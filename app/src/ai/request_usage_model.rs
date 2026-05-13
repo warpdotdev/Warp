@@ -399,7 +399,7 @@ impl AIRequestUsageModel {
 
         // If you have provided your own API key,
         // it doesn't matter if you are out of warp-provided requests.
-        let has_byo_api_key = UserWorkspaces::as_ref(ctx).is_byo_api_key_enabled()
+        let has_byo_api_key = UserWorkspaces::as_ref(ctx).is_byo_api_key_enabled(ctx)
             && ApiKeyManager::as_ref(ctx).keys().has_any_key();
 
         has_base_plan_ai_requests
@@ -640,5 +640,5 @@ impl AIRequestUsageModel {
 impl SingletonEntity for AIRequestUsageModel {}
 
 #[cfg(test)]
-#[path = "request_usage_model_test.rs"]
+#[path = "request_usage_model_tests.rs"]
 mod tests;

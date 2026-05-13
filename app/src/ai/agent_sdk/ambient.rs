@@ -417,10 +417,12 @@ impl AmbientAgentRunner {
 
             let harness_override = (args.harness != Harness::Oz).then_some(HarnessConfig {
                 harness_type: args.harness,
+                model_id: None,
             });
             let harness_auth_secrets = args.claude_auth_secret.clone().map(|name| {
                 crate::ai::ambient_agents::task::HarnessAuthSecretsConfig {
                     claude_auth_secret_name: Some(name),
+                    codex_auth_secret_name: None,
                 }
             });
 
@@ -483,13 +485,14 @@ impl AmbientAgentRunner {
                     (_, true) => Some(false),
                     _ => None,
                 },
+                agent_identity_uid: args.agent_uid,
                 skill,
                 attachments,
                 interactive: None,
                 parent_run_id: None,
                 runtime_skills: vec![],
                 referenced_attachments: vec![],
-                conversation_id: None,
+                conversation_id: args.conversation,
                 initial_snapshot_token: None,
             };
 
@@ -844,6 +847,10 @@ impl AmbientAgentRunner {
                     MAX_LINE_WIDTH,
                 );
                 table.add_row(vec![title_cell]);
+            }
+
+            if let Some(executor) = task.executor_display_name() {
+                table.add_row(vec![format!("Executed as: {executor}")]);
             }
 
             // Agent config snapshot (if available)

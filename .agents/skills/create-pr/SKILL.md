@@ -12,7 +12,6 @@ This guide covers best practices for creating pull requests in the warp reposito
 ## Related Skills
 
 - `fix-errors` - Fix presubmit failures (formatting, linting, tests) before opening PR
-- `rust-unit-tests` - Write unit tests for your changes, if applicable (see "Testing Requirements" below)
 - `warp-integration-test` - Add or update integration coverage for user-visible flows, regressions, and P0 use cases
 - `add-feature-flag` - Gate changes behind feature flags
 
@@ -156,7 +155,7 @@ Code with non-trivial logic should have unit tests to validate functionality:
 - Sufficiently-simple functions
 - Trivial getters/setters
 
-See the `rust-unit-tests` skill for guidance on writing unit tests.
+Follow the repository's local testing conventions for guidance on writing unit tests.
 
 ### UI components need layout validation tests
 

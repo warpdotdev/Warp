@@ -24,7 +24,7 @@ struct Models;
 
 #[derive(Copy, Clone)]
 pub enum Model {
-    BertTiny,
+    BertTinyV1,
 }
 
 impl Model {
@@ -38,13 +38,13 @@ impl Model {
 
     fn model_path(&self) -> &'static str {
         match self {
-            Model::BertTiny => "bert_tiny.onnx",
+            Model::BertTinyV1 => "bert_tiny_v1.onnx",
         }
     }
 
     fn tokenizer_path(&self) -> &'static str {
         match self {
-            Model::BertTiny => "bert_tiny_tokenizer.json",
+            Model::BertTinyV1 => "bert_tiny_tokenizer.json",
         }
     }
 }

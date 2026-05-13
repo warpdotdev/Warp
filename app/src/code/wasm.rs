@@ -6,7 +6,10 @@ use warpui::{
     AppContext, Element, Entity, ModelHandle, TypedActionView, View, ViewContext, ViewHandle,
 };
 
-use super::{editor_management::CodeSource, local_code_editor::LocalCodeEditorView};
+use super::{
+    buffer_location::FileLocation, editor_management::CodeSource,
+    local_code_editor::LocalCodeEditorView,
+};
 use crate::pane_group::{
     focus_state::PaneFocusHandle,
     pane::view::{HeaderContent, HeaderRenderContext},
@@ -131,11 +134,11 @@ impl CodeView {
 
     pub fn open_or_focus_existing(
         &mut self,
-        path: Option<PathBuf>,
+        location: Option<FileLocation>,
         line_col: Option<LineAndColumnArg>,
         ctx: &mut ViewContext<Self>,
     ) {
-        if let Some(path) = path {
+        if let Some(path) = location.and_then(|loc| loc.to_local_path().map(|p| p.to_path_buf())) {
             self.open_local(None, path, line_col, ctx);
         }
     }

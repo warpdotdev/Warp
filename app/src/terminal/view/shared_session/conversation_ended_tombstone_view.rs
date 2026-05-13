@@ -25,8 +25,8 @@ use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::icons::Icon;
 use warp_core::ui::theme::{AnsiColorIdentifier, Fill};
 use warpui::elements::{
-    Border, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Flex,
-    MainAxisSize, Padding, ParentElement, Radius, Shrinkable, Text,
+    Border, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
+    Expanded, Flex, MainAxisSize, Padding, ParentElement, Radius, Shrinkable, Text,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::{
@@ -592,7 +592,7 @@ impl View for ConversationEndedTombstoneView {
             .with_main_axis_size(MainAxisSize::Max)
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
             .with_spacing(12.)
-            .with_child(Shrinkable::new(1., left_column.finish()).finish())
+            .with_child(Expanded::new(1., left_column.finish()).finish())
             .with_child(self.render_action_buttons(appearance, app))
             .finish();
 

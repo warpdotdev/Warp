@@ -6,9 +6,11 @@ use warpui::{
 };
 
 use crate::{
-    code_review::diff_state::DiffStateModel,
     tab_configs::PickerStyle,
-    util::git::detect_current_branch,
+    util::git::{
+        detect_current_branch, get_all_branches, get_all_branches_with_known_main,
+        sort_branches_main_first,
+    },
     view_components::{DropdownItem, FilterableDropdown},
 };
 
@@ -137,10 +139,9 @@ impl BranchPicker {
             async move {
                 let branches = match known_main {
                     Some(ref main) => {
-                        DiffStateModel::get_all_branches_with_known_main(&cwd, main, None, false)
-                            .await
+                        get_all_branches_with_known_main(&cwd, main, None, false).await
                     }
-                    None => DiffStateModel::get_all_branches(&cwd, None, false).await,
+                    None => get_all_branches(&cwd, None, false).await,
                 };
 
                 // git for-each-ref only lists refs backed by actual commits,
@@ -190,10 +191,9 @@ impl BranchPicker {
                 }
 
                 // Main branches first, then the rest in recency order.
-                let mut items: Vec<DropdownItem<String>> =
-                    DiffStateModel::sort_branches_main_first(&branches)
-                        .map(|(name, _)| DropdownItem::new(name.clone(), name.clone()))
-                        .collect();
+                let mut items: Vec<DropdownItem<String>> = sort_branches_main_first(&branches)
+                    .map(|(name, _)| DropdownItem::new(name.clone(), name.clone()))
+                    .collect();
 
                 // Add the default as the first item if it isn't already in the list
                 // (e.g. the user typed a branch name that doesn't exist locally yet).

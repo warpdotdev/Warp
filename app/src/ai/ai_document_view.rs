@@ -102,6 +102,7 @@ use warp_util::path::LineAndColumnArg;
 
 // Import keybinding constants from code view to ensure consistency
 use crate::code::view::{SAVE_FILE_BINDING_DESCRIPTION, SAVE_FILE_BINDING_NAME};
+use crate::notebooks::file::MarkdownDisplayMode;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AIDocumentAction {
@@ -303,11 +304,12 @@ impl AIDocumentView {
                             // sends the orchestration config).
                             if me.orchestration_config_block.is_none() {
                                 let conv_id = *cid;
+                                // TODO: introduce DocumentId / PlanId newtypes to make this
+                                // conversion type-safe.
+                                let plan_id = document_id.to_string();
                                 me.orchestration_config_block =
                                     Some(ctx.add_typed_action_view(move |ctx| {
-                                        OrchestrationConfigBlockView::new_with_conversation_id(
-                                            conv_id, ctx,
-                                        )
+                                        OrchestrationConfigBlockView::new(conv_id, plan_id, ctx)
                                     }));
                             }
                             ctx.notify();
@@ -330,7 +332,9 @@ impl AIDocumentView {
                     let appearance = Appearance::as_ref(ctx);
                     let font_settings = FontSettings::as_ref(ctx);
                     let styles = rich_text_styles(appearance, font_settings);
-                    NotebooksEditorModel::new_unbound(styles, ctx)
+                    let mut model = NotebooksEditorModel::new_unbound(styles, ctx);
+                    model.set_default_mermaid_display_mode(MarkdownDisplayMode::Rendered, ctx);
+                    model
                 })
             });
 
@@ -436,11 +440,17 @@ impl AIDocumentView {
         let has_orchestration_config = doc_conversation_id.and_then(|cid| {
             BlocklistAIHistoryModel::as_ref(ctx)
                 .conversation(&cid)
-                .and_then(|conv| conv.orchestration_config().map(|_| cid))
+                .and_then(|conv| {
+                    let plan_id_str = document_id.to_string();
+                    conv.orchestration_config_for_plan(&plan_id_str)
+                        .map(|_| cid)
+                })
         });
+        let doc_id_for_block = document_id;
         let orchestration_config_block = has_orchestration_config.map(|conv_id| {
+            let plan_id = doc_id_for_block.to_string();
             ctx.add_typed_action_view(move |ctx| {
-                OrchestrationConfigBlockView::new_with_conversation_id(conv_id, ctx)
+                OrchestrationConfigBlockView::new(conv_id, plan_id, ctx)
             })
         });
 
@@ -1061,9 +1071,10 @@ impl View for AIDocumentView {
         let has_orchestration_config = AIDocumentModel::as_ref(app)
             .get_conversation_id_for_document_id(&self.document_id)
             .and_then(|cid| {
+                let plan_id_str = self.document_id.to_string();
                 BlocklistAIHistoryModel::as_ref(app)
                     .conversation(&cid)
-                    .and_then(|conv| conv.orchestration_config().map(|_| ()))
+                    .and_then(|conv| conv.orchestration_config_for_plan(&plan_id_str).map(|_| ()))
             })
             .is_some();
 

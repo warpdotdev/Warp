@@ -5,6 +5,7 @@
 use ai::agent::action::RunAgentsExecutionMode;
 use ai::agent::orchestration_config::OrchestrationConfigStatus;
 use pathfinder_color::ColorU;
+use std::collections::HashMap;
 use warpui::elements::{
     ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Flex, Hoverable,
     MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Text,
@@ -19,6 +20,7 @@ use crate::ai::blocklist::inline_action::orchestration_controls::{
 };
 use crate::ai::blocklist::BlocklistAIHistoryEvent;
 use crate::ai::document::ai_document_model::AIDocumentModel;
+use crate::ai::harness_availability::{HarnessAvailabilityEvent, HarnessAvailabilityModel};
 use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
 use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
@@ -67,10 +69,7 @@ fn render_pill_toggle(is_on: bool, theme: &WarpTheme) -> Box<dyn Element> {
 
 const CONFIG_BLOCK_HEADER: &str = "Use orchestration";
 const CONFIG_BLOCK_DESCRIPTION: &str =
-    "Break this work into coordinated streams handled by specialized agents. \
-     Each agent focuses on a specific part of the plan\u{2014}design, instrumentation, \
-     backend, testing, and rollout\u{2014}while sharing context to stay aligned. \
-     This approach speeds up execution and reduces gaps between steps.";
+    "Break this work into coordinated streams with multiple agents.";
 const BASE_MODEL_HELPER: &str = "The primary model all agents will use.";
 
 // ── Action type ─────────────────────────────────────────────────────
@@ -108,6 +107,7 @@ impl OrchestrationControlAction for OrchestrationConfigBlockAction {
 
 pub struct OrchestrationConfigBlockView {
     conversation_id: AIConversationId,
+    plan_id: String,
     edit_state: OrchestrationEditState,
     pickers: OrchestrationPickerHandles<OrchestrationConfigBlockAction>,
     is_approved: bool,
@@ -115,23 +115,32 @@ pub struct OrchestrationConfigBlockView {
     pickers_initialized: bool,
     toggle_mouse_state: MouseStateHandle,
     details_mouse_state: MouseStateHandle,
+    /// UI-only per-harness model memory so switching harnesses preserves
+    /// the user's previous model selection for each harness.
+    saved_model_per_harness: HashMap<String, String>,
+    /// Suppresses self-triggered refresh when `apply_field_change`
+    /// saves the config and the resulting event re-enters
+    /// `refresh_from_model`.
+    suppress_refresh: bool,
 }
 
 impl OrchestrationConfigBlockView {
-    pub fn new_with_conversation_id(
+    pub fn new(
         conversation_id: AIConversationId,
+        plan_id: String,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let history = BlocklistAIHistoryModel::as_ref(ctx);
         let (edit_state, is_approved) = history
             .conversation(&conversation_id)
             .and_then(|conv| {
-                conv.orchestration_config().map(|config| {
-                    (
-                        OrchestrationEditState::from_orchestration_config(config),
-                        conv.orchestration_status().is_approved(),
-                    )
-                })
+                conv.orchestration_config_for_plan(&plan_id)
+                    .map(|(config, status)| {
+                        (
+                            OrchestrationEditState::from_orchestration_config(config),
+                            status.is_approved(),
+                        )
+                    })
             })
             .unwrap_or_else(|| {
                 (
@@ -158,19 +167,41 @@ impl OrchestrationConfigBlockView {
             },
         );
 
-        // Repopulate the model picker when available LLMs change.
-        // LLMPreferences loads asynchronously from the server; the
-        // picker may have been created before models arrived.
+        // Repopulate the model picker when available LLMs change (Oz
+        // harness only — non-Oz harnesses get their catalog from
+        // HarnessAvailabilityModel, not LLMPreferences).
         ctx.subscribe_to_model(&LLMPreferences::handle(ctx), |me, _, event, ctx| {
             if let LLMPreferencesEvent::UpdatedAvailableLLMs = event {
                 if let Some(handle) = &me.pickers.model_picker {
-                    oc::populate_model_picker(handle, &me.edit_state.model_id, ctx);
+                    let is_local = !me.edit_state.execution_mode.is_remote();
+                    oc::populate_model_picker_for_harness(
+                        handle,
+                        &me.edit_state.model_id,
+                        &me.edit_state.harness_type,
+                        is_local,
+                        ctx,
+                    );
                 }
             }
         });
 
+        // Repopulate harness and model pickers when the server-provided
+        // harness list or harness model catalogs change.
+        ctx.subscribe_to_model(
+            &HarnessAvailabilityModel::handle(ctx),
+            |me, _, event, ctx| {
+                if let HarnessAvailabilityEvent::Changed = event {
+                    if me.pickers_initialized {
+                        oc::repopulate_all_pickers(&mut me.edit_state, &me.pickers, ctx);
+                    }
+                    ctx.notify();
+                }
+            },
+        );
+
         let mut view = Self {
             conversation_id,
+            plan_id,
             edit_state,
             pickers: OrchestrationPickerHandles::default(),
             is_approved,
@@ -178,6 +209,8 @@ impl OrchestrationConfigBlockView {
             pickers_initialized: false,
             toggle_mouse_state: MouseStateHandle::default(),
             details_mouse_state: MouseStateHandle::default(),
+            saved_model_per_harness: HashMap::new(),
+            suppress_refresh: false,
         };
         if view.is_approved {
             view.ensure_pickers(ctx);
@@ -186,13 +219,17 @@ impl OrchestrationConfigBlockView {
     }
 
     fn refresh_from_model(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.suppress_refresh {
+            self.suppress_refresh = false;
+            return;
+        }
         let history = BlocklistAIHistoryModel::as_ref(ctx);
         if let Some(conv) = history.conversation(&self.conversation_id) {
-            if let Some(config) = conv.orchestration_config() {
+            if let Some((config, status)) = conv.orchestration_config_for_plan(&self.plan_id) {
                 self.edit_state = OrchestrationEditState::from_orchestration_config(config);
-                self.is_approved = conv.orchestration_status().is_approved();
+                self.is_approved = status.is_approved();
                 if self.pickers_initialized {
-                    oc::sync_picker_selections(&self.edit_state, &self.pickers, ctx);
+                    oc::repopulate_all_pickers(&mut self.edit_state, &self.pickers, ctx);
                 }
                 ctx.notify();
             }
@@ -218,9 +255,16 @@ impl OrchestrationConfigBlockView {
         } else {
             self.edit_state.model_id.clone()
         };
+        let is_local = !self.edit_state.execution_mode.is_remote();
         let model_handle = oc::new_standard_picker_dropdown(&colors, ctx);
         model_handle.update(ctx, |d, c| d.set_use_overlay_layer(true, c));
-        oc::populate_model_picker(&model_handle, &display_model_id, ctx);
+        oc::populate_model_picker_for_harness(
+            &model_handle,
+            &display_model_id,
+            &self.edit_state.harness_type,
+            is_local,
+            ctx,
+        );
         self.pickers.model_picker = Some(model_handle);
 
         let harness_handle = oc::new_standard_picker_dropdown(&colors, ctx);
@@ -228,6 +272,33 @@ impl OrchestrationConfigBlockView {
         oc::populate_harness_picker(&harness_handle, &self.edit_state.harness_type, ctx);
         self.pickers.harness_picker = Some(harness_handle);
 
+        // When restoring a Remote config with empty host or
+        // environment, fill defaults so the pickers aren't blank.
+        // If the config is approved, persist the defaults so the
+        // stored config used by auto-launch has concrete values.
+        let (needs_host, needs_env) = match &self.edit_state.execution_mode {
+            RunAgentsExecutionMode::Remote {
+                worker_host,
+                environment_id,
+                ..
+            } => (worker_host.is_empty(), environment_id.is_empty()),
+            RunAgentsExecutionMode::Local => (false, false),
+        };
+        let mut filled_defaults = false;
+        if needs_host {
+            self.edit_state
+                .set_worker_host(oc::ORCHESTRATION_WARP_WORKER_HOST.to_string());
+            filled_defaults = true;
+        }
+        if needs_env {
+            if let Some(default_env) = oc::resolve_default_environment_id(ctx) {
+                self.edit_state.set_environment_id(default_env);
+                filled_defaults = true;
+            }
+        }
+        if filled_defaults && self.is_approved {
+            self.apply_field_change(ctx);
+        }
         let initial_env = match &self.edit_state.execution_mode {
             RunAgentsExecutionMode::Remote { environment_id, .. } => environment_id.as_str(),
             RunAgentsExecutionMode::Local => "",
@@ -250,6 +321,7 @@ impl OrchestrationConfigBlockView {
     }
 
     fn apply_field_change(&mut self, ctx: &mut ViewContext<Self>) {
+        self.suppress_refresh = true;
         let config = self.edit_state.to_orchestration_config();
         let status = if self.is_approved {
             OrchestrationConfigStatus::Approved
@@ -257,13 +329,9 @@ impl OrchestrationConfigBlockView {
             OrchestrationConfigStatus::Disapproved
         };
         let conversation_id = self.conversation_id;
-        // Preserve the existing plan_id from the conversation so we don't
-        // clobber it when the user only edits config fields.
-        let plan_id = BlocklistAIHistoryModel::as_ref(ctx)
-            .conversation(&conversation_id)
-            .and_then(|conv| conv.orchestration_plan_id().map(str::to_string));
+        let plan_id = self.plan_id.clone();
         AIDocumentModel::handle(ctx).update(ctx, |model, ctx| {
-            model.set_orchestration_config(conversation_id, config, status, plan_id, ctx);
+            model.set_orchestration_config_for_plan(conversation_id, plan_id, config, status, ctx);
         });
     }
 }
@@ -361,19 +429,16 @@ impl View for OrchestrationConfigBlockView {
                 .with_child(details_text)
                 .with_child(chevron)
                 .finish();
+            let details_link_hoverable =
+                Hoverable::new(self.details_mouse_state.clone(), move |_| details_link)
+                    .on_click(|ctx, _, _| {
+                        ctx.dispatch_typed_action(OrchestrationConfigBlockAction::ToggleDetails);
+                    })
+                    .with_cursor(Cursor::PointingHand)
+                    .finish();
             let details_row = Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_child(warpui::elements::Expanded::new(1.0, Empty::new().finish()).finish())
-                .with_child(
-                    Hoverable::new(self.details_mouse_state.clone(), move |_| details_link)
-                        .on_click(|ctx, _, _| {
-                            ctx.dispatch_typed_action(
-                                OrchestrationConfigBlockAction::ToggleDetails,
-                            );
-                        })
-                        .with_cursor(Cursor::PointingHand)
-                        .finish(),
-                )
+                .with_child(details_link_hoverable)
                 .finish();
             column.add_child(Container::new(details_row).with_margin_top(8.).finish());
 
@@ -462,8 +527,19 @@ impl TypedActionView for OrchestrationConfigBlockView {
                 ctx.notify();
             }
             OrchestrationConfigBlockAction::ExecutionModeToggled { is_remote } => {
-                self.edit_state.toggle_execution_mode_to_remote(*is_remote);
-                oc::sync_picker_selections(&self.edit_state, &self.pickers, ctx);
+                let conversation_id = self.conversation_id;
+                oc::apply_execution_mode_change(
+                    &mut self.edit_state,
+                    &self.pickers,
+                    *is_remote,
+                    |ctx| {
+                        BlocklistAIHistoryModel::as_ref(ctx)
+                            .conversation(&conversation_id)
+                            .and_then(|conv| conv.latest_exchange())
+                            .map(|ex| ex.model_id.to_string())
+                    },
+                    ctx,
+                );
                 self.apply_field_change(ctx);
                 ctx.notify();
             }
@@ -473,12 +549,26 @@ impl TypedActionView for OrchestrationConfigBlockView {
                 ctx.notify();
             }
             OrchestrationConfigBlockAction::HarnessChanged { harness_type } => {
-                self.edit_state.harness_type = harness_type.clone();
+                let conversation_id = self.conversation_id;
+                oc::apply_harness_change(
+                    &mut self.edit_state,
+                    &mut self.saved_model_per_harness,
+                    &self.pickers,
+                    harness_type,
+                    |ctx| {
+                        BlocklistAIHistoryModel::as_ref(ctx)
+                            .conversation(&conversation_id)
+                            .and_then(|conv| conv.latest_exchange())
+                            .map(|ex| ex.model_id.to_string())
+                    },
+                    ctx,
+                );
                 self.apply_field_change(ctx);
                 ctx.notify();
             }
             OrchestrationConfigBlockAction::EnvironmentChanged { environment_id } => {
                 self.edit_state.set_environment_id(environment_id.clone());
+                oc::persist_environment_selection(environment_id, ctx);
                 self.apply_field_change(ctx);
                 ctx.notify();
             }

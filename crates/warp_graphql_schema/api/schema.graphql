@@ -220,8 +220,15 @@ enum AgentHarness {
   OZ
 }
 
+"""A single model available for a third-party harness."""
+type HarnessModel {
+  displayName: String!
+  id: ID!
+}
+
 """A harness available to the requesting user."""
 type HarnessInfo {
+  availableModels: [HarnessModel!]!
   displayName: String!
   enabled: Boolean!
   harness: AgentHarness!
@@ -1324,6 +1331,7 @@ type GcpProviderConfig {
 }
 
 input GenerateApiKeyInput {
+  agentUid: ID
   expiresAt: Time
   name: String!
   teamId: ID
@@ -2031,6 +2039,16 @@ type ManagedSecretConfig {
   publicKey: String
 }
 
+"""A managed secret value representing an OpenAI API key."""
+type ManagedSecretOpenAiApiKeyValue {
+  apiKey: String!
+  """
+  Optional base URL for the OpenAI API. When set, the harness uses this
+  instead of the provider default (e.g. for regional endpoints).
+  """
+  baseUrl: String
+}
+
 """A raw, unencrypted managed secret value."""
 type ManagedSecretRawValue {
   value: String!
@@ -2042,10 +2060,11 @@ enum ManagedSecretType {
   ANTHROPIC_BEDROCK_ACCESS_KEY
   ANTHROPIC_BEDROCK_API_KEY
   DOTENVX
+  OPENAI_API_KEY
   RAW_VALUE
 }
 
-union ManagedSecretValue = ManagedSecretAnthropicApiKeyValue | ManagedSecretAnthropicBedrockAccessKeyValue | ManagedSecretAnthropicBedrockApiKeyValue | ManagedSecretRawValue
+union ManagedSecretValue = ManagedSecretAnthropicApiKeyValue | ManagedSecretAnthropicBedrockAccessKeyValue | ManagedSecretAnthropicBedrockApiKeyValue | ManagedSecretOpenAiApiKeyValue | ManagedSecretRawValue
 
 input ManagedSecretsInput {
   """Pagination cursor, currently unused."""
@@ -2058,6 +2077,21 @@ type ManagedSecretsOutput implements Response {
 }
 
 union ManagedSecretsResult = ManagedSecretsOutput | UserFacingError
+
+input ListHarnessAuthSecretsInput {
+  """
+  Harness whose auth-credential secrets should be returned. Harnesses that
+  don't use auth secrets (e.g. OZ) always return an empty result.
+  """
+  harness: AgentHarness!
+}
+
+type HarnessAuthSecretsOutput implements Response {
+  managedSecrets: [ManagedSecret!]!
+  responseContext: ResponseContext!
+}
+
+union HarnessAuthSecretsResult = HarnessAuthSecretsOutput | UserFacingError
 
 enum MembershipRole {
   ADMIN
@@ -2759,6 +2793,12 @@ type RootQuery {
   """
   listWarpDevImages: ListWarpDevImagesResult!
   managedSecrets(input: ManagedSecretsInput!, requestContext: RequestContext!): ManagedSecretsResult!
+
+  """
+  Retrieve managed secrets that serve as authentication credentials for the given harness,
+  scoped to the caller's personal drive and team drives.
+  """
+  harnessAuthSecrets(input: ListHarnessAuthSecretsInput!, requestContext: RequestContext!): HarnessAuthSecretsResult!
   pricingInfo(requestContext: RequestContext!): PricingInfoResult!
   rerankFragments(input: RerankFragmentsInput!, requestContext: RequestContext!): RerankFragmentsResult!
 
@@ -3846,6 +3886,7 @@ type User {
   - `[]` means that the user is not part of any server-side enabled experiments.
   """
   experiments: [Experiment!]
+  globalSkills: [String!]!
   githubInstallations: UserGithubInstallationsOutput!
   isOnWorkDomain: Boolean!
   isOnboarded: Boolean!
