@@ -4,6 +4,7 @@ use crate::elements::{Highlight, HighlightedRange, DEFAULT_UI_LINE_HEIGHT_RATIO}
 use crate::{
     elements::{Container, Element, Text},
     fonts::Properties,
+    text_layout::ClipConfig,
     ui_components::components::{UiComponent, UiComponentStyles},
 };
 use itertools::Itertools;
@@ -15,6 +16,7 @@ pub struct WrappableText {
     wrap: bool,
     line_height_ratio: f32,
     highlights: Vec<HighlightedRange>,
+    clip_config: Option<ClipConfig>,
     /// Whether the text is selectable when rendered as a descendant of a [`SelectableArea`].
     is_selectable: bool,
 }
@@ -27,6 +29,7 @@ impl WrappableText {
             wrap: soft_wrap,
             line_height_ratio: DEFAULT_UI_LINE_HEIGHT_RATIO,
             highlights: vec![],
+            clip_config: None,
             is_selectable: true,
         }
     }
@@ -51,6 +54,11 @@ impl WrappableText {
         self.is_selectable = is_selectable;
         self
     }
+
+    pub fn with_clip_config(mut self, clip_config: ClipConfig) -> Self {
+        self.clip_config = Some(clip_config);
+        self
+    }
 }
 
 impl UiComponent for WrappableText {
@@ -70,6 +78,9 @@ impl UiComponent for WrappableText {
         }
         if let Some(weight) = styles.font_weight {
             text = text.with_style(Properties::default().weight(weight))
+        }
+        if let Some(clip_config) = self.clip_config {
+            text = text.with_clip(clip_config);
         }
 
         // The text element assumes that highlights are sorted by character index.
@@ -130,6 +141,11 @@ impl Span {
 
     pub fn with_selectable(mut self, is_selectable: bool) -> Self {
         self.text.is_selectable = is_selectable;
+        self
+    }
+
+    pub fn with_clip_config(mut self, clip_config: ClipConfig) -> Self {
+        self.text = self.text.with_clip_config(clip_config);
         self
     }
 }

@@ -20,6 +20,7 @@ use warpui::{
         PositionedElementOffsetBounds, Radius, SavePosition, Shrinkable, Stack,
     },
     geometry::vector::vec2f,
+    text_layout::ClipConfig,
     ui_components::{
         button::{ButtonVariant, TextAndIcon, TextAndIconAlignment},
         components::{Coords, UiComponent, UiComponentStyles},
@@ -68,6 +69,7 @@ pub struct FilterableDropdown<A: Action + Clone> {
     menu_width: Option<f32>,
     vertical_margin: f32,
     top_bar_height: f32,
+    top_bar_text_clip_config: Option<ClipConfig>,
     /// See `Dropdown::use_overlay_layer`. Mirrors the same opt-out for
     /// `FilterableDropdown` callers (the orchestrate environment
     /// picker) that need to render in the parent's Normal layer
@@ -130,6 +132,7 @@ where
             menu_width: None,
             vertical_margin: DROPDOWN_PADDING,
             top_bar_height: TOP_MENU_BAR_HEIGHT,
+            top_bar_text_clip_config: None,
             use_overlay_layer: true,
         }
     }
@@ -321,6 +324,10 @@ where
         self.top_bar_max_width = max_width;
     }
 
+    pub fn set_top_bar_text_clip_config(&mut self, clip_config: ClipConfig) {
+        self.top_bar_text_clip_config = Some(clip_config);
+    }
+
     pub fn set_menu_width(&mut self, width: f32, ctx: &mut ViewContext<Self>) {
         self.menu_width = Some(width);
         self.dropdown.update(ctx, |menu, ctx| {
@@ -424,21 +431,24 @@ where
             },
         };
 
+        let mut label = TextAndIcon::new(
+            TextAndIconAlignment::TextFirst,
+            selected_item_text,
+            icons::Icon::ChevronDown
+                .to_warpui_icon(appearance.theme().active_ui_text_color()),
+            self.main_axis_size,
+            MainAxisAlignment::SpaceBetween,
+            vec2f(15., 15.),
+        )
+        .with_inner_padding(10.);
+        if let Some(clip_config) = self.top_bar_text_clip_config {
+            label = label.with_text_clip_config(clip_config);
+        }
+
         let mut top_bar = appearance
             .ui_builder()
             .button(self.button_variant, self.top_bar_mouse_state.clone())
-            .with_text_and_icon_label(
-                TextAndIcon::new(
-                    TextAndIconAlignment::TextFirst,
-                    selected_item_text,
-                    icons::Icon::ChevronDown
-                        .to_warpui_icon(appearance.theme().active_ui_text_color()),
-                    self.main_axis_size,
-                    MainAxisAlignment::SpaceBetween,
-                    vec2f(15., 15.),
-                )
-                .with_inner_padding(10.),
-            )
+            .with_text_and_icon_label(label)
             .with_style(self.style_override.unwrap_or(UiComponentStyles {
                 padding: Some(Coords {
                     top: 5.,
