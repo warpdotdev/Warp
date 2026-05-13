@@ -1,5 +1,5 @@
 use crate::ai::agent::SuggestedRule;
-use crate::ai::facts::CloudAIFactModel;
+use crate::ai::facts::AIFactObjectModel;
 use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::cloud_object::update_manager::{
@@ -499,7 +499,7 @@ impl SuggestedRuleView {
         let cloud_model = CloudModel::handle(ctx);
         if let Some(rule) = cloud_model
             .as_ref(ctx)
-            .get_object_of_type::<GenericStringObjectId, CloudAIFactModel>(sync_id)
+            .get_object_of_type::<GenericStringObjectId, AIFactObjectModel>(sync_id)
         {
             let AIFact::Memory(AIMemory { name, content, .. }) = rule.model().string_model.clone();
             self.name_editor.update(ctx, |name_editor, ctx| {

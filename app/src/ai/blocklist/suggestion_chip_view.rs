@@ -1,5 +1,5 @@
 use crate::ai::agent::{SuggestedAgentModeWorkflow, SuggestedLoggingId, SuggestedRule};
-use crate::ai::facts::CloudAIFactModel;
+use crate::ai::facts::AIFactObjectModel;
 use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::cloud_object::update_manager::{
@@ -353,7 +353,7 @@ impl SuggestionChipView {
             Suggestion::Rule { .. } => {
                 if let Some(rule) = cloud_model
                     .as_ref(ctx)
-                    .get_object_of_type::<GenericStringObjectId, CloudAIFactModel>(&self.sync_id)
+                    .get_object_of_type::<GenericStringObjectId, AIFactObjectModel>(&self.sync_id)
                 {
                     let AIFact::Memory(AIMemory { content, .. }) =
                         rule.model().string_model.clone();
@@ -419,7 +419,7 @@ impl TypedActionView for SuggestionChipView {
             SuggestedViewAction::ChipClicked => match &self.suggestion {
                 Suggestion::Rule { rule, .. } => {
                     if CloudModel::as_ref(ctx)
-                        .get_object_of_type::<GenericStringObjectId, CloudAIFactModel>(
+                        .get_object_of_type::<GenericStringObjectId, AIFactObjectModel>(
                             &self.sync_id,
                         )
                         .is_some()

@@ -88,7 +88,7 @@ use crate::ai::blocklist::inline_action::aws_bedrock_credentials_error::{
 };
 use crate::ai::blocklist::inline_action::web_fetch::WebFetchView;
 use crate::ai::blocklist::inline_action::web_search::WebSearchView;
-use crate::ai::facts::{AIFact, AIMemory, CloudAIFactModel};
+use crate::ai::facts::{AIFact, AIFactObjectModel, AIMemory};
 use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
@@ -2061,7 +2061,7 @@ impl AIBlock {
 
             let existing_rules: HashSet<SuggestedLoggingId> = {
                 CloudModel::as_ref(ctx)
-                    .get_all_objects_of_type::<GenericStringObjectId, CloudAIFactModel>()
+                    .get_all_objects_of_type::<GenericStringObjectId, AIFactObjectModel>()
                     .filter_map(|fact| {
                         let AIFact::Memory(AIMemory {
                             suggested_logging_id,

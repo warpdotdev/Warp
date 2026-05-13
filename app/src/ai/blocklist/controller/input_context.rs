@@ -15,7 +15,7 @@ use crate::{
         block_context::BlockContext,
         blocklist::BlocklistAIContextModel,
         document::ai_document_model::{AIDocumentId, AIDocumentModel},
-        facts::CloudAIFactModel,
+        facts::AIFactObjectModel,
         skills::list_skills,
     },
     cloud_object::{
@@ -301,7 +301,7 @@ fn get_object_attachment_payload(
             CloudModel::as_ref(ctx)
                 .get_by_uid(&uid.to_string())
                 .and_then(|object| {
-                    if let Some(ai_fact) = object.as_any().downcast_ref::<GenericCloudObject<GenericStringObjectId, CloudAIFactModel>>() {
+                    if let Some(ai_fact) = object.as_any().downcast_ref::<GenericCloudObject<GenericStringObjectId, AIFactObjectModel>>() {
                         let string_object = ai_fact as &dyn CloudStringObject;
                         let object_type =
                             generic_string_object_format_name(string_object.generic_string_object_format());

@@ -5,7 +5,7 @@ use warpui::{
 };
 
 use crate::{
-    ai::facts::{view::AIFactPage, CloudAIFactModel},
+    ai::facts::{view::AIFactPage, AIFactObjectModel},
     cloud_object::model::{generic_string_model::GenericStringObjectId, persistence::CloudModel},
     integration_testing::view_getters::workspace_view,
     server::ids::SyncId,
@@ -22,7 +22,7 @@ pub fn assert_rule_exists(
         let sync_id: &SyncId = data.get(&expected_id_key).expect("No saved AI fact ID");
         CloudModel::handle(app).read(app, |cloud_model, _| {
             if let Some(ai_fact) =
-                cloud_model.get_object_of_type::<GenericStringObjectId, CloudAIFactModel>(sync_id)
+                cloud_model.get_object_of_type::<GenericStringObjectId, AIFactObjectModel>(sync_id)
             {
                 let content = match &ai_fact.model().string_model {
                     crate::ai::facts::AIFact::Memory(memory) => &memory.content,
@@ -48,7 +48,7 @@ pub fn assert_rule_count(expected_count: usize) -> AssertionCallback {
 /// Helper function to count AI facts in the cloud model
 pub fn rule_count(cloud_model: &CloudModel, _ctx: &AppContext) -> usize {
     cloud_model
-        .get_all_objects_of_type::<GenericStringObjectId, CloudAIFactModel>()
+        .get_all_objects_of_type::<GenericStringObjectId, AIFactObjectModel>()
         .count()
 }
 

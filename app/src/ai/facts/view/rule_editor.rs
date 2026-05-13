@@ -24,7 +24,7 @@ use warpui::{
 };
 
 use super::style;
-use crate::ai::facts::{AIFact, AIMemory, CloudAIFact, CloudAIFactModel};
+use crate::ai::facts::{AIFact, AIFactObject, AIFactObjectModel, AIMemory};
 use crate::ui_components::icons::Icon;
 
 #[derive(Debug, Clone, Copy)]
@@ -59,7 +59,7 @@ pub enum RuleEditorViewAction {
 }
 pub struct RuleEditorView {
     // Is None if we are adding a new rule, otherwise it is the existing rule we are editing.
-    ai_fact: Option<CloudAIFact>,
+    ai_fact: Option<AIFactObject>,
 
     current_editor: EditorType,
     name_editor: ViewHandle<EditorView>,
@@ -161,7 +161,7 @@ impl RuleEditorView {
         if let Some(sync_id) = sync_id {
             // Get the AIFact from the cloud model
             let Some(ai_fact) = CloudModel::as_ref(ctx)
-                .get_object_of_type::<GenericStringObjectId, CloudAIFactModel>(&sync_id)
+                .get_object_of_type::<GenericStringObjectId, AIFactObjectModel>(&sync_id)
             else {
                 return;
             };

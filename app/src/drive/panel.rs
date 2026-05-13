@@ -8,7 +8,7 @@ use warpui::{
 };
 
 use crate::{
-    ai::{document::ai_document_model::AIDocumentId, facts::CloudAIFactModel},
+    ai::{document::ai_document_model::AIDocumentId, facts::AIFactObjectModel},
     cloud_object::{
         model::{persistence::CloudModel, view::CloudViewModel},
         update_manager::{InitiatedBy, UpdateManager},
@@ -326,7 +326,7 @@ impl DrivePanel {
                     let client_id = ClientId::default();
                     UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
                         update_manager.create_object(
-                            CloudAIFactModel::new(fact.clone()),
+                            AIFactObjectModel::new(fact.clone()),
                             owner,
                             client_id,
                             CloudObjectEventEntrypoint::Blocklist,

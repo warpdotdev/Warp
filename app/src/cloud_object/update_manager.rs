@@ -3,7 +3,7 @@ use crate::ai::mcp::templatable::{CloudTemplatableMCPServerModel, TemplatableMCP
 use crate::{
     ai::{
         execution_profiles::{AIExecutionProfile, CloudAIExecutionProfileModel},
-        facts::{AIFact, CloudAIFactModel},
+        facts::{AIFact, AIFactObjectModel},
     },
     auth::TEST_USER_UID,
     cloud_object::{
@@ -293,7 +293,12 @@ impl UpdateManager {
         revision_ts: Option<Revision>,
         ctx: &mut ModelContext<Self>,
     ) {
-        self.update_object(CloudAIFactModel::new(ai_fact), ai_fact_id, revision_ts, ctx);
+        self.update_object(
+            AIFactObjectModel::new(ai_fact),
+            ai_fact_id,
+            revision_ts,
+            ctx,
+        );
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -768,7 +773,7 @@ impl UpdateManager {
         ctx: &mut ModelContext<Self>,
     ) {
         self.create_object(
-            CloudAIFactModel::new(ai_fact),
+            AIFactObjectModel::new(ai_fact),
             owner,
             client_id,
             Default::default(),

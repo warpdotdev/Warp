@@ -55,7 +55,7 @@ use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::document::ai_document_model::AIDocumentId;
 use crate::ai::execution_profiles::{CloudAIExecutionProfile, CloudAIExecutionProfileModel};
-use crate::ai::facts::{CloudAIFact, CloudAIFactModel};
+use crate::ai::facts::{AIFactObject, AIFactObjectModel};
 use crate::ai::mcp::templatable::{CloudTemplatableMCPServer, CloudTemplatableMCPServerModel};
 use crate::ai::mcp::templatable_installation::VariableValue;
 use crate::ai::mcp::{
@@ -3037,9 +3037,9 @@ fn read_sqlite_data(
                                 })
                             }
                             JsonObjectType::AIFact => {
-                                let model = CloudAIFactModel::deserialize_owned(&object.data);
+                                let model = AIFactObjectModel::deserialize_owned(&object.data);
                                 model.ok().map(|model| {
-                                    let boxed: Box<dyn CloudObject> = Box::new(CloudAIFact::new(
+                                    let boxed: Box<dyn CloudObject> = Box::new(AIFactObject::new(
                                         server_id,
                                         model,
                                         to_cloud_object_metadata(metadata),

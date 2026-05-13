@@ -1,5 +1,5 @@
 use super::search_item::RuleSearchItem;
-use crate::ai::facts::{AIFact, CloudAIFactModel};
+use crate::ai::facts::{AIFact, AIFactObjectModel};
 use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::CloudObject;
@@ -35,7 +35,7 @@ impl SyncDataSource for RulesDataSource {
         let mut rule_results = Vec::new();
 
         let mut rules: Vec<_> = cloud_model
-            .get_all_objects_of_type::<GenericStringObjectId, CloudAIFactModel>()
+            .get_all_objects_of_type::<GenericStringObjectId, AIFactObjectModel>()
             .filter(|ai_fact| !ai_fact.is_trashed(cloud_model))
             .collect();
 

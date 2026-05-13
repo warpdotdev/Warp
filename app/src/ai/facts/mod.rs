@@ -46,11 +46,11 @@ impl AIFact {
     }
 }
 
-pub type CloudAIFact = GenericCloudObject<GenericStringObjectId, CloudAIFactModel>;
-pub type CloudAIFactModel = GenericStringModel<AIFact, JsonSerializer>;
+pub type AIFactObject = GenericCloudObject<GenericStringObjectId, AIFactObjectModel>;
+pub type AIFactObjectModel = GenericStringModel<AIFact, JsonSerializer>;
 
 impl StringModel for AIFact {
-    type CloudObjectType = CloudAIFact;
+    type CloudObjectType = AIFactObject;
 
     fn model_type_name(&self) -> &'static str {
         "Rule"
@@ -90,7 +90,7 @@ impl StringModel for AIFact {
         &self,
         id: SyncId,
         _appearance: &Appearance,
-        ai_fact: &CloudAIFact,
+        ai_fact: &AIFactObject,
     ) -> Option<Box<dyn WarpDriveItem>> {
         Some(Box::new(WarpDriveAIFact::new(
             CloudObjectTypeAndId::GenericStringObject {
