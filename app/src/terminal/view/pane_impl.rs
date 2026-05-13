@@ -724,10 +724,14 @@ impl TerminalView {
                 .clone(),
             move |state| {
                 let mut stack = Stack::new().with_child(
-                    ConstrainedBox::new(icons::Icon::AmbientAgentMode.to_warpui_icon(icon_color).finish())
-                        .with_height(font_size * 1.5)
-                        .with_width(font_size * 1.5)
-                        .finish(),
+                    ConstrainedBox::new(
+                        icons::Icon::AmbientAgentMode
+                            .to_warpui_icon(icon_color)
+                            .finish(),
+                    )
+                    .with_height(font_size * 1.5)
+                    .with_width(font_size * 1.5)
+                    .finish(),
                 );
                 if state.is_hovered() {
                     let tooltip = ui_builder
