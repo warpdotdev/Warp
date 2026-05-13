@@ -100,8 +100,6 @@ pub struct SearchBarState<T: Action + Clone> {
     /// The filter atom text to be rendered in the Search input, representing the currently applied
     /// filter.
     filter_atom_text: Option<&'static str>,
-    /// Whether the search bar's editor buffer is currently empty.
-    buffer_is_empty: bool,
     query_result_renderers: Option<Vec<QueryResultRenderer<T>>>,
     /// Ordering of how results should be displayed. Used to determine which search result should
     /// be considered selected when the user presses certain navigation keys such as up/down.
@@ -173,7 +171,6 @@ impl<T: Action + Clone> SearchBarState<T> {
             selected_index: None,
             query_filter: FilterState::Unfiltered,
             filter_atom_text: None,
-            buffer_is_empty: true,
             query_result_renderers: None,
             ordering,
             max_results: SearchResultLimit::Unbounded,
@@ -231,6 +228,7 @@ impl<T: Action + Clone> SearchBarState<T> {
     pub fn handle_selection_update(
         &mut self,
         selection_update: SelectionUpdate,
+        should_show_zero_state: bool,
         ctx: &mut ModelContext<Self>,
     ) {
         // Even if the zero state should be shown, still update the internal selected index of the
@@ -240,7 +238,7 @@ impl<T: Action + Clone> SearchBarState<T> {
         // 2) We are resilient to any race conditions where selection update may be called before
         // `should_show_zero_state` is actually set to `false`, which would then cause no index to
         // be selected.
-        if self.should_show_zero_state() {
+        if should_show_zero_state {
             ctx.emit(SearchBarEvent::SelectionUpdateInZeroState { selection_update });
         }
 
@@ -341,16 +339,6 @@ impl<T: Action + Clone> SearchBarState<T> {
     /// Returns the index of currently selected search result.
     pub fn selected_index(&self) -> Option<usize> {
         self.selected_index
-    }
-
-    /// Returns true when the zero-state UI should be shown: the buffer is empty and no
-    /// user-chosen filter is active.
-    pub fn should_show_zero_state(&self) -> bool {
-        self.buffer_is_empty && self.query_filter == FilterState::Unfiltered
-    }
-
-    fn should_run_query(&self) -> bool {
-        !self.should_show_zero_state() || self.run_query_on_buffer_empty
     }
 }
 
@@ -462,7 +450,7 @@ impl<T: Action + Clone> SearchBar<T> {
                 // visible.  In the command search view, they're only visible when the
                 // buffer is empty, so if the user accepts one, immediately re-clear the
                 // buffer (to effectively revert the event).
-                if self.state.as_ref(ctx).should_show_zero_state() {
+                if self.should_show_zero_state(ctx) {
                     self.editor_handle.update(ctx, |editor, ctx| {
                         editor.clear_buffer_and_reset_undo_stack(ctx);
                     });
@@ -486,7 +474,7 @@ impl<T: Action + Clone> SearchBar<T> {
                     _ => false,
                 };
 
-                if !self.state.as_ref(ctx).should_run_query() {
+                if !self.should_run_query(ctx) {
                     ctx.emit(SearchBarEvent::EnterInZeroState { modified_enter });
                     return;
                 }
@@ -695,7 +683,7 @@ impl<T: Action + Clone> SearchBar<T> {
             });
         }
 
-        if self.state.as_ref(ctx).should_run_query() {
+        if self.should_run_query(ctx) {
             self.run_query_internal(ctx);
         }
 
@@ -732,7 +720,7 @@ impl<T: Action + Clone> SearchBar<T> {
     }
 
     pub fn run_query(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.state.as_ref(ctx).should_run_query() {
+        if self.should_run_query(ctx) {
             self.run_query_internal(ctx);
         }
     }
@@ -820,16 +808,9 @@ impl<T: Action + Clone> SearchBar<T> {
             .editor_handle
             .read(ctx, |editor, ctx| editor.buffer_text(ctx));
 
-        let buffer_is_empty = current_buffer_text.is_empty();
-        self.state.update(ctx, |state, ctx| {
-            state.buffer_is_empty = buffer_is_empty;
-            ctx.notify();
-        });
-
-        if self.state.as_ref(ctx).should_show_zero_state() {
+        if self.should_show_zero_state(ctx) {
             self.handle_selection_update(SelectionUpdate::Clear, ctx);
-
-            if self.state.as_ref(ctx).should_run_query() {
+            if self.should_run_query(ctx) {
                 self.run_query_internal(ctx);
             }
         } else {
@@ -890,11 +871,21 @@ impl<T: Action + Clone> SearchBar<T> {
         selection_update: SelectionUpdate,
         ctx: &mut ViewContext<Self>,
     ) {
+        let should_show_zero_state = self.should_show_zero_state(ctx);
         self.state.update(ctx, |state, ctx| {
-            state.handle_selection_update(selection_update, ctx);
+            state.handle_selection_update(selection_update, should_show_zero_state, ctx);
         });
 
         self.emit_accessibility_content(ctx);
+    }
+
+    pub fn should_show_zero_state(&self, app: &AppContext) -> bool {
+        self.editor_handle.as_ref(app).is_empty(app)
+            && self.state.as_ref(app).query_filter == FilterState::Unfiltered
+    }
+
+    fn should_run_query(&self, app: &AppContext) -> bool {
+        !self.should_show_zero_state(app) || self.state.as_ref(app).run_query_on_buffer_empty
     }
 
     /// Updates the state and visibility of filter atom autosuggestion text in the editor.
