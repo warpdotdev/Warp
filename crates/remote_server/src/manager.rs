@@ -112,6 +112,7 @@ pub enum RemoteServerOperation {
     ReadFileContext,
     DeleteFile,
     RunCommand,
+    GetFragmentMetadataFromHash,
 }
 
 #[derive(Clone, Copy, Debug)]

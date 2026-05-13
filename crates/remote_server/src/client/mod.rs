@@ -403,7 +403,13 @@ impl RemoteServerClient {
             )),
         };
 
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::GetFragmentMetadataFromHash,
+            )
+            .await?;
 
         match response.message {
             Some(server_message::Message::GetFragmentMetadataFromHashResponse(resp)) => {
