@@ -165,7 +165,6 @@ pub use init::{
 pub use inline_banner::{NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction};
 #[cfg(feature = "local_fs")]
 use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
-use session_sharing_protocol::common::LongRunningCommandAgentInteractionState;
 use session_sharing_protocol::sharer::{SessionEndedReason, SessionSourceType};
 use ssh_file_upload::{FileUpload, FileUploadEvent};
 use uuid::Uuid;
@@ -1853,6 +1852,13 @@ pub enum Event {
     RevealChildAgent {
         conversation_id: AIConversationId,
     },
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum LongRunningCommandAgentInteractionState {
+    InControl,
+    TaggedIn,
+    NotInteracting,
 }
 
 #[derive(Clone, Copy, Debug)]
