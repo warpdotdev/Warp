@@ -53,9 +53,9 @@ use crate::TelemetryEvent;
 use derivative::Derivative;
 use markdown_parser::{parse_markdown, FormattedTable, FormattedText, FormattedTextInline};
 use serde::{Deserialize, Serialize};
-use session_sharing_protocol::common::ParticipantId;
 
 use super::llms::LLMId;
+use crate::terminal::shared_session::ParticipantId;
 
 /// A server supplied ID for a specific AI generated output.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]

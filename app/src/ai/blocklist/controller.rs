@@ -59,6 +59,7 @@ use crate::terminal::view::inline_banner::ZeroStatePromptSuggestionType;
 use crate::terminal::{
     model::session::{active_session::ActiveSession, SessionType},
     model::terminal_model::TerminalModel,
+    shared_session::ParticipantId,
     ShellLaunchData,
 };
 use crate::{send_telemetry_from_ctx, server::telemetry::TelemetryEvent};
@@ -67,7 +68,6 @@ use chrono::{DateTime, Local};
 use itertools::Itertools;
 use parking_lot::FairMutex;
 use pending_response_streams::PendingResponseStreams;
-use session_sharing_protocol::common::ParticipantId;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use warp_core::assertions::safe_assert;

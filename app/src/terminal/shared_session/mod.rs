@@ -7,6 +7,8 @@ use warpui::{id, keymap::ContextPredicate, AppContext};
 
 use crate::editor::{InteractionState, ReplicaId};
 
+pub use session_sharing_protocol::common::ParticipantId;
+
 use super::{
     model::{block::SerializedBlock, terminal_model::BlockIndex},
     GridType, TerminalModel,
