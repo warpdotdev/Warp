@@ -33,7 +33,7 @@ pub fn init(app: &mut warpui::AppContext) {
     )]);
 }
 
-const SECTION_GAP: f32 = 16.;
+const SECTION_GAP: f32 = 12.;
 
 #[derive(Clone, Debug)]
 pub enum SessionConfigModalAction {
@@ -88,7 +88,7 @@ impl SessionConfigModal {
         });
 
         let submit_button = ctx.add_view(|ctx| {
-            ActionButton::new("Get Warping", PrimaryTheme)
+            ActionButton::new("Create", PrimaryTheme)
                 .with_full_width(true)
                 .with_keybinding(
                     KeystrokeSource::Fixed(Keystroke::parse("enter").unwrap_or_default()),
@@ -168,21 +168,14 @@ impl SessionConfigModal {
         let title = FormattedTextElement::from_str(
             "Create your first tab config",
             appearance.ui_font_family(),
-            24.,
+            20.,
         )
         .with_color(blended_colors::text_main(theme, theme.background()))
         .with_weight(Weight::Semibold)
         .finish();
 
-        let subtitle_text = if self.show_session_type_row {
-            "Set up a reusable starting point for your tabs. \
-             Pick a repo, choose a session type, and optionally attach a worktree. \
-             Use it whenever you want to open a new tab with this setup."
-        } else {
-            "Set up a reusable starting point for your tabs. \
-             Pick a repo, optionally attach a worktree, and \
-             use it whenever you want to open a new tab with this setup."
-        };
+        let subtitle_text =
+            "Choose where new tabs should start. Add worktree setup now or edit the config later.";
         let subtitle =
             FormattedTextElement::from_str(subtitle_text, appearance.ui_font_family(), 14.)
                 .with_color(blended_colors::text_sub(theme, theme.background()))
@@ -290,11 +283,13 @@ impl View for SessionConfigModal {
                 .with_margin_top(SECTION_GAP)
                 .finish(),
         );
-        form.add_child(
-            Container::new(self.render_autogenerate_worktree_branch_name_checkbox(appearance))
-                .with_margin_top(8.)
-                .finish(),
-        );
+        if self.enable_worktree {
+            form.add_child(
+                Container::new(self.render_autogenerate_worktree_branch_name_checkbox(appearance))
+                    .with_margin_top(8.)
+                    .finish(),
+            );
+        }
 
         let content = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
@@ -307,8 +302,8 @@ impl View for SessionConfigModal {
             .finish();
 
         let body = Container::new(content)
-            .with_horizontal_padding(32.)
-            .with_vertical_padding(40.)
+            .with_horizontal_padding(24.)
+            .with_vertical_padding(28.)
             .finish();
 
         let mut stack = Stack::new();
@@ -327,7 +322,7 @@ impl View for SessionConfigModal {
         );
 
         ConstrainedBox::new(stack.finish())
-            .with_width(420.)
+            .with_width(388.)
             .finish()
     }
 }

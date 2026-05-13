@@ -197,6 +197,11 @@ impl<T: View> Modal<T> {
         self
     }
 
+    pub fn with_offset_positioning(mut self, offset_positioning: OffsetPositioning) -> Self {
+        self.offset_positioning = offset_positioning;
+        self
+    }
+
     pub fn set_title(&mut self, title: Option<String>) {
         self.title = title;
     }

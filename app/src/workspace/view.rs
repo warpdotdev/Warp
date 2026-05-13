@@ -1893,10 +1893,16 @@ impl Workspace {
             Modal::new(None, body, ctx)
                 .close_modal_button_disabled()
                 .with_modal_style(UiComponentStyles {
-                    width: Some(424.),
+                    width: Some(392.),
                     ..Default::default()
                 })
                 .with_background_opacity(0)
+                .with_offset_positioning(OffsetPositioning::offset_from_parent(
+                    vec2f(-24., 72.),
+                    ParentOffsetBounds::WindowByPosition,
+                    ParentAnchor::TopRight,
+                    ChildAnchor::TopRight,
+                ))
                 .with_body_style(UiComponentStyles {
                     padding: Some(Coords::uniform(0.)),
                     ..Default::default()
