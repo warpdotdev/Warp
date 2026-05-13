@@ -5,8 +5,9 @@
 //! operations to whichever is active.
 //! All consumers should use `DiffStateModel` rather than accessing sub-models directly.
 
-use crate::code::buffer_location::FileLocation;
 use crate::util::git::{Commit, PrInfo};
+use warp_core::SessionId;
+use warp_util::remote_path::RemotePath;
 use warpui::{AppContext, ModelContext, ModelHandle};
 
 use std::{path::PathBuf, sync::Arc};
@@ -316,27 +317,6 @@ pub enum DiffStateModelEvent {
     ConnectionLost,
 }
 
-/// App-level representation of a remote diff state snapshot.
-///
-/// Proto messages are converted into this type at the remote-server boundary
-/// before being applied to [`RemoteDiffStateModel`].
-pub struct DiffStateSnapshot {
-    pub metadata: Option<DiffMetadata>,
-    pub state: DiffState,
-    pub diffs: Option<GitDiffWithBaseContent>,
-}
-
-/// App-level representation of a remote diff state metadata update.
-pub struct DiffStateMetadataUpdate {
-    pub metadata: Option<DiffMetadata>,
-}
-
-/// App-level representation of a remote single-file diff delta.
-pub struct DiffStateFileDelta {
-    pub file_path: StandardizedPath,
-    pub diff: Option<FileDiffAndContent>,
-    pub metadata: Option<DiffMetadata>,
-}
 // ── Unified model ────────────────────────────────────────────────────────
 
 /// Unified diff state model that dispatches to a local or remote backend.
@@ -356,22 +336,27 @@ impl warpui::Entity for DiffStateModel {
 impl DiffStateModel {
     // ── Construction ─────────────────────────────────────────────────
 
-    pub fn new(key: FileLocation, ctx: &mut ModelContext<Self>) -> Self {
-        match key {
-            FileLocation::Local(path) => {
-                let repo_path = Some(path.display().to_string());
-                let local = ctx.add_model(|ctx| LocalDiffStateModel::new(repo_path, ctx));
-                ctx.subscribe_to_model(&local, Self::forward_event);
-                Self::Local(local)
-            }
-            FileLocation::Remote(remote_path) => {
-                let remote = ctx.add_model(|ctx| {
-                    RemoteDiffStateModel::new(remote_path, DiffMode::default(), ctx)
-                });
-                ctx.subscribe_to_model(&remote, Self::forward_event);
-                Self::Remote(remote)
-            }
-        }
+    /// Creates a new local-backed `DiffStateModel`. The wrapper subscribes
+    /// to the inner model so it can forward events.
+    pub fn new_local(path: PathBuf, ctx: &mut ModelContext<Self>) -> Self {
+        let repo_path = Some(path.display().to_string());
+        let local = ctx.add_model(|ctx| LocalDiffStateModel::new(repo_path, ctx));
+        ctx.subscribe_to_model(&local, Self::forward_event);
+        Self::Local(local)
+    }
+
+    /// Creates a new remote-backed `DiffStateModel`. Requires a connected
+    /// `session_id` to anchor the initial `GetDiffState` subscription.
+    pub fn new_remote(
+        remote_path: RemotePath,
+        session_id: SessionId,
+        ctx: &mut ModelContext<Self>,
+    ) -> Self {
+        let remote = ctx.add_model(|ctx| {
+            RemoteDiffStateModel::new(remote_path, DiffMode::default(), session_id, ctx)
+        });
+        ctx.subscribe_to_model(&remote, Self::forward_event);
+        Self::Remote(remote)
     }
 
     // ── Event forwarding ─────────────────────────────────────────────
@@ -492,7 +477,15 @@ impl DiffStateModel {
         }
     }
 
-    // ── Unified write API ────────────────────────────────────────────
+    /// Returns the active subscription session for a remote-backed model or `None` for a local-backed one.
+    pub(crate) fn remote_session_id(&self, ctx: &AppContext) -> Option<SessionId> {
+        match self {
+            Self::Local(_) => None,
+            Self::Remote(m) => Some(m.as_ref(ctx).session_id()),
+        }
+    }
+
+    // ── Unified write API ─────────────────────────────────────────────
 
     pub(crate) fn set_diff_mode(
         &self,
@@ -606,6 +599,32 @@ impl DiffStateModel {
             Self::Remote(remote) => {
                 remote.update(ctx, |remote, ctx| {
                     remote.unsubscribe(ctx);
+                });
+            }
+        }
+    }
+
+    /// Transitions a remote-backed model to `Disconnected` and emits
+    /// `ConnectionLost`. No-op for local-backed models.
+    pub(crate) fn mark_disconnected(&self, ctx: &mut ModelContext<Self>) {
+        match self {
+            Self::Local(_) => {}
+            Self::Remote(remote) => {
+                remote.update(ctx, |remote, ctx| {
+                    remote.mark_disconnected(ctx);
+                });
+            }
+        }
+    }
+
+    /// Re-sends `GetDiffState` for a remote-backed model through its
+    /// existing session. No-op for local-backed models.
+    pub(crate) fn resubscribe(&self, ctx: &mut ModelContext<Self>) {
+        match self {
+            Self::Local(_) => {}
+            Self::Remote(remote) => {
+                remote.update(ctx, |remote, ctx| {
+                    remote.resubscribe(ctx);
                 });
             }
         }

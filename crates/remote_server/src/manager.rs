@@ -14,7 +14,8 @@ use crate::client::RemoteServerClient;
 use crate::codebase_index_proto::RemoteCodebaseIndexStatus;
 use crate::proto::{
     diff_state, get_diff_state_response, DiffMode, DiffState, DiffStateErrorValue,
-    DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot, FileStatusInfo, TextEdit,
+    DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot, FileStatusInfo,
+    GetDiffStateResponse, TextEdit,
 };
 use crate::repo_metadata_proto::proto_load_repo_metadata_directory_response_to_update;
 use crate::setup::PreinstallCheckResult;
@@ -625,10 +626,30 @@ impl RemoteServerManager {
     /// Returns a connected client for the given host by picking an arbitrary
     /// session from the host's session pool.
     pub fn client_for_host(&self, host_id: &HostId) -> Option<&Arc<RemoteServerClient>> {
+        self.any_connected_session_for_host(host_id)
+            .map(|(_, client)| client)
+    }
+
+    /// Returns the [`SessionId`] of an arbitrary currently-connected session
+    /// for the given host, if any.
+    pub fn find_connected_session(&self, host_id: &HostId) -> Option<SessionId> {
+        self.any_connected_session_for_host(host_id)
+            .map(|(session_id, _)| session_id)
+    }
+
+    /// Returns an arbitrary connected `(session_id, client)` pair for the
+    /// given host. Backs both [`Self::client_for_host`] and
+    /// [`Self::find_connected_session`] so they share a single source of
+    /// truth for iteration order and connection-state filtering.
+    fn any_connected_session_for_host(
+        &self,
+        host_id: &HostId,
+    ) -> Option<(SessionId, &Arc<RemoteServerClient>)> {
         let sessions = self.host_to_sessions.get(host_id)?;
         sessions
             .iter()
-            .find_map(|session_id| self.client_for_session(*session_id))
+            .copied()
+            .find_map(|sid| self.client_for_session(sid).map(|client| (sid, client)))
     }
 
     /// Checks if the remote server binary is installed and executable.
@@ -1552,72 +1573,68 @@ impl RemoteServerManager {
         let spawner = self.spawner.clone();
         ctx.background_executor()
             .spawn(async move {
-                let error_snapshot = |message: String| DiffStateSnapshot {
-                    repo_path: repo_path_for_event.to_string(),
-                    mode: Some(mode_for_event.clone()),
-                    metadata: None,
-                    state: Some(DiffState {
-                        state: Some(diff_state::State::Error(DiffStateErrorValue { message })),
-                    }),
-                    diffs: None,
-                };
-                match client.get_diff_state(&repo_path, mode).await {
-                    Ok(resp) => match resp.result {
-                        Some(get_diff_state_response::Result::Snapshot(snapshot)) => {
-                            let event_repo_path = repo_path_for_event.clone();
-                            let event_mode = mode_for_event.clone();
-                            let _ = spawner
-                                .spawn(move |_me, ctx| {
-                                    ctx.emit(RemoteServerManagerEvent::DiffStateSnapshotReceived {
-                                        host_id,
-                                        repo_path: event_repo_path,
-                                        mode: event_mode,
-                                        snapshot,
-                                    });
-                                })
-                                .await;
-                        }
-                        Some(get_diff_state_response::Result::Error(e)) => {
-                            log::warn!("Remote server get_diff_state error: {}", e.message);
-                            let snapshot = error_snapshot(e.message);
-                            let event_repo_path = repo_path_for_event.clone();
-                            let event_mode = mode_for_event.clone();
-                            let _ = spawner
-                                .spawn(move |_me, ctx| {
-                                    ctx.emit(RemoteServerManagerEvent::DiffStateSnapshotReceived {
-                                        host_id,
-                                        repo_path: event_repo_path,
-                                        mode: event_mode,
-                                        snapshot,
-                                    });
-                                })
-                                .await;
-                        }
-                        None => {
-                            let message =
-                                "Remote server returned an empty GetDiffStateResponse".to_string();
-                            log::warn!("{message}");
-                            let snapshot = error_snapshot(message);
-                            let event_repo_path = repo_path_for_event.clone();
-                            let event_mode = mode_for_event.clone();
-                            let _ = spawner
-                                .spawn(move |_me, ctx| {
-                                    ctx.emit(RemoteServerManagerEvent::DiffStateSnapshotReceived {
-                                        host_id,
-                                        repo_path: event_repo_path,
-                                        mode: event_mode,
-                                        snapshot,
-                                    });
-                                })
-                                .await;
-                        }
-                    },
-                    Err(e) => {
-                        log::warn!(
-                            "Remote server get_diff_state failed: session={session_id:?} error={e}"
-                        );
-                        // Transport-level telemetry is emitted automatically
-                        // by send_request via RequestFailedEvent.
+                let result = client.get_diff_state(&repo_path, mode).await;
+                match result {
+                    Ok(GetDiffStateResponse {
+                        result: Some(get_diff_state_response::Result::Snapshot(snapshot)),
+                    }) => {
+                        let _ = spawner
+                            .spawn(move |_me, ctx| {
+                                ctx.emit(RemoteServerManagerEvent::DiffStateSnapshotReceived {
+                                    host_id,
+                                    repo_path: repo_path_for_event,
+                                    mode: mode_for_event,
+                                    snapshot,
+                                });
+                            })
+                            .await;
+                    }
+                    other => {
+                        let error_message = match other {
+                            Ok(GetDiffStateResponse {
+                                result: Some(get_diff_state_response::Result::Error(e)),
+                            }) => {
+                                log::warn!("Remote server get_diff_state error: {}", e.message);
+                                e.message
+                            }
+                            Ok(_) => {
+                                let message = "Remote server returned an empty \
+                                                GetDiffStateResponse"
+                                    .to_string();
+                                log::warn!("{message}");
+                                message
+                            }
+                            Err(e) => {
+                                // Transport-level telemetry is emitted automatically
+                                // by send_request via RequestFailedEvent.
+                                log::warn!(
+                                    "Remote server get_diff_state failed: \
+                                     session={session_id:?} error={e}"
+                                );
+                                e.to_string()
+                            }
+                        };
+                        let error_snapshot = DiffStateSnapshot {
+                            repo_path: repo_path_for_event.to_string(),
+                            mode: Some(mode_for_event.clone()),
+                            metadata: None,
+                            state: Some(DiffState {
+                                state: Some(diff_state::State::Error(DiffStateErrorValue {
+                                    message: error_message,
+                                })),
+                            }),
+                            diffs: None,
+                        };
+                        let _ = spawner
+                            .spawn(move |_me, ctx| {
+                                ctx.emit(RemoteServerManagerEvent::DiffStateSnapshotReceived {
+                                    host_id,
+                                    repo_path: repo_path_for_event,
+                                    mode: mode_for_event,
+                                    snapshot: error_snapshot,
+                                });
+                            })
+                            .await;
                     }
                 }
             })
@@ -1660,7 +1677,6 @@ impl RemoteServerManager {
         };
 
         let repo_path = remote_path.path;
-        let spawner = self.spawner.clone();
         ctx.background_executor()
             .spawn(async move {
                 match client

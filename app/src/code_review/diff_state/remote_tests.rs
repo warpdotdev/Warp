@@ -1,16 +1,15 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use remote_server::manager::RemoteServerManagerEvent;
-use remote_server::HostId;
+use warp_core::SessionId;
 use warp_util::remote_path::RemotePath;
 use warp_util::standardized_path::StandardizedPath;
 
 use crate::code_review::diff_size_limits::DiffSize;
 use crate::code_review::diff_state::{
     DiffHunk, DiffLine, DiffLineType, DiffMetadata, DiffMetadataAgainstBase, DiffMode, DiffState,
-    DiffStateFileDelta, DiffStateModelEvent, DiffStateSnapshot, DiffStats, FileDiff,
-    FileDiffAndContent, GitDiffData, GitDiffWithBaseContent, GitFileStatus, RemoteDiffStateModel,
+    DiffStateModelEvent, DiffStats, FileDiff, FileDiffAndContent, GitDiffData,
+    GitDiffWithBaseContent, GitFileStatus, RemoteDiffStateModel,
 };
 use crate::util::git::{Commit, PrInfo};
 
@@ -29,7 +28,7 @@ impl RemoteDiffStateModel {
                     .expect("test repo path should be valid and absolute"),
             ),
             mode,
-            session_id: None,
+            session_id: SessionId::default(),
             state,
             metadata,
         }
@@ -55,9 +54,17 @@ fn empty_metadata(branch: &str) -> DiffMetadata {
     }
 }
 
-fn loaded_snapshot_with_files(files: Vec<FileDiffAndContent>) -> DiffStateSnapshot {
+/// Snapshot inputs grouped for ergonomic test construction. Mirrors the
+/// argument list of `RemoteDiffStateModel::apply_snapshot`.
+struct SnapshotInputs {
+    metadata: Option<DiffMetadata>,
+    state: DiffState,
+    diffs: Option<GitDiffWithBaseContent>,
+}
+
+fn loaded_snapshot_with_files(files: Vec<FileDiffAndContent>) -> SnapshotInputs {
     let files_changed = files.len();
-    DiffStateSnapshot {
+    SnapshotInputs {
         metadata: Some(empty_metadata("feature")),
         state: DiffState::Loaded,
         diffs: Some(GitDiffWithBaseContent {
@@ -141,8 +148,14 @@ fn apply_snapshot_loaded_with_diffs() {
                 None,
             )
         });
-        let snapshot = loaded_snapshot_with_files(vec![simple_file("/test/repo/src/main.rs")]);
-        handle.update(&mut app, |m, ctx| m.apply_snapshot(snapshot, ctx));
+        let SnapshotInputs {
+            metadata,
+            state,
+            diffs,
+        } = loaded_snapshot_with_files(vec![simple_file("/test/repo/src/main.rs")]);
+        handle.update(&mut app, |m, ctx| {
+            m.apply_snapshot(metadata, state, diffs, ctx)
+        });
         handle.read(&app, |m, _| {
             assert!(matches!(m.get(), DiffState::Loaded));
             assert!(m.metadata.is_some());
@@ -180,11 +193,17 @@ fn apply_snapshot_loaded_preserves_content_at_base_in_event() {
             });
         }
 
-        let snapshot = loaded_snapshot_with_files(vec![simple_file_with_content(
+        let SnapshotInputs {
+            metadata,
+            state,
+            diffs,
+        } = loaded_snapshot_with_files(vec![simple_file_with_content(
             "/test/repo/src/main.rs",
             Some("base content"),
         )]);
-        handle.update(&mut app, |m, ctx| m.apply_snapshot(snapshot, ctx));
+        handle.update(&mut app, |m, ctx| {
+            m.apply_snapshot(metadata, state, diffs, ctx)
+        });
 
         assert_eq!(
             emitted_content
@@ -206,12 +225,9 @@ fn apply_snapshot_loaded_without_diffs_becomes_error() {
                 None,
             )
         });
-        let snapshot = DiffStateSnapshot {
-            metadata: None,
-            state: DiffState::Loaded,
-            diffs: None,
-        };
-        handle.update(&mut app, |m, ctx| m.apply_snapshot(snapshot, ctx));
+        handle.update(&mut app, |m, ctx| {
+            m.apply_snapshot(None, DiffState::Loaded, None, ctx)
+        });
         assert!(matches!(
             handle.read(&app, |m, _| m.get()),
             DiffState::Error(_)
@@ -229,12 +245,9 @@ fn apply_snapshot_not_in_repository() {
                 None,
             )
         });
-        let snapshot = DiffStateSnapshot {
-            metadata: None,
-            state: DiffState::NotInRepository,
-            diffs: None,
-        };
-        handle.update(&mut app, |m, ctx| m.apply_snapshot(snapshot, ctx));
+        handle.update(&mut app, |m, ctx| {
+            m.apply_snapshot(None, DiffState::NotInRepository, None, ctx)
+        });
         assert!(matches!(
             handle.read(&app, |m, _| m.get()),
             DiffState::NotInRepository
@@ -252,12 +265,9 @@ fn apply_snapshot_error_stores_message() {
                 None,
             )
         });
-        let snapshot = DiffStateSnapshot {
-            metadata: None,
-            state: DiffState::Error("git failed".to_string()),
-            diffs: None,
-        };
-        handle.update(&mut app, |m, ctx| m.apply_snapshot(snapshot, ctx));
+        handle.update(&mut app, |m, ctx| {
+            m.apply_snapshot(None, DiffState::Error("git failed".to_string()), None, ctx)
+        });
         assert!(
             matches!(handle.read(&app, |m, _| m.get()), DiffState::Error(ref msg) if msg == "git failed")
         );
@@ -265,7 +275,7 @@ fn apply_snapshot_error_stores_message() {
 }
 
 #[test]
-fn host_disconnected_marks_disconnected() {
+fn mark_disconnected_transitions_state_and_emits_connection_lost() {
     warpui::App::test((), |mut app| async move {
         let handle = app.add_model(|_ctx| {
             RemoteDiffStateModel::new_for_test(
@@ -288,18 +298,20 @@ fn host_disconnected_marks_disconnected() {
             });
         }
 
-        handle.update(&mut app, |m, ctx| {
-            m.handle_manager_event(
-                &RemoteServerManagerEvent::HostDisconnected {
-                    host_id: HostId::new("test-host".to_string()),
-                },
-                ctx,
-            );
-        });
+        handle.update(&mut app, |m, ctx| m.mark_disconnected(ctx));
 
         handle.read(&app, |m, _| {
             assert!(matches!(m.get(), DiffState::Disconnected));
         });
+        assert_eq!(
+            *connection_lost_count
+                .lock()
+                .expect("connection lost count mutex should not be poisoned"),
+            1
+        );
+
+        // Idempotent: a second call should not re-emit ConnectionLost.
+        handle.update(&mut app, |m, ctx| m.mark_disconnected(ctx));
         assert_eq!(
             *connection_lost_count
                 .lock()
@@ -361,12 +373,11 @@ fn apply_file_delta_ignored_when_not_loaded() {
                 None,
             )
         });
-        let delta = DiffStateFileDelta {
-            file_path: test_path("/test/repo/src/main.rs"),
-            diff: Some(simple_file("/test/repo/src/main.rs")),
-            metadata: None,
-        };
-        handle.update(&mut app, |m, ctx| m.apply_file_delta(delta, ctx));
+        let file_path = test_path("/test/repo/src/main.rs");
+        let diff = Some(simple_file("/test/repo/src/main.rs"));
+        handle.update(&mut app, |m, ctx| {
+            m.apply_file_delta(file_path, diff, None, ctx)
+        });
         assert!(matches!(
             handle.read(&app, |m, _| m.get()),
             DiffState::Loading
@@ -389,12 +400,11 @@ fn apply_file_delta_adds_file() {
                 None,
             )
         });
-        let delta = DiffStateFileDelta {
-            file_path: test_path("/test/repo/src/new.rs"),
-            diff: Some(simple_file("/test/repo/src/new.rs")),
-            metadata: None,
-        };
-        handle.update(&mut app, |m, ctx| m.apply_file_delta(delta, ctx));
+        let file_path = test_path("/test/repo/src/new.rs");
+        let diff = Some(simple_file("/test/repo/src/new.rs"));
+        handle.update(&mut app, |m, ctx| {
+            m.apply_file_delta(file_path, diff, None, ctx)
+        });
         assert!(matches!(
             handle.read(&app, |m, _| m.get()),
             DiffState::Loaded
@@ -435,15 +445,14 @@ fn apply_file_delta_preserves_content_at_base_in_event() {
             });
         }
 
-        let delta = DiffStateFileDelta {
-            file_path: test_path("/test/repo/src/new.rs"),
-            diff: Some(simple_file_with_content(
-                "/test/repo/src/new.rs",
-                Some("old file content"),
-            )),
-            metadata: None,
-        };
-        handle.update(&mut app, |m, ctx| m.apply_file_delta(delta, ctx));
+        let file_path = test_path("/test/repo/src/new.rs");
+        let diff = Some(simple_file_with_content(
+            "/test/repo/src/new.rs",
+            Some("old file content"),
+        ));
+        handle.update(&mut app, |m, ctx| {
+            m.apply_file_delta(file_path, diff, None, ctx)
+        });
 
         assert_eq!(
             emitted_content
@@ -480,12 +489,10 @@ fn apply_file_delta_none_removes_file() {
                 None,
             )
         });
-        let delta = DiffStateFileDelta {
-            file_path: test_path("/test/repo/src/old.rs"),
-            diff: None,
-            metadata: None,
-        };
-        handle.update(&mut app, |m, ctx| m.apply_file_delta(delta, ctx));
+        let file_path = test_path("/test/repo/src/old.rs");
+        handle.update(&mut app, |m, ctx| {
+            m.apply_file_delta(file_path, None, None, ctx)
+        });
         handle.read(&app, |m, _| {
             let InternalRemoteDiffState::Loaded(diffs) = &m.state else {
                 panic!("state should remain loaded");

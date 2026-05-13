@@ -16,6 +16,7 @@ use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::ActiveSession;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::NotebookKeybindings;
+use remote_server::manager::RemoteServerManager;
 use repo_metadata::repositories::DetectedRepositories;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -152,6 +153,7 @@ fn initialize_test_app(app: &mut App) {
     app.add_singleton_model(|_| VimRegisters::new());
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
     app.add_singleton_model(|_| DetectedRepositories::default());
+    app.add_singleton_model(RemoteServerManager::new);
     app.add_singleton_model(|_| GlobalCodeReviewModel);
     app.add_singleton_model(|ctx| {
         UserWorkspaces::mock(
@@ -178,7 +180,7 @@ fn create_find_model_with_query(
 
     let diff_state_model = app.add_model(DiffStateModel::new_for_test);
     let repo_path = PathBuf::from("/tmp/test");
-    let working_directories_model = app.add_model(|_| WorkingDirectoriesModel::new());
+    let working_directories_model = app.add_model(WorkingDirectoriesModel::new);
     let code_review_comment_batch =
         working_directories_model.update(app, |working_directories, ctx| {
             working_directories.get_or_create_code_review_comments(repo_path.as_path(), ctx)

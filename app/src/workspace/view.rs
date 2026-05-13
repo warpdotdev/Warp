@@ -2753,8 +2753,7 @@ impl Workspace {
             manager.register_view(window_id, ai_fact_view.clone());
         });
 
-        let working_directories_model =
-            ctx.add_model(|_| pane_group::WorkingDirectoriesModel::new());
+        let working_directories_model = ctx.add_model(pane_group::WorkingDirectoriesModel::new);
 
         let left_panel_views = Self::compute_left_panel_views(ctx);
 

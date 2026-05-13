@@ -15,8 +15,8 @@ use warp_util::standardized_path::StandardizedPath;
 use crate::code_review::diff_size_limits::DiffSize;
 use crate::code_review::diff_state::{
     DiffHunk, DiffLine, DiffLineType, DiffMetadata, DiffMetadataAgainstBase, DiffMode, DiffState,
-    DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot, DiffStats, FileDiff,
-    FileDiffAndContent, FileStatusInfo, GitDiffData, GitDiffWithBaseContent, GitFileStatus,
+    DiffStats, FileDiff, FileDiffAndContent, FileStatusInfo, GitDiffData, GitDiffWithBaseContent,
+    GitFileStatus,
 };
 use crate::util::git::{Commit, PrInfo};
 
@@ -311,61 +311,59 @@ impl TryFrom<Option<&proto::DiffState>> for DiffState {
     }
 }
 
-impl TryFrom<&proto::DiffStateSnapshot> for DiffStateSnapshot {
-    type Error = String;
-
-    fn try_from(snapshot: &proto::DiffStateSnapshot) -> Result<Self, Self::Error> {
-        Ok(Self {
-            metadata: snapshot
-                .metadata
-                .as_ref()
-                .map(DiffMetadata::try_from)
-                .transpose()?,
-            state: DiffState::try_from(snapshot.state.as_ref())?,
-            diffs: snapshot
-                .diffs
-                .as_ref()
-                .map(GitDiffWithBaseContent::try_from)
-                .transpose()?,
-        })
-    }
+/// Decodes a `DiffStateSnapshot` wire message into the domain types consumed
+/// by `RemoteDiffStateModel`, short-circuiting on the first conversion error.
+pub(crate) fn try_decode_snapshot(
+    snapshot: &proto::DiffStateSnapshot,
+) -> Result<
+    (
+        Option<DiffMetadata>,
+        DiffState,
+        Option<GitDiffWithBaseContent>,
+    ),
+    String,
+> {
+    let metadata = snapshot
+        .metadata
+        .as_ref()
+        .map(DiffMetadata::try_from)
+        .transpose()?;
+    let state = DiffState::try_from(snapshot.state.as_ref())?;
+    let diffs = snapshot
+        .diffs
+        .as_ref()
+        .map(GitDiffWithBaseContent::try_from)
+        .transpose()?;
+    Ok((metadata, state, diffs))
 }
 
-impl TryFrom<&proto::DiffStateMetadataUpdate> for DiffStateMetadataUpdate {
-    type Error = String;
-
-    fn try_from(update: &proto::DiffStateMetadataUpdate) -> Result<Self, Self::Error> {
-        Ok(Self {
-            metadata: update
-                .metadata
-                .as_ref()
-                .map(DiffMetadata::try_from)
-                .transpose()?,
-        })
-    }
+/// Decodes a `DiffStateFileDelta` wire message into the domain types consumed
+/// by `RemoteDiffStateModel`, short-circuiting on the first conversion error.
+pub(crate) fn try_decode_file_delta(
+    delta: &proto::DiffStateFileDelta,
+) -> Result<
+    (
+        StandardizedPath,
+        Option<FileDiffAndContent>,
+        Option<DiffMetadata>,
+    ),
+    String,
+> {
+    let file_path = StandardizedPath::try_new(&delta.file_path).map_err(|e| e.to_string())?;
+    let diff = delta
+        .diff
+        .as_ref()
+        .map(FileDiffAndContent::try_from)
+        .transpose()?;
+    let metadata = delta
+        .metadata
+        .as_ref()
+        .map(DiffMetadata::try_from)
+        .transpose()?;
+    Ok((file_path, diff, metadata))
 }
 
-impl TryFrom<&proto::DiffStateFileDelta> for DiffStateFileDelta {
-    type Error = String;
-
-    fn try_from(delta: &proto::DiffStateFileDelta) -> Result<Self, Self::Error> {
-        Ok(Self {
-            file_path: StandardizedPath::try_new(&delta.file_path).map_err(|e| e.to_string())?,
-            diff: delta
-                .diff
-                .as_ref()
-                .map(FileDiffAndContent::try_from)
-                .transpose()?,
-            metadata: delta
-                .metadata
-                .as_ref()
-                .map(DiffMetadata::try_from)
-                .transpose()?,
-        })
-    }
-}
-
-// ── Rust → Proto (for server pushes) ────────────────────────────────
+// ── Rust → Proto (for server pushes) ─────────────────────────────────────
 
 impl From<&DiffMode> for proto::DiffMode {
     fn from(mode: &DiffMode) -> Self {

@@ -1,11 +1,15 @@
 #[cfg(feature = "local_fs")]
 use indexmap::IndexSet;
 #[cfg(feature = "local_fs")]
+use remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
+#[cfg(feature = "local_fs")]
 use repo_metadata::repositories::DetectedRepositories;
 use std::collections::HashMap;
 #[cfg(feature = "local_fs")]
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+#[cfg(feature = "local_fs")]
+use warp_core::{HostId, SessionId};
 #[cfg(feature = "local_fs")]
 use warp_util::remote_path::RemotePath;
 #[cfg(feature = "local_fs")]
@@ -16,13 +20,11 @@ use warpui::{ModelHandle, ViewHandle};
 use crate::code::buffer_location::FileLocation;
 #[cfg(feature = "local_fs")]
 use crate::code::file_tree::FileTreeView;
+use crate::code_review::code_review_view::CodeReviewView;
 use crate::code_review::comments::{
     AttachedReviewComment, PendingImportedReviewComment, ReviewCommentBatch,
 };
-use crate::code_review::{
-    code_review_view::CodeReviewView,
-    diff_state::{DiffMode, DiffStateModel},
-};
+use crate::code_review::diff_state::{DiffMode, DiffStateModel};
 use crate::workspace::view::global_search::view::GlobalSearchView;
 
 /// Type-safe wrapper around the map of `FileLocation` → `DiffStateModel`.
@@ -175,8 +177,103 @@ pub fn update_index_set(
 
 #[cfg(feature = "local_fs")]
 impl WorkingDirectoriesModel {
-    pub fn new() -> Self {
+    pub fn new(ctx: &mut ModelContext<Self>) -> Self {
+        let remote_server_manager = RemoteServerManager::handle(ctx);
+        ctx.subscribe_to_model(&remote_server_manager, Self::handle_remote_server_event);
         Self::default()
+    }
+
+    fn handle_remote_server_event(
+        &mut self,
+        event: &RemoteServerManagerEvent,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        match event {
+            RemoteServerManagerEvent::HostDisconnected { host_id } => {
+                self.discard_remote_diff_state_models_for_host(host_id, ctx);
+            }
+            RemoteServerManagerEvent::SessionDisconnected { session_id, .. } => {
+                self.discard_remote_diff_state_models_for_session(*session_id, ctx);
+            }
+            RemoteServerManagerEvent::SessionReconnected { session_id, .. } => {
+                self.resubscribe_remote_diff_state_models_for_session(*session_id, ctx);
+            }
+            _ => {}
+        }
+    }
+
+    fn discard_remote_diff_state_models_for_host(
+        &mut self,
+        host_id: &HostId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let keys: Vec<FileLocation> = self
+            .diff_state_models
+            .models
+            .keys()
+            .filter(|k| match k {
+                FileLocation::Remote(rp) => &rp.host_id == host_id,
+                FileLocation::Local(_) => false,
+            })
+            .cloned()
+            .collect();
+        for key in keys {
+            self.mark_and_remove_remote_model(&key, ctx);
+        }
+    }
+
+    fn discard_remote_diff_state_models_for_session(
+        &mut self,
+        session_id: SessionId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let keys: Vec<FileLocation> = self
+            .diff_state_models
+            .models
+            .iter()
+            .filter_map(|(key, model)| match key {
+                FileLocation::Remote(_) => model
+                    .read(ctx, |m, app_ctx| m.remote_session_id(app_ctx))
+                    .filter(|sid| *sid == session_id)
+                    .map(|_| key.clone()),
+                FileLocation::Local(_) => None,
+            })
+            .collect();
+        for key in keys {
+            self.mark_and_remove_remote_model(&key, ctx);
+        }
+    }
+
+    fn resubscribe_remote_diff_state_models_for_session(
+        &mut self,
+        session_id: SessionId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let matching: Vec<ModelHandle<DiffStateModel>> = self
+            .diff_state_models
+            .models
+            .values()
+            .filter(|model| {
+                model
+                    .read(ctx, |m, app_ctx| m.remote_session_id(app_ctx))
+                    .is_some_and(|sid| sid == session_id)
+            })
+            .cloned()
+            .collect();
+        for model in matching {
+            model.update(ctx, |m, ctx| m.resubscribe(ctx));
+        }
+    }
+
+    /// Marks a remote `DiffStateModel` as disconnected (so any subscribers
+    /// see `ConnectionLost`) and removes it from the cache so the next call
+    /// to `get_or_create_diff_state_model` lazily creates a fresh one bound
+    /// to a currently-connected session.
+    fn mark_and_remove_remote_model(&mut self, key: &FileLocation, ctx: &mut ModelContext<Self>) {
+        let Some(model) = self.diff_state_models.remove(key) else {
+            return;
+        };
+        model.update(ctx, |m, ctx| m.mark_disconnected(ctx));
     }
 
     /// Get the unique directories for a specific pane group in insertion order (oldest first).
@@ -230,7 +327,10 @@ impl WorkingDirectoriesModel {
     }
 
     /// Get or create a DiffStateModel for a specific repository.
+    ///
     /// If the model doesn't exist, it will be created.
+    /// For remote file locations we require a connected session for the host.
+    /// If none exists, returns `None` and callers should retry once a session is established.
     pub fn get_or_create_diff_state_model(
         &mut self,
         key: FileLocation,
@@ -240,7 +340,20 @@ impl WorkingDirectoriesModel {
             return Some(model.clone());
         }
 
-        let diff_state_model = ctx.add_model(|ctx| DiffStateModel::new(key.clone(), ctx));
+        let diff_state_model = match &key {
+            FileLocation::Local(path) => {
+                let path = path.clone();
+                ctx.add_model(|ctx| DiffStateModel::new_local(path, ctx))
+            }
+            FileLocation::Remote(remote_path) => {
+                let mgr_handle = RemoteServerManager::handle(ctx);
+                let session_id = mgr_handle
+                    .as_ref(ctx)
+                    .find_connected_session(&remote_path.host_id)?;
+                let remote_path = remote_path.clone();
+                ctx.add_model(|ctx| DiffStateModel::new_remote(remote_path, session_id, ctx))
+            }
+        };
 
         match key {
             FileLocation::Local(path) => {
