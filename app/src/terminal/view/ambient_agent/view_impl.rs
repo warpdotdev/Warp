@@ -293,6 +293,9 @@ impl TerminalView {
             }
             AmbientAgentViewModelEvent::HarnessSelected => {
                 self.maybe_enter_agent_view_for_shared_third_party_viewer(ctx);
+                self.pane_configuration.update(ctx, |pane_config, ctx| {
+                    pane_config.notify_header_content_changed(ctx);
+                });
                 ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
