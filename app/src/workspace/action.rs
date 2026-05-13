@@ -621,6 +621,10 @@ pub enum WorkspaceAction {
         conversation_id: ServerConversationToken,
         ambient_agent_task_id: Option<AmbientAgentTaskId>,
     },
+    /// Open or focus an ambient agent task and enter the cloud follow-up input state.
+    ContinueAmbientAgentInCloud {
+        task_id: AmbientAgentTaskId,
+    },
     /// Toggle the conversation transcript details panel (WASM-only).
     #[cfg(target_family = "wasm")]
     ToggleConversationTranscriptDetailsPanel,
@@ -941,6 +945,7 @@ impl WorkspaceAction {
             | ExecuteDeleteConversation { .. }
             | OpenAmbientAgentSession { .. }
             | OpenConversationTranscriptViewer { .. }
+            | ContinueAmbientAgentInCloud { .. }
             | OpenLightbox { .. }
             | UpdateLightboxImage { .. }
             | StartAgentOnboardingTutorial(_)

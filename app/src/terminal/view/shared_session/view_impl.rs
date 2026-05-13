@@ -838,8 +838,7 @@ impl TerminalView {
         self.enable_owned_cloud_followup_input(task_id, ctx);
     }
 
-    #[cfg(not(target_family = "wasm"))]
-    fn start_cloud_followup_from_tombstone(
+    pub(crate) fn start_cloud_followup_from_tombstone(
         &mut self,
         task_id: crate::ai::ambient_agents::AmbientAgentTaskId,
         ctx: &mut ViewContext<Self>,

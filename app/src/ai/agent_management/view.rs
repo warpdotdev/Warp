@@ -1387,6 +1387,11 @@ impl AgentManagementView {
                     notebook_uid: *notebook_uid,
                 });
             }
+            ConversationDetailsPanelEvent::ContinueInCloud { task_id } => {
+                ctx.dispatch_typed_action(&WorkspaceAction::ContinueAmbientAgentInCloud {
+                    task_id: *task_id,
+                });
+            }
         }
     }
 

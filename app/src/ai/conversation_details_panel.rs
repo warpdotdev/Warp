@@ -9,6 +9,7 @@ use pathfinder_color::ColorU;
 use warp_cli::agent::Harness;
 use warp_cli::skill::SkillSpec;
 use warp_core::channel::ChannelState;
+use warp_core::features::FeatureFlag;
 use warp_core::ui::color::coloru_with_opacity;
 use warpui::{
     clipboard::ClipboardContent,
@@ -49,7 +50,6 @@ use crate::notebooks::NotebookId;
 use crate::send_telemetry_from_ctx;
 use crate::server::ids::{ServerId, SyncId};
 use crate::server::server_api::ai::AmbientAgentTask;
-#[cfg(not(target_family = "wasm"))]
 use crate::settings::ai::{AISettings, AISettingsChangedEvent};
 use crate::ui_components::avatar::{Avatar, AvatarContent};
 use crate::ui_components::blended_colors;
@@ -57,7 +57,6 @@ use crate::ui_components::buttons::icon_button;
 use crate::ui_components::icons::Icon;
 use crate::util::bindings::CustomAction;
 use crate::util::time_format::{format_approx_duration_from_now, human_readable_precise_duration};
-#[cfg(not(target_family = "wasm"))]
 use crate::view_components::action_button::PrimaryTheme;
 use crate::view_components::action_button::{ActionButton, ButtonSize, SecondaryTheme};
 use crate::view_components::copyable_text_field::{
@@ -558,6 +557,7 @@ impl ConversationDetailsData {
 pub enum ConversationDetailsPanelEvent {
     Close,
     OpenPlanNotebook { notebook_uid: NotebookId },
+    ContinueInCloud { task_id: AmbientAgentTaskId },
 }
 
 /// Actions for the ConversationDetailsPanel.
@@ -573,6 +573,7 @@ pub enum ConversationDetailsPanelAction {
     CopySetupCommands(String),
     Focus,
     CopySelectedText,
+    ContinueInCloud,
     #[cfg(not(target_family = "wasm"))]
     ContinueLocally,
     OpenInOz,
@@ -600,6 +601,7 @@ pub struct ConversationDetailsPanel {
     /// Whether to show the "Open conversation" button (we don't want to show a navigate to
     /// conversation button in the transcript view, but do in the management details view).
     show_open_button: bool,
+    continue_in_cloud_button: ViewHandle<ActionButton>,
     #[cfg(not(target_family = "wasm"))]
     continue_locally_button: ViewHandle<ActionButton>,
     /// Text button "View in Oz" shown next to "Continue locally".
@@ -624,7 +626,14 @@ impl ConversationDetailsPanel {
 
         let action_buttons = ctx.add_typed_action_view(ConversationActionButtonsRow::new);
         ctx.subscribe_to_view(&action_buttons, Self::handle_action_buttons_event);
-
+        let continue_in_cloud_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Continue", PrimaryTheme)
+                .with_tooltip("Continue this task in Cloud Mode")
+                .with_size(ButtonSize::Small)
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(ConversationDetailsPanelAction::ContinueInCloud);
+                })
+        });
         #[cfg(not(target_family = "wasm"))]
         let continue_locally_button = ctx.add_typed_action_view(|_| {
             ActionButton::new("Continue locally", PrimaryTheme)
@@ -642,7 +651,6 @@ impl ConversationDetailsPanel {
                     ctx.dispatch_typed_action(ConversationDetailsPanelAction::OpenInOz);
                 })
         });
-        #[cfg(not(target_family = "wasm"))]
         ctx.subscribe_to_model(&AISettings::handle(ctx), |_, _, event, ctx| {
             if matches!(event, AISettingsChangedEvent::IsAnyAIEnabled { .. }) {
                 ctx.notify();
@@ -655,6 +663,7 @@ impl ConversationDetailsPanel {
             artifact_buttons_row,
             action_buttons,
             show_open_button,
+            continue_in_cloud_button,
             #[cfg(not(target_family = "wasm"))]
             continue_locally_button,
             open_in_oz_button,
@@ -681,6 +690,28 @@ impl ConversationDetailsPanel {
     pub(crate) fn task_display_status_for_test(&self) -> Option<AgentRunDisplayStatus> {
         match &self.data.mode {
             PanelMode::Task { display_status, .. } => display_status.clone(),
+            PanelMode::Conversation { .. } => None,
+        }
+    }
+    fn continue_in_cloud_task_id(&self, app: &AppContext) -> Option<AmbientAgentTaskId> {
+        if !FeatureFlag::HandoffCloudCloud.is_enabled()
+            || !AISettings::as_ref(app).is_any_ai_enabled(app)
+        {
+            return None;
+        }
+
+        match &self.data.mode {
+            PanelMode::Task {
+                task_id,
+                display_status,
+                ..
+            } => {
+                let display_status = display_status.as_ref()?;
+                if display_status.is_working() {
+                    return None;
+                }
+                *task_id
+            }
             PanelMode::Conversation { .. } => None,
         }
     }
@@ -1641,20 +1672,23 @@ impl View for ConversationDetailsPanel {
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::End)
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
-        // Add continue locally button (left-aligned) and action icon buttons (right-aligned).
+        // Add continue buttons (left-aligned) and action icon buttons (right-aligned).
         let has_action_buttons = !self.action_buttons.as_ref(app).is_empty();
+        let has_continue_in_cloud = self.continue_in_cloud_task_id(app).is_some();
 
         #[cfg(not(target_family = "wasm"))]
         let has_continue_locally = self.continue_locally_conversation_id(app).is_some();
         #[cfg(target_family = "wasm")]
         let has_continue_locally = false;
         let has_oz_url = Self::oz_run_url(&self.data).is_some();
-
-        if has_continue_locally || has_oz_url {
+        if has_continue_in_cloud || has_continue_locally || has_oz_url {
             let mut buttons_wrap = Wrap::row().with_spacing(8.).with_run_spacing(8.);
+            if has_continue_in_cloud {
+                buttons_wrap.add_child(ChildView::new(&self.continue_in_cloud_button).finish());
+            }
 
             #[cfg(not(target_family = "wasm"))]
-            if has_continue_locally {
+            if !has_continue_in_cloud && has_continue_locally {
                 buttons_wrap.add_child(ChildView::new(&self.continue_locally_button).finish());
             }
             if has_oz_url {
@@ -2076,6 +2110,11 @@ impl TypedActionView for ConversationDetailsPanel {
             ConversationDetailsPanelAction::CopySelectedText => {
                 if let Some(text) = self.selected_text.read().clone().filter(|t| !t.is_empty()) {
                     ctx.clipboard().write(ClipboardContent::plain_text(text));
+                }
+            }
+            ConversationDetailsPanelAction::ContinueInCloud => {
+                if let Some(task_id) = self.continue_in_cloud_task_id(ctx) {
+                    ctx.emit(ConversationDetailsPanelEvent::ContinueInCloud { task_id });
                 }
             }
             #[cfg(not(target_family = "wasm"))]
