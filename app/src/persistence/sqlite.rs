@@ -59,7 +59,7 @@ use crate::ai::facts::{CloudAIFact, CloudAIFactModel};
 use crate::ai::mcp::templatable::{CloudTemplatableMCPServer, CloudTemplatableMCPServerModel};
 use crate::ai::mcp::templatable_installation::VariableValue;
 use crate::ai::mcp::{
-    CloudMCPServer, CloudMCPServerModel, TemplatableMCPServer, TemplatableMCPServerInstallation,
+    MCPServerObject, MCPServerObjectModel, TemplatableMCPServer, TemplatableMCPServerInstallation,
 };
 use crate::app_state::{
     AIFactPaneSnapshot, AmbientAgentPaneSnapshot, CodeReviewPaneSnapshot,
@@ -3049,10 +3049,10 @@ fn read_sqlite_data(
                                 })
                             }
                             JsonObjectType::MCPServer => {
-                                let model = CloudMCPServerModel::deserialize_owned(&object.data);
+                                let model = MCPServerObjectModel::deserialize_owned(&object.data);
                                 model.ok().map(|model| {
                                     let boxed: Box<dyn CloudObject> =
-                                        Box::new(CloudMCPServer::new(
+                                        Box::new(MCPServerObject::new(
                                             server_id,
                                             model,
                                             to_cloud_object_metadata(metadata),

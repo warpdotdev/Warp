@@ -263,34 +263,34 @@ pub struct ServerSentEvents {
     pub headers: Vec<StaticHeader>,
 }
 
-pub type CloudMCPServer = GenericCloudObject<GenericStringObjectId, CloudMCPServerModel>;
-pub type CloudMCPServerModel = GenericStringModel<MCPServer, JsonSerializer>;
+pub type MCPServerObject = GenericCloudObject<GenericStringObjectId, MCPServerObjectModel>;
+pub type MCPServerObjectModel = GenericStringModel<MCPServer, JsonSerializer>;
 
-impl CloudMCPServer {
-    pub fn get_all(app: &AppContext) -> Vec<CloudMCPServer> {
+impl MCPServerObject {
+    pub fn get_all(app: &AppContext) -> Vec<MCPServerObject> {
         CloudModel::as_ref(app)
-            .get_all_objects_of_type::<GenericStringObjectId, CloudMCPServerModel>()
+            .get_all_objects_of_type::<GenericStringObjectId, MCPServerObjectModel>()
             .cloned()
             .collect()
     }
 
-    pub fn get_by_id<'a>(sync_id: &'a SyncId, app: &'a AppContext) -> Option<&'a CloudMCPServer> {
+    pub fn get_by_id<'a>(sync_id: &'a SyncId, app: &'a AppContext) -> Option<&'a MCPServerObject> {
         CloudModel::as_ref(app)
-            .get_object_of_type::<GenericStringObjectId, CloudMCPServerModel>(sync_id)
+            .get_object_of_type::<GenericStringObjectId, MCPServerObjectModel>(sync_id)
     }
 
     pub fn get_by_uuid<'a>(
         uuid: &'a uuid::Uuid,
         app: &'a AppContext,
-    ) -> Option<&'a CloudMCPServer> {
+    ) -> Option<&'a MCPServerObject> {
         CloudModel::as_ref(app)
-            .get_all_objects_of_type::<GenericStringObjectId, CloudMCPServerModel>()
+            .get_all_objects_of_type::<GenericStringObjectId, MCPServerObjectModel>()
             .find(|server| server.model().string_model.uuid == *uuid)
     }
 }
 
 impl StringModel for MCPServer {
-    type CloudObjectType = CloudMCPServer;
+    type CloudObjectType = MCPServerObject;
 
     fn model_type_name(&self) -> &'static str {
         "MCP server"
@@ -328,7 +328,7 @@ impl StringModel for MCPServer {
         &self,
         id: SyncId,
         _appearance: &Appearance,
-        mcp_server: &CloudMCPServer,
+        mcp_server: &MCPServerObject,
     ) -> Option<Box<dyn WarpDriveItem>> {
         Some(Box::new(WarpDriveMCPServer::new(
             CloudObjectTypeAndId::GenericStringObject {

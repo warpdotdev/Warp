@@ -1,6 +1,6 @@
 use super::{WarpDriveItem, WarpDriveItemId};
 use crate::{
-    ai::mcp::CloudMCPServer,
+    ai::mcp::MCPServerObject,
     appearance::Appearance,
     cloud_object::CloudObjectMetadata,
     drive::{index::DriveIndexAction, CloudObjectTypeAndId, DriveObjectType},
@@ -11,11 +11,11 @@ use warpui::{elements::MouseStateHandle, AppContext, Element};
 #[derive(Clone)]
 pub struct WarpDriveMCPServer {
     id: CloudObjectTypeAndId,
-    mcp_server: CloudMCPServer,
+    mcp_server: MCPServerObject,
 }
 
 impl WarpDriveMCPServer {
-    pub fn new(id: CloudObjectTypeAndId, mcp_server: CloudMCPServer) -> Self {
+    pub fn new(id: CloudObjectTypeAndId, mcp_server: MCPServerObject) -> Self {
         Self { id, mcp_server }
     }
 }

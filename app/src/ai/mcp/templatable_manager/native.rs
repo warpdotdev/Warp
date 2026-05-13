@@ -14,7 +14,7 @@ use crate::ai::mcp::http_client::build_client_with_headers;
 use crate::ai::mcp::templatable::GalleryData;
 use crate::ai::mcp::templatable_manager::FigmaMcpStatus;
 use crate::ai::mcp::{
-    Author, CloudMCPServer, JsonTemplate, MCPGalleryManager, MCPServerUpdate,
+    Author, JsonTemplate, MCPGalleryManager, MCPServerObject, MCPServerUpdate,
     ParsedTemplatableMCPServerResult,
 };
 
@@ -258,7 +258,7 @@ impl TemplatableMCPServerManager {
                 log::debug!("A new MCP server template was found with sync id {new_sync_id}");
                 if let Some(new_server) = CloudTemplatableMCPServer::get_by_id(new_sync_id, ctx) {
                     let uuid = new_server.model().string_model.uuid;
-                    if let Some(legacy_server) = CloudMCPServer::get_by_uuid(&uuid, ctx) {
+                    if let Some(legacy_server) = MCPServerObject::get_by_uuid(&uuid, ctx) {
                         let old_sync_id = legacy_server.sync_id();
                         me.delete_legacy_mcp_server(old_sync_id, InitiatedBy::System, ctx);
                         log::info!("Successfully converted MCP server {old_sync_id} into {uuid} with sync id {new_sync_id}.");
@@ -1404,15 +1404,15 @@ impl TemplatableMCPServerManager {
         ctx: &mut ModelContext<Self>,
     ) {
         // Import inline because of circular dependencies
-        use crate::ai::mcp::CloudMCPServer;
-        let cloud_legacy_servers = CloudMCPServer::get_all(ctx);
+        use crate::ai::mcp::MCPServerObject;
+        let legacy_servers = MCPServerObject::get_all(ctx);
         log::info!(
             "Converting {} legacy MCP servers into templatable MCP servers",
-            cloud_legacy_servers.len()
+            legacy_servers.len()
         );
-        for cloud_legacy_server in cloud_legacy_servers {
-            let sync_id = cloud_legacy_server.sync_id();
-            let legacy_mcp_server = cloud_legacy_server.model().string_model.clone();
+        for legacy_server in legacy_servers {
+            let sync_id = legacy_server.sync_id();
+            let legacy_mcp_server = legacy_server.model().string_model.clone();
             let uuid = legacy_mcp_server.uuid;
             let result = self.convert_legacy_to_templatable(
                 sync_id,
