@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 use crate::auth::AuthManager;
 use crate::auth::AuthStateProvider;
 use crate::search::command_search::searcher::CommandSearchMixer;
@@ -10,8 +10,6 @@ use crate::search::mixer::{AddAsyncSourceOptions, AsyncDataSource, BoxFuture};
 use crate::search::result_renderer::ItemHighlightState;
 use crate::search::{QueryFilter, SyncDataSource};
 
-use crate::server::server_api::ServerApiProvider;
-use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::terminal::HistoryEntry;
 use crate::{appearance::Appearance, search::command_search::history::history_data_source};
 use itertools::Itertools;
@@ -107,9 +105,7 @@ impl SyncDataSource for SlowDataSource {
 }
 
 fn initialize_app(app: &mut App) {
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
 }
 

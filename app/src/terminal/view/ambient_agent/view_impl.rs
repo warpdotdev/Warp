@@ -1,22 +1,17 @@
 //! [`TerminalView`]-specific implementation for ambient agent functionality.
 
-use std::cell::Cell;
-use std::rc::Rc;
 use warp_cli::agent::Harness;
 use warp_terminal::model::BlockId;
 
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
 use crate::ai::AIRequestUsageModel;
 use warp_core::features::FeatureFlag;
-use warp_core::send_telemetry_from_ctx;
-use warpui::prelude::{Empty, Vector2F};
+use warpui::prelude::Empty;
 
-use crate::ai::ambient_agents::telemetry::{CloudAgentTelemetryEvent, CloudModeEntryPoint};
+use crate::ai::ambient_agents::SpawnAgentRequest;
 use crate::ai::blocklist::{agent_view::AgentViewEntryOrigin, BlocklistAIHistoryModel};
-use crate::pane_group::TerminalViewResources;
-use crate::server::server_api::ai::SpawnAgentRequest;
 use crate::terminal::view::ambient_agent::CloudModeInitialUserQuery;
-use crate::terminal::view::rich_content::{RichContentInsertionPosition, RichContentMetadata};
+use crate::terminal::view::rich_content::RichContentInsertionPosition;
 use crate::terminal::view::TerminalView;
 use crate::terminal::CLIAgent;
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -28,9 +23,7 @@ use super::loading_screen::{
     render_cloud_mode_cancelled_screen, render_cloud_mode_error_screen,
     render_cloud_mode_github_auth_required_screen, render_cloud_mode_loading_screen,
 };
-use super::{
-    is_cloud_agent_pre_first_exchange, AmbientAgentEntryBlock, AmbientAgentViewModelEvent,
-};
+use super::{is_cloud_agent_pre_first_exchange, AmbientAgentViewModelEvent};
 const CHILD_AGENT_GITHUB_AUTH_REQUIRED_BLOCKED_ACTION: &str =
     "GitHub authentication required before starting the child agent.";
 
@@ -130,7 +123,7 @@ impl TerminalView {
                     ctx.notify();
                     return;
                 }
-                if FeatureFlag::CloudModeSetupV2.is_enabled() {
+                if false {
                     if self
                         .ambient_agent_view_model
                         .as_ref(ctx)
@@ -189,7 +182,6 @@ impl TerminalView {
                 // Re-render to hide the loading screen now that the session is ready.
                 ctx.notify();
             }
-            AmbientAgentViewModelEvent::EnvironmentSelected => {}
             AmbientAgentViewModelEvent::ProgressUpdated => {
                 // Refresh the tip (respects 60s cooldown internally)
                 let tip_model = self
@@ -215,7 +207,7 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::ShowAICreditModal => {
-                if FeatureFlag::CloudMode.is_enabled()
+                if false
                     && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
                     && !self.model.lock().is_shared_ambient_agent_session()
                 {
@@ -286,7 +278,7 @@ impl TerminalView {
         block_id: &BlockId,
         ctx: &mut ViewContext<Self>,
     ) {
-        if !FeatureFlag::CloudModeSetupV2.is_enabled() {
+        if !false {
             return;
         }
 
@@ -538,9 +530,7 @@ impl TerminalView {
         initial_prompt: Option<String>,
         ctx: &mut ViewContext<Self>,
     ) {
-        if !(FeatureFlag::CloudMode.is_enabled()
-            && FeatureFlag::CloudModeFromLocalSession.is_enabled())
-        {
+        if !(false && false) {
             return;
         }
 
@@ -575,117 +565,11 @@ impl TerminalView {
     /// further configured in the cloud mode session.
     fn start_cloud_mode(
         &mut self,
-        spawn_request: Option<SpawnAgentRequest>,
-        initial_prompt: Option<String>,
-        ctx: &mut ViewContext<Self>,
+        _spawn_request: Option<SpawnAgentRequest>,
+        _initial_prompt: Option<String>,
+        _ctx: &mut ViewContext<Self>,
     ) {
-        let resources = TerminalViewResources {
-            tips_completed: self.tips_completed.clone(),
-            model_event_sender: self.model_event_sender.clone(),
-        };
-
-        // TODO: Use self.size_info
-        let (terminal_view, terminal_manager) =
-            super::create_cloud_mode_view(resources, Vector2F::zero(), ctx.window_id(), ctx);
-
-        // Only insert an ambient agent entry block once the agent is actually dispatched.
-        // This avoids persisting an empty "New cloud agent" entry when the user enters cloud mode
-        // but exits without sending anything.
-        let ambient_agent_view_model = terminal_view.as_ref(ctx).ambient_agent_view_model().clone();
-        let terminal_view_weak = terminal_view.downgrade();
-        let terminal_manager_weak = terminal_manager.downgrade();
-        let pane_stack = self.pane_stack.clone();
-        let has_inserted_entry_block = Rc::new(Cell::new(false));
-
-        ctx.subscribe_to_model(&ambient_agent_view_model, move |me, _, event, ctx| {
-            if !matches!(event, AmbientAgentViewModelEvent::DispatchedAgent) {
-                return;
-            }
-
-            if has_inserted_entry_block.get() {
-                return;
-            }
-            has_inserted_entry_block.set(true);
-
-            let Some(pane_stack) = pane_stack.clone() else {
-                log::warn!(
-                    "Pane stack not available; cannot insert ambient agent entry block for cloud mode"
-                );
-                return;
-            };
-
-            let Some(terminal_view) = terminal_view_weak.upgrade(ctx) else {
-                return;
-            };
-            let Some(terminal_manager) = terminal_manager_weak.upgrade(ctx) else {
-                return;
-            };
-
-            let block_terminal_view = terminal_view.clone();
-            let block_terminal_manager = terminal_manager.clone();
-            let block_handle = ctx.add_typed_action_view(|ctx| {
-                AmbientAgentEntryBlock::new(
-                    block_terminal_view,
-                    block_terminal_manager,
-                    pane_stack.clone(),
-                    ctx,
-                )
-            });
-
-            me.insert_rich_content(
-                None,
-                block_handle.clone(),
-                Some(RichContentMetadata::AmbientAgentBlock { block_handle }),
-                RichContentInsertionPosition::Append {
-                    insert_below_long_running_block: false,
-                },
-                ctx,
-            );
-        });
-
-        let pane_config = self.pane_configuration.clone();
-        terminal_view.update(ctx, |view, ctx| {
-            view.set_pane_configuration(pane_config);
-
-            // Mark as having a parent since it's pushed onto an existing pane stack
-            view.ambient_agent_view_model.update(ctx, |model, _ctx| {
-                model.set_has_parent_terminal(true);
-            });
-
-            if let Some(request) = spawn_request {
-                // Spawn the agent immediately with the provided request.
-                view.enter_agent_view_for_new_conversation(
-                    None,
-                    AgentViewEntryOrigin::CloudAgent,
-                    ctx,
-                );
-                view.ambient_agent_view_model.update(ctx, |model, ctx| {
-                    model.spawn_agent_with_request(request, ctx);
-                });
-            } else {
-                // Enter setup mode for composing a prompt
-                view.enter_ambient_agent_setup(initial_prompt, ctx);
-            }
-        });
-
-        if let Some(pane_stack) = self.pane_stack.clone() {
-            if let Some(stack) = pane_stack.upgrade(ctx) {
-                stack.update(ctx, |stack, ctx| {
-                    stack.push(terminal_manager, terminal_view, ctx);
-                });
-            } else {
-                log::warn!("Pane stack deallocated, cannot enter cloud mode");
-            }
-        } else {
-            log::warn!("Pane stack not available, cannot enter cloud mode");
-        }
-
-        send_telemetry_from_ctx!(
-            CloudAgentTelemetryEvent::EnteredCloudMode {
-                entry_point: CloudModeEntryPoint::LocalSession
-            },
-            ctx
-        );
+        log::warn!("Ignoring removed cloud mode start request in OpenWarp");
     }
 
     /// Renders the ambient agent progress view based on agent progress.

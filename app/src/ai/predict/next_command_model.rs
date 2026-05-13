@@ -1,8 +1,8 @@
+use crate::ai::api_error::AIApiError;
 use crate::ai::block_context::BlockContext;
 use crate::ai_assistant::execution_context::WarpAiExecutionContext;
 use crate::completer::SessionContext;
 use crate::report_error;
-use crate::server::server_api::AIApiError;
 use crate::settings::AISettings;
 use crate::terminal::event::UserBlockCompleted;
 use crate::terminal::input::{CompleterData, IntelligentAutosuggestionResult};

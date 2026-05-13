@@ -113,18 +113,6 @@ pub(super) fn convert_input(
                     )),
                 });
             }
-            AIAgentInput::CreateEnvironment {
-                context,
-                repo_paths,
-                ..
-            } => {
-                return Ok(api::request::Input {
-                    context: Some(convert_context(context.as_ref())),
-                    r#type: Some(api::request::input::Type::CreateEnvironment(
-                        api::request::input::CreateEnvironment { repo_paths },
-                    )),
-                });
-            }
             AIAgentInput::TriggerPassiveSuggestion {
                 context,
                 attachments,
@@ -442,7 +430,6 @@ fn convert_input_to_user_input(
         AIAgentInput::InitProjectRules { .. } => Err(ConvertToAPITypeError::Ignore),
         AIAgentInput::CodeReview { .. } => Err(ConvertToAPITypeError::Ignore),
         AIAgentInput::FetchReviewComments { .. } => Err(ConvertToAPITypeError::Ignore),
-        AIAgentInput::CreateEnvironment { .. } => Err(ConvertToAPITypeError::Ignore),
         AIAgentInput::InvokeSkill { .. } => Err(ConvertToAPITypeError::Ignore),
         invalid_input => Err(anyhow!(
             "Cannot convert non user query or action result input into API UserInput: {invalid_input:?}"

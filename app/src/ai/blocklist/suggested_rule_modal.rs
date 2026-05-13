@@ -2,6 +2,9 @@ use crate::ai::agent::SuggestedRule;
 use crate::ai::facts::CloudAIFactModel;
 use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
+use crate::cloud_object::update_manager::{
+    ObjectOperation, OperationSuccessType, UpdateManagerEvent,
+};
 use crate::cloud_object::Owner;
 use crate::drive::CloudObjectTypeAndId;
 use crate::editor::{
@@ -11,16 +14,13 @@ use crate::editor::{
 use crate::modal::{Modal, ModalEvent};
 use crate::network::NetworkStatus;
 use crate::send_telemetry_from_ctx;
-use crate::server::cloud_objects::update_manager::{
-    ObjectOperation, OperationSuccessType, UpdateManagerEvent,
-};
 use crate::server::ids::SyncId;
 use crate::server::telemetry::TelemetryEvent;
 use crate::view_components::action_button::{ActionButton, PrimaryTheme};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{
     ai::facts::{AIFact, AIMemory},
-    server::cloud_objects::update_manager::UpdateManager,
+    cloud_object::update_manager::UpdateManager,
     ui_components::blended_colors,
 };
 use pathfinder_geometry::vector::vec2f;

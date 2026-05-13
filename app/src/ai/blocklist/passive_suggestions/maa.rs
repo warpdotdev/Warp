@@ -1,7 +1,6 @@
-﻿use std::sync::Arc;
+use std::sync::Arc;
 
 use super::super::controller::{BlocklistAIController, BlocklistAIControllerEvent};
-use crate::ai::agent::api::generate_multi_agent_output;
 use crate::ai::agent::AIIdentifiers;
 use crate::ai::agent::FileContext;
 use crate::ai::agent::PassiveCodeDiffEntry;
@@ -154,7 +153,7 @@ impl PassiveSuggestionsModel {
         // Capture before the call — `Some` means there's a real conversation
         // the user can continue in; `None` means ephemeral.
         let continuable_conversation_id = followup_conversation_id;
-        let Ok((conversation_id, request_params)) =
+        let Ok((conversation_id, _request_params)) =
             self.ai_controller.update(ctx, |controller, ctx| {
                 controller.build_passive_suggestions_request_params(
                     followup_conversation_id,
@@ -167,13 +166,15 @@ impl PassiveSuggestionsModel {
             return;
         };
 
+        log::debug!(
+            "[passive-suggestions] skipped MAA request because cloud multi-agent endpoint is disabled in OpenWarp"
+        );
         let (cancellation_tx, cancellation_rx) = futures::channel::oneshot::channel();
 
         let stream_handle = ctx.spawn(
             async move {
-                let stream_result =
-                    generate_multi_agent_output(request_params, cancellation_rx).await;
-                extract_suggestion_from_stream(stream_result).await
+                let _ = cancellation_rx;
+                None
             },
             move |me, result, ctx| {
                 let Some(latest_request) = &me.latest_request else {
@@ -456,7 +457,7 @@ impl PassiveSuggestionsModel {
 
         // Startup commands run while bootstrapping an Oz cloud environment, so we skip
         // passive prompt suggestion generation for them to avoid unnecessary requests.
-        let is_oz_environment_startup_command = FeatureFlag::CloudModeSetupV2.is_enabled()
+        let is_oz_environment_startup_command = false
             && self
                 .terminal_model
                 .lock()

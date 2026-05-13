@@ -1,5 +1,5 @@
 use crate::ai::agent::ReceivedMessageInput;
-use crate::server::server_api::ai::AgentRunEvent;
+use crate::ai::agent_events::AgentRunEvent;
 
 /// OpenWarp 本地构建不再从云端 mailbox 拉取消息正文或发送 delivered 回执。
 /// 该类型保留 orchestration 调用面的无副作用兼容语义。

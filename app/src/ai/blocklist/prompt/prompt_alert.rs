@@ -12,7 +12,6 @@ use crate::{
     ai::{blocklist::error_color, AIRequestUsageModel},
     auth::AuthStateProvider,
     network::NetworkStatus,
-    server::ids::ServerId,
     settings::PrivacySettings,
     settings_view::SettingsSection,
     ui_components::icons::Icon,
@@ -25,7 +24,6 @@ const ANONYMOUS_USER_REQUEST_LIMIT_SOFT_GATE_PERCENTAGE: f32 = 0.5;
 
 const TELEMETRY_DISABLED_PRIMARY_TEXT: &str = "To use AI features,";
 const ENABLE_ANALYTICS_ACTION_TEXT: &str = "enable analytics";
-const UPGRADE_TO_BUILD_ACTION_TEXT: &str = "upgrade";
 
 const NO_CONNECTION_PRIMARY_TEXT: &str = "No internet connection";
 const ANONYMOUS_USER_REQUEST_LIMIT_SOFT_GATE_PRIMARY_TEXT: &str = "";
@@ -34,12 +32,8 @@ const DELINQUENT_DUE_TO_PAYMENT_ISSUE_PRIMARY_TEXT: &str = "Restricted due to pa
 const OUT_OF_REQUESTS_PRIMARY_TEXT: &str = "Out of credits";
 
 const ANONYMOUS_USER_REQUEST_LIMIT_ACTION_TEXT: &str = "Sign up for more AI credits";
-const DELINQUENT_DUE_TO_PAYMENT_ISSUE_ACTION_TEXT: &str = "Manage billing";
 const OVERAGES_TOGGLEABLE_BUT_NOT_ENABLED_ACTION_TEXT: &str = "Enable premium overages";
 const MONTHLY_OVERAGES_SPEND_LIMIT_REACHED_ACTION_TEXT: &str = "Increase monthly spend limit";
-const UPGRADE_TEXT: &str = "Upgrade";
-const COMPARE_PLANS_TEXT: &str = "Compare plans";
-const CONTACT_SUPPORT_TEXT: &str = "Contact support";
 const NON_ADMIN_CONTACT_ADMIN_TEXT: &str = ", contact a team admin";
 const NON_ADMIN_ASK_ADMIN_TO_ENABLE_OVERAGES_TEXT: &str = ", ask a team admin to enable overages";
 const NON_ADMIN_ASK_ADMIN_TO_INCREASE_OVERAGES_TEXT: &str =
@@ -50,14 +44,12 @@ pub enum PromptAlertAction {
     SignUpClickedForAnonymousUser,
     OpenSettingsClicked,
     OpenPrivacySettingsClicked,
-    ManageBillingClicked { team_uid: ServerId },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptAlertEvent {
     SignupAnonymousUser,
     OpenPrivacyPage,
-    OpenBillingPortal { team_uid: ServerId },
 }
 
 /// The alert state of the chip that appears to the right of certain parts of the prompt.
@@ -282,18 +274,6 @@ impl PromptAlertView {
                     PromptAlertAction::OpenPrivacySettingsClicked,
                 ));
 
-                // Show "or upgrade to Build" link
-                text_fragments.push(FormattedTextFragment::plain_text(" or "));
-                let upgrade_url = if let Some(team) = UserWorkspaces::as_ref(app).current_team() {
-                    UserWorkspaces::upgrade_link_for_team(team.uid)
-                } else {
-                    let user_id = auth_state.user_id().unwrap_or_default();
-                    UserWorkspaces::upgrade_link(user_id)
-                };
-                text_fragments.push(FormattedTextFragment::hyperlink(
-                    UPGRADE_TO_BUILD_ACTION_TEXT,
-                    upgrade_url,
-                ));
                 text_fragments.push(FormattedTextFragment::plain_text("."));
             }
             PromptAlertState::AnonymousUserRequestLimitSoftGate
@@ -305,23 +285,9 @@ impl PromptAlertView {
                 ));
             }
             PromptAlertState::DelinquentDueToPaymentIssue => {
-                // Check if user is team admin with billing history
-                let has_billing_history = current_team
-                    .map(|team| team.has_billing_history)
-                    .unwrap_or_default();
-                if has_admin_permissions && has_billing_history {
-                    text_fragments.push(FormattedTextFragment::plain_text("  "));
-                    text_fragments.push(FormattedTextFragment::hyperlink_action(
-                        DELINQUENT_DUE_TO_PAYMENT_ISSUE_ACTION_TEXT,
-                        PromptAlertAction::ManageBillingClicked {
-                            team_uid: current_team.map(|team| team.uid).unwrap_or_default(),
-                        },
-                    ));
-                } else {
-                    text_fragments.push(FormattedTextFragment::plain_text(
-                        NON_ADMIN_CONTACT_ADMIN_TEXT,
-                    ));
-                }
+                text_fragments.push(FormattedTextFragment::plain_text(
+                    NON_ADMIN_CONTACT_ADMIN_TEXT,
+                ));
             }
             PromptAlertState::OveragesToggleableButNotEnabled => {
                 if has_admin_permissions {
@@ -351,42 +317,7 @@ impl PromptAlertView {
             }
             PromptAlertState::RequestLimitReached => {
                 text_fragments.push(FormattedTextFragment::plain_text("  "));
-                if let Some(team) = UserWorkspaces::as_ref(app).current_team() {
-                    if team.billing_metadata.can_upgrade_to_higher_tier_plan() {
-                        let upgrade_url = UserWorkspaces::upgrade_link_for_team(team.uid);
-                        let upgrade_text = if !has_admin_permissions {
-                            COMPARE_PLANS_TEXT
-                        } else if team.billing_metadata.can_upgrade_to_build_plan() {
-                            "Upgrade to Build"
-                        } else {
-                            UPGRADE_TEXT
-                        };
-
-                        text_fragments
-                            .push(FormattedTextFragment::hyperlink(upgrade_text, upgrade_url));
-                    } else {
-                        text_fragments.push(FormattedTextFragment::hyperlink(
-                            CONTACT_SUPPORT_TEXT,
-                            "mailto:support@warp.dev".to_owned(),
-                        ));
-                    }
-                } else {
-                    let user_id = auth_state.user_id().unwrap_or_default();
-                    let upgrade_url = UserWorkspaces::upgrade_link(user_id);
-                    let label =
-                        if let Some(workspace) = UserWorkspaces::as_ref(app).current_workspace() {
-                            if workspace.billing_metadata.can_upgrade_to_build_plan() {
-                                "Upgrade to Build"
-                            } else {
-                                UPGRADE_TEXT
-                            }
-                        } else {
-                            UPGRADE_TEXT
-                        };
-                    text_fragments.push(FormattedTextFragment::hyperlink(label, upgrade_url));
-                }
                 if UserWorkspaces::as_ref(app).is_byo_api_key_enabled() {
-                    text_fragments.push(FormattedTextFragment::plain_text(" or "));
                     text_fragments.push(FormattedTextFragment::hyperlink_action(
                         "use your own API keys",
                         WorkspaceAction::ShowSettingsPageWithSearch {
@@ -430,31 +361,7 @@ impl View for PromptAlertView {
 
         self.primary_text(&state, &mut text_fragments);
 
-        let auth_state = AuthStateProvider::as_ref(app).get();
-        let current_team = UserWorkspaces::as_ref(app).current_team();
-        let has_admin_permissions = auth_state
-            .user_email()
-            .zip(current_team)
-            .is_some_and(|(email, team)| team.has_admin_permissions(&email));
-
-        let can_purchase_addon_credits = current_team
-            .and_then(|team| team.billing_metadata.tier.purchase_add_on_credits_policy)
-            .is_some_and(|policy| policy.enabled);
-
-        let suggest_buy_credits = can_purchase_addon_credits
-            && has_admin_permissions
-            && matches!(
-                state,
-                PromptAlertState::RequestLimitReached
-                    | PromptAlertState::OveragesToggleableButNotEnabled
-                    | PromptAlertState::MonthlyOveragesSpendLimitReached
-            );
-
-        if suggest_buy_credits {
-            // 去云端分支:不再展示购买额度入口
-        } else {
-            self.action_hyperlink(&state, &mut text_fragments, app);
-        }
+        self.action_hyperlink(&state, &mut text_fragments, app);
 
         let formatted_text_element = FormattedTextElement::new(
             FormattedText::new([FormattedTextLine::Line(text_fragments)]),
@@ -525,11 +432,6 @@ impl TypedActionView for PromptAlertView {
             }
             PromptAlertAction::OpenPrivacySettingsClicked => {
                 ctx.emit(PromptAlertEvent::OpenPrivacyPage);
-            }
-            PromptAlertAction::ManageBillingClicked { team_uid } => {
-                ctx.emit(PromptAlertEvent::OpenBillingPortal {
-                    team_uid: *team_uid,
-                });
             }
         }
     }

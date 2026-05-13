@@ -167,7 +167,7 @@ fn should_hide_first_ai_block_query_and_header(
     is_first_exchange: bool,
     is_receiving_agent_conversation_replay: bool,
 ) -> bool {
-    FeatureFlag::CloudModeSetupV2.is_enabled()
+    false
         && has_inserted_cloud_mode_user_query_block
         && is_shared_ambient_agent_session
         && is_first_exchange
@@ -1327,7 +1327,6 @@ impl AIAgentInput {
             | AIAgentInput::AutoCodeDiffQuery { .. }
             | AIAgentInput::ResumeConversation { .. }
             | AIAgentInput::InitProjectRules { .. }
-            | AIAgentInput::CreateEnvironment { .. }
             | AIAgentInput::TriggerPassiveSuggestion { .. }
             | AIAgentInput::CreateNewProject { .. }
             | AIAgentInput::CloneRepository { .. }

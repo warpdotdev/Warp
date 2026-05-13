@@ -27,14 +27,11 @@ use crate::{
     },
     auth::AuthStateProvider,
     cloud_object::model::persistence::CloudModel,
+    cloud_object::update_manager::UpdateManager,
     network::NetworkStatus,
-    server::cloud_objects::update_manager::UpdateManager,
     settings::{AgentModeCommandExecutionPredicate, PrivacySettings},
     test_util::settings::initialize_settings_for_tests_with_mode,
-    workspaces::{
-        team_tester::TeamTesterStatus, user_workspaces::UserWorkspaces,
-        workspace::SandboxedAgentSettings,
-    },
+    workspaces::{user_workspaces::UserWorkspaces, workspace::SandboxedAgentSettings},
     GlobalResourceHandles, GlobalResourceHandlesProvider, LaunchMode,
 };
 
@@ -76,7 +73,6 @@ fn initialize_permissions_test_with_mode(
     let terminal_view_id = EntityId::new();
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(|_| NetworkStatus::new());
-    app.add_singleton_model(TeamTesterStatus::mock);
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|_| TemplatableMCPServerManager::default());

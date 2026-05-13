@@ -10,15 +10,44 @@ use uuid::{NonNilUuid, Uuid};
 pub mod github_auth_notifier;
 pub mod spawn;
 pub mod task;
-pub mod telemetry;
 
 pub use task::{
-    AgentConfigSnapshot, AgentSource, AmbientAgentTask, AmbientAgentTaskState, TaskStatusMessage,
+    AgentConfigSnapshot, AgentSource, AmbientAgentTask, AmbientAgentTaskState, AttachmentInput,
+    TaskStatusMessage,
 };
 pub const OUT_OF_CREDITS_TASK_FAILURE_MESSAGE: &str =
     "Cloud agent usage limit reached. Please try again later.";
 pub const SERVER_OVERLOADED_TASK_FAILURE_MESSAGE: &str =
     "Warp is temporarily overloaded. Please try again shortly.";
+
+/// JSON payload for starting an agent run. In OpenWarp this is only used by local UI/CLI
+/// plumbing; the cloud `POST /agent/run` endpoint is disabled.
+#[derive(Debug, Clone, Serialize)]
+pub struct SpawnAgentRequest {
+    pub prompt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<AgentConfigSnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team: Option<bool>,
+    /// Use a Claude-compatible skill as the base prompt.
+    /// Format: "repo:skill_name" or just "skill_name".
+    pub skill: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<AttachmentInput>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interactive: Option<bool>,
+    /// Populated when a cloud agent spawns a child run via the public API.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_run_id: Option<String>,
+    /// Base64-encoded `warp.multi_agent.v1.Skill` payloads to restore as runtime skills.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub runtime_skills: Vec<String>,
+    /// Base64-encoded `warp.multi_agent.v1.Attachment` payloads to restore as referenced attachments.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub referenced_attachments: Vec<String>,
+}
 
 #[derive(Debug, thiserror::Error)]
 #[error("Invalid task ID: {0}")]
@@ -40,12 +69,6 @@ impl FromStr for AmbientAgentTaskId {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let uuid = Uuid::try_parse(s)?;
         Ok(Self(NonNilUuid::try_from(uuid)?))
-    }
-}
-
-impl From<AmbientAgentTaskId> for cynic::Id {
-    fn from(id: AmbientAgentTaskId) -> Self {
-        Self::new(id.to_string())
     }
 }
 

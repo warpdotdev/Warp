@@ -63,8 +63,8 @@ const CLOUD_MODE_V2_CHIPS_ROW_TOP_PADDING: f32 = 4.;
 
 impl Input {
     pub fn is_cloud_mode_input_v2_composing(&self, app: &AppContext) -> bool {
-        FeatureFlag::CloudModeInputV2.is_enabled()
-            && FeatureFlag::CloudMode.is_enabled()
+        false
+            && false
             && self
                 .ambient_agent_view_model
                 .as_ref(app)
@@ -116,7 +116,7 @@ impl Input {
             }
         }
 
-        let show_harness_row = FeatureFlag::CloudMode.is_enabled()
+        let show_harness_row = false
             && FeatureFlag::AgentHarness.is_enabled()
             && self
                 .ambient_agent_view_model

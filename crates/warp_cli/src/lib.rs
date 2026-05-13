@@ -21,23 +21,17 @@ pub mod agent;
 pub mod completions;
 pub mod config_file;
 // OpenWarp Wave 7-2:`environment` CLI 随 cloud ambient agent 主体子系统物理删。
-pub mod federate;
 pub mod harness_support;
 pub mod integration;
 pub mod json_filter;
 pub mod mcp;
 pub mod model;
 pub mod provider;
-pub mod secret;
 pub mod share;
-pub mod task;
 pub const OZ_RUN_ID_ENV: &str = "OZ_RUN_ID";
 pub const OZ_PARENT_RUN_ID_ENV: &str = "OZ_PARENT_RUN_ID";
 pub const OZ_CLI_ENV: &str = "OZ_CLI";
 pub const OZ_HARNESS_ENV: &str = "OZ_HARNESS";
-pub const SERVER_ROOT_URL_OVERRIDE_ENV: &str = "WARP_SERVER_ROOT_URL";
-pub const WS_SERVER_URL_OVERRIDE_ENV: &str = "WARP_WS_SERVER_URL";
-pub const SESSION_SHARING_SERVER_URL_OVERRIDE_ENV: &str = "WARP_SESSION_SHARING_SERVER_URL";
 
 /// Options related to the parent process that spawned this Warp instance.
 #[derive(Debug, Default, Clone, clap::Args)]
@@ -92,13 +86,13 @@ pub struct GlobalOptions {
 #[command(
     name = "oz",
     display_name = "Oz",
-    about = r#"The orchestration platform for cloud agents
+    about = r#"OpenWarp local agent CLI
 
-The Oz CLI is a tool for running, managing, and orchestrating coding agents at scale.
+The Oz CLI is a tool for running and managing local coding agents.
 Use the CLI to:
-* Launch and inspect cloud agents
-* Manage the environments that cloud agents run in
-* Upload secrets to Oz's secure storage"#
+* Launch and inspect local agents
+* Manage local runs
+* Configure local providers and MCP servers"#
 )]
 #[clap(args_conflicts_with_subcommands = true)]
 pub struct Args {
@@ -108,33 +102,6 @@ pub struct Args {
     /// Enable debug mode.
     #[arg(long = "debug", global = true, help = "Enable debug logging")]
     debug: bool,
-
-    /// Override the server root URL.
-    #[arg(
-        long = "server-root-url",
-        global = true,
-        hide = true,
-        env = "WARP_SERVER_ROOT_URL"
-    )]
-    server_root_url: Option<String>,
-
-    /// Override the websocket server URL.
-    #[arg(
-        long = "ws-server-url",
-        global = true,
-        hide = true,
-        env = "WARP_WS_SERVER_URL"
-    )]
-    ws_server_url: Option<String>,
-
-    /// Override the session sharing server URL.
-    #[arg(
-        long = "session-sharing-server-url",
-        global = true,
-        hide = true,
-        env = "WARP_SESSION_SHARING_SERVER_URL"
-    )]
-    session_sharing_server_url: Option<String>,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -198,22 +165,18 @@ impl Args {
                     }
                 }
 
-                if !FeatureFlag::WarpManagedSecrets.is_enabled() {
-                    let args: Vec<String> = env::args().collect();
-                    if args.len() > 1 && args[1] == "secret" {
-                        eprintln!("error: unrecognized subcommand 'secret'\n");
-                        eprintln!("For more information, try '--help'");
-                        std::process::exit(2);
-                    }
+                let args: Vec<String> = env::args().collect();
+                if args.len() > 1 && args[1] == "secret" {
+                    eprintln!("error: unrecognized subcommand 'secret'\n");
+                    eprintln!("For more information, try '--help'");
+                    std::process::exit(2);
                 }
 
-                if !FeatureFlag::OzIdentityFederation.is_enabled() {
-                    let args: Vec<String> = env::args().collect();
-                    if args.len() > 1 && args[1] == "federate" {
-                        eprintln!("error: unrecognized subcommand 'federate'\n");
-                        eprintln!("For more information, try '--help'");
-                        std::process::exit(2);
-                    }
+                let args: Vec<String> = env::args().collect();
+                if args.len() > 1 && args[1] == "federate" {
+                    eprintln!("error: unrecognized subcommand 'federate'\n");
+                    eprintln!("For more information, try '--help'");
+                    std::process::exit(2);
                 }
 
                 if !FeatureFlag::ArtifactCommand.is_enabled() {
@@ -247,26 +210,15 @@ impl Args {
         let mut command = <Args as CommandFactory>::command();
 
         // OpenWarp Wave 7-2:`environment` 子命令与 `--environment` 参数随 cloud ambient agent
-        // 主体物理删 —— enum variant 已从 `CliCommand` 和 `RunAgentArgs` / `RunCloudArgs`
-        // 移除,无需 `mut_subcommand` 隐藏。
+        // 主体物理删 —— enum variant 已从 `CliCommand` 和 `RunAgentArgs` 移除。
 
         // CloudConversations was removed in OpenWarp; the --conversation flag is
         // always hidden from help text.
         command = command.mut_subcommand("agent", |agent_cmd| {
-            agent_cmd
-                .mut_subcommand("run", |run_cmd| {
-                    run_cmd.mut_arg("conversation", |arg| arg.hide(true))
-                })
-                .mut_subcommand("run-cloud", |cloud_cmd| {
-                    cloud_cmd.mut_arg("conversation", |arg| arg.hide(true))
-                })
+            agent_cmd.mut_subcommand("run", |run_cmd| {
+                run_cmd.mut_arg("conversation", |arg| arg.hide(true))
+            })
         });
-
-        if !FeatureFlag::AmbientAgentsCommandLine.is_enabled() {
-            command = command.mut_subcommand("agent", |agent_cmd| {
-                agent_cmd.mut_subcommand("run-cloud", |c| c.hide(true))
-            });
-        }
 
         // Hide the provider subcommand from help text
         if !FeatureFlag::ProviderCommand.is_enabled() {
@@ -278,26 +230,9 @@ impl Args {
             command = command.mut_subcommand("integration", |c| c.hide(true));
         }
 
-        // Hide the secret subcommand from help text.
-        if !FeatureFlag::WarpManagedSecrets.is_enabled() {
-            command = command.mut_subcommand("secret", |c| c.hide(true));
-        }
-
-        // Hide the federate subcommand from help text.
-        if !FeatureFlag::OzIdentityFederation.is_enabled() {
-            command = command.mut_subcommand("federate", |c| c.hide(true));
-        }
-
         // Hide the harness-support subcommand from help text.
         if !FeatureFlag::AgentHarness.is_enabled() {
             command = command.mut_subcommand("harness-support", |c| c.hide(true));
-        }
-
-        // Hide the message subcommand from help text.
-        if !FeatureFlag::OrchestrationV2.is_enabled() {
-            command = command.mut_subcommand("run", |run_cmd| {
-                run_cmd.mut_subcommand("message", |c| c.hide(true))
-            });
         }
 
         // Hide the artifact subcommand from help text.
@@ -361,18 +296,6 @@ impl Args {
     /// Returns true if debug logging is enabled.
     pub fn debug(&self) -> bool {
         self.debug
-    }
-
-    pub fn server_root_url(&self) -> Option<&str> {
-        self.server_root_url.as_deref()
-    }
-
-    pub fn ws_server_url(&self) -> Option<&str> {
-        self.ws_server_url.as_deref()
-    }
-
-    pub fn session_sharing_server_url(&self) -> Option<&str> {
-        self.session_sharing_server_url.as_deref()
     }
 }
 
@@ -445,10 +368,6 @@ pub enum CliCommand {
     #[command(subcommand)]
     MCP(crate::mcp::MCPCommand),
 
-    /// Manage runs.
-    #[command(subcommand, alias = "task")]
-    Run(crate::task::TaskCommand),
-
     /// Manage available models.
     #[command(subcommand)]
     Model(crate::model::ModelCommand),
@@ -465,14 +384,6 @@ pub enum CliCommand {
     /// Manage integrations.
     #[command(subcommand)]
     Integration(crate::integration::IntegrationCommand),
-
-    /// Manage secrets.
-    #[command(subcommand)]
-    Secret(crate::secret::SecretCommand),
-
-    /// Issue and manage federated identity tokens.
-    #[command(subcommand)]
-    Federate(crate::federate::FederateCommand),
 
     /// Support commands for agent harnesses to integrate with Oz.
     #[command(hide = true)]

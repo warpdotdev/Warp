@@ -61,9 +61,6 @@ pub(crate) fn redact_inputs(inputs: &mut [AIAgentInput]) {
                     redact_secrets(p);
                 }
             }
-            AIAgentInput::CreateEnvironment { context, .. } => {
-                redact_context(Arc::make_mut(context));
-            }
             AIAgentInput::TriggerPassiveSuggestion {
                 context,
                 attachments,

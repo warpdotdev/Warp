@@ -1,19 +1,11 @@
 use warpui::{platform::WindowStyle, App};
 
 use crate::{
-    cloud_object::model::persistence::CloudModel,
-    network::NetworkStatus,
-    server::{
-        cloud_objects::update_manager::UpdateManager, server_api::ServerApiProvider,
-        telemetry::context_provider::AppTelemetryContextProvider,
-    },
-    settings_view::keybindings::KeybindingChangedNotifier,
-    system::SystemStats,
+    auth::AuthManager, cloud_object::model::persistence::CloudModel,
+    cloud_object::update_manager::UpdateManager, network::NetworkStatus,
+    settings_view::keybindings::KeybindingChangedNotifier, system::SystemStats,
     test_util::settings::initialize_settings_for_tests,
-    workspaces::{
-        team_tester::TeamTesterStatus, update_manager::TeamUpdateManager,
-        user_workspaces::UserWorkspaces,
-    },
+    workspaces::user_workspaces::UserWorkspaces,
 };
 
 use super::*;
@@ -21,16 +13,12 @@ use super::*;
 fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
 
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(TeamTesterStatus::mock);
-    app.add_singleton_model(TeamUpdateManager::mock);
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(|_| ResizableData::default());

@@ -6,7 +6,6 @@ use crate::ai::blocklist::{RequestInput, ResponseStreamId, SerializedBlockListIt
 use crate::code_review::CodeReviewTelemetryEvent;
 use crate::notebooks::NotebookId;
 use crate::persistence::model::{ConversationUsageMetadata, ModelTokenUsage, ToolUsageMetadata};
-use crate::server::ids::ServerId;
 use crate::terminal::general_settings::GeneralSettings;
 use crate::terminal::model::block::{
     AgentInteractionMetadata, AgentViewVisibility, BlockId, SerializedAIMetadata, SerializedBlock,
@@ -775,12 +774,6 @@ impl AIConversation {
     /// This ensures we only send the forked_from token once during session sharing.
     pub(crate) fn clear_forked_from_server_conversation_token(&mut self) {
         self.forked_from_server_conversation_token = None;
-    }
-
-    pub fn server_id(&self) -> Option<ServerId> {
-        self.server_metadata
-            .as_ref()
-            .map(|metadata| metadata.metadata.uid)
     }
 
     pub fn server_metadata(&self) -> Option<&ServerAIConversationMetadata> {
@@ -3631,8 +3624,7 @@ pub struct AIAgentConversationFormat {
     pub block_snapshot: Option<AIAgentSerializedBlockFormat>,
 }
 
-/// Metadata for an AI conversation, containing all information from the GraphQL API
-/// except the full task list data.
+/// Metadata for an AI conversation, containing restore data outside the full task list data.
 #[derive(Debug, Clone)]
 pub struct ServerAIConversationMetadata {
     /// The title of the conversation.
@@ -3646,12 +3638,6 @@ pub struct ServerAIConversationMetadata {
 
     /// Usage metadata including token counts, credits spent, etc.
     pub usage: ConversationUsageMetadata,
-
-    /// Server metadata (revision, timestamps, creator info, etc.).
-    pub metadata: crate::cloud_object::ServerMetadata,
-
-    /// Permissions for this conversation (space, guests, link sharing).
-    pub permissions: crate::cloud_object::ServerPermissions,
 
     /// The ID of the associated ambient agent task, if any.
     pub ambient_agent_task_id: Option<crate::ai::ambient_agents::AmbientAgentTaskId>,

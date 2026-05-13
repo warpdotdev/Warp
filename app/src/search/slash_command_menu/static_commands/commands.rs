@@ -36,19 +36,6 @@ pub static PR_COMMENTS: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand
     argument: None,
 });
 
-pub static CREATE_ENVIRONMENT: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
-    name: "/create-environment",
-    description: t_static!("slash-cmd-create-environment-desc"),
-    icon_path: "bundled/svg/dataflow.svg",
-    availability: Availability::AI_ENABLED,
-    auto_enter_ai_mode: false,
-    argument: Some(
-        Argument::optional()
-            .with_hint_text(t_static!("slash-cmd-create-environment-hint"))
-            .with_execute_on_selection(),
-    ),
-});
-
 pub static CREATE_DOCKER_SANDBOX: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
     name: "/docker-sandbox",
     description: t_static!("slash-cmd-docker-sandbox-desc"),
@@ -332,15 +319,6 @@ pub static FORK_FROM: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
     argument: None,
 });
 
-pub static REMOTE_CONTROL: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
-    name: "/remote-control",
-    description: t_static!("slash-cmd-remote-control-desc"),
-    icon_path: "bundled/svg/phone-01.svg",
-    availability: Availability::AI_ENABLED,
-    auto_enter_ai_mode: false,
-    argument: None,
-});
-
 pub static CONVERSATIONS: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
     name: "/conversations",
     description: t_static!("slash-cmd-conversations-desc"),
@@ -477,12 +455,6 @@ fn all_commands() -> Vec<StaticCommand> {
         commands.push(CREATE_DOCKER_SANDBOX.clone());
     }
 
-    if FeatureFlag::CreatingSharedSessions.is_enabled()
-        && FeatureFlag::HOARemoteControl.is_enabled()
-    {
-        commands.push(REMOTE_CONTROL.clone());
-    }
-
     if FeatureFlag::Changelog.is_enabled() {
         commands.push(CHANGELOG.clone());
     }
@@ -492,10 +464,6 @@ fn all_commands() -> Vec<StaticCommand> {
     }
 
     commands.push(OPEN_CODE_REVIEW.clone());
-
-    if FeatureFlag::CreateEnvironmentSlashCommand.is_enabled() {
-        commands.push(CREATE_ENVIRONMENT.clone());
-    }
 
     if FeatureFlag::CreateProjectFlow.is_enabled() {
         commands.push(CREATE_NEW_PROJECT.clone());

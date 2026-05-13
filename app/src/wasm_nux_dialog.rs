@@ -219,9 +219,6 @@ impl View for WasmNUXDialog {
         } else {
             let object_kind = match web_intent_parser::current_web_intent() {
                 Some(WebIntent::DriveObject(_)) => crate::t!("wasm-nux-object-kind-drive-objects"),
-                Some(WebIntent::SessionView(_)) => {
-                    crate::t!("wasm-nux-object-kind-shared-sessions")
-                }
                 _ => crate::t!("wasm-nux-object-kind-warp-links"),
             };
 
@@ -283,7 +280,7 @@ impl TypedActionView for WasmNUXDialog {
                 }
             }
             WasmNUXDialogAction::OpenDownloadDesktopAppLink => {
-                ctx.open_url("https://app.warp.dev/get_warp");
+                ctx.open_url("https://warp.dev/download");
                 self.requested_download = true;
                 ctx.notify();
             }

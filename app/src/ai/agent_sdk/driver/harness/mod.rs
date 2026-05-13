@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fmt;
@@ -14,16 +13,13 @@ use warp_managed_secrets::ManagedSecretValue;
 use warpui::{ModelHandle, ModelSpawner, SingletonEntity};
 
 use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::agent_events::AgentEventStreamClient;
+use crate::ai::agent_sdk::harness_support_client::HarnessSupportClient;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::server::server_api::harness_support::HarnessSupportClient;
-use crate::server::server_api::AgentEventStreamClient;
 use crate::terminal::cli_agent_sessions::{CLIAgentSessionStatus, CLIAgentSessionsModel};
 use crate::terminal::CLIAgent;
 use crate::util::path::resolve_executable;
-use warp_cli::{
-    OZ_CLI_ENV, OZ_HARNESS_ENV, OZ_PARENT_RUN_ID_ENV, OZ_RUN_ID_ENV, SERVER_ROOT_URL_OVERRIDE_ENV,
-    SESSION_SHARING_SERVER_URL_OVERRIDE_ENV, WS_SERVER_URL_OVERRIDE_ENV,
-};
+use warp_cli::{OZ_CLI_ENV, OZ_HARNESS_ENV, OZ_PARENT_RUN_ID_ENV, OZ_RUN_ID_ENV};
 use warp_core::channel::ChannelState;
 
 use super::terminal::{CommandHandle, TerminalDriver};
@@ -275,28 +271,6 @@ fn task_env_vars_for_harness_name(
     }
     // Server URL overrides are disabled on release channels, so there's no
     // override to propagate to child processes there.
-    if ChannelState::channel().allows_server_url_overrides() {
-        insert_non_empty_task_env_var(
-            &mut env_vars,
-            SERVER_ROOT_URL_OVERRIDE_ENV,
-            ChannelState::server_root_url().into_owned(),
-        );
-        insert_non_empty_task_env_var(
-            &mut env_vars,
-            WS_SERVER_URL_OVERRIDE_ENV,
-            ChannelState::ws_server_url().into_owned(),
-        );
-        if let Some(url) = ChannelState::session_sharing_server_url()
-            .map(Cow::into_owned)
-            .filter(|url| !url.is_empty())
-        {
-            env_vars.insert(
-                OsString::from(SESSION_SHARING_SERVER_URL_OVERRIDE_ENV),
-                OsString::from(url),
-            );
-        }
-    }
-
     env_vars
 }
 

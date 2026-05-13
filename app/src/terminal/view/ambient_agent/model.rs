@@ -4,7 +4,6 @@ use instant::Instant;
 use session_sharing_protocol::common::SessionId;
 use warp_cli::agent::Harness;
 use warp_core::features::FeatureFlag;
-use warp_core::send_telemetry_from_ctx;
 use warpui::r#async::{SpawnedFutureHandle, Timer};
 use warpui::{Entity, EntityId, ModelContext, SingletonEntity};
 
@@ -12,19 +11,14 @@ use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent_conversations_model::AgentConversationsModel;
 use crate::ai::ambient_agents::spawn::{spawn_task, AmbientAgentEvent};
 use crate::ai::ambient_agents::task::HarnessConfig;
-use crate::ai::ambient_agents::telemetry::CloudAgentTelemetryEvent;
-use crate::ai::ambient_agents::{AmbientAgentTaskId, AmbientAgentTaskState};
 use crate::ai::ambient_agents::{
-    OUT_OF_CREDITS_TASK_FAILURE_MESSAGE, SERVER_OVERLOADED_TASK_FAILURE_MESSAGE,
+    AgentConfigSnapshot, AmbientAgentTaskId, AmbientAgentTaskState, AttachmentInput,
+    SpawnAgentRequest, OUT_OF_CREDITS_TASK_FAILURE_MESSAGE, SERVER_OVERLOADED_TASK_FAILURE_MESSAGE,
 };
+use crate::ai::api_error::{AIApiError, CloudAgentCapacityError};
 use crate::ai::blocklist::BlocklistAIHistoryModel;
-use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::execution_profiles::{CloudAgentComputerUseState, ComputerUsePermission};
 use crate::ai::llms::{LLMId, LLMPreferences};
-use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
-use crate::server::ids::{ServerId, SyncId};
-use crate::server::server_api::ai::{AgentConfigSnapshot, AttachmentInput, SpawnAgentRequest};
-use crate::server::server_api::{AIApiError, CloudAgentCapacityError};
 use crate::terminal::view::ambient_agent::SetupCommandState;
 
 use super::AmbientAgentProgressUIState;
@@ -85,9 +79,6 @@ pub struct AmbientAgentViewModel {
     /// `true` for nested views (pushed onto an existing terminal's pane stack).
     has_parent_terminal: bool,
 
-    /// Selected cloud environment to launch the ambient agent with.
-    environment_id: Option<SyncId>,
-
     /// Handle for the periodic timer that updates progress durations.
     progress_timer_handle: Option<SpawnedFutureHandle>,
 
@@ -121,18 +112,6 @@ impl AmbientAgentViewModel {
         has_parent_terminal: bool,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
-        ctx.subscribe_to_model(&CloudModel::handle(ctx), |me, event, ctx| {
-            me.handle_cloud_model_event(event, ctx);
-        });
-
-        // Validate the default environment once Warp Drive sync completes.
-        // The environment ID may be restored from settings before environments are synced,
-        // so we need to validate it once the initial load is complete.
-        let initial_load_complete = CloudModel::as_ref(ctx).initial_load_complete();
-        ctx.spawn(initial_load_complete, |me, _, ctx| {
-            me.validate_environment_after_initial_load(ctx);
-        });
-
         let ui_state = AmbientAgentProgressUIState::new(ctx);
 
         Self {
@@ -140,7 +119,6 @@ impl AmbientAgentViewModel {
             request: None,
             terminal_view_id,
             has_parent_terminal,
-            environment_id: None,
             progress_timer_handle: None,
             ui_state,
             setup_commands_state: Default::default(),
@@ -175,51 +153,6 @@ impl AmbientAgentViewModel {
         }
     }
 
-    /// Handles CloudModel events to keep environment_id in sync.
-    fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ModelContext<Self>) {
-        match event {
-            // If the selected environment is deleted, clear the selection.
-            CloudModelEvent::ObjectTrashed { type_and_id, .. }
-            | CloudModelEvent::ObjectDeleted { type_and_id, .. } => {
-                if type_and_id.as_generic_string_object_id() == self.environment_id
-                    && self.environment_id.is_some()
-                {
-                    self.environment_id = None;
-                    ctx.emit(AmbientAgentViewModelEvent::EnvironmentSelected);
-                }
-            }
-            // When an environment syncs and gets a ServerId, update our stored ID.
-            CloudModelEvent::ObjectSynced {
-                client_id,
-                server_id,
-                ..
-            } => {
-                if let Some(current_id) = &self.environment_id {
-                    // Check if this is our environment by comparing with the ClientId
-                    if current_id == &SyncId::ClientId(*client_id) {
-                        self.environment_id = Some(SyncId::ServerId(*server_id));
-                        ctx.emit(AmbientAgentViewModelEvent::EnvironmentSelected);
-                    }
-                }
-            }
-            _ => (),
-        }
-    }
-
-    /// Validates the environment ID after Warp Drive initial load completes.
-    /// If the environment no longer exists, clears the selection.
-    fn validate_environment_after_initial_load(&mut self, ctx: &mut ModelContext<Self>) {
-        if let Some(id) = &self.environment_id {
-            if CloudAmbientAgentEnvironment::get_by_id(id, ctx).is_none() {
-                log::warn!(
-                    "Environment {id:?} no longer exists after initial load, clearing selection"
-                );
-                self.environment_id = None;
-                ctx.emit(AmbientAgentViewModelEvent::EnvironmentSelected);
-            }
-        }
-    }
-
     /// Returns the agent progress for tracking spawn steps.
     /// Returns `None` if not in the `WaitingForSession`, `Failed`, `NeedsGithubAuth`, or `Cancelled` state.
     pub fn agent_progress(&self) -> Option<&AgentProgress> {
@@ -230,11 +163,6 @@ impl AmbientAgentViewModel {
             | Status::Cancelled { progress } => Some(progress),
             _ => None,
         }
-    }
-
-    /// Returns the currently selected environment ID.
-    pub fn selected_environment_id(&self) -> Option<&SyncId> {
-        self.environment_id.as_ref()
     }
 
     pub fn selected_harness(&self) -> Harness {
@@ -272,23 +200,6 @@ impl AmbientAgentViewModel {
         }
         self.harness_command_started = true;
         ctx.emit(AmbientAgentViewModelEvent::HarnessCommandStarted);
-    }
-
-    /// Sets the selected environment ID.
-    /// If the given ID does not exist in CloudModel, the environment ID is not changed.
-    pub fn set_environment_id(
-        &mut self,
-        environment_id: Option<SyncId>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if let Some(id) = &environment_id {
-            if CloudAmbientAgentEnvironment::get_by_id(id, ctx).is_none() {
-                log::warn!("Tried to select unknown environment {id:?}");
-                return;
-            }
-        }
-        self.environment_id = environment_id;
-        ctx.emit(AmbientAgentViewModelEvent::EnvironmentSelected);
     }
 
     /// Whether or not this terminal session is for an ambient agent.
@@ -357,7 +268,7 @@ impl AmbientAgentViewModel {
 
     /// Whether or not we should show a status footer (loading, error, auth, or cancelled).
     pub fn should_show_status_footer(&self) -> bool {
-        if FeatureFlag::CloudModeSetupV2.is_enabled() {
+        if false {
             return false;
         }
 
@@ -424,7 +335,6 @@ impl AmbientAgentViewModel {
     /// Reset the status back to NotAmbientAgent.
     pub fn reset_status(&mut self, ctx: &mut ModelContext<Self>) {
         self.status = Status::NotAmbientAgent;
-        self.environment_id = None;
         self.task_id = None;
         self.conversation_id = None;
         self.has_inserted_cloud_mode_user_query_block = false;
@@ -463,7 +373,7 @@ impl AmbientAgentViewModel {
             (self.harness != Harness::Oz).then(|| HarnessConfig::from_harness_type(self.harness));
 
         let config = Some(AgentConfigSnapshot {
-            environment_id: self.environment_id.as_ref().map(|id| id.to_string()),
+            environment_id: None,
             model_id: Some(model_id),
             computer_use_enabled,
             worker_host: default_host,
@@ -495,12 +405,6 @@ impl AmbientAgentViewModel {
     ) {
         // Apply pane settings from the request.
         if let Some(config) = request.config.as_ref() {
-            self.environment_id = config
-                .environment_id
-                .as_deref()
-                .and_then(|id| ServerId::try_from(id).ok())
-                .map(SyncId::ServerId);
-
             if let Some(model_id) = config.model_id.as_deref() {
                 LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
                     prefs.update_preferred_agent_mode_llm(
@@ -643,15 +547,9 @@ impl AmbientAgentViewModel {
                             return;
                         }
                         let error_message = err.to_string();
-                        send_telemetry_from_ctx!(
-                            CloudAgentTelemetryEvent::DispatchFailed {
-                                error: error_message.clone()
-                            },
-                            ctx
-                        );
 
                         // Check if this is a ClientError with an auth_url
-                        use crate::server::server_api::ClientError;
+                        use crate::ai::api_error::ClientError;
                         if let Some(client_error) = err.downcast_ref::<ClientError>() {
                             if let Some(auth_url) = &client_error.auth_url {
                                 me.handle_needs_github_auth(
@@ -863,8 +761,6 @@ pub enum AmbientAgentViewModelEvent {
     SessionReady {
         session_id: SessionId,
     },
-    /// An environment was selected.
-    EnvironmentSelected,
     /// The ambient agent failed.
     Failed {
         error_message: String,

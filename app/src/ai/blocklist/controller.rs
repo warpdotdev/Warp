@@ -31,6 +31,7 @@ use crate::ai::agent::{
 };
 use crate::ai::agent::{DocumentContentAttachmentSource, FileContext};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
+use crate::ai::api_error::AIApiError;
 use crate::ai::document::ai_document_model::{
     AIDocumentId, AIDocumentModel, AIDocumentUserEditStatus,
 };
@@ -50,7 +51,6 @@ use crate::network::NetworkStatus;
 use crate::notebooks::editor::model::FileLinkResolutionContext;
 use crate::persistence::ModelEvent;
 use crate::search::slash_command_menu::static_commands::commands;
-use crate::server::server_api::AIApiError;
 use crate::terminal::model::block::{
     formatted_terminal_contents_for_input, BlockId, CURSOR_MARKER,
 };
@@ -61,7 +61,6 @@ use crate::terminal::{
     model::terminal_model::TerminalModel,
     ShellLaunchData,
 };
-use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::{send_telemetry_from_ctx, server::telemetry::TelemetryEvent};
 use anyhow::anyhow;
 use chrono::{DateTime, Local};
@@ -2314,7 +2313,7 @@ impl BlocklistAIController {
                 .await;
                 (pending_title_generation.task_id, result)
             },
-            move |me, (task_id, result), ctx| match result {
+            move |_me, (task_id, result), ctx| match result {
                 Ok(Some(title)) => {
                     log::info!("[byop] title generated: {title:?}");
                     let client_actions = vec![ClientAction {
@@ -2323,26 +2322,6 @@ impl BlocklistAIController {
                             description: title,
                         })),
                     }];
-                    let response_event = warp_multi_agent_api::ResponseEvent {
-                        r#type: Some(warp_multi_agent_api::response_event::Type::ClientActions(
-                            warp_multi_agent_api::response_event::ClientActions {
-                                actions: client_actions.clone(),
-                            },
-                        )),
-                    };
-                    if FeatureFlag::AgentSharedSessions.is_enabled() {
-                        let participant_id = me
-                            .get_current_response_initiator()
-                            .or_else(|| me.get_sharer_participant_id());
-                        let mut model = me.terminal_model.lock();
-                        if model.shared_session_status().is_sharer() {
-                            model.send_agent_response_for_shared_session(
-                                &response_event,
-                                participant_id,
-                                None,
-                            );
-                        }
-                    }
                     BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
                         match history_model.apply_client_actions(
                             &stream_id,
@@ -2401,36 +2380,6 @@ impl BlocklistAIController {
                 let history_model = BlocklistAIHistoryModel::handle(ctx);
                 match event {
                     Ok(event) => {
-                        // If this controller is part of a shared session, forward the entire response event to viewers first.
-                        if FeatureFlag::AgentSharedSessions.is_enabled() {
-                            let mut model = self.terminal_model.lock();
-                            if model.shared_session_status().is_sharer() {
-                                // Get the participant who initiated this response, falling back to the sharer if needed.
-                                let participant_id = self
-                                    .get_current_response_initiator()
-                                    .or_else(|| self.get_sharer_participant_id());
-
-                                // For forked conversations (e.g. when loading from cloud), include
-                                // the original conversation token so viewers can link the new
-                                // server-assigned token to their existing conversation.
-                                //
-                                // This token is cleared after the first Init event (see below),
-                                // so it's only sent once per forked conversation.
-                                let forked_from_token = history_model
-                                    .as_ref(ctx)
-                                    .conversation(&conversation_id)
-                                    .and_then(|conv| {
-                                        conv.forked_from_server_conversation_token()
-                                            .map(|t| t.as_str().to_string())
-                                    });
-
-                                model.send_agent_response_for_shared_session(
-                                    &event,
-                                    participant_id,
-                                    forked_from_token,
-                                );
-                            }
-                        }
                         let Some(event) = event.r#type else {
                             return;
                         };
@@ -2513,16 +2462,6 @@ impl BlocklistAIController {
                     }
                     Err(e) => {
                         if matches!(e.as_ref(), AIApiError::QuotaLimit) {
-                            // If the error is a quota limit, we want to refresh workspace metadata
-                            // So the current state of AI overages is immediately up to date.
-                            TeamUpdateManager::handle(ctx).update(
-                                ctx,
-                                |team_update_manager, ctx| {
-                                    std::mem::drop(
-                                        team_update_manager.refresh_workspace_metadata(ctx),
-                                    );
-                                },
-                            );
                             // OpenWarp(Phase 3c A1):删除
                             // `AIRequestUsageModel::enable_buy_credits_banner` 调用。
                             // 本地化后 BYOP 场景下不存在"购买额外 credits"业务。
@@ -2609,17 +2548,6 @@ impl BlocklistAIController {
                 }
 
                 if let Some(stream_cancellation) = &cancellation {
-                    // If this is a shared session, send a synthetic StreamFinished event to notify viewers
-                    // of any user-initiated cancellation. We skip FollowUpSubmitted because that's an internal
-                    // cancellation for continuing the conversation.
-                    if FeatureFlag::AgentSharedSessions.is_enabled()
-                        && !stream_cancellation
-                            .reason
-                            .is_follow_up_for_same_conversation()
-                    {
-                        self.send_cancellation_to_viewers(ctx);
-                    }
-
                     history_model.update(ctx, |history_model, ctx| {
                         history_model.mark_response_stream_cancelled(
                             &stream_id,
@@ -2634,9 +2562,7 @@ impl BlocklistAIController {
                         self.set_input_mode_for_cancellation(ctx);
                     }
                 } else if is_any_exchange_unfinished {
-                    log::warn!(
-                        "generate_multi_agent_output stream ended without emitting StreamFinished event."
-                    );
+                    log::warn!("AI response stream ended without emitting StreamFinished event.");
 
                     let error_message = "Request did not successfully complete";
                     history_model.update(ctx, |history_model, ctx| {

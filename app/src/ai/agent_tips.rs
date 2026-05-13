@@ -441,13 +441,9 @@ pub struct AITipModel<T: AITip> {
 
 impl<T: AITip + 'static> AITipModel<T> {
     /// Creates a new AITipModel with the given tips.
-    /// Selects a random initial tip from the provided tips.
-    ///
-    /// # Panics
-    /// Panics if the tips vector is empty.
+    /// Selects a random initial tip from the provided tips, if any.
     pub fn new(tips: Vec<T>) -> Self {
         use rand::seq::SliceRandom;
-        debug_assert!(!tips.is_empty(), "AITipModel must have at least one tip");
 
         let mut rng = rand::thread_rng();
         let current_tip = tips.choose(&mut rng).cloned();

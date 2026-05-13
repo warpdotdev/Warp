@@ -875,7 +875,7 @@ impl BlocklistAIStatusBar {
     }
 
     fn render_cloud_mode_setup_status(&self, app: &AppContext) -> Option<Box<dyn Element>> {
-        if !FeatureFlag::CloudModeSetupV2.is_enabled() {
+        if !false {
             return None;
         }
 
@@ -907,7 +907,7 @@ impl BlocklistAIStatusBar {
     }
 
     fn render_cloud_mode_setup_terminal_message(&self, app: &AppContext) -> Option<Message> {
-        if !FeatureFlag::CloudModeSetupV2.is_enabled() {
+        if !false {
             return None;
         }
 
@@ -1144,7 +1144,7 @@ impl View for BlocklistAIStatusBar {
         let status_element =
             if let Some(cloud_mode_setup_status) = self.render_cloud_mode_setup_status(app) {
                 cloud_mode_setup_status
-            } else if FeatureFlag::CloudModeSetupV2.is_enabled()
+            } else if false
                 && is_cloud_agent_pre_first_exchange(
                     &self.ambient_agent_view_model,
                     &self.agent_view_controller,

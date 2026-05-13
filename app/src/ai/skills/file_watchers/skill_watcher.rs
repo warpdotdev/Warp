@@ -25,7 +25,7 @@ use ai::skills::{
 use async_channel::Sender;
 use chrono::{DateTime, Duration, Utc};
 use repo_metadata::{
-    repositories::{DetectedRepositories, RepoDetectionSource},
+    repositories::DetectedRepositories,
     repository::{Repository, SubscriberId},
     DirectoryWatcher, RepoMetadataModel, RepositoryUpdate,
 };
@@ -188,27 +188,6 @@ impl SkillWatcher {
                 | RepoMetadataEvent::FileTreeUpdated { .. }
                 | RepoMetadataEvent::UpdatingRepositoryFailed { .. }
                 | RepoMetadataEvent::IncrementalUpdateReady { .. } => {}
-            }
-        });
-
-        // Subscribe to DetectedRepositories to watch repos registered via CloudEnvironmentPrep.
-        // This fires when AgentDriver calls prepare_environment (for any run with a configured
-        // environment, Warp-hosted or self-hosted). The CloudEnvironmentPrep source filter means
-        // this is a no-op on local runs where no environment is configured.
-        ctx.subscribe_to_model(&DetectedRepositories::handle(ctx), |me, event, ctx| {
-            use repo_metadata::repositories::DetectedRepositoriesEvent;
-            match event {
-                DetectedRepositoriesEvent::DetectedGitRepo { source, .. }
-                    if *source == RepoDetectionSource::CloudEnvironmentPrep =>
-                {
-                    // The repo root is already registered in DirectoryWatcher by the time
-                    // this event fires. Extract its path from the repository handle.
-                    let DetectedRepositoriesEvent::DetectedGitRepo { repository, .. } = event;
-                    let repo_path = repository.as_ref(ctx).root_dir().to_local_path_lossy();
-                    me.watch_repo(repo_path.clone(), ctx);
-                    me.scan_repository_for_skills(&repo_path, ctx);
-                }
-                DetectedRepositoriesEvent::DetectedGitRepo { .. } => {}
             }
         });
 

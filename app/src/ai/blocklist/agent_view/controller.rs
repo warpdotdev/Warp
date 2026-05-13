@@ -145,7 +145,6 @@ pub enum AgentViewEntryOrigin {
         trigger: SlashCommandTrigger,
     },
     SlashInit,
-    CreateEnvironment,
     /// Entered agent view by executing a slash command that requires agent mode.
     Keybinding,
     /// Entered agent view by attaching context from the code review panel.
@@ -803,17 +802,8 @@ impl AgentViewController {
             .set_agent_view_state(self.agent_view_state.clone());
 
         if origin == AgentViewEntryOrigin::CloudAgent {
-            // Only enter setup state if there are no existing environments.
-            // If environments exist, the user should go directly to composing.
-            let has_environments =
-                !crate::ai::cloud_environments::CloudAmbientAgentEnvironment::get_all(ctx)
-                    .is_empty();
             self.ambient_agent_view_model.update(ctx, |model, ctx| {
-                if has_environments {
-                    model.enter_composing_from_setup(ctx);
-                } else {
-                    model.enter_setup(ctx);
-                }
+                model.enter_composing_from_setup(ctx);
             });
         }
 

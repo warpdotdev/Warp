@@ -3,7 +3,7 @@ use crate::auth::AuthManager;
 use crate::auth::AuthManagerEvent;
 use crate::channel::{Channel, ChannelState};
 // OpenWarp(本地化,Phase 5):`CloudPreferencesSyncer` 已物理删除。
-use crate::settings::{AISettings, CodeSettings};
+use crate::settings::CodeSettings;
 use crate::terminal::general_settings::GeneralSettings;
 use settings::Setting as _;
 use warp_core::features::FeatureFlag;
@@ -17,8 +17,6 @@ use warpui::{Entity, ModelContext, SingletonEntity, WindowId};
 /// conditions are met (e.g., user becomes onboarded).
 pub struct OneTimeModalModel {
     is_build_plan_migration_modal_open: bool,
-    /// Whether the Oz launch modal is currently being shown.
-    is_oz_launch_modal_open: bool,
     /// Whether the OpenWarp launch modal is currently being shown.
     is_openwarp_launch_modal_open: bool,
     /// Whether the HOA onboarding flow is currently being shown.
@@ -55,14 +53,6 @@ impl OneTimeModalModel {
                 // 在云端设置同步完成后触发模态;本地化下直接触发。
                 me.check_and_trigger_all_modals(ctx);
             } else {
-                AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                    if let Err(e) = settings
-                        .did_check_to_trigger_oz_launch_modal
-                        .set_value(true, ctx)
-                    {
-                        log::warn!("Failed to mark Oz launch modal as dismissed: {e}");
-                    }
-                });
                 GeneralSettings::handle(ctx).update(ctx, |settings, ctx| {
                     if let Err(e) = settings
                         .did_check_to_trigger_openwarp_launch_modal
@@ -76,25 +66,15 @@ impl OneTimeModalModel {
 
         Self {
             is_build_plan_migration_modal_open: false,
-            is_oz_launch_modal_open: false,
             is_openwarp_launch_modal_open: false,
             is_hoa_onboarding_open: false,
             target_window_id: None,
         }
     }
 
-    /// Returns whether the Oz launch modal is currently open.
-    pub fn is_oz_launch_modal_open(&self) -> bool {
-        self.is_oz_launch_modal_open && self.target_window_id.is_some()
-    }
-
     /// Returns the window ID where the currently open one-time modal should be displayed.
     pub fn target_window_id(&self) -> Option<WindowId> {
         self.target_window_id
-    }
-
-    pub fn mark_oz_launch_modal_dismissed(&mut self, ctx: &mut ModelContext<Self>) {
-        self.set_oz_launch_modal_open(false, ctx);
     }
 
     /// Returns whether the OpenWarp launch modal is currently open.
@@ -117,16 +97,10 @@ impl OneTimeModalModel {
 
     /// Returns true if any one-time modal is currently open.
     pub fn is_any_modal_open(&self) -> bool {
-        (self.is_oz_launch_modal_open
-            || self.is_openwarp_launch_modal_open
+        (self.is_openwarp_launch_modal_open
             || self.is_build_plan_migration_modal_open
             || self.is_hoa_onboarding_open)
             && self.target_window_id.is_some()
-    }
-
-    #[cfg(debug_assertions)]
-    pub fn force_open_oz_launch_modal(&mut self, ctx: &mut ModelContext<Self>) {
-        self.set_oz_launch_modal_open(true, ctx);
     }
 
     #[cfg(debug_assertions)]
@@ -142,15 +116,6 @@ impl OneTimeModalModel {
                 is_open: self.is_any_modal_open(),
             });
         }
-    }
-
-    fn set_oz_launch_modal_open(&mut self, is_open: bool, ctx: &mut ModelContext<Self>) -> bool {
-        if self.is_oz_launch_modal_open != is_open {
-            self.is_oz_launch_modal_open = is_open;
-            ctx.emit(OneTimeModalEvent::VisibilityChanged { is_open });
-            return true;
-        }
-        false
     }
 
     fn set_openwarp_launch_modal_open(
@@ -182,13 +147,7 @@ impl OneTimeModalModel {
             }
         });
 
-        // The OpenWarp launch modal takes priority over the Oz launch modal
-        // when both are enabled.
         if self.check_and_trigger_openwarp_launch_modal(ctx) {
-            return;
-        }
-
-        if self.check_and_trigger_oz_launch_modal(ctx) {
             return;
         }
 
@@ -226,34 +185,6 @@ impl OneTimeModalModel {
         }
 
         self.set_hoa_onboarding_open(true, ctx)
-    }
-
-    fn check_and_trigger_oz_launch_modal(&mut self, ctx: &mut ModelContext<Self>) -> bool {
-        // Only show if the feature flag is enabled.
-        if !FeatureFlag::OzLaunchModal.is_enabled() {
-            return false;
-        }
-
-        let ai_settings = AISettings::as_ref(ctx);
-        let oz_modal_shown = *ai_settings.did_check_to_trigger_oz_launch_modal;
-
-        // If Oz modal has already been shown, don't show anything.
-        if oz_modal_shown {
-            return false;
-        }
-
-        AISettings::handle(ctx).update(ctx, |settings, ctx| {
-            if let Err(e) = settings
-                .did_check_to_trigger_oz_launch_modal
-                .set_value(true, ctx)
-            {
-                log::warn!("Failed to mark Oz launch modal as dismissed: {e}");
-            }
-        });
-
-        let should_show_oz_modal = !matches!(ChannelState::channel(), Channel::Integration);
-        self.set_oz_launch_modal_open(should_show_oz_modal, ctx);
-        should_show_oz_modal
     }
 
     fn check_and_trigger_openwarp_launch_modal(&mut self, ctx: &mut ModelContext<Self>) -> bool {

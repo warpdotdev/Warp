@@ -1,5 +1,5 @@
 use super::*;
-use crate::server::server_api::ai::AgentRunEvent;
+use crate::ai::agent_events::AgentRunEvent;
 
 fn make_run_event(
     sequence: i64,

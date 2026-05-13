@@ -198,47 +198,6 @@ impl From<api::message::artifact_event::PlanArtifact> for Artifact {
     }
 }
 
-impl TryFrom<warp_graphql::ai::AIConversationArtifact> for Artifact {
-    type Error = ();
-
-    fn try_from(value: warp_graphql::ai::AIConversationArtifact) -> Result<Self, Self::Error> {
-        match value {
-            warp_graphql::ai::AIConversationArtifact::PlanArtifact(plan) => Ok(Artifact::Plan {
-                document_uid: plan.document_uid.into_inner(),
-                notebook_uid: plan
-                    .notebook_uid
-                    .map(|id| NotebookId::from(id.into_inner())),
-                title: plan.title,
-            }),
-            warp_graphql::ai::AIConversationArtifact::PullRequestArtifact(pr) => {
-                let (repo, number) = parse_github_pr_url(&pr.url).unzip();
-                Ok(Artifact::PullRequest {
-                    url: pr.url,
-                    branch: pr.branch,
-                    repo,
-                    number,
-                })
-            }
-            warp_graphql::ai::AIConversationArtifact::ScreenshotArtifact(screenshot) => {
-                Ok(Artifact::Screenshot {
-                    artifact_uid: screenshot.artifact_uid.into_inner(),
-                    mime_type: screenshot.mime_type,
-                    description: screenshot.description,
-                })
-            }
-            warp_graphql::ai::AIConversationArtifact::FileArtifact(file) => Ok(Artifact::File {
-                artifact_uid: file.artifact_uid.into_inner(),
-                filepath: file.filepath.clone(),
-                filename: sanitized_basename(&file.filepath).unwrap_or(file.filepath),
-                mime_type: file.mime_type,
-                description: file.description,
-                size_bytes: file.size_bytes,
-            }),
-            warp_graphql::ai::AIConversationArtifact::Unknown => Err(()),
-        }
-    }
-}
-
 /// Parse GitHub PR URL to extract repo and number.
 /// Expected format: https://github.com/{owner}/{repo}/pull/{number}
 pub fn parse_github_pr_url(url: &str) -> Option<(String, u32)> {

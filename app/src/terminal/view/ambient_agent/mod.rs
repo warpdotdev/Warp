@@ -27,58 +27,7 @@ use warp_core::features::FeatureFlag;
 
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewState};
 use crate::ai::blocklist::BlocklistAIHistoryModel;
-use crate::pane_group::TerminalViewResources;
-use crate::terminal::shared_session;
-use crate::terminal::TerminalManager;
-use crate::terminal::TerminalView;
-use warpui::geometry::vector::Vector2F;
-use warpui::{AppContext, ModelHandle, SingletonEntity, ViewHandle, WindowId};
-
-/// Creates a cloud mode terminal view and manager for ambient agent sessions.
-///
-/// This is used when pushing a new ambient agent view onto an existing pane's navigation stack,
-/// or when creating a standalone ambient agent pane.
-pub fn create_cloud_mode_view(
-    resources: TerminalViewResources,
-    view_bounds_size: Vector2F,
-    window_id: WindowId,
-    ctx: &mut AppContext,
-) -> (
-    ViewHandle<TerminalView>,
-    ModelHandle<Box<dyn TerminalManager>>,
-) {
-    // In Cloud Mode, ambient agent prompts are composed in an uninitialized session-sharing
-    // viewer pane. This lets us reuse the terminal input without a backing session, and
-    // then join the ambient agent session once it's ready.
-    let terminal_manager: ModelHandle<Box<dyn TerminalManager>> = ctx.add_model(|ctx| {
-        Box::new(shared_session::viewer::TerminalManager::new_deferred(
-            resources,
-            view_bounds_size,
-            window_id,
-            ctx,
-        )) as Box<dyn TerminalManager>
-    });
-
-    let terminal_view = terminal_manager.as_ref(ctx).view();
-
-    // Subscribe to the ambient agent view model to join the session once it's ready.
-    // This ensures that we use the manager corresponding to this specific view.
-    let view_model = terminal_view.as_ref(ctx).ambient_agent_view_model().clone();
-    terminal_manager.update(ctx, |_, ctx| {
-        ctx.subscribe_to_model(&view_model, move |manager, event, ctx| {
-            if let AmbientAgentViewModelEvent::SessionReady { session_id } = event {
-                if let Some(manager) = manager
-                    .as_any_mut()
-                    .downcast_mut::<shared_session::viewer::TerminalManager>()
-                {
-                    manager.connect_to_session(*session_id, ctx);
-                }
-            };
-        });
-    });
-
-    (terminal_view, terminal_manager)
-}
+use warpui::{AppContext, ModelHandle, SingletonEntity};
 
 /// Returns `true` when a cloud agent shared session is ready but no agent exchange has been
 /// received yet. In this state, we hide the interactive input and render a loading footer
@@ -88,7 +37,7 @@ pub fn is_cloud_agent_pre_first_exchange(
     agent_view_controller: &ModelHandle<AgentViewController>,
     app: &AppContext,
 ) -> bool {
-    if !(FeatureFlag::CloudMode.is_enabled() && FeatureFlag::AgentView.is_enabled()) {
+    if !(false && FeatureFlag::AgentView.is_enabled()) {
         return false;
     }
 

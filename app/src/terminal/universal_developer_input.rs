@@ -70,7 +70,6 @@ use crate::{
         model::{block::BlockMetadata, session::Sessions},
         profile_model_selector::{ProfileModelSelector, ProfileModelSelectorEvent},
         session_settings::{SessionSettings, SessionSettingsChangedEvent},
-        shared_session::permissions_manager::SessionPermissionsManager,
     },
     ui_components::icons::Icon,
     view_components::action_button::{
@@ -582,10 +581,6 @@ impl UniversalDeveloperInputButtonBar {
             me.notify_and_notify_children(ctx);
         });
 
-        // Keep the control disabled state in sync with role changes
-        ctx.subscribe_to_model(&SessionPermissionsManager::handle(ctx), |me, _, _, ctx| {
-            me.update_segmented_control_disabled_state(ctx);
-        });
         // Keep the control disabled state in sync with agent control state
         ctx.subscribe_to_model(&cli_subagent_controller, move |me, _, _, ctx| {
             me.update_segmented_control_disabled_state(ctx);

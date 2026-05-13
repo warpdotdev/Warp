@@ -16,13 +16,12 @@ use warpui::prelude::{CornerRadius, Radius};
 use warpui::text_layout::TextAlignment;
 use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::components::UiComponent;
-use warpui::{AppContext, ModelHandle, SingletonEntity};
+use warpui::{AppContext, ModelHandle};
 
 use crate::ai::agent_tips::{AITip, AITipModel};
 use crate::ai::loading::shimmering_warp_loading_text;
 use crate::terminal::view::ambient_agent::CloudModeTip;
 use crate::ui_components::blended_colors;
-use crate::workspaces::user_workspaces::UserWorkspaces;
 
 /// Icon size for the error icon
 const ERROR_ICON_SIZE: f32 = 24.;
@@ -138,80 +137,8 @@ fn render_tier_limits_footer(
     appearance: &Appearance,
     app: &AppContext,
 ) -> Option<Box<dyn Element>> {
-    let theme = appearance.theme();
-    let footer_font_size = appearance.monospace_font_size() - 2.;
-
-    // Get tier info and billing metadata from UserWorkspaces
-    let workspace = UserWorkspaces::as_ref(app).current_workspace()?;
-    let policy = workspace.billing_metadata.tier.ambient_agents_policy?;
-
-    let shape = policy.instance_shape.as_ref()?;
-    let specs = format!("{}CPU, {}GB", shape.vcpus, shape.memory_gb);
-
-    // If there's no way to upgrade, don't render the footer at all
-    // (Build Max users can still upgrade to Business plans)
-    if !workspace.billing_metadata.can_upgrade_to_build_plan()
-        && !workspace.billing_metadata.can_upgrade_to_build_max_plan()
-        && !workspace.billing_metadata.is_on_build_max_plan()
-    {
-        return None;
-    }
-
-    let mut fragments = vec![FormattedTextFragment::plain_text(format!(
-        "Your agent is currently running on a {} machine. ",
-        specs
-    ))];
-
-    // Get the upgrade URL for the current team
-    let upgrade_url = UserWorkspaces::as_ref(app)
-        .current_team()
-        .map(|team| UserWorkspaces::upgrade_link_for_team(team.uid))?;
-
-    fragments.push(FormattedTextFragment::hyperlink("Upgrade", upgrade_url));
-    fragments.push(FormattedTextFragment::plain_text(
-        " for more powerful cloud agents.",
-    ));
-
-    let formatted_text = FormattedText::new(vec![FormattedTextLine::Line(fragments)]);
-
-    let text_element = FormattedTextElement::new(
-        formatted_text,
-        footer_font_size,
-        appearance.ui_font_family(),
-        appearance.monospace_font_family(),
-        blended_colors::text_sub(theme, theme.surface_1()),
-        Default::default(),
-    )
-    .with_alignment(TextAlignment::Center)
-    .with_hyperlink_font_color(theme.accent().into())
-    .register_default_click_handlers_with_action_support(|link, _evt, app| {
-        use warpui::elements::HyperlinkLens;
-        if let HyperlinkLens::Url(url) = link {
-            app.open_url(url);
-        }
-    })
-    .finish();
-
-    // Create info icon
-    let icon_size = footer_font_size;
-    let info_icon = ConstrainedBox::new(
-        Icon::Info
-            .to_warpui_icon(blended_colors::text_sub(theme, theme.surface_1()).into())
-            .finish(),
-    )
-    .with_width(icon_size)
-    .with_height(icon_size)
-    .finish();
-
-    Some(
-        Flex::row()
-            .with_main_axis_alignment(MainAxisAlignment::Center)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_spacing(6.)
-            .with_child(info_icon)
-            .with_child(text_element)
-            .finish(),
-    )
+    let _ = (appearance, app);
+    None
 }
 
 /// Renders the cloud mode error screen.

@@ -13,7 +13,7 @@ use crate::ai::agent_sdk::mcp_config::build_mcp_servers_from_specs;
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::aws_credentials::refresh_aws_credentials;
 use crate::ai::llms::LLMId;
-use crate::auth::{AuthManager, AuthManagerEvent};
+use crate::auth::{AuthManager, AuthManagerEvent, OwnerType};
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::workflows::workflow::Workflow;
 use ai::api_keys::{ApiKeyManager, AwsCredentialsRefreshStrategy};
@@ -21,15 +21,11 @@ use anyhow::Context;
 use warp_cli::{
     agent::{AgentCommand, AgentProfileCommand, OutputFormat},
     artifact::ArtifactCommand,
-    federate::FederateCommand,
     harness_support::{HarnessSupportCommand, ReportArtifactCommand, TaskStatus},
     integration::IntegrationCommand,
     mcp::MCPCommand,
     model::ModelCommand,
     provider::ProviderCommand,
-    secret::SecretCommand,
-    share::ShareRequest,
-    task::{MessageCommand, TaskCommand},
     CliCommand, GlobalOptions,
 };
 use warp_core::features::FeatureFlag;
@@ -41,16 +37,13 @@ use warpui::ModelSpawner;
 use warpui::{platform::TerminationMode, AppContext, SingletonEntity};
 
 use crate::{
+    ai::agent_sdk::harness_support_client::{DisabledHarnessSupportClient, HarnessSupportClient},
     ai::ambient_agents::task::HarnessConfig,
+    ai::ambient_agents::AgentConfigSnapshot,
     auth::AuthStateProvider,
     send_telemetry_sync_from_app_ctx,
-    server::server_api::{
-        ai::AgentConfigSnapshot,
-        harness_support::{DisabledHarnessSupportClient, HarnessSupportClient},
-    },
 };
 use driver::AgentDriverError;
-use warp_graphql::object_permissions::OwnerType;
 
 use crate::ai::skills::{
     clone_repo_for_skill, resolve_skill_spec, ResolveSkillError, ResolvedSkill,
@@ -62,25 +55,21 @@ pub(crate) use driver::harness::{
 pub use driver::AgentDriver;
 use telemetry::CliTelemetryEvent;
 use warp_cli::agent::{Harness, Prompt, RunAgentArgs};
-use warp_cli::OZ_HARNESS_ENV;
 
 mod admin;
-mod ambient;
 mod artifact;
 mod common;
 mod config_file;
 pub(crate) mod driver;
-mod federate;
 mod harness_support;
+pub(crate) mod harness_support_client;
 mod mcp;
 mod mcp_config;
 mod model;
-mod oauth_flow;
 pub mod output;
 mod profiles;
 mod provider;
 pub(crate) mod retry;
-mod secret;
 mod telemetry;
 #[cfg(test)]
 mod test_support;
@@ -121,7 +110,6 @@ fn dispatch_command(
     match command {
         CliCommand::Agent(agent_cmd) => run_agent(ctx, global_options, agent_cmd),
         CliCommand::MCP(mcp_cmd) => mcp::run(ctx, global_options, mcp_cmd),
-        CliCommand::Run(task_cmd) => run_task(ctx, global_options, task_cmd),
         CliCommand::Model(model_cmd) => model::run(ctx, global_options, model_cmd),
         CliCommand::Login => admin::login(ctx),
         CliCommand::Whoami => admin::whoami(ctx, global_options.output_format),
@@ -139,18 +127,6 @@ fn dispatch_command(
         #[cfg(target_family = "wasm")]
         CliCommand::Integration(_) => {
             return Err(anyhow::anyhow!("invalid value 'integration'"));
-        }
-        CliCommand::Secret(secret_cmd) => {
-            if !FeatureFlag::WarpManagedSecrets.is_enabled() {
-                return Err(anyhow::anyhow!("invalid value 'secret'"));
-            }
-            secret::run(ctx, global_options, secret_cmd)
-        }
-        CliCommand::Federate(federate_cmd) => {
-            if !FeatureFlag::OzIdentityFederation.is_enabled() {
-                return Err(anyhow::anyhow!("invalid value 'federate'"));
-            }
-            federate::run(ctx, global_options, federate_cmd)
         }
         CliCommand::HarnessSupport(args) => {
             if !FeatureFlag::AgentHarness.is_enabled() {
@@ -246,9 +222,6 @@ fn run_agent(
 
             Ok(())
         }
-        AgentCommand::RunCloud(_) => {
-            Err(anyhow::anyhow!("Cloud agent runs are disabled in OpenWarp"))
-        }
         AgentCommand::Profile(sub) => profiles::run(ctx, global_options, sub),
         AgentCommand::List(_) => Err(anyhow::anyhow!(
             "Cloud agent skill listing is disabled in OpenWarp"
@@ -294,7 +267,7 @@ fn build_merged_config_and_task(
     let mut merged_config = AgentConfigSnapshot {
         // CLI name > skill name > file name
         name: args.name.clone().or(skill_name).or(file_merged.name),
-        environment_id: file_merged.environment_id,
+        environment_id: None,
         model_id: args.model.model.clone().or(file_merged.model_id),
         // Skill base_prompt takes precedence over file base_prompt
         base_prompt: runtime_base_prompt.clone().or(file_merged.base_prompt),
@@ -425,26 +398,6 @@ fn resolve_prompt(prompt: &Prompt, ctx: &AppContext) -> Result<String, AgentDriv
     }
 }
 
-/// Run the task with the provided command.
-fn run_task(
-    ctx: &mut AppContext,
-    global_options: GlobalOptions,
-    command: TaskCommand,
-) -> anyhow::Result<()> {
-    match command {
-        TaskCommand::List(args) => ambient::list_ambient_agent_tasks(ctx, global_options, args),
-        TaskCommand::Get(args) => ambient::get_ambient_agent_task_status(ctx, global_options, args),
-        TaskCommand::Message(message_cmd) => {
-            if !FeatureFlag::OrchestrationV2.is_enabled() {
-                return Err(anyhow::anyhow!(
-                    "The 'message' subcommand is not available in this build"
-                ));
-            }
-            ambient::run_message(ctx, global_options, message_cmd)
-        }
-    }
-}
-
 /// Singleton model that provides a ModelContext for spawning async operations
 /// when starting the agent driver. This is needed because conversation fetching
 /// requires spawning an async task, which requires a ModelContext.
@@ -478,7 +431,6 @@ impl AgentDriverRunner {
 
         let result: Result<(), AgentDriverError> = async {
             // Pull relevant variables out of args before moving it into the closure.
-            let share_requests = args.share.share.clone();
             let bedrock_inference_role = args.bedrock_inference_role.clone();
             let args_harness = args.harness;
 
@@ -562,7 +514,6 @@ impl AgentDriverRunner {
                         ctx,
                         driver_options,
                         output_format,
-                        share_requests,
                         task,
                     );
                 })
@@ -667,8 +618,7 @@ impl AgentDriverRunner {
                     build_merged_config_and_task(&args, &resolved_skill, &prompt_clone, ctx)?.1;
 
                 let task_id = args.task_id.as_ref().and_then(|s| s.parse().ok());
-                let should_share = (args.share.is_shared() || args.task_id.is_some())
-                    && FeatureFlag::AgentSharedSessions.is_enabled();
+                let should_share = false;
 
                 let driver_options = driver::AgentDriverOptions {
                     working_dir: working_dir.clone(),
@@ -679,15 +629,6 @@ impl AgentDriverRunner {
                     secrets: Default::default(),
                     resume: None,
                     selected_harness: args.harness,
-                    snapshot_disabled: args.snapshot.no_snapshot.then_some(true),
-                    snapshot_upload_timeout: args
-                        .snapshot
-                        .snapshot_upload_timeout
-                        .map(|duration| duration.into()),
-                    snapshot_script_timeout: args
-                        .snapshot
-                        .snapshot_script_timeout
-                        .map(|duration| duration.into()),
                 };
 
                 Ok((task, driver_options))
@@ -830,7 +771,6 @@ impl AgentDriverRunner {
         ctx: &mut AppContext,
         driver_options: driver::AgentDriverOptions,
         output_format: OutputFormat,
-        share_requests: Option<Vec<ShareRequest>>,
         task: driver::Task,
     ) {
         maybe_warn_team_api_key(ctx);
@@ -843,9 +783,6 @@ impl AgentDriverRunner {
 
         driver.update(ctx, |driver, ctx| {
             driver.set_output_format(output_format);
-            if let Some(share_requests) = share_requests {
-                driver.add_share_requests(share_requests, ctx);
-            }
             let agent_future = driver.run(task, ctx);
 
             ctx.spawn(agent_future, |_, result, ctx| match result {
@@ -865,7 +802,6 @@ fn command_requires_auth(command: &CliCommand) -> bool {
     match command {
         CliCommand::Agent(agent_cmd) => match agent_cmd {
             AgentCommand::Run { .. } => true,
-            AgentCommand::RunCloud { .. } => true,
             AgentCommand::Profile(sub) => match sub {
                 AgentProfileCommand::List => true,
             },
@@ -874,11 +810,6 @@ fn command_requires_auth(command: &CliCommand) -> bool {
         CliCommand::MCP(mcp_cmd) => match mcp_cmd {
             MCPCommand::List => true,
         },
-        CliCommand::Run(task_cmd) => match task_cmd {
-            TaskCommand::List { .. } => true,
-            TaskCommand::Get { .. } => true,
-            TaskCommand::Message { .. } => true,
-        },
         CliCommand::Model(model_cmd) => match model_cmd {
             ModelCommand::List => true,
         },
@@ -886,8 +817,6 @@ fn command_requires_auth(command: &CliCommand) -> bool {
         CliCommand::Whoami => true,
         CliCommand::Provider(_) => true,
         CliCommand::Integration(_) => true,
-        CliCommand::Secret(_) => true,
-        CliCommand::Federate(_) => true,
         CliCommand::HarnessSupport(_) => true,
         CliCommand::Artifact(artifact_cmd) => match artifact_cmd {
             ArtifactCommand::Upload(_) | ArtifactCommand::Get(_) | ArtifactCommand::Download(_) => {
@@ -992,19 +921,6 @@ fn report_fatal_error(err: anyhow::Error, ctx: &mut AppContext) {
     ctx.terminate_app(TerminationMode::ForceTerminate, Some(Err(error)));
 }
 
-fn resolve_orchestration_harness_label() -> &'static str {
-    let Ok(raw) = std::env::var(OZ_HARNESS_ENV) else {
-        return "unknown";
-    };
-    match Harness::parse_orchestration_harness(&raw) {
-        Some(Harness::Oz) => "oz",
-        Some(Harness::Claude) => "claude",
-        Some(Harness::OpenCode) => "opencode",
-        Some(Harness::Gemini) => "gemini",
-        Some(Harness::Unknown) | None => "unknown",
-    }
-}
-
 /// Map each CLI command into a telemetry event to emit when it's executed.
 fn command_to_telemetry_event(command: &CliCommand) -> CliTelemetryEvent {
     match command {
@@ -1015,31 +931,11 @@ fn command_to_telemetry_event(command: &CliCommand) -> CliTelemetryEvent {
             task_id: args.task_id.clone(),
             harness: args.harness.to_string(),
         },
-        CliCommand::Agent(AgentCommand::RunCloud(_)) => CliTelemetryEvent::AgentRunAmbient,
         CliCommand::Agent(AgentCommand::Profile(sub)) => match sub {
             AgentProfileCommand::List => CliTelemetryEvent::AgentProfileList,
         },
         CliCommand::Agent(AgentCommand::List(_)) => CliTelemetryEvent::AgentList,
         CliCommand::MCP(MCPCommand::List) => CliTelemetryEvent::MCPList,
-        CliCommand::Run(TaskCommand::List(_)) => CliTelemetryEvent::TaskList,
-        CliCommand::Run(TaskCommand::Get(_)) => CliTelemetryEvent::TaskGet,
-        CliCommand::Run(TaskCommand::Message(message_cmd)) => match message_cmd {
-            MessageCommand::Watch(_) => CliTelemetryEvent::RunMessageWatch {
-                harness: resolve_orchestration_harness_label(),
-            },
-            MessageCommand::Send(_) => CliTelemetryEvent::RunMessageSend {
-                harness: resolve_orchestration_harness_label(),
-            },
-            MessageCommand::List(_) => CliTelemetryEvent::RunMessageList {
-                harness: resolve_orchestration_harness_label(),
-            },
-            MessageCommand::Read(_) => CliTelemetryEvent::RunMessageRead {
-                harness: resolve_orchestration_harness_label(),
-            },
-            MessageCommand::MarkDelivered(_) => CliTelemetryEvent::RunMessageMarkDelivered {
-                harness: resolve_orchestration_harness_label(),
-            },
-        },
         CliCommand::Model(ModelCommand::List) => CliTelemetryEvent::ModelList,
         CliCommand::Login => CliTelemetryEvent::Login,
         CliCommand::Whoami => CliTelemetryEvent::Whoami,
@@ -1049,16 +945,6 @@ fn command_to_telemetry_event(command: &CliCommand) -> CliTelemetryEvent {
             IntegrationCommand::Create(_) => CliTelemetryEvent::IntegrationCreate,
             IntegrationCommand::Update(_) => CliTelemetryEvent::IntegrationUpdate,
             IntegrationCommand::List => CliTelemetryEvent::IntegrationList,
-        },
-        CliCommand::Secret(secret_cmd) => match secret_cmd {
-            SecretCommand::Create(_) => CliTelemetryEvent::SecretCreate,
-            SecretCommand::Delete(_) => CliTelemetryEvent::SecretDelete,
-            SecretCommand::Update(_) => CliTelemetryEvent::SecretUpdate,
-            SecretCommand::List(_) => CliTelemetryEvent::SecretList,
-        },
-        CliCommand::Federate(federate_cmd) => match federate_cmd {
-            FederateCommand::IssueToken(_) => CliTelemetryEvent::FederateIssueToken,
-            FederateCommand::IssueGcpToken(_) => CliTelemetryEvent::FederateIssueGcpToken,
         },
         CliCommand::HarnessSupport(args) => match &args.command {
             HarnessSupportCommand::Ping => CliTelemetryEvent::HarnessSupportPing,

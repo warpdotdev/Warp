@@ -6,10 +6,9 @@ use crate::ai::agent::{
 };
 use crate::ai::agent_events::{
     run_agent_event_driver, AgentEventConsumer, AgentEventConsumerControlFlow,
-    AgentEventDriverConfig, AgentEventStreamClientEventSource, MessageHydrator,
+    AgentEventDriverConfig, AgentEventStreamClient, AgentEventStreamClientEventSource,
+    AgentRunEvent, DisabledAgentEventStreamClient, MessageHydrator,
 };
-use crate::server::server_api::ai::AgentRunEvent;
-use crate::server::server_api::{AgentEventStreamClient, DisabledAgentEventStreamClient};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -431,7 +430,7 @@ impl OrchestrationEventStreamer {
         conversation_id: AIConversationId,
         self_run_id: &str,
         previous_cursor: i64,
-        events: Vec<crate::server::server_api::ai::AgentRunEvent>,
+        events: Vec<AgentRunEvent>,
         messages: Vec<ReceivedMessageInput>,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -672,10 +671,7 @@ fn parse_occurred_at(s: &str) -> prost_types::Timestamp {
         })
 }
 
-fn convert_lifecycle_events(
-    events: &[crate::server::server_api::ai::AgentRunEvent],
-    self_run_id: &str,
-) -> Vec<api::AgentEvent> {
+fn convert_lifecycle_events(events: &[AgentRunEvent], self_run_id: &str) -> Vec<api::AgentEvent> {
     events
         .iter()
         .filter(|e| e.event_type != "new_message" && e.run_id != self_run_id)

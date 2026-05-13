@@ -17,7 +17,6 @@ fn write_temp(suffix: &str, contents: &str) -> tempfile::NamedTempFile {
 fn loads_json_and_validates_mcp_servers() {
     let contents = json!({
         "model_id": "gpt-4o",
-        "environment_id": "env-123",
         "base_prompt": "be helpful",
         "mcp_servers": {
             "s": { "command": "npx", "args": [] }
@@ -29,7 +28,6 @@ fn loads_json_and_validates_mcp_servers() {
     let loaded = super::load_config_file(file.path()).unwrap();
 
     assert_eq!(loaded.file.model_id.as_deref(), Some("gpt-4o"));
-    assert_eq!(loaded.file.environment_id.as_deref(), Some("env-123"));
     assert_eq!(loaded.file.base_prompt.as_deref(), Some("be helpful"));
     assert!(loaded.file.mcp_servers.is_some());
     assert!(loaded.file.mcp_servers.as_ref().unwrap().contains_key("s"));

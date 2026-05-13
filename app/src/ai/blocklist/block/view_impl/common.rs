@@ -3407,8 +3407,6 @@ pub(super) fn query_prefix_highlight_len(
 ) -> Option<usize> {
     if displayed_query.starts_with(commands::PLAN.name) {
         Some(commands::PLAN.name.len())
-    } else if displayed_query.starts_with(commands::CREATE_ENVIRONMENT.name) {
-        Some(commands::CREATE_ENVIRONMENT.name.len())
     } else if displayed_query.starts_with(commands::AGENT.name) {
         Some(commands::AGENT.name.len())
     } else if displayed_query.starts_with(commands::NEW.name) {
@@ -3420,7 +3418,6 @@ pub(super) fn query_prefix_highlight_len(
             | AIAgentInput::AutoCodeDiffQuery { .. }
             | AIAgentInput::ResumeConversation { .. }
             | AIAgentInput::InitProjectRules { .. }
-            | AIAgentInput::CreateEnvironment { .. }
             | AIAgentInput::TriggerPassiveSuggestion { .. }
             | AIAgentInput::CreateNewProject { .. }
             | AIAgentInput::CloneRepository { .. }

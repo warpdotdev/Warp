@@ -172,10 +172,6 @@ impl AgentToolbarItemKind {
             Self::ContextWindowUsage,
             Self::ModelSelector,
         ];
-        // OpenWarp:删除 Agent footer Share Session 按钮(云端 shared session)
-        if false {
-            items.push(Self::ShareSession);
-        }
         items.push(Self::VoiceInput);
         items.push(Self::FileAttach);
         items
@@ -197,10 +193,6 @@ impl AgentToolbarItemKind {
         if FeatureFlag::FastForwardAutoexecuteButton.is_enabled() {
             items.push(Self::FastForwardToggle);
         }
-        // OpenWarp:删除 Agent footer Share Session 按钮(云端 shared session)
-        if false {
-            items.push(Self::ShareSession);
-        }
         items
     }
 
@@ -211,10 +203,6 @@ impl AgentToolbarItemKind {
             Self::VoiceInput,
             Self::ContextChip(ContextChipKind::GitDiffStats),
         ];
-        // OpenWarp:删除 Agent footer Share Session 按钮(云端 shared session)
-        if false {
-            items.push(Self::ShareSession);
-        }
         items.push(Self::FileExplorer);
         if FeatureFlag::CLIAgentRichInput.is_enabled() {
             items.push(Self::RichInput);
@@ -244,10 +232,6 @@ impl AgentToolbarItemKind {
             Self::VoiceInput,
             Self::Settings,
         ]);
-        // OpenWarp:删除 Agent footer Share Session 按钮(云端 shared session)
-        if false {
-            items.push(Self::ShareSession);
-        }
         items
     }
 

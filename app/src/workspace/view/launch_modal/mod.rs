@@ -1,9 +1,5 @@
 // Specific slide implementations
 pub mod cta_button;
-pub mod oz_launch;
-
-// Re-export slide types for convenience
-pub use oz_launch::OzLaunchSlide;
 
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon;

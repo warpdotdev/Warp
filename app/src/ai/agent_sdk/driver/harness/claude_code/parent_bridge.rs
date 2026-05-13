@@ -26,11 +26,10 @@ use warpui::ModelSpawner;
 
 use crate::ai::agent_events::{
     run_agent_event_driver, AgentEventConsumer, AgentEventConsumerControlFlow,
-    AgentEventDriverConfig, AgentEventSource, AgentEventSourceItem, MessageHydrator,
+    AgentEventDriverConfig, AgentEventSource, AgentEventSourceItem, AgentEventStreamClient,
+    AgentRunEvent, MessageHydrator,
 };
 use crate::ai::agent_sdk::driver::{AgentDriver, OZ_MESSAGE_LISTENER_STATE_ROOT_ENV};
-use crate::server::server_api::ai::AgentRunEvent;
-use crate::server::server_api::AgentEventStreamClient;
 
 const LEGACY_MESSAGE_LISTENER_STATE_ROOT_ENV: &str = "OZ_PARENT_STATE_ROOT";
 const PARENT_BRIDGE_DEFAULT_STATE_ROOT: &str = ".claude-code/oz-parent-bridge";

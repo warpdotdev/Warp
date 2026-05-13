@@ -16,8 +16,6 @@ pub(super) enum CliTelemetryEvent {
         /// Which execution harness was selected (e.g. "oz", "claude").
         harness: String,
     },
-    /// Executing `warp agent run-ambient`
-    AgentRunAmbient,
     /// Executing `warp agent profile list`
     AgentProfileList,
     /// Executing `warp agent list`
@@ -38,20 +36,6 @@ pub(super) enum CliTelemetryEvent {
     MCPList,
     /// Executing `warp model list`
     ModelList,
-    /// Executing `warp task list`
-    TaskList,
-    /// Executing `warp task get`
-    TaskGet,
-    /// Executing `warp run message watch`
-    RunMessageWatch { harness: &'static str },
-    /// Executing `warp run message send`
-    RunMessageSend { harness: &'static str },
-    /// Executing `warp run message list`
-    RunMessageList { harness: &'static str },
-    /// Executing `warp run message read`
-    RunMessageRead { harness: &'static str },
-    /// Executing `warp run message mark-delivered`
-    RunMessageMarkDelivered { harness: &'static str },
     /// Executing `warp login`
     Login,
     /// Executing `warp whoami`
@@ -72,18 +56,6 @@ pub(super) enum CliTelemetryEvent {
     ArtifactGet,
     /// Executing `warp artifact download`
     ArtifactDownload,
-    /// Executing `warp secret create`
-    SecretCreate,
-    /// Executing `warp secret delete`
-    SecretDelete,
-    /// Executing `warp secret update`
-    SecretUpdate,
-    /// Executing `warp secret list`
-    SecretList,
-    /// Executing `warp federate issue-token`
-    FederateIssueToken,
-    /// Executing `warp federate issue-gcp-token`
-    FederateIssueGcpToken,
     /// Executing `warp harness-support ping`
     HarnessSupportPing,
     /// Executing `warp harness-support report-artifact`
@@ -114,7 +86,6 @@ impl TelemetryEvent for CliTelemetryEvent {
                 "task_id": task_id,
                 "harness": harness,
             })),
-            CliTelemetryEvent::AgentRunAmbient => None,
             CliTelemetryEvent::AgentProfileList => None,
             CliTelemetryEvent::AgentList => None,
             CliTelemetryEvent::EnvironmentList => None,
@@ -125,15 +96,6 @@ impl TelemetryEvent for CliTelemetryEvent {
             CliTelemetryEvent::EnvironmentImageList => None,
             CliTelemetryEvent::MCPList => None,
             CliTelemetryEvent::ModelList => None,
-            CliTelemetryEvent::TaskList => None,
-            CliTelemetryEvent::TaskGet => None,
-            CliTelemetryEvent::RunMessageWatch { harness } => Some(json!({ "harness": harness })),
-            CliTelemetryEvent::RunMessageSend { harness } => Some(json!({ "harness": harness })),
-            CliTelemetryEvent::RunMessageList { harness } => Some(json!({ "harness": harness })),
-            CliTelemetryEvent::RunMessageRead { harness } => Some(json!({ "harness": harness })),
-            CliTelemetryEvent::RunMessageMarkDelivered { harness } => {
-                Some(json!({ "harness": harness }))
-            }
             CliTelemetryEvent::Login => None,
             CliTelemetryEvent::Whoami => None,
             CliTelemetryEvent::ProviderSetup => None,
@@ -144,12 +106,6 @@ impl TelemetryEvent for CliTelemetryEvent {
             CliTelemetryEvent::ArtifactUpload => None,
             CliTelemetryEvent::ArtifactGet => None,
             CliTelemetryEvent::ArtifactDownload => None,
-            CliTelemetryEvent::SecretCreate => None,
-            CliTelemetryEvent::SecretDelete => None,
-            CliTelemetryEvent::SecretUpdate => None,
-            CliTelemetryEvent::SecretList => None,
-            CliTelemetryEvent::FederateIssueToken => None,
-            CliTelemetryEvent::FederateIssueGcpToken => None,
             CliTelemetryEvent::HarnessSupportPing => None,
             CliTelemetryEvent::HarnessSupportReportArtifact { artifact_type } => {
                 Some(json!({ "artifact_type": artifact_type }))
@@ -182,7 +138,6 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
     fn name(&self) -> &'static str {
         match self {
             CliTelemetryEventDiscriminants::AgentRun => "CLI.Execute.Agent.Run",
-            CliTelemetryEventDiscriminants::AgentRunAmbient => "CLI.Execute.Agent.RunAmbient",
             CliTelemetryEventDiscriminants::AgentProfileList => "CLI.Execute.Agent.Profile.List",
             CliTelemetryEventDiscriminants::AgentList => "CLI.Execute.Agent.List",
             CliTelemetryEventDiscriminants::EnvironmentList => "CLI.Execute.Environment.List",
@@ -195,15 +150,6 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
             }
             CliTelemetryEventDiscriminants::MCPList => "CLI.Execute.MCP.List",
             CliTelemetryEventDiscriminants::ModelList => "CLI.Execute.Model.List",
-            CliTelemetryEventDiscriminants::TaskList => "CLI.Execute.Task.List",
-            CliTelemetryEventDiscriminants::TaskGet => "CLI.Execute.Task.Get",
-            CliTelemetryEventDiscriminants::RunMessageWatch => "CLI.Execute.Run.Message.Watch",
-            CliTelemetryEventDiscriminants::RunMessageSend => "CLI.Execute.Run.Message.Send",
-            CliTelemetryEventDiscriminants::RunMessageList => "CLI.Execute.Run.Message.List",
-            CliTelemetryEventDiscriminants::RunMessageRead => "CLI.Execute.Run.Message.Read",
-            CliTelemetryEventDiscriminants::RunMessageMarkDelivered => {
-                "CLI.Execute.Run.Message.MarkDelivered"
-            }
             CliTelemetryEventDiscriminants::Login => "CLI.Execute.Login",
             CliTelemetryEventDiscriminants::Whoami => "CLI.Execute.Whoami",
             CliTelemetryEventDiscriminants::ProviderSetup => "CLI.Execute.Provider.Setup",
@@ -214,14 +160,6 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
             CliTelemetryEventDiscriminants::ArtifactUpload => "CLI.Execute.Artifact.Upload",
             CliTelemetryEventDiscriminants::ArtifactGet => "CLI.Execute.Artifact.Get",
             CliTelemetryEventDiscriminants::ArtifactDownload => "CLI.Execute.Artifact.Download",
-            CliTelemetryEventDiscriminants::SecretCreate => "CLI.Execute.Secret.Create",
-            CliTelemetryEventDiscriminants::SecretDelete => "CLI.Execute.Secret.Delete",
-            CliTelemetryEventDiscriminants::SecretUpdate => "CLI.Execute.Secret.Update",
-            CliTelemetryEventDiscriminants::SecretList => "CLI.Execute.Secret.List",
-            CliTelemetryEventDiscriminants::FederateIssueToken => "CLI.Execute.Federate.IssueToken",
-            CliTelemetryEventDiscriminants::FederateIssueGcpToken => {
-                "CLI.Execute.Federate.IssueGcpToken"
-            }
             CliTelemetryEventDiscriminants::HarnessSupportPing => "CLI.Execute.HarnessSupport.Ping",
             CliTelemetryEventDiscriminants::HarnessSupportReportArtifact => {
                 "CLI.Execute.HarnessSupport.ReportArtifact"
@@ -238,9 +176,6 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
     fn description(&self) -> &'static str {
         match self {
             CliTelemetryEventDiscriminants::AgentRun => "Ran an agent from the Warp CLI",
-            CliTelemetryEventDiscriminants::AgentRunAmbient => {
-                "Ran an ambient agent from the Warp CLI"
-            }
             CliTelemetryEventDiscriminants::AgentProfileList => {
                 "Listed agent profiles from the Warp CLI"
             }
@@ -265,23 +200,6 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
             }
             CliTelemetryEventDiscriminants::MCPList => "Listed MCP servers from the Warp CLI",
             CliTelemetryEventDiscriminants::ModelList => "Listed models from the Warp CLI",
-            CliTelemetryEventDiscriminants::TaskList => "Listed tasks from the Warp CLI",
-            CliTelemetryEventDiscriminants::TaskGet => "Got status of task from the Warp CLI",
-            CliTelemetryEventDiscriminants::RunMessageWatch => {
-                "Watched run messages from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::RunMessageSend => {
-                "Sent a run message from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::RunMessageList => {
-                "Listed run messages from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::RunMessageRead => {
-                "Read a run message from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::RunMessageMarkDelivered => {
-                "Marked a run message as delivered from the Warp CLI"
-            }
             CliTelemetryEventDiscriminants::Login => "Logged in via the Warp CLI",
             CliTelemetryEventDiscriminants::Whoami => "Printed current user info from the Warp CLI",
             CliTelemetryEventDiscriminants::ProviderSetup => "Set up a provider via the Warp CLI",
@@ -304,16 +222,6 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
             CliTelemetryEventDiscriminants::ArtifactDownload => {
                 "Downloaded an artifact from the Warp CLI"
             }
-            CliTelemetryEventDiscriminants::SecretCreate => "Created a secret from the Warp CLI",
-            CliTelemetryEventDiscriminants::SecretDelete => "Deleted a secret from the Warp CLI",
-            CliTelemetryEventDiscriminants::SecretUpdate => "Updated a secret from the Warp CLI",
-            CliTelemetryEventDiscriminants::SecretList => "Listed secrets from the Warp CLI",
-            CliTelemetryEventDiscriminants::FederateIssueToken => {
-                "Issued a federated identity token from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::FederateIssueGcpToken => {
-                "Issued a GCP federated identity token from the Warp CLI"
-            }
             CliTelemetryEventDiscriminants::HarnessSupportPing => {
                 "Pinged harness-support from the Warp CLI"
             }
@@ -331,9 +239,6 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
 
     fn enablement_state(&self) -> EnablementState {
         match self {
-            Self::FederateIssueToken | Self::FederateIssueGcpToken => {
-                EnablementState::Flag(FeatureFlag::OzIdentityFederation)
-            }
             Self::HarnessSupportPing
             | Self::HarnessSupportReportArtifact
             | Self::HarnessSupportNotifyUser
@@ -341,11 +246,6 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
             Self::ArtifactUpload | Self::ArtifactGet | Self::ArtifactDownload => {
                 EnablementState::Flag(FeatureFlag::ArtifactCommand)
             }
-            Self::RunMessageWatch
-            | Self::RunMessageSend
-            | Self::RunMessageList
-            | Self::RunMessageRead
-            | Self::RunMessageMarkDelivered => EnablementState::Flag(FeatureFlag::OrchestrationV2),
             _ => EnablementState::Always,
         }
     }

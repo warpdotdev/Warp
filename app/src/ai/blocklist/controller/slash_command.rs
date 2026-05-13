@@ -31,10 +31,6 @@ pub enum SlashCommandRequest {
     InitProjectRules {
         arguments: Option<String>,
     },
-    CreateEnvironment {
-        repos: Vec<String>,
-        use_current_dir: bool,
-    },
     Summarize {
         prompt: Option<String>,
         /// OpenWarp BYOP 本地会话压缩:本次摘要是否由 token-overflow 自动触发。
@@ -190,7 +186,6 @@ impl SlashCommandRequest {
     ) -> Option<AIConversationId> {
         match self {
             Self::Summarize { .. }
-            | Self::CreateEnvironment { .. }
             | Self::InvokeSkill { .. }
             | Self::FetchReviewComments { .. } => controller
                 .context_model
@@ -227,27 +222,6 @@ impl SlashCommandRequest {
                 running_command: None,
                 intended_agent: None,
             }],
-            SlashCommandRequest::CreateEnvironment {
-                mut repos,
-                use_current_dir,
-            } => {
-                let display_query = if repos.is_empty() {
-                    "/create-environment".to_string()
-                } else {
-                    format!("/create-environment {}", repos.join(" "))
-                };
-
-                // Add "." to represent the current working directory
-                if use_current_dir {
-                    repos.push(String::from("."));
-                }
-
-                vec![AIAgentInput::CreateEnvironment {
-                    context,
-                    display_query: Some(display_query),
-                    repo_paths: repos,
-                }]
-            }
             SlashCommandRequest::Summarize { prompt, overflow } => {
                 vec![AIAgentInput::SummarizeConversation { prompt, overflow }]
             }
@@ -284,7 +258,6 @@ impl SlashCommandRequest {
             SlashCommandRequest::CloneRepository { .. } => EntrypointType::CloneRepository,
             SlashCommandRequest::InitProjectRules { .. } => EntrypointType::InitProjectRules,
             SlashCommandRequest::CreateNewProject { .. }
-            | SlashCommandRequest::CreateEnvironment { .. }
             | SlashCommandRequest::Summarize { .. }
             | SlashCommandRequest::FetchReviewComments { .. }
             | SlashCommandRequest::InvokeSkill { .. } => EntrypointType::UserInitiated,

@@ -12,11 +12,10 @@ use warpui::{
     accessibility::{AccessibilityContent, WarpA11yRole},
     elements::{
         resizable_state_handle, Align, AnchorPair, Border, ConstrainedBox, Container, CornerRadius,
-        CrossAxisAlignment, Dismiss, Fill, Flex, MouseStateHandle, OffsetPositioning, OffsetType,
-        ParentElement, ParentOffsetBounds, PositionedElementOffsetBounds, PositioningAxis, Radius,
-        Resizable, ResizableStateHandle, SavePosition, ScrollStateHandle, Scrollable,
-        ScrollableElement, Shrinkable, Stack, UniformList, UniformListState, XAxisAnchor,
-        YAxisAnchor,
+        CrossAxisAlignment, Dismiss, Fill, Flex, OffsetPositioning, OffsetType, ParentElement,
+        ParentOffsetBounds, PositionedElementOffsetBounds, PositioningAxis, Radius, Resizable,
+        ResizableStateHandle, SavePosition, ScrollStateHandle, Scrollable, ScrollableElement,
+        Shrinkable, Stack, UniformList, UniformListState, XAxisAnchor, YAxisAnchor,
     },
     presenter::ChildView,
     ui_components::components::{UiComponent, UiComponentStyles},
@@ -27,7 +26,7 @@ use warpui::{
 use crate::{
     ai_assistant::execution_context::WarpAiExecutionContext,
     appearance::Appearance,
-    auth::{AuthManager, AuthState, AuthStateProvider, AuthViewVariant, UserUid},
+    auth::{AuthState, AuthStateProvider},
     completer::SessionContext,
     drive::settings::WarpDriveSettings,
     search::{
@@ -37,7 +36,7 @@ use crate::{
         QueryFilter,
     },
     send_telemetry_from_ctx,
-    server::{ids::ServerId, telemetry::TelemetryEvent},
+    server::telemetry::TelemetryEvent,
     settings::AISettings,
     terminal::{
         input::MenuPositioning,
@@ -45,7 +44,6 @@ use crate::{
         resizable_data::{ModalType, ResizableData, DEFAULT_UNIVERSAL_SEARCH_WIDTH},
         History, HistoryEvent,
     },
-    workspaces::user_workspaces::UserWorkspaces,
 };
 
 use super::{
@@ -103,8 +101,6 @@ pub enum CommandSearchAction {
     },
     Close,
     Resize,
-    OpenUpgradeLink(String),
-    AttemptLoginGatedUpgrade,
 }
 
 struct CommandSearchViewState {
@@ -128,7 +124,6 @@ pub struct CommandSearchView {
     search_bar: ViewHandle<SearchBar<CommandSearchItemAction>>,
     search_bar_state: ModelHandle<SearchBarState<CommandSearchItemAction>>,
     mixer: ModelHandle<CommandSearchMixer>,
-    upgrade_link: MouseStateHandle,
 }
 
 impl CommandSearchView {
@@ -209,7 +204,6 @@ impl CommandSearchView {
             search_bar,
             search_bar_state,
             mixer,
-            upgrade_link: Default::default(),
         }
     }
 
@@ -584,43 +578,16 @@ impl CommandSearchView {
 
     fn render_error_header(
         &self,
-        app: &AppContext,
         message: String,
         is_ratelimit_error: bool,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         if is_ratelimit_error {
-            if UserWorkspaces::as_ref(app).is_byo_api_key_enabled() {
-                return self.render_error_header_text(
-                    "Request limit reached. Please try again later.".to_string(),
-                    appearance,
-                );
-            }
-
-            let current_user_id = self.auth_state.user_id().unwrap_or_default();
-            if let Some(team) = UserWorkspaces::as_ref(app).current_team() {
-                let current_user_email = self.auth_state.user_email().unwrap_or_default();
-                let has_admin_permissions = team.has_admin_permissions(&current_user_email);
-                if team.billing_metadata.can_upgrade_to_higher_tier_plan() {
-                    if has_admin_permissions {
-                        self.render_error_header_with_upgrade_link(
-                            app,
-                            appearance,
-                            Some(team.uid),
-                            current_user_id,
-                        )
-                    } else {
-                        self.render_error_header_text(
-                            crate::t!("command-search-out-of-credits-contact-admin"),
-                            appearance,
-                        )
-                    }
-                } else {
-                    self.render_error_header_text(message, appearance)
-                }
-            } else {
-                self.render_error_header_with_upgrade_link(app, appearance, None, current_user_id)
-            }
+            self.render_error_header_text(
+                "Request limit reached. Please configure a BYOP provider or try again later."
+                    .to_string(),
+                appearance,
+            )
         } else {
             self.render_error_header_text(message, appearance)
         }
@@ -654,95 +621,6 @@ impl CommandSearchView {
         .with_padding_bottom(10.)
         .with_padding_top(4.)
         .finish()
-    }
-
-    fn render_error_header_with_upgrade_link(
-        &self,
-        app: &AppContext,
-        appearance: &Appearance,
-        team_uid: Option<ServerId>,
-        user_id: UserUid,
-    ) -> Box<dyn Element> {
-        let mut row = Flex::row()
-            .with_main_axis_size(warpui::elements::MainAxisSize::Max)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center);
-
-        let upgrade_link = team_uid
-            .map(UserWorkspaces::upgrade_link_for_team)
-            .unwrap_or_else(|| UserWorkspaces::upgrade_link(user_id));
-
-        let link = if AuthStateProvider::as_ref(app)
-            .get()
-            .is_anonymous_or_logged_out()
-        {
-            appearance
-                .ui_builder()
-                .link(
-                    crate::t!("common-upgrade").into(),
-                    None,
-                    Some(Box::new(move |ctx| {
-                        ctx.dispatch_typed_action(CommandSearchAction::AttemptLoginGatedUpgrade);
-                    })),
-                    self.upgrade_link.clone(),
-                )
-                .soft_wrap(false)
-        } else {
-            appearance
-                .ui_builder()
-                .link(
-                    crate::t!("common-upgrade").into(),
-                    None,
-                    Some(Box::new(move |ctx| {
-                        ctx.dispatch_typed_action(CommandSearchAction::OpenUpgradeLink(
-                            upgrade_link.clone(),
-                        ));
-                    })),
-                    self.upgrade_link.clone(),
-                )
-                .soft_wrap(false)
-        };
-
-        row.add_child(
-            appearance
-                .ui_builder()
-                .span(crate::t!("command-search-out-of-credits-prefix"))
-                .with_style(UiComponentStyles {
-                    font_size: Some(appearance.monospace_font_size()),
-                    font_family_id: Some(appearance.ui_font_family()),
-                    font_color: Some(appearance.theme().nonactive_ui_text_color().into()),
-                    ..Default::default()
-                })
-                .build()
-                .finish(),
-        );
-        row.add_child(
-            link.with_style(UiComponentStyles {
-                font_size: Some(appearance.monospace_font_size()),
-                font_family_id: Some(appearance.ui_font_family()),
-                ..Default::default()
-            })
-            .build()
-            .finish(),
-        );
-        row.add_child(
-            appearance
-                .ui_builder()
-                .span(crate::t!("command-search-for-more-credits-suffix"))
-                .with_style(UiComponentStyles {
-                    font_size: Some(appearance.monospace_font_size()),
-                    font_family_id: Some(appearance.ui_font_family()),
-                    font_color: Some(appearance.theme().nonactive_ui_text_color().into()),
-                    ..Default::default()
-                })
-                .build()
-                .finish(),
-        );
-
-        Container::new(row.finish())
-            .with_horizontal_padding(16.)
-            .with_padding_bottom(10.)
-            .with_padding_top(4.)
-            .finish()
     }
 
     /// Renders the results pane.
@@ -829,7 +707,6 @@ impl CommandSearchView {
                     .map(|(.., e)| e)
                 {
                     column.add_child(self.render_error_header(
-                        app,
                         error.user_facing_error(),
                         false,
                         appearance,
@@ -958,18 +835,6 @@ impl TypedActionView for CommandSearchView {
                 result_action,
             } => self.handle_result_selected(*result_index, *result_action.clone(), ctx),
             Resize => ctx.emit(CommandSearchEvent::Resize),
-            OpenUpgradeLink(upgrade_link) => {
-                ctx.open_url(upgrade_link);
-            }
-            AttemptLoginGatedUpgrade => {
-                AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                    auth_manager.attempt_login_gated_feature(
-                        "Upgrade AI Usage",
-                        AuthViewVariant::RequireLoginCloseable,
-                        ctx,
-                    )
-                });
-            }
         }
     }
 }

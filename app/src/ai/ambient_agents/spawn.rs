@@ -8,10 +8,7 @@ use session_sharing_protocol::common::SessionId;
 
 use super::AmbientAgentTaskId;
 use super::{AmbientAgentTask, AmbientAgentTaskState};
-use crate::{
-    server::server_api::ai::{SpawnAgentRequest, TaskStatusMessage},
-    terminal::shared_session,
-};
+use crate::ai::ambient_agents::{SpawnAgentRequest, TaskStatusMessage};
 
 /// How long to poll for the agent to be ready.
 /// This should be long enough that the shared session will be joinable.
@@ -37,16 +34,6 @@ impl SessionJoinInfo {
                 session_id,
                 session_link: link.to_string(),
             });
-        }
-
-        // Fallback to constructing a link from the session_id.
-        if let Some(session_id_str) = task.session_id.as_deref() {
-            if let Ok(session_id) = SessionId::from_str(session_id_str) {
-                return Some(Self {
-                    session_id: Some(session_id),
-                    session_link: shared_session::join_link(&session_id),
-                });
-            }
         }
 
         None

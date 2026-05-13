@@ -1,18 +1,10 @@
 //! AI Assistant has since been renamed to "Warp AI" in the product.
 use std::{collections::HashSet, sync::Arc};
 
-use crate::{
-    ai::{RequestLimitInfo, RequestLimitRefreshDuration},
-    server::telemetry::OpenedWarpAISource,
-    terminal::model::terminal_model::BlockIndex,
-};
+use crate::{server::telemetry::OpenedWarpAISource, terminal::model::terminal_model::BlockIndex};
 use lazy_static::lazy_static;
 use pathfinder_color::ColorU;
 use warp_core::command::ExitCode;
-use warp_graphql::ai::{
-    RequestLimitInfo as RequestLimitInfoGraphql,
-    RequestLimitRefreshDuration as RequestLimitRefreshDurationGraphql,
-};
 
 pub mod execution_context;
 pub mod panel;
@@ -71,36 +63,6 @@ impl From<&AskAIType> for OpenedWarpAISource {
                 OpenedWarpAISource::HelpWithBlock
             }
             AskAIType::FromTextSelection { .. } => OpenedWarpAISource::HelpWithTextSelection,
-        }
-    }
-}
-
-impl From<RequestLimitRefreshDurationGraphql> for RequestLimitRefreshDuration {
-    fn from(value: RequestLimitRefreshDurationGraphql) -> Self {
-        match value {
-            RequestLimitRefreshDurationGraphql::Monthly => RequestLimitRefreshDuration::Monthly,
-            RequestLimitRefreshDurationGraphql::Weekly => RequestLimitRefreshDuration::Weekly,
-            RequestLimitRefreshDurationGraphql::EveryTwoWeeks => {
-                RequestLimitRefreshDuration::EveryTwoWeeks
-            }
-        }
-    }
-}
-
-impl From<RequestLimitInfoGraphql> for RequestLimitInfo {
-    fn from(value: RequestLimitInfoGraphql) -> Self {
-        RequestLimitInfo {
-            is_unlimited: value.is_unlimited,
-            limit: value.request_limit as usize,
-            num_requests_used_since_refresh: value.requests_used_since_last_refresh as usize,
-            next_refresh_time: value.next_refresh_time,
-            request_limit_refresh_duration: value.request_limit_refresh_duration.into(),
-            is_unlimited_voice: value.is_unlimited_voice,
-            voice_request_limit: value.voice_request_limit as usize,
-            voice_requests_used_since_last_refresh: value.voice_requests_used_since_last_refresh
-                as usize,
-            max_files_per_repo: value.max_files_per_repo as usize,
-            embedding_generation_batch_size: value.embedding_generation_batch_size as usize,
         }
     }
 }

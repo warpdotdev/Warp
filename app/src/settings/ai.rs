@@ -1248,18 +1248,6 @@ define_settings_group!(AISettings, settings: [
         description: "Controls whether ghosted text autosuggestions are shown for AI input queries.",
         feature_flag: FeatureFlag::PredictAMQueries,
     }
-    // This field should not be referenced directly to lookup shared block title generations
-    // enablement -- use the `is_shared_block_title_generation_enabled()` getter.
-    // This feature refers to the auto title generation when the user opens the shared block dialog.
-    shared_block_title_generation_enabled_internal: SharedBlockTitleGenerationEnabled {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        private: false,
-        toml_path: "agents.warp_agent.active_ai.shared_block_title_generation_enabled",
-        description: "Controls whether titles are auto-generated when sharing blocks.",
-    }
     // This field should not be referenced directly to lookup git operations AI autogen
     // enablement -- use the `is_git_operations_autogen_enabled()` getter.
     git_operations_autogen_enabled_internal: GitOperationsAutogenEnabled {
@@ -1568,41 +1556,6 @@ define_settings_group!(AISettings, settings: [
         supported_platforms: SupportedPlatforms::ALL,
         sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
         private: true,
-    }
-
-    // This is not a user-visible setting - it's merely a one-time flag to track if the Oz launch modal
-    // has been shown to the user.
-    //
-    // We model it as a setting so it's only shown once to a given user regardless of the number of
-    // devices they use.
-    did_check_to_trigger_oz_launch_modal: DidShowOzLaunchModal {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
-        private: true,
-    }
-
-    // Used to determine whether the "What's new in Oz" section of the agent view
-    // zero state is expanded or collapsed by default.
-    should_expand_oz_updates: ShouldExpandOzUpdates {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Never,
-        private: true,
-    }
-
-    // Used to determine whether the "What's new in Oz" section of the agent view
-    // zero state is shown or hidden.
-    should_show_oz_updates_in_zero_state: ShouldShowOzUpdatesInZeroState {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        private: false,
-        toml_path: "agents.warp_agent.other.should_show_oz_updates_in_zero_state",
-        description: "Whether the \"What's new\" section is shown in the agent view.",
     }
 
     // Whether or not the user has enabled the ability to use Warp credits even when providing
@@ -2109,10 +2062,6 @@ impl AISettings {
 
     pub fn is_natural_language_autosuggestions_enabled(&self, app: &warpui::AppContext) -> bool {
         self.is_active_ai_enabled(app) && *self.natural_language_autosuggestions_enabled_internal
-    }
-
-    pub fn is_shared_block_title_generation_enabled(&self, app: &warpui::AppContext) -> bool {
-        self.is_active_ai_enabled(app) && *self.shared_block_title_generation_enabled_internal
     }
 
     pub fn is_git_operations_autogen_enabled(&self, app: &warpui::AppContext) -> bool {

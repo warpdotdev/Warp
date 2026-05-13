@@ -6,7 +6,6 @@ use warp_cli::{
     provider::{ProviderCommand, ProviderType},
     GlobalOptions,
 };
-use warp_core::channel::ChannelState;
 use warpui::{platform::TerminationMode, AppContext, ModelContext, SingletonEntity};
 
 use crate::ai::agent_sdk::output::{self, TableFormat};
@@ -38,9 +37,6 @@ impl ProviderCommandRunner {
         personal: bool,
         ctx: &mut ModelContext<Self>,
     ) -> anyhow::Result<()> {
-        // Construct the OAuth connect URL
-        let server_url = ChannelState::server_root_url();
-
         let mut use_team_auth = team;
         if !team && !personal {
             if provider_type.allowed_in_team_context()
@@ -56,26 +52,12 @@ impl ProviderCommandRunner {
             use_team_auth = false;
         }
 
-        // TODO(bens): initiate the OAuth flow and use the login-less auth URL
         let slug = provider_type.slug();
-        let url = if use_team_auth {
-            let team_uid = match UserWorkspaces::as_ref(ctx).current_team_uid() {
-                Some(uid) => uid,
-                None => {
-                    return Err(anyhow::anyhow!("User is not on a team"));
-                }
-            };
-            format!("{server_url}/oauth/connect/{slug}?principalType=team&principalId={team_uid}")
-        } else {
-            format!("{server_url}/oauth/connect/{slug}")
-        };
+        if use_team_auth && UserWorkspaces::as_ref(ctx).current_team_uid().is_none() {
+            return Err(anyhow::anyhow!("User is not on a team"));
+        }
 
-        println!("To authenticate {slug}, open this URL in your browser: {url}");
-
-        // Open the URL in the default browser
-        ctx.open_url(&url);
-
-        // TODO(bens): poll/subscribe until connection is created
+        println!("Provider OAuth setup for {slug} is disabled in OpenWarp.");
 
         ctx.terminate_app(TerminationMode::ForceTerminate, None);
 

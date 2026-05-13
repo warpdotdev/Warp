@@ -34,6 +34,11 @@ use crate::{
         agent::{
             AIAgentExchange, AIAgentInput, AIAgentOutput, CancellationReason, RenderableAIError,
         },
+        agent_events::DisabledAgentEventStreamClient,
+        agent_sdk::harness_support_client::{
+            DisabledHarnessSupportClient, HarnessSupportClient, ResolvePromptAttachedSkill,
+            ResolvePromptRequest,
+        },
         ambient_agents::{
             conversation_output_status_from_conversation, AmbientAgentTaskId,
             AmbientConversationStatus,
@@ -44,27 +49,17 @@ use crate::{
         },
         execution_profiles::profiles::AIExecutionProfilesModel,
         mcp::{
-            file_based_manager::{FileBasedMCPManager, FileBasedMCPManagerEvent},
             parsing::{normalize_mcp_json, ParsedTemplatableMCPServerResult},
             templatable_manager::TemplatableMCPServerManagerEvent,
             TemplatableMCPServerInstallation, TemplatableMCPServerManager,
         },
     },
     auth::AuthStateProvider,
-    server::{
-        ids::{ServerId, SyncId},
-        server_api::{
-            harness_support::{
-                DisabledHarnessSupportClient, HarnessSupportClient, ResolvePromptAttachedSkill,
-                ResolvePromptRequest,
-            },
-            DisabledAgentEventStreamClient,
-        },
-    },
+    server::ids::{ServerId, SyncId},
     terminal::view::ConversationRestorationInNewPaneType,
 };
 use ai::skills::ParsedSkill;
-use anyhow::{anyhow, Context as _};
+use anyhow::Context as _;
 use futures::{
     channel::oneshot,
     future::{self, Either},
@@ -74,8 +69,7 @@ use oneshot::{Canceled, Receiver, Sender};
 use uuid::Uuid;
 use warp_cli::agent::{Harness, OutputFormat};
 use warp_cli::mcp::MCPSpec;
-use warp_cli::share::ShareRequest;
-use warp_core::{features::FeatureFlag, report_error, report_if_error, safe_debug, safe_info};
+use warp_core::{features::FeatureFlag, report_if_error, safe_debug, safe_info};
 use warp_managed_secrets::ManagedSecretValue;
 use warpui::{
     r#async::{FutureExt, TimeoutError},
@@ -85,7 +79,6 @@ use warpui::{
 pub(crate) mod attachments;
 pub(crate) mod harness;
 pub(super) mod output;
-mod snapshot;
 pub(crate) mod terminal;
 
 use terminal::TerminalDriverEvent;
@@ -217,12 +210,6 @@ pub struct AgentDriverOptions {
     pub resume: Option<ResumeOptions>,
     /// Selected execution harness for this run.
     pub selected_harness: Harness,
-    /// Whether to skip end-of-run snapshot upload.
-    pub snapshot_disabled: Option<bool>,
-    /// End-of-run snapshot upload timeout override.
-    pub snapshot_upload_timeout: Option<Duration>,
-    /// Declarations script timeout override.
-    pub snapshot_script_timeout: Option<Duration>,
 }
 
 /// `AgentDriver` is a model for driving an ambient Warp agent to completion.
@@ -254,11 +241,6 @@ pub struct AgentDriver {
 
     // The conversation ID to continue (if provided).
     restored_conversation_id: Option<AIConversationId>,
-
-    // End-of-run snapshot upload controls.
-    snapshot_disabled: bool,
-    snapshot_upload_timeout: Duration,
-    snapshot_script_timeout: Duration,
 
     /// If set, a third-party-harness conversation to resume. Consumed by `prepare_harness`
     /// when building the runner and taken back to `None` after use so subsequent runs start
@@ -345,11 +327,6 @@ pub enum AgentDriverError {
     AIWorkflowNotFound(String),
     #[error("Terminal bootstrap failed")]
     BootstrapFailed,
-    #[error("Unable to share agent session")]
-    ShareSessionFailed {
-        #[source]
-        error: terminal::ShareSessionError,
-    },
     #[error("Error syncing Warp Drive")]
     WarpDriveSyncFailed,
     #[error("Requested environment not found: {0}")]
@@ -441,9 +418,6 @@ impl AgentDriver {
             secrets,
             resume,
             selected_harness,
-            snapshot_disabled,
-            snapshot_upload_timeout,
-            snapshot_script_timeout,
         } = options;
 
         // Split the unified resume option into the two internal slots that the rest of
@@ -591,27 +565,12 @@ impl AgentDriver {
             harness: None,
             idle_on_complete,
             restored_conversation_id,
-            snapshot_disabled: snapshot_disabled.unwrap_or(false),
-            snapshot_upload_timeout: snapshot_upload_timeout
-                .unwrap_or(snapshot::DEFAULT_SNAPSHOT_UPLOAD_TIMEOUT),
-            snapshot_script_timeout: snapshot_script_timeout
-                .unwrap_or(snapshot::DEFAULT_DECLARATIONS_SCRIPT_TIMEOUT),
             resume_payload,
         })
     }
 
     pub fn set_output_format(&mut self, output_format: OutputFormat) {
         self.output_format = output_format;
-    }
-
-    pub fn add_share_requests(
-        &self,
-        share_requests: impl IntoIterator<Item = ShareRequest>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        self.terminal_driver.update(ctx, |td, ctx| {
-            td.add_share_requests(share_requests, ctx);
-        });
     }
 
     pub fn run(
@@ -626,14 +585,6 @@ impl AgentDriver {
         ctx.spawn(
             async move {
                 let result = Self::run_internal(task, foreground.clone()).await;
-
-                // Run the snapshot upload before signaling the caller. The caller resumes and
-                // triggers process termination as soon as it receives `result`; the snapshot
-                // upload depends on the event loop that termination tears down, so anything
-                // async it awaits (presigned URL fetch, uploads, timers) would get abandoned
-                // mid-flight. Provider cleanup is just local temp-file teardown, so it's safe
-                // to run after the send.
-                Self::run_snapshot_upload(&foreground).await;
 
                 if tx.send(result).is_err() {
                     log::error!("Caller did not wait for agent driver to finish");
@@ -961,61 +912,6 @@ impl AgentDriver {
         })
     }
 
-    /// Subscribe to [`FileBasedMCPManagerEvent::CloudEnvMcpScanComplete`]
-    /// paths and return a receiver that fires with all discovered server UUIDs once every repo
-    /// reports in. Must be called **before** `prepare_environment` so no events are missed.
-    fn setup_file_based_mcp_discovery(
-        &self,
-        expected_repos: Vec<PathBuf>,
-        ctx: &mut ModelContext<Self>,
-    ) -> Receiver<Vec<Uuid>> {
-        let (tx, rx) = oneshot::channel::<Vec<Uuid>>();
-
-        if expected_repos.is_empty() {
-            let _ = tx.send(vec![]);
-            return rx;
-        }
-
-        log::info!(
-            "Waiting for {} cloud environment repo(s) to report back file-based MCP server UUIDs...",
-            expected_repos.len()
-        );
-
-        let mut tx = Some(tx);
-        let mut pending_repos: HashSet<PathBuf> = HashSet::from_iter(expected_repos);
-        let mut collected_uuids = Vec::<Uuid>::new();
-
-        let file_based_mcp_manager = FileBasedMCPManager::handle(ctx);
-        let manager_clone = file_based_mcp_manager.clone();
-
-        ctx.subscribe_to_model(&file_based_mcp_manager, move |_me, event, ctx| {
-            if let FileBasedMCPManagerEvent::CloudEnvMcpScanComplete {
-                repo_path,
-                server_uuids,
-            } = event
-            {
-                if pending_repos.remove(repo_path) {
-                    collected_uuids.extend(server_uuids.iter().copied());
-                    log::info!(
-                        "Found file-based MCP server UUIDs in repo {repo_path:?}: {server_uuids:?}"
-                    );
-                    // If we've received all UUIDs from all cloud environment repos, send it back to the caller
-                    // and begin waiting for file-based MCP initialization.
-                    if pending_repos.is_empty() {
-                        let uuids = collected_uuids.clone();
-                        if let Some(sender) = tx.take() {
-                            log::info!("Waiting for file-based MCP servers to reach a terminal state: {uuids:?}");
-                            let _ = sender.send(uuids);
-                        }
-                        ctx.unsubscribe_from_model(&manager_clone);
-                    }
-                }
-            }
-        });
-
-        rx
-    }
-
     /// Wait for all file-based MCP servers with the given UUIDs to reach a terminal state
     /// (`Running` or `FailedToStart`). Non-fatal: always completes without returning an error.
     ///
@@ -1175,16 +1071,6 @@ impl AgentDriver {
                 .await?
                 .await?;
         }
-
-        // For all harnesses: wait for the shared session. OpenWarp Wave 7-2 已下线云端
-        // environment 准备链路；本地 BYOP 运行只保留工作目录、MCP、模型/Profile 与 harness 启动流程。
-        foreground
-            .spawn(|me, ctx| {
-                me.terminal_driver
-                    .update(ctx, |driver, _| driver.wait_for_session_shared())
-            })
-            .await?
-            .await?;
 
         // Run the harness with a prompt
         match task.harness {
@@ -1823,70 +1709,6 @@ impl AgentDriver {
                     "Warning: Terminal session is slow to bootstrap. See https://docs.warp.dev/support-and-community/troubleshooting-and-support/known-issues#shells to troubleshoot."
                 );
             }
-            TerminalDriverEvent::EstablishedSharedSession {
-                session_id: _,
-                join_url,
-            } => {
-                write_session_joined(join_url, self.output_format);
-            }
-        }
-    }
-
-    /// Invoke the end-of-run snapshot upload pipeline if the feature flag is enabled and this
-    /// driver is associated with a cloud task. Errors are logged internally; this helper always
-    /// returns so cleanup can proceed.
-    async fn run_snapshot_upload(spawner: &ModelSpawner<Self>) {
-        if !FeatureFlag::OzHandoff.is_enabled() {
-            return;
-        }
-
-        // Snapshot upload is only meaningful for cloud task runs, so short-circuit before
-        // pulling the rest of the context onto this task.
-        let Ok((Some(task_id), snapshot_disabled, upload_timeout, script_timeout)) = spawner
-            .spawn(|me, _| {
-                (
-                    me.task_id,
-                    me.snapshot_disabled,
-                    me.snapshot_upload_timeout,
-                    me.snapshot_script_timeout,
-                )
-            })
-            .await
-        else {
-            return;
-        };
-        if snapshot_disabled {
-            log::info!("Skipping snapshot upload because --no-snapshot was specified");
-            return;
-        }
-
-        let Ok((working_dir, client)) = spawner
-            .spawn(|me, _ctx| {
-                let client: Arc<dyn HarnessSupportClient> =
-                    Arc::new(DisabledHarnessSupportClient::new());
-                (me.working_dir.clone(), client)
-            })
-            .await
-        else {
-            log::error!("Unable to retrieve snapshot upload context for cleanup (task {task_id})");
-            return;
-        };
-
-        // Regenerate the declarations file so the upload pipeline sees the latest workspace
-        // state. The helper swallows its own errors at ERROR level; we just proceed.
-        snapshot::run_declarations_script(&working_dir, &task_id, script_timeout).await;
-
-        // Cap the upload so a pathological slow upload cannot wedge cleanup.
-        // On timeout we surface via report_error! so Sentry captures the incident and on-call
-        // alerting can fire, then let cloud-provider teardown continue.
-        if let Err(TimeoutError) = snapshot::upload_snapshot_from_declarations(client, &task_id)
-            .with_timeout(upload_timeout)
-            .await
-        {
-            report_error!(anyhow!(
-                "Snapshot upload timed out after {:?}; continuing with cleanup (task {task_id})",
-                upload_timeout
-            ));
         }
     }
 }
@@ -1906,16 +1728,4 @@ pub(super) fn write_run_started(run_id: &str, output_format: OutputFormat) {
         OutputFormat::Text | OutputFormat::Pretty => output::text::run_started(run_id, buf),
     })
     .context("Failed to write run ID"));
-}
-
-/// Write the session URL to stdout using the appropriate output format
-fn write_session_joined(join_url: &str, output_format: OutputFormat) {
-    report_if_error!(output::with_stdout_buffered(|buf| match output_format {
-        OutputFormat::Json | OutputFormat::Ndjson =>
-            output::json::shared_session_established(join_url, buf),
-        OutputFormat::Text | OutputFormat::Pretty => {
-            output::text::shared_session_established(join_url, buf)
-        }
-    })
-    .context("Failed to write shared session event"));
 }

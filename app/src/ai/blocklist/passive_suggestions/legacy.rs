@@ -222,7 +222,7 @@ impl PassiveSuggestionsModel {
 
         // Startup commands run while bootstrapping an Oz cloud environment, so we skip
         // passive prompt suggestion generation for them to avoid unnecessary requests.
-        let is_oz_environment_startup_command = FeatureFlag::CloudModeSetupV2.is_enabled()
+        let is_oz_environment_startup_command = false
             && self
                 .terminal_model
                 .lock()

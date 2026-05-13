@@ -14,11 +14,11 @@ use warp_core::features::FeatureFlag;
 use warpui::{platform::TerminationMode, AppContext, ModelHandle, SingletonEntity};
 
 use super::common::set_ambient_task_context_from_run_id;
-use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::artifacts::Artifact;
-use crate::server::server_api::harness_support::{
+use crate::ai::agent_sdk::harness_support_client::{
     DisabledHarnessSupportClient, HarnessSupportClient,
 };
+use crate::ai::ambient_agents::AmbientAgentTaskId;
+use crate::ai::artifacts::Artifact;
 
 /// Run harness-support commands.
 pub fn run(

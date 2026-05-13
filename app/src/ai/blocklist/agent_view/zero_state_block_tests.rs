@@ -1,4 +1,4 @@
-use super::{display_working_directory, format_session_location, should_render_oz_updates_section};
+use super::{display_working_directory, format_session_location};
 use crate::ai::blocklist::agent_view::zero_state_block::current_working_directory_for_zero_state;
 use crate::terminal::model::ansi::{Handler, InitShellValue, PrecmdValue, SSHValue};
 use crate::terminal::model::test_utils::block_size;
@@ -120,24 +120,4 @@ fn cwd_for_recent_conversations_does_not_use_startup_path_after_bootstrap() {
     let terminal = terminal_with_startup_path(Some("/startup/path"));
     let cwd = current_working_directory_for_zero_state(&terminal);
     assert_eq!(cwd, None);
-}
-
-#[test]
-fn oz_updates_section_renders_when_all_conditions_are_true() {
-    assert!(should_render_oz_updates_section(true, true, true));
-}
-
-#[test]
-fn oz_updates_section_does_not_render_when_setting_is_disabled() {
-    assert!(!should_render_oz_updates_section(true, false, true));
-}
-
-#[test]
-fn oz_updates_section_does_not_render_without_updates() {
-    assert!(!should_render_oz_updates_section(true, true, false));
-}
-
-#[test]
-fn oz_updates_section_does_not_render_when_feature_flag_is_disabled() {
-    assert!(!should_render_oz_updates_section(false, true, true));
 }

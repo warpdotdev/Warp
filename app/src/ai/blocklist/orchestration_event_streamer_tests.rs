@@ -158,7 +158,6 @@ fn ai_conversation_new_restored_preserves_last_event_sequence() {
 #[test]
 fn restored_inprogress_parent_defers_delivery_until_success() {
     use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
-    use crate::server::server_api::ServerApiProvider;
     use warpui::App;
 
     App::test((), |mut app| async move {
@@ -183,8 +182,8 @@ fn restored_inprogress_parent_defers_delivery_until_success() {
             );
         });
 
-        let agent_event_stream_client =
-            ServerApiProvider::new_for_test().get_agent_event_stream_client();
+        let agent_event_stream_client: Arc<dyn AgentEventStreamClient> =
+            Arc::new(DisabledAgentEventStreamClient);
 
         let streamer = app.add_singleton_model(|ctx| {
             OrchestrationEventStreamer::new_with_clients_for_test(agent_event_stream_client, ctx)
@@ -232,7 +231,6 @@ fn restored_inprogress_parent_defers_delivery_until_success() {
 #[test]
 fn restored_parent_registers_local_child_run_ids() {
     use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
-    use crate::server::server_api::ServerApiProvider;
     use warpui::App;
 
     App::test((), |mut app| async move {
@@ -262,8 +260,8 @@ fn restored_parent_registers_local_child_run_ids() {
             );
         });
 
-        let agent_event_stream_client =
-            ServerApiProvider::new_for_test().get_agent_event_stream_client();
+        let agent_event_stream_client: Arc<dyn AgentEventStreamClient> =
+            Arc::new(DisabledAgentEventStreamClient);
 
         let streamer = app.add_singleton_model(|ctx| {
             OrchestrationEventStreamer::new_with_clients_for_test(agent_event_stream_client, ctx)
@@ -293,7 +291,6 @@ fn restored_parent_registers_local_child_run_ids() {
 fn handle_event_batch_persists_max_seq_to_history_model() {
     use crate::ai::agent::conversation::{AIConversation, AIConversationId};
     use crate::persistence::ModelEvent;
-    use crate::server::server_api::ServerApiProvider;
     use crate::test_util::settings::initialize_settings_for_tests;
     use crate::{GlobalResourceHandles, GlobalResourceHandlesProvider};
     use warpui::App;
@@ -320,8 +317,8 @@ fn handle_event_batch_persists_max_seq_to_history_model() {
             model.restore_conversations(terminal_view_id, vec![conversation], ctx);
         });
 
-        let agent_event_stream_client =
-            ServerApiProvider::new_for_test().get_agent_event_stream_client();
+        let agent_event_stream_client: Arc<dyn AgentEventStreamClient> =
+            Arc::new(DisabledAgentEventStreamClient);
 
         let poller = app.add_singleton_model(|ctx| {
             OrchestrationEventStreamer::new_with_clients_for_test(agent_event_stream_client, ctx)

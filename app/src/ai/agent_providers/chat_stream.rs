@@ -57,8 +57,8 @@ use genai::{Client, ModelIden, ServiceTarget, WebConfig};
 
 use crate::ai::agent::api::{RequestParams, ResponseStream};
 use crate::ai::agent::{AIAgentInput, RunningCommand, UserQueryMode};
+use crate::ai::api_error::AIApiError;
 use crate::ai::byop_compaction;
-use crate::server::server_api::AIApiError;
 use crate::settings::AgentProviderApiType;
 use ai::agent::convert::ConvertToAPITypeError;
 

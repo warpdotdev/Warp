@@ -12,9 +12,7 @@ use crate::terminal::cli_agent_sessions::{
     event::{CLIAgentEvent, CLIAgentEventPayload, CLIAgentEventType},
     CLIAgentInputEntrypoint, CLIAgentSessionsModel,
 };
-use crate::terminal::shared_session::{SharedSessionActionSource, SharedSessionScrollbackType};
 use base64::Engine;
-use session_sharing_protocol::sharer::SessionSourceType;
 use warpui::clipboard::{ClipboardContent, ImageData};
 mod warpify_footer;
 
@@ -233,21 +231,6 @@ impl TerminalView {
             }
             UseAgentToolbarEvent::ToggleFileExplorer(cli_agent) => {
                 self.toggle_file_tree(Some((*cli_agent).into()), ctx);
-            }
-            UseAgentToolbarEvent::StartRemoteControl { scrollback_type } => {
-                self.auto_stop_sharing_on_cli_end =
-                    *scrollback_type == SharedSessionScrollbackType::None;
-                self.attempt_to_share_session(
-                    *scrollback_type,
-                    Some(SharedSessionActionSource::FooterChip),
-                    SessionSourceType::default(),
-                    true,
-                    ctx,
-                );
-            }
-            UseAgentToolbarEvent::StopRemoteControl => {
-                self.auto_stop_sharing_on_cli_end = false;
-                self.stop_sharing_session(SharedSessionActionSource::FooterChip, ctx);
             }
             UseAgentToolbarEvent::OpenRichInput => {
                 if self.has_active_cli_agent_input_session(ctx) {
@@ -1096,17 +1079,6 @@ impl UseAgentToolbar {
             AgentInputFooterEvent::ToggleFileExplorer(agent) => {
                 ctx.emit(UseAgentToolbarEvent::ToggleFileExplorer(*agent));
             }
-            AgentInputFooterEvent::StartRemoteControl => {
-                let scrollback_type = if self.cli_agent(ctx).is_some() {
-                    SharedSessionScrollbackType::None
-                } else {
-                    SharedSessionScrollbackType::All
-                };
-                ctx.emit(UseAgentToolbarEvent::StartRemoteControl { scrollback_type });
-            }
-            AgentInputFooterEvent::StopRemoteControl => {
-                ctx.emit(UseAgentToolbarEvent::StopRemoteControl);
-            }
             AgentInputFooterEvent::OpenRichInput => {
                 ctx.emit(UseAgentToolbarEvent::OpenRichInput);
             }
@@ -1204,12 +1176,6 @@ pub enum UseAgentToolbarEvent {
     ToggleCodeReviewPane(CLIAgent),
     /// Toggle the file explorer (from CLI agent view).
     ToggleFileExplorer(CLIAgent),
-    /// Start remote control (one-click share without modal).
-    StartRemoteControl {
-        scrollback_type: SharedSessionScrollbackType,
-    },
-    /// Stop remote control (stop the active shared session).
-    StopRemoteControl,
     /// Open the rich input editor for composing a prompt.
     OpenRichInput,
     /// Hide the rich input editor (same as Escape).

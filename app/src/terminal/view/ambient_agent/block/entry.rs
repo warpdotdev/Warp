@@ -1,5 +1,4 @@
 use settings::Setting;
-use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::{appearance::Appearance, Icon};
 use warpui::prelude::Empty;
 use warpui::AppContext;
@@ -25,7 +24,6 @@ use crate::{
 };
 
 use super::super::{AmbientAgentViewModelEvent, Status};
-use crate::ai::ambient_agents::telemetry::{CloudAgentTelemetryEvent, CloudModeEntryPoint};
 
 /// Icon size for the status indicator
 const STATUS_ICON_SIZE: f32 = 16.;
@@ -282,12 +280,6 @@ impl TypedActionView for AmbientAgentEntryBlock {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             AmbientAgentEntryBlockAction::OpenAmbientAgent => {
-                send_telemetry_from_ctx!(
-                    CloudAgentTelemetryEvent::EnteredCloudMode {
-                        entry_point: CloudModeEntryPoint::EntryBlock,
-                    },
-                    ctx
-                );
                 if let Some(stack) = self.pane_stack.upgrade(ctx) {
                     stack.update(ctx, |stack, ctx| {
                         stack.push(

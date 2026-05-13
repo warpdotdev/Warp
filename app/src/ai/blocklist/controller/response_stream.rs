@@ -1,15 +1,17 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
+use crate::ai::api_error::AIApiError;
 use anyhow::anyhow;
 use chrono::{DateTime, Local, TimeDelta};
 use futures::channel::oneshot;
+use futures_util::StreamExt;
 use uuid::Uuid;
 use warp_multi_agent_api::response_event;
 use warpui::{Entity, ModelContext};
 
 use crate::{
     ai::agent::{
-        api::{self, generate_multi_agent_output, ConvertToAPITypeError},
+        api::{self, ConvertToAPITypeError},
         conversation::AIConversationId,
         AIAgentInput, AIIdentifiers, CancellationReason,
     },
@@ -264,7 +266,7 @@ impl ResponseStream {
                     )
                     .await
                 } else {
-                    generate_multi_agent_output(params_clone, cancellation_rx).await
+                    byop_required_response_stream(cancellation_rx).await
                 }
             },
             move |me, stream, ctx| {
@@ -369,7 +371,7 @@ impl ResponseStream {
                     )
                     .await
                 } else {
-                    generate_multi_agent_output(params, cancellation_rx).await
+                    byop_required_response_stream(cancellation_rx).await
                 }
             },
             move |me, stream, ctx| {
@@ -605,4 +607,17 @@ pub enum ResponseStreamEvent {
 
 impl Entity for ResponseStream {
     type Event = ResponseStreamEvent;
+}
+
+async fn byop_required_response_stream(
+    cancellation_rx: oneshot::Receiver<()>,
+) -> Result<api::ResponseStream, ConvertToAPITypeError> {
+    log::debug!("No BYOP provider selected for OpenWarp agent request");
+    let error_stream = futures::stream::once(async {
+        Err(Arc::new(AIApiError::Other(anyhow!(
+            "OpenWarp requires a configured BYOP provider in Settings"
+        ))))
+    })
+    .take_until(cancellation_rx);
+    Ok(Box::pin(error_stream))
 }

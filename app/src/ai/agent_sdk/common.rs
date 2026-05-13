@@ -1,13 +1,12 @@
 //! Common utilities for agent SDK commands.
 
 use std::future::Future;
-use std::time::Duration;
 
 use futures::TryFutureExt;
 
 use warp_cli::agent::Harness;
 use warpui::r#async::FutureExt;
-use warpui::{AppContext, GetSingletonModelHandle, SingletonEntity as _, UpdateModel};
+use warpui::{AppContext, SingletonEntity as _};
 
 use crate::ai::agent::conversation::ServerAIConversationMetadata;
 use crate::ai::agent_sdk::driver::{AgentDriverError, WARP_DRIVE_SYNC_TIMEOUT};
@@ -17,11 +16,7 @@ use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::Owner;
-use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::UserWorkspaces;
-
-/// How long to wait for workspace metadata to refresh.
-pub const WORKSPACE_METADATA_REFRESH_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub fn validate_agent_mode_base_model_id(
     model_id: &str,
@@ -104,23 +99,9 @@ pub fn resolve_owner(team_flag: bool, user_flag: bool, ctx: &AppContext) -> anyh
 /// This ensures that team state is up-to-date before creating cloud objects or performing
 /// other operations that depend on team membership.
 pub fn refresh_workspace_metadata<C>(
-    ctx: &mut C,
-) -> impl Future<Output = anyhow::Result<()>> + Send + 'static
-where
-    C: GetSingletonModelHandle + UpdateModel,
-{
-    let refresh_future = TeamUpdateManager::handle(ctx).update(ctx, |manager, ctx| {
-        manager
-            .refresh_workspace_metadata(ctx)
-            .with_timeout(WORKSPACE_METADATA_REFRESH_TIMEOUT)
-    });
-
-    async move {
-        let _ = refresh_future
-            .await
-            .map_err(|_| anyhow::anyhow!("Timed out refreshing team metadata"))?;
-        Ok(())
-    }
+    _ctx: &mut C,
+) -> impl Future<Output = anyhow::Result<()>> + Send + 'static {
+    async { Ok(()) }
 }
 
 /// Refresh Warp Drive before executing an operation.

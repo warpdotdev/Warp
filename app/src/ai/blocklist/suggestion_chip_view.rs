@@ -2,16 +2,17 @@ use crate::ai::agent::{SuggestedAgentModeWorkflow, SuggestedLoggingId, Suggested
 use crate::ai::facts::CloudAIFactModel;
 use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
-use crate::drive::CloudObjectTypeAndId;
-use crate::server::cloud_objects::update_manager::{
+use crate::cloud_object::update_manager::{
     ObjectOperation, OperationSuccessType, UpdateManagerEvent,
 };
+use crate::drive::CloudObjectTypeAndId;
 use crate::server::ids::SyncId;
 use crate::view_components::action_button::{ActionButton, ActionButtonTheme, SecondaryTheme};
 use crate::TelemetryEvent;
 use crate::{
     ai::facts::{AIFact, AIMemory},
-    server::{cloud_objects::update_manager::UpdateManager, ids::ClientId},
+    cloud_object::update_manager::UpdateManager,
+    server::ids::ClientId,
     ui_components::{blended_colors, icons::Icon},
 };
 use pathfinder_color::ColorU;

@@ -10,22 +10,25 @@
 //! * 外溢使用 `RequestLimitInfo` / `RequestUsageInfo` / `BonusGrant` /
 //!   `BonusGrantScope` / `RequestLimitRefreshDuration` /
 //!   `BuyCreditsBannerDisplayState` / `AIRequestUsageModelEvent` /
-//!   `AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD` 的文件(`server/server_api/ai.rs`、
-//!   `workspaces/gql_convert.rs`、`ai_assistant/requests.rs`、`ai_assistant/mod.rs`、
+//!   `AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD` 的文件(`workspaces/gql_convert.rs`、
+//!   `ai_assistant/requests.rs`、`ai_assistant/mod.rs`、
 //!   `settings/ai.rs`、`settings/ai_tests.rs`、`workspace/bonus_grant_notification_model.rs`、
 //!   `workspace/view/free_tier_limit_hit_modal.rs`、`settings_view/ai_page.rs`、
 //!   `terminal/view/ambient_agent/first_time_setup.rs`、`agent_view/agent_message_bar.rs`)
 //!   不在本任务写入域内 → 必须在 stub 内继续保留这些类型定义与等价构造能力,
 //!   只剥离 RPC / 缓存 / 计量等业务逻辑。
 
-use crate::workspaces::workspace::WorkspaceUid;
+use crate::{server_time::ServerTimestamp, workspaces::workspace::WorkspaceUid};
 use chrono::{DateTime, Utc};
 use instant::Instant;
 use serde::{Deserialize, Serialize};
-use warp_graphql::scalars::time::ServerTimestamp;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
-pub use warp_graphql::billing::BonusGrantType;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BonusGrantType {
+    AmbientOnly,
+    Any,
+}
 
 /// Threshold of ambient-only credits at which we surface upgrade/CTA UI。
 ///
@@ -122,8 +125,8 @@ impl RequestLimitInfo {
 }
 
 /// 历史:服务端 `getRequestLimitInfo` 返回的聚合结构。
-/// OpenWarp:仅作为类型壳保留(`server/server_api/ai.rs`、`ai_assistant/requests.rs`
-/// 仍会构造此类型)。`AIRequestUsageModel` 不再消费它。
+/// OpenWarp:仅作为类型壳保留(`ai_assistant/requests.rs` 仍会构造此类型)。
+/// `AIRequestUsageModel` 不再消费它。
 pub struct RequestUsageInfo {
     pub request_limit_info: RequestLimitInfo,
     pub bonus_grants: Vec<BonusGrant>,
