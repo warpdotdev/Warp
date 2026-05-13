@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{anyhow, Result};
+use warp_core::safe_warn;
 
 #[cfg(test)]
 #[path = "git_tests.rs"]
@@ -934,6 +935,163 @@ pub async fn create_pr(
     _path_env: Option<&str>,
 ) -> Result<PrInfo> {
     Err(anyhow!("Not supported on wasm"))
+}
+
+/// Gets git branches, sorted by commit date (most recent first).
+/// Returns a list of `(branch_name, is_main_branch)` tuples.
+/// Defaults to the most recent 100 branches for performance.
+pub async fn get_all_branches(
+    repo_path: &Path,
+    max_branch_count: Option<usize>,
+    include_remotes: bool,
+) -> Result<Vec<(String, bool)>> {
+    let main_branch = match detect_main_branch(repo_path).await {
+        Ok(branch) => branch,
+        Err(err) => {
+            log::warn!("Failed to detect main branch: {err}");
+            "origin/main".to_string()
+        }
+    };
+    fetch_branch_list_with_main(repo_path, &main_branch, max_branch_count, include_remotes).await
+}
+
+/// Like [`get_all_branches`] but with a pre-known main branch, skipping
+/// [`detect_main_branch`].
+///
+/// Use this when the main branch is already cached from a previous call to avoid
+/// the up-to-6 sequential subprocess calls that detection may require.
+pub async fn get_all_branches_with_known_main(
+    repo_path: &Path,
+    main_branch: &str,
+    max_branch_count: Option<usize>,
+    include_remotes: bool,
+) -> Result<Vec<(String, bool)>> {
+    fetch_branch_list_with_main(repo_path, main_branch, max_branch_count, include_remotes).await
+}
+
+/// Shared implementation for [`get_all_branches`] and
+/// [`get_all_branches_with_known_main`]. Runs `git for-each-ref` and
+/// marks each branch as main or not based on the supplied `main_branch` string.
+async fn fetch_branch_list_with_main(
+    repo_path: &Path,
+    main_branch: &str,
+    max_branch_count: Option<usize>,
+    include_remotes: bool,
+) -> Result<Vec<(String, bool)>> {
+    let count_arg = format!("--count={}", max_branch_count.unwrap_or(100));
+
+    let mut args = vec![
+        "for-each-ref",
+        count_arg.as_str(),
+        "--sort=-committerdate",
+        "--format=%(refname:short)",
+        "refs/heads",
+    ];
+
+    if include_remotes {
+        args.push("refs/remotes");
+    }
+    log::debug!(
+        "[GIT OPERATION] git.rs fetch_branch_list_with_main git {}",
+        args.join(" ")
+    );
+    let output = run_git_command(repo_path, args.as_slice()).await?;
+
+    let mut branches = Vec::new();
+
+    for branch in output.lines() {
+        let branch = branch.trim();
+        if branch.is_empty() {
+            continue;
+        }
+
+        // Skip HEAD pointer and detached HEAD states
+        if branch.contains("HEAD") || branch.starts_with('(') {
+            continue;
+        }
+
+        let is_main = branch == main_branch || branch == main_branch.trim_start_matches("origin/");
+        branches.push((branch.to_string(), is_main));
+    }
+
+    // Remove duplicates while preserving order (most recent first)
+    let mut seen = std::collections::HashSet::new();
+    branches.retain(|(name, _)| seen.insert(name.clone()));
+
+    if branches.is_empty() {
+        safe_warn!(
+            safe: ("Code Review: get_all_branches returned empty list"),
+            full: ("Code Review: get_all_branches returned empty list for repo: {:?}", repo_path)
+        );
+    }
+
+    Ok(branches)
+}
+
+/// Returns an iterator over `branches` with main branches (`is_main == true`) first,
+/// then the rest in their existing order.
+pub fn sort_branches_main_first(
+    branches: &[(String, bool)],
+) -> impl Iterator<Item = &(String, bool)> {
+    branches
+        .iter()
+        .filter(|(_, is_main)| *is_main)
+        .chain(branches.iter().filter(|(_, is_main)| !is_main))
+}
+
+/// Represents a parsed unified diff header.
+/// Format: `@@ -old_start,old_count +new_start,new_count @@ [optional context]`
+#[derive(Clone, Debug, PartialEq)]
+pub struct UnifiedDiffHeader {
+    pub old_start_line: usize,
+    pub old_line_count: usize,
+    pub new_start_line: usize,
+    pub new_line_count: usize,
+}
+
+/// Parses a range string like "1,5" or "1" into (start, count).
+pub(crate) fn parse_range(range_str: &str) -> Result<(usize, usize)> {
+    if let Some(comma_pos) = range_str.find(',') {
+        let start: usize = range_str[..comma_pos]
+            .parse()
+            .map_err(|_| anyhow!("Invalid range start: {range_str}"))?;
+        let count: usize = range_str[comma_pos + 1..]
+            .parse()
+            .map_err(|_| anyhow!("Invalid range count: {range_str}"))?;
+        Ok((start, count))
+    } else {
+        let start: usize = range_str
+            .parse()
+            .map_err(|_| anyhow!("Invalid range: {range_str}"))?;
+        Ok((start, 1))
+    }
+}
+
+/// Parses a unified diff header line.
+/// Format: `@@ -old_start,old_count +new_start,new_count @@ [optional context]`
+pub(crate) fn parse_unified_diff_header(header_line: &str) -> Result<UnifiedDiffHeader> {
+    if !header_line.starts_with("@@") {
+        return Err(anyhow!("Invalid unified diff header: {header_line}"));
+    }
+
+    // Split by whitespace and take only the first 3 tokens to ignore optional context
+    let header_parts: Vec<&str> = header_line.split_whitespace().take(3).collect();
+    if header_parts.len() < 3 {
+        return Err(anyhow!("Invalid unified diff header format: {header_line}"));
+    }
+
+    let old_range = &header_parts[1][1..]; // Remove the '-'
+    let new_range = &header_parts[2][1..]; // Remove the '+'
+
+    let (old_start_line, old_line_count) = parse_range(old_range)?;
+    let (new_start_line, new_line_count) = parse_range(new_range)?;
+
+    Ok(UnifiedDiffHeader {
+        old_start_line,
+        old_line_count,
+        new_start_line,
+        new_line_count,
+    })
 }
 
 /// Counts newlines in a file, returning 0 for binary or oversized files.

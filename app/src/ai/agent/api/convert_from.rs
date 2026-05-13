@@ -133,6 +133,7 @@ fn convert_run_agents(run_agents: api::RunAgents) -> AIAgentActionType {
         harness,
         agent_run_configs,
         execution_mode,
+        plan_id,
     } = run_agents;
     AIAgentActionType::RunAgents(RunAgentsRequest {
         summary,
@@ -152,6 +153,7 @@ fn convert_run_agents(run_agents: api::RunAgents) -> AIAgentActionType {
                 title: config.title,
             })
             .collect(),
+        plan_id,
     })
 }
 

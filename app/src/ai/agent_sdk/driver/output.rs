@@ -42,7 +42,8 @@ pub mod text {
             | AIAgentInput::StartFromAmbientRunPrompt { .. }
             | AIAgentInput::MessagesReceivedFromAgents { .. }
             | AIAgentInput::PassiveSuggestionResult { .. }
-            | AIAgentInput::EventsFromAgents { .. } => {
+            | AIAgentInput::EventsFromAgents { .. }
+            | AIAgentInput::OrchestrationConfigUpdate { .. } => {
                 // Do not include the user query, since it's already provided as input to the agent.
                 Ok(())
             }
@@ -795,7 +796,8 @@ pub mod json {
                 | AIAgentInput::StartFromAmbientRunPrompt { .. }
                 | AIAgentInput::MessagesReceivedFromAgents { .. }
                 | AIAgentInput::EventsFromAgents { .. }
-                | AIAgentInput::PassiveSuggestionResult { .. } => None,
+                | AIAgentInput::PassiveSuggestionResult { .. }
+                | AIAgentInput::OrchestrationConfigUpdate { .. } => None,
                 // These input types should not occur in a SDK-run agent.
                 AIAgentInput::ResumeConversation { .. }
                 | AIAgentInput::TriggerPassiveSuggestion { .. } => None,

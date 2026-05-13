@@ -1,6 +1,6 @@
 ---
 name: feedback
-description: Turn rough feedback about the Warp app into a filed GitHub issue or duplicate-issue response for `warpdotdev/warp`. Use when the user shares a Warp bug report, regression, confusing UX note, feature gap, or short complaint and wants it clarified into reproduction steps, expected vs actual behavior, concrete impact, and grounded source references from local Warp repos when available.
+description: "Turn rough feedback about the Warp app into a filed GitHub issue or duplicate-issue response for `warpdotdev/warp`. Use ONLY when the user explicitly wants to report a problem with the Warp terminal/IDE/app itself—not when they're working on their own code, managing their own GitHub repos, or doing general software development tasks. SKIP when: the user is creating/managing GitHub issues or PRs for their own projects, reviewing PRs, diagnosing CI failures, using `gh` CLI for repo management, or performing any GitHub workflow not specifically about reporting a problem with the Warp application itself."
 ---
 
 # Feedback

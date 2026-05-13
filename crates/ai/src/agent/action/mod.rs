@@ -48,7 +48,7 @@ pub enum AIAgentActionType {
         /// result instead.
         wait_until_completion: bool,
 
-        /// [`Some(true)`] iff the LLM thinks that the `command` might invoke pager.
+        /// [`Some(true)`] iff the LLM thinks that the `command` might invoke a pager.
         uses_pager: Option<bool>,
 
         /// The AI's rationale for requesting a command.
@@ -192,6 +192,7 @@ pub struct RunAgentsRequest {
     pub harness_type: String,
     pub execution_mode: RunAgentsExecutionMode,
     pub agent_run_configs: Vec<RunAgentsAgentRunConfig>,
+    pub plan_id: String,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

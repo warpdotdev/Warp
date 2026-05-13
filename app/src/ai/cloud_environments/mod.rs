@@ -18,7 +18,7 @@ use crate::{
 };
 use warpui::{AppContext, SingletonEntity as _};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GithubRepo {
     /// Repository owner (e.g. "warpdotdev")
     pub owner: String,

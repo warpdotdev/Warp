@@ -500,6 +500,7 @@ pub enum CLIAgentType {
     Auggie,
     Cursor,
     Goose,
+    Hermes,
     Vibe,
     Unknown,
 }
@@ -1045,6 +1046,7 @@ pub enum AIAgentInput {
     MessagesReceivedFromAgents { message_count: usize },
     EventsFromAgents { event_count: usize },
     PassiveSuggestionResult,
+    OrchestrationConfigUpdate,
 }
 
 impl From<FullAIAgentInput> for AIAgentInput {
@@ -1085,6 +1087,7 @@ impl From<FullAIAgentInput> for AIAgentInput {
                 event_count: events.len(),
             },
             FullAIAgentInput::PassiveSuggestionResult { .. } => Self::PassiveSuggestionResult,
+            FullAIAgentInput::OrchestrationConfigUpdate { .. } => Self::OrchestrationConfigUpdate,
         }
     }
 }
@@ -1371,7 +1374,9 @@ pub enum TelemetryEvent {
     /// We attempted to bootstrap an SSH session via the SSH wrapper.  The
     /// argument is the name of the remote shell.
     SSHBootstrapAttempt(String),
-    SSHControlMasterError,
+    SSHControlMasterError {
+        has_remote_server: bool,
+    },
     KeybindingChanged {
         action: String,
         keystroke: Keystroke,
@@ -2341,7 +2346,9 @@ pub enum TelemetryEvent {
     #[cfg(windows)]
     AutoupdateMutexTimeout,
     #[cfg(windows)]
-    AutoupdateForcekillFailed,
+    AutoupdateForcekillFailed {
+        exit_code: i32,
+    },
     ExecutedWarpDrivePrompt {
         id: Option<WorkflowId>,
         selection_source: WorkflowSelectionSource,
@@ -2801,6 +2808,7 @@ pub enum TelemetryEvent {
     /// `error` is `None` on success, `Some(reason)` on failure.
     RemoteServerInstallation {
         error: Option<String>,
+        install_source: Option<remote_server::transport::InstallSource>,
         remote_os: Option<String>,
         remote_arch: Option<String>,
     },
@@ -2811,6 +2819,11 @@ pub enum TelemetryEvent {
         error: Option<String>,
         remote_os: Option<String>,
         remote_arch: Option<String>,
+        /// Exit code of the SSH subprocess, if available.
+        /// Helps distinguish proxy crashes from transport failures.
+        exit_code: Option<i32>,
+        /// Whether the SSH subprocess was killed by a signal.
+        signal_killed: Option<bool>,
     },
     /// Emitted when an established remote server connection drops.
     RemoteServerDisconnection {
@@ -4128,7 +4141,6 @@ impl TelemetryEvent {
             | TelemetryEvent::SettingsImportResetButtonClicked
             | TelemetryEvent::ITermMultipleHotkeys
             | TelemetryEvent::DriveSharingOnboardingBlockShown
-            | TelemetryEvent::SSHControlMasterError
             | TelemetryEvent::SettingsImportInitiated
             | TelemetryEvent::GrepToolSucceeded
             | TelemetryEvent::FileGlobToolSucceeded
@@ -4141,6 +4153,9 @@ impl TelemetryEvent {
             | TelemetryEvent::GlobalSearchOpened
             | TelemetryEvent::GlobalSearchQueryStarted
             | TelemetryEvent::GetStartedSkipToTerminal => None,
+            TelemetryEvent::SSHControlMasterError { has_remote_server } => Some(json!({
+                "has_remote_server": has_remote_server,
+            })),
             TelemetryEvent::RemoteServerBinaryCheck {
                 found,
                 error,
@@ -4154,10 +4169,12 @@ impl TelemetryEvent {
             })),
             TelemetryEvent::RemoteServerInstallation {
                 error,
+                install_source,
                 remote_os,
                 remote_arch,
             } => Some(json!({
                 "error": error,
+                "install_source": install_source,
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
             })),
@@ -4166,11 +4183,15 @@ impl TelemetryEvent {
                 error,
                 remote_os,
                 remote_arch,
+                exit_code,
+                signal_killed,
             } => Some(json!({
                 "phase": phase,
                 "error": error,
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
+                "exit_code": exit_code,
+                "signal_killed": signal_killed,
             })),
             TelemetryEvent::RemoteServerDisconnection {
                 remote_os,
@@ -4308,8 +4329,11 @@ impl TelemetryEvent {
             TelemetryEvent::WSLRegistryError
             | TelemetryEvent::AutoupdateUnableToCloseApplications
             | TelemetryEvent::AutoupdateFileInUse
-            | TelemetryEvent::AutoupdateMutexTimeout
-            | TelemetryEvent::AutoupdateForcekillFailed => None,
+            | TelemetryEvent::AutoupdateMutexTimeout => None,
+            #[cfg(windows)]
+            TelemetryEvent::AutoupdateForcekillFailed { exit_code } => Some(json!({
+                "exit_code": exit_code,
+            })),
             TelemetryEvent::InputBufferSubmitted {
                 input_type,
                 is_locked,
@@ -4659,7 +4683,7 @@ impl TelemetryEvent {
             | TelemetryEvent::LoggedOutStartup
             | TelemetryEvent::DownloadSource(_)
             | TelemetryEvent::SSHBootstrapAttempt(_)
-            | TelemetryEvent::SSHControlMasterError
+            | TelemetryEvent::SSHControlMasterError { .. }
             | TelemetryEvent::KeybindingChanged { .. }
             | TelemetryEvent::KeybindingResetToDefault { .. }
             | TelemetryEvent::KeybindingRemoved { .. }
@@ -5046,7 +5070,7 @@ impl TelemetryEvent {
             | TelemetryEvent::AutoupdateUnableToCloseApplications
             | TelemetryEvent::AutoupdateFileInUse
             | TelemetryEvent::AutoupdateMutexTimeout
-            | TelemetryEvent::AutoupdateForcekillFailed => false,
+            | TelemetryEvent::AutoupdateForcekillFailed { .. } => false,
         }
     }
 
@@ -5433,7 +5457,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::SettingsImportConfigFocused
             | Self::SettingsImportConfigParsed
             | Self::SettingsImportResetButtonClicked
-            | Self::ITermMultipleHotkeys => EnablementState::Flag(FeatureFlag::SettingsImport),
+            | Self::ITermMultipleHotkeys => EnablementState::Always,
             Self::ToggleIntelligentAutosuggestionsSetting | Self::AgentModePrediction => {
                 EnablementState::Always
             }
@@ -5466,9 +5490,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ToggleWorkspaceDecorationVisibility => {
                 EnablementState::Flag(FeatureFlag::FullScreenZenMode)
             }
-            Self::UpdateAltScreenPaddingMode => {
-                EnablementState::Flag(FeatureFlag::RemoveAltScreenPadding)
-            }
+            Self::UpdateAltScreenPaddingMode => EnablementState::Always,
             Self::AddTabWithShell => EnablementState::Flag(FeatureFlag::ShellSelector),
             Self::AgentModeSurfacedCitations | Self::AgentModeOpenedCitation => {
                 EnablementState::Always
@@ -5492,7 +5514,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::AutoupdateUnableToCloseApplications
             | Self::AutoupdateFileInUse
             | Self::AutoupdateMutexTimeout
-            | Self::AutoupdateForcekillFailed => EnablementState::Always,
+            | Self::AutoupdateForcekillFailed { .. } => EnablementState::Always,
             Self::ToggleCodebaseContext => EnablementState::Always,
             Self::ToggleAutoIndexing => EnablementState::Always,
             Self::AgentModeRatedResponse => {
@@ -5537,7 +5559,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::AgentModeSetupProjectScopedRulesAction { .. } => EnablementState::Always,
             Self::AgentModeSetupCodebaseContextAction { .. } => EnablementState::Always,
             Self::AgentModeSetupCreateEnvironmentAction { .. } => EnablementState::Always,
-            Self::InputBufferSubmitted => EnablementState::Flag(FeatureFlag::NldImprovements),
+            Self::InputBufferSubmitted => EnablementState::Always,
             Self::AgentModeContinueConversationButtonClicked { .. } => EnablementState::Always,
             Self::AgentModeRewindDialogOpened { .. } => {
                 EnablementState::Flag(FeatureFlag::RevertToCheckpoints)
@@ -6022,7 +6044,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             #[cfg(windows)]
             Self::AutoupdateMutexTimeout => "Windows Autoupdate: Mutex Timeout",
             #[cfg(windows)]
-            Self::AutoupdateForcekillFailed => "Windows Autoupdate: Forcekill Failed",
+            Self::AutoupdateForcekillFailed { .. } => "Windows Autoupdate: Forcekill Failed",
             Self::ToggleCodebaseContext => "Toggle Agent Mode Codebase Context",
             Self::ToggleAutoIndexing => "Toggle Codebase Context Autoindexing",
             Self::ActiveIndexedReposChanged => "Active Indexed Repos Changed",
@@ -6840,7 +6862,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 "The Windows auto-update installer timed out waiting for Warp to release its mutex; a force-kill was attempted"
             }
             #[cfg(windows)]
-            Self::AutoupdateForcekillFailed => {
+            Self::AutoupdateForcekillFailed { .. } => {
                 "The Windows auto-update installer failed to force-kill Warp after the mutex timeout"
             }
             Self::ToggleCodebaseContext => {
@@ -7059,5 +7081,5 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
 warp_core::register_telemetry_event!(TelemetryEvent);
 
 #[cfg(test)]
-#[path = "events_test.rs"]
+#[path = "events_tests.rs"]
 mod tests;

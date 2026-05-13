@@ -23,7 +23,6 @@ onnx_ort = [
     "dep:ndarray",
     "dep:parking_lot",
 ]
-fasttext = ["dep:fasttext", "dep:rust-embed", "dep:tempfile"]
 onnx = ["dep:rust-embed", "dep:tokenizers"]
 
 [dependencies]
@@ -36,7 +35,6 @@ candle-nn = { version = "0.9.2", optional = true }
 candle-onnx = { version = "0.9.2", optional = true }
 cfg-if.workspace = true
 itertools.workspace = true
-fasttext = { version = "0.7.8", optional = true }
 futures-lite.workspace = true
 instant.workspace = true
 lazy_static.workspace = true
@@ -49,7 +47,6 @@ prost = { version = "0.14.3", optional = true }
 rust-embed = { workspace = true, optional = true }
 serde.workspace = true
 smol_str.workspace = true
-tempfile = { workspace = true, optional = true }
 tokenizers = { version = "0.21.4", optional = true }
 warp_completer.workspace = true
 

@@ -112,6 +112,10 @@ pub enum WorkspaceAction {
     RenamePane(PaneViewLocator),
     ResetPaneName(PaneViewLocator),
     RenameActiveTab,
+    /// Renames the focused pane in the active tab. Mirrors `RenameActiveTab`
+    /// so the action is reachable from the binding registry / Command Palette
+    /// (see #9351). The context-menu path keeps using `RenamePane(locator)`.
+    RenameActivePane,
     SetActiveTabName(String),
     /// Sets the manual color override for the active tab.
     ///
@@ -478,6 +482,21 @@ pub enum WorkspaceAction {
     },
     /// Insert the /fork slash command into the active terminal's input.
     InsertForkSlashCommand,
+    /// Open a local-to-cloud handoff pane next to the active conversation
+    /// (REMOTE-1486). Triggered by the `/move-to-cloud` slash command
+    /// and the footer chip of the same name. The dispatch site reads the
+    /// active conversation's `server_conversation_token` and gates on
+    /// `FeatureFlag::OzHandoff && FeatureFlag::HandoffLocalCloud`.
+    /// Falls through to splitting a fresh cloud-mode pane when the active
+    /// conversation isn't handoff-able (no synced server token, empty, or no
+    /// active conversation at all).
+    OpenLocalToCloudHandoffPane {
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        launch: Option<crate::ai::blocklist::handoff::PendingCloudLaunch>,
+        #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+        launch: Option<()>,
+        explicit_environment_id: Option<crate::server::ids::SyncId>,
+    },
     /// Summarize the active AI conversation in the focused pane.
     SummarizeAIConversation {
         prompt: Option<String>,
@@ -551,6 +570,12 @@ pub enum WorkspaceAction {
     /// Reset the OpenWarp launch modal dismissed state (for debugging)
     #[cfg(debug_assertions)]
     ResetOpenWarpLaunchModalState,
+    /// Open the Orchestration Launch Modal (for debugging)
+    #[cfg(debug_assertions)]
+    OpenOrchestrationLaunchModal,
+    /// Reset the orchestration launch modal dismissed state (for debugging)
+    #[cfg(debug_assertions)]
+    ResetOrchestrationLaunchModalState,
     /// Install the opencode-warp plugin from GitHub into the global opencode config.
     #[cfg(debug_assertions)]
     InstallOpenCodeWarpPlugin,
@@ -717,6 +742,7 @@ impl WorkspaceAction {
             | RenamePane(_)
             | ResetPaneName(_)
             | RenameActiveTab
+            | RenameActivePane
             | SetActiveTabName(_)
             | SetActiveTabColor(_)
             | CloseTab(_)
@@ -928,6 +954,7 @@ impl WorkspaceAction {
             | TabConfigSidecarRemoveConfig { .. }
             | OpenSettingsFile
             | FixSettingsWithOz { .. }
+            | OpenLocalToCloudHandoffPane { .. }
             | OpenNetworkLogPane => false,
             #[cfg(debug_assertions)]
             ShowHoaOnboardingFlow => false,
@@ -941,6 +968,8 @@ impl WorkspaceAction {
             | ResetOzLaunchModalState
             | OpenOpenWarpLaunchModal
             | ResetOpenWarpLaunchModalState
+            | OpenOrchestrationLaunchModal
+            | ResetOrchestrationLaunchModalState
             | InstallOpenCodeWarpPlugin
             | UseLocalOpenCodeWarpPlugin => false,
             #[cfg(not(target_family = "wasm"))]

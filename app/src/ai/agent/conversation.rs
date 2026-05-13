@@ -12,6 +12,7 @@ use crate::terminal::general_settings::GeneralSettings;
 use crate::terminal::model::block::{
     AgentInteractionMetadata, AgentViewVisibility, BlockId, SerializedAIMetadata, SerializedBlock,
 };
+use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationConfigStatus};
 
 use crate::ai::agent::api::convert_conversation::{
     compute_time_to_first_token_ms_from_messages, ConvertToExchanges,
@@ -22,6 +23,7 @@ use itertools::Itertools as _;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::{collections::HashMap, fmt::Display};
+use warp_cli::agent::Harness;
 
 use super::task_store::TaskStore;
 use uuid::Uuid;
@@ -216,6 +218,8 @@ pub struct AIConversation {
     parent_agent_id: Option<String>,
     /// The display name for this agent (e.g. "Agent 1"), assigned by the orchestrator.
     agent_name: Option<String>,
+    /// Harness metadata associated with this child agent in orchestration flows.
+    orchestration_harness_type: Option<String>,
     /// The local conversation ID of the parent that spawned this child, if any.
     parent_conversation_id: Option<AIConversationId>,
     /// True when this conversation is a placeholder for a child agent executing
@@ -228,6 +232,11 @@ pub struct AIConversation {
     /// event log. Used on restore to resume event delivery without
     /// re-delivering already-processed events.
     last_event_sequence: Option<i64>,
+
+    /// Per-plan orchestration configs hydrated from
+    /// `OrchestrationConfigSnapshot` messages in the conversation's task list.
+    /// Keyed by `plan_id`; snapshots with empty `plan_id` are ignored.
+    orchestration_configs: HashMap<String, (OrchestrationConfig, OrchestrationConfigStatus)>,
 }
 
 pub(crate) fn artifact_from_fork_proto(
@@ -275,9 +284,11 @@ impl AIConversation {
             artifacts: Vec::new(),
             parent_agent_id: None,
             agent_name: None,
+            orchestration_harness_type: None,
             parent_conversation_id: None,
             is_remote_child: false,
             last_event_sequence: None,
+            orchestration_configs: HashMap::new(),
         }
     }
 
@@ -354,6 +365,7 @@ impl AIConversation {
             artifacts,
             parent_agent_id,
             agent_name,
+            orchestration_harness_type,
             parent_conversation_id,
             is_remote_child,
             run_id,
@@ -378,6 +390,7 @@ impl AIConversation {
                 .unwrap_or_default();
             let parent_agent_id = data.parent_agent_id;
             let agent_name = data.agent_name;
+            let orchestration_harness_type = data.orchestration_harness_type;
             let parent_conversation_id = data
                 .parent_conversation_id
                 .and_then(|id| AIConversationId::try_from(id).ok());
@@ -400,6 +413,7 @@ impl AIConversation {
                 artifacts,
                 parent_agent_id,
                 agent_name,
+                orchestration_harness_type,
                 parent_conversation_id,
                 is_remote_child,
                 run_id,
@@ -413,6 +427,7 @@ impl AIConversation {
                 ConversationUsageMetadata::default(),
                 Default::default(),
                 Vec::new(),
+                None,
                 None,
                 None,
                 None,
@@ -460,9 +475,11 @@ impl AIConversation {
             artifacts,
             parent_agent_id,
             agent_name,
+            orchestration_harness_type,
             parent_conversation_id,
             is_remote_child,
             last_event_sequence,
+            orchestration_configs: HashMap::new(),
         })
     }
 
@@ -796,6 +813,25 @@ impl AIConversation {
         self.agent_name = Some(name);
     }
 
+    pub fn orchestration_harness_type(&self) -> Option<&str> {
+        self.orchestration_harness_type.as_deref()
+    }
+
+    pub fn orchestration_harness(&self) -> Option<Harness> {
+        self.orchestration_harness_type
+            .as_deref()
+            .map(parse_orchestration_harness_type)
+            .or_else(|| {
+                self.server_metadata
+                    .as_ref()
+                    .map(|metadata| Harness::from(metadata.harness))
+            })
+    }
+
+    pub fn set_orchestration_harness(&mut self, harness: Harness) {
+        self.orchestration_harness_type = Some(harness.config_name().to_string());
+    }
+
     pub fn parent_conversation_id(&self) -> Option<AIConversationId> {
         self.parent_conversation_id
     }
@@ -837,6 +873,69 @@ impl AIConversation {
     /// Marks this conversation as a remote child placeholder.
     pub fn mark_as_remote_child(&mut self) {
         self.is_remote_child = true;
+    }
+
+    /// Returns the orchestration config and status for a specific plan,
+    /// or `None` if no config has been hydrated for that plan.
+    pub fn orchestration_config_for_plan(
+        &self,
+        plan_id: &str,
+    ) -> Option<(&OrchestrationConfig, OrchestrationConfigStatus)> {
+        self.orchestration_configs
+            .get(plan_id)
+            .map(|(config, status)| (config, *status))
+    }
+
+    /// Returns `true` if at least one plan has an orchestration config.
+    pub fn has_any_orchestration_config(&self) -> bool {
+        !self.orchestration_configs.is_empty()
+    }
+
+    /// Inserts or replaces the orchestration config for a specific plan.
+    /// Returns `true` if the value actually changed.
+    pub fn set_orchestration_config_for_plan(
+        &mut self,
+        plan_id: String,
+        config: OrchestrationConfig,
+        status: OrchestrationConfigStatus,
+    ) -> bool {
+        use std::collections::hash_map::Entry;
+        match self.orchestration_configs.entry(plan_id) {
+            Entry::Occupied(mut entry) => {
+                let existing = entry.get();
+                if existing.0 != config || existing.1 != status {
+                    entry.insert((config, status));
+                    true
+                } else {
+                    false
+                }
+            }
+            Entry::Vacant(entry) => {
+                entry.insert((config, status));
+                true
+            }
+        }
+    }
+
+    /// Returns a reference to the full per-plan config map.
+    pub fn orchestration_configs(
+        &self,
+    ) -> &HashMap<String, (OrchestrationConfig, OrchestrationConfigStatus)> {
+        &self.orchestration_configs
+    }
+
+    /// Bulk-replaces all orchestration configs (used during hydration).
+    /// Returns `true` if the map actually changed.
+    pub fn set_orchestration_configs(
+        &mut self,
+        configs: HashMap<String, (OrchestrationConfig, OrchestrationConfigStatus)>,
+    ) -> bool {
+        if self.orchestration_configs != configs {
+            self.orchestration_configs = configs;
+            true
+        } else {
+            false
+        }
     }
 
     /// Returns a flat list of linearized messages across all tasks, interpolating subtask messages
@@ -1116,9 +1215,15 @@ impl AIConversation {
 
     /// Returns the last exchange that didn't contain a passive request.
     pub fn last_non_passive_exchange(&self) -> Option<&AIAgentExchange> {
+        self.exchanges_reversed().find(|e| !e.has_passive_request())
+    }
+
+    /// Returns the latest root task exchange that has a visible AI block.
+    /// Passive exchanges do not render conversation-level controls, and hidden exchanges have
+    /// been removed from the blocklist.
+    pub fn latest_visible_exchange(&self) -> Option<&AIAgentExchange> {
         self.exchanges_reversed()
-            .skip_while(|e| e.has_passive_request())
-            .nth(0)
+            .find(|e| !e.has_passive_request() && !self.is_exchange_hidden(e.id))
     }
 
     pub fn first_exchange(&self) -> Option<&AIAgentExchange> {
@@ -2308,6 +2413,32 @@ impl AIConversation {
                                 None => {}
                             }
                         }
+                        Some(api::message::Message::OrchestrationConfigSnapshot(
+                            snapshot,
+                        )) => {
+                            if !snapshot.plan_id.is_empty() {
+                                if let Some(config) = snapshot
+                                    .config
+                                    .as_ref()
+                                    .map(OrchestrationConfig::from_proto)
+                                {
+                                    let status = OrchestrationConfigStatus::from_proto(
+                                        snapshot.status.as_ref(),
+                                    );
+                                    if self.set_orchestration_config_for_plan(
+                                        snapshot.plan_id.clone(),
+                                        config,
+                                        status,
+                                    ) {
+                                        ctx.emit(
+                                            BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
+                                                conversation_id: self.id,
+                                            },
+                                        );
+                                    }
+                                }
+                            }
+                        }
                         Some(api::message::Message::ToolCallResult(tcr)) => {
                             // Clean up temp directories from conversation search subagents.
                             if let Some(api::message::tool_call_result::Result::Subagent(_)) =
@@ -2441,6 +2572,33 @@ impl AIConversation {
                 message: Some(message),
                 mask: Some(mask),
             }) => {
+                // Process OrchestrationConfigSnapshot if the updated
+                // message carries one (e.g. create_orchestration_config
+                // tool call result updating a single message in place).
+                if let Some(api::message::Message::OrchestrationConfigSnapshot(snapshot)) =
+                    &message.message
+                {
+                    if !snapshot.plan_id.is_empty() {
+                        if let Some(config) = snapshot
+                            .config
+                            .as_ref()
+                            .map(OrchestrationConfig::from_proto)
+                        {
+                            let status =
+                                OrchestrationConfigStatus::from_proto(snapshot.status.as_ref());
+                            if self.set_orchestration_config_for_plan(
+                                snapshot.plan_id.clone(),
+                                config,
+                                status,
+                            ) {
+                                ctx.emit(BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
+                                    conversation_id: self.id,
+                                });
+                            }
+                        }
+                    }
+                }
+
                 let task_id = TaskId::new(task_id);
                 let exchange_id = self
                     .added_exchanges_by_response
@@ -2844,6 +3002,7 @@ impl AIConversation {
                 artifacts_json,
                 parent_agent_id: self.parent_agent_id.clone(),
                 agent_name: self.agent_name.clone(),
+                orchestration_harness_type: self.orchestration_harness_type.clone(),
                 parent_conversation_id: self.parent_conversation_id.map(|id| id.to_string()),
                 is_remote_child: self.is_remote_child,
                 run_id: self.task_id.map(|id| id.to_string()),
@@ -3342,6 +3501,12 @@ impl AIConversation {
     }
 }
 
+fn parse_orchestration_harness_type(value: &str) -> Harness {
+    Harness::from_config_name(value)
+        .or_else(|| Harness::parse_orchestration_harness(value))
+        .unwrap_or(Harness::Unknown)
+}
+
 pub(super) fn update_todo_list_from_todo_op(
     todo_lists: &mut Vec<AIAgentTodoList>,
     op: api::message::update_todos::Operation,
@@ -3669,6 +3834,14 @@ impl From<AIConversationAutoexecuteMode> for PersistedAutoexecuteMode {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum StatusColorStyle {
+    /// Foreground-blend colors (`ansi_fg`) used by the regular status badge.
+    Standard,
+    /// Background-blend colors (`ansi_bg`) used by the cloud overlay badge.
+    Cloud,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ConversationStatus {
     /// Agent is running.
@@ -3710,13 +3883,41 @@ impl ConversationStatus {
         }
     }
 
-    pub fn status_icon_and_color(&self, theme: &WarpTheme) -> (Icon, ColorU) {
+    pub fn status_icon_and_color(
+        &self,
+        theme: &WarpTheme,
+        color_style: StatusColorStyle,
+    ) -> (Icon, ColorU) {
         match self {
-            ConversationStatus::InProgress => (Icon::ClockLoader, theme.ansi_fg_magenta()),
-            ConversationStatus::Success => (Icon::Check, theme.ansi_fg_green()),
-            ConversationStatus::Error => (Icon::Triangle, theme.ansi_fg_red()),
+            ConversationStatus::InProgress => (
+                Icon::ClockLoader,
+                match color_style {
+                    StatusColorStyle::Standard => theme.ansi_fg_magenta(),
+                    StatusColorStyle::Cloud => theme.ansi_bg_magenta(),
+                },
+            ),
+            ConversationStatus::Success => (
+                Icon::Check,
+                match color_style {
+                    StatusColorStyle::Standard => theme.ansi_fg_green(),
+                    StatusColorStyle::Cloud => theme.ansi_bg_green(),
+                },
+            ),
+            ConversationStatus::Error => (
+                Icon::Triangle,
+                match color_style {
+                    StatusColorStyle::Standard => theme.ansi_fg_red(),
+                    StatusColorStyle::Cloud => theme.ansi_bg_red(),
+                },
+            ),
             ConversationStatus::Cancelled => (Icon::StopFilled, internal_colors::neutral_5(theme)),
-            ConversationStatus::Blocked { .. } => (Icon::StopFilled, theme.ansi_fg_yellow()),
+            ConversationStatus::Blocked { .. } => (
+                Icon::StopFilled,
+                match color_style {
+                    StatusColorStyle::Standard => theme.ansi_fg_yellow(),
+                    StatusColorStyle::Cloud => theme.ansi_bg_yellow(),
+                },
+            ),
         }
     }
 

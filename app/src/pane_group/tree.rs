@@ -217,9 +217,9 @@ impl PaneData {
     }
 
     pub fn visible_pane_count(&self) -> usize {
-        let total_panes = self.pane_ids().len();
-        let hidden_count = self.num_hidden_panes();
-        total_panes.saturating_sub(hidden_count)
+        // Use `visible_pane_ids` directly; subtracting hidden count would
+        // double-count temporary-replacement originals (hidden but off-tree).
+        self.visible_pane_ids().len()
     }
 
     pub fn has_horizontal_split(&self) -> bool {
@@ -324,6 +324,11 @@ impl PaneData {
         }
     }
 
+    /// Returns true if `id` is hidden as a child agent pane.
+    pub fn is_pane_hidden_for_child_agent(&self, id: PaneId) -> bool {
+        pane_hidden_for_child_agent(&self.hidden_panes, &id)
+    }
+
     pub fn toggle_pane_visibility_for_job(&mut self, id: PaneId) -> bool {
         if pane_hidden_for_job(&self.hidden_panes, &id) {
             self.show_pane_for_job(id);
@@ -372,6 +377,21 @@ impl PaneData {
         self.hidden_panes.iter().find_map(|hidden_pane| {
             matches!(hidden_pane.reason, HiddenPaneReason::TemporaryReplacement(id) if id == replacement_pane_id)
                 .then_some(hidden_pane.pane_id)
+        })
+    }
+
+    /// Inverse of [`Self::original_pane_for_replacement`]: given a pane
+    /// currently swapped out as a temporary replacement's original,
+    /// return the replacement that took its slot.
+    pub fn replacement_pane_for_original(&self, original_pane_id: PaneId) -> Option<PaneId> {
+        self.hidden_panes.iter().find_map(|hidden_pane| {
+            if hidden_pane.pane_id != original_pane_id {
+                return None;
+            }
+            match hidden_pane.reason {
+                HiddenPaneReason::TemporaryReplacement(replacement_id) => Some(replacement_id),
+                _ => None,
+            }
         })
     }
 
@@ -482,6 +502,11 @@ impl PaneData {
         self.hidden_panes
             .iter()
             .any(|hidden_pane| hidden_pane.pane_id == *pane_id)
+    }
+
+    /// Returns true if `pane_id` is currently a leaf in the layout tree.
+    pub fn is_pane_in_tree(&self, pane_id: PaneId) -> bool {
+        self.root.contains_pane(pane_id)
     }
 
     pub fn len(&self) -> usize {
@@ -825,7 +850,7 @@ impl PaneNode {
         }
     }
 
-    fn contains_pane(&self, pane_id: PaneId) -> bool {
+    pub(crate) fn contains_pane(&self, pane_id: PaneId) -> bool {
         match self {
             PaneNode::Leaf(id) => *id == pane_id,
             PaneNode::Branch(branch) => branch.contains_pane(pane_id),
