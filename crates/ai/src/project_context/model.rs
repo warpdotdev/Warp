@@ -491,7 +491,6 @@ impl ProjectContextModel {
     /// `ProjectContextModel` remains the public rule-context facade; the
     /// global source registry, cache, and watcher plumbing live in
     /// `global_rules`.
-    #[cfg(feature = "local_fs")]
     pub fn index_global_rules(&mut self, ctx: &mut ModelContext<Self>) {
         self.global_rules.index(ctx);
     }

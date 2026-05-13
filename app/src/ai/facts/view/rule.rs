@@ -33,7 +33,6 @@ use warp_core::ui::{
 };
 use warpui::elements::Shrinkable;
 use warpui::platform::FilePickerConfiguration;
-use warpui::text_layout::TextAlignment;
 use warpui::ui_components::button::ButtonVariant;
 use warpui::{
     elements::{
@@ -121,19 +120,20 @@ enum RuleRow {
 impl RuleRow {
     fn matches_search_term(&self, search_term: &str) -> bool {
         let search_term = search_term.to_lowercase();
+        let search_term = search_term.as_str();
         match self {
             RuleRow::Global(row) => {
                 let AIFact::Memory(AIMemory { name, content, .. }) =
                     row.fact.model().string_model.clone();
                 name.unwrap_or_default()
                     .to_lowercase()
-                    .contains(search_term.as_str())
-                    || content.to_lowercase().contains(search_term.as_str())
+                    .contains(search_term)
+                    || content.to_lowercase().contains(search_term)
             }
             RuleRow::FileBacked(row) => row
                 .file_path
                 .to_str()
-                .map(|s| s.to_lowercase().contains(search_term.as_str()))
+                .map(|s| s.to_lowercase().contains(search_term))
                 .unwrap_or(false),
         }
     }
@@ -890,18 +890,12 @@ impl RuleView {
             RuleScope::ProjectBased => ZERO_STATE_TEXT_PROJECT,
         };
 
-        let text_color = appearance
-            .theme()
-            .sub_text_color(appearance.theme().background())
-            .into();
-        let centered_text = FormattedTextElement::from_str(
-            text,
-            appearance.ui_font_family(),
-            style::TEXT_FONT_SIZE,
-        )
-        .with_color(text_color)
-        .with_alignment(TextAlignment::Center)
-        .finish();
+        let centered_text = appearance
+            .ui_builder()
+            .wrappable_text(text, true)
+            .with_style(style::description_text(appearance))
+            .build()
+            .finish();
 
         Container::new(
             ConstrainedBox::new(
@@ -911,8 +905,8 @@ impl RuleView {
                         .with_main_axis_alignment(MainAxisAlignment::Center)
                         .with_cross_axis_alignment(CrossAxisAlignment::Center)
                         .with_child(
-                            Container::new(centered_text)
-                                .with_margin_bottom(8.)
+                            Container::new(Align::new(centered_text).top_center().finish())
+                                .with_horizontal_padding(style::ROW_HORIZONTAL_PADDING)
                                 .finish(),
                         )
                         .with_child(self.render_add_button())

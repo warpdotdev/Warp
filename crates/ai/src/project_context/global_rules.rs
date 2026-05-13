@@ -61,7 +61,7 @@ pub(crate) struct GlobalRules {
     /// Global rule files keyed by absolute file path. Populated from
     /// [`GlobalRuleSource`]. Independent of project-level rule indexing.
     /// Stored in a `BTreeMap` so iteration order is deterministic.
-    rules: BTreeMap<PathBuf, ProjectRule>,
+    pub(super) rules: BTreeMap<PathBuf, ProjectRule>,
     /// Active home-subdir directory watchers, keyed by the absolute subdir
     /// path (e.g. `~/.agents`).
     source_watchers: HashMap<PathBuf, GlobalSourceWatcherState>,
@@ -84,17 +84,6 @@ impl GlobalRules {
             .values()
             .next()
             .and_then(|rule| rule.path.parent().map(|p| p.to_path_buf()))
-    }
-
-    #[cfg(test)]
-    pub(crate) fn insert_for_test(&mut self, path: &Path, content: &str) {
-        self.rules.insert(
-            path.to_path_buf(),
-            ProjectRule {
-                path: path.to_path_buf(),
-                content: content.to_string(),
-            },
-        );
     }
 
     /// Index all configured global rule sources (see [`GlobalRuleSource`]).
@@ -180,15 +169,7 @@ impl GlobalRules {
                     ));
                 }
                 None => {
-                    // Read failed. If we previously had content cached for
-                    // this path we MUST drop it — silently keeping stale
-                    // rule text active after the file becomes unreadable
-                    // (deleted between the FS event and the read, perms
-                    // revoked, replaced with a directory, …) would leave
-                    // the user's prompts decorated with instructions they
-                    // thought were gone. If we had nothing to begin with,
-                    // this is the steady "file never existed" state and we
-                    // do nothing.
+                    // Drop cached content if file is now unreadable; no-op if it never existed.
                     if me.global_rules.rules.remove(&file_path).is_some() {
                         ctx.emit(ProjectContextModelEvent::GlobalRulesChanged(
                             GlobalRulesDelta {
@@ -224,11 +205,10 @@ impl GlobalRules {
             return;
         }
 
-        let Some(update_tx) = self.updates_tx.clone() else {
-            return;
-        };
-
-        let Ok(std_path) = StandardizedPath::from_local_canonicalized(subdir_path) else {
+        let (Some(update_tx), Ok(std_path)) = (
+            self.updates_tx.clone(),
+            StandardizedPath::from_local_canonicalized(subdir_path),
+        ) else {
             return;
         };
 
@@ -288,6 +268,7 @@ impl GlobalRules {
                         subdir_for_log.display()
                     )
                 );
+                // Remove the stored watcher since registration failed.
                 if let Some(state) = me.global_rules.source_watchers.remove(&cleanup_key) {
                     state.repository.update(ctx, |repo, ctx| {
                         repo.stop_watching(state.subscriber_id, ctx);
@@ -319,6 +300,7 @@ impl GlobalRules {
         let was_added_or_modified = update.added_or_modified().any(|f| f.path == target_file)
             || update.moved.keys().any(|f| f.path == target_file);
 
+        // If the file was deleted, remove it from the cached content and emit a change event.
         if was_deleted && self.rules.remove(&target_file).is_some() {
             ctx.emit(ProjectContextModelEvent::GlobalRulesChanged(
                 GlobalRulesDelta {
@@ -328,6 +310,7 @@ impl GlobalRules {
             ));
         }
 
+        // If the file was added or modified, spawn a read to update the cached content.
         if was_added_or_modified {
             Self::spawn_global_rule_read(target_file, ctx);
         }
@@ -341,6 +324,7 @@ impl GlobalRules {
     ) {
         let HomeDirectoryWatcherEvent::HomeFilesChanged(fs_event) = event;
         let Some(home_dir) = dirs::home_dir() else {
+            log::warn!("Home directory not found; skipping global rules home dir event");
             return;
         };
 
@@ -369,9 +353,8 @@ impl GlobalRules {
             let subdir_added =
                 fs_event.added.contains(&subdir_path) || fs_event.moved.contains_key(&subdir_path);
             if subdir_added {
-                // Match `index()`'s ordering: kick off the read first, then
-                // register the watcher for subsequent edits.
                 let target_file = subdir_path.join(source.file_pattern());
+                // Kick off the read first, then register the watcher for subsequent edits.
                 Self::spawn_global_rule_read(target_file, ctx);
                 self.register_global_source_watcher(source, &subdir_path, ctx);
             }

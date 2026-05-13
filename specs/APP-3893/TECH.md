@@ -18,7 +18,7 @@ Relevant code:
 - `app/src/ai/mcp/file_mcp_watcher.rs` — pre-existing pattern for watching a known home subdir (e.g. `~/.codex`) plus the home directory itself for subdir creation/deletion. Reused as a template for the global-rule watchers.
 - `crates/watcher/src/home_watcher.rs` — `HomeDirectoryWatcher` singleton (non-recursive watch on `$HOME`) used to detect creation/deletion of the rule subdir at runtime.
 - `app/src/ai/facts/view/rule.rs` — `RuleView` settings UI with `Global` and `ProjectBased` tabs. Cloud rules render via `CloudRuleRow`; project rules render via the path-only row type.
-- `app/src/lib.rs:1746-1754` — singleton bootstrap site for `ProjectContextModel`.
+- `app/src/lib.rs` — singleton bootstrap site for `ProjectContextModel` and the startup call to `index_global_rules`.
 
 ## Proposed changes
 
@@ -30,12 +30,12 @@ Relevant code:
 
 - A `GlobalRuleSource` enum that enumerates known global locations via `strum::EnumIter`. Variants expose `name() / home_subdir() / file_pattern()` accessors. Today there is one variant, `Agents` → `~/.agents/AGENTS.md`. Adding a new global source = one variant + one match arm in each accessor.
 - `rules: BTreeMap<PathBuf, ProjectRule>` — discovered file contents, sorted by path so iteration is deterministic.
-- `source_watchers: HashMap<PathBuf, GlobalSourceWatcherState>` (gated on `local_fs`) — keyed by the absolute home subdir path so duplicate registrations naturally dedup.
+- `source_watchers: HashMap<PathBuf, GlobalSourceWatcherState>` — keyed by the absolute home subdir path so duplicate registrations naturally dedup.
 - `updates_tx: Option<Sender<GlobalRulesUpdate>>` — single channel that all per-source `RepositorySubscriber` instances push into; tagged with the originating `GlobalRuleSource`.
 
 `ProjectContextModel` owns one `global_rules: GlobalRules` field and exposes thin integration methods:
 
-- `index_global_rules(ctx)` (gated on `local_fs`) — invoked once at startup and delegated to `GlobalRules::index`. For each `GlobalRuleSource`, the delegated logic:
+- `index_global_rules(ctx)` — invoked once at startup and delegated to `GlobalRules::index`. Native builds use the file-watching implementation in `global_rules.rs`; non-`local_fs` builds call the no-op `dummy_global_rules.rs` implementation so the public facade and startup call stay unconditional. For each `GlobalRuleSource`, the native delegated logic:
   1. Spawns an async read of the target file via `ctx.spawn`. The callback inserts into `global_rules` and emits `GlobalRulesChanged`.
   2. Subscribes to `HomeDirectoryWatcher` to react to creation/deletion of the subdir at runtime.
   3. If the subdir exists, registers a `repo_metadata::DirectoryWatcher` on it and starts a `GlobalRulesRepositorySubscriber` that funnels per-file events back through the channel.
@@ -51,7 +51,7 @@ The implementation deliberately does **not** persist global rule paths to SQLite
 
 ### Wire-up
 
-`app/src/lib.rs` calls `ProjectContextModel::handle(ctx).update(ctx, |me, ctx| me.index_global_rules(ctx))` immediately after constructing the singleton. The call is gated on `feature = "local_fs"` (the function itself is also gated, mirroring existing `local_fs`-only model APIs).
+`app/src/lib.rs` calls `ProjectContextModel::handle(ctx).update(ctx, |me, ctx| me.index_global_rules(ctx))` immediately after constructing the singleton. The call is unconditional; platform differences live behind the `GlobalRules` alias (`global_rules.rs` for native file-system builds, `dummy_global_rules.rs` no-op for builds without file-system watcher support).
 
 ### Settings UI
 
@@ -72,7 +72,7 @@ The implementation deliberately does **not** persist global rule paths to SQLite
 ## Testing and validation
 
 ### Unit tests
-Located in `crates/ai/src/project_context/model_tests.rs`. They populate `ProjectContextModel` through test helpers (`GlobalRules::insert_for_test` for globals and `path_to_rules` for project rules), so they exercise the layering logic without spinning up the watcher infrastructure (which requires the warpui runtime).
+Located in `crates/ai/src/project_context/model_tests.rs`. They populate `ProjectContextModel` through local test helpers (direct test-visible `global_rules.rules` insertion for globals and `path_to_rules` for project rules), so they exercise the layering logic without spinning up the watcher infrastructure (which requires the warpui runtime).
 
 - Global rule alone, no project rules → `find_applicable_rules` returns it. Covers PRODUCT invariants 8, 10.
 - Global rule + project `WARP.md` for the same path → both appear in `active_rules`, ordered global first. Covers invariants 8, 9.

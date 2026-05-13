@@ -299,7 +299,13 @@ fn test_merge_rediscovery_keeps_latest() {
 // the model. Bypasses the watcher infrastructure (which requires the warpui
 // runtime) so we can exercise `find_applicable_rules`'s layering logic.
 fn insert_global_rule(model: &mut ProjectContextModel, path: &Path, content: &str) {
-    model.global_rules.insert_for_test(path, content);
+    model.global_rules.rules.insert(
+        path.to_path_buf(),
+        ProjectRule {
+            path: path.to_path_buf(),
+            content: content.to_string(),
+        },
+    );
 }
 
 fn insert_project_rule(
