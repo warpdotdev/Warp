@@ -73,10 +73,10 @@ fn test_basic_exec_no_field_codes() {
             let result = metadata.build_default_command(&content);
             assert!(result.is_ok());
             let cmd = result.unwrap();
-            assert_eq!(cmd.get_program(), "sh");
+            assert_eq!(cmd.get_program(), "echo");
             assert_eq!(
                 cmd.get_args().collect::<Vec<_>>(),
-                ["-c", "echo \"hello world\""]
+                ["hello world"]
             );
             Ok(())
         },
@@ -99,7 +99,7 @@ fn test_file_path_substitution() {
         assert!(result.is_ok());
         assert_eq!(
             result.unwrap().get_args().collect::<Vec<_>>(),
-            ["-c", format!("cat {file_name}").as_str()]
+            [file_name.as_str()]
         );
         Ok(())
     });
@@ -118,7 +118,7 @@ fn test_file_path_substitution() {
         assert!(result.is_ok());
         assert_eq!(
             result.unwrap().get_args().collect::<Vec<_>>(),
-            ["-c", format!("cat {file_name}").as_str()]
+            [file_name.as_str()]
         );
         Ok(())
     });
@@ -142,7 +142,7 @@ fn test_file_url_substitution() {
 
         assert_eq!(
             result.unwrap().get_args().collect::<Vec<_>>(),
-            ["-c", &format!("open {expected_file_uri}")]
+            [expected_file_uri.as_str()]
         );
         Ok(())
     });
@@ -163,7 +163,7 @@ fn test_file_url_substitution() {
 
         assert_eq!(
             result.unwrap().get_args().collect::<Vec<_>>(),
-            ["-c", &format!("open {expected_file_uri}")]
+            [expected_file_uri.as_str()]
         );
         Ok(())
     });
@@ -186,10 +186,24 @@ fn test_remaining_substitutions() {
 
         assert!(result.is_ok());
 
-        assert_eq!(
-            result.unwrap().get_args().collect::<Vec<_>>(),
-            ["-c", &format!("echo Warp Test Application && echo --icon /foo/bar/icon.png && echo {desktop_file_path} && echo %")]
-        );
+        // With argv-based construction, each token is a separate arg.
+        // %c → "Warp Test Application" (single arg, spaces preserved)
+        // %i → "--icon" and "/foo/bar/icon.png" (two separate args)
+        // %k → desktop file path
+        // %% → "%"
+        let cmd = result.unwrap();
+        let args: Vec<_> = cmd.get_args().collect();
+        assert_eq!(args[0], "Warp Test Application");
+        assert_eq!(args[1], "&&");
+        assert_eq!(args[2], "echo");
+        assert_eq!(args[3], "--icon");
+        assert_eq!(args[4], "/foo/bar/icon.png");
+        assert_eq!(args[5], "&&");
+        assert_eq!(args[6], "echo");
+        assert_eq!(args[7], desktop_file_path.as_str());
+        assert_eq!(args[8], "&&");
+        assert_eq!(args[9], "echo");
+        assert_eq!(args[10], "%");
         Ok(())
     });
 }
@@ -215,7 +229,7 @@ fn test_jetbrains_command_no_line_numbers() {
 
             assert_eq!(
                 result.unwrap().get_args().collect::<Vec<_>>(),
-                ["-c", &format!("/snap/bin/phpstorm {file_path}")]
+                [file_path.as_str()]
             );
             Ok(())
         },
@@ -249,7 +263,7 @@ fn test_jetbrains_command_line_numbers() {
 
             assert_eq!(
                 result.unwrap().get_args().collect::<Vec<_>>(),
-                ["-c", &format!("/snap/bin/phpstorm --line 42 {file_path}")]
+                ["--line", "42", file_path.as_str()]
             );
             Ok(())
         },
@@ -282,10 +296,7 @@ fn test_jetbrains_command_line_and_col_numbers() {
 
             assert_eq!(
                 result.unwrap().get_args().collect::<Vec<_>>(),
-                [
-                    "-c",
-                    &format!("/snap/bin/phpstorm --line 42 --column 25 {file_path}")
-                ]
+                ["--line", "42", "--column", "25", file_path.as_str()]
             );
             Ok(())
         },
@@ -313,7 +324,7 @@ fn test_sublime_command_no_line_numbers() {
 
             assert_eq!(
                 result.unwrap().get_args().collect::<Vec<_>>(),
-                ["-c", &format!("/snap/bin/subl {file_path}")]
+                [file_path.as_str()]
             );
             Ok(())
         },
@@ -346,7 +357,7 @@ fn test_sublime_command_line_numbers() {
 
             assert_eq!(
                 result.unwrap().get_args().collect::<Vec<_>>(),
-                ["-c", &format!("/snap/bin/subl {file_path}:42")]
+                [format!("{file_path}:42").as_str()]
             );
             Ok(())
         },
@@ -379,7 +390,7 @@ fn test_sublime_command_line_and_col_numbers() {
 
             assert_eq!(
                 result.unwrap().get_args().collect::<Vec<_>>(),
-                ["-c", &format!("/snap/bin/subl {file_path}:42:25")]
+                [format!("{file_path}:42:25").as_str()]
             );
             Ok(())
         },

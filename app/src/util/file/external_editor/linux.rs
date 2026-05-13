@@ -68,58 +68,49 @@ impl EditorMetadata {
 
     /// Common implementation of building a command
     ///
-    /// - Iterates over all characters in the Exec field, replacing field codes,
-    ///   to generate a new command string
-    /// - Builds a new command that executes `sh -c <command_string>`
+    /// - Pre-splits the Exec field into shell words, then expands field codes
+    ///   within each token to build a proper argv vector
+    /// - Returns a `Command` with program and args set directly (no shell)
     ///
     /// Field code replacement is handled by the `field_code_processor` callback.
-    /// See [`Self::build_default_command`] and [`Self::process_field_code`]
-    /// for examples of how these work.
-    ///
-    /// ```ignore
-    /// use std::path::PathBuf;
-    /// use warp::util::file::external_editor::linux::EditorMetadata;
-    ///
-    /// let desktop_file_path = PathBuf::from("/var/lib/snapd/desktop/applications/webstorm_webstorm.desktop");
-    /// let metadata = EditorMetadata::try_new(desktop_file_path)?;
-    ///
-    /// let my_file_path = PathBuf::from("~/foo.rs");
-    ///
-    /// // This is identicial to metadata.build_default_command(my_file_path);
-    /// let command = metadata.build_command(|me, acc, c| me.process_field_code(acc, c, my_file_path))?;
-    ///
-    /// // If I want to do some custom stuff, I can use a modified field code processor
-    /// let command = metadata.build_command(|me, acc, c| {
-    ///     match c {
-    ///         'c' => acc += "foobar",
-    ///         c =>  me.process_field_code(acc, c, my_file_path),
-    ///     }
-    /// });
-    /// ```
+    /// The callback receives `&mut Vec<String>` — push to the last element to
+    /// append within the current arg, or push a new `String` to add a new arg.
     fn build_command<T>(&self, field_code_processor: T) -> Result<Command, DesktopExecError>
     where
-        T: Fn(&Self, &mut String, char),
+        T: Fn(&Self, &mut Vec<String>, char),
     {
         let raw_exec = &self.exec;
 
-        let mut iter = raw_exec.chars();
-        let mut processed_exec = String::new();
-        while let Some(ch) = iter.next() {
-            if ch != '%' {
-                processed_exec.push(ch);
-                continue;
+        // Pre-split the Exec string into shell words first, then expand
+        // field codes within each token.  This preserves spaces inside
+        // substituted values (e.g. file paths) while still honouring the
+        // quoting in the original .desktop Exec line.
+        let tokens = shell_words::split(raw_exec)
+            .map_err(|_| DesktopExecError::MalformedFieldCode)?;
+
+        let mut argv: Vec<String> = Vec::with_capacity(tokens.len());
+        for token in &tokens {
+            let mut iter = token.chars();
+            let mut parts: Vec<String> = vec![String::new()];
+            while let Some(ch) = iter.next() {
+                if ch != '%' {
+                    parts.last_mut().unwrap().push(ch);
+                    continue;
+                }
+                let Some(next_char) = iter.next() else {
+                    return Err(DesktopExecError::MalformedFieldCode);
+                };
+                // Field code processors may push additional argv entries
+                // (e.g. %i pushes "--icon" and the icon value as separate args).
+                field_code_processor(self, &mut parts, next_char);
             }
-            let Some(next_char) = iter.next() else {
-                return Err(DesktopExecError::MalformedFieldCode);
-            };
-            field_code_processor(self, &mut processed_exec, next_char);
+            for p in parts {
+                if !p.is_empty() {
+                    argv.push(p);
+                }
+            }
         }
 
-        // Split into argv using shell-word splitting instead of passing to
-        // `sh -c`, which would allow shell metacharacter injection from
-        // malicious .desktop files.
-        let argv = shell_words::split(&processed_exec)
-            .map_err(|_| DesktopExecError::MalformedFieldCode)?;
         let (program, args) = argv
             .split_first()
             .ok_or(DesktopExecError::MalformedFieldCode)?;
@@ -139,10 +130,15 @@ impl EditorMetadata {
     ///
     /// Any errors or missing information (ex: %i with no Icon field, %U wiht a non-existent path)
     /// will fail silently, and result in nothing being appended to `processed_exec`
-    fn process_field_code(&self, processed_exec: &mut String, field_code: char, file_path: &Path) {
+    fn process_field_code(&self, parts: &mut Vec<String>, field_code: char, file_path: &Path) {
         match field_code {
             // file path
-            'f' | 'F' => *processed_exec += file_path.to_str().unwrap_or_default(),
+            'f' | 'F' => {
+                parts
+                    .last_mut()
+                    .unwrap()
+                    .push_str(file_path.to_str().unwrap_or_default());
+            }
             // URI
             'u' | 'U' => {
                 // TODO(daprahamian): B/c we are using canonicalize, this will fail
@@ -154,27 +150,32 @@ impl EditorMetadata {
                 // See https://github.com/rust-lang/rust/issues/92750
                 if let Ok(absolute) = file_path.canonicalize() {
                     if let Ok(file_url) = url::Url::from_file_path(absolute) {
-                        *processed_exec += file_url.as_str();
+                        parts.last_mut().unwrap().push_str(file_url.as_str());
                     }
                 }
             }
             // Localized Name
             'c' => {
                 if let Some(localized_name) = self.localized_name.as_ref() {
-                    *processed_exec += localized_name;
+                    parts.last_mut().unwrap().push_str(localized_name);
                 }
             }
-            // Icon argument
+            // Icon argument — push as separate argv entries
             'i' => {
                 if let Some(icon) = &self.icon {
-                    *processed_exec += "--icon ";
-                    *processed_exec += icon;
+                    parts.last_mut().unwrap().push_str("--icon");
+                    parts.push(icon.clone());
                 }
             }
             // Path to the display file
-            'k' => *processed_exec += self.desktop_file_path.to_str().unwrap_or_default(),
+            'k' => {
+                parts
+                    .last_mut()
+                    .unwrap()
+                    .push_str(self.desktop_file_path.to_str().unwrap_or_default());
+            }
             // Just add the character
-            other => processed_exec.push(other),
+            other => parts.last_mut().unwrap().push(other),
         };
     }
 
@@ -189,7 +190,7 @@ impl EditorMetadata {
     ///
     /// See https://specifications.freedesktop.org/desktop-entry-spec/latest/ar01s07.html
     fn build_default_command(&self, file_path: &Path) -> Result<Command, DesktopExecError> {
-        self.build_command(|me, acc, c| me.process_field_code(acc, c, file_path))
+        self.build_command(|me, parts, c| me.process_field_code(parts, c, file_path))
     }
 
     /// A variant of [`Self::build_default_command`] for jetbrains IDEs
@@ -205,19 +206,21 @@ impl EditorMetadata {
         file_path: &Path,
         line_column_number: Option<LineAndColumnArg>,
     ) -> Result<Command, DesktopExecError> {
-        self.build_command(|me, acc, field_code| match field_code {
+        self.build_command(|me, parts, field_code| match field_code {
             'f' | 'F' | 'u' | 'U' => {
                 if let Some(file_path) = file_path.to_str() {
                     if let Some(line_column_number) = line_column_number {
-                        *acc += &format!("--line {} ", line_column_number.line_num);
+                        parts.last_mut().unwrap().push_str("--line");
+                        parts.push(line_column_number.line_num.to_string());
                         if let Some(column_num) = line_column_number.column_num {
-                            *acc += &format!("--column {column_num} ");
+                            parts.push(format!("--column"));
+                            parts.push(column_num.to_string());
                         }
                     }
-                    *acc += file_path;
+                    parts.push(file_path.to_string());
                 }
             }
-            other => me.process_field_code(acc, other, file_path),
+            other => me.process_field_code(parts, other, file_path),
         })
     }
     /// A variant of [`Self::build_default_command`] for sublime
@@ -232,19 +235,20 @@ impl EditorMetadata {
         file_path: &Path,
         line_column_number: Option<LineAndColumnArg>,
     ) -> Result<Command, DesktopExecError> {
-        self.build_command(|me, acc, field_code| match field_code {
+        self.build_command(|me, parts, field_code| match field_code {
             'f' | 'F' | 'u' | 'U' => {
                 if let Some(file_path) = file_path.to_str() {
-                    *acc += file_path;
+                    let mut arg = file_path.to_string();
                     if let Some(line_column_number) = line_column_number {
-                        *acc += &format!(":{}", line_column_number.line_num);
+                        arg += &format!(":{}", line_column_number.line_num);
                         if let Some(column_num) = line_column_number.column_num {
-                            *acc += &format!(":{column_num}");
+                            arg += &format!(":{column_num}");
                         }
                     }
+                    parts.last_mut().unwrap().push_str(&arg);
                 }
             }
-            other => me.process_field_code(acc, other, file_path),
+            other => me.process_field_code(parts, other, file_path),
         })
     }
 }

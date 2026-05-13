@@ -20,6 +20,7 @@
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, CONTENT_LENGTH, CONTENT_TYPE, USER_AGENT};
+use reqwest::redirect::Policy;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -161,10 +162,27 @@ fn validate_url_not_internal(url_str: &str) -> Result<()> {
     Ok(())
 }
 
+/// Build a reqwest client with a redirect policy that validates each redirect
+/// target against internal IP ranges (SSRF protection).
+pub fn build_ssrf_safe_client() -> Result<reqwest::Client> {
+    let policy = Policy::custom(|attempt| {
+        if validate_url_not_internal(attempt.url().as_str()).is_err() {
+            attempt.stop()
+        } else {
+            attempt.follow()
+        }
+    });
+    reqwest::Client::builder()
+        .redirect(policy)
+        .pool_idle_timeout(Duration::from_secs(30))
+        .build()
+        .context("build SSRF-safe reqwest client")
+}
+
 /// 入口:执行一次 webfetch,返回结构化 output(由 caller `serde_json::to_value` 喂给上游 LLM)。
 pub async fn run_webfetch(client: &reqwest::Client, args: FetchArgs) -> Result<FetchOutput> {
-    if !args.url.starts_with("http://") && !args.url.starts_with("https://") {
-        bail!("URL must start with http:// or https://");
+    if !args.url.starts_with("https://") {
+        bail!("URL must use HTTPS");
     }
     validate_url_not_internal(&args.url)?;
     let format = args.format.clone().unwrap_or_default();
@@ -175,7 +193,7 @@ pub async fn run_webfetch(client: &reqwest::Client, args: FetchArgs) -> Result<F
     let timeout = Duration::from_secs(timeout_secs);
 
     let accept = format.accept_header();
-    let resp = match send_fetch(client, &args.url, accept, CHROME_UA, timeout).await {
+    let resp = match send_fetch(&client, &args.url, accept, CHROME_UA, timeout).await {
         Ok(r) => r,
         Err(e) => return Err(e),
     };
@@ -189,7 +207,7 @@ pub async fn run_webfetch(client: &reqwest::Client, args: FetchArgs) -> Result<F
             == Some("challenge")
     {
         log::info!("[webfetch] cloudflare challenge detected → retry with fallback UA");
-        send_fetch(client, &args.url, accept, FALLBACK_UA, timeout).await?
+        send_fetch(&client, &args.url, accept, FALLBACK_UA, timeout).await?
     } else {
         resp
     };

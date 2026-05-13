@@ -3167,11 +3167,9 @@ fn make_append_event(task_id: &str, message_id: &str, kind: AppendKind) -> api::
 /// 让模型看到标准 tool_result。
 async fn dispatch_byop_web_tool(tool_name: &str, args_str: &str) -> Value {
     use tools::web_runtime;
-    // 短超时 + 默认安全配置;系统全局共享一个 client 也可,这里每次新建以避免污染。
-    let client = match reqwest::Client::builder()
-        .pool_idle_timeout(std::time::Duration::from_secs(30))
-        .build()
-    {
+    // Build an SSRF-safe client for webfetch (custom redirect policy validates
+    // each redirect target against blocked IP ranges).
+    let client = match web_runtime::build_ssrf_safe_client() {
         Ok(c) => c,
         Err(e) => {
             log::warn!("[byop] reqwest client build failed: {e:#}");
