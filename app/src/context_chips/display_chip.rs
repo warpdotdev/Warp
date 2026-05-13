@@ -18,6 +18,7 @@ use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChange
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::input::{MenuPositioning, MenuPositioningProvider};
 use crate::terminal::model_events::ModelEventDispatcher;
+use crate::terminal::shell::ShellType;
 use crate::terminal::view::ambient_agent::AmbientAgentViewModel;
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon;
@@ -2018,11 +2019,7 @@ pub fn format_git_branch_command(encoded_git_branch_on_click_value: &str) -> Str
     format!("git checkout {}", shell_single_quote(&branch.branch_name))
 }
 
-pub fn format_aws_profile_command(
-    profile_name: &str,
-    shell: Option<crate::terminal::shell::ShellType>,
-) -> String {
-    use crate::terminal::shell::ShellType;
+pub fn format_aws_profile_command(profile_name: &str, shell: Option<ShellType>) -> String {
     // Clicking the chip is an explicit profile override. The chip resolves
     // the active profile as `AWS_VAULT` > `AWS_PROFILE` > ..., so in an
     // aws-vault session merely setting `AWS_PROFILE` would not change the
