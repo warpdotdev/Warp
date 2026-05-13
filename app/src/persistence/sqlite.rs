@@ -137,9 +137,8 @@ const OPENWARP_APP_GROUP_SQLITE_MIGRATION_MARKER: &str = ".openwarp-app-group-sq
 #[cfg(target_os = "macos")]
 const WARP_APP_GROUP_ID: &str = "2BBY89MBSN.dev.warp";
 
-/// When delete a cloud object, this callback is used to delete the cloud
-/// object. It takes the id of the cloud object to delete as a parameter.
-/// The supplied conn has already started a transaction.
+/// 删除本地 stored object 时使用的回调。入参是待删除对象的 id。
+/// 传入的 conn 已经启动 transaction。
 type DeleteCloudObjectFn =
     Box<dyn FnOnce(&mut SqliteConnection, StoredObjectId) -> Result<(), Error>>;
 
@@ -2111,8 +2110,8 @@ fn increment_retry_count(
     })
 }
 
-/// Helper function to delete a cloud object identified by `sync_id`. If a valid object metadata row
-/// for the object is found, `delete_object_fn` is called to delete the actual object.
+/// 删除 `sync_id` 标识的本地 stored object 的 helper。如果找到有效 object metadata row,
+/// 就调用 `delete_object_fn` 删除实际对象。
 fn delete_cloud_object(
     conn: &mut SqliteConnection,
     sync_id: SyncId,

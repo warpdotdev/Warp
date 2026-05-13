@@ -1021,7 +1021,7 @@ impl UpdateManager {
         );
     }
 
-    /// Generic function for creating a new cloud object with a given model.
+    /// 使用给定 model 创建新的本地 stored object。
     ///
     /// OpenWarp(本地化):同 `update_object` — 原实现入队 `SyncQueue` 等服务端创建 ack,
     /// 本地化后仅保留创建内存对象 + 写 sqlite。对象以 client_id 身份永久存在,
@@ -1080,7 +1080,7 @@ impl UpdateManager {
         }
     }
 
-    /// Generic function for updating a cloud object with a new model.
+    /// 使用新 model 更新本地 stored object。
     ///
     /// OpenWarp(本地化):无云端 = 无服务端 ack。原实现:更新内存 → 标 `InFlight` →
     /// 写 sqlite → 入队 `SyncQueue`(等服务端响应再 decrement `InFlight`)。本地化后

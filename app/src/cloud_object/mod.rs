@@ -117,7 +117,8 @@ impl From<&str> for SerializedModel {
 /// The typical usage pattern for these types is to use dyn StoredObject whenever you
 /// don't need access to a model or id, and to downcast to a GenericStoredObject whenever you do.
 ///
-/// This implies that, for now, *all* CloudObjects must implement GenericStoredObject.
+/// 由于历史 cloud-object 命名仍保留,当前所有本地 StoredObject 都需要实现
+/// GenericStoredObject。
 ///
 /// Additionally, they must support the "grab the baton" UX for editing, where any
 /// user can grab edit access of an object, revoking it from anyone else currently
@@ -379,7 +380,7 @@ pub trait StoredObject: Debug {
                 }
             }
             _ => log::error!(
-                "called decrement_in_flight_request_count with a non-`InFlight` cloud status"
+                "called decrement_in_flight_request_count with a non-`InFlight` stored-object status"
             ),
         }
 
@@ -433,17 +434,14 @@ pub trait StoredObject: Debug {
             .downcast_mut::<GenericStoredObject<K, M>>()
     }
 
-    /// Returns a cloned boxed version of this cloud object.
-    /// Note that we can't force the StoredObject trait to derive from Cloned
-    /// directly because that would make the trait not object safe.  This
-    /// is a workaround.
+    /// 返回这个 stored object 的 boxed clone。
+    /// 不能直接要求 StoredObject trait derive Clone,否则 trait 不再 object safe。
     fn clone_box(&self) -> Box<dyn StoredObject>;
 }
 
 /// Defines a common trait for object store models to implement.
-/// The "model" is the domain specific piece of data for a cloud object,
-/// e.g. it contains the notebook, workflow, or folder specific data, but has
-/// no logic around metadata, permissions, or sync status.
+/// "model" 是 stored object 的领域数据,例如 notebook/workflow/folder 的具体内容;
+/// metadata、permissions、sync status 逻辑不放在这里。
 ///
 /// See the comments for StoredObject to understand the relationship between
 /// this trait, StoredObject and GenericStoredObject.  They are tightly coupled.
@@ -538,10 +536,9 @@ lazy_static! {
         Regex::new(r"[^a-zA-Z0-9\s-]").expect("Expect regex to be valid");
 }
 
-/// A generic implementation of cloud objects that can be used for any model and id types.
+/// GenericStoredObject 是历史 cloud-object 体系保留下来的本地对象通用实现。
 ///
-/// For instance, rather than directly implementing the StoredObject trait, CloudObjects can
-/// implement GenericStoredObject<K, M> where K is their id type and M is their model type.
+/// 新对象可以直接使用 GenericStoredObject<K, M>,其中 K 是 id type,M 是 model type。
 ///
 /// For example, NotebookObject becomes:
 ///
