@@ -1231,7 +1231,11 @@ fn find_block_indices_for_exchange_timestamps(
                 // command block's start_ts comes from the tool call message
                 // timestamp, which is in the same exchange whose start_time
                 // we're comparing against.
-                if best.is_none_or(|(_, best_ts)| ts < best_ts) {
+                // When timestamps tie, keep moving backwards so we pick the
+                // earliest inserted block for that timestamp.
+                if best.is_none_or(|(best_idx, best_ts)| {
+                    ts < best_ts || (ts == best_ts && idx < best_idx)
+                }) {
                     best = Some((idx, ts));
                 }
             } else {

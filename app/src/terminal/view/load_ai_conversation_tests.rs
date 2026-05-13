@@ -149,6 +149,20 @@ fn sorted_tail_exchange_equals_tail_block() {
 }
 
 #[test]
+fn sorted_tail_equal_timestamps_pick_first_inserted_block() {
+    // When restored commands fall back to the same exchange/message timestamp,
+    // insert the AI block before the first command from that exchange.
+    let blocks = vec![
+        (bi(0), ts(40)),
+        (bi(1), ts(50)),
+        (bi(2), ts(10)),
+        (bi(3), ts(10)),
+    ];
+    let result = find_block_indices_for_exchange_timestamps(&blocks, &[ts(10)]);
+    assert_eq!(result, vec![Some(bi(2))]);
+}
+
+#[test]
 fn sorted_tail_multiple_exchanges() {
     // Prefix: [t=40 @0, t=50 @1], Tail: [t=10 @2, t=30 @3]
     let blocks = vec![
