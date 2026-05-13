@@ -557,7 +557,6 @@ default = [
     "list_skills",
     "ask_user_question",
     "bundled_skills",
-    "ambient_agents_rtc",
     "agent_mode_computer_use",
     "oz_platform_skills",
     "sync_ambient_plans",
@@ -731,7 +730,6 @@ selectable_prompt = []
 settings_file = []
 settings_import = []
 sequential_storage = []
-session_sharing = []
 skip_login = []
 # This feature should only be enabled when building a self-contained binary with the bundle script.
 standalone = []
@@ -846,7 +844,6 @@ v4a_file_diffs = []
 agent_tips = []
 agent_toolbar_editor = ["agent_view"]
 agent_view_prompt_chip = ["agent_view"]
-ambient_agents_rtc = []
 team_api_keys = []
 classic_completions = []
 force_classic_completions = []
