@@ -1434,6 +1434,13 @@ impl Session {
         self.external_commands.clone()
     }
 
+    /// Returns a reference to the session's command executor for integration
+    /// test assertions (e.g. to verify `RemoteServerCommandExecutor` is wired).
+    #[cfg(any(test, feature = "integration_tests"))]
+    pub fn command_executor(&self) -> Arc<dyn CommandExecutor> {
+        self.command_executor.read().clone()
+    }
+
     pub async fn execute_command(
         &self,
         command: &str,

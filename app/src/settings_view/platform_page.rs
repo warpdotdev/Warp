@@ -121,13 +121,11 @@ impl PlatformPageView {
         );
     }
     pub fn new(ctx: &mut ViewContext<PlatformPageView>) -> Self {
-        // Create the modal body
         let create_api_key_body = ctx.add_typed_action_view(CreateApiKeyModal::new);
         ctx.subscribe_to_view(&create_api_key_body, |me, _, event, ctx| {
             me.handle_create_api_key_modal_event(event, ctx);
         });
 
-        // Create the modal wrapper
         let create_api_key_modal_view = ctx.add_typed_action_view(|ctx| {
             Modal::new(
                 Some(i18n::tr(ctx, I18nKey::PlatformNewApiKeyTitle).to_string()),
@@ -247,7 +245,6 @@ impl PlatformPageView {
                 ctx.notify();
             }
             CreateApiKeyModalEvent::Error { message } => {
-                // Show an error toast with the provided message
                 let window_id = ctx.window_id();
                 crate::ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     let toast = crate::view_components::DismissibleToast::error(message.clone());
@@ -341,6 +338,11 @@ struct APIKeyProperties {
 enum ApiKeyScope {
     Personal,
     Team,
+    /// Not yet constructed — the server doesn't distinguish agent-scoped keys
+    /// from team keys yet, but the create modal already supports the Agent
+    /// type and the render path needs this variant for display.
+    #[allow(dead_code)]
+    Agent,
 }
 
 impl APIKeyProperties {
@@ -506,7 +508,7 @@ impl PlatformPageWidget {
             )
             .finish(),
         );
-        if FeatureFlag::TeamApiKeys.is_enabled() {
+        if FeatureFlag::TeamApiKeys.is_enabled() || FeatureFlag::NamedAgents.is_enabled() {
             header_row.add_child(
                 Expanded::new(
                     1.,
@@ -632,10 +634,11 @@ impl PlatformPageWidget {
             )
             .finish(),
         );
-        if FeatureFlag::TeamApiKeys.is_enabled() {
+        if FeatureFlag::TeamApiKeys.is_enabled() || FeatureFlag::NamedAgents.is_enabled() {
             let scope_display = match key.scope {
                 ApiKeyScope::Personal => i18n::tr(app, I18nKey::PlatformScopePersonal),
                 ApiKeyScope::Team => i18n::tr(app, I18nKey::PlatformScopeTeam),
+                ApiKeyScope::Agent => "Agent",
             };
             row.add_child(
                 Expanded::new(

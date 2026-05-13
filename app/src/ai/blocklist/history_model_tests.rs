@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Local, Utc};
 use itertools::Itertools;
+use warp_cli::agent::Harness;
 use warpui::{App, EntityId};
 
 use crate::{
@@ -87,6 +88,78 @@ fn create_exchange_with_query(
         computer_use_model_id: LLMId::from("test-computer-use-model"),
         response_initiator: None,
     }
+}
+
+#[test]
+fn start_new_child_conversation_persists_harness_metadata() {
+    App::test((), |mut app| async move {
+        let terminal_view_id = EntityId::new();
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+
+        let (child_a, child_b, child_ids) = history_model.update(&mut app, |history_model, ctx| {
+            let parent_conversation_id =
+                history_model.start_new_conversation(terminal_view_id, false, false, ctx);
+            history_model.set_server_conversation_token_for_conversation(
+                parent_conversation_id,
+                "parent-agent-id".to_string(),
+            );
+            let child_a = history_model.start_new_child_conversation(
+                terminal_view_id,
+                "Agent 1".to_string(),
+                parent_conversation_id,
+                Some(Harness::Claude),
+                ctx,
+            );
+            let child_b = history_model.start_new_child_conversation(
+                terminal_view_id,
+                "Agent 2".to_string(),
+                parent_conversation_id,
+                Some(Harness::Codex),
+                ctx,
+            );
+            (
+                child_a,
+                child_b,
+                history_model
+                    .child_conversation_ids_of(&parent_conversation_id)
+                    .to_vec(),
+            )
+        });
+
+        assert_eq!(child_ids, vec![child_a, child_b]);
+        history_model.read(&app, |history_model, _| {
+            let child_a_conversation = history_model
+                .conversation(&child_a)
+                .expect("child conversation should exist");
+            let child_b_conversation = history_model
+                .conversation(&child_b)
+                .expect("child conversation should exist");
+            assert_eq!(
+                child_a_conversation.orchestration_harness_type(),
+                Some(Harness::Claude.config_name())
+            );
+            assert_eq!(
+                child_a_conversation.orchestration_harness(),
+                Some(Harness::Claude)
+            );
+            assert_eq!(
+                child_b_conversation.orchestration_harness_type(),
+                Some(Harness::Codex.config_name())
+            );
+            assert_eq!(
+                child_b_conversation.orchestration_harness(),
+                Some(Harness::Codex)
+            );
+            assert_eq!(
+                child_a_conversation.parent_agent_id(),
+                Some("parent-agent-id")
+            );
+            assert_eq!(
+                child_b_conversation.parent_agent_id(),
+                Some("parent-agent-id")
+            );
+        });
+    });
 }
 
 #[test]
@@ -1173,6 +1246,7 @@ fn test_find_by_token_after_insert_forked_conversation_from_tasks() {
             artifacts_json: None,
             parent_agent_id: None,
             agent_name: None,
+            orchestration_harness_type: None,
             parent_conversation_id: None,
             is_remote_child: false,
             run_id: None,
@@ -1364,6 +1438,7 @@ fn test_fork_then_bind_handoff_token_resolves_to_forked_conversation() {
                 artifacts_json: None,
                 parent_agent_id: None,
                 agent_name: None,
+                orchestration_harness_type: None,
                 parent_conversation_id: None,
                 is_remote_child: false,
                 run_id: None,
@@ -1460,6 +1535,7 @@ fn test_fork_conversation_preserves_task_ids_when_requested() {
                 artifacts_json: None,
                 parent_agent_id: None,
                 agent_name: None,
+                orchestration_harness_type: None,
                 parent_conversation_id: None,
                 is_remote_child: false,
                 run_id: None,

@@ -179,6 +179,7 @@ async fn prepare_local_codex_child_launch_does_not_rewrite_global_codex_state() 
     let prepared = prepare_local_harness_child_launch(
         "hello world".to_string(),
         "codex".to_string(),
+        None,
         Some("parent-run".to_string()),
         Some(ShellType::Zsh),
         Some(working_dir),
@@ -192,4 +193,75 @@ async fn prepare_local_codex_child_launch_does_not_rewrite_global_codex_state() 
         "codex --dangerously-bypass-approvals-and-sandbox 'hello world'"
     );
     assert!(!fake_home.path().join(".codex").exists());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn prepare_local_claude_child_merges_anthropic_model_env_var() {
+    let fake_home = TempDir::new().unwrap();
+    let fake_bin_dir = TempDir::new().unwrap();
+    let working_dir = fake_home.path().join("workspace");
+    fs::create_dir_all(&working_dir).unwrap();
+    write_fake_cli(fake_bin_dir.path(), "claude");
+
+    let _home = EnvVarGuard::set("HOME", fake_home.path().as_os_str().to_os_string());
+    let _path = EnvVarGuard::set("PATH", fake_bin_dir.path().as_os_str().to_os_string());
+
+    let mut ai_client = MockAIClient::new();
+    ai_client
+        .expect_create_agent_task()
+        .times(1)
+        .returning(|_, _, _, _| Ok("550e8400-e29b-41d4-a716-446655440000".parse().unwrap()));
+
+    let prepared = prepare_local_harness_child_launch(
+        "hello world".to_string(),
+        "claude".to_string(),
+        Some("opus".to_string()),
+        Some("parent-run".to_string()),
+        Some(ShellType::Zsh),
+        Some(working_dir),
+        Arc::new(ai_client),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        prepared.env_vars.get(&OsString::from("ANTHROPIC_MODEL")),
+        Some(&OsString::from("opus"))
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn prepare_local_claude_child_no_anthropic_model_when_empty() {
+    let fake_home = TempDir::new().unwrap();
+    let fake_bin_dir = TempDir::new().unwrap();
+    let working_dir = fake_home.path().join("workspace");
+    fs::create_dir_all(&working_dir).unwrap();
+    write_fake_cli(fake_bin_dir.path(), "claude");
+
+    let _home = EnvVarGuard::set("HOME", fake_home.path().as_os_str().to_os_string());
+    let _path = EnvVarGuard::set("PATH", fake_bin_dir.path().as_os_str().to_os_string());
+
+    let mut ai_client = MockAIClient::new();
+    ai_client
+        .expect_create_agent_task()
+        .times(1)
+        .returning(|_, _, _, _| Ok("550e8400-e29b-41d4-a716-446655440000".parse().unwrap()));
+
+    let prepared = prepare_local_harness_child_launch(
+        "hello world".to_string(),
+        "claude".to_string(),
+        None,
+        Some("parent-run".to_string()),
+        Some(ShellType::Zsh),
+        Some(working_dir),
+        Arc::new(ai_client),
+    )
+    .await
+    .unwrap();
+
+    assert!(!prepared
+        .env_vars
+        .contains_key(&OsString::from("ANTHROPIC_MODEL")));
 }

@@ -122,11 +122,11 @@ impl TerminalView {
         )
     }
 
-    pub(in crate::terminal::view) fn owned_ambient_agent_task_id(
+    pub(crate) fn owned_ambient_agent_task_id(
         &self,
         ctx: &AppContext,
     ) -> Option<AmbientAgentTaskId> {
-        let task_id = self.model.lock().ambient_agent_task_id()?;
+        let task_id = self.ambient_agent_task_id_for_details_panel(ctx)?;
         self.is_current_user_creator_of_ambient_task(task_id, ctx)
             .then_some(task_id)
     }
@@ -496,7 +496,9 @@ impl TerminalView {
                 .any(|conv| conv.exchange_count() > 0);
 
             if has_conversations {
-                log::warn!("Cannot share without scrollback when agent conversations exist. Agent shared sessions require conversation history to be shared.");
+                log::warn!(
+                    "Cannot share without scrollback when agent conversations exist. Agent shared sessions require conversation history to be shared."
+                );
                 return;
             }
         }
@@ -1668,7 +1670,7 @@ impl TerminalView {
         if self.conversation_ended_tombstone_view_id.is_some() {
             self.remove_conversation_ended_tombstone(ctx);
         }
-        let task_id = self.model.lock().ambient_agent_task_id();
+        let task_id = self.ambient_agent_task_id_for_details_panel(ctx);
         let terminal_view_id = self.id();
 
         let tombstone_view_handle = ctx.add_typed_action_view(|ctx| {

@@ -175,6 +175,12 @@ impl BlocklistAIController {
         }
 
         self.shared_session_state.current_response_id = Some(stream_id.clone());
+        if existing_conversation_id.is_some() {
+            history.update(ctx, |history, ctx| {
+                history.set_viewing_shared_session_for_conversation(conversation_id, true);
+                ctx.notify();
+            });
+        }
 
         let Some(conversation) = history.as_ref(ctx).conversation(&conversation_id) else {
             log::error!(

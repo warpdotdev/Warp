@@ -1,7 +1,10 @@
 use pathfinder_geometry::vector::vec2f;
 use session_sharing_protocol::sharer::SessionSourceType;
+use std::collections::HashMap;
+use warp_multi_agent_api::{self as api, client_action as api_client_action};
 
 use crate::ai::agent::conversation::ConversationStatus;
+use crate::ai::agent::AIAgentInput;
 use crate::ai::agent_conversations_model::{AgentConversationsModel, AgentRunDisplayStatus};
 use crate::ai::ambient_agents::task::TaskCreatorInfo;
 use crate::ai::ambient_agents::{AgentSource, AmbientAgentTask, AmbientAgentTaskState};
@@ -696,6 +699,53 @@ fn test_on_ambient_agent_execution_ended_enables_followup_input_without_tombston
 }
 
 #[test]
+fn test_restored_owned_tombstone_hides_input_until_continue() {
+    let _handoff_flag = FeatureFlag::HandoffCloudCloud.override_enabled(true);
+    let _setup_v2_flag = FeatureFlag::CloudModeSetupV2.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        let terminal = cloud_mode_terminal_for_test(&mut app);
+        let task = create_cloud_mode_task_for_user(TEST_USER_UID);
+        let task_id = task.task_id;
+
+        AgentConversationsModel::handle(&app).update(&mut app, |model, _| {
+            model.insert_task_for_test(task);
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            let mut model = view.model.lock();
+            model.set_shared_session_source_type(SessionSourceType::AmbientAgent {
+                task_id: Some(task_id.to_string()),
+            });
+            model.set_shared_session_status(SharedSessionStatus::NotShared);
+            drop(model);
+
+            let ambient_agent_view_model = view
+                .ambient_agent_view_model()
+                .expect("cloud mode terminal should have ambient model")
+                .clone();
+            ambient_agent_view_model.update(ctx, |model, ctx| {
+                model.enter_viewing_existing_session(task_id, ctx);
+            });
+
+            view.insert_conversation_ended_tombstone(ctx);
+            assert!(view.conversation_ended_tombstone_view_id.is_some());
+            {
+                let model = view.model.lock();
+                assert!(!view.is_input_box_visible(&model, ctx));
+            }
+
+            view.start_cloud_followup_from_tombstone(task_id, ctx);
+            assert!(view.conversation_ended_tombstone_view_id.is_none());
+            assert_eq!(view.pending_cloud_followup_task_id, Some(task_id));
+            {
+                let model = view.model.lock();
+                assert!(view.is_input_box_visible(&model, ctx));
+            }
+        });
+    });
+}
+#[test]
 fn test_on_ambient_agent_execution_ended_keeps_live_owned_session_on_session_sharing_path() {
     let _handoff_flag = FeatureFlag::HandoffCloudCloud.override_enabled(true);
     let _setup_v2_flag = FeatureFlag::CloudModeSetupV2.override_enabled(true);
@@ -773,6 +823,115 @@ fn test_try_submit_pending_cloud_followup_allows_repeat_submission_for_owned_tas
                     .pending_followup_prompt(),
                 Some("second follow up")
             );
+        });
+    });
+}
+#[test]
+fn test_shared_followup_on_existing_conversation_converts_user_query_input() {
+    App::test((), |mut app| async move {
+        let terminal = cloud_mode_terminal_for_test(&mut app);
+        let terminal_view_id = terminal.id();
+        let conversation_token = "restored-conversation-token";
+        let request_id = "new-followup-request";
+        let root_task_id = "root-task";
+        let followup_query = "follow up";
+
+        let conversation_id =
+            BlocklistAIHistoryModel::handle(&app).update(&mut app, |model, ctx| {
+                let conversation_id =
+                    model.start_new_conversation(terminal_view_id, false, false, ctx);
+                model.set_server_conversation_token_for_conversation(
+                    conversation_id,
+                    conversation_token.to_string(),
+                );
+                conversation_id
+            });
+
+        terminal.update(&mut app, |view, ctx| {
+            let init_event = api::ResponseEvent {
+                r#type: Some(api::response_event::Type::Init(
+                    api::response_event::StreamInit {
+                        request_id: request_id.to_string(),
+                        conversation_id: conversation_token.to_string(),
+                        run_id: String::new(),
+                    },
+                )),
+            };
+            view.ai_controller.update(ctx, |controller, ctx| {
+                controller.handle_shared_session_response_event(init_event, ctx);
+            });
+
+            let create_root_task_event = api::ResponseEvent {
+                r#type: Some(api::response_event::Type::ClientActions(
+                    api::response_event::ClientActions {
+                        actions: vec![api::ClientAction {
+                            action: Some(api_client_action::Action::CreateTask(
+                                api_client_action::CreateTask {
+                                    task: Some(api::Task {
+                                        id: root_task_id.to_string(),
+                                        messages: vec![],
+                                        dependencies: None,
+                                        description: String::new(),
+                                        summary: String::new(),
+                                        server_data: String::new(),
+                                    }),
+                                },
+                            )),
+                        }],
+                    },
+                )),
+            };
+            view.ai_controller.update(ctx, |controller, ctx| {
+                controller.handle_shared_session_response_event(create_root_task_event, ctx);
+            });
+
+            let add_user_query_event = api::ResponseEvent {
+                r#type: Some(api::response_event::Type::ClientActions(
+                    api::response_event::ClientActions {
+                        actions: vec![api::ClientAction {
+                            action: Some(api_client_action::Action::AddMessagesToTask(
+                                api_client_action::AddMessagesToTask {
+                                    task_id: root_task_id.to_string(),
+                                    messages: vec![api::Message {
+                                        id: "user-message".to_string(),
+                                        task_id: root_task_id.to_string(),
+                                        server_message_data: String::new(),
+                                        citations: vec![],
+                                        message: Some(api::message::Message::UserQuery(
+                                            api::message::UserQuery {
+                                                query: followup_query.to_string(),
+                                                context: None,
+                                                referenced_attachments: HashMap::new(),
+                                                mode: None,
+                                                intended_agent: Default::default(),
+                                            },
+                                        )),
+                                        request_id: request_id.to_string(),
+                                        timestamp: None,
+                                    }],
+                                },
+                            )),
+                        }],
+                    },
+                )),
+            };
+            view.ai_controller.update(ctx, |controller, ctx| {
+                controller.handle_shared_session_response_event(add_user_query_event, ctx);
+            });
+        });
+
+        BlocklistAIHistoryModel::handle(&app).read(&app, |model, _| {
+            let conversation = model
+                .conversation(&conversation_id)
+                .expect("conversation should exist");
+            assert!(conversation.is_viewing_shared_session());
+
+            let input = conversation
+                .latest_exchange()
+                .and_then(|exchange| exchange.input.first())
+                .expect("shared-session replay should reconstruct the user query input");
+            assert!(matches!(input, AIAgentInput::UserQuery { .. }));
+            assert_eq!(input.user_query().as_deref(), Some(followup_query));
         });
     });
 }

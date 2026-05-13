@@ -40,6 +40,7 @@ pub type ConnectionId = uuid::Uuid;
 use super::protocol::RequestId;
 use crate::ai::agent::FileLocations;
 use crate::ai::blocklist::{read_local_file_context, ReadFileContextResult};
+use crate::auth::auth_state::{AuthState, AuthStateProvider};
 use crate::terminal::model::session::command_executor::{
     ExecuteCommandOptions, LocalCommandExecutor,
 };
@@ -136,37 +137,6 @@ impl PendingFileOps {
     }
 }
 
-/// Client-supplied auth credentials and user identity for the daemon.
-///
-/// Populated by `Initialize` and `Authenticate` messages. The auth token
-/// is used for server API calls; the user identity is forwarded to Sentry
-/// so crash reports from the daemon are attributed to the connecting user.
-///
-/// All fields are intentionally retained across proxy connection teardown
-/// and cleared only by daemon process exit.
-struct DaemonAuthContext {
-    /// Bearer credential set by Initialize / Authenticate.
-    auth_token: Option<String>,
-    /// User ID from the most recent `Initialize` handshake (Firebase UID).
-    #[cfg(feature = "crash_reporting")]
-    user_id: Option<String>,
-    /// User email from the most recent `Initialize` handshake.
-    #[cfg(feature = "crash_reporting")]
-    user_email: Option<String>,
-}
-
-impl DaemonAuthContext {
-    fn new() -> Self {
-        Self {
-            auth_token: None,
-            #[cfg(feature = "crash_reporting")]
-            user_id: None,
-            #[cfg(feature = "crash_reporting")]
-            user_email: None,
-        }
-    }
-}
-
 /// The top-level server-side orchestrator model.
 ///
 /// Receives `ClientMessage`s from connected proxy sessions and routes
@@ -202,7 +172,7 @@ pub struct ServerModel {
     /// Tracks in-flight file write/delete operations and handles cleanup.
     pending_file_ops: PendingFileOps,
     /// Daemon-wide auth credentials and user identity.
-    auth: DaemonAuthContext,
+    auth_state: Arc<AuthState>,
     /// Tracks open buffers, per-buffer connection sets, and pending async
     /// buffer requests (OpenBuffer, SaveBuffer).
     buffers: ServerBufferTracker,
@@ -230,7 +200,7 @@ impl ServerModel {
             host_id,
             executors: HashMap::new(),
             pending_file_ops: PendingFileOps::new(),
-            auth: DaemonAuthContext::new(),
+            auth_state: AuthStateProvider::as_ref(ctx).get().clone(),
             buffers: ServerBufferTracker::new(),
         };
         // Subscribe to FileModel and RepoMetadataModel events
@@ -790,13 +760,6 @@ impl ServerModel {
         // Update crash reporting based on client-supplied preferences.
         #[cfg(feature = "crash_reporting")]
         {
-            if !msg.user_id.is_empty() {
-                self.auth.user_id = Some(msg.user_id.clone());
-            }
-            if !msg.user_email.is_empty() {
-                self.auth.user_email = Some(msg.user_email.clone());
-            }
-
             if msg.crash_reporting_enabled {
                 self.apply_sentry_user_id(ctx);
             } else {
@@ -816,22 +779,20 @@ impl ServerModel {
     /// Applies the auth token from an `Initialize` message.
     /// Extracted so unit tests can call it without a `ModelContext`.
     fn apply_initialize_auth(&mut self, msg: &Initialize) {
-        if !msg.auth_token.is_empty() {
-            self.auth.auth_token = Some(msg.auth_token.clone());
-        }
+        self.auth_state.apply_remote_server_auth_context(
+            msg.auth_token.clone(),
+            msg.user_id.clone(),
+            msg.user_email.clone(),
+        );
     }
 
-    /// Sets the Sentry user identity from the stored `DaemonAuthContext`.
+    /// Sets the Sentry user identity from the stored `AuthState`.
     /// Called both during `Initialize` and when re-enabling crash reporting
     /// via `UpdatePreferences`.
     #[cfg(feature = "crash_reporting")]
     fn apply_sentry_user_id(&self, ctx: &mut warpui::AppContext) {
-        if let Some(user_id) = &self.auth.user_id {
-            crate::crash_reporting::set_user_id(
-                crate::auth::UserUid::new(user_id),
-                self.auth.user_email.clone(),
-                ctx,
-            );
+        if let Some(user_id) = self.auth_state.user_id() {
+            crate::crash_reporting::set_user_id(user_id, self.auth_state.user_email(), ctx);
         }
     }
 
@@ -862,15 +823,12 @@ impl ServerModel {
     /// Handles `Authenticate` by replacing the daemon-wide credential.
     /// This is a notification — no response is sent.
     fn handle_authenticate(&mut self, msg: Authenticate) {
-        if msg.auth_token.is_empty() {
-            log::warn!("Received Authenticate notification with empty auth token; ignoring");
-            return;
-        }
-        self.auth.auth_token = Some(msg.auth_token);
+        self.auth_state
+            .set_remote_server_bearer_token(msg.auth_token);
     }
 
-    pub fn auth_token(&self) -> Option<&str> {
-        self.auth.auth_token.as_deref()
+    pub fn auth_token(&self) -> Option<String> {
+        self.auth_state.get_access_token_ignoring_validity()
     }
 
     /// Handles `Abort` by cancelling the in-progress request it targets.

@@ -1587,6 +1587,16 @@ impl TerminalManager {
             .clear_write_to_pty_events_for_shared_session_tx();
         if FeatureFlag::HandoffCloudCloud.is_enabled() {
             terminal_view.update(ctx, |terminal_view, ctx| {
+                // Owned ambient tasks remain editable Cloud Mode panes after their live shared
+                // session ends; non-owners are still read-only viewers of a finished session.
+                let owns_ambient_task = terminal_view.owned_ambient_agent_task_id(ctx).is_some();
+                model
+                    .lock()
+                    .set_shared_session_status(if owns_ambient_task {
+                        SharedSessionStatus::NotShared
+                    } else {
+                        SharedSessionStatus::FinishedViewer
+                    });
                 if let Some(ambient_agent_view_model) =
                     terminal_view.ambient_agent_view_model().cloned()
                 {

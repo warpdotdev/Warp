@@ -18,7 +18,10 @@ use crate::{
     terminal::{model::rich_content::RichContentType, view::WithinBlockBanner},
 };
 
-use super::util::{ssh_command, ssh_command_with_remote_shell_override, user_host};
+use super::util::{
+    remote_server_ssh_command, remote_server_user_host, ssh_command,
+    ssh_command_with_remote_shell_override, user_host,
+};
 
 /// Sets environment variables needed by the Google Cloud SDK.
 pub fn setup_gcloud_sdk() -> TestStep {
@@ -39,6 +42,17 @@ pub fn enter_ssh_command(shell: &str) -> TestStep {
         .with_typed_characters(&[&ssh_command])
         .with_keystrokes(&["enter"])
         .set_post_step_pause(Duration::from_millis(250))
+}
+
+/// Initiates an SSH connection to the dedicated remote-server test host.
+pub fn enter_remote_server_ssh_command(shell: &str) -> TestStep {
+    let ssh_command = remote_server_ssh_command(shell, true);
+    TestStep::new(&format!(
+        "Start remote-server ssh connection with remote shell '{shell}'"
+    ))
+    .with_typed_characters(&[&ssh_command])
+    .with_keystrokes(&["enter"])
+    .set_post_step_pause(Duration::from_millis(250))
 }
 
 /// Initiates an SSH connection that starts a specific remote shell via `-t`.
@@ -67,6 +81,16 @@ pub fn enter_remote_subshell_command(shell: &str) -> TestStep {
 /// Waits for a password prompt.
 pub fn wait_for_password_prompt(tab_index: usize, shell: &str) -> TestStep {
     let user_host = user_host(shell);
+    wait_for_password_prompt_for_user_host(tab_index, user_host)
+}
+
+/// Waits for a password prompt from the dedicated remote-server test host.
+pub fn wait_for_remote_server_password_prompt(tab_index: usize, shell: &str) -> TestStep {
+    let user_host = remote_server_user_host(shell);
+    wait_for_password_prompt_for_user_host(tab_index, user_host)
+}
+
+fn wait_for_password_prompt_for_user_host(tab_index: usize, user_host: String) -> TestStep {
     let regex = Regex::new(&format!("{user_host}'s password:[\\s]*$"))
         .expect("regex should not fail to compile");
     TestStep::new("Wait for password prompt")

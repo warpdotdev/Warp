@@ -899,10 +899,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                         {
                             output_items.add_child(
                                 orchestration::render_messages_received_from_agents(
-                                    messages,
-                                    props,
-                                    &output_message.id,
-                                    app,
+                                    messages, props, app,
                                 ),
                             );
                         }

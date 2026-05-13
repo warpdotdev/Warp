@@ -16,6 +16,7 @@ use warpui::{ModelHandle, ModelSpawner};
 
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
+use crate::ai::mcp::JSONTransportType;
 use crate::server::server_api::harness_support::{upload_to_target, HarnessSupportClient};
 use crate::server::server_api::ServerApi;
 use crate::terminal::model::block::BlockId;
@@ -31,7 +32,7 @@ use super::claude_transcript::{
 use super::json_utils::{read_json_file_or_default, write_json_file};
 use super::{
     cli_agent_session_status, write_temp_file, HarnessCleanupDisposition, HarnessRunner,
-    ResumePayload, SavePoint, ThirdPartyHarness,
+    JSONMCPServer, ResumePayload, SavePoint, ThirdPartyHarness,
 };
 mod parent_bridge;
 mod wake_driver;
@@ -70,20 +71,6 @@ impl ThirdPartyHarness for ClaudeHarness {
         Some("https://code.claude.com/docs/en/quickstart")
     }
 
-    fn prepare_environment_config(
-        &self,
-        working_dir: &Path,
-        _system_prompt: Option<&str>,
-        resolved_env_vars: &HashMap<OsString, OsString>,
-    ) -> Result<(), AgentDriverError> {
-        prepare_claude_environment_config(working_dir, resolved_env_vars).map_err(|error| {
-            AgentDriverError::HarnessConfigSetupFailed {
-                harness: self.cli_agent().command_prefix().to_owned(),
-                error,
-            }
-        })
-    }
-
     /// Fetch the Claude Code transcript for the current task's conversation and wrap it
     /// into a [`ResumePayload::Claude`]. Maps a server 404 to
     /// [`AgentDriverError::ConversationResumeStateMissing`] tagged as the `claude` harness
@@ -109,20 +96,42 @@ impl ThirdPartyHarness for ClaudeHarness {
         prompt: &str,
         system_prompt: Option<&str>,
         resumption_prompt: Option<&str>,
+        context: Option<&str>,
         working_dir: &Path,
         task_id: Option<AmbientAgentTaskId>,
         server_api: Arc<ServerApi>,
         terminal_driver: ModelHandle<TerminalDriver>,
         resume: Option<ResumePayload>,
+        resolved_env_vars: &HashMap<OsString, OsString>,
+        resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
+        _third_party_harness_model_id: Option<&str>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
+        // Prepare the environment config files.
+        prepare_claude_environment_config(working_dir, resolved_env_vars).map_err(|error| {
+            AgentDriverError::HarnessConfigSetupFailed {
+                harness: self.cli_agent().command_prefix().to_owned(),
+                error,
+            }
+        })?;
+
         // The ResumePayload shouldn't contain non-Claude information, error if it does.
         let claude_resume = resume.map(ClaudeResumeInfo::try_from).transpose()?;
         // Claude treats the user-turn message as immediate intent, so the resumption preamble
-        // is most reliable when prepended directly to the prompt that gets piped into the CLI.
-        let owned_prompt = match resumption_prompt {
-            Some(preamble) if !preamble.is_empty() => format!("{preamble}\n\n{prompt}"),
-            _ => prompt.to_string(),
-        };
+        // and server context are most reliable when prepended directly to the prompt that gets
+        // piped into the CLI. Order: resumption_prompt → context → prompt
+        let mut parts: Vec<&str> = Vec::new();
+        if let Some(preamble) = resumption_prompt {
+            if !preamble.is_empty() {
+                parts.push(preamble);
+            }
+        }
+        if let Some(ctx) = context {
+            if !ctx.is_empty() {
+                parts.push(ctx);
+            }
+        }
+        parts.push(prompt);
+        let owned_prompt = parts.join("\n\n");
         Ok(Box::new(ClaudeHarnessRunner::new(
             self.cli_agent().command_prefix(),
             &owned_prompt,
@@ -132,6 +141,7 @@ impl ThirdPartyHarness for ClaudeHarness {
             server_api,
             terminal_driver,
             claude_resume,
+            resolved_mcp_servers,
         )?))
     }
 }
@@ -153,12 +163,16 @@ fn claude_command(
     session_id: &Uuid,
     prompt_path: &str,
     system_prompt_path: Option<&str>,
+    mcp_config_path: Option<&str>,
     resuming: bool,
 ) -> String {
     let flag = if resuming { "--resume" } else { "--session-id" };
     let mut cmd = format!("{cli_name} {flag} {session_id} --dangerously-skip-permissions");
     if let Some(sp_path) = system_prompt_path {
         let _ = write!(cmd, " --append-system-prompt-file '{sp_path}'");
+    }
+    if let Some(mcp_path) = mcp_config_path {
+        let _ = write!(cmd, " --mcp-config '{mcp_path}'");
     }
     format!("{cmd} < '{prompt_path}'")
 }
@@ -182,6 +196,8 @@ struct ClaudeHarnessRunner {
     _temp_prompt_file: NamedTempFile,
     /// Held so the system prompt temp file is cleaned up when the runner is dropped.
     _temp_system_prompt_file: Option<NamedTempFile>,
+    /// Held so the MCP config temp file lives until the CLI exits.
+    _temp_mcp_config_file: Option<NamedTempFile>,
     client: Arc<dyn HarnessSupportClient>,
     server_api: Arc<ServerApi>,
     terminal_driver: ModelHandle<TerminalDriver>,
@@ -208,10 +224,11 @@ impl ClaudeHarnessRunner {
         server_api: Arc<ServerApi>,
         terminal_driver: ModelHandle<TerminalDriver>,
         resume: Option<ClaudeResumeInfo>,
+        resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
     ) -> Result<Self, AgentDriverError> {
         // Write the prompt to a temp file so we can feed it via stdin redirect,
         // avoiding shell-quoting issues with complex content (e.g. skill instructions).
-        let temp_file = write_temp_file("oz_prompt_", prompt)?;
+        let temp_file = write_temp_file("oz_prompt_", prompt, ".txt")?;
         let prompt_path = temp_file.path().display().to_string();
 
         let (session_id, preexisting_conversation_id) = match resume {
@@ -246,11 +263,23 @@ impl ClaudeHarnessRunner {
         };
 
         let temp_system_prompt_file = system_prompt
-            .map(|sp| write_temp_file("oz_system_prompt_", sp))
+            .map(|sp| write_temp_file("oz_system_prompt_", sp, ".txt"))
             .transpose()?;
         let system_prompt_path = temp_system_prompt_file
             .as_ref()
             .map(|f| f.path().display().to_string());
+
+        let temp_mcp_config_file = (!resolved_mcp_servers.is_empty())
+            .then(|| {
+                let mcp_json = serialize_claude_mcp_config(resolved_mcp_servers)
+                    .map_err(AgentDriverError::ConfigBuildFailed)?;
+                write_temp_file("oz_mcp_config_", &mcp_json, ".json")
+            })
+            .transpose()?;
+        let mcp_config_path = temp_mcp_config_file
+            .as_ref()
+            .map(|f| f.path().display().to_string());
+
         let parent_bridge = task_id
             .map(|task_id| MessageBridge::new(task_id.to_string(), session_id))
             .transpose()
@@ -263,11 +292,13 @@ impl ClaudeHarnessRunner {
                 &session_id,
                 &prompt_path,
                 system_prompt_path.as_deref(),
+                mcp_config_path.as_deref(),
                 preexisting_conversation_id.is_some(),
             ),
             cli_name: cli_command.to_string(),
             _temp_prompt_file: temp_file,
             _temp_system_prompt_file: temp_system_prompt_file,
+            _temp_mcp_config_file: temp_mcp_config_file,
             client,
             server_api,
             terminal_driver,
@@ -541,7 +572,7 @@ async fn upload_transcript(
         .with_context(|| format!("Failed to get transcript upload target for {conversation_id}"))?;
     upload_to_target(client.http_client(), &target, body).await
 }
-fn prepare_claude_environment_config(
+pub(crate) fn prepare_claude_environment_config(
     working_dir: &Path,
     resolved_env_vars: &HashMap<OsString, OsString>,
 ) -> Result<()> {
@@ -677,6 +708,74 @@ fn suffix_of(key: &str) -> Option<&str> {
     } else {
         None
     }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaudeMcpConfig {
+    mcp_servers: HashMap<String, ClaudeMcpServerEntry>,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type")]
+enum ClaudeMcpServerEntry {
+    #[serde(rename = "stdio")]
+    Stdio {
+        command: String,
+        args: Vec<String>,
+        #[serde(skip_serializing_if = "HashMap::is_empty")]
+        env: HashMap<String, String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cwd: Option<String>,
+    },
+    #[serde(rename = "http")]
+    Http {
+        url: String,
+        #[serde(skip_serializing_if = "HashMap::is_empty")]
+        headers: HashMap<String, String>,
+    },
+}
+
+impl ClaudeMcpServerEntry {
+    fn from_json_mcp_server(server: &JSONMCPServer) -> Self {
+        match &server.transport_type {
+            JSONTransportType::CLIServer {
+                command,
+                args,
+                env,
+                working_directory,
+            } => Self::Stdio {
+                command: command.clone(),
+                args: args.clone(),
+                env: env.clone(),
+                cwd: working_directory.clone(),
+            },
+            JSONTransportType::SSEServer { url, headers } => Self::Http {
+                url: url.clone(),
+                headers: headers.clone(),
+            },
+        }
+    }
+}
+
+/// Serialize resolved MCP servers into Claude Code's `--mcp-config` JSON format.
+///
+/// Produces `{ "mcpServers": { "name": { "type": "stdio"|"http", ... }, ... } }`.
+pub(crate) fn serialize_claude_mcp_config(
+    servers: &HashMap<String, JSONMCPServer>,
+) -> Result<String> {
+    let config = ClaudeMcpConfig {
+        mcp_servers: servers
+            .iter()
+            .map(|(name, server)| {
+                (
+                    name.clone(),
+                    ClaudeMcpServerEntry::from_json_mcp_server(server),
+                )
+            })
+            .collect(),
+    };
+    serde_json::to_string_pretty(&config).context("Failed to serialize Claude MCP config")
 }
 
 #[cfg(test)]

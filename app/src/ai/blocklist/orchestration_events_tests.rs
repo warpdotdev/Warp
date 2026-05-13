@@ -414,6 +414,7 @@ fn test_restored_v1_child_reregisters_lifecycle_subscription() {
                     terminal_view_id,
                     "child".to_string(),
                     parent_conversation_id,
+                    None,
                     ctx,
                 );
                 history_model.set_server_conversation_token_for_conversation(

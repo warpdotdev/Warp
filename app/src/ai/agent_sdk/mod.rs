@@ -825,7 +825,7 @@ impl AgentDriverRunner {
                 let should_share = (args.share.is_shared() || args.task_id.is_some())
                     && FeatureFlag::AgentSharedSessions.is_enabled();
 
-                let harness_model_id = merged_config
+                let third_party_harness_model_id = merged_config
                     .harness
                     .as_ref()
                     .and_then(|h| h.model_id.clone());
@@ -840,7 +840,7 @@ impl AgentDriverRunner {
                     cloud_providers: Vec::new(),
                     environment: None,
                     selected_harness: args.harness,
-                    harness_model_id,
+                    third_party_harness_model_id,
                     snapshot_disabled: args.snapshot.no_snapshot.then_some(true),
                     snapshot_upload_timeout: args
                         .snapshot
@@ -1031,7 +1031,7 @@ impl AgentDriverRunner {
                 return Ok(vec![]);
             }
             let workload_token = match warp_isolation_platform::issue_workload_token(Some(
-                std::time::Duration::from_mins(5),
+                std::time::Duration::from_secs(5 * 60),
             ))
             .await
             {
@@ -1178,8 +1178,8 @@ impl AgentDriverRunner {
         driver_options.parent_run_id = parent_run_id;
         driver_options.secrets = secrets;
         // CLI flags continue to take precedence so users can still override per-invocation.
-        if driver_options.harness_model_id.is_none() {
-            driver_options.harness_model_id = task_harness_model_id;
+        if driver_options.third_party_harness_model_id.is_none() {
+            driver_options.third_party_harness_model_id = task_harness_model_id;
         }
 
         // Update the task prompt to include the downloaded attachments dir
@@ -1599,6 +1599,9 @@ fn command_to_telemetry_event(command: &CliCommand) -> CliTelemetryEvent {
                 CliTelemetryEvent::HarnessSupportFinishTask {
                     success: finish_args.status == TaskStatus::Success,
                 }
+            }
+            HarnessSupportCommand::ReportShutdown(_) => {
+                CliTelemetryEvent::HarnessSupportReportShutdown
             }
         },
         CliCommand::Artifact(artifact_cmd) => match artifact_cmd {
