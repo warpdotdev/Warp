@@ -373,10 +373,10 @@ fn blocked_ip_ipv4_basics() {
         "255.255.255.255",
         "100.64.0.1",   // CGNAT
         "192.0.2.1",    // TEST-NET-1
-        "198.51.100.1",  // TEST-NET-2
-        "203.0.113.1",   // TEST-NET-3
-        "198.18.0.1",    // Benchmarking
-        "240.0.0.1",     // Reserved
+        "198.51.100.1", // TEST-NET-2
+        "203.0.113.1",  // TEST-NET-3
+        "198.18.0.1",   // Benchmarking
+        "240.0.0.1",    // Reserved
     ] {
         let ip: IpAddr = blocked.parse().unwrap();
         assert!(is_blocked_ip(ip), "should block {blocked}");
@@ -393,28 +393,40 @@ fn blocked_ip_ipv4_mapped_ipv6() {
     use std::net::IpAddr;
     // ::ffff:127.0.0.1 is IPv4-mapped — must be blocked.
     let mapped_loopback: IpAddr = "::ffff:127.0.0.1".parse().unwrap();
-    assert!(is_blocked_ip(mapped_loopback), "::ffff:127.0.0.1 must be blocked");
+    assert!(
+        is_blocked_ip(mapped_loopback),
+        "::ffff:127.0.0.1 must be blocked"
+    );
 
     let mapped_private: IpAddr = "::ffff:10.0.0.1".parse().unwrap();
-    assert!(is_blocked_ip(mapped_private), "::ffff:10.0.0.1 must be blocked");
+    assert!(
+        is_blocked_ip(mapped_private),
+        "::ffff:10.0.0.1 must be blocked"
+    );
 
     let mapped_link_local: IpAddr = "::ffff:169.254.1.1".parse().unwrap();
-    assert!(is_blocked_ip(mapped_link_local), "::ffff:169.254.1.1 must be blocked");
+    assert!(
+        is_blocked_ip(mapped_link_local),
+        "::ffff:169.254.1.1 must be blocked"
+    );
 
     // ::ffff:8.8.8.8 is public — must NOT be blocked.
     let mapped_public: IpAddr = "::ffff:8.8.8.8".parse().unwrap();
-    assert!(!is_blocked_ip(mapped_public), "::ffff:8.8.8.8 should be allowed");
+    assert!(
+        !is_blocked_ip(mapped_public),
+        "::ffff:8.8.8.8 should be allowed"
+    );
 }
 
 #[test]
 fn blocked_ip_ipv6_ranges() {
     use std::net::IpAddr;
     for blocked in [
-        "::1",                   // loopback
-        "::",                    // unspecified
-        "fc00::1",               // unique-local
-        "fe80::1",               // link-local
-        "2001:db8::1",           // documentation
+        "::1",         // loopback
+        "::",          // unspecified
+        "fc00::1",     // unique-local
+        "fe80::1",     // link-local
+        "2001:db8::1", // documentation
     ] {
         let ip: IpAddr = blocked.parse().unwrap();
         assert!(is_blocked_ip(ip), "should block {blocked}");
@@ -429,11 +441,12 @@ fn blocked_ip_ipv6_ranges() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn ssrf_safe_client_blocks_redirect_to_internal() {
+async fn ssrf_safe_client_builds_with_redirect_policy() {
     let client = build_ssrf_safe_client().expect("build client");
-    // The custom redirect policy should stop redirects to internal IPs.
-    // We can't easily test this with mockito (no redirect support),
-    // but we verify the client builds successfully with the policy.
+    // Verify the client builds successfully with the custom SSRF redirect
+    // policy and DNS resolver configured.
+    // TODO: Add integration test with a real redirect to an internal IP
+    // once mockito gains redirect support.
     assert!(client.get("https://example.invalid").build().is_ok());
 }
 
@@ -533,7 +546,7 @@ fn webfetch_description_matches_opencode_verbatim() {
                     Usage notes:\n\
                     \x20\x20- IMPORTANT: if another tool is present that offers better web fetching capabilities, is more targeted to the task, or has fewer restrictions, prefer using that tool instead of this one.\n\
                     \x20\x20- The URL must be a fully-formed valid URL\n\
-                    \x20\x20- HTTP URLs will be automatically upgraded to HTTPS\n\
+                    \x20\x20- The URL must use HTTPS (http:// URLs are rejected)\n\
                     \x20\x20- Format options: \"markdown\" (default), \"text\", or \"html\"\n\
                     \x20\x20- This tool is read-only and does not modify any files\n\
                     \x20\x20- Results may be summarized if the content is very large\n";

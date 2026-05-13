@@ -74,10 +74,7 @@ fn test_basic_exec_no_field_codes() {
             assert!(result.is_ok());
             let cmd = result.unwrap();
             assert_eq!(cmd.get_program(), "echo");
-            assert_eq!(
-                cmd.get_args().collect::<Vec<_>>(),
-                ["hello world"]
-            );
+            assert_eq!(cmd.get_args().collect::<Vec<_>>(), ["hello world"]);
             Ok(())
         },
     )

@@ -25,6 +25,7 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -137,7 +138,7 @@ fn is_blocked_ipv4(v4: Ipv4Addr) -> bool {
         || (o[0] == 198 && o[1] == 51 && o[2] == 100) // TEST-NET-2  198.51.100.0/24
         || (o[0] == 203 && o[1] == 0 && o[2] == 113)  // TEST-NET-3  203.0.113.0/24
         || (o[0] == 198 && (o[1] & 0xfe) == 18)       // Benchmarking 198.18.0.0/15
-        || o[0] >= 240                                 // Reserved    240.0.0.0/4
+        || o[0] >= 240 // Reserved    240.0.0.0/4
 }
 
 fn is_ipv6_unique_local(v6: Ipv6Addr) -> bool {
@@ -182,8 +183,13 @@ fn validate_url_not_internal(url_str: &str) -> Result<()> {
 
 /// DNS resolver that filters out blocked (internal/private) IPs at resolution
 /// time, eliminating the TOCTOU gap between pre-validation and connection.
+///
+/// Only available on non-WASM targets — reqwest's `dns` module (and
+/// `ClientBuilder::dns_resolver`) is not exposed on WebAssembly.
+#[cfg(not(target_arch = "wasm32"))]
 struct SsrfSafeResolver;
 
+#[cfg(not(target_arch = "wasm32"))]
 impl reqwest::dns::Resolve for SsrfSafeResolver {
     fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
         let host = name.as_str().to_owned();
@@ -198,18 +204,29 @@ impl reqwest::dns::Resolve for SsrfSafeResolver {
                 return Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::PermissionDenied,
                     format!("DNS for '{host}' resolved to blocked IPs (SSRF protection)"),
-                )) as Box<dyn std::error::Error + Send + Sync>);
+                ))
+                    as Box<dyn std::error::Error + Send + Sync>);
             }
             Ok(Box::new(addrs.into_iter()) as reqwest::dns::Addrs)
         })
     }
 }
 
+/// Maximum number of redirects before stopping (matches reqwest's default).
+const MAX_REDIRECT_HOPS: usize = 10;
+
 /// Build a reqwest client with:
 /// - A custom DNS resolver that blocks connections to internal IPs
-/// - A redirect policy that enforces HTTPS and validates each hop
+/// - A redirect policy that enforces HTTPS, validates each hop, and limits
+///   the total number of redirects (reqwest's default limits are not inherited
+///   by `Policy::custom`)
 pub fn build_ssrf_safe_client() -> Result<reqwest::Client> {
     let policy = Policy::custom(|attempt| {
+        // Enforce redirect hop limit (Policy::custom does not inherit
+        // reqwest's default loop/max-hop protections).
+        if attempt.previous().len() >= MAX_REDIRECT_HOPS {
+            return attempt.stop();
+        }
         let url = attempt.url();
         // Enforce HTTPS on redirect targets (prevent HTTPS→HTTP downgrade).
         if url.scheme() != "https" {
@@ -223,12 +240,14 @@ pub fn build_ssrf_safe_client() -> Result<reqwest::Client> {
             attempt.follow()
         }
     });
-    reqwest::Client::builder()
+    let builder = reqwest::Client::builder()
         .redirect(policy)
-        .dns_resolver(Arc::new(SsrfSafeResolver))
-        .pool_idle_timeout(Duration::from_secs(30))
-        .build()
-        .context("build SSRF-safe reqwest client")
+        .pool_idle_timeout(Duration::from_secs(30));
+    // Wire the SSRF-safe DNS resolver only on non-WASM targets (reqwest
+    // does not expose the dns module on WebAssembly).
+    #[cfg(not(target_arch = "wasm32"))]
+    let builder = builder.dns_resolver(Arc::new(SsrfSafeResolver));
+    builder.build().context("build SSRF-safe reqwest client")
 }
 
 /// 入口:执行一次 webfetch,返回结构化 output(由 caller `serde_json::to_value` 喂给上游 LLM)。

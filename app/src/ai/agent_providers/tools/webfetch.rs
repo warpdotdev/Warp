@@ -26,7 +26,7 @@ fn parameters() -> Value {
         "properties": {
             "url": {
                 "type": "string",
-                "description": "The URL to fetch content from. Must start with http:// or https://."
+                "description": "The URL to fetch content from. Must use HTTPS (https://)."
             },
             "format": {
                 "type": "string",
