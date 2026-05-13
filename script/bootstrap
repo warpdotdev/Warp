@@ -80,10 +80,8 @@ maybe_install_common_skills() {
   fi
 }
 
-# Ensure Git LFS is installed and initialized for this checkout. The
-# `crates/input_classifier/models/**` binaries (ONNX/fasttext models) are
-# tracked via LFS; without `git-lfs` those paths will be ~130-byte pointer
-# stubs and the app will silently fall back to the heuristic classifier.
+# This repository requires Git LFS; ensure it is installed and initialized
+# for this checkout.
 ensure_git_lfs() {
   if ! command -v git-lfs >/dev/null 2>&1; then
     echo
