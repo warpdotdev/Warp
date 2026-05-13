@@ -207,6 +207,9 @@ pub(crate) fn should_auto_launch(
     if auto_launched || is_denied || is_spawning || state.agent_run_configs.is_empty() {
         return false;
     }
+    if state.orch.accept_disabled_reason().is_some() {
+        return false;
+    }
     match active_config {
         Some((config, status)) => {
             let request = state.to_request();
@@ -229,13 +232,6 @@ pub(crate) fn compute_is_denied(
             active_config,
             Some((_, status)) if status.is_disapproved()
         )
-}
-
-fn is_opencode_on_remote(request: &RunAgentsRequest) -> bool {
-    matches!(
-        request.execution_mode,
-        RunAgentsExecutionMode::Remote { .. }
-    ) && request.harness_type.eq_ignore_ascii_case("opencode")
 }
 
 impl RunAgentsCardView {
@@ -523,13 +519,11 @@ impl RunAgentsCardView {
         if self.spawning.is_some() {
             return;
         }
-        let request = self.state.to_request();
-        if is_opencode_on_remote(&request) {
-            log::warn!(
-                "RunAgentsCardView: refusing Accept for OpenCode+Cloud (unsupported per spec)"
-            );
+        if let Some(reason) = self.state.orch.accept_disabled_reason() {
+            log::warn!("RunAgentsCardView: refusing Accept because action is disabled: {reason}");
             return;
         }
+        let request = self.state.to_request();
         let action_id = self.action_id.clone();
         self.action_model.update(ctx, |action_model, action_ctx| {
             action_model.execute_run_agents(&action_id, request, action_ctx);
@@ -571,7 +565,12 @@ impl RunAgentsCardView {
         if self.handles.pickers.harness_picker.is_none() {
             let handle = oc::new_standard_picker_dropdown(&colors, ctx);
             Self::set_upward_menu_position(&handle, ctx);
-            oc::populate_harness_picker(&handle, &state.orch.harness_type, ctx);
+            oc::populate_harness_picker(
+                &handle,
+                &state.orch.harness_type,
+                !state.orch.execution_mode.is_remote(),
+                ctx,
+            );
             Self::subscribe_picker_close(&handle, ctx);
             self.handles.pickers.harness_picker = Some(handle);
         }

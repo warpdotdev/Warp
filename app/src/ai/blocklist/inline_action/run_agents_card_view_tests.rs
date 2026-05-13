@@ -114,13 +114,31 @@ fn cloud_with_opencode_disables_accept() {
 
 #[test]
 fn local_with_any_harness_does_not_disable_accept() {
-    for harness in ["oz", "claude", "gemini", "opencode"] {
+    for harness in ["oz", "gemini", "opencode"] {
         let state =
             RunAgentsEditState::from_request(&make_request(harness, RunAgentsExecutionMode::Local));
         assert!(
             state.orch.accept_disabled_reason().is_none(),
             "Local + {harness} should allow Accept"
         );
+    }
+}
+
+#[test]
+fn local_with_disabled_claude_or_codex_disables_accept() {
+    for (harness, expected) in [
+        (
+            "claude",
+            "Local Claude Code child agents are temporarily disabled.",
+        ),
+        (
+            "codex",
+            "Local Codex child agents are temporarily disabled.",
+        ),
+    ] {
+        let state =
+            RunAgentsEditState::from_request(&make_request(harness, RunAgentsExecutionMode::Local));
+        assert_eq!(state.orch.accept_disabled_reason(), Some(expected));
     }
 }
 
@@ -476,6 +494,23 @@ mod should_auto_launch_tests {
             should_auto_launch(false, false, false, &state, &config),
             "Empty model_id on request should inherit from config and match"
         );
+    }
+
+    #[test]
+    fn returns_false_when_accept_is_disabled() {
+        let state = RunAgentsEditState::from_request(&make_request(
+            "claude",
+            RunAgentsExecutionMode::Local,
+        ));
+        let config = Some((
+            OrchestrationConfig {
+                model_id: "auto".to_string(),
+                harness_type: "claude".to_string(),
+                execution_mode: OrchestrationExecutionMode::Local,
+            },
+            OrchestrationConfigStatus::Approved,
+        ));
+        assert!(!should_auto_launch(false, false, false, &state, &config));
     }
 }
 

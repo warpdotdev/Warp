@@ -34,8 +34,11 @@ use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::execution_profiles::model_menu_items::available_model_menu_items;
 use crate::ai::harness_availability::HarnessAvailabilityModel;
 use crate::ai::harness_display;
+use crate::ai::local_child_harnesses::{
+    local_child_harness_disabled_message, local_child_harness_is_enabled,
+};
 use crate::appearance::Appearance;
-use crate::menu::{MenuItem, MenuItemFields};
+use crate::menu::{MenuItem, MenuItemFields, MenuTooltipPosition};
 use crate::ui_components::blended_colors;
 use crate::view_components::dropdown::{Dropdown, DropdownAction, DropdownStyle};
 use crate::view_components::FilterableDropdown;
@@ -81,6 +84,15 @@ pub struct OrchestrationEditState {
 }
 
 impl OrchestrationEditState {
+    fn sanitize_for_local_execution(&mut self) {
+        let Some(harness) = Harness::parse_local_child_harness(&self.harness_type) else {
+            return;
+        };
+        if local_child_harness_disabled_message(harness).is_some() {
+            self.harness_type = "oz".to_string();
+            self.model_id.clear();
+        }
+    }
     pub fn from_run_agents_fields(
         model_id: &str,
         harness_type: &str,
@@ -105,11 +117,15 @@ impl OrchestrationEditState {
                 computer_use_enabled: false,
             },
         };
-        Self {
+        let mut state = Self {
             model_id: config.model_id.clone(),
             harness_type: config.harness_type.clone(),
             execution_mode,
+        };
+        if matches!(state.execution_mode, RunAgentsExecutionMode::Local) {
+            state.sanitize_for_local_execution();
         }
+        state
     }
 
     /// Toggle Local ↔ Cloud. Resets OpenCode to Oz when switching
@@ -128,6 +144,7 @@ impl OrchestrationEditState {
             }
         } else {
             self.execution_mode = RunAgentsExecutionMode::Local;
+            self.sanitize_for_local_execution();
         }
     }
 
@@ -150,9 +167,11 @@ impl OrchestrationEditState {
     }
 
     /// Returns `Some(reason)` if Accept / Apply must be disabled.
-    /// Only hard block: OpenCode + Cloud.
+    /// Hard blocks: OpenCode + Cloud, and temporarily disabled local Claude/Codex.
     pub fn accept_disabled_reason(&self) -> Option<&'static str> {
         match &self.execution_mode {
+            RunAgentsExecutionMode::Local => Harness::parse_local_child_harness(&self.harness_type)
+                .and_then(local_child_harness_disabled_message),
             RunAgentsExecutionMode::Remote { .. }
                 if self.harness_type.eq_ignore_ascii_case("opencode") =>
             {
@@ -160,7 +179,7 @@ impl OrchestrationEditState {
                     "OpenCode is not supported on Cloud yet. Switch to Local or pick a different harness.",
                 )
             }
-            RunAgentsExecutionMode::Local | RunAgentsExecutionMode::Remote { .. } => None,
+            RunAgentsExecutionMode::Remote { .. } => None,
         }
     }
 
@@ -456,6 +475,7 @@ pub fn first_filtered_model_id<V: View>(
 pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
     dropdown: &ViewHandle<Dropdown<A>>,
     initial_harness: &str,
+    is_local: bool,
     ctx: &mut ViewContext<V>,
 ) {
     let initial_harness = initial_harness.to_string();
@@ -463,13 +483,31 @@ pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
         let availability = HarnessAvailabilityModel::as_ref(ctx_dropdown);
         let harnesses = availability.available_harnesses();
 
+        let resolve_entry_harness = |harness: Harness, display_name: &str| match harness {
+            Harness::Unknown => [
+                Harness::Oz,
+                Harness::Claude,
+                Harness::OpenCode,
+                Harness::Gemini,
+                Harness::Codex,
+            ]
+            .into_iter()
+            .find(|candidate| harness_display::display_name(*candidate) == display_name)
+            .unwrap_or(Harness::Unknown),
+            harness => harness,
+        };
+
         // Sort enabled harnesses before disabled ones, preserving
         // relative order within each group.
         // Filter out Gemini — it is not yet supported as a multi-agent
         // harness and causes an infinite "Spawning agents" hang.
         let mut sorted: Vec<_> = harnesses
             .iter()
-            .filter(|entry| entry.harness != Harness::Gemini)
+            .filter(|entry| {
+                let harness = resolve_entry_harness(entry.harness, &entry.display_name);
+                harness != Harness::Gemini
+                    && !(is_local && !local_child_harness_is_enabled(harness))
+            })
             .collect();
         sorted.sort_by_key(|entry| !entry.enabled);
 
@@ -479,9 +517,29 @@ pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
         let target_harness = Harness::parse_orchestration_harness(&initial_harness);
 
         let mut items: Vec<MenuItem<DropdownAction<A>>> = Vec::new();
-        let mut selected_idx = None;
-        for (idx, entry) in sorted.iter().enumerate() {
-            let harness = entry.harness;
+        let mut selected_name: Option<String> = None;
+        let target_display = target_harness.map(|harness| availability.display_name_for(harness));
+
+        if is_local {
+            if let Some(harness) = Harness::parse_local_child_harness(&initial_harness) {
+                if let Some(message) = local_child_harness_disabled_message(harness) {
+                    let label = availability.display_name_for(harness).to_string();
+                    let mut fields = MenuItemFields::new(&label)
+                        .with_icon(harness_display::icon_for(harness))
+                        .with_disabled(true)
+                        .with_tooltip(message)
+                        .with_tooltip_position(MenuTooltipPosition::Right);
+                    if let Some(color) = harness_display::brand_color(harness) {
+                        fields = fields.with_override_icon_color(Fill::from(color));
+                    }
+                    selected_name = Some(label);
+                    items.push(MenuItem::Item(fields));
+                }
+            }
+        }
+
+        for entry in sorted {
+            let harness = resolve_entry_harness(entry.harness, &entry.display_name);
             // Use the server-provided display_name for the label so stale
             // cache entries (where harness deserializes as Unknown) still
             // show the correct name.
@@ -502,21 +560,20 @@ pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
             // the display_name against the client-side name for the target
             // harness. This handles stale cache entries where entry.harness
             // is Unknown but entry.display_name is still correct.
-            if harness_str.eq_ignore_ascii_case(&initial_harness) {
-                selected_idx = Some(idx);
-            } else if selected_idx.is_none() {
-                if let Some(target) = target_harness {
-                    let target_display = harness_display::display_name(target);
+            if selected_name.is_none() {
+                if harness_str.eq_ignore_ascii_case(&initial_harness) {
+                    selected_name = Some(entry.display_name.clone());
+                } else if let Some(target_display) = target_display {
                     if entry.display_name == target_display {
-                        selected_idx = Some(idx);
+                        selected_name = Some(entry.display_name.clone());
                     }
                 }
             }
             items.push(MenuItem::Item(fields));
         }
         dropdown.set_rich_items(items, ctx_dropdown);
-        if let Some(idx) = selected_idx {
-            dropdown.set_selected_by_index(idx, ctx_dropdown);
+        if let Some(name) = selected_name {
+            dropdown.set_selected_by_name(&name, ctx_dropdown);
         }
     });
 }
@@ -709,12 +766,12 @@ pub fn repopulate_all_pickers<A: OrchestrationControlAction, V: View>(
     handles: &OrchestrationPickerHandles<A>,
     ctx: &mut ViewContext<V>,
 ) {
+    let is_local = !state.execution_mode.is_remote();
     if let Some(handle) = &handles.harness_picker {
-        populate_harness_picker(handle, &state.harness_type, ctx);
+        populate_harness_picker(handle, &state.harness_type, is_local, ctx);
     }
     // Revalidate model_id: if the previously selected model is no longer
     // in the catalog (e.g. server removed it), reset to default.
-    let is_local = !state.execution_mode.is_remote();
     if !is_model_in_filtered_choices(&state.model_id, &state.harness_type, is_local, ctx) {
         if let Some(first_id) = first_filtered_model_id(&state.harness_type, ctx) {
             state.model_id = first_id;
@@ -807,6 +864,10 @@ pub fn sync_picker_selections<A: OrchestrationControlAction, V: View>(
         });
     }
 }
+
+#[cfg(test)]
+#[path = "orchestration_controls_tests.rs"]
+mod tests;
 
 // ── Adaptive picker layout ──────────────────────────────────────────
 

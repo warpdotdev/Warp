@@ -9,6 +9,7 @@ use ai::agent::action::{RunAgentsAgentRunConfig, RunAgentsExecutionMode};
 use ai::skills::SkillReference;
 use settings::Setting;
 use std::path::PathBuf;
+use warp_core::features::FeatureFlag;
 use warpui::{App, SingletonEntity};
 
 #[test]
@@ -218,4 +219,40 @@ fn remote_arm_rejects_opencode() {
     )
     .expect_err("Remote+opencode must be rejected");
     assert!(err.to_lowercase().contains("opencode"));
+}
+
+#[test]
+fn local_arm_rejects_disabled_claude() {
+    let err = run_agents_to_start_agent_mode(
+        &RunAgentsExecutionMode::Local,
+        "claude",
+        "auto",
+        &[],
+        &agent_cfg(),
+    )
+    .expect_err("Local+claude must be rejected while disabled");
+    assert_eq!(
+        err,
+        "Local Claude Code child agents are temporarily disabled."
+    );
+}
+
+#[test]
+fn local_arm_allows_claude_when_feature_enabled() {
+    let _local_harnesses = FeatureFlag::LocalClaudeCodexChildHarnesses.override_enabled(true);
+    let mode = run_agents_to_start_agent_mode(
+        &RunAgentsExecutionMode::Local,
+        "claude",
+        "auto",
+        &[],
+        &agent_cfg(),
+    )
+    .expect("Local+claude should convert when feature is enabled");
+    assert!(matches!(
+        mode,
+        StartAgentExecutionMode::Local {
+            harness_type: Some(ref harness_type),
+            model_id: Some(ref model_id),
+        } if harness_type == "claude" && model_id == "auto"
+    ));
 }
