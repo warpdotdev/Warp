@@ -904,4 +904,4 @@ zh-CN:
     split_pane_left: "向左拆分面板"
     split_pane_down: "向下拆分面板"
     split_pane_up: "向上拆分面板"
-     close_pane: "关闭面板"
+    close_pane: "关闭面板"
