@@ -53,8 +53,15 @@ def extract_pr_number(sha: str) -> int | None:
     """Extract PR number from a squash-merge commit subject line.
 
     Expects the GitHub squash format: 'feat: something (#1234)'.
+    Matches the trailing parenthesized (#N) to avoid grabbing issue
+    numbers from titles like 'Fixes #123 (#456)'.
     """
     msg = run(["git", "log", "-1", "--format=%s", sha])
+    # Match the last (#N) in the subject — GitHub always appends the PR number
+    m = re.search(r"\(#(\d+)\)\s*$", msg)
+    if m:
+        return int(m.group(1))
+    # Fallback: first bare #N (for non-standard subjects)
     m = re.search(r"#(\d+)", msg)
     if m:
         return int(m.group(1))
@@ -103,13 +110,24 @@ def extract_linked_issues(body: str) -> list[int]:
     return sorted(set(int(m.group(1)) for m in LINKED_ISSUE_RE.finditer(body)))
 
 
+def strip_html_comments(text: str) -> str:
+    """Remove HTML comment blocks (<!-- ... -->) from text.
+
+    This prevents template placeholders inside HTML comments from being
+    parsed as real CHANGELOG markers.
+    """
+    return re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+
+
 def extract_markers(body: str) -> list[dict]:
     """Extract CHANGELOG-* markers from a PR body."""
     if not body:
         return []
+    # Strip HTML comments so template placeholders aren't treated as real markers
+    cleaned = strip_html_comments(body)
     entries = []
     has_opt_out = False
-    for m in MARKER_RE.finditer(body):
+    for m in MARKER_RE.finditer(cleaned):
         category = m.group(1)
         text = m.group(2).strip()
         # CHANGELOG-NONE is an explicit opt-out — skip all other markers

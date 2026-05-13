@@ -39,7 +39,10 @@ jobs:
       - name: Check out code
         uses: namespacelabs/nscloud-checkout-action@938f5d2d403d6224d9a0c0dc559b1dae09c2ede4 # v8.1.1
         with:
-          ref: ${{ inputs.release_tag }}
+          # Check out the default branch (not the release tag) so the skill
+          # files and scripts are always available — older release tags may
+          # not contain them. The release_tag is used only as the git range
+          # endpoint by the skill.
           fetch-depth: 0
 
       - name: Generate changelog draft
@@ -55,7 +58,7 @@ jobs:
 
             After writing the output files, print the full contents of changelog-draft.md to stdout so it appears in the workflow log.
 
-            You are running in a GitHub Actions workflow. The repo is already checked out at the release tag. `gh` is authenticated. Do not commit, push, or create PRs.
+            You are running in a GitHub Actions workflow. The repo is checked out at the default branch (HEAD). Use the release_tag input as the git range endpoint — do NOT check out the release tag. `gh` is authenticated. Do not commit, push, or create PRs.
           warp_api_key: ${{ secrets.WARP_API_KEY }}
           share: team
 

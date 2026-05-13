@@ -50,12 +50,13 @@ def check_org_membership(org: str, username: str) -> str:
         return "internal"
     # Distinguish auth failures from genuine "not a member" responses.
     # gh api exits non-zero for both 404 (not a member) and 403/401 (no
-    # read:org scope).  When the token lacks permissions, stderr typically
-    # contains "403" or "401".  If we can't tell, be conservative.
+    # read:org scope).  Only treat an explicit 404 as "external";
+    # everything else (network errors, rate limits, auth issues) is "unknown"
+    # to avoid publicly crediting internal or unverified users.
     stderr = result.stderr.lower()
-    if "403" in stderr or "401" in stderr or "saml" in stderr:
-        return "unknown"
-    return "external"
+    if "404" in stderr:
+        return "external"
+    return "unknown"
 
 
 def main() -> None:
