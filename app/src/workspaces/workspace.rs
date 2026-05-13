@@ -711,11 +711,6 @@ pub enum AdminEnablementSetting {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct CloudConversationStorageSettings {
-    pub setting: AdminEnablementSetting,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AiPermissionsSettings {
     pub allow_ai_in_remote_sessions: bool,
     #[serde(with = "serde_regex")]
@@ -820,7 +815,6 @@ pub struct WorkspaceSettings {
     pub llm_settings: LlmSettings,
     pub telemetry_settings: TelemetrySettings,
     pub ugc_collection_settings: UgcCollectionSettings,
-    pub cloud_conversation_storage_settings: CloudConversationStorageSettings,
     pub link_sharing_settings: LinkSharingSettings,
     pub secret_redaction_settings: SecretRedactionSettings,
     pub ai_permissions_settings: AiPermissionsSettings,

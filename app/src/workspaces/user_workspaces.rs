@@ -1167,17 +1167,6 @@ impl UserWorkspaces {
             .unwrap_or_default()
     }
 
-    pub fn get_cloud_conversation_storage_enablement_setting(&self) -> AdminEnablementSetting {
-        self.current_team()
-            .map(|team| {
-                team.organization_settings
-                    .cloud_conversation_storage_settings
-                    .setting
-                    .clone()
-            })
-            .unwrap_or_default()
-    }
-
     pub fn is_ai_allowed_in_remote_sessions(&self) -> bool {
         self.current_team()
             .map(|team| {
