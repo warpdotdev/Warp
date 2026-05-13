@@ -4391,7 +4391,12 @@ impl TerminalView {
                             );
                         }
                     }
-                    RemoteServerManagerEvent::SessionDisconnected { session_id, .. } => {
+                    RemoteServerManagerEvent::SessionDisconnected {
+                        session_id,
+                        exit_status,
+                        was_reconnect_attempt,
+                        ..
+                    } => {
                         let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
                             .as_ref(ctx)
                             .platform_for_session(*session_id)
@@ -4402,13 +4407,26 @@ impl TerminalView {
                                 )
                             })
                             .unwrap_or((None, None));
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::RemoteServerDisconnection {
-                                remote_os,
-                                remote_arch,
-                            },
-                            ctx
-                        );
+                        if *was_reconnect_attempt {
+                            send_telemetry_from_ctx!(
+                                TelemetryEvent::RemoteServerReconnectExhausted {
+                                    attempts: remote_server::manager::MAX_RECONNECT_ATTEMPTS,
+                                    remote_os,
+                                    remote_arch,
+                                    exit_code: exit_status.as_ref().and_then(|s| s.code),
+                                    signal_killed: exit_status.as_ref().map(|s| s.signal_killed),
+                                },
+                                ctx
+                            );
+                        } else {
+                            send_telemetry_from_ctx!(
+                                TelemetryEvent::RemoteServerDisconnection {
+                                    remote_os,
+                                    remote_arch,
+                                },
+                                ctx
+                            );
+                        }
                     }
                     RemoteServerManagerEvent::SessionDeregistered { session_id } => {
                         // Clean up any stale SSH remote-server choice block if the
@@ -4548,8 +4566,31 @@ impl TerminalView {
                             }));
                         }
                     }
+                    RemoteServerManagerEvent::SessionReconnected {
+                        session_id,
+                        attempt,
+                        ..
+                    } => {
+                        let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
+                            .as_ref(ctx)
+                            .platform_for_session(*session_id)
+                            .map(|p| {
+                                (
+                                    Some(p.os.as_str().to_owned()),
+                                    Some(p.arch.as_str().to_owned()),
+                                )
+                            })
+                            .unwrap_or((None, None));
+                        send_telemetry_from_ctx!(
+                            TelemetryEvent::RemoteServerReconnection {
+                                attempt: *attempt,
+                                remote_os,
+                                remote_arch,
+                            },
+                            ctx
+                        );
+                    }
                     RemoteServerManagerEvent::SessionConnecting { .. }
-                    | RemoteServerManagerEvent::SessionReconnected { .. }
                     | RemoteServerManagerEvent::HostConnected { .. }
                     | RemoteServerManagerEvent::HostDisconnected { .. }
                     | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }

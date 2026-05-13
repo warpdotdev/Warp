@@ -88,6 +88,15 @@ pub enum ClientEvent {
     CodebaseIndexStatusUpdated { status: RemoteCodebaseIndexStatus },
     /// A server message could not be decoded and had no parseable request_id.
     MessageDecodingError,
+    /// A client request to the remote server failed at the transport level
+    /// (timeout, disconnect, protocol error, etc.). Emitted automatically by
+    /// `send_tracked_request` so upstream callers get telemetry for free.
+    RequestFailed {
+        /// Static tag identifying which RPC failed (e.g. `"open_buffer"`).
+        operation: &'static str,
+        /// Classified error kind for telemetry aggregation.
+        error_kind: crate::manager::RemoteServerErrorKind,
+    },
     /// A buffer was updated on the server (file changed on disk).
     BufferUpdated {
         path: String,
@@ -146,6 +155,11 @@ pub struct RemoteServerClient {
     /// `send_request` after inserting into `pending_requests` to avoid hanging
     /// on a dead connection.
     disconnected: Arc<AtomicBool>,
+
+    /// Clone of the event channel used by the reader task. Stored here so
+    /// `send_tracked_request` can fire `ClientEvent::RequestFailed` events
+    /// without requiring callers to thread the channel through.
+    event_tx: async_channel::Sender<ClientEvent>,
 }
 
 impl fmt::Debug for RemoteServerClient {
@@ -200,6 +214,8 @@ impl RemoteServerClient {
         let (outbound_tx, outbound_rx) = async_channel::unbounded::<ClientMessage>();
         let (event_tx, event_rx) = async_channel::unbounded::<ClientEvent>();
         let disconnected = Arc::new(AtomicBool::new(false));
+        // Clone before moving into background tasks so the struct can hold one.
+        let event_tx_for_client = event_tx.clone();
 
         executor
             .spawn(Self::writer_task(
@@ -222,6 +238,7 @@ impl RemoteServerClient {
                 outbound_tx,
                 pending_requests,
                 disconnected,
+                event_tx: event_tx_for_client,
             },
             event_rx,
         )
@@ -278,7 +295,9 @@ impl RemoteServerClient {
              repo_path={repo_path_for_log}"
         );
 
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_tracked_request(request_id, msg, "index_codebase")
+            .await?;
 
         match response.message {
             Some(server_message::Message::CodebaseIndexStatusUpdated(update)) => {
@@ -322,7 +341,9 @@ impl RemoteServerClient {
              repo_path={repo_path_for_log}"
         );
 
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_tracked_request(request_id, msg, "drop_codebase_index")
+            .await?;
 
         match response.message {
             Some(server_message::Message::CodebaseIndexStatusUpdated(update)) => {
@@ -451,7 +472,9 @@ impl RemoteServerClient {
             )),
         };
 
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_tracked_request(request_id, msg, "navigate_to_directory")
+            .await?;
 
         match response.message {
             Some(server_message::Message::NavigatedToDirectoryResponse(resp)) => Ok(resp),
@@ -482,7 +505,9 @@ impl RemoteServerClient {
             )),
         };
 
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_tracked_request(request_id, msg, "load_repo_metadata_directory")
+            .await?;
 
         match response.message {
             Some(server_message::Message::LoadRepoMetadataDirectoryResponse(resp)) => Ok(resp),
@@ -507,7 +532,9 @@ impl RemoteServerClient {
                 content,
             })),
         };
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_tracked_request(request_id, msg, "write_file")
+            .await?;
         match response.message {
             Some(server_message::Message::WriteFileResponse(resp)) => match resp.result {
                 Some(crate::proto::write_file_response::Result::Success(_)) | None => Ok(()),
@@ -540,7 +567,9 @@ impl RemoteServerClient {
             request_id: request_id.to_string(),
             message: Some(client_message::Message::ReadFileContext(request)),
         };
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_tracked_request(request_id, msg, "read_file_context")
+            .await?;
         match response.message {
             Some(server_message::Message::ReadFileContextResponse(resp)) => Ok(resp),
             other => {
@@ -570,7 +599,9 @@ impl RemoteServerClient {
                 force_reload,
             })),
         };
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_tracked_request(request_id, msg, "open_buffer")
+            .await?;
         match response.message {
             Some(server_message::Message::OpenBufferResponse(resp)) => Ok(resp),
             other => {
@@ -607,7 +638,9 @@ impl RemoteServerClient {
             request_id: request_id.to_string(),
             message: Some(client_message::Message::SaveBuffer(SaveBuffer { path })),
         };
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_tracked_request(request_id, msg, "save_buffer")
+            .await?;
         match response.message {
             Some(server_message::Message::SaveBufferResponse(resp)) => match resp.result {
                 Some(crate::proto::save_buffer_response::Result::Success(_)) | None => Ok(()),
@@ -638,7 +671,9 @@ impl RemoteServerClient {
             request_id: request_id.to_string(),
             message: Some(client_message::Message::DeleteFile(DeleteFile { path })),
         };
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_tracked_request(request_id, msg, "delete_file")
+            .await?;
         match response.message {
             Some(server_message::Message::DeleteFileResponse(resp)) => match resp.result {
                 Some(crate::proto::delete_file_response::Result::Success(_)) | None => Ok(()),
@@ -747,7 +782,9 @@ impl RemoteServerClient {
             })),
         };
 
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_tracked_request(request_id, msg, "run_command")
+            .await?;
 
         match response.message {
             Some(server_message::Message::RunCommandResponse(resp)) => Ok(resp),
@@ -759,6 +796,29 @@ impl RemoteServerClient {
                 Err(ClientError::UnexpectedResponse)
             }
         }
+    }
+
+    /// Wrapper around [`send_request`] that automatically fires a
+    /// [`ClientEvent::RequestFailed`] event on error, so transport-level
+    /// failures are tracked for telemetry without requiring each caller
+    /// to instrument its own error path.
+    async fn send_tracked_request(
+        &self,
+        request_id: RequestId,
+        msg: ClientMessage,
+        operation: &'static str,
+    ) -> Result<ServerMessage, ClientError> {
+        let result = self.send_request(request_id, msg).await;
+        if let Err(ref e) = result {
+            let error_kind = crate::manager::RemoteServerErrorKind::from_client_error(e);
+            // Best-effort: if the channel is closed the disconnect event
+            // will fire separately via the reader task.
+            let _ = self.event_tx.try_send(ClientEvent::RequestFailed {
+                operation,
+                error_kind,
+            });
+        }
+        result
     }
 
     /// Generic request/response correlation.
