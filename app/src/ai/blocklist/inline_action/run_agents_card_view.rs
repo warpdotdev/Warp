@@ -14,8 +14,9 @@ use ai::skills::SkillReference;
 use pathfinder_geometry::vector::vec2f;
 use std::rc::Rc;
 use warpui::elements::{
-    Border, ChildView, Container, CornerRadius, CrossAxisAlignment, Empty, Flex, MainAxisSize,
-    OffsetPositioning, ParentElement, Radius, Stack, Text,
+    Border, ChildAnchor, ChildView, Container, CornerRadius, CrossAxisAlignment, Empty, Flex,
+    MainAxisSize, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius,
+    Stack, Text,
 };
 use warpui::keymap::FixedBinding;
 use warpui::{
@@ -33,6 +34,9 @@ use crate::ai::blocklist::agent_view::orchestration_pill_bar::render_static_agen
 use crate::ai::blocklist::block::model::AIBlockModel;
 use crate::ai::blocklist::block::view_impl::WithContentItemSpacing;
 use crate::ai::blocklist::block::AIBlock;
+use crate::ai::blocklist::inline_action::create_environment_modal::{
+    CreateEnvironmentModal, CreateEnvironmentModalEvent,
+};
 use crate::ai::blocklist::inline_action::inline_action_header::{HeaderConfig, InteractionMode};
 use crate::ai::blocklist::inline_action::inline_action_icons;
 use crate::ai::blocklist::inline_action::orchestration_controls::{
@@ -133,6 +137,9 @@ impl OrchestrationControlAction for RunAgentsCardViewAction {
     fn environment_changed(environment_id: String) -> Self {
         Self::EnvironmentChanged { environment_id }
     }
+    fn create_environment_requested() -> Self {
+        Self::CreateEnvironmentRequested
+    }
     fn worker_host_changed(worker_host: String) -> Self {
         Self::WorkerHostChanged { worker_host }
     }
@@ -156,6 +163,7 @@ pub enum RunAgentsCardViewAction {
     ModelChanged { model_id: String },
     HarnessChanged { harness_type: String },
     EnvironmentChanged { environment_id: String },
+    CreateEnvironmentRequested,
     WorkerHostChanged { worker_host: String },
 }
 
@@ -190,6 +198,7 @@ pub struct RunAgentsCardView {
     /// UI-only per-harness model memory so switching harnesses preserves
     /// the user's previous model selection for each harness.
     saved_model_per_harness: HashMap<String, String>,
+    create_environment_modal: ViewHandle<CreateEnvironmentModal>,
 }
 
 /// Returns `true` when the conditions for auto-launching are met.
@@ -426,6 +435,16 @@ impl RunAgentsCardView {
             },
         );
 
+        let create_environment_modal = ctx.add_typed_action_view(CreateEnvironmentModal::new);
+        ctx.subscribe_to_view(&create_environment_modal, |me, _, event, ctx| match event {
+            CreateEnvironmentModalEvent::Created { environment_id } => {
+                me.select_created_environment(environment_id.clone(), ctx);
+            }
+            CreateEnvironmentModalEvent::Cancelled => {
+                ctx.notify();
+            }
+        });
+
         // When auto_launched is true, execution is deferred to the
         // ActionBlockedOnUserConfirmation subscription above — the action
         // hasn't been queued in pending_actions yet at construction time.
@@ -447,6 +466,7 @@ impl RunAgentsCardView {
             action_model,
             block_model,
             saved_model_per_harness: HashMap::new(),
+            create_environment_modal,
         };
 
         // Eagerly create picker views so the editor section is always
@@ -647,6 +667,24 @@ impl RunAgentsCardView {
         oc::sync_picker_selections(&self.state.orch, &self.handles.pickers, ctx);
     }
 
+    fn open_create_environment_modal(&mut self, ctx: &mut ViewContext<Self>) {
+        if let Some(environment_picker) = &self.handles.pickers.environment_picker {
+            environment_picker.update(ctx, |dropdown, ctx| dropdown.close(ctx));
+        }
+        self.create_environment_modal.update(ctx, |modal, ctx| {
+            modal.show(ctx);
+        });
+        ctx.notify();
+    }
+
+    fn select_created_environment(&mut self, environment_id: String, ctx: &mut ViewContext<Self>) {
+        self.state.orch.set_environment_id(environment_id.clone());
+        if let Some(environment_picker) = &self.handles.pickers.environment_picker {
+            oc::populate_environment_picker(environment_picker, &environment_id, ctx);
+        }
+        ctx.notify();
+    }
+
     fn toggle_accept_menu(&mut self, ctx: &mut ViewContext<Self>) {
         self.is_accept_menu_open = !self.is_accept_menu_open;
         if self.is_accept_menu_open {
@@ -770,6 +808,18 @@ impl View for RunAgentsCardView {
             );
         }
 
+        if self.create_environment_modal.as_ref(app).is_visible() {
+            root_stack.add_positioned_overlay_child(
+                ChildView::new(&self.create_environment_modal).finish(),
+                OffsetPositioning::offset_from_parent(
+                    vec2f(0., 0.),
+                    ParentOffsetBounds::WindowByPosition,
+                    ParentAnchor::Center,
+                    ChildAnchor::Center,
+                ),
+            );
+        }
+
         root_stack.finish()
     }
 }
@@ -824,6 +874,9 @@ impl TypedActionView for RunAgentsCardView {
             RunAgentsCardViewAction::EnvironmentChanged { environment_id } => {
                 self.state.orch.set_environment_id(environment_id.clone());
                 ctx.notify();
+            }
+            RunAgentsCardViewAction::CreateEnvironmentRequested => {
+                self.open_create_environment_modal(ctx);
             }
             RunAgentsCardViewAction::WorkerHostChanged { worker_host } => {
                 self.state.orch.set_worker_host(worker_host.clone());
