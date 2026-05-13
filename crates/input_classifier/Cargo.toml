@@ -25,8 +25,10 @@ onnx_ort = [
 ]
 onnx = ["dep:rust-embed", "dep:tokenizers"]
 # Selects which BERT-tiny ONNX model bytes are embedded via rust-embed; enable exactly one.
-nld_classifier_v1 = ["onnx"]
-nld_classifier_v2 = ["onnx"]
+# These transitively pull in the ONNX runtime backend (onnx_candle) so callers only
+# need to enable a single feature per model version.
+nld_classifier_v1 = ["onnx_candle"]
+nld_classifier_v2 = ["onnx_candle"]
 
 [dependencies]
 anyhow.workspace = true
