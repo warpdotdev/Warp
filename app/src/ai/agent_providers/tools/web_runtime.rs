@@ -130,7 +130,7 @@ fn is_blocked_ipv4(v4: Ipv4Addr) -> bool {
     v4.is_loopback()          // 127.0.0.0/8
         || v4.is_private()    // 10/8, 172.16/12, 192.168/16
         || v4.is_link_local() // 169.254.0.0/16
-        || v4.is_unspecified() // 0.0.0.0
+        || o[0] == 0          // 0.0.0.0/8 — "This host" (RFC 1122 §3.2.1.3)
         || v4.is_broadcast()  // 255.255.255.255
         || (Ipv4Addr::new(100, 64, 0, 0) <= v4 && v4 <= Ipv4Addr::new(100, 127, 255, 255))
             // CGNAT 100.64/10
@@ -283,9 +283,21 @@ pub async fn run_webfetch(client: &reqwest::Client, args: FetchArgs) -> Result<F
         resp
     };
 
+    response_to_fetch_output(resp, &args.url, &format).await
+}
+
+/// 共享的 Response → FetchOutput 转换逻辑。
+///
+/// 由 `run_webfetch` 和测试辅助函数共同调用，避免重复实现状态检查、
+/// 大小限制、图片编码和 JSON 美化等逻辑。
+async fn response_to_fetch_output(
+    resp: reqwest::Response,
+    url: &str,
+    format: &FetchFormat,
+) -> Result<FetchOutput> {
     let status = resp.status();
     if !status.is_success() {
-        bail!("HTTP {} fetching {}", status.as_u16(), args.url);
+        bail!("HTTP {} fetching {url}", status.as_u16());
     }
 
     let content_type = resp
@@ -309,9 +321,7 @@ pub async fn run_webfetch(client: &reqwest::Client, args: FetchArgs) -> Result<F
         if let Ok(len) = len_str.parse::<usize>() {
             if len > MAX_RESPONSE_SIZE {
                 bail!(
-                    "Response too large (Content-Length {} > {} bytes limit)",
-                    len,
-                    MAX_RESPONSE_SIZE
+                    "Response too large (Content-Length {len} > {MAX_RESPONSE_SIZE} bytes limit)"
                 );
             }
         }
@@ -331,7 +341,7 @@ pub async fn run_webfetch(client: &reqwest::Client, args: FetchArgs) -> Result<F
         let encoded = BASE64.encode(&bytes);
         let data_url = format!("data:{mime};base64,{encoded}");
         return Ok(FetchOutput {
-            url: args.url.clone(),
+            url: url.to_owned(),
             status: status.as_u16(),
             content_type,
             format: format!("{format:?}").to_ascii_lowercase(),
@@ -350,12 +360,12 @@ pub async fn run_webfetch(client: &reqwest::Client, args: FetchArgs) -> Result<F
         FetchFormat::Markdown if is_html => html_to_markdown(&body_str),
         FetchFormat::Text if is_html => extract_text_from_html(&body_str),
         FetchFormat::Html => body_str,
-        // markdown / text 但 mime 不是 html → 透传(已经是 text 类)
+        // markdown / text 但 mime 不是 html → 透传（已经是 text 类）
         _ => body_str,
     };
 
     Ok(FetchOutput {
-        url: args.url.clone(),
+        url: url.to_owned(),
         status: status.as_u16(),
         content_type,
         format: format!("{format:?}").to_ascii_lowercase(),

@@ -18,7 +18,7 @@ fn args(url: &str) -> FetchArgs {
 }
 
 // ---------------------------------------------------------------------------
-// URL 验证(纯逻辑,無 HTTP)
+// URL 验证（纯逻辑，无 HTTP）
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -49,12 +49,12 @@ async fn rejects_http_urls() {
 }
 
 // ---------------------------------------------------------------------------
-// 内容类型分支 — use send_fetch directly since mockito uses http://
+// 内容类型分支 — 直接调用 send_fetch，因为 mockito 只提供 HTTP
 // ---------------------------------------------------------------------------
 
-/// Helper: run a webfetch-like flow against a mockito server, bypassing the
-/// HTTPS-only check (mockito only serves HTTP).  Tests the content processing
-/// pipeline without the URL scheme gate.
+/// 辅助函数：对 mockito 服务器执行类似 webfetch 的流程，跳过 HTTPS 检查
+/// （mockito 只提供 HTTP）。测试内容处理管道，不经过 URL scheme 校验。
+/// 复用 `response_to_fetch_output` 以避免与生产逻辑漂移。
 async fn run_webfetch_test(
     server_url: &str,
     path: &str,
@@ -67,66 +67,7 @@ async fn run_webfetch_test(
     let timeout = std::time::Duration::from_secs(DEFAULT_FETCH_TIMEOUT_SECS);
 
     let resp = send_fetch(&client, &url, accept, CHROME_UA, timeout).await?;
-
-    let status = resp.status();
-    if !status.is_success() {
-        anyhow::bail!("HTTP {} fetching {}", status.as_u16(), url);
-    }
-
-    let content_type = resp
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_owned();
-    let mime = content_type
-        .split(';')
-        .next()
-        .map(|s| s.trim().to_ascii_lowercase())
-        .unwrap_or_default();
-
-    let bytes = resp.bytes().await?;
-    if bytes.len() > MAX_RESPONSE_SIZE {
-        anyhow::bail!(
-            "Response too large ({} bytes > {} bytes limit)",
-            bytes.len(),
-            MAX_RESPONSE_SIZE
-        );
-    }
-
-    if is_image_mime(&mime) {
-        let encoded = BASE64.encode(&bytes);
-        let data_url = format!("data:{mime};base64,{encoded}");
-        return Ok(FetchOutput {
-            url: url.clone(),
-            status: status.as_u16(),
-            content_type,
-            format: format!("{fmt:?}").to_ascii_lowercase(),
-            output: "Image fetched successfully".to_owned(),
-            attachments: vec![FetchAttachment {
-                mime,
-                url: data_url,
-            }],
-        });
-    }
-
-    let body_str = String::from_utf8_lossy(&bytes).into_owned();
-    let is_html = mime == "text/html" || mime == "application/xhtml+xml";
-    let output = match fmt {
-        FetchFormat::Markdown if is_html => html_to_markdown(&body_str),
-        FetchFormat::Text if is_html => extract_text_from_html(&body_str),
-        FetchFormat::Html => body_str,
-        _ => body_str,
-    };
-
-    Ok(FetchOutput {
-        url: url.clone(),
-        status: status.as_u16(),
-        content_type,
-        format: format!("{fmt:?}").to_ascii_lowercase(),
-        output: maybe_format_json(&output, &mime),
-        attachments: vec![],
-    })
+    response_to_fetch_output(resp, &url, &fmt).await
 }
 
 #[tokio::test]
@@ -357,7 +298,7 @@ async fn http_error_status_propagates() {
 }
 
 // ---------------------------------------------------------------------------
-// SSRF: is_blocked_ip coverage
+// SSRF：is_blocked_ip 覆盖测试
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -370,6 +311,8 @@ fn blocked_ip_ipv4_basics() {
         "192.168.1.1",
         "169.254.1.1",
         "0.0.0.0",
+        "0.0.0.1",       // 0.0.0.0/8 "This host" range
+        "0.255.255.255", // 0.0.0.0/8 upper bound
         "255.255.255.255",
         "100.64.0.1",   // CGNAT
         "192.0.2.1",    // TEST-NET-1
@@ -437,25 +380,23 @@ fn blocked_ip_ipv6_ranges() {
 }
 
 // ---------------------------------------------------------------------------
-// SSRF redirect protection
+// SSRF 重定向保护
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn ssrf_safe_client_builds_with_redirect_policy() {
     let client = build_ssrf_safe_client().expect("build client");
-    // Verify the client builds successfully with the custom SSRF redirect
-    // policy and DNS resolver configured.
-    // TODO: Add integration test with a real redirect to an internal IP
-    // once mockito gains redirect support.
+    // 验证客户端能使用自定义 SSRF 重定向策略和 DNS 解析器成功构建。
+    // TODO: mockito 支持重定向后，补充真正的内部 IP 重定向集成测试。
     assert!(client.get("https://example.invalid").build().is_ok());
 }
 
 // ---------------------------------------------------------------------------
-// FetchOutput 序列化
+// FetchOutput 序列化测试
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// 真実端点 smoke 测试(默认开启;CI 网络受限时設 WARP_SKIP_WEB_INTEGRATION=1)
+// 真实端点 smoke 测试（默认开启；CI 网络受限时设 WARP_SKIP_WEB_INTEGRATION=1）
 // ---------------------------------------------------------------------------
 
 fn skip_real() -> bool {
@@ -529,11 +470,11 @@ async fn real_httpbin_404_errors() {
 }
 
 // ---------------------------------------------------------------------------
-// 描述文档 / opencode 字节级対齐回归
+// 描述文档 / opencode 字节级对齐回归
 // ---------------------------------------------------------------------------
 
 /// 锁住 webfetch.md 与 opencode `packages/opencode/src/tool/webfetch.txt`
-/// 字節级一致。修改時需同步两邊。
+/// 字节级一致。修改时需同步两边。
 #[test]
 fn webfetch_description_matches_opencode_verbatim() {
     use super::super::webfetch::WEBFETCH;
@@ -571,9 +512,9 @@ fn fetch_output_omits_empty_attachments_in_json() {
     assert_eq!(v["output"], "hi");
 }
 
-/// `_byop_intercepted` sentinel 必须存在于所有 web tool result(包括 error)中,
-/// 否則 controller (`controller.rs::needs_byop_local_resume`) 不会触发 auto-resume,
-/// 模型会卡在等待结果,UI 显示静默失败。
+/// `_byop_intercepted` sentinel 必须存在于所有 web tool result（包括 error）中，
+/// 否则 controller（`controller.rs::needs_byop_local_resume`）不会触发 auto-resume，
+/// 模型会卡在等待结果，UI 显示静默失败。
 #[test]
 fn fetch_output_carries_byop_sentinel() {
     let out = FetchOutput {
