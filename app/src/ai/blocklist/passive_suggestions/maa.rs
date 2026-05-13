@@ -401,7 +401,7 @@ impl PassiveSuggestionsModel {
             return;
         }
 
-        // Suppress passive suggestions in cloud mode sessions.
+        // Suppress passive suggestions in ambient-agent sessions.
         if self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent() {
             return;
         }
@@ -450,7 +450,7 @@ impl PassiveSuggestionsModel {
         ctx: &mut ModelContext<Self>,
     ) {
         self.abort_pending_requests(ctx);
-        // Suppress passive suggestions in cloud mode sessions.
+        // Suppress passive suggestions in ambient-agent sessions.
         if self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent() {
             return;
         }
