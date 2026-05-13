@@ -26,10 +26,9 @@ use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::Expanded;
 use warpui::{
     elements::{
-        Align, AnchorPair, Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
+        Align, Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
         DispatchEventResult, DropTarget, Element, EventHandler, Flex, Hoverable, MainAxisSize,
-        OffsetPositioning, OffsetType, ParentElement, PositionedElementOffsetBounds,
-        PositioningAxis, Radius, SavePosition, Stack, XAxisAnchor, YAxisAnchor,
+        ParentElement, Radius, SavePosition, Stack,
     },
     presenter::ChildView,
     AppContext, SingletonEntity as _,
@@ -357,29 +356,6 @@ impl Input {
 
         stack.add_child(centered_content);
 
-        if let Some(history_menu) = self.render_cloud_mode_v2_history_menu(app) {
-            let prompt_position = self.prompt_save_position_id();
-            stack.add_positioned_overlay_child(
-                ConstrainedBox::new(history_menu)
-                    .with_max_width(CLOUD_MODE_V2_MAX_WIDTH)
-                    .finish(),
-                OffsetPositioning::from_axes(
-                    PositioningAxis::relative_to_stack_child(
-                        &prompt_position,
-                        PositionedElementOffsetBounds::WindowByPosition,
-                        OffsetType::Pixel(0.),
-                        AnchorPair::new(XAxisAnchor::Left, XAxisAnchor::Left),
-                    ),
-                    PositioningAxis::relative_to_stack_child(
-                        &prompt_position,
-                        PositionedElementOffsetBounds::Unbounded,
-                        OffsetType::Pixel(-CLOUD_MODE_V2_TOP_ROW_GAP),
-                        AnchorPair::new(YAxisAnchor::Top, YAxisAnchor::Bottom),
-                    ),
-                ),
-            );
-        }
-
         if let Some(selected_workflow_state) = self.workflows_state.selected_workflow_state.as_ref()
         {
             if selected_workflow_state.should_show_more_info_view {
@@ -447,18 +423,6 @@ impl Input {
                 .finish(),
         )
         .finish()
-    }
-
-    fn render_cloud_mode_v2_history_menu(&self, app: &AppContext) -> Option<Box<dyn Element>> {
-        if !self
-            .suggestions_mode_model
-            .as_ref(app)
-            .is_inline_history_menu()
-        {
-            return None;
-        }
-        let view = self.cloud_mode_v2_history_menu_view.as_ref()?;
-        Some(ChildView::new(view).finish())
     }
 
     fn render_cloud_mode_v2_top_row(&self) -> Box<dyn Element> {
