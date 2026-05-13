@@ -11,7 +11,7 @@ use crate::{
             actions::ObjectActions, persistence::ObjectStoreModel, view::ObjectStoreViewModel,
         },
         update_manager::UpdateManager,
-        CloudObjectSyncStatus, ObjectType, Owner, Space,
+        ObjectType, Owner, Space, StoredObjectSyncStatus,
     },
     drive::{items::WarpDriveItemId, ObjectTypeAndId},
     menu::MenuItem,
@@ -93,7 +93,7 @@ fn set_object_in_error(app: &mut App, object_type_and_id: &ObjectTypeAndId) {
         app,
         |cloud_model, _ctx: &mut warpui::ModelContext<'_, ObjectStoreModel>| {
             if let Some(object) = cloud_model.get_mut_by_uid(&object_type_and_id.uid()) {
-                object.set_pending_content_changes_status(CloudObjectSyncStatus::Errored);
+                object.set_pending_content_changes_status(StoredObjectSyncStatus::Errored);
             }
         },
     );

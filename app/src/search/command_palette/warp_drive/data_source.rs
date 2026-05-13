@@ -3,7 +3,7 @@ use super::notebook_search_item::NotebookSearchItem;
 use super::workflow_search_item::WorkflowSearchItem;
 use crate::cloud_object::model::persistence::{ObjectStoreEvent, ObjectStoreModel};
 use crate::cloud_object::{
-    CloudObject, CloudObjectLocation, GenericStringObjectFormat, JsonObjectType, ObjectType,
+    GenericStringObjectFormat, JsonObjectType, ObjectType, StoredObject, StoredObjectLocation,
 };
 use crate::drive::folders::FolderObject;
 use crate::env_vars::EnvVarCollectionObject;
@@ -261,7 +261,7 @@ impl Entity for DataSource {
 trait WarpDriveSearcher {
     fn insert_searchable_object(
         &mut self,
-        object: &dyn CloudObject,
+        object: &dyn StoredObject,
         object_type: ObjectType,
         app: &AppContext,
     ) -> anyhow::Result<()>;
@@ -313,7 +313,7 @@ struct FuzzyWarpDriveSearcher {
 impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
     fn insert_searchable_object(
         &mut self,
-        object: &dyn CloudObject,
+        object: &dyn StoredObject,
         object_type: ObjectType,
         app: &AppContext,
     ) -> anyhow::Result<()> {
@@ -347,7 +347,7 @@ impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
             ObjectType::Folder => {
                 let folder: Option<&FolderObject> = object.into();
                 if let Some(folder) = folder {
-                    let location = CloudObjectLocation::Folder(folder.id);
+                    let location = StoredObjectLocation::Folder(folder.id);
                     for obj in ObjectStoreModel::as_ref(app)
                         .active_cloud_objects_in_location_without_descendents(location, app)
                     {
@@ -388,7 +388,7 @@ impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
                 };
                 let folder: Option<&FolderObject> = obj.into();
                 if let Some(folder) = folder {
-                    let location = CloudObjectLocation::Folder(folder.id);
+                    let location = StoredObjectLocation::Folder(folder.id);
                     for obj in
                         model.trashed_cloud_objects_in_location_without_descendents(location, app)
                     {
@@ -525,7 +525,7 @@ mod full_text_searcher {
 
     use crate::cloud_object::model::persistence::ObjectStoreModel;
     use crate::cloud_object::{
-        CloudObject, CloudObjectLocation, GenericStringObjectFormat, JsonObjectType, ObjectType,
+        GenericStringObjectFormat, JsonObjectType, ObjectType, StoredObject, StoredObjectLocation,
     };
     use crate::define_search_schema;
     use crate::drive::folders::FolderObject;
@@ -682,7 +682,7 @@ mod full_text_searcher {
     impl WarpDriveSearcher for FullTextWarpDriveSearcher {
         fn insert_searchable_object(
             &mut self,
-            object: &dyn CloudObject,
+            object: &dyn StoredObject,
             object_type: ObjectType,
             app: &AppContext,
         ) -> anyhow::Result<()> {
@@ -774,7 +774,7 @@ mod full_text_searcher {
                 ObjectType::Folder => {
                     let folder: Option<&FolderObject> = object.into();
                     if let Some(folder) = folder {
-                        let location = CloudObjectLocation::Folder(folder.id);
+                        let location = StoredObjectLocation::Folder(folder.id);
                         for obj in ObjectStoreModel::as_ref(app)
                             .active_cloud_objects_in_location_without_descendents(location, app)
                         {
@@ -820,7 +820,7 @@ mod full_text_searcher {
                     };
                     let folder: Option<&FolderObject> = obj.into();
                     if let Some(folder) = folder {
-                        let location = CloudObjectLocation::Folder(folder.id);
+                        let location = StoredObjectLocation::Folder(folder.id);
                         for obj in ObjectStoreModel::as_ref(app)
                             .trashed_cloud_objects_in_location_without_descendents(location, app)
                         {

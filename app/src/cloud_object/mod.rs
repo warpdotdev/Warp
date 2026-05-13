@@ -6,16 +6,16 @@
 //! 在 OpenWarp 中云端同步链路(RTC / UpdateManager / SyncQueue / ServerApiProvider)
 //! 已被剥离(详见 `docs/openwarp-cloud-removal-plan.md`),本模块**变为纯本地对象抽象**:
 //!
-//! - `CloudObject` trait → 实际语义是 "本地领域对象 trait",承载 metadata / permissions /
+//! - `StoredObject` trait → 实际语义是 "本地领域对象 trait",承载 metadata / permissions /
 //!   versions / display_name / upsert_event / as_any / clone_box;命名上的 `Cloud` 前缀
 //!   仅为减少跨上游 cherry-pick 的 diff 面而保留,不再具有任何云端含义。
-//! - `GenericCloudObject<K, M>` → 本地领域对象的泛型承载结构。
-//! - `CloudModelType` trait → 本地对象类型描述。
+//! - `GenericStoredObject<K, M>` → 本地领域对象的泛型承载结构。
+//! - `StoredObjectModel` trait → 本地对象类型描述。
 //! - `ObjectStoreModel`(`model/persistence.rs`)→ 进程内本地对象全局存储 + SQLite 背存。
 //! - `ObjectStoreEvent` → 本地模型变更事件总线,被本地 UI 视图订阅。
 //! - `ObjectTypeAndId` → 本地 ID 判别式,被 Drive UI / search 等 60+ 处使用。
 //!
-//! 之所以采用 "保留原名 + 文档注释" 而非物理重命名(`CloudObject` → `LocalObject`),
+//! 之所以采用 "保留原名 + 文档注释" 而非物理重命名(`StoredObject` → `LocalObject`),
 //! 是为了把重命名的 200+ 处级联改动留到上游同步策略稳定后再统一做,本阶段**只
 //! 标注语义已本地化**,不动符号名。
 //!
@@ -93,7 +93,7 @@ impl From<&str> for SerializedModel {
     }
 }
 
-/// A CloudObject represents
+/// A StoredObject represents
 /// therefore shareable and editable (i.e. Notebooks and Workflows). In order
 /// to support collaborative editing of these objects, they must each store local
 /// revision numbers to ensure a stable way of accepting and rejecting edits.
@@ -101,12 +101,12 @@ impl From<&str> for SerializedModel {
 /// Note that this trait must be object-safe and non-generic.  The reason for this
 /// is that (a) we need to be able to store instances of it as trait objects in
 /// ObjectStoreModel and (b) we need to be able to support mixed collections of different
-/// instances of it (e.g. in the map of id -> CloudObject in ObjectStoreModel).
+/// instances of it (e.g. in the map of id -> StoredObject in ObjectStoreModel).
 ///
 /// There are two closely related types to this:
-/// 1) GenericCloudObject: This is the concrete generic implementation of CloudObject that
-///    holds onto a model of type CloudModelType and an id of type SyncId.
-/// 2) CloudModelType: This is a trait that defines the model type for a CloudObject -
+/// 1) GenericStoredObject: This is the concrete generic implementation of StoredObject that
+///    holds onto a model of type StoredObjectModel and an id of type SyncId.
+/// 2) StoredObjectModel: This is a trait that defines the model type for a StoredObject -
 ///    this is what implementors of new cloud types typically have to implement.
 ///
 /// These types are tightly coupled.  In an ideal world, rust would allow a mechanism
@@ -114,10 +114,10 @@ impl From<&str> for SerializedModel {
 /// be generic on id and model types, but as far as I (zach) can tell, that's not currently
 /// possible.
 ///
-/// The typical usage pattern for these types is to use dyn CloudObject whenever you
-/// don't need access to a model or id, and to downcast to a GenericCloudObject whenever you do.
+/// The typical usage pattern for these types is to use dyn StoredObject whenever you
+/// don't need access to a model or id, and to downcast to a GenericStoredObject whenever you do.
 ///
-/// This implies that, for now, *all* CloudObjects must implement GenericCloudObject.
+/// This implies that, for now, *all* CloudObjects must implement GenericStoredObject.
 ///
 /// Additionally, they must support the "grab the baton" UX for editing, where any
 /// user can grab edit access of an object, revoking it from anyone else currently
@@ -125,7 +125,7 @@ impl From<&str> for SerializedModel {
 ///
 /// For more info on revisions: https://docs.google.com/document/d/1SGtX_5AiSJmUxXCRk5NzGTzrC_XrxQRsio-KZOec_ng/edit
 /// And grab the baton: https://docs.google.com/document/d/1LgGaz8bB40AONTzC0ZFOw5Kg0SD8_RM10V_nyt3zOvY/edit#heading=h.tcup5oqi82p4
-pub trait CloudObject: Debug {
+pub trait StoredObject: Debug {
     /// Returns the name of this model type (e.g. Workflow, Folder, Notebook)
     fn model_type_name(&self) -> &'static str;
 
@@ -139,17 +139,17 @@ pub trait CloudObject: Debug {
     /// prefixed, such as "Workflow-{UID}"
     fn hashed_sqlite_id(&self) -> HashedSqliteId;
 
-    /// Returns the CloudObjectMetadata struct associated with this object.
-    fn metadata(&self) -> &CloudObjectMetadata;
+    /// Returns the StoredObjectMetadata struct associated with this object.
+    fn metadata(&self) -> &StoredObjectMetadata;
 
-    /// Returns a mutable reference to the CloudObjectMetadata struct associated with this object.
-    fn metadata_mut(&mut self) -> &mut CloudObjectMetadata;
+    /// Returns a mutable reference to the StoredObjectMetadata struct associated with this object.
+    fn metadata_mut(&mut self) -> &mut StoredObjectMetadata;
 
-    /// Returns the CloudObjectPermissions struct associated with this object.
-    fn permissions(&self) -> &CloudObjectPermissions;
+    /// Returns the StoredObjectPermissions struct associated with this object.
+    fn permissions(&self) -> &StoredObjectPermissions;
 
-    /// Returnsa mutable reference to the CloudObjectPermissions struct associated with this object.
-    fn permissions_mut(&mut self) -> &mut CloudObjectPermissions;
+    /// Returnsa mutable reference to the StoredObjectPermissions struct associated with this object.
+    fn permissions_mut(&mut self) -> &mut StoredObjectPermissions;
 
     /// Returns the ObjectType i.e. 'Workflow' or 'Notebook'
     fn object_type(&self) -> ObjectType;
@@ -267,7 +267,7 @@ pub trait CloudObject: Debug {
             .join(" / ")
     }
 
-    /// Returns whether this CloudObject is in the given space
+    /// Returns whether this StoredObject is in the given space
     fn is_in_space(&self, space: Space, app: &AppContext) -> bool {
         self.space(app) == space
     }
@@ -279,14 +279,14 @@ pub trait CloudObject: Debug {
     /// Returns the direct location of the object. If the object
     /// is not in a folder, this will be the object's space. Otherwise, it will
     /// be the folder the object is placed in directly, even if that folder is nested.
-    fn location(&self, cloud_model: &ObjectStoreModel, app: &AppContext) -> CloudObjectLocation {
+    fn location(&self, cloud_model: &ObjectStoreModel, app: &AppContext) -> StoredObjectLocation {
         if let Some(folder_id) = self.metadata().folder_id {
             if cloud_model.get_folder(&folder_id).is_some() {
-                return CloudObjectLocation::Folder(folder_id);
+                return StoredObjectLocation::Folder(folder_id);
             }
         }
 
-        CloudObjectLocation::Space(self.space(app))
+        StoredObjectLocation::Space(self.space(app))
     }
 
     /// Return true is this object or any of its ancestors are trashed. Also returns true
@@ -346,11 +346,11 @@ pub trait CloudObject: Debug {
     /// increments the number of in flight requests tracked in the `InFlight` enum.
     fn increment_in_flight_request_count(&mut self) {
         let new_reqs = match &self.metadata().pending_changes_statuses.content_sync_status {
-            CloudObjectSyncStatus::InFlight(reqs) => reqs.0 + 1,
+            StoredObjectSyncStatus::InFlight(reqs) => reqs.0 + 1,
             _ => 1,
         };
 
-        self.set_pending_content_changes_status(CloudObjectSyncStatus::InFlight(
+        self.set_pending_content_changes_status(StoredObjectSyncStatus::InFlight(
             NumInFlightRequests(new_reqs),
         ))
     }
@@ -360,15 +360,15 @@ pub trait CloudObject: Debug {
     /// Returns true if the object is no longer in flight.
     fn decrement_in_flight_request_count(
         &mut self,
-        status_if_no_reqs: CloudObjectSyncStatus,
+        status_if_no_reqs: StoredObjectSyncStatus,
     ) -> bool {
         match &self.metadata().pending_changes_statuses.content_sync_status {
-            CloudObjectSyncStatus::InFlight(reqs) => {
+            StoredObjectSyncStatus::InFlight(reqs) => {
                 if reqs.0 - 1 == 0 {
                     self.set_pending_content_changes_status(status_if_no_reqs);
                     return true;
                 } else {
-                    self.set_pending_content_changes_status(CloudObjectSyncStatus::InFlight(
+                    self.set_pending_content_changes_status(StoredObjectSyncStatus::InFlight(
                         NumInFlightRequests(reqs.0 - 1),
                     ));
                     return false;
@@ -385,7 +385,7 @@ pub trait CloudObject: Debug {
     /// Sets the content change status on this object's metadata
     fn set_pending_content_changes_status(
         &mut self,
-        pending_content_changes_status: CloudObjectSyncStatus,
+        pending_content_changes_status: StoredObjectSyncStatus,
     ) {
         self.metadata_mut()
             .pending_changes_statuses
@@ -403,37 +403,37 @@ pub trait CloudObject: Debug {
 
     /// Returns the trait object as a concrete type reference by downcasting it.
     /// Returns None if the downcast fails.
-    fn as_model_type<K, M>(cloud_object: &dyn CloudObject) -> Option<&GenericCloudObject<K, M>>
+    fn as_model_type<K, M>(cloud_object: &dyn StoredObject) -> Option<&GenericStoredObject<K, M>>
     where
         Self: Sized,
         K: HashableId + ToServerId + Debug + Into<String> + Clone + 'static,
-        M: CloudModelType<IdType = K, CloudObjectType = GenericCloudObject<K, M>> + 'static,
+        M: StoredObjectModel<IdType = K, StoredObjectType = GenericStoredObject<K, M>> + 'static,
     {
         cloud_object
             .as_any()
-            .downcast_ref::<GenericCloudObject<K, M>>()
+            .downcast_ref::<GenericStoredObject<K, M>>()
     }
 
     /// Returns the trait object as a concrete mutable type reference by downcasting it.
     /// Returns None if the downcast fails.
     fn as_model_type_mut<K, M>(
-        cloud_object: &mut dyn CloudObject,
-    ) -> Option<&mut GenericCloudObject<K, M>>
+        cloud_object: &mut dyn StoredObject,
+    ) -> Option<&mut GenericStoredObject<K, M>>
     where
         Self: Sized,
         K: HashableId + ToServerId + Debug + Into<String> + Clone + 'static,
-        M: CloudModelType<IdType = K, CloudObjectType = GenericCloudObject<K, M>> + 'static,
+        M: StoredObjectModel<IdType = K, StoredObjectType = GenericStoredObject<K, M>> + 'static,
     {
         cloud_object
             .as_any_mut()
-            .downcast_mut::<GenericCloudObject<K, M>>()
+            .downcast_mut::<GenericStoredObject<K, M>>()
     }
 
     /// Returns a cloned boxed version of this cloud object.
-    /// Note that we can't force the CloudObject trait to derive from Cloned
+    /// Note that we can't force the StoredObject trait to derive from Cloned
     /// directly because that would make the trait not object safe.  This
     /// is a workaround.
-    fn clone_box(&self) -> Box<dyn CloudObject>;
+    fn clone_box(&self) -> Box<dyn StoredObject>;
 }
 
 /// Defines a common trait for cloud models to implement.
@@ -441,14 +441,14 @@ pub trait CloudObject: Debug {
 /// e.g. it contains the notebook, workflow, or folder specific data, but has
 /// no logic around metadata, permissions, or sync status.
 ///
-/// See the comments for CloudObject to understand the relationship between
-/// this trait, CloudObject and GenericCloudObject.  They are tightly coupled.
+/// See the comments for StoredObject to understand the relationship between
+/// this trait, StoredObject and GenericStoredObject.  They are tightly coupled.
 ///
 /// When building new model types (e.g. for settings or launch configs) we should just
-/// have to implement this trait, and not the entire CloudObject trait.
-pub trait CloudModelType: Debug + Clone + Send + Sync {
-    /// The associated CloudObject type for this model (e.g. NotebookObject, WorkflowObject, etc)
-    type CloudObjectType: CloudObject + 'static;
+/// have to implement this trait, and not the entire StoredObject trait.
+pub trait StoredObjectModel: Debug + Clone + Send + Sync {
+    /// The associated StoredObject type for this model (e.g. NotebookObject, WorkflowObject, etc)
+    type StoredObjectType: StoredObject + 'static;
     // TODO: @ianhodge - remove for sync ID refactor.
     type IdType: HashableId + ToServerId + Debug + Into<String> + Clone + 'static;
 
@@ -481,7 +481,7 @@ pub trait CloudModelType: Debug + Clone + Send + Sync {
         &self,
         id: SyncId,
         appearance: &Appearance,
-        object: &Self::CloudObjectType,
+        object: &Self::StoredObjectType,
     ) -> Option<Box<dyn WarpDriveItem>>;
 
     /// Returns the display name for this model (e.g. to show in the Warp Drive index)
@@ -493,10 +493,10 @@ pub trait CloudModelType: Debug + Clone + Send + Sync {
     fn set_display_name(&mut self, _name: &str) {}
 
     /// Returns the upsert event for putting this model into the SQLite database.
-    fn upsert_event(&self, object: &Self::CloudObjectType) -> ModelEvent;
+    fn upsert_event(&self, object: &Self::StoredObjectType) -> ModelEvent;
 
     /// Returns a bulk upsert event for putting a list of this model into the SQLite database.
-    fn bulk_upsert_event(objects: &[Self::CloudObjectType]) -> ModelEvent;
+    fn bulk_upsert_event(objects: &[Self::StoredObjectType]) -> ModelEvent;
 
     /// Returns a serialized model.
     fn serialized(&self) -> SerializedModel;
@@ -536,27 +536,27 @@ lazy_static! {
 
 /// A generic implementation of cloud objects that can be used for any model and id types.
 ///
-/// For instance, rather than directly implementing the CloudObject trait, CloudObjects can
-/// implement GenericCloudObject<K, M> where K is their id type and M is their model type.
+/// For instance, rather than directly implementing the StoredObject trait, CloudObjects can
+/// implement GenericStoredObject<K, M> where K is their id type and M is their model type.
 ///
 /// For example, NotebookObject becomes:
 ///
-///   pub type NotebookObject = GenericCloudObject<NotebookId, NotebookObjectModel>
+///   pub type NotebookObject = GenericStoredObject<NotebookId, NotebookObjectModel>
 ///
 /// The advantage of using the generic model is you get common implementations
-/// of CloudObject methods like ```versions``` for free.
+/// of StoredObject methods like ```versions``` for free.
 ///
-/// See the comments for CloudObject to understand the relationship between
-/// this trait, CloudObject and CloudModelType.  They are tightly coupled.
+/// See the comments for StoredObject to understand the relationship between
+/// this trait, StoredObject and StoredObjectModel.  They are tightly coupled.
 #[derive(Clone, Debug)]
-pub struct GenericCloudObject<K, M>
+pub struct GenericStoredObject<K, M>
 where
     K: HashableId + ToServerId + Debug + Into<String> + Clone + 'static,
-    M: CloudModelType<IdType = K> + 'static,
+    M: StoredObjectModel<IdType = K> + 'static,
 {
     pub id: SyncId,
-    pub metadata: CloudObjectMetadata,
-    pub permissions: CloudObjectPermissions,
+    pub metadata: StoredObjectMetadata,
+    pub permissions: StoredObjectPermissions,
     /// Tracks whether this object has a conflict with the server version.
     /// This is runtime state (not persisted) - conflicts are always NoConflicts when loaded from SQLite.
     pub conflict_status: ConflictStatus,
@@ -573,10 +573,10 @@ where
     model: Arc<M>,
 }
 
-impl<K, M> CloudObject for GenericCloudObject<K, M>
+impl<K, M> StoredObject for GenericStoredObject<K, M>
 where
     K: HashableId + ToServerId + Debug + Into<String> + Clone + 'static,
-    M: CloudModelType<IdType = K, CloudObjectType = GenericCloudObject<K, M>> + 'static,
+    M: StoredObjectModel<IdType = K, StoredObjectType = GenericStoredObject<K, M>> + 'static,
 {
     fn model_type_name(&self) -> &'static str {
         self.model.model_type_name()
@@ -602,19 +602,19 @@ where
         self.model.warn_if_unsaved_at_quit()
     }
 
-    fn metadata(&self) -> &CloudObjectMetadata {
+    fn metadata(&self) -> &StoredObjectMetadata {
         &self.metadata
     }
 
-    fn metadata_mut(&mut self) -> &mut CloudObjectMetadata {
+    fn metadata_mut(&mut self) -> &mut StoredObjectMetadata {
         &mut self.metadata
     }
 
-    fn permissions(&self) -> &CloudObjectPermissions {
+    fn permissions(&self) -> &StoredObjectPermissions {
         &self.permissions
     }
 
-    fn permissions_mut(&mut self) -> &mut CloudObjectPermissions {
+    fn permissions_mut(&mut self) -> &mut StoredObjectPermissions {
         &mut self.permissions
     }
 
@@ -653,7 +653,7 @@ where
         let mut new_conflict = ConflictStatus::NoConflicts;
         std::mem::swap(&mut new_conflict, &mut self.conflict_status);
 
-        self.set_pending_content_changes_status(CloudObjectSyncStatus::NoLocalChanges);
+        self.set_pending_content_changes_status(StoredObjectSyncStatus::NoLocalChanges);
 
         let _ = new_conflict;
         self.conflict_status = ConflictStatus::NoConflicts;
@@ -733,15 +733,15 @@ where
         self
     }
 
-    fn clone_box(&self) -> Box<dyn CloudObject> {
+    fn clone_box(&self) -> Box<dyn StoredObject> {
         Box::new(self.clone())
     }
 }
 
-impl<K, M> GenericCloudObject<K, M>
+impl<K, M> GenericStoredObject<K, M>
 where
     K: HashableId + ToServerId + Debug + Into<String> + Clone + 'static,
-    M: CloudModelType<IdType = K, CloudObjectType = GenericCloudObject<K, M>> + 'static,
+    M: StoredObjectModel<IdType = K, StoredObjectType = GenericStoredObject<K, M>> + 'static,
 {
     /// Gets a reference to the model held by the object.
     pub fn model(&self) -> &M {
@@ -767,8 +767,8 @@ where
     pub fn new(
         id: SyncId,
         model: M,
-        metadata: CloudObjectMetadata,
-        permissions: CloudObjectPermissions,
+        metadata: StoredObjectMetadata,
+        permissions: StoredObjectPermissions,
     ) -> Self {
         Self {
             id,
@@ -779,7 +779,7 @@ where
         }
     }
 
-    /// Creates a new GenericCloudObject with the given model, owner, and initial folder id.
+    /// Creates a new GenericStoredObject with the given model, owner, and initial folder id.
     /// This is for the local creation flow, as opposed to creating from a server update.
     pub fn new_local(
         model: M,
@@ -790,9 +790,9 @@ where
         Self {
             id: SyncId::ClientId(client_id),
             model: model.into(),
-            metadata: CloudObjectMetadata {
-                pending_changes_statuses: CloudObjectStatuses {
-                    content_sync_status: CloudObjectSyncStatus::InFlight(NumInFlightRequests(1)),
+            metadata: StoredObjectMetadata {
+                pending_changes_statuses: StoredObjectStatuses {
+                    content_sync_status: StoredObjectSyncStatus::InFlight(NumInFlightRequests(1)),
                     has_pending_metadata_change: false,
                     has_pending_permissions_change: false,
                     pending_untrash: false,
@@ -809,7 +809,7 @@ where
                 last_editor_uid: None,
                 last_task_run_ts: None,
             },
-            permissions: CloudObjectPermissions {
+            permissions: StoredObjectPermissions {
                 owner,
                 anyone_with_link: None,
                 guests: Default::default(),
@@ -861,37 +861,37 @@ pub fn extract_server_id_and_object_type_from_warp_drive_link(
     })
 }
 
-impl<'a, K, M> From<&'a dyn CloudObject> for Option<&'a GenericCloudObject<K, M>>
+impl<'a, K, M> From<&'a dyn StoredObject> for Option<&'a GenericStoredObject<K, M>>
 where
     K: HashableId + ToServerId + Debug + Into<String> + Clone + 'static,
-    M: CloudModelType<IdType = K, CloudObjectType = GenericCloudObject<K, M>> + 'static,
+    M: StoredObjectModel<IdType = K, StoredObjectType = GenericStoredObject<K, M>> + 'static,
 {
-    fn from(value: &'a dyn CloudObject) -> Self {
-        <GenericCloudObject<K, M> as CloudObject>::as_model_type::<K, M>(value)
+    fn from(value: &'a dyn StoredObject) -> Self {
+        <GenericStoredObject<K, M> as StoredObject>::as_model_type::<K, M>(value)
     }
 }
 
-impl<'a, K, M> From<&'a Box<dyn CloudObject>> for Option<&'a GenericCloudObject<K, M>>
+impl<'a, K, M> From<&'a Box<dyn StoredObject>> for Option<&'a GenericStoredObject<K, M>>
 where
     K: HashableId + ToServerId + Debug + Into<String> + Clone + 'static,
-    M: CloudModelType<IdType = K, CloudObjectType = GenericCloudObject<K, M>> + 'static,
+    M: StoredObjectModel<IdType = K, StoredObjectType = GenericStoredObject<K, M>> + 'static,
 {
-    fn from(value: &'a Box<dyn CloudObject>) -> Self {
-        <GenericCloudObject<K, M> as CloudObject>::as_model_type::<K, M>(value.as_ref())
+    fn from(value: &'a Box<dyn StoredObject>) -> Self {
+        <GenericStoredObject<K, M> as StoredObject>::as_model_type::<K, M>(value.as_ref())
     }
 }
 
-impl<'a, K, M> From<&'a mut Box<dyn CloudObject>> for Option<&'a mut GenericCloudObject<K, M>>
+impl<'a, K, M> From<&'a mut Box<dyn StoredObject>> for Option<&'a mut GenericStoredObject<K, M>>
 where
     K: HashableId + ToServerId + Debug + Into<String> + Clone + 'static,
-    M: CloudModelType<IdType = K, CloudObjectType = GenericCloudObject<K, M>> + 'static,
+    M: StoredObjectModel<IdType = K, StoredObjectType = GenericStoredObject<K, M>> + 'static,
 {
-    fn from(value: &'a mut Box<dyn CloudObject>) -> Self {
-        <GenericCloudObject<K, M> as CloudObject>::as_model_type_mut::<K, M>(value.as_mut())
+    fn from(value: &'a mut Box<dyn StoredObject>) -> Self {
+        <GenericStoredObject<K, M> as StoredObject>::as_model_type_mut::<K, M>(value.as_mut())
     }
 }
 
-impl Clone for Box<dyn CloudObject> {
+impl Clone for Box<dyn StoredObject> {
     fn clone(&self) -> Self {
         self.clone_box()
     }
@@ -930,20 +930,20 @@ pub enum UniquePer {
     User,
 }
 
-impl From<&dyn CloudObject> for ObjectType {
-    fn from(value: &dyn CloudObject) -> Self {
+impl From<&dyn StoredObject> for ObjectType {
+    fn from(value: &dyn StoredObject) -> Self {
         value.object_type()
     }
 }
 
-impl From<&Box<dyn CloudObject>> for ObjectType {
-    fn from(value: &Box<dyn CloudObject>) -> Self {
-        <ObjectType as From<&dyn CloudObject>>::from(value.as_ref())
+impl From<&Box<dyn StoredObject>> for ObjectType {
+    fn from(value: &Box<dyn StoredObject>) -> Self {
+        <ObjectType as From<&dyn StoredObject>>::from(value.as_ref())
     }
 }
 
-/// Extension trait for CloudObjectMetadata with methods that require AppContext.
-pub trait CloudObjectMetadataExt {
+/// Extension trait for StoredObjectMetadata with methods that require AppContext.
+pub trait StoredObjectMetadataExt {
     /// Returns a semantic summary of the last edit to the object. For example, "Alice edited 4 weeks ago".
     /// Returns None if the revision and last_editor are None.
     fn semantic_editing_history(&self, app: &AppContext) -> Option<String>;
@@ -957,7 +957,7 @@ pub trait CloudObjectMetadataExt {
     fn semantic_permadeletion_countdown(&self, app: &AppContext) -> Option<String>;
 }
 
-impl CloudObjectMetadataExt for CloudObjectMetadata {
+impl StoredObjectMetadataExt for StoredObjectMetadata {
     fn semantic_editing_history(&self, app: &AppContext) -> Option<String> {
         let user_profiles = UserProfiles::as_ref(app);
 
@@ -1067,7 +1067,7 @@ impl Space {
 /// Enum for specifying the location of a warp drive object.
 /// Objects can live in top level spaces, or a specific folder.
 #[derive(Eq, PartialEq, Copy, Clone, Debug, Hash)]
-pub enum CloudObjectLocation {
+pub enum StoredObjectLocation {
     Space(Space),
     Folder(SyncId),
     Trash,

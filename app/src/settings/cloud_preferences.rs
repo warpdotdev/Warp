@@ -7,7 +7,7 @@ use crate::cloud_object::{
         generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
         json_model::{JsonModel, JsonSerializer},
     },
-    GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey, JsonObjectType,
+    GenericStoredObject, GenericStringObjectFormat, GenericStringObjectUniqueKey, JsonObjectType,
     UniquePer,
 };
 
@@ -26,7 +26,7 @@ define_settings_group!(CloudPreferencesSettings, settings: [
    },
 ]);
 
-pub type CloudPreference = GenericCloudObject<GenericStringObjectId, CloudPreferenceModel>;
+pub type CloudPreference = GenericStoredObject<GenericStringObjectId, CloudPreferenceModel>;
 pub type CloudPreferenceModel = GenericStringModel<Preference, JsonSerializer>;
 
 /// Defines the platform that a preference was set on.
@@ -131,7 +131,7 @@ impl Preference {
 
 /// Defines a based model for syncing cloud preferences.
 impl StringModel for Preference {
-    type CloudObjectType = CloudPreference;
+    type StoredObjectType = CloudPreference;
 
     fn model_type_name(&self) -> &'static str {
         "Preference"

@@ -10,7 +10,7 @@ use crate::{
     auth::{UserUid, TEST_USER_UID},
     channel::ChannelState,
     cloud_object::{
-        model::persistence::ObjectStoreModel, CloudObjectEventEntrypoint, ObjectType, Owner, Space,
+        model::persistence::ObjectStoreModel, ObjectType, Owner, Space, StoredObjectEventEntrypoint,
     },
     pricing::{PricingInfo, PricingInfoModel},
     report_error,
@@ -728,7 +728,7 @@ impl UserWorkspaces {
         &mut self,
         user_uid: UserUid,
         team_uid: ServerId,
-        entrypoint: CloudObjectEventEntrypoint,
+        entrypoint: StoredObjectEventEntrypoint,
         _ctx: &mut ModelContext<Self>,
     ) {
         // OpenWarp(本地化,Phase 5):原发 GraphQL `RemoveUserFromTeam`,本地无 team 概念 → no-op。

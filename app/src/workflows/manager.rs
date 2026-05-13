@@ -1,6 +1,6 @@
 use super::{workflow::Workflow, WorkflowObjectModel};
 use crate::{
-    cloud_object::{model::persistence::ObjectStoreModel, GenericCloudObject, Owner},
+    cloud_object::{model::persistence::ObjectStoreModel, GenericStoredObject, Owner},
     drive::OpenWarpDriveObjectSettings,
     pane_group::{PaneContent, WorkflowPane},
     safe_warn,
@@ -110,7 +110,7 @@ impl WorkflowManager {
             } => {
                 view.update(ctx, |view, ctx| {
                     view.load(
-                        GenericCloudObject::new_local(
+                        GenericStoredObject::new_local(
                             WorkflowObjectModel::new(*workflow.clone()),
                             *owner,
                             *initial_folder_id,

@@ -23,7 +23,7 @@ use crate::workspaces::team::{MembershipRole, TeamDeleteDisabledReason};
 use crate::{
     appearance::Appearance,
     channel::ChannelState,
-    cloud_object::{model::persistence::ObjectStoreModel, CloudObjectEventEntrypoint, Space},
+    cloud_object::{model::persistence::ObjectStoreModel, Space, StoredObjectEventEntrypoint},
     drive::cloud_action_confirmation_dialog::{
         CloudActionConfirmationDialog, CloudActionConfirmationDialogEvent,
         CloudActionConfirmationDialogVariant,
@@ -1266,7 +1266,7 @@ impl TeamsPageView {
                 user_workspaces.remove_user_from_team(
                     user_uid,
                     team_uid,
-                    CloudObjectEventEntrypoint::TeamSettings,
+                    StoredObjectEventEntrypoint::TeamSettings,
                     ctx,
                 );
             });

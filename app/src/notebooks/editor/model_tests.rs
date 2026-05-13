@@ -6,7 +6,7 @@ use super::NotebooksEditorModel;
 use crate::appearance::Appearance;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::ObjectStoreModel;
-use crate::cloud_object::{CloudObjectMetadata, CloudObjectPermissions, Revision};
+use crate::cloud_object::{Revision, StoredObjectMetadata, StoredObjectPermissions};
 use crate::editor::InteractionState;
 use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::notebooks::editor::model::DEBOUNCED_RESIZE_PERIOD;
@@ -1646,13 +1646,13 @@ fn mock_server_workflow(id: i64, app: &mut App) {
     let server_id: ServerId = id.into();
     let workflow_id: WorkflowId = server_id.into();
     let sync_id = SyncId::ServerId(workflow_id.into());
-    let mut metadata = CloudObjectMetadata::mock();
+    let mut metadata = StoredObjectMetadata::mock();
     metadata.revision = Some(Revision::now());
     let workflow = WorkflowObject::new(
         sync_id,
         WorkflowObjectModel::new(Workflow::new(format!("w{id}"), format!("c{id}"))),
         metadata,
-        CloudObjectPermissions::mock_personal(),
+        StoredObjectPermissions::mock_personal(),
     );
 
     ObjectStoreModel::handle(app).update(app, |cloud_model, _| {

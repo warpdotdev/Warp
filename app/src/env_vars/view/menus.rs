@@ -4,7 +4,7 @@ use warpui::{keymap::Trigger, SingletonEntity, ViewContext, ViewHandle};
 
 use crate::{
     cloud_object::update_manager::UpdateManager,
-    cloud_object::{CloudObject, GenericStringObjectFormat, Space},
+    cloud_object::{GenericStringObjectFormat, Space, StoredObject},
     drive::{
         drive_helpers::has_feature_gated_anonymous_user_reached_env_var_limit,
         export::ExportManager, ObjectTypeAndId,

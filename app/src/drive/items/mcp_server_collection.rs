@@ -2,7 +2,7 @@ use warpui::{elements::MouseStateHandle, AppContext, Element};
 
 use crate::{
     appearance::Appearance,
-    cloud_object::CloudObjectMetadata,
+    cloud_object::StoredObjectMetadata,
     drive::{index::DriveIndexAction, DriveObjectType},
     server::ids::ClientId,
     themes::theme::Fill,
@@ -30,7 +30,7 @@ impl WarpDriveItem for WarpDriveMCPServerCollection {
         Some("MCP Servers".to_string())
     }
 
-    fn metadata(&self) -> Option<&CloudObjectMetadata> {
+    fn metadata(&self) -> Option<&StoredObjectMetadata> {
         None
     }
 

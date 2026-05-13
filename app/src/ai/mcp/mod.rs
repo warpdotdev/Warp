@@ -14,7 +14,7 @@ use crate::{
             json_model::{JsonModel, JsonSerializer},
             persistence::ObjectStoreModel,
         },
-        GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
+        GenericStoredObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
         JsonObjectType,
     },
     drive::{
@@ -263,7 +263,7 @@ pub struct ServerSentEvents {
     pub headers: Vec<StaticHeader>,
 }
 
-pub type MCPServerObject = GenericCloudObject<GenericStringObjectId, MCPServerObjectModel>;
+pub type MCPServerObject = GenericStoredObject<GenericStringObjectId, MCPServerObjectModel>;
 pub type MCPServerObjectModel = GenericStringModel<MCPServer, JsonSerializer>;
 
 impl MCPServerObject {
@@ -290,7 +290,7 @@ impl MCPServerObject {
 }
 
 impl StringModel for MCPServer {
-    type CloudObjectType = MCPServerObject;
+    type StoredObjectType = MCPServerObject;
 
     fn model_type_name(&self) -> &'static str {
         "MCP server"

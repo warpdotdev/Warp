@@ -23,7 +23,7 @@ use crate::ai::mcp::TemplatableMCPServer;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::{ObjectStoreEvent, ObjectStoreModel};
 use crate::cloud_object::update_manager::{InitiatedBy, UpdateManager};
-use crate::cloud_object::{CloudObject, CloudObjectLocation, CloudObjectMetadataExt, Space};
+use crate::cloud_object::{Space, StoredObject, StoredObjectLocation, StoredObjectMetadataExt};
 use crate::server::ids::{ClientId, ServerId};
 use crate::server::telemetry::{
     MCPServerModel, MCPServerTelemetryTransportType, MCPTemplateCreationSource,
@@ -1457,7 +1457,7 @@ impl TemplatableMCPServerManager {
                 UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
                     update_manager.move_object_to_location(
                         object_type_and_id,
-                        CloudObjectLocation::Space(Space::Team { team_uid }),
+                        StoredObjectLocation::Space(Space::Team { team_uid }),
                         ctx,
                     );
                 });
@@ -1494,7 +1494,7 @@ impl TemplatableMCPServerManager {
             UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
                 update_manager.move_object_to_location(
                     object_type_and_id,
-                    CloudObjectLocation::Space(Space::Personal),
+                    StoredObjectLocation::Space(Space::Personal),
                     ctx,
                 );
             });

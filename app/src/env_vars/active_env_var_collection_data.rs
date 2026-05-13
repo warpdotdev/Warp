@@ -2,7 +2,7 @@ use crate::{
     cloud_object::{
         breadcrumbs::ContainingObject,
         model::{persistence::ObjectStoreEvent, view::ObjectStoreViewModel},
-        CloudObject, Owner, Revision, Space,
+        Owner, Revision, Space, StoredObject,
     },
     drive::sharing::{ContentEditability, SharingAccessLevel},
     env_vars::EnvVarCollectionObject,

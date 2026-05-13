@@ -7,7 +7,7 @@ use warpui::fonts::FamilyId;
 use warpui::{AppContext, SingletonEntity};
 
 use crate::cloud_object::model::persistence::ObjectStoreModel;
-use crate::cloud_object::CloudObject;
+use crate::cloud_object::StoredObject;
 use crate::search::async_snapshot_data_source::AsyncSnapshotDataSource;
 use crate::search::data_source::{Query, QueryResult};
 use crate::search::mixer::{BoxFuture, DataSourceRunErrorWrapper};

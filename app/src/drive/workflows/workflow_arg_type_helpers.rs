@@ -4,8 +4,8 @@ use warpui::{AppContext, SingletonEntity, ViewHandle};
 
 use crate::{
     cloud_object::{
-        model::persistence::ObjectStoreModel, update_manager::UpdateManager,
-        CloudObjectEventEntrypoint, Owner,
+        model::persistence::ObjectStoreModel, update_manager::UpdateManager, Owner,
+        StoredObjectEventEntrypoint,
     },
     editor::EditorView,
     server::ids::SyncId,
@@ -179,7 +179,7 @@ pub fn save_enum<V>(
                         workflow_enum,
                         owner,
                         client_id,
-                        CloudObjectEventEntrypoint::Unknown,
+                        StoredObjectEventEntrypoint::Unknown,
                         true,
                         ctx,
                     );

@@ -1,6 +1,6 @@
 use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
 use crate::cloud_object::model::persistence::ObjectStoreModel;
-use crate::cloud_object::{CloudObject, Revision};
+use crate::cloud_object::{Revision, StoredObject};
 use crate::editor::{
     EditorOptions, EditorView, EnterAction, EnterSettings, Event as EditorEvent,
     PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions,

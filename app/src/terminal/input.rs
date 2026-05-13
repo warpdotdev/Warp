@@ -129,7 +129,7 @@ use crate::{
             actions::ObjectActionType, persistence::ObjectStoreModel, view::ObjectStoreViewModel,
         },
         update_manager::UpdateManager,
-        CloudObject, Space,
+        Space, StoredObject,
     },
     cmd_or_ctrl_shift,
     code_review::diff_state::DiffMode,

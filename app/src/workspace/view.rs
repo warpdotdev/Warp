@@ -206,9 +206,9 @@ use crate::autoupdate::{
 use crate::banner::BannerState;
 use crate::changelog_model::{ChangelogModel, ChangelogRequestType, Event as ChangelogEvent};
 use crate::channel::Channel;
-use crate::cloud_object::toast_message::CloudObjectToastMessage;
+use crate::cloud_object::toast_message::StoredObjectToastMessage;
 use crate::cloud_object::{
-    CloudObject, GenericStringObjectFormat, JsonObjectType, ObjectType, Owner, Space,
+    GenericStringObjectFormat, JsonObjectType, ObjectType, Owner, Space, StoredObject,
 };
 use crate::context_chips::ChipRuntimeCapabilities;
 use crate::drive::import::modal::{ImportModal, ImportModalEvent};
@@ -13995,7 +13995,7 @@ impl Workspace {
                     // Early exit for objects that don't show toasts.
                     return;
                 }
-                if let Some(message) = CloudObjectToastMessage::toast_message(
+                if let Some(message) = StoredObjectToastMessage::toast_message(
                     object,
                     &result.operation,
                     &result.success_type,
@@ -14158,7 +14158,7 @@ impl Workspace {
 
         // For confirmation toast of permadeletion
         if let Some(n) = result.num_objects {
-            if let Some(message) = CloudObjectToastMessage::toast_deletion_confirm_message(
+            if let Some(message) = StoredObjectToastMessage::toast_deletion_confirm_message(
                 n,
                 &result.operation,
                 &result.success_type,
@@ -14215,7 +14215,7 @@ impl Workspace {
             {
                 // TODO(openwarp-cloud-removal Phase 5): drive sharing onboarding
                 // block 已退;`created_object` 仍是 cloud_object 创建结果,
-                // CloudObject 模型本身在后续 phase 一并退役。
+                // StoredObject 模型本身在后续 phase 一并退役。
                 let _ = created_object;
             }
         }

@@ -1,7 +1,7 @@
 use crate::{
     cloud_object::{
-        model::persistence::ObjectStoreModel, update_manager::UpdateManager,
-        CloudObjectEventEntrypoint, CloudObjectLocation, Space,
+        model::persistence::ObjectStoreModel, update_manager::UpdateManager, Space,
+        StoredObjectEventEntrypoint, StoredObjectLocation,
     },
     network::{NetworkStatus, NetworkStatusKind},
     server::ids::ClientId,
@@ -102,7 +102,7 @@ pub fn create_a_personal_workflow() -> TestStep {
                         .expect("User UID must be set in tests"),
                     None,
                     ClientId::default(),
-                    CloudObjectEventEntrypoint::ManagementUI,
+                    StoredObjectEventEntrypoint::ManagementUI,
                     true,
                     ctx,
                 )
@@ -113,7 +113,7 @@ pub fn create_a_personal_workflow() -> TestStep {
                 async_assert!(
                     cloud_model
                         .active_cloud_objects_in_location_without_descendents(
-                            CloudObjectLocation::Space(Space::Personal),
+                            StoredObjectLocation::Space(Space::Personal),
                             ctx,
                         )
                         .count()

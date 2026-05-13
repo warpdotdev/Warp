@@ -8,7 +8,7 @@ use crate::{
             persistence::{ObjectStoreEvent, ObjectStoreModel},
             view::{Editor, EditorState, ObjectStoreViewModel},
         },
-        CloudObject, Owner, Space,
+        Owner, Space, StoredObject,
     },
     drive::sharing::{ContentEditability, SharingAccessLevel},
     notebooks::NotebookObject,

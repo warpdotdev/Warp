@@ -1,6 +1,6 @@
 use crate::{
     appearance::Appearance,
-    cloud_object::{model::persistence::ObjectStoreModel, CloudObject, Owner},
+    cloud_object::{model::persistence::ObjectStoreModel, Owner, StoredObject},
     server::ids::SyncId,
     themes::theme::WarpTheme,
     workspaces::user_workspaces::UserWorkspaces,

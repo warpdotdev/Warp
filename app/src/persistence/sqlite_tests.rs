@@ -9,7 +9,7 @@ use crate::{
         AppState, CodePaneSnapShot, CodePaneTabSnapshot, LeafContents, LeafSnapshot,
         PaneNodeSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
     },
-    cloud_object::{CloudObjectPermissions, Owner},
+    cloud_object::{Owner, StoredObjectPermissions},
     code::editor_management::CodeSource,
     notebooks::{NotebookObject, NotebookObjectModel},
     persistence::{model::ObjectPermissions, BlockCompleted, ModelEvent},
@@ -502,7 +502,7 @@ fn test_deserialize_corrupted_guests() {
     let cloud_permissions = super::to_cloud_object_permissions(&db_permissions, None);
     assert_eq!(
         cloud_permissions,
-        Some(CloudObjectPermissions {
+        Some(StoredObjectPermissions {
             owner: Owner::Team {
                 team_uid: crate::server::ids::ServerId::from_string_lossy("team_uid12345678912345"),
             },

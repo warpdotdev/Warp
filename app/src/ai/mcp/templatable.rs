@@ -14,7 +14,7 @@ use crate::{
             json_model::{JsonModel, JsonSerializer},
             persistence::ObjectStoreModel,
         },
-        GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
+        GenericStoredObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
         JsonObjectType, UniquePer,
     },
     drive::items::WarpDriveItem,
@@ -202,7 +202,7 @@ impl TemplatableMCPServer {
 }
 
 pub type TemplatableMCPServerObject =
-    GenericCloudObject<GenericStringObjectId, TemplatableMCPServerObjectModel>;
+    GenericStoredObject<GenericStringObjectId, TemplatableMCPServerObjectModel>;
 pub type TemplatableMCPServerObjectModel = GenericStringModel<TemplatableMCPServer, JsonSerializer>;
 
 impl TemplatableMCPServerObject {
@@ -232,7 +232,7 @@ impl TemplatableMCPServerObject {
 }
 
 impl StringModel for TemplatableMCPServer {
-    type CloudObjectType = TemplatableMCPServerObject;
+    type StoredObjectType = TemplatableMCPServerObject;
 
     fn model_type_name(&self) -> &'static str {
         "MCP server"

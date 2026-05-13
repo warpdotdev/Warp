@@ -8,7 +8,7 @@ use warpui::{
 };
 
 use crate::{
-    cloud_object::{model::persistence::ObjectStoreModel, CloudObjectEventEntrypoint, Space},
+    cloud_object::{model::persistence::ObjectStoreModel, Space, StoredObjectEventEntrypoint},
     drive::OpenWarpDriveObjectSettings,
     integration_testing::view_getters::{notebook_view, workspace_view},
     notebooks::manager::NotebookSource,
@@ -45,7 +45,7 @@ pub fn create_a_personal_notebook(key: impl Into<String>, title: impl Into<Strin
                         .expect("User UID must be set in tests"),
                     None,
                     Default::default(),
-                    CloudObjectEventEntrypoint::ManagementUI,
+                    StoredObjectEventEntrypoint::ManagementUI,
                     true,
                     ctx,
                 );

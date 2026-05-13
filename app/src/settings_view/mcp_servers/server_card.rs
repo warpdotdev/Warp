@@ -31,7 +31,7 @@ use crate::{
         templatable::TemplatableMCPServerObject, MCPServerState, TemplatableMCPServerManager,
     },
     appearance::Appearance,
-    cloud_object::CloudObject,
+    cloud_object::StoredObject,
     settings_view::mcp_servers::{style, ServerCardItemId},
     ui_components::{
         avatar::{Avatar, AvatarContent, StatusElementTypes},

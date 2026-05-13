@@ -203,7 +203,7 @@ impl DataSourceStore {
                 // zero state yet.
                 None
             }
-            ItemSummary::CloudObject => {
+            ItemSummary::StoredObject => {
                 // We don't yet support all cloud objects in the command palette but
                 // we have a `ViewInWarpDrive` action that supports all of them, so
                 // this is necessary to make the compiler happy.

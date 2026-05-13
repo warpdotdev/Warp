@@ -26,7 +26,7 @@ use crate::{
             FetchSingleObjectOption, ObjectOperation, OperationSuccessType, UpdateManager,
             UpdateManagerEvent,
         },
-        CloudObject, CloudObjectEventEntrypoint, ObjectType, Owner, Revision, Space,
+        ObjectType, Owner, Revision, Space, StoredObject, StoredObjectEventEntrypoint,
     },
     drive::{
         cloud_object_styling::warp_drive_icon_color,
@@ -1633,7 +1633,7 @@ impl WorkflowView {
                             space,
                             self.initial_folder_id,
                             client_id,
-                            CloudObjectEventEntrypoint::Unknown,
+                            StoredObjectEventEntrypoint::Unknown,
                             true,
                             ctx,
                         );

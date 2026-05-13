@@ -47,7 +47,7 @@ use crate::{
             view::{Editor, EditorState},
         },
         update_manager::{FetchSingleObjectOption, UpdateManager},
-        CloudObject, CloudObjectEventEntrypoint, ObjectType, Owner, Space,
+        ObjectType, Owner, Space, StoredObject, StoredObjectEventEntrypoint,
     },
     cmd_or_ctrl_shift,
     drive::{
@@ -847,7 +847,7 @@ impl NotebookView {
                                 ai_document_id: notebook.model().ai_document_id,
                                 conversation_id: notebook.model().conversation_id.clone(),
                             },
-                            CloudObjectEventEntrypoint::Unknown,
+                            StoredObjectEventEntrypoint::Unknown,
                             true,
                             ctx,
                         );
@@ -1318,7 +1318,7 @@ impl NotebookView {
                     ai_document_id,
                     conversation_id: None,
                 },
-                CloudObjectEventEntrypoint::Unknown,
+                StoredObjectEventEntrypoint::Unknown,
                 true,
                 ctx,
             );
@@ -1772,7 +1772,7 @@ impl NotebookView {
                                 ai_document_id: notebook.model().ai_document_id,
                                 conversation_id: notebook.model().conversation_id.clone(),
                             },
-                            CloudObjectEventEntrypoint::Unknown,
+                            StoredObjectEventEntrypoint::Unknown,
                             true,
                             ctx,
                         );

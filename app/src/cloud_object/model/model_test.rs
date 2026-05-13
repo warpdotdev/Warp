@@ -13,11 +13,11 @@ use crate::cloud_object::model::view::EditorState;
 use crate::cloud_object::model::view::ObjectStoreViewModel;
 use crate::cloud_object::model::view::UpdateTimestamp;
 use crate::cloud_object::model::view::EDITOR_TIMEOUT_DURATION_MINUTES;
-use crate::cloud_object::CloudObjectMetadata;
-use crate::cloud_object::CloudObjectPermissions;
-use crate::cloud_object::CloudObjectStatuses;
-use crate::cloud_object::CloudObjectSyncStatus;
 use crate::cloud_object::Owner;
+use crate::cloud_object::StoredObjectMetadata;
+use crate::cloud_object::StoredObjectPermissions;
+use crate::cloud_object::StoredObjectStatuses;
+use crate::cloud_object::StoredObjectSyncStatus;
 use crate::drive::folders::FolderObjectModel;
 use crate::drive::DriveIndexVariant;
 use crate::features::FeatureFlag;
@@ -40,9 +40,9 @@ use super::*;
 
 fn create_cloud_model(
     app: &mut App,
-    objects: Vec<Box<dyn CloudObject>>,
+    objects: Vec<Box<dyn StoredObject>>,
 ) -> ModelHandle<ObjectStoreModel> {
-    // Make sure to register the ObjectStoreModel singleton - some CloudObject methods
+    // Make sure to register the ObjectStoreModel singleton - some StoredObject methods
     // find it and other dependencies via the AppContext.
     app.add_singleton_model(|_ctx| ObjectStoreModel::new(None, objects, None))
 }
@@ -65,7 +65,7 @@ lazy_static! {
     );
 }
 
-fn initialize_app(app: &mut App, cached_objects: Vec<Box<dyn CloudObject>>) {
+fn initialize_app(app: &mut App, cached_objects: Vec<Box<dyn StoredObject>>) {
     // Add the necessary singleton models to the App
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
@@ -79,15 +79,15 @@ fn initialize_app(app: &mut App, cached_objects: Vec<Box<dyn CloudObject>>) {
     app.add_singleton_model(|_| ObjectActions::new(Vec::new()));
 }
 
-fn mock_stored_metadata() -> CloudObjectMetadata {
-    let mut metadata = CloudObjectMetadata::mock();
+fn mock_stored_metadata() -> StoredObjectMetadata {
+    let mut metadata = StoredObjectMetadata::mock();
     metadata.revision = Some(Revision::now());
     metadata.metadata_last_updated_ts = Some(Utc::now().into());
     metadata
 }
 
-fn mock_permissions() -> CloudObjectPermissions {
-    CloudObjectPermissions {
+fn mock_permissions() -> StoredObjectPermissions {
+    StoredObjectPermissions {
         owner: Owner::mock_current_user(),
         guests: Vec::new(),
         permissions_last_updated_ts: None,
@@ -103,9 +103,9 @@ fn mock_cloud_folder(id: SyncId, name: String, folder_id: Option<SyncId>) -> Fol
             is_open: true,
             is_warp_pack: false,
         },
-        CloudObjectMetadata {
-            pending_changes_statuses: CloudObjectStatuses {
-                content_sync_status: CloudObjectSyncStatus::NoLocalChanges,
+        StoredObjectMetadata {
+            pending_changes_statuses: StoredObjectStatuses {
+                content_sync_status: StoredObjectSyncStatus::NoLocalChanges,
                 has_pending_metadata_change: false,
                 has_pending_permissions_change: false,
                 pending_untrash: false,
@@ -134,9 +134,9 @@ fn mock_cloud_notebook(id: SyncId, title: String, folder_id: Option<SyncId>) -> 
             ai_document_id: None,
             conversation_id: None,
         },
-        CloudObjectMetadata {
-            pending_changes_statuses: CloudObjectStatuses {
-                content_sync_status: CloudObjectSyncStatus::NoLocalChanges,
+        StoredObjectMetadata {
+            pending_changes_statuses: StoredObjectStatuses {
+                content_sync_status: StoredObjectSyncStatus::NoLocalChanges,
                 has_pending_metadata_change: false,
                 has_pending_permissions_change: false,
                 pending_untrash: false,
@@ -178,7 +178,7 @@ fn folder_from_cloud_model(model: &ObjectStoreModel, id: SyncId) -> &FolderObjec
 fn test_create_json_object() {
     let client_id = ClientId::default();
     let id = SyncId::ClientId(client_id);
-    let json_object: Box<dyn CloudObject> = Box::new(CloudPreference::new(
+    let json_object: Box<dyn StoredObject> = Box::new(CloudPreference::new(
         id,
         GenericStringModel::new(
             Preference::new(
@@ -188,9 +188,9 @@ fn test_create_json_object() {
             )
             .expect("error creating preference"),
         ),
-        CloudObjectMetadata {
-            pending_changes_statuses: CloudObjectStatuses {
-                content_sync_status: CloudObjectSyncStatus::NoLocalChanges,
+        StoredObjectMetadata {
+            pending_changes_statuses: StoredObjectStatuses {
+                content_sync_status: StoredObjectSyncStatus::NoLocalChanges,
                 has_pending_metadata_change: false,
                 has_pending_permissions_change: false,
                 pending_untrash: false,
@@ -290,7 +290,7 @@ fn test_collapse_all_in_location() {
         mock_cloud_folder(folder_7_id, "test7".to_string(), Some(folder_6_id)),
     ]
     .into_iter()
-    .map(|o| Box::new(o) as Box<dyn CloudObject>)
+    .map(|o| Box::new(o) as Box<dyn StoredObject>)
     .collect();
 
     App::test((), |mut app| async move {
@@ -300,7 +300,7 @@ fn test_collapse_all_in_location() {
         cloud_model.update(&mut app, |model, ctx| {
             // first, collapse all folders in folder 1
             model.collapse_all_in_location(
-                CloudObjectLocation::Folder(folder_1_id),
+                StoredObjectLocation::Folder(folder_1_id),
                 DriveIndexVariant::MainIndex,
                 ctx,
             );
@@ -323,7 +323,7 @@ fn test_collapse_all_in_location() {
             assert!(folder_7.model.is_open);
 
             model.collapse_all_in_location(
-                CloudObjectLocation::Space(Default::default()),
+                StoredObjectLocation::Space(Default::default()),
                 DriveIndexVariant::MainIndex,
                 ctx,
             );
@@ -388,7 +388,7 @@ fn test_collapse_all_in_trash() {
         mock_cloud_folder(folder_7_id, "test7".to_string(), Some(folder_6_id)),
     ]
     .into_iter()
-    .map(|o| Box::new(o) as Box<dyn CloudObject>)
+    .map(|o| Box::new(o) as Box<dyn StoredObject>)
     .collect();
 
     App::test((), |mut app| async move {
@@ -398,7 +398,7 @@ fn test_collapse_all_in_trash() {
         cloud_model.update(&mut app, |model, ctx| {
             // first, collapse all folders in folder 1
             model.collapse_all_in_location(
-                CloudObjectLocation::Folder(folder_1_id),
+                StoredObjectLocation::Folder(folder_1_id),
                 DriveIndexVariant::Trash,
                 ctx,
             );
@@ -421,7 +421,7 @@ fn test_collapse_all_in_trash() {
             assert!(folder_7.model.is_open);
 
             model.collapse_all_in_location(
-                CloudObjectLocation::Space(Default::default()),
+                StoredObjectLocation::Space(Default::default()),
                 DriveIndexVariant::Trash,
                 ctx,
             );
@@ -506,7 +506,7 @@ fn test_breadcrumbs() {
         mock_cloud_folder(folder_3_id, "test3".to_string(), Some(folder_2_id)),
     ]
     .into_iter()
-    .map(|f| Box::new(f) as Box<dyn CloudObject>)
+    .map(|f| Box::new(f) as Box<dyn StoredObject>)
     .collect::<Vec<_>>();
 
     App::test((), |mut app| async move {
@@ -559,7 +559,7 @@ fn test_shared_personal_object() {
                 conversation_id: None,
             },
             mock_stored_metadata(),
-            CloudObjectPermissions {
+            StoredObjectPermissions {
                 owner: Owner::User {
                     user_uid: other_user,
                 },
@@ -597,7 +597,7 @@ fn test_unshared_personal_object() {
                 conversation_id: None,
             },
             mock_stored_metadata(),
-            CloudObjectPermissions {
+            StoredObjectPermissions {
                 owner: Owner::User {
                     user_uid: UserUid::new(TEST_USER_UID),
                 },
@@ -638,7 +638,7 @@ fn test_shared_team_object() {
                 conversation_id: None,
             },
             mock_stored_metadata(),
-            CloudObjectPermissions {
+            StoredObjectPermissions {
                 owner: Owner::Team { team_uid },
                 guests: Vec::new(),
                 permissions_last_updated_ts: None,
@@ -677,7 +677,7 @@ fn test_unshared_team_object() {
                 conversation_id: None,
             },
             mock_stored_metadata(),
-            CloudObjectPermissions {
+            StoredObjectPermissions {
                 owner: Owner::Team { team_uid },
                 guests: Vec::new(),
                 permissions_last_updated_ts: None,
@@ -716,7 +716,7 @@ fn test_shared_object_in_unshared_folder() {
                 conversation_id: None,
             },
             mock_stored_metadata(),
-            CloudObjectPermissions {
+            StoredObjectPermissions {
                 owner: Owner::User {
                     user_uid: other_user,
                 },
@@ -740,7 +740,7 @@ fn test_shared_object_in_unshared_folder() {
             // Check location-based APIs.
             assert_eq!(
                 notebook.location(cloud_model, ctx),
-                CloudObjectLocation::Space(Space::Shared)
+                StoredObjectLocation::Space(Space::Shared)
             );
             assert!(notebook.metadata.folder_id.is_some());
 
@@ -753,7 +753,7 @@ fn test_shared_object_in_unshared_folder() {
                 .any(|obj| obj.uid() == notebook.uid()));
             assert!(cloud_model
                 .active_cloud_objects_in_location_without_descendents(
-                    CloudObjectLocation::Space(Space::Shared),
+                    StoredObjectLocation::Space(Space::Shared),
                     ctx
                 )
                 .any(|obj| obj.uid() == notebook.uid()));
@@ -766,14 +766,14 @@ fn test_shared_object_in_unshared_folder() {
             assert_eq!(
                 cloud_model
                     .trashed_cloud_objects_in_location_without_descendents(
-                        CloudObjectLocation::Space(Space::Shared),
+                        StoredObjectLocation::Space(Space::Shared),
                         ctx
                     )
                     .count(),
                 0
             );
 
-            let folder_location = CloudObjectLocation::Folder(unshared_folder_id);
+            let folder_location = StoredObjectLocation::Folder(unshared_folder_id);
             assert_eq!(
                 cloud_model
                     .active_cloud_objects_in_location_without_descendents(folder_location, ctx)
@@ -802,7 +802,7 @@ fn naive_active_object_uids(model: &ObjectStoreModel) -> HashSet<String> {
 #[test]
 fn active_object_uids_matches_naive_with_no_trashed_objects() {
     let folder_id = SyncId::ServerId(1.into());
-    let objects: Vec<Box<dyn CloudObject>> = vec![
+    let objects: Vec<Box<dyn StoredObject>> = vec![
         Box::new(mock_cloud_folder(folder_id, "Folder".into(), None)),
         Box::new(mock_cloud_notebook(
             SyncId::ServerId(2.into()),
@@ -824,7 +824,7 @@ fn active_object_uids_matches_naive_with_no_trashed_objects() {
 fn active_object_uids_matches_naive_with_directly_trashed_object() {
     let trashed_folder_id = SyncId::ServerId(1.into());
     let active_notebook_id = SyncId::ServerId(2.into());
-    let objects: Vec<Box<dyn CloudObject>> = vec![
+    let objects: Vec<Box<dyn StoredObject>> = vec![
         Box::new(mock_trashed_cloud_folder(
             trashed_folder_id,
             "Trashed Folder".into(),
@@ -856,7 +856,7 @@ fn active_object_uids_matches_naive_with_indirectly_trashed_children() {
     let trashed_folder_id = SyncId::ServerId(1.into());
     let child_notebook_id = SyncId::ServerId(2.into());
     let active_notebook_id = SyncId::ServerId(3.into());
-    let objects: Vec<Box<dyn CloudObject>> = vec![
+    let objects: Vec<Box<dyn StoredObject>> = vec![
         Box::new(mock_trashed_cloud_folder(
             trashed_folder_id,
             "Trashed Folder".into(),
@@ -893,7 +893,7 @@ fn active_object_uids_matches_naive_with_nested_trashed_folder() {
     let folder_b_id = SyncId::ServerId(2.into());
     let notebook_id = SyncId::ServerId(3.into());
     let active_notebook_id = SyncId::ServerId(4.into());
-    let objects: Vec<Box<dyn CloudObject>> = vec![
+    let objects: Vec<Box<dyn StoredObject>> = vec![
         Box::new(mock_trashed_cloud_folder(
             folder_a_id,
             "Folder A (trashed)".into(),

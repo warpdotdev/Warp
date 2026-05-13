@@ -255,7 +255,7 @@ pub enum ServerObjectContainer {
 pub struct NumInFlightRequests(pub usize);
 
 #[derive(Clone, Debug)]
-pub enum CloudObjectSyncStatus {
+pub enum StoredObjectSyncStatus {
     NoLocalChanges,
     InFlight(NumInFlightRequests),
     InConflict,
@@ -266,14 +266,14 @@ const SYNC_ICON_DIMENSIONS: f32 = 16.;
 const SYNC_STATUS_TOOLTIP_ERROR: &str = "Failed to save";
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CloudObjectPermissions {
+pub struct StoredObjectPermissions {
     pub owner: Owner,
     pub permissions_last_updated_ts: Option<ServerTimestamp>,
     pub anyone_with_link: Option<CloudLinkSharing>,
-    pub guests: Vec<CloudObjectGuest>,
+    pub guests: Vec<StoredObjectGuest>,
 }
 
-impl CloudObjectPermissions {
+impl StoredObjectPermissions {
     #[cfg(test)]
     pub fn mock_personal() -> Self {
         Self {
@@ -296,18 +296,18 @@ pub struct CloudLinkSharing {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct CloudObjectGuest {
+pub struct StoredObjectGuest {
     pub subject: Subject,
     pub access_level: SharingAccessLevel,
     pub source: Option<ServerObjectContainer>,
 }
 
 #[derive(Clone, Debug)]
-pub struct CloudObjectMetadata {
+pub struct StoredObjectMetadata {
     pub revision: Option<Revision>,
     pub metadata_last_updated_ts: Option<ServerTimestamp>,
     pub current_editor_uid: Option<String>,
-    pub pending_changes_statuses: CloudObjectStatuses,
+    pub pending_changes_statuses: StoredObjectStatuses,
     pub trashed_ts: Option<ServerTimestamp>,
     pub folder_id: Option<SyncId>,
     pub is_welcome_object: bool,
@@ -316,14 +316,14 @@ pub struct CloudObjectMetadata {
     pub last_task_run_ts: Option<ServerTimestamp>,
 }
 
-impl CloudObjectMetadata {
+impl StoredObjectMetadata {
     #[cfg(test)]
     pub fn mock() -> Self {
         Self {
             revision: Some(Revision::now()),
             current_editor_uid: None,
             metadata_last_updated_ts: Some(Utc::now().into()),
-            pending_changes_statuses: CloudObjectStatuses::mock(),
+            pending_changes_statuses: StoredObjectStatuses::mock(),
             trashed_ts: None,
             folder_id: None,
             is_welcome_object: false,
@@ -336,14 +336,14 @@ impl CloudObjectMetadata {
     pub fn has_pending_content_changes(&self) -> bool {
         !matches!(
             self.pending_changes_statuses.content_sync_status,
-            CloudObjectSyncStatus::NoLocalChanges | CloudObjectSyncStatus::InConflict
+            StoredObjectSyncStatus::NoLocalChanges | StoredObjectSyncStatus::InConflict
         )
     }
 
     pub fn is_errored(&self) -> bool {
         matches!(
             self.pending_changes_statuses.content_sync_status,
-            CloudObjectSyncStatus::Errored
+            StoredObjectSyncStatus::Errored
         )
     }
 
@@ -360,19 +360,19 @@ impl CloudObjectMetadata {
 }
 
 #[derive(Clone, Debug)]
-pub struct CloudObjectStatuses {
-    pub content_sync_status: CloudObjectSyncStatus,
+pub struct StoredObjectStatuses {
+    pub content_sync_status: StoredObjectSyncStatus,
     pub has_pending_permissions_change: bool,
     pub has_pending_metadata_change: bool,
     pub pending_untrash: bool,
     pub pending_delete: bool,
 }
 
-impl CloudObjectStatuses {
+impl StoredObjectStatuses {
     #[cfg(test)]
     pub fn mock() -> Self {
         Self {
-            content_sync_status: CloudObjectSyncStatus::NoLocalChanges,
+            content_sync_status: StoredObjectSyncStatus::NoLocalChanges,
             has_pending_permissions_change: false,
             has_pending_metadata_change: false,
             pending_untrash: false,
@@ -389,7 +389,7 @@ impl CloudObjectStatuses {
         let theme = appearance.theme();
         let should_show_error_indicator = matches!(
             self.content_sync_status,
-            CloudObjectSyncStatus::Errored | CloudObjectSyncStatus::InConflict
+            StoredObjectSyncStatus::Errored | StoredObjectSyncStatus::InConflict
         );
 
         let icon_and_tooltip_text = if should_show_error_indicator {
@@ -443,7 +443,7 @@ impl CloudObjectStatuses {
 }
 
 #[derive(Copy, Default, Clone, Debug, Eq, PartialEq)]
-pub enum CloudObjectEventEntrypoint {
+pub enum StoredObjectEventEntrypoint {
     TeamSettings,
     ResourceCenter,
     UniversalSearch,

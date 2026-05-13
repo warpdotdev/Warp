@@ -8,8 +8,8 @@ use warp_core::features::FeatureFlag;
 use crate::{
     auth::UserUid,
     cloud_object::{
-        CloudLinkSharing, CloudObjectGuest, CloudObjectMetadata, CloudObjectPermissions,
-        ObjectIdType, ObjectType, Owner, ServerObjectContainer,
+        CloudLinkSharing, ObjectIdType, ObjectType, Owner, ServerObjectContainer,
+        StoredObjectGuest, StoredObjectMetadata, StoredObjectPermissions,
     },
     drive::sharing::{SharingAccessLevel, Subject, TeamKind, UserKind},
     persistence::{model::ObjectMetadata, schema},
@@ -27,8 +27,8 @@ pub fn upsert_cloud_object(
     conn: &mut SqliteConnection,
     cloud_object_type: ObjectType,
     sync_id: crate::server::ids::SyncId,
-    cloud_object_metadata: CloudObjectMetadata,
-    cloud_object_permissions: CloudObjectPermissions,
+    cloud_object_metadata: StoredObjectMetadata,
+    cloud_object_permissions: StoredObjectPermissions,
     create_object_fn: CreateCloudObjectFn,
     update_object_fn: UpdateCloudObjectFn,
 ) -> Result<(), Error> {
@@ -231,7 +231,7 @@ pub fn encode_link_sharing(
     Ok((link_sharing.access_level.to_serializable_value(), source))
 }
 
-pub fn decode_guests(encoded_guests: &[u8]) -> anyhow::Result<Vec<CloudObjectGuest>> {
+pub fn decode_guests(encoded_guests: &[u8]) -> anyhow::Result<Vec<StoredObjectGuest>> {
     let persisted_guests = bincode::deserialize::<Vec<PersistedGuest>>(encoded_guests)?;
     Ok(persisted_guests
         .into_iter()
@@ -239,7 +239,7 @@ pub fn decode_guests(encoded_guests: &[u8]) -> anyhow::Result<Vec<CloudObjectGue
         .collect())
 }
 
-pub fn encode_guests(guests: &[CloudObjectGuest]) -> anyhow::Result<Vec<u8>> {
+pub fn encode_guests(guests: &[StoredObjectGuest]) -> anyhow::Result<Vec<u8>> {
     let persisted_guests = guests
         .iter()
         .map(PersistedGuest::try_from_cloud_object_guest)
@@ -262,15 +262,15 @@ enum PersistedSubject {
 }
 
 impl PersistedGuest {
-    pub fn into_cloud_object_guest(self) -> CloudObjectGuest {
-        CloudObjectGuest {
+    pub fn into_cloud_object_guest(self) -> StoredObjectGuest {
+        StoredObjectGuest {
             subject: self.subject.into_subject(),
             access_level: self.access_level,
             source: self.source,
         }
     }
 
-    pub fn try_from_cloud_object_guest(guest: &CloudObjectGuest) -> anyhow::Result<Self> {
+    pub fn try_from_cloud_object_guest(guest: &StoredObjectGuest) -> anyhow::Result<Self> {
         Ok(PersistedGuest {
             subject: PersistedSubject::try_from_subject(&guest.subject)?,
             access_level: guest.access_level,

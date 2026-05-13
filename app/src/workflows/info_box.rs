@@ -29,7 +29,7 @@ use crate::{
 };
 use crate::{
     appearance::Appearance,
-    cloud_object::{model::actions::ObjectActions, CloudObjectMetadataExt},
+    cloud_object::{model::actions::ObjectActions, StoredObjectMetadataExt},
 };
 use crate::{cloud_object::model::actions::ObjectActionType, terminal::view::TerminalAction};
 use crate::{terminal::input::InputAction, ui_components::buttons::icon_button};

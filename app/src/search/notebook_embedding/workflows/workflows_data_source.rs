@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use warpui::{AppContext, SingletonEntity};
 
-use crate::cloud_object::{CloudObject, Space};
+use crate::cloud_object::{Space, StoredObject};
 use crate::search::notebook_embedding::embedded_fuzzy_match::FuzzyMatchEmbeddedObjectResult;
 use crate::search::notebook_embedding::is_embed_accessible;
 use crate::search::notebook_embedding::searcher::EmbeddingSearchItemAction;

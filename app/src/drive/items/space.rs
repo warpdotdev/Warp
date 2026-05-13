@@ -2,7 +2,7 @@ use warpui::{elements::MouseStateHandle, Element};
 
 use crate::{
     appearance::Appearance,
-    cloud_object::{CloudObjectMetadata, Space},
+    cloud_object::{Space, StoredObjectMetadata},
     drive::{index::DriveIndexAction, DriveObjectType},
     themes::theme::Fill,
 };
@@ -26,7 +26,7 @@ impl WarpDriveItem for WarpDriveSpace {
         None
     }
 
-    fn metadata(&self) -> Option<&CloudObjectMetadata> {
+    fn metadata(&self) -> Option<&StoredObjectMetadata> {
         None
     }
 

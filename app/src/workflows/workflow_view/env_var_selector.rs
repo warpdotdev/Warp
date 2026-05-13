@@ -7,7 +7,7 @@ use warpui::{
 use crate::{
     cloud_object::{
         model::persistence::{ObjectStoreEvent, ObjectStoreModel},
-        CloudObject as _, GenericStringObjectFormat, JsonObjectType,
+        GenericStringObjectFormat, JsonObjectType, StoredObject as _,
     },
     drive::ObjectTypeAndId,
     server::ids::SyncId,

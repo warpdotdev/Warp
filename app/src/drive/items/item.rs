@@ -20,7 +20,7 @@ use warpui::{
 use crate::{
     cloud_object::{
         model::{persistence::ObjectStoreModel, view::ObjectStoreViewModel},
-        CloudObject, CloudObjectMetadataExt, Owner,
+        Owner, StoredObject, StoredObjectMetadataExt,
     },
     drive::ObjectTypeAndId,
     workspaces::{user_profiles::UserProfiles, user_workspaces::UserWorkspaces},
@@ -49,7 +49,7 @@ use crate::{
         },
     },
 };
-use crate::{cloud_object::CloudObjectLocation, drive::items::WarpDriveItem};
+use crate::{cloud_object::StoredObjectLocation, drive::items::WarpDriveItem};
 
 use super::WarpDriveItemId;
 
@@ -247,7 +247,7 @@ impl<'a> WarpDriveRow<'a> {
 
     #[allow(clippy::too_many_arguments)]
     pub fn new_from_cloud_object(
-        object: &dyn CloudObject,
+        object: &dyn StoredObject,
         item_states: ItemStates,
         space: Space,
         folder_depth: usize,
@@ -835,7 +835,7 @@ impl UiComponent for WarpDriveRow<'_> {
                             .with_drag_bounds_callback(drag_bounds_callback())
                             .with_accepted_by_drop_target_fn(move |drop_data, app| {
                                 let Some(location) =
-                                    drop_data.as_any().downcast_ref::<CloudObjectLocation>()
+                                    drop_data.as_any().downcast_ref::<StoredObjectLocation>()
                                 else {
                                     return AcceptedByDropTarget::No;
                                 };
@@ -852,7 +852,7 @@ impl UiComponent for WarpDriveRow<'_> {
                             })
                             .on_drop(move |ctx, _, _, data| {
                                 if let Some(location) = data.and_then(|data| {
-                                    data.as_any().downcast_ref::<CloudObjectLocation>()
+                                    data.as_any().downcast_ref::<StoredObjectLocation>()
                                 }) {
                                     ctx.dispatch_typed_action(DriveIndexAction::DropIndexItem {
                                         object_type_and_id: item,
@@ -863,7 +863,7 @@ impl UiComponent for WarpDriveRow<'_> {
                             .on_drag(move |ctx, _, dragged_item, data| {
                                 // First, check if we are over a drop target for styling
                                 if let Some(location) = data.and_then(|data| {
-                                    data.as_any().downcast_ref::<CloudObjectLocation>()
+                                    data.as_any().downcast_ref::<StoredObjectLocation>()
                                 }) {
                                     ctx.dispatch_typed_action(
                                         DriveIndexAction::UpdateCurrentDropTarget {

@@ -13,8 +13,8 @@ use warpui::{AddSingletonModel, App, SingletonEntity, WindowId};
 
 use crate::{
     cloud_object::{
-        model::persistence::ObjectStoreModel, CloudObjectMetadata, CloudObjectPermissions,
-        ObjectIdType, ObjectType, Space,
+        model::persistence::ObjectStoreModel, ObjectIdType, ObjectType, Space,
+        StoredObjectMetadata, StoredObjectPermissions,
     },
     drive::ObjectTypeAndId,
     notebooks::{NotebookId, NotebookObject, NotebookObjectModel},
@@ -116,8 +116,8 @@ fn add_workflow(id: SyncId, workflow: Workflow, app: &mut App) {
             WorkflowObject::new(
                 id,
                 WorkflowObjectModel::new(workflow),
-                CloudObjectMetadata::mock(),
-                CloudObjectPermissions::mock_personal(),
+                StoredObjectMetadata::mock(),
+                StoredObjectPermissions::mock_personal(),
             ),
         );
     });
@@ -136,8 +136,8 @@ fn add_notebook(id: SyncId, title: impl Into<String>, data: impl Into<String>, a
                     ai_document_id: None,
                     conversation_id: None,
                 },
-                CloudObjectMetadata::mock(),
-                CloudObjectPermissions::mock_personal(),
+                StoredObjectMetadata::mock(),
+                StoredObjectPermissions::mock_personal(),
             ),
         );
     });

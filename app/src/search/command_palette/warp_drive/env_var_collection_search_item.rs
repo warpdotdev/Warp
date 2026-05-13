@@ -1,5 +1,5 @@
 use crate::appearance::Appearance;
-use crate::cloud_object::CloudObject;
+use crate::cloud_object::StoredObject;
 use crate::drive::cloud_object_styling::warp_drive_icon_color;
 use crate::drive::{DriveObjectType, ObjectTypeAndId};
 use crate::env_vars::EnvVarCollectionObject;

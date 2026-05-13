@@ -18,7 +18,7 @@ pub mod workflow_view;
 
 use crate::appearance::Appearance;
 use crate::cloud_object::model::view::ObjectStoreViewModel;
-use crate::cloud_object::{CloudModelType, GenericCloudObject, ObjectType};
+use crate::cloud_object::{GenericStoredObject, ObjectType, StoredObjectModel};
 
 use crate::cloud_object::SerializedModel;
 use crate::drive::items::workflow::WarpDriveWorkflow;
@@ -217,10 +217,10 @@ impl WorkflowObjectModel {
 }
 
 /// `WorkflowObject` is an object-store backed workflow.
-pub type WorkflowObject = GenericCloudObject<WorkflowId, WorkflowObjectModel>;
+pub type WorkflowObject = GenericStoredObject<WorkflowId, WorkflowObjectModel>;
 
-impl CloudModelType for WorkflowObjectModel {
-    type CloudObjectType = WorkflowObject;
+impl StoredObjectModel for WorkflowObjectModel {
+    type StoredObjectType = WorkflowObject;
     type IdType = WorkflowId;
 
     fn model_type_name(&self) -> &'static str {

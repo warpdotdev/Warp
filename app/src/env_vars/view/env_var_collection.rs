@@ -25,7 +25,7 @@ use crate::{
         breadcrumbs::ContainingObject,
         model::persistence::{ObjectStoreEvent, ObjectStoreModel},
         update_manager::{FetchSingleObjectOption, UpdateManager},
-        CloudObjectEventEntrypoint, Owner,
+        Owner, StoredObjectEventEntrypoint,
     },
     drive::{items::WarpDriveItemId, sharing::ContentEditability},
     editor::EditorView,
@@ -859,7 +859,7 @@ impl EnvVarCollectionView {
                             env_var_collection.permissions.owner,
                             env_var_collection.metadata.folder_id,
                             EnvVarCollectionObjectModel::new(new_env_var_collection),
-                            CloudObjectEventEntrypoint::Unknown,
+                            StoredObjectEventEntrypoint::Unknown,
                             true,
                             ctx,
                         );

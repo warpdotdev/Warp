@@ -10,7 +10,7 @@ use crate::{
     appearance::Appearance,
     cloud_object::{
         model::actions::{ObjectActionType, ObjectActions},
-        CloudObjectMetadata,
+        StoredObjectMetadata,
     },
     drive::{index::DriveIndexAction, DriveObjectType, ObjectTypeAndId},
     themes::theme::Fill,
@@ -40,7 +40,7 @@ impl WarpDriveItem for WarpDriveWorkflow {
         }
     }
 
-    fn metadata(&self) -> Option<&CloudObjectMetadata> {
+    fn metadata(&self) -> Option<&StoredObjectMetadata> {
         Some(&self.workflow.metadata)
     }
 

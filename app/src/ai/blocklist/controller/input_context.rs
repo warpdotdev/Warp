@@ -20,10 +20,10 @@ use crate::{
     },
     cloud_object::{
         model::{
-            generic_string_model::{CloudStringObject, GenericStringObjectId},
+            generic_string_model::{GenericStringObjectId, StoredStringObject},
             persistence::ObjectStoreModel,
         },
-        GenericCloudObject, GenericStringObjectFormat, JsonObjectType, ObjectType,
+        GenericStoredObject, GenericStringObjectFormat, JsonObjectType, ObjectType,
     },
     terminal::{
         model::{block::BlockId, session::active_session::ActiveSession},
@@ -305,8 +305,8 @@ fn get_object_attachment_payload(
             ObjectStoreModel::as_ref(ctx)
                 .get_by_uid(&uid.to_string())
                 .and_then(|object| {
-                    if let Some(ai_fact) = object.as_any().downcast_ref::<GenericCloudObject<GenericStringObjectId, AIFactObjectModel>>() {
-                        let string_object = ai_fact as &dyn CloudStringObject;
+                    if let Some(ai_fact) = object.as_any().downcast_ref::<GenericStoredObject<GenericStringObjectId, AIFactObjectModel>>() {
+                        let string_object = ai_fact as &dyn StoredStringObject;
                         let object_type =
                             generic_string_object_format_name(string_object.generic_string_object_format());
                         Some(DriveObjectPayload::GenericStringObject {

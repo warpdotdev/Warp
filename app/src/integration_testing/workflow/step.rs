@@ -3,7 +3,7 @@ use warpui::{
 };
 
 use crate::{
-    cloud_object::{model::persistence::ObjectStoreModel, CloudObjectEventEntrypoint, Space},
+    cloud_object::{model::persistence::ObjectStoreModel, Space, StoredObjectEventEntrypoint},
     drive::OpenWarpDriveObjectSettings,
     integration_testing::view_getters::workspace_view,
     server::{
@@ -32,7 +32,7 @@ pub fn create_a_personal_workflow(key: impl Into<String>) -> TestStep {
                         .expect("User UID must be set in tests"),
                     None,
                     client_id,
-                    CloudObjectEventEntrypoint::ManagementUI,
+                    StoredObjectEventEntrypoint::ManagementUI,
                     true,
                     ctx,
                 );

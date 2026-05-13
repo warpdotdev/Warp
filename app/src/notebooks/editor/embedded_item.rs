@@ -34,7 +34,7 @@ use warpui::{
 };
 
 use crate::{
-    cloud_object::{model::persistence::ObjectStoreModel, CloudObject},
+    cloud_object::{model::persistence::ObjectStoreModel, StoredObject},
     drive::{cloud_object_styling::warp_drive_icon_color, DriveObjectType},
     server::ids::{HashableId, ToServerId},
     ui_components::icons::Icon,

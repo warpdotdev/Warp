@@ -35,7 +35,7 @@ use crate::{
         breadcrumbs::{ContainingObject, ContainingObjectKind},
         model::persistence::{ObjectStoreEvent, ObjectStoreModel},
         update_manager::UpdateManager,
-        CloudObject, CloudObjectEventEntrypoint, ObjectType, Owner, Revision,
+        ObjectType, Owner, Revision, StoredObject, StoredObjectEventEntrypoint,
     },
     drive::{
         cloud_object_styling::warp_drive_icon_color, items::WarpDriveItemId, DriveObjectType,
@@ -743,7 +743,7 @@ impl WorkflowModal {
                         owner,
                         self.initial_folder_id,
                         ClientId::default(),
-                        CloudObjectEventEntrypoint::Unknown,
+                        StoredObjectEventEntrypoint::Unknown,
                         true,
                         ctx,
                     );

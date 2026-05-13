@@ -12,7 +12,7 @@ use crate::{
     cloud_object::{
         model::{persistence::ObjectStoreModel, view::ObjectStoreViewModel},
         update_manager::{InitiatedBy, UpdateManager},
-        CloudObjectEventEntrypoint, GenericStringObjectFormat, JsonObjectType, Owner, Space,
+        GenericStringObjectFormat, JsonObjectType, Owner, Space, StoredObjectEventEntrypoint,
     },
     env_vars::{manager::EnvVarCollectionSource, EnvVarCollectionObject},
     notebooks::{manager::NotebookSource, NotebookObject},
@@ -329,7 +329,7 @@ impl DrivePanel {
                             AIFactObjectModel::new(fact.clone()),
                             owner,
                             client_id,
-                            CloudObjectEventEntrypoint::Blocklist,
+                            StoredObjectEventEntrypoint::Blocklist,
                             true,
                             *initial_folder_id,
                             // When adding the initiated_by parameter to this function call, InitiatedBy::User was set as a default value.

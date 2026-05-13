@@ -15,9 +15,9 @@ use crate::{
             persistence::{ObjectStoreEvent, ObjectStoreModel, UpdateSource},
             view::{Editor, EditorState, ObjectStoreViewModel},
         },
-        CloudModelType, CloudObject, CloudObjectEventEntrypoint, CloudObjectLocation,
-        GenericCloudObject, GenericStringObjectFormat, JsonObjectType, ObjectIdType, ObjectType,
-        Owner, Revision, Space,
+        GenericStoredObject, GenericStringObjectFormat, JsonObjectType, ObjectIdType, ObjectType,
+        Owner, Revision, Space, StoredObject, StoredObjectEventEntrypoint, StoredObjectLocation,
+        StoredObjectModel,
     },
     drive::{
         folders::{FolderId, FolderObjectModel},
@@ -114,14 +114,14 @@ pub enum InitiatedBy {
 pub struct GenericStringObjectInput<T, S>
 where
     T: StringModel<
-            CloudObjectType = GenericCloudObject<GenericStringObjectId, GenericStringModel<T, S>>,
+            StoredObjectType = GenericStoredObject<GenericStringObjectId, GenericStringModel<T, S>>,
         > + 'static,
     S: Serializer<T> + 'static,
 {
     pub id: ClientId,
     pub model: GenericStringModel<T, S>,
     pub initial_folder_id: Option<SyncId>,
-    pub entrypoint: CloudObjectEventEntrypoint,
+    pub entrypoint: StoredObjectEventEntrypoint,
 }
 
 /// The UpdateManager is responsible for delegating work
@@ -517,7 +517,7 @@ impl UpdateManager {
                     object.model().clone(),
                     owner,
                     client_id,
-                    CloudObjectEventEntrypoint::Unknown,
+                    StoredObjectEventEntrypoint::Unknown,
                     true,
                     None,
                     // When adding the initiated_by parameter to this function call, InitiatedBy::User was set as a default value.
@@ -549,11 +549,11 @@ impl UpdateManager {
     pub fn move_object_to_location(
         &mut self,
         object_id: ObjectTypeAndId,
-        new_location: CloudObjectLocation,
+        new_location: StoredObjectLocation,
         ctx: &mut ModelContext<Self>,
     ) {
         // If we are moving into the trash, we really mean to trash the object
-        if let CloudObjectLocation::Trash = new_location {
+        if let StoredObjectLocation::Trash = new_location {
             return self.trash_object(object_id, ctx);
         }
 
@@ -598,7 +598,7 @@ impl UpdateManager {
         // we should simplify this to a unified call to move_object that sends the new space AND the new folder.
         let mut not_supported = false;
         match new_location {
-            CloudObjectLocation::Space(destination_space) => {
+            StoredObjectLocation::Space(destination_space) => {
                 match UserWorkspaces::as_ref(ctx).space_to_owner(destination_space, ctx) {
                     Some(destination_owner) => {
                         if destination_owner == object_current_owner {
@@ -642,7 +642,7 @@ impl UpdateManager {
                     }
                 }
             }
-            CloudObjectLocation::Folder(SyncId::ServerId(destination_folder_id)) => {
+            StoredObjectLocation::Folder(SyncId::ServerId(destination_folder_id)) => {
                 // If we're moving across folders, then the space must be staying the same.
                 ObjectStoreModel::handle(ctx).update(ctx, |model, ctx| {
                     model.update_object_location(
@@ -727,21 +727,21 @@ impl UpdateManager {
             + Send
             + Sync
             + 'static,
-        M: CloudModelType<IdType = K, CloudObjectType = GenericCloudObject<K, M>> + 'static,
+        M: StoredObjectModel<IdType = K, StoredObjectType = GenericStoredObject<K, M>> + 'static,
     {
         let (duplicate_model, client_id, owner, initial_folder_id, entrypoint) = {
             let cloud_model = ObjectStoreModel::as_ref(ctx);
-            let object: GenericCloudObject<K, M> = cloud_model
+            let object: GenericStoredObject<K, M> = cloud_model
                 .get_object_of_type(id)
                 .expect("object should exist in order to be duplicated")
                 .clone();
             let client_id = ClientId::new();
             let owner = object.permissions.owner;
             let initial_folder_id = object.metadata.folder_id;
-            let entrypoint = CloudObjectEventEntrypoint::Unknown;
+            let entrypoint = StoredObjectEventEntrypoint::Unknown;
             let mut duplicate_model = object.model().clone();
             let duplicate_name =
-                self.get_next_duplicate_object_name(&object as &dyn CloudObject, cloud_model, ctx);
+                self.get_next_duplicate_object_name(&object as &dyn StoredObject, cloud_model, ctx);
             duplicate_model.set_display_name(&duplicate_name);
             (
                 duplicate_model,
@@ -866,7 +866,7 @@ impl UpdateManager {
         owner: Owner,
         initial_folder_id: Option<SyncId>,
         model: NotebookObjectModel,
-        entrypoint: CloudObjectEventEntrypoint,
+        entrypoint: StoredObjectEventEntrypoint,
         force_expand: bool,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -886,7 +886,7 @@ impl UpdateManager {
 
     fn get_next_duplicate_object_name(
         &self,
-        original_cloud_object: &dyn CloudObject,
+        original_cloud_object: &dyn StoredObject,
         cloud_model: &ObjectStoreModel,
         app: &AppContext,
     ) -> String {
@@ -920,7 +920,7 @@ impl UpdateManager {
         owner: Owner,
         initial_folder_id: Option<SyncId>,
         client_id: ClientId,
-        entrypoint: CloudObjectEventEntrypoint,
+        entrypoint: StoredObjectEventEntrypoint,
         force_expand: bool,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -944,7 +944,7 @@ impl UpdateManager {
         workflow_enum: WorkflowEnum,
         owner: Owner,
         client_id: ClientId,
-        entrypoint: CloudObjectEventEntrypoint,
+        entrypoint: StoredObjectEventEntrypoint,
         force_expand: bool,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -969,7 +969,7 @@ impl UpdateManager {
         owner: Owner,
         initial_folder_id: Option<SyncId>,
         model: EnvVarCollectionObjectModel,
-        entrypoint: CloudObjectEventEntrypoint,
+        entrypoint: StoredObjectEventEntrypoint,
         force_expand: bool,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -1022,7 +1022,7 @@ impl UpdateManager {
         model: M,
         owner: Owner,
         client_id: ClientId,
-        entrypoint: CloudObjectEventEntrypoint,
+        entrypoint: StoredObjectEventEntrypoint,
         force_expand: bool,
         initial_folder_id: Option<SyncId>,
         initiated_by: InitiatedBy,
@@ -1037,7 +1037,7 @@ impl UpdateManager {
             + Send
             + Sync
             + 'static,
-        M: CloudModelType<IdType = K, CloudObjectType = GenericCloudObject<K, M>> + 'static,
+        M: StoredObjectModel<IdType = K, StoredObjectType = GenericStoredObject<K, M>> + 'static,
     {
         // OpenWarp:上云队列腿被砍,两个参数仅用于 `create_object_queue_item` 构造;
         // 保留接口以避免冲击 30+ 调用点签名。
@@ -1049,7 +1049,7 @@ impl UpdateManager {
 
         // Update in-memory model.
         ObjectStoreModel::handle(ctx).update(ctx, move |cloud_model, ctx| {
-            let mut object = GenericCloudObject::<K, M>::new_local(
+            let mut object = GenericStoredObject::<K, M>::new_local(
                 model.clone(),
                 owner,
                 initial_folder_id,
@@ -1093,7 +1093,7 @@ impl UpdateManager {
             + Send
             + Sync
             + 'static,
-        M: CloudModelType<IdType = K, CloudObjectType = GenericCloudObject<K, M>> + 'static,
+        M: StoredObjectModel<IdType = K, StoredObjectType = GenericStoredObject<K, M>> + 'static,
     {
         let _ = revision_ts; // OpenWarp: 无服务端 revision 协调,忽略。
 

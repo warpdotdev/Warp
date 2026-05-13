@@ -15,8 +15,8 @@ use crate::{
             view::{ObjectStoreViewModel, ObjectStoreViewModelEvent, UpdateTimestamp},
         },
         update_manager::{FetchSingleObjectOption, UpdateManager},
-        CloudObject, CloudObjectLocation, GenericCloudObject, GenericStringObjectFormat,
-        JsonObjectType, ObjectType, Space,
+        GenericStoredObject, GenericStringObjectFormat, JsonObjectType, ObjectType, Space,
+        StoredObject, StoredObjectLocation,
     },
     editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions},
     env_vars::EnvVarCollectionObject,
@@ -169,7 +169,7 @@ struct DriveIndexSectionState {
     empty_trash_mouse_state: MouseStateHandle,
 }
 
-impl DropTargetData for CloudObjectLocation {
+impl DropTargetData for StoredObjectLocation {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -242,10 +242,10 @@ pub enum DriveIndexAction {
     CloseCloudObjectNamingDialog,
     DropIndexItem {
         object_type_and_id: ObjectTypeAndId,
-        drop_target_location: CloudObjectLocation,
+        drop_target_location: StoredObjectLocation,
     },
     UpdateCurrentDropTarget {
-        drop_target_location: CloudObjectLocation,
+        drop_target_location: StoredObjectLocation,
     },
     ClearDropTarget,
     ToggleSectionCollapsed(DriveIndexSection),
@@ -257,7 +257,7 @@ pub enum DriveIndexAction {
     },
     OpenWorkflowModalWithWorkflowObject(SyncId),
     ToggleFolderOpen(SyncId),
-    CollapseAllInLocation(CloudObjectLocation),
+    CollapseAllInLocation(StoredObjectLocation),
     InvokeEnvVarCollectionInSubshell(ObjectTypeAndId),
     TrashObject {
         object_type_and_id: ObjectTypeAndId,
@@ -458,7 +458,7 @@ pub struct DriveIndex {
     clipped_scroll_state: ClippedScrollStateHandle,
     mouse_state_handles: MouseStateHandles,
     cloud_object_naming_dialog: CloudObjectNamingDialog,
-    current_drop_target: Option<CloudObjectLocation>,
+    current_drop_target: Option<StoredObjectLocation>,
     empty_trash_confirmation_dialog: ViewHandle<EmptyTrashConfirmationDialog>,
     empty_trash_confirmation_dialog_space: Option<Space>,
     sorting_button_menu_open: bool,
@@ -468,7 +468,7 @@ pub struct DriveIndex {
     should_show_personal_object_limit_status: bool,
     /// A hashmap of location (space/folder) to a list of hashed IDs of objects inside
     /// the space/folder, used for rendering our objects
-    sorted_orders_by_location: HashMap<CloudObjectLocation, Vec<ObjectUid>>,
+    sorted_orders_by_location: HashMap<StoredObjectLocation, Vec<ObjectUid>>,
     /// A sorted list of all the items (spaces + objects) in Warp Drive
     /// Unlike sorted_orders_by_location, this is not used for rendering
     /// This is used for object focusing and WD keyboard navigation
@@ -615,7 +615,7 @@ impl DriveIndex {
         self.sorted_orders_by_location.clear();
         spaces.iter().for_each(|space| {
             self.sort_location(
-                CloudObjectLocation::Space(*space),
+                StoredObjectLocation::Space(*space),
                 cloud_model.as_ref(ctx),
                 ObjectStoreViewModel::as_ref(ctx),
                 ctx,
@@ -640,17 +640,17 @@ impl DriveIndex {
         self.has_initialized_sections.wait()
     }
 
-    /// Recursively sorts the objects within a CloudObjectLocation and its children, storing the sorted list
+    /// Recursively sorts the objects within a StoredObjectLocation and its children, storing the sorted list
     /// of HashedObjectId's in the DriveIndex's sorted_orders_by_location.
     fn sort_location(
         &mut self,
-        location: CloudObjectLocation,
+        location: StoredObjectLocation,
         cloud_model: &ObjectStoreModel,
         cloud_view_model: &ObjectStoreViewModel,
         app: &AppContext,
     ) {
         let item_iter = match (self.index_variant, location) {
-            (DriveIndexVariant::MainIndex, CloudObjectLocation::Space(Space::Shared)) => {
+            (DriveIndexVariant::MainIndex, StoredObjectLocation::Space(Space::Shared)) => {
                 let user_uid = AuthStateProvider::as_ref(app).get().user_id();
                 cloud_model
                     .active_cloud_objects_in_location_without_descendents(location, app)
@@ -674,7 +674,7 @@ impl DriveIndex {
                     UpdateTimestamp::Revision,
                     app,
                 )),
-            (DriveIndexVariant::Trash, CloudObjectLocation::Space(space)) => cloud_model
+            (DriveIndexVariant::Trash, StoredObjectLocation::Space(space)) => cloud_model
                 .directly_trashed_cloud_objects_in_space(space, app)
                 .sorted_by(self.sorting_choice.sort_by(
                     cloud_view_model,
@@ -692,7 +692,7 @@ impl DriveIndex {
 
         let mut items = vec![];
         // Add the AI fact collection object + MCP server collection object for personal space
-        if matches!(location, CloudObjectLocation::Space(Space::Personal)) {
+        if matches!(location, StoredObjectLocation::Space(Space::Personal)) {
             items.push(self.mcp_server_collection.id().to_string());
             items.push(self.ai_fact_collection.id().to_string());
         }
@@ -705,7 +705,7 @@ impl DriveIndex {
                         if let Some(folder) = folder {
                             if folder.model().is_open {
                                 self.sort_location(
-                                    CloudObjectLocation::Folder(folder.id),
+                                    StoredObjectLocation::Folder(folder.id),
                                     cloud_model,
                                     cloud_view_model,
                                     app,
@@ -732,10 +732,11 @@ impl DriveIndex {
                 if let ObjectTypeAndId::Folder(folder_id) = cloud_id {
                     if self
                         .sorted_orders_by_location
-                        .contains_key(&CloudObjectLocation::Folder(folder_id))
+                        .contains_key(&StoredObjectLocation::Folder(folder_id))
                     {
                         self.sort_ordered_items(
-                            self.sorted_orders_by_location[&CloudObjectLocation::Folder(folder_id)]
+                            self.sorted_orders_by_location
+                                [&StoredObjectLocation::Folder(folder_id)]
                                 .clone(),
                             cloud_model,
                         )
@@ -771,7 +772,7 @@ impl DriveIndex {
                         // Sort and add the rest of the items in the space
                         let Some(uids) = self
                             .sorted_orders_by_location
-                            .get(&CloudObjectLocation::Space(space))
+                            .get(&StoredObjectLocation::Space(space))
                         else {
                             return;
                         };
@@ -1872,7 +1873,7 @@ impl DriveIndex {
 
         let results = self
             .sorted_orders_by_location
-            .get(&CloudObjectLocation::Space(space))
+            .get(&StoredObjectLocation::Space(space))
             .cloned()
             .unwrap_or_else(|| {
                 match self.index_variant {
@@ -1881,7 +1882,7 @@ impl DriveIndex {
                         let is_shared_space = space == Space::Shared;
                         cloud_model
                             .active_cloud_objects_in_location_without_descendents(
-                                CloudObjectLocation::Space(space),
+                                StoredObjectLocation::Space(space),
                                 app,
                             )
                             .filter(move |cloud_object| {
@@ -2356,7 +2357,7 @@ impl DriveIndex {
                 section_content = section_content.with_padding_bottom(PADDING_BETWEEN_SPACES);
 
                 if let DriveIndexSection::Space(space) = section {
-                    let location = CloudObjectLocation::Space(*space);
+                    let location = StoredObjectLocation::Space(*space);
                     sections.push(self.render_as_drop_target(
                         section_content.finish(),
                         location,
@@ -2377,7 +2378,7 @@ impl DriveIndex {
             let trash_row = self.render_trash_row(appearance, app);
             sections.push(self.render_as_drop_target(
                 trash_row,
-                CloudObjectLocation::Trash,
+                StoredObjectLocation::Trash,
                 appearance,
             ));
         }
@@ -2558,7 +2559,7 @@ impl DriveIndex {
     #[allow(clippy::too_many_arguments)]
     fn render_item_and_children(
         &self,
-        object: &dyn CloudObject,
+        object: &dyn StoredObject,
         item_mouse_states: &Vec<ItemStates>,
         space: Space,
         space_index: usize,
@@ -2661,14 +2662,14 @@ impl DriveIndex {
             if folder.model().is_open {
                 let results = self
                     .sorted_orders_by_location
-                    .get(&CloudObjectLocation::Folder(folder.id))
+                    .get(&StoredObjectLocation::Folder(folder.id))
                     .cloned()
                     .unwrap_or_else(|| {
                         let cloud_view_model = ObjectStoreViewModel::as_ref(app);
                         match self.index_variant {
                             DriveIndexVariant::MainIndex => cloud_model
                                 .active_cloud_objects_in_location_without_descendents(
-                                    CloudObjectLocation::Folder(folder.id),
+                                    StoredObjectLocation::Folder(folder.id),
                                     app,
                                 )
                                 .sorted_by(self.sorting_choice.sort_by(
@@ -2678,7 +2679,7 @@ impl DriveIndex {
                                 )),
                             DriveIndexVariant::Trash => cloud_model
                                 .indirectly_trashed_cloud_objects_in_location_without_descendents(
-                                    CloudObjectLocation::Folder(folder.id),
+                                    StoredObjectLocation::Folder(folder.id),
                                     app,
                                 )
                                 .sorted_by(self.sorting_choice.sort_by(
@@ -2719,7 +2720,7 @@ impl DriveIndex {
                 });
             }
 
-            let location = CloudObjectLocation::Folder(folder.id);
+            let location = StoredObjectLocation::Folder(folder.id);
 
             // Since this is a folder, render it as a drop target
             rendered_item = self.render_as_drop_target(
@@ -3070,17 +3071,17 @@ impl DriveIndex {
 
     fn update_drop_target_location(
         &mut self,
-        new_location: CloudObjectLocation,
+        new_location: StoredObjectLocation,
         ctx: &mut ViewContext<Self>,
     ) {
         // TODO: we need to tell the user why 'move' is not working.
         let is_drop_target_valid = match new_location {
-            CloudObjectLocation::Folder(folder_id) => self.online_only_operation_allowed(
+            StoredObjectLocation::Folder(folder_id) => self.online_only_operation_allowed(
                 &ObjectTypeAndId::from_id_and_type(folder_id, ObjectType::Folder),
                 ctx,
             ),
-            CloudObjectLocation::Space(_) => self.is_online(ctx),
-            CloudObjectLocation::Trash => self.is_online(ctx),
+            StoredObjectLocation::Space(_) => self.is_online(ctx),
+            StoredObjectLocation::Trash => self.is_online(ctx),
         };
 
         if is_drop_target_valid {
@@ -3095,13 +3096,13 @@ impl DriveIndex {
         space: Space,
         ctx: &mut ViewContext<Self>,
     ) {
-        self.move_object(object_type_and_id, CloudObjectLocation::Space(space), ctx);
+        self.move_object(object_type_and_id, StoredObjectLocation::Space(space), ctx);
     }
 
     fn move_object(
         &mut self,
         object_type_and_id: &ObjectTypeAndId,
-        new_location: CloudObjectLocation,
+        new_location: StoredObjectLocation,
         ctx: &mut ViewContext<Self>,
     ) {
         self.current_drop_target = None;
@@ -3130,7 +3131,7 @@ impl DriveIndex {
 
         // Check if object is being moved into team space, if it is, then check
         // corresponding object limits for that team.
-        if let CloudObjectLocation::Space(Space::Team { team_uid }) = new_location {
+        if let StoredObjectLocation::Space(Space::Team { team_uid }) = new_location {
             match *object_type_and_id {
                 ObjectTypeAndId::Notebook(_) => {
                     if !UserWorkspaces::has_capacity_for_shared_notebooks(team_uid, ctx, 1) {
@@ -3166,14 +3167,14 @@ impl DriveIndex {
         });
 
         match new_location {
-            CloudObjectLocation::Space(space) => self.open_section_of_space(space),
-            CloudObjectLocation::Folder(folder_id) => {
+            StoredObjectLocation::Space(space) => self.open_section_of_space(space),
+            StoredObjectLocation::Folder(folder_id) => {
                 cloud_model.update(ctx, |cloud_model, ctx| {
                     cloud_model.open_folder(folder_id, ctx);
                 });
             }
             // If location is the trash, then the above move_[object]_to_location call already trashed the object
-            CloudObjectLocation::Trash => {}
+            StoredObjectLocation::Trash => {}
         }
 
         self.reset_menus(ctx);
@@ -3393,7 +3394,7 @@ impl DriveIndex {
                             let trashed_object_types = cloud_model
                                 .as_ref(ctx)
                                 .trashed_cloud_object_types_in_location_with_descendants(
-                                    CloudObjectLocation::Folder(*folder_id),
+                                    StoredObjectLocation::Folder(*folder_id),
                                     ctx,
                                 );
                             let notebooks_in_trashed_folder = trashed_object_types
@@ -3662,7 +3663,7 @@ impl DriveIndex {
     fn render_as_drop_target(
         &self,
         inner_element: Box<dyn Element>,
-        location: CloudObjectLocation,
+        location: StoredObjectLocation,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         let drop_target = Container::new(DropTarget::new(inner_element, location).finish());
@@ -4215,7 +4216,7 @@ impl DriveIndex {
                         );
                         // TODO(openwarp-cloud-removal Phase 5): `editability` 在此处只剩
                         // 用于决定 share 菜单可见性。share 菜单已删,但 editability 仍是
-                        // CloudObject 权限模型的一部分,保留以待 cloud_object 整体退役。
+                        // StoredObject 权限模型的一部分,保留以待 cloud_object 整体退役。
                         let _ = editability;
                     }
                 }
@@ -4234,7 +4235,7 @@ impl DriveIndex {
                 menu_items.push(
                     MenuItemFields::new(crate::t!("drive-collapse-all"))
                         .with_on_select_action(DriveIndexAction::CollapseAllInLocation(
-                            CloudObjectLocation::Folder(*folder_id),
+                            StoredObjectLocation::Folder(*folder_id),
                         ))
                         .with_icon(Icon::ListCollapsed)
                         .into_item(),
@@ -4274,7 +4275,7 @@ impl DriveIndex {
 
                 if self.edit_object_enabled(object_type_and_id, app) {
                     if let Some(notebook) =
-                        <GenericCloudObject<_, NotebookObjectModel> as CloudObject>::as_model_type::<
+                        <GenericStoredObject<_, NotebookObjectModel> as StoredObject>::as_model_type::<
                             _,
                             NotebookObjectModel,
                         >(object)
@@ -4606,7 +4607,7 @@ impl DriveIndex {
         });
         let menu_items = vec![MenuItemFields::new(crate::t!("drive-collapse-all"))
             .with_on_select_action(DriveIndexAction::CollapseAllInLocation(
-                CloudObjectLocation::Space(*space),
+                StoredObjectLocation::Space(*space),
             ))
             .with_icon(Icon::ListCollapsed)
             .into_item()];
@@ -5113,7 +5114,7 @@ impl TypedActionView for DriveIndex {
                 new_space,
             } => self.move_object(
                 object_type_and_id,
-                CloudObjectLocation::Space(*new_space),
+                StoredObjectLocation::Space(*new_space),
                 ctx,
             ),
             DriveIndexAction::DropIndexItem {

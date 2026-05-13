@@ -2,7 +2,7 @@ use super::{WarpDriveItem, WarpDriveItemId};
 use crate::{
     ai::mcp::MCPServerObject,
     appearance::Appearance,
-    cloud_object::CloudObjectMetadata,
+    cloud_object::StoredObjectMetadata,
     drive::{index::DriveIndexAction, DriveObjectType, ObjectTypeAndId},
     themes::theme::Fill,
 };
@@ -24,7 +24,7 @@ impl WarpDriveItem for WarpDriveMCPServer {
     fn display_name(&self) -> Option<String> {
         Some(self.mcp_server.model().string_model.name.clone())
     }
-    fn metadata(&self) -> Option<&CloudObjectMetadata> {
+    fn metadata(&self) -> Option<&StoredObjectMetadata> {
         Some(&self.mcp_server.metadata)
     }
 

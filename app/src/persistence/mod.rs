@@ -36,9 +36,9 @@ use crate::ai::mcp::TemplatableMCPServerInstallation;
 use crate::app_state::AppState;
 use crate::auth::PersistedCurrentUserInformation;
 use crate::cloud_object::model::actions::ObjectAction;
-use crate::cloud_object::model::generic_string_model::CloudStringObject;
+use crate::cloud_object::model::generic_string_model::StoredStringObject;
 
-use crate::cloud_object::{CloudObject, CloudObjectMetadata, ObjectIdType};
+use crate::cloud_object::{ObjectIdType, StoredObject, StoredObjectMetadata};
 use crate::drive::folders::FolderObject;
 use crate::notebooks::NotebookObject;
 use crate::server::experiments::ServerExperiment;
@@ -187,7 +187,7 @@ pub struct PersistedData {
     pub app_state: AppState,
 
     /// Shareable objects.
-    pub cloud_objects: Vec<Box<dyn CloudObject>>,
+    pub cloud_objects: Vec<Box<dyn StoredObject>>,
     pub workspaces: Vec<WorkspaceMetadata>,
     pub current_workspace_uid: Option<WorkspaceUid>,
     pub command_history: Vec<PersistedCommand>,
@@ -245,9 +245,9 @@ pub enum ModelEvent {
     UpsertFolders(Vec<FolderObject>),
     IncrementRetryCount(String),
     UpsertGenericStringObject {
-        object: Box<dyn CloudStringObject>,
+        object: Box<dyn StoredStringObject>,
     },
-    UpsertGenericStringObjects(Vec<Box<dyn CloudStringObject>>),
+    UpsertGenericStringObjects(Vec<Box<dyn StoredStringObject>>),
     UpsertNotebook {
         notebook: NotebookObject,
     },
@@ -271,7 +271,7 @@ pub enum ModelEvent {
     },
     UpdateObjectMetadata {
         id: String,
-        metadata: CloudObjectMetadata,
+        metadata: StoredObjectMetadata,
     },
     InsertCommand {
         metadata: StartedCommandMetadata,

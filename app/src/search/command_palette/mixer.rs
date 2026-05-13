@@ -115,7 +115,7 @@ impl CommandPaletteItemAction {
             CommandPaletteItemAction::ViewInWarpDrive { id } => match id {
                 ObjectTypeAndId::Notebook(_)
                 | ObjectTypeAndId::Folder(_)
-                | ObjectTypeAndId::GenericStringObject { .. } => ItemSummary::CloudObject,
+                | ObjectTypeAndId::GenericStringObject { .. } => ItemSummary::StoredObject,
                 ObjectTypeAndId::Workflow(id) => ItemSummary::Workflow { id: *id },
             },
             CommandPaletteItemAction::OpenFile {
@@ -185,7 +185,7 @@ pub enum ItemSummary {
     /// of the zero state
     LaunchConfiguration,
     /// Dummy enum variant for cloud objects that aren't supported yet in command palette
-    CloudObject,
+    StoredObject,
     File {
         path: String,
         project_directory: String,

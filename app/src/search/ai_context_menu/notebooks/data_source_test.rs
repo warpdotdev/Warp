@@ -8,7 +8,7 @@ mod tests {
     use crate::cloud_object::model::persistence::ObjectStoreModel;
     use crate::cloud_object::model::view::ObjectStoreViewModel;
     use crate::cloud_object::update_manager::UpdateManager;
-    use crate::cloud_object::{CloudObjectMetadata, CloudObjectPermissions, Revision};
+    use crate::cloud_object::{Revision, StoredObjectMetadata, StoredObjectPermissions};
     use crate::notebooks::manager::NotebookManager;
     use crate::notebooks::{NotebookObject, NotebookObjectModel};
     use crate::search::ai_context_menu::notebooks::data_source::NotebookDataSource;
@@ -23,7 +23,7 @@ mod tests {
 
     fn mock_notebook_with_revision(id: i64, title: &str, revision: Revision) -> NotebookObject {
         let sync_id = SyncId::ServerId(id.into());
-        let mut metadata = CloudObjectMetadata::mock();
+        let mut metadata = StoredObjectMetadata::mock();
         metadata.revision = Some(revision);
 
         NotebookObject::new(
@@ -35,7 +35,7 @@ mod tests {
                 conversation_id: None,
             },
             metadata,
-            CloudObjectPermissions::mock_personal(),
+            StoredObjectPermissions::mock_personal(),
         )
     }
 

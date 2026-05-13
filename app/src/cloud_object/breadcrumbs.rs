@@ -1,4 +1,4 @@
-use super::{CloudObject, Space};
+use super::{Space, StoredObject};
 use crate::{
     drive::{folders::FolderObject, items::WarpDriveItemId, ObjectTypeAndId},
     ui_components::breadcrumb::Breadcrumb,

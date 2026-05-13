@@ -7,7 +7,7 @@ use warpui::{
 
 use crate::{
     appearance::Appearance,
-    cloud_object::CloudObjectMetadata,
+    cloud_object::StoredObjectMetadata,
     drive::{index::DriveIndexAction, DriveObjectType, ObjectTypeAndId},
     notebooks::NotebookObject,
     themes::theme::Fill,
@@ -41,7 +41,7 @@ impl WarpDriveItem for WarpDriveNotebook {
         }
     }
 
-    fn metadata(&self) -> Option<&CloudObjectMetadata> {
+    fn metadata(&self) -> Option<&StoredObjectMetadata> {
         Some(&self.notebook.metadata)
     }
 

@@ -23,7 +23,7 @@ use warpui::{
 };
 
 use crate::{
-    cloud_object::{model::persistence::ObjectStoreModel, CloudObject},
+    cloud_object::{model::persistence::ObjectStoreModel, StoredObject},
     editor::{
         EditOrigin, EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys,
         SingleLineEditorOptions, TextOptions, ValidInputType,

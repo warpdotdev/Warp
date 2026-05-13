@@ -11,7 +11,7 @@ use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::{ObjectStoreEvent, ObjectStoreModel};
 use crate::cloud_object::update_manager::UpdateManager;
-use crate::cloud_object::{CloudObjectMetadata, CloudObjectPermissions};
+use crate::cloud_object::{StoredObjectMetadata, StoredObjectPermissions};
 use crate::network::NetworkStatus;
 use crate::server::ids::{ServerId, SyncId};
 use crate::settings::{apply_onboarding_settings, PrivacySettings};
@@ -70,8 +70,8 @@ fn apply_onboarding_settings_preserves_existing_profile_object_on_existing_user_
         let profile_object = AIExecutionProfileObject::new(
             cloud_sync_id,
             AIExecutionProfileObjectModel::new(local_profile),
-            CloudObjectMetadata::mock(),
-            CloudObjectPermissions::mock_personal(),
+            StoredObjectMetadata::mock(),
+            StoredObjectPermissions::mock_personal(),
         );
 
         // Insert the existing user's stored profile without per-object events

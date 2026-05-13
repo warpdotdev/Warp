@@ -8,7 +8,7 @@ use crate::{
         update_manager::{
             InitiatedBy, ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent,
         },
-        CloudObjectEventEntrypoint, Owner,
+        Owner, StoredObjectEventEntrypoint,
     },
     drive::folders::FolderId,
     notebooks::NotebookObjectModel,
@@ -214,7 +214,7 @@ impl ImportQueue {
                                 ai_document_id: None,
                                 conversation_id: None,
                             },
-                            CloudObjectEventEntrypoint::ImportModal,
+                            StoredObjectEventEntrypoint::ImportModal,
                             false,
                             ctx,
                         );
@@ -233,7 +233,7 @@ impl ImportQueue {
                                 workflow_enum,
                                 dequeued_item.owner,
                                 client_id,
-                                CloudObjectEventEntrypoint::ImportModal,
+                                StoredObjectEventEntrypoint::ImportModal,
                                 false,
                                 ctx,
                             );
@@ -246,7 +246,7 @@ impl ImportQueue {
                                 dequeued_item.owner,
                                 parent_id,
                                 client_id,
-                                CloudObjectEventEntrypoint::ImportModal,
+                                StoredObjectEventEntrypoint::ImportModal,
                                 false,
                                 ctx,
                             );

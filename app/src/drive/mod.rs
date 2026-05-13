@@ -24,14 +24,14 @@ use warpui::AppContext;
 use crate::{
     cloud_object::{
         model::view::{ObjectStoreViewModel, UpdateTimestamp},
-        CloudObject, GenericStringObjectFormat, ObjectIdType, ObjectType,
+        GenericStringObjectFormat, ObjectIdType, ObjectType, StoredObject,
     },
     server::ids::{HashedSqliteId, ObjectUid, ServerId, SyncId},
     ui_components::icons::Icon,
     workflows::WorkflowObject,
 };
 
-type SortByComparator<'a> = dyn FnMut(&&dyn CloudObject, &&dyn CloudObject) -> Ordering + 'a;
+type SortByComparator<'a> = dyn FnMut(&&dyn StoredObject, &&dyn StoredObject) -> Ordering + 'a;
 
 #[derive(Copy, Clone, Debug)]
 pub enum DriveObjectType {
@@ -285,7 +285,7 @@ pub enum DriveSortOrder {
 impl DriveSortOrder {
     /// Returns the comparator that can be used for sorting items returned by
     /// ObjectStoreModel::cloud_objects_in_space, for example (so more specifically, on the iterator of
-    /// type Iterator<Item = &'_ dyn CloudObject>)
+    /// type Iterator<Item = &'_ dyn StoredObject>)
     pub fn sort_by<'a>(
         &self,
         cloud_model: &'a ObjectStoreViewModel,
@@ -295,7 +295,7 @@ impl DriveSortOrder {
         match self {
             // Sorts newly-created objects to be at the top of the list
             Self::ByTimestamp => Box::new(
-                move |a: &&dyn CloudObject, b: &&dyn CloudObject| -> Ordering {
+                move |a: &&dyn StoredObject, b: &&dyn StoredObject| -> Ordering {
                     cloud_model
                         .object_sorting_timestamp(*a, update_timestamp, app)
                         .cmp(&cloud_model.object_sorting_timestamp(*b, update_timestamp, app))
@@ -303,22 +303,22 @@ impl DriveSortOrder {
                 },
             ),
             Self::AlphabeticalDescending => Box::new(
-                move |a: &&dyn CloudObject, b: &&dyn CloudObject| -> Ordering {
+                move |a: &&dyn StoredObject, b: &&dyn StoredObject| -> Ordering {
                     a.display_name()
                         .to_lowercase()
                         .cmp(&b.display_name().to_lowercase())
                 },
             ),
             Self::AlphabeticalAscending => Box::new(
-                move |a: &&dyn CloudObject, b: &&dyn CloudObject| -> Ordering {
+                move |a: &&dyn StoredObject, b: &&dyn StoredObject| -> Ordering {
                     b.display_name()
                         .to_lowercase()
                         .cmp(&a.display_name().to_lowercase())
                 },
             ),
             Self::ByObjectType => Box::new(
-                move |a: &&dyn CloudObject, b: &&dyn CloudObject| -> Ordering {
-                    let order = |obj: &&dyn CloudObject| match obj.object_type() {
+                move |a: &&dyn StoredObject, b: &&dyn StoredObject| -> Ordering {
+                    let order = |obj: &&dyn StoredObject| match obj.object_type() {
                         ObjectType::Folder => 0,
                         ObjectType::GenericStringObject(_) => 1,
                         ObjectType::Notebook => 2,

@@ -11,7 +11,7 @@ use crate::{
     appearance::Appearance,
     cloud_object::{
         model::actions::{ObjectActionType, ObjectActions},
-        CloudObjectMetadata,
+        StoredObjectMetadata,
     },
     drive::{index::DriveIndexAction, DriveObjectType, ObjectTypeAndId},
     env_vars::{EnvVarCollectionObject, EnvVarValue},
@@ -40,7 +40,7 @@ impl WarpDriveItem for WarpDriveEnvVarCollection {
         self.env_var_collection.model().string_model.title.clone()
     }
 
-    fn metadata(&self) -> Option<&CloudObjectMetadata> {
+    fn metadata(&self) -> Option<&StoredObjectMetadata> {
         Some(&self.env_var_collection.metadata)
     }
 

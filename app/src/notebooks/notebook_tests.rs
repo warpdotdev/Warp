@@ -18,7 +18,7 @@ use crate::{
             view::{Editor, EditorState, ObjectStoreViewModel},
         },
         update_manager::UpdateManager,
-        CloudObjectMetadata, CloudObjectPermissions, Owner,
+        Owner, StoredObjectMetadata, StoredObjectPermissions,
     },
     drive::OpenWarpDriveObjectSettings,
     editor::{DisplayPoint, EditorAction, SelectAction},
@@ -146,8 +146,8 @@ fn local_notebook_with_id(
             ai_document_id: None,
             conversation_id: None,
         },
-        CloudObjectMetadata::mock(),
-        CloudObjectPermissions::mock_personal(),
+        StoredObjectMetadata::mock(),
+        StoredObjectPermissions::mock_personal(),
     )
 }
 

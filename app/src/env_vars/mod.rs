@@ -14,7 +14,7 @@ use crate::{
             generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
             json_model::{JsonModel, JsonSerializer},
         },
-        GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
+        GenericStoredObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
         JsonObjectType,
     },
     drive::items::{env_var_collection::WarpDriveEnvVarCollection, WarpDriveItem},
@@ -39,7 +39,7 @@ impl EnvVarCollectionType {
 }
 
 pub type EnvVarCollectionObject =
-    GenericCloudObject<GenericStringObjectId, EnvVarCollectionObjectModel>;
+    GenericStoredObject<GenericStringObjectId, EnvVarCollectionObjectModel>;
 pub type EnvVarCollectionObjectModel = GenericStringModel<EnvVarCollection, JsonSerializer>;
 
 /// Defines the data model for a single environment variable
@@ -146,7 +146,7 @@ impl EnvVarCollection {
 }
 
 impl StringModel for EnvVarCollection {
-    type CloudObjectType = EnvVarCollectionObject;
+    type StoredObjectType = EnvVarCollectionObject;
 
     fn model_type_name(&self) -> &'static str {
         "Environment variables"

@@ -2,7 +2,7 @@ use warpui::{elements::MouseStateHandle, AppContext, Element};
 
 use crate::{
     appearance::Appearance,
-    cloud_object::{CloudObjectMetadata, Space},
+    cloud_object::{Space, StoredObjectMetadata},
     themes::theme::Fill,
     ui_components::icons::Icon,
 };
@@ -28,7 +28,7 @@ pub trait WarpDriveItem {
     /// The display name of the item. If the item is unnamed, this may return `None` - implementations
     /// should prefer this over `Some("")`, as it lets the index view use alternate styling.
     fn display_name(&self) -> Option<String>;
-    fn metadata(&self) -> Option<&CloudObjectMetadata>;
+    fn metadata(&self) -> Option<&StoredObjectMetadata>;
     fn object_type(&self) -> Option<DriveObjectType>;
     fn secondary_icon(&self, color: Option<Fill>) -> Option<Box<dyn Element>>; // The optional icon to the right of the name
     fn click_action(&self) -> Option<DriveIndexAction>;

@@ -1,8 +1,8 @@
 use crate::ai::execution_profiles::AIExecutionProfileObject;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::{
-    CloudModelType, CloudObjectLocation, GenericCloudObject, GenericStringObjectFormat,
-    JsonObjectType, ObjectIdType, ObjectType, Owner, Revision, Space,
+    GenericStoredObject, GenericStringObjectFormat, JsonObjectType, ObjectIdType, ObjectType,
+    Owner, Revision, Space, StoredObjectLocation, StoredObjectModel,
 };
 use crate::drive::folders::{FolderObject, FolderObjectModel};
 use crate::drive::{
@@ -27,7 +27,7 @@ use std::sync::mpsc::SyncSender;
 
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
-use crate::cloud_object::CloudObject;
+use crate::cloud_object::StoredObject;
 use crate::util::sync::Condition;
 use chrono::{DateTime, Duration, Utc};
 use rand::Rng;
@@ -100,12 +100,12 @@ enum FolderOpenState {
     Reversed,
 }
 
-/// Persistence model for [CloudObject] information. In an ideal world, this singleton model
+/// Persistence model for [StoredObject] information. In an ideal world, this singleton model
 /// is a 1:1 mapping for what we persisting in sqlite, and on the server. Any logic beyond a basic update
 /// or query to data in [ObjectStoreModel] should instead be stored in [ObjectStoreViewModel] and tested in
 /// model_test.rs.
 pub struct ObjectStoreModel {
-    objects_by_id: HashMap<ObjectUid, Box<dyn CloudObject>>,
+    objects_by_id: HashMap<ObjectUid, Box<dyn StoredObject>>,
     model_event_sender: Option<SyncSender<ModelEvent>>,
     initial_load_complete: Condition,
 
@@ -115,13 +115,13 @@ pub struct ObjectStoreModel {
 impl ObjectStoreModel {
     pub fn new(
         model_event_sender: Option<SyncSender<ModelEvent>>,
-        cached_objects: Vec<Box<dyn CloudObject>>,
+        cached_objects: Vec<Box<dyn StoredObject>>,
         time_of_next_force_refresh: Option<DateTime<Utc>>,
     ) -> Self {
         let objects_by_id = cached_objects
             .into_iter()
             .map(|object| (object.uid().to_owned(), object))
-            .collect::<HashMap<ObjectUid, Box<dyn CloudObject>>>();
+            .collect::<HashMap<ObjectUid, Box<dyn StoredObject>>>();
         let initial_load_complete = Condition::new();
         // OpenWarp 没有云端 object 初始拉取；SQLite restore 完成后即可视为可读。
         initial_load_complete.set();
@@ -157,14 +157,14 @@ impl ObjectStoreModel {
     pub fn can_move_object_to_location(
         &self,
         hashed_id: &str,
-        new_location: CloudObjectLocation,
+        new_location: StoredObjectLocation,
         app: &AppContext,
     ) -> bool {
         // TODO(ben): Update as sharing+moving is supported in more cases.
 
         if let Some(object) = self.objects_by_id.get(hashed_id) {
             let object_space = object.space(app);
-            if let CloudObjectLocation::Space(space) = new_location {
+            if let StoredObjectLocation::Space(space) = new_location {
                 if matches!(object_space, Space::Team { .. }) && space == Space::Personal {
                     return false;
                 }
@@ -174,7 +174,7 @@ impl ObjectStoreModel {
                 }
             }
 
-            if let CloudObjectLocation::Folder(target_folder_id) = new_location {
+            if let StoredObjectLocation::Folder(target_folder_id) = new_location {
                 let folder_to_move: Option<&FolderObject> = object.into();
                 if let Some(folder_to_move) = folder_to_move {
                     // We do not want to move a folder into itself.
@@ -209,38 +209,38 @@ impl ObjectStoreModel {
         false
     }
 
-    /// Given a hashed object-id, returns the object's CloudObjectLocation
+    /// Given a hashed object-id, returns the object's StoredObjectLocation
     /// (either a folder or top level space)
     pub fn object_location(
         &self,
         hashed_id: &str,
         app: &AppContext,
-    ) -> Option<CloudObjectLocation> {
+    ) -> Option<StoredObjectLocation> {
         self.objects_by_id
             .get(hashed_id)
             .map(|object| object.location(self, app))
     }
 
-    pub fn get_by_uid(&self, uid: &ObjectUid) -> Option<&dyn CloudObject> {
+    pub fn get_by_uid(&self, uid: &ObjectUid) -> Option<&dyn StoredObject> {
         self.objects_by_id.get(uid).map(|o| o.as_ref())
     }
 
-    pub fn get_mut_by_uid(&mut self, uid: &ObjectUid) -> Option<&mut Box<dyn CloudObject>> {
+    pub fn get_mut_by_uid(&mut self, uid: &ObjectUid) -> Option<&mut Box<dyn StoredObject>> {
         self.objects_by_id.get_mut(uid)
     }
 
-    pub fn cloud_objects(&self) -> impl Iterator<Item = &Box<dyn CloudObject>> {
+    pub fn cloud_objects(&self) -> impl Iterator<Item = &Box<dyn StoredObject>> {
         self.objects_by_id.values()
     }
 
-    pub fn cloud_objects_mut(&mut self) -> impl Iterator<Item = &mut Box<dyn CloudObject>> {
+    pub fn cloud_objects_mut(&mut self) -> impl Iterator<Item = &mut Box<dyn StoredObject>> {
         self.objects_by_id.values_mut()
     }
 
     pub fn create_object(
         &mut self,
         id: SyncId,
-        object: impl CloudObject + 'static,
+        object: impl StoredObject + 'static,
         ctx: &mut ModelContext<ObjectStoreModel>,
     ) {
         ctx.emit(ObjectStoreEvent::ObjectCreated {
@@ -252,7 +252,7 @@ impl ObjectStoreModel {
 
     // Does not emit events or notify — used during initial load where
     // InitialLoadCompleted is emitted once afterward instead.
-    fn create_object_internal(&mut self, id: SyncId, object: impl CloudObject + 'static) {
+    fn create_object_internal(&mut self, id: SyncId, object: impl StoredObject + 'static) {
         self.objects_by_id.insert(id.uid(), Box::new(object));
     }
 
@@ -445,7 +445,7 @@ impl ObjectStoreModel {
             + Send
             + Sync
             + 'static,
-        M: CloudModelType<IdType = K, CloudObjectType = GenericCloudObject<K, M>> + 'static,
+        M: StoredObjectModel<IdType = K, StoredObjectType = GenericStoredObject<K, M>> + 'static,
     {
         if let Some(cloud_object) = self.get_object_of_type_mut(&object_id) {
             cloud_object.set_model(model);
@@ -558,10 +558,10 @@ impl ObjectStoreModel {
     }
 
     /// Collapses all folders for a given location, including the folder provided
-    /// (if location is a CloudObjectLocation::Folder).
+    /// (if location is a StoredObjectLocation::Folder).
     pub fn collapse_all_in_location(
         &mut self,
-        location: CloudObjectLocation,
+        location: StoredObjectLocation,
         index_variant: DriveIndexVariant,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -579,12 +579,12 @@ impl ObjectStoreModel {
     /// adding IDs of any folders found to the folder_ids mutable vector reference.
     fn collapse_all_in_location_helper(
         &self,
-        location: CloudObjectLocation,
+        location: StoredObjectLocation,
         index_variant: DriveIndexVariant,
         folder_ids: &mut Vec<SyncId>,
         app: &AppContext,
     ) {
-        if let CloudObjectLocation::Folder(folder_id) = location {
+        if let StoredObjectLocation::Folder(folder_id) = location {
             folder_ids.push(folder_id);
         }
 
@@ -595,7 +595,7 @@ impl ObjectStoreModel {
                     let folder: Option<&FolderObject> = object.into();
                     if let Some(folder) = folder {
                         self.collapse_all_in_location_helper(
-                            CloudObjectLocation::Folder(folder.id),
+                            StoredObjectLocation::Folder(folder.id),
                             index_variant,
                             folder_ids,
                             app,
@@ -603,13 +603,13 @@ impl ObjectStoreModel {
                     }
                 }),
             DriveIndexVariant::Trash => {
-                if let CloudObjectLocation::Space(space) = location {
+                if let StoredObjectLocation::Space(space) = location {
                     self.directly_trashed_cloud_objects_in_space(space, app)
                         .for_each(|object| {
                             let folder: Option<&FolderObject> = object.into();
                             if let Some(folder) = folder {
                                 self.collapse_all_in_location_helper(
-                                    CloudObjectLocation::Folder(folder.id),
+                                    StoredObjectLocation::Folder(folder.id),
                                     index_variant,
                                     folder_ids,
                                     app,
@@ -624,7 +624,7 @@ impl ObjectStoreModel {
                         let folder: Option<&FolderObject> = object.into();
                         if let Some(folder) = folder {
                             self.collapse_all_in_location_helper(
-                                CloudObjectLocation::Folder(folder.id),
+                                StoredObjectLocation::Folder(folder.id),
                                 index_variant,
                                 folder_ids,
                                 app,
@@ -758,7 +758,7 @@ impl ObjectStoreModel {
     ) -> bool {
         let user_uid = AuthStateProvider::as_ref(app).get().user_id();
         self.objects_by_id.values().any(|object| {
-            // We can't use CloudObject::is_in_space, because that reborrows UserWorkspaces.
+            // We can't use StoredObject::is_in_space, because that reborrows UserWorkspaces.
             user_workspaces.owner_to_space(object.permissions().owner, app) == Space::Shared
                 && user_uid.is_some_and(|uid| object.permissions().has_direct_user_access(uid))
         })
@@ -947,10 +947,10 @@ impl ObjectStoreModel {
             .collect::<HashMap<_, _>>()
     }
 
-    pub fn get_object_of_type<K, M>(&self, object_id: &SyncId) -> Option<&GenericCloudObject<K, M>>
+    pub fn get_object_of_type<K, M>(&self, object_id: &SyncId) -> Option<&GenericStoredObject<K, M>>
     where
         K: HashableId + ToServerId + std::fmt::Debug + Into<String> + Clone + 'static,
-        M: CloudModelType<IdType = K, CloudObjectType = GenericCloudObject<K, M>> + 'static,
+        M: StoredObjectModel<IdType = K, StoredObjectType = GenericStoredObject<K, M>> + 'static,
     {
         self.objects_by_id
             .get(&object_id.uid())
@@ -960,20 +960,20 @@ impl ObjectStoreModel {
     pub fn get_object_of_type_mut<K, M>(
         &mut self,
         object_id: &SyncId,
-    ) -> Option<&mut GenericCloudObject<K, M>>
+    ) -> Option<&mut GenericStoredObject<K, M>>
     where
         K: HashableId + ToServerId + std::fmt::Debug + Into<String> + Clone + 'static,
-        M: CloudModelType<IdType = K, CloudObjectType = GenericCloudObject<K, M>> + 'static,
+        M: StoredObjectModel<IdType = K, StoredObjectType = GenericStoredObject<K, M>> + 'static,
     {
         self.objects_by_id
             .get_mut(&object_id.uid())
             .and_then(|object| object.into())
     }
 
-    pub fn get_all_objects_of_type<K, M>(&self) -> impl Iterator<Item = &GenericCloudObject<K, M>>
+    pub fn get_all_objects_of_type<K, M>(&self) -> impl Iterator<Item = &GenericStoredObject<K, M>>
     where
         K: HashableId + ToServerId + std::fmt::Debug + Into<String> + Clone + 'static,
-        M: CloudModelType<IdType = K, CloudObjectType = GenericCloudObject<K, M>> + 'static,
+        M: StoredObjectModel<IdType = K, StoredObjectType = GenericStoredObject<K, M>> + 'static,
     {
         self.objects_by_id
             .values()
@@ -1041,12 +1041,12 @@ impl ObjectStoreModel {
     }
 
     #[cfg(test)]
-    pub fn as_cloud_objects(&self) -> impl Iterator<Item = &'_ Box<dyn CloudObject>> {
+    pub fn as_cloud_objects(&self) -> impl Iterator<Item = &'_ Box<dyn StoredObject>> {
         self.objects_by_id.values()
     }
 
     #[cfg(test)]
-    pub fn add_object(&mut self, id: SyncId, object: impl CloudObject + 'static) {
+    pub fn add_object(&mut self, id: SyncId, object: impl StoredObject + 'static) {
         self.objects_by_id.insert(id.uid(), Box::new(object));
     }
 
@@ -1104,14 +1104,14 @@ impl ObjectStoreModel {
         result
     }
 
-    /// Given a CloudObjectLocation (either a folder or a space), returns an iterator of active (not trashed) cloud objects
+    /// Given a StoredObjectLocation (either a folder or a space), returns an iterator of active (not trashed) cloud objects
     /// that live directly in this location (its children). I.e. this function does NOT look into nested folders in order
     /// to return those children.
     pub fn active_cloud_objects_in_location_without_descendents<'a>(
         &'a self,
-        location: CloudObjectLocation,
+        location: StoredObjectLocation,
         app: &'a AppContext,
-    ) -> impl Iterator<Item = &'a dyn CloudObject> + 'a {
+    ) -> impl Iterator<Item = &'a dyn StoredObject> + 'a {
         self.objects_by_id
             .values()
             .filter(move |object| {
@@ -1120,14 +1120,14 @@ impl ObjectStoreModel {
             .map(|object| object.as_ref())
     }
 
-    /// Given a CloudObjectLocation (either a folder or a space), returns an iterator of trashed cloud objects
+    /// Given a StoredObjectLocation (either a folder or a space), returns an iterator of trashed cloud objects
     /// that live directly in this location (its children). I.e. this function does NOT look into nested folders in order
     /// to return those children.
     pub fn trashed_cloud_objects_in_location_without_descendents<'a>(
         &'a self,
-        location: CloudObjectLocation,
+        location: StoredObjectLocation,
         app: &'a AppContext,
-    ) -> impl Iterator<Item = &'a dyn CloudObject> + 'a {
+    ) -> impl Iterator<Item = &'a dyn StoredObject> + 'a {
         self.objects_by_id
             .values()
             .filter(move |object| object.is_trashed(self) && object.location(self, app) == location)
@@ -1136,7 +1136,7 @@ impl ObjectStoreModel {
 
     pub fn trashed_cloud_object_types_in_location_with_descendants(
         &self,
-        location: CloudObjectLocation,
+        location: StoredObjectLocation,
         app: &AppContext,
     ) -> Vec<ObjectType> {
         let mut trashed_objects: Vec<ObjectType> = Vec::new();
@@ -1153,7 +1153,7 @@ impl ObjectStoreModel {
     /// objects found to the trashed_objects mutable vector reference.
     fn trashed_cloud_object_types_in_location_with_descendants_helper(
         &self,
-        location: CloudObjectLocation,
+        location: StoredObjectLocation,
         trashed_objects: &mut Vec<ObjectType>,
         app: &AppContext,
     ) {
@@ -1165,7 +1165,7 @@ impl ObjectStoreModel {
                 // If any of the direct descendants are folders, recursively traverse through them
                 if let Some(folder) = folder {
                     self.trashed_cloud_object_types_in_location_with_descendants_helper(
-                        CloudObjectLocation::Folder(folder.id),
+                        StoredObjectLocation::Folder(folder.id),
                         trashed_objects,
                         app,
                     );
@@ -1173,14 +1173,14 @@ impl ObjectStoreModel {
             });
     }
 
-    /// Given a CloudObjectLocation (either a folder or a space), returns an iterator of cloud objects
+    /// Given a StoredObjectLocation (either a folder or a space), returns an iterator of cloud objects
     /// that live directly in this location (its children) are in the trash but have not been explicitly
     /// trashed by a user. I.e. this function does NOT look into nested folders in order to return those children.
     pub fn indirectly_trashed_cloud_objects_in_location_without_descendents<'a>(
         &'a self,
-        location: CloudObjectLocation,
+        location: StoredObjectLocation,
         app: &'a AppContext,
-    ) -> impl Iterator<Item = &'a dyn CloudObject> {
+    ) -> impl Iterator<Item = &'a dyn StoredObject> {
         self.objects_by_id
             .values()
             .filter(move |object| {
@@ -1196,7 +1196,7 @@ impl ObjectStoreModel {
         &'a self,
         space: Space,
         app: &'a AppContext,
-    ) -> impl Iterator<Item = &'a dyn CloudObject> + 'a {
+    ) -> impl Iterator<Item = &'a dyn StoredObject> + 'a {
         self.objects_by_id
             .values()
             .filter(move |object| object.is_in_space(space, app) && !object.is_trashed(self))
@@ -1208,7 +1208,7 @@ impl ObjectStoreModel {
         &'a self,
         space: Space,
         app: &'a AppContext,
-    ) -> impl Iterator<Item = &'a dyn CloudObject> + 'a {
+    ) -> impl Iterator<Item = &'a dyn StoredObject> + 'a {
         self.objects_by_id
             .values()
             .filter(move |object| {
@@ -1224,7 +1224,7 @@ impl ObjectStoreModel {
         &'a self,
         space: Space,
         app: &'a AppContext,
-    ) -> impl Iterator<Item = &'a dyn CloudObject> + 'a {
+    ) -> impl Iterator<Item = &'a dyn StoredObject> + 'a {
         self.objects_by_id
             .values()
             .filter(move |object| object.is_in_space(space, app))
@@ -1236,7 +1236,7 @@ impl ObjectStoreModel {
         &'a self,
         space: Space,
         app: &'a AppContext,
-    ) -> impl Iterator<Item = &'a dyn CloudObject> + 'a {
+    ) -> impl Iterator<Item = &'a dyn StoredObject> + 'a {
         self.objects_by_id
             .values()
             .filter(move |object| object.is_in_space(space, app) && object.is_trashed(self))
@@ -1248,7 +1248,7 @@ impl ObjectStoreModel {
         &'a self,
         space: Space,
         app: &'a AppContext,
-    ) -> impl Iterator<Item = &'a dyn CloudObject> {
+    ) -> impl Iterator<Item = &'a dyn StoredObject> {
         self.objects_by_id
             .values()
             .filter(move |object| {

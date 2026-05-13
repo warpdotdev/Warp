@@ -2,7 +2,7 @@ use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
 use crate::cloud_object::model::persistence::{ObjectStoreEvent, ObjectStoreModel};
 use crate::cloud_object::update_manager::UpdateManager;
 use crate::cloud_object::{
-    CloudObject, GenericStringObjectFormat, JsonObjectType, Owner, Revision,
+    GenericStringObjectFormat, JsonObjectType, Owner, Revision, StoredObject,
 };
 use crate::drive::ObjectTypeAndId;
 use crate::editor::{

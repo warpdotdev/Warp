@@ -3,8 +3,8 @@ use std::fmt::Debug;
 use crate::{
     appearance::Appearance,
     cloud_object::{
-        CloudModelType, CloudObject, GenericCloudObject, GenericStringObjectFormat,
-        GenericStringObjectUniqueKey, ObjectType, SerializedModel,
+        GenericStoredObject, GenericStringObjectFormat, GenericStringObjectUniqueKey, ObjectType,
+        SerializedModel, StoredObject, StoredObjectModel,
     },
     drive::{items::WarpDriveItem, ObjectTypeAndId},
     persistence::ModelEvent,
@@ -14,7 +14,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 /// A trait that generic string-based objects should implement.
-pub trait CloudStringObject: CloudObject + Send + Sync {
+pub trait StoredStringObject: StoredObject + Send + Sync {
     /// Returns the object format for this object.
     fn generic_string_object_format(&self) -> GenericStringObjectFormat;
 
@@ -28,7 +28,7 @@ pub trait CloudStringObject: CloudObject + Send + Sync {
     /// Note that we can't force this trait to derive from Cloned
     /// directly because that would make the trait not object safe.  This
     /// is a workaround.
-    fn clone_box(&self) -> Box<dyn CloudStringObject>;
+    fn clone_box(&self) -> Box<dyn StoredStringObject>;
 }
 
 /// A `StringModel` is a model that can be serialized and deserialized as a simple string.
@@ -38,7 +38,7 @@ pub trait CloudStringObject: CloudObject + Send + Sync {
 ///
 /// Objects that implement this type all share common storage and server apis.
 pub trait StringModel: Clone + Debug + PartialEq + Send + Sync + 'static {
-    type CloudObjectType: CloudObject + 'static;
+    type StoredObjectType: StoredObject + 'static;
 
     /// Returns the name of this model type (e.g. Workflow, Folder, Notebook)
     fn model_type_name(&self) -> &'static str;
@@ -86,7 +86,7 @@ pub trait StringModel: Clone + Debug + PartialEq + Send + Sync + 'static {
         &self,
         _id: SyncId,
         _appearance: &Appearance,
-        _object: &Self::CloudObjectType,
+        _object: &Self::StoredObjectType,
     ) -> Option<Box<dyn WarpDriveItem>> {
         None
     }
@@ -116,17 +116,18 @@ pub trait Serializer<M>: Debug + Clone + 'static {
 pub struct GenericStringModel<M, S>
 where
     M: StringModel<
-        CloudObjectType = GenericCloudObject<GenericStringObjectId, GenericStringModel<M, S>>,
+        StoredObjectType = GenericStoredObject<GenericStringObjectId, GenericStringModel<M, S>>,
     >,
     S: Serializer<M>,
 {
     pub string_model: M,
 }
 
-impl<M, S> CloudStringObject for GenericCloudObject<GenericStringObjectId, GenericStringModel<M, S>>
+impl<M, S> StoredStringObject
+    for GenericStoredObject<GenericStringObjectId, GenericStringModel<M, S>>
 where
     M: StringModel<
-        CloudObjectType = GenericCloudObject<GenericStringObjectId, GenericStringModel<M, S>>,
+        StoredObjectType = GenericStoredObject<GenericStringObjectId, GenericStringModel<M, S>>,
     >,
     S: Serializer<M>,
 {
@@ -142,24 +143,24 @@ where
         self.model.serialized()
     }
 
-    fn clone_box(&self) -> Box<dyn CloudStringObject> {
+    fn clone_box(&self) -> Box<dyn StoredStringObject> {
         Box::new(self.clone())
     }
 }
 
-/// Implements the CloudModelType trait for all generic string models.
+/// Implements the StoredObjectModel trait for all generic string models.
 ///
 /// This has common logic for storing string models to SQLite and updating from the
 /// server -- basically for anything not specific to the contents
 /// of the string model.
-impl<M, S> CloudModelType for GenericStringModel<M, S>
+impl<M, S> StoredObjectModel for GenericStringModel<M, S>
 where
     M: StringModel<
-        CloudObjectType = GenericCloudObject<GenericStringObjectId, GenericStringModel<M, S>>,
+        StoredObjectType = GenericStoredObject<GenericStringObjectId, GenericStringModel<M, S>>,
     >,
     S: Serializer<M>,
 {
-    type CloudObjectType = GenericCloudObject<GenericStringObjectId, Self>;
+    type StoredObjectType = GenericStoredObject<GenericStringObjectId, Self>;
     type IdType = GenericStringObjectId;
 
     fn model_type_name(&self) -> &'static str {
@@ -185,10 +186,13 @@ where
         self.string_model.set_display_name(name);
     }
 
-    fn upsert_event(&self, object: &GenericCloudObject<GenericStringObjectId, Self>) -> ModelEvent {
-        let object = object as &dyn CloudStringObject;
+    fn upsert_event(
+        &self,
+        object: &GenericStoredObject<GenericStringObjectId, Self>,
+    ) -> ModelEvent {
+        let object = object as &dyn StoredStringObject;
         ModelEvent::UpsertGenericStringObject {
-            object: CloudStringObject::clone_box(object),
+            object: StoredStringObject::clone_box(object),
         }
     }
 
@@ -209,10 +213,10 @@ where
     }
 
     fn bulk_upsert_event(
-        objects: &[GenericCloudObject<GenericStringObjectId, Self>],
+        objects: &[GenericStoredObject<GenericStringObjectId, Self>],
     ) -> ModelEvent {
         ModelEvent::UpsertGenericStringObjects(
-            objects.iter().map(CloudStringObject::clone_box).collect(),
+            objects.iter().map(StoredStringObject::clone_box).collect(),
         )
     }
 
@@ -236,7 +240,7 @@ where
         &self,
         id: SyncId,
         appearance: &Appearance,
-        object: &GenericCloudObject<GenericStringObjectId, Self>,
+        object: &GenericStoredObject<GenericStringObjectId, Self>,
     ) -> Option<Box<dyn WarpDriveItem>> {
         self.string_model.to_warp_drive_item(id, appearance, object)
     }
@@ -245,7 +249,7 @@ where
 impl<M, S> GenericStringModel<M, S>
 where
     M: StringModel<
-        CloudObjectType = GenericCloudObject<GenericStringObjectId, GenericStringModel<M, S>>,
+        StoredObjectType = GenericStoredObject<GenericStringObjectId, GenericStringModel<M, S>>,
     >,
     S: Serializer<M>,
 {

@@ -9,7 +9,7 @@ use crate::{
         update_manager::{
             ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent,
         },
-        CloudObject, CloudObjectLocation, Space,
+        Space, StoredObject, StoredObjectLocation,
     },
     drive::{
         folders::FolderObject,
@@ -177,7 +177,7 @@ impl ObjectStoreViewModel {
         }
     }
 
-    fn object_access_level(object: &dyn CloudObject, app: &AppContext) -> SharingAccessLevel {
+    fn object_access_level(object: &dyn StoredObject, app: &AppContext) -> SharingAccessLevel {
         match object.space(app) {
             // For now, users have full access to all objects in their own drives. We may introduce
             // drive-level ACLs in the future.
@@ -248,7 +248,7 @@ impl ObjectStoreViewModel {
     /// Get the timestamp to sort `object` according to `timestamp_kind`.
     pub fn object_sorting_timestamp(
         &self,
-        object: &dyn CloudObject,
+        object: &dyn StoredObject,
         timestamp_kind: UpdateTimestamp,
         app: &AppContext,
     ) -> Option<ServerTimestamp> {
@@ -271,7 +271,7 @@ impl ObjectStoreViewModel {
     /// * For other objects, this is the object's own timestamp.
     fn sorting_timestamp_rec(
         &self,
-        object: &dyn CloudObject,
+        object: &dyn StoredObject,
         cloud_model: &ObjectStoreModel,
         app: &AppContext,
     ) -> Option<ServerTimestamp> {
@@ -289,7 +289,7 @@ impl ObjectStoreViewModel {
                 .or_else(|| {
                     let max_child_timestamp = cloud_model
                         .active_cloud_objects_in_location_without_descendents(
-                            CloudObjectLocation::Folder(folder.id),
+                            StoredObjectLocation::Folder(folder.id),
                             app,
                         )
                         // TODO(ben): This check won't be needed soon.

@@ -8,7 +8,7 @@ use warpui::{
 use crate::{
     ai::facts::{AIFact, AIFactObject, AIMemory},
     appearance::Appearance,
-    cloud_object::CloudObjectMetadata,
+    cloud_object::StoredObjectMetadata,
     drive::{index::DriveIndexAction, DriveObjectType, ObjectTypeAndId},
     themes::theme::Fill,
 };
@@ -43,7 +43,7 @@ impl WarpDriveItem for WarpDriveAIFact {
             }
         }
     }
-    fn metadata(&self) -> Option<&CloudObjectMetadata> {
+    fn metadata(&self) -> Option<&StoredObjectMetadata> {
         Some(&self.ai_fact.metadata)
     }
 

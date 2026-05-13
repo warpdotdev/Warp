@@ -9,7 +9,7 @@ use crate::{
             generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
             json_model::{JsonModel, JsonSerializer},
         },
-        GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
+        GenericStoredObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
         JsonObjectType,
     },
     settings::{
@@ -432,11 +432,11 @@ impl AIExecutionProfile {
 }
 
 pub type AIExecutionProfileObject =
-    GenericCloudObject<GenericStringObjectId, AIExecutionProfileObjectModel>;
+    GenericStoredObject<GenericStringObjectId, AIExecutionProfileObjectModel>;
 pub type AIExecutionProfileObjectModel = GenericStringModel<AIExecutionProfile, JsonSerializer>;
 
 impl StringModel for AIExecutionProfile {
-    type CloudObjectType = AIExecutionProfileObject;
+    type StoredObjectType = AIExecutionProfileObject;
 
     fn model_type_name(&self) -> &'static str {
         "AIExecutionProfile"

@@ -216,7 +216,7 @@ use crate::autoupdate::{self, get_update_state, AutoupdateStage};
 use crate::cloud_object::model::actions::ObjectActionType;
 use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::cloud_object::update_manager::UpdateManager;
-use crate::cloud_object::{CloudObject, GenericStringObjectFormat, JsonObjectType};
+use crate::cloud_object::{GenericStringObjectFormat, JsonObjectType, StoredObject};
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
 use crate::context_chips::prompt::Prompt;

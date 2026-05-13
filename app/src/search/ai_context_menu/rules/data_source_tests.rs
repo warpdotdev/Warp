@@ -7,7 +7,7 @@ use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::cloud_object::model::view::ObjectStoreViewModel;
 use crate::cloud_object::update_manager::UpdateManager;
-use crate::cloud_object::{CloudObjectMetadata, CloudObjectPermissions, Revision};
+use crate::cloud_object::{Revision, StoredObjectMetadata, StoredObjectPermissions};
 use crate::notebooks::manager::NotebookManager;
 use crate::search::ai_context_menu::rules::data_source::RulesDataSource;
 use crate::search::data_source::Query;
@@ -21,7 +21,7 @@ use crate::NetworkStatus;
 
 fn mock_ai_fact(id: i64, name: &str, content: &str, revision: Revision) -> AIFactObject {
     let sync_id = SyncId::ServerId(id.into());
-    let mut metadata = CloudObjectMetadata::mock();
+    let mut metadata = StoredObjectMetadata::mock();
     metadata.revision = Some(revision);
 
     AIFactObject::new(
@@ -33,7 +33,7 @@ fn mock_ai_fact(id: i64, name: &str, content: &str, revision: Revision) -> AIFac
             suggested_logging_id: None,
         })),
         metadata,
-        CloudObjectPermissions::mock_personal(),
+        StoredObjectPermissions::mock_personal(),
     )
 }
 

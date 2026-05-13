@@ -1,6 +1,6 @@
 use crate::{
     auth::UserUid,
-    cloud_object::{CloudObjectGuest, ServerObjectContainer},
+    cloud_object::{ServerObjectContainer, StoredObjectGuest},
     drive::sharing::{LinkSharingSubjectType, SharingAccessLevel, Subject, TeamKind, UserKind},
     server::ids::ServerId,
 };
@@ -8,12 +8,12 @@ use crate::{
 #[test]
 fn test_roundtrip_guests() {
     let guests = vec![
-        CloudObjectGuest {
+        StoredObjectGuest {
             subject: Subject::User(UserKind::Account(UserUid::new("firebase_uid"))),
             access_level: SharingAccessLevel::Edit,
             source: None,
         },
-        CloudObjectGuest {
+        StoredObjectGuest {
             subject: Subject::PendingUser {
                 email: Some("pending@warp.dev".to_string()),
             },
@@ -22,7 +22,7 @@ fn test_roundtrip_guests() {
                 folder_uid: 123.into(),
             }),
         },
-        CloudObjectGuest {
+        StoredObjectGuest {
             subject: Subject::Team(TeamKind::Team {
                 team_uid: ServerId::from(99),
             }),
@@ -39,7 +39,7 @@ fn test_roundtrip_guests() {
 
 #[test]
 fn test_fail_unsupported_subjects() {
-    let result = super::encode_guests(&[CloudObjectGuest {
+    let result = super::encode_guests(&[StoredObjectGuest {
         subject: Subject::AnyoneWithLink(LinkSharingSubjectType::Anyone),
         access_level: SharingAccessLevel::View,
         source: None,

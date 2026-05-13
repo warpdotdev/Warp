@@ -12,7 +12,7 @@ use warpui::{
 use crate::search::result_renderer::ItemHighlightState;
 use crate::{
     appearance::Appearance,
-    cloud_object::CloudObject,
+    cloud_object::StoredObject,
     drive::{cloud_object_styling::warp_drive_icon_color, DriveObjectType},
     search::{
         item::IconLocation,

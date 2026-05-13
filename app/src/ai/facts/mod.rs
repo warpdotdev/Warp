@@ -7,7 +7,7 @@ use crate::{
             generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
             json_model::{JsonModel, JsonSerializer},
         },
-        GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
+        GenericStoredObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
         JsonObjectType,
     },
     drive::ObjectTypeAndId,
@@ -46,11 +46,11 @@ impl AIFact {
     }
 }
 
-pub type AIFactObject = GenericCloudObject<GenericStringObjectId, AIFactObjectModel>;
+pub type AIFactObject = GenericStoredObject<GenericStringObjectId, AIFactObjectModel>;
 pub type AIFactObjectModel = GenericStringModel<AIFact, JsonSerializer>;
 
 impl StringModel for AIFact {
-    type CloudObjectType = AIFactObject;
+    type StoredObjectType = AIFactObject;
 
     fn model_type_name(&self) -> &'static str {
         "Rule"

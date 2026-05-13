@@ -4,7 +4,7 @@ use warpui::{App, SingletonEntity};
 
 use super::*;
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::{CloudObjectMetadata, CloudObjectPermissions, Owner};
+use crate::cloud_object::{Owner, StoredObjectMetadata, StoredObjectPermissions};
 use crate::notebooks::manager::NotebookManager;
 use crate::notebooks::{NotebookObject, NotebookObjectModel};
 use crate::server::ids::SyncId::{self};
@@ -25,14 +25,14 @@ use crate::{
     workspaces::{user_profiles::UserProfiles, user_workspaces::UserWorkspaces},
 };
 
-fn mock_metadata() -> CloudObjectMetadata {
-    let mut metadata = CloudObjectMetadata::mock();
+fn mock_metadata() -> StoredObjectMetadata {
+    let mut metadata = StoredObjectMetadata::mock();
     metadata.revision = Some(Revision::now());
     metadata
 }
 
-fn mock_permissions(owner: Owner) -> CloudObjectPermissions {
-    CloudObjectPermissions {
+fn mock_permissions(owner: Owner) -> StoredObjectPermissions {
+    StoredObjectPermissions {
         owner,
         guests: Vec::new(),
         permissions_last_updated_ts: Some(Utc::now().into()),

@@ -70,9 +70,9 @@ use crate::auth::AuthStateProvider;
 use crate::auth::PersistedCurrentUserInformation;
 use crate::auth::UserUid;
 use crate::cloud_object::model::actions::{ObjectAction, ObjectActionSubtype};
-use crate::cloud_object::model::generic_string_model::{CloudStringObject, GenericStringObjectId};
+use crate::cloud_object::model::generic_string_model::{GenericStringObjectId, StoredStringObject};
 use crate::cloud_object::{
-    CloudObject, JsonObjectType, ObjectIdType, ObjectType, Owner, GENERIC_STRING_OBJECT_PREFIX,
+    JsonObjectType, ObjectIdType, ObjectType, Owner, StoredObject, GENERIC_STRING_OBJECT_PREFIX,
     JSON_OBJECT_PREFIX,
 };
 use crate::code::editor_management::CodeSource;
@@ -112,11 +112,11 @@ use crate::{
     workspaces::user_profiles::UserProfileWithUID,
 };
 use crate::{
-    cloud_object::{CloudObjectMetadata, NumInFlightRequests, Revision},
+    cloud_object::{NumInFlightRequests, Revision, StoredObjectMetadata},
     notebooks::NotebookObjectModel,
 };
 use crate::{
-    cloud_object::{CloudObjectPermissions, CloudObjectStatuses, CloudObjectSyncStatus},
+    cloud_object::{StoredObjectPermissions, StoredObjectStatuses, StoredObjectSyncStatus},
     workflows::WorkflowObjectModel,
 };
 use crate::{report_error, report_if_error, safe_info, send_telemetry_from_app_ctx};
@@ -2166,7 +2166,7 @@ fn delete_cloud_object(
 fn update_object_metadata(
     conn: &mut SqliteConnection,
     hashed_id: String,
-    metadata: CloudObjectMetadata,
+    metadata: StoredObjectMetadata,
 ) -> Result<(), Error> {
     use schema::object_metadata::dsl::*;
     let metadata_last_updated_at = metadata
@@ -2194,7 +2194,7 @@ fn update_object_metadata(
 
 fn upsert_generic_string_objects(
     conn: &mut SqliteConnection,
-    cloud_generic_string_objects: Vec<Box<dyn CloudStringObject>>,
+    cloud_generic_string_objects: Vec<Box<dyn StoredStringObject>>,
 ) -> Result<(), Error> {
     use schema::generic_string_objects::dsl::*;
     conn.transaction::<(), Error, _>(|conn| {
@@ -2872,7 +2872,7 @@ fn read_sqlite_data(
         .map(|permissions| (permissions.object_metadata_id, permissions))
         .collect::<HashMap<_, _>>();
 
-    let mut cloud_objects: Vec<Box<dyn CloudObject>> = Vec::new();
+    let mut cloud_objects: Vec<Box<dyn StoredObject>> = Vec::new();
     cloud_objects.extend(
         schema::workflows::dsl::workflows
             .load::<model::Workflow>(conn)?
@@ -2892,7 +2892,7 @@ fn read_sqlite_data(
                         workflow_content
                             .zip(workflow_id)
                             .map(|(content, workflow_id)| {
-                                let boxed: Box<dyn CloudObject> = Box::new(WorkflowObject::new(
+                                let boxed: Box<dyn StoredObject> = Box::new(WorkflowObject::new(
                                     workflow_id,
                                     WorkflowObjectModel::new(content),
                                     to_cloud_object_metadata(metadata),
@@ -2925,7 +2925,7 @@ fn read_sqlite_data(
                                 notebook.ai_document_id.as_ref().and_then(|doc_id_str| {
                                     AIDocumentId::try_from(doc_id_str.as_str()).ok()
                                 });
-                            let boxed: Box<dyn CloudObject> = Box::new(NotebookObject::new(
+                            let boxed: Box<dyn StoredObject> = Box::new(NotebookObject::new(
                                 server_id,
                                 NotebookObjectModel {
                                     title: notebook.title.clone().unwrap_or_default(),
@@ -2959,7 +2959,7 @@ fn read_sqlite_data(
                         let cloud_object_permissions =
                             to_cloud_object_permissions(permissions, current_user_id)?;
                         folder_id.map(|server_id| {
-                            let boxed: Box<dyn CloudObject> = Box::new(FolderObject::new(
+                            let boxed: Box<dyn StoredObject> = Box::new(FolderObject::new(
                                 server_id,
                                 FolderObjectModel {
                                     name: folder.name.clone(),
@@ -2999,7 +2999,7 @@ fn read_sqlite_data(
                             JsonObjectType::Preference => {
                                 let model = CloudPreferenceModel::deserialize_owned(&object.data);
                                 model.ok().map(|model| {
-                                    let boxed: Box<dyn CloudObject> =
+                                    let boxed: Box<dyn StoredObject> =
                                         Box::new(CloudPreference::new(
                                             server_id,
                                             model,
@@ -3013,7 +3013,7 @@ fn read_sqlite_data(
                                 let model =
                                     EnvVarCollectionObjectModel::deserialize_owned(&object.data);
                                 model.ok().map(|model| {
-                                    let boxed: Box<dyn CloudObject> =
+                                    let boxed: Box<dyn StoredObject> =
                                         Box::new(EnvVarCollectionObject::new(
                                             server_id,
                                             model,
@@ -3027,7 +3027,7 @@ fn read_sqlite_data(
                                 let model =
                                     WorkflowEnumObjectModel::deserialize_owned(&object.data);
                                 model.ok().map(|model| {
-                                    let boxed: Box<dyn CloudObject> =
+                                    let boxed: Box<dyn StoredObject> =
                                         Box::new(WorkflowEnumObject::new(
                                             server_id,
                                             model,
@@ -3040,7 +3040,7 @@ fn read_sqlite_data(
                             JsonObjectType::AIFact => {
                                 let model = AIFactObjectModel::deserialize_owned(&object.data);
                                 model.ok().map(|model| {
-                                    let boxed: Box<dyn CloudObject> = Box::new(AIFactObject::new(
+                                    let boxed: Box<dyn StoredObject> = Box::new(AIFactObject::new(
                                         server_id,
                                         model,
                                         to_cloud_object_metadata(metadata),
@@ -3052,7 +3052,7 @@ fn read_sqlite_data(
                             JsonObjectType::MCPServer => {
                                 let model = MCPServerObjectModel::deserialize_owned(&object.data);
                                 model.ok().map(|model| {
-                                    let boxed: Box<dyn CloudObject> =
+                                    let boxed: Box<dyn StoredObject> =
                                         Box::new(MCPServerObject::new(
                                             server_id,
                                             model,
@@ -3067,7 +3067,7 @@ fn read_sqlite_data(
                                     &object.data,
                                 );
                                 model.ok().map(|model| {
-                                    let boxed: Box<dyn CloudObject> =
+                                    let boxed: Box<dyn StoredObject> =
                                         Box::new(TemplatableMCPServerObject::new(
                                             server_id,
                                             model,
@@ -3081,7 +3081,7 @@ fn read_sqlite_data(
                                 let model =
                                     AIExecutionProfileObjectModel::deserialize_owned(&object.data);
                                 model.ok().map(|model| {
-                                    let boxed: Box<dyn CloudObject> =
+                                    let boxed: Box<dyn StoredObject> =
                                         Box::new(AIExecutionProfileObject::new(
                                             server_id,
                                             model,
@@ -3272,8 +3272,8 @@ fn id_from_metadata<K: HashableId + ToServerId>(metadata: &ObjectMetadata) -> Op
     }
 }
 
-fn to_cloud_object_metadata(metadata: &ObjectMetadata) -> CloudObjectMetadata {
-    CloudObjectMetadata {
+fn to_cloud_object_metadata(metadata: &ObjectMetadata) -> StoredObjectMetadata {
+    StoredObjectMetadata {
         current_editor_uid: metadata.current_editor.clone(),
         metadata_last_updated_ts: metadata
             .metadata_last_updated_ts
@@ -3281,12 +3281,12 @@ fn to_cloud_object_metadata(metadata: &ObjectMetadata) -> CloudObjectMetadata {
         revision: metadata
             .revision_ts
             .and_then(|epoch| Revision::from_unix_timestamp_micros(epoch).ok()),
-        pending_changes_statuses: CloudObjectStatuses {
+        pending_changes_statuses: StoredObjectStatuses {
             pending_delete: false,
             content_sync_status: if metadata.is_pending {
-                CloudObjectSyncStatus::InFlight(NumInFlightRequests(1))
+                StoredObjectSyncStatus::InFlight(NumInFlightRequests(1))
             } else {
-                CloudObjectSyncStatus::NoLocalChanges
+                StoredObjectSyncStatus::NoLocalChanges
             },
             has_pending_metadata_change: false,
             has_pending_permissions_change: false,
@@ -3317,7 +3317,7 @@ fn to_cloud_object_metadata(metadata: &ObjectMetadata) -> CloudObjectMetadata {
 fn to_cloud_object_permissions(
     permissions: &ObjectPermissions,
     default_user_id: Option<UserUid>,
-) -> Option<CloudObjectPermissions> {
+) -> Option<StoredObjectPermissions> {
     let owner = owner_for_permissions(permissions, default_user_id)?;
     let permissions_last_updated_ts = permissions
         .permissions_last_updated_at
@@ -3351,7 +3351,7 @@ fn to_cloud_object_permissions(
         None
     };
 
-    Some(CloudObjectPermissions {
+    Some(StoredObjectPermissions {
         owner,
         permissions_last_updated_ts,
         guests,

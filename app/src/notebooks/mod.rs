@@ -15,7 +15,7 @@ use warpui::AppContext;
 use crate::{
     ai::document::ai_document_model::AIDocumentId,
     appearance::Appearance,
-    cloud_object::{CloudModelType, GenericCloudObject, ObjectType, Owner},
+    cloud_object::{GenericStoredObject, ObjectType, Owner, StoredObjectModel},
     drive::{
         items::{notebook::WarpDriveNotebook, WarpDriveItem},
         ObjectTypeAndId,
@@ -45,10 +45,10 @@ pub struct NotebookObjectModel {
     pub conversation_id: Option<String>,
 }
 
-pub type NotebookObject = GenericCloudObject<NotebookId, NotebookObjectModel>;
+pub type NotebookObject = GenericStoredObject<NotebookId, NotebookObjectModel>;
 
-impl CloudModelType for NotebookObjectModel {
-    type CloudObjectType = NotebookObject;
+impl StoredObjectModel for NotebookObjectModel {
+    type StoredObjectType = NotebookObject;
     type IdType = NotebookId;
 
     fn model_type_name(&self) -> &'static str {

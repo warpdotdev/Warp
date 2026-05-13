@@ -3,7 +3,7 @@ use super::items::WarpDriveItem;
 use super::ObjectTypeAndId;
 use crate::{
     appearance::Appearance,
-    cloud_object::{CloudModelType, GenericCloudObject, ObjectType, SerializedModel, Space},
+    cloud_object::{GenericStoredObject, ObjectType, SerializedModel, Space, StoredObjectModel},
     persistence::ModelEvent,
     server::ids::SyncId,
 };
@@ -32,10 +32,10 @@ impl FolderObjectModel {
 }
 
 /// `FolderObject` is an object-store backed folder.
-pub type FolderObject = GenericCloudObject<FolderId, FolderObjectModel>;
+pub type FolderObject = GenericStoredObject<FolderId, FolderObjectModel>;
 
-impl CloudModelType for FolderObjectModel {
-    type CloudObjectType = FolderObject;
+impl StoredObjectModel for FolderObjectModel {
+    type StoredObjectType = FolderObject;
     type IdType = FolderId;
 
     fn model_type_name(&self) -> &'static str {

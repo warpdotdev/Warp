@@ -5,7 +5,7 @@ use crate::cloud_object::{
         generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
         json_model::{JsonModel, JsonSerializer},
     },
-    GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey, JsonObjectType,
+    GenericStoredObject, GenericStringObjectFormat, GenericStringObjectUniqueKey, JsonObjectType,
 };
 
 /// Data model for a workflow enum, one type of argument that can be inserted into a workflow
@@ -29,11 +29,11 @@ pub enum EnumVariants {
     Dynamic(String),     // contains the value of the shell command associated with the dynamic enum
 }
 
-pub type WorkflowEnumObject = GenericCloudObject<GenericStringObjectId, WorkflowEnumObjectModel>;
+pub type WorkflowEnumObject = GenericStoredObject<GenericStringObjectId, WorkflowEnumObjectModel>;
 pub type WorkflowEnumObjectModel = GenericStringModel<WorkflowEnum, JsonSerializer>;
 
 impl StringModel for WorkflowEnum {
-    type CloudObjectType = WorkflowEnumObject;
+    type StoredObjectType = WorkflowEnumObject;
 
     fn model_type_name(&self) -> &'static str {
         "WorkflowEnum"
