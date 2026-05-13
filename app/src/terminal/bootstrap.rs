@@ -30,8 +30,12 @@ const BYTE_ORDER_MARK: &str = "\u{FEFF}";
 #[cfg(feature = "local_fs")]
 pub fn is_container_subshell(session_info: &SessionInfo) -> bool {
     session_info.subshell_info.as_ref().is_some_and(|info| {
-        let cmd = info.spawning_command.as_str();
-        cmd.starts_with("docker ") || cmd.starts_with("podman ")
+        let first_token = info
+            .spawning_command
+            .split_ascii_whitespace()
+            .next()
+            .unwrap_or("");
+        first_token == "docker" || first_token == "podman"
     })
 }
 
