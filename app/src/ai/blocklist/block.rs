@@ -401,6 +401,11 @@ pub(super) struct AIBlockStateHandles {
     /// A given citation should only appear once per block.
     footer_citation_chip_handles: HashMap<AIAgentCitation, MouseStateHandle>,
     orchestration_navigation_card_handles: HashMap<AIAgentActionId, MouseStateHandle>,
+    /// Per-transcript-row `MouseStateHandle` for the clickable sender avatar
+    /// shown in `MessagesReceivedFromAgents` rows. Required to persist across
+    /// frames since `Hoverable` resets its state when the handle is created
+    /// inline.
+    pub(super) transcript_avatar_handles: HashMap<MessageId, MouseStateHandle>,
 
     references_section_collapsible_handle: MouseStateHandle,
 
@@ -2076,10 +2081,15 @@ impl AIBlock {
                     }
                     AIAgentOutputMessageType::MessagesReceivedFromAgents { messages } => {
                         for received_message in messages {
+                            let collapsible_id = received_message_collapsible_id(
+                                &received_message.message_id,
+                            );
                             self.collapsible_block_states
-                                .entry(received_message_collapsible_id(
-                                    &received_message.message_id,
-                                ))
+                                .entry(collapsible_id.clone())
+                                .or_default();
+                            self.state_handles
+                                .transcript_avatar_handles
+                                .entry(collapsible_id)
                                 .or_default();
                         }
                     }

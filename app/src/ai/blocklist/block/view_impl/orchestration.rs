@@ -50,6 +50,11 @@ const ORCHESTRATION_COLLAPSED_MAX_HEIGHT: f32 = 200.;
 struct OrchestrationParticipant {
     display_name: String,
     avatar: OrchestrationAvatar,
+    /// The conversation ID of the participant, when known. Used to make the
+    /// transcript avatar clickable so users can jump to that agent's pane.
+    /// `None` for the orchestrator (no separate pane to navigate to) and for
+    /// unresolved/unknown agents.
+    conversation_id: Option<AIConversationId>,
 }
 
 impl OrchestrationParticipant {
@@ -57,6 +62,7 @@ impl OrchestrationParticipant {
         Self {
             display_name: "Orchestrator".to_string(),
             avatar: OrchestrationAvatar::Orchestrator,
+            conversation_id: None,
         }
     }
 
@@ -64,6 +70,7 @@ impl OrchestrationParticipant {
         Self {
             display_name: "Unknown agent".to_string(),
             avatar: OrchestrationAvatar::agent("Unknown agent".to_string()),
+            conversation_id: None,
         }
     }
 
@@ -123,6 +130,7 @@ fn participant_for_conversation(
     OrchestrationParticipant {
         display_name: display_name.clone(),
         avatar: OrchestrationAvatar::agent(display_name),
+        conversation_id: Some(conversation.id()),
     }
 }
 
@@ -287,10 +295,34 @@ fn render_transcript_row(
         }
     }
 
+    let avatar = data.participant.avatar.render(app);
+    let avatar_element: Box<dyn Element> = if let (Some(conversation_id), Some(mouse_state)) = (
+        data.participant.conversation_id,
+        props
+            .state_handles
+            .transcript_avatar_handles
+            .get(data.message_id),
+    ) {
+        // The avatar of a known child agent navigates to that conversation's
+        // pane. `OpenChildAgentInNewPane` reveals an existing hidden pane,
+        // focuses an already-visible pane, or splits off a new one as needed.
+        let mouse_state = mouse_state.clone();
+        Hoverable::new(mouse_state, move |_| avatar)
+            .with_cursor(Cursor::PointingHand)
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(TerminalAction::OpenChildAgentInNewPane {
+                    conversation_id,
+                });
+            })
+            .finish()
+    } else {
+        avatar
+    };
+
     Flex::row()
         .with_cross_axis_alignment(CrossAxisAlignment::Start)
         .with_child(
-            Container::new(data.participant.avatar.render(app))
+            Container::new(avatar_element)
                 .with_margin_right(12.)
                 .finish(),
         )

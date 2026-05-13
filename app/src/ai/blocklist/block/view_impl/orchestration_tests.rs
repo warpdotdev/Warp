@@ -254,6 +254,7 @@ fn transcript_metadata_uses_transcript_copy_without_technical_labels() {
     let recipients = vec![OrchestrationParticipant {
         display_name: "Agent 1".to_string(),
         avatar: OrchestrationAvatar::agent("Agent 1".to_string()),
+        conversation_id: None,
     }];
 
     let metadata = transcript_metadata(&recipients, "Fix tests").expect("metadata");
@@ -285,6 +286,7 @@ fn transcript_metadata_preserves_non_orchestrator_recipients() {
         OrchestrationParticipant {
             display_name: "Agent 1".to_string(),
             avatar: OrchestrationAvatar::agent("Agent 1".to_string()),
+            conversation_id: None,
         },
     ];
 
