@@ -68,7 +68,9 @@ use {
     super::terminal_attributes::TerminalAttributesPoller,
     crate::terminal::local_tty::terminal_attributes::Event as TerminalAttributesPollerEvent,
     crate::terminal::model::terminal_model::BlockIndex,
-    crate::terminal::session_settings::NotificationsMode, nix::sys::termios::LocalFlags,
+    crate::terminal::session_settings::NotificationsMode,
+    nix::sys::termios::LocalFlags,
+    std::{cell::RefCell, rc::Rc},
 };
 
 type PtyController = writeable_pty::PtyController<mio_channel::Sender<Message>>;

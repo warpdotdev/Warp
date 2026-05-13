@@ -106,6 +106,13 @@ jobs:
         run: rustup target add ${{ matrix.arch }}-apple-darwin
         shell: bash
 
+      - name: Check ${{ matrix.arch }} release compile
+        run: |
+          script/bundle --check-only --channel "$CHANNEL" --arch ${{ matrix.arch }} --dmg-name-suffix "${{ matrix.dmg_name_suffix }}" --selfsign
+        shell: bash
+        env:
+          GIT_RELEASE_TAG: ${{ needs.prepare_metadata.outputs.release_tag }}
+
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
@@ -210,6 +217,12 @@ jobs:
       - name: Ensure rust target is installed
         run: rustup target add x86_64-unknown-linux-gnu
         shell: bash
+
+      - name: Check Linux release compile
+        run: script/bundle --check-only --channel "$CHANNEL" --arch x86_64 --packages appimage,deb
+        shell: bash
+        env:
+          GIT_RELEASE_TAG: ${{ needs.prepare_metadata.outputs.release_tag }}
 
       - name: Install linuxdeploy
         # script/linux/install_linuxdeploy 不被 install_build_deps 调用,需手动跑;
