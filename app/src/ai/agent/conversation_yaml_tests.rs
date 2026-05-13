@@ -402,7 +402,7 @@ fn start_agent_v2_tool_call_result_serializes_agent_id_and_error() {
 }
 
 #[test]
-fn upload_file_artifact_tool_call_result_serializes_only_supported_success_fields() {
+fn upload_file_artifact_messages_are_not_materialized_to_yaml() {
     let task_id = "root";
     let tasks = vec![create_api_task(
         task_id,
@@ -439,13 +439,8 @@ fn upload_file_artifact_tool_call_result_serializes_only_supported_success_field
 
     let dir = materialize_tasks_to_yaml(&tasks).unwrap();
     let files = list_dir_sorted(Path::new(&dir));
-    let success_content = fs::read_to_string(Path::new(&dir).join(&files[1])).unwrap();
 
-    assert!(success_content.contains("artifact_uid: artifact-123"));
-    assert!(success_content.contains("mime_type: text/plain"));
-    assert!(success_content.contains("size_bytes: 42"));
-    assert!(!success_content.contains("filepath:"));
-    assert!(!success_content.contains("description:"));
+    assert!(files.is_empty());
 
     cleanup_dir(&dir);
 }

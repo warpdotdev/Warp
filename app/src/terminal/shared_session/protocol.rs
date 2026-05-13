@@ -388,9 +388,9 @@ pub enum AgentAttachment {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Copy)]
-pub struct ServerConversationToken(Uuid);
+pub struct SharedConversationToken(Uuid);
 
-impl ServerConversationToken {
+impl SharedConversationToken {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
@@ -404,19 +404,19 @@ impl ServerConversationToken {
     }
 }
 
-impl Default for ServerConversationToken {
+impl Default for SharedConversationToken {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl std::fmt::Display for ServerConversationToken {
+impl std::fmt::Display for SharedConversationToken {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl std::str::FromStr for ServerConversationToken {
+impl std::str::FromStr for SharedConversationToken {
     type Err = uuid::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -439,15 +439,15 @@ impl SelectedAgentModel {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Default)]
 pub enum SelectedConversation {
-    ExistingConversation(ServerConversationToken),
+    ExistingConversation(SharedConversationToken),
     #[default]
     NewConversation,
     NoConversation,
 }
 
 impl SelectedConversation {
-    pub fn new(server_token: Option<ServerConversationToken>) -> Self {
-        match server_token {
+    pub fn new(conversation_token: Option<SharedConversationToken>) -> Self {
+        match conversation_token {
             Some(token) => Self::ExistingConversation(token),
             None => Self::NewConversation,
         }
