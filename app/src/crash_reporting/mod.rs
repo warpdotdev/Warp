@@ -60,7 +60,10 @@ fn should_drop_sentry_event(event: &sentry::protocol::Event<'_>) -> bool {
     // Explicitly drop this message on the client before sending to Sentry. Even though this message
     // doesn't consume sentry quota, the rate of this message is frequent enough that it ends up
     // causing us to get rate limited by sentry because of the frequency of the error.
-    event.message.and_then(|message| message.contains(UPDATE_CLIENT_GRAPHQL_TYPES_MESSAGE))
+    event
+        .message
+        .as_ref()
+        .map_or(false, |message| message.contains(UPDATE_CLIENT_GRAPHQL_TYPES_MESSAGE))
 }
 
 /// Sets a kv-pair as a Sentry tag for the rest of the application's lifetime.
