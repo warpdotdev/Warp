@@ -213,7 +213,7 @@ impl EditorMetadata {
                         parts.last_mut().unwrap().push_str("--line");
                         parts.push(line_column_number.line_num.to_string());
                         if let Some(column_num) = line_column_number.column_num {
-                            parts.push(format!("--column"));
+                            parts.push("--column".to_string());
                             parts.push(column_num.to_string());
                         }
                     }

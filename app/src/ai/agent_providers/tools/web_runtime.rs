@@ -25,6 +25,7 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::sync::Arc;
 use std::time::Duration;
 
 use super::exa;
@@ -108,22 +109,35 @@ pub struct FetchOutput {
 /// otherwise should not be reachable from a webfetch tool (SSRF protection).
 fn is_blocked_ip(ip: IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v4) => {
-            v4.is_loopback()          // 127.0.0.0/8
-                || v4.is_private()    // 10/8, 172.16/12, 192.168/16
-                || v4.is_link_local() // 169.254.0.0/16
-                || v4.is_unspecified() // 0.0.0.0
-                || v4.is_broadcast()  // 255.255.255.255
-                || Ipv4Addr::new(100, 64, 0, 0) <= v4 && v4 <= Ipv4Addr::new(100, 127, 255, 255)
-            // CGNAT 100.64/10
-        }
+        IpAddr::V4(v4) => is_blocked_ipv4(v4),
         IpAddr::V6(v6) => {
-            v6.is_loopback()          // ::1
-                || v6.is_unspecified() // ::
+            // IPv4-mapped IPv6 (::ffff:x.x.x.x) — apply IPv4 rules.
+            if let Some(mapped) = v6.to_ipv4_mapped() {
+                return is_blocked_ipv4(mapped);
+            }
+            v6.is_loopback()               // ::1
+                || v6.is_unspecified()      // ::
                 || is_ipv6_unique_local(v6) // fc00::/7
-                || is_ipv6_link_local(v6) // fe80::/10
+                || is_ipv6_link_local(v6)   // fe80::/10
+                || is_ipv6_documentation(v6) // 2001:db8::/32
         }
     }
+}
+
+fn is_blocked_ipv4(v4: Ipv4Addr) -> bool {
+    let o = v4.octets();
+    v4.is_loopback()          // 127.0.0.0/8
+        || v4.is_private()    // 10/8, 172.16/12, 192.168/16
+        || v4.is_link_local() // 169.254.0.0/16
+        || v4.is_unspecified() // 0.0.0.0
+        || v4.is_broadcast()  // 255.255.255.255
+        || (Ipv4Addr::new(100, 64, 0, 0) <= v4 && v4 <= Ipv4Addr::new(100, 127, 255, 255))
+            // CGNAT 100.64/10
+        || (o[0] == 192 && o[1] == 0 && o[2] == 2)   // TEST-NET-1  192.0.2.0/24
+        || (o[0] == 198 && o[1] == 51 && o[2] == 100) // TEST-NET-2  198.51.100.0/24
+        || (o[0] == 203 && o[1] == 0 && o[2] == 113)  // TEST-NET-3  203.0.113.0/24
+        || (o[0] == 198 && (o[1] & 0xfe) == 18)       // Benchmarking 198.18.0.0/15
+        || o[0] >= 240                                 // Reserved    240.0.0.0/4
 }
 
 fn is_ipv6_unique_local(v6: Ipv6Addr) -> bool {
@@ -132,6 +146,10 @@ fn is_ipv6_unique_local(v6: Ipv6Addr) -> bool {
 
 fn is_ipv6_link_local(v6: Ipv6Addr) -> bool {
     (v6.segments()[0] & 0xffc0) == 0xfe80
+}
+
+fn is_ipv6_documentation(v6: Ipv6Addr) -> bool {
+    v6.segments()[0] == 0x2001 && v6.segments()[1] == 0x0db8
 }
 
 /// Validate a URL for SSRF safety: reject private/internal IP ranges after DNS
@@ -162,11 +180,44 @@ fn validate_url_not_internal(url_str: &str) -> Result<()> {
     Ok(())
 }
 
-/// Build a reqwest client with a redirect policy that validates each redirect
-/// target against internal IP ranges (SSRF protection).
+/// DNS resolver that filters out blocked (internal/private) IPs at resolution
+/// time, eliminating the TOCTOU gap between pre-validation and connection.
+struct SsrfSafeResolver;
+
+impl reqwest::dns::Resolve for SsrfSafeResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let host = name.as_str().to_owned();
+        Box::pin(async move {
+            use std::net::ToSocketAddrs;
+            let addrs: Vec<std::net::SocketAddr> = (host.as_str(), 0)
+                .to_socket_addrs()
+                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?
+                .filter(|addr| !is_blocked_ip(addr.ip()))
+                .collect();
+            if addrs.is_empty() {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    format!("DNS for '{host}' resolved to blocked IPs (SSRF protection)"),
+                )) as Box<dyn std::error::Error + Send + Sync>);
+            }
+            Ok(Box::new(addrs.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
+}
+
+/// Build a reqwest client with:
+/// - A custom DNS resolver that blocks connections to internal IPs
+/// - A redirect policy that enforces HTTPS and validates each hop
 pub fn build_ssrf_safe_client() -> Result<reqwest::Client> {
     let policy = Policy::custom(|attempt| {
-        if validate_url_not_internal(attempt.url().as_str()).is_err() {
+        let url = attempt.url();
+        // Enforce HTTPS on redirect targets (prevent HTTPS→HTTP downgrade).
+        if url.scheme() != "https" {
+            return attempt.stop();
+        }
+        // Validate redirect target is not internal (defense-in-depth on top
+        // of the DNS resolver, catches IP-literal redirect URLs immediately).
+        if validate_url_not_internal(url.as_str()).is_err() {
             attempt.stop()
         } else {
             attempt.follow()
@@ -174,6 +225,7 @@ pub fn build_ssrf_safe_client() -> Result<reqwest::Client> {
     });
     reqwest::Client::builder()
         .redirect(policy)
+        .dns_resolver(Arc::new(SsrfSafeResolver))
         .pool_idle_timeout(Duration::from_secs(30))
         .build()
         .context("build SSRF-safe reqwest client")

@@ -357,6 +357,74 @@ async fn http_error_status_propagates() {
 }
 
 // ---------------------------------------------------------------------------
+// SSRF: is_blocked_ip coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn blocked_ip_ipv4_basics() {
+    use std::net::IpAddr;
+    for blocked in [
+        "127.0.0.1",
+        "10.0.0.1",
+        "172.16.0.1",
+        "192.168.1.1",
+        "169.254.1.1",
+        "0.0.0.0",
+        "255.255.255.255",
+        "100.64.0.1",   // CGNAT
+        "192.0.2.1",    // TEST-NET-1
+        "198.51.100.1",  // TEST-NET-2
+        "203.0.113.1",   // TEST-NET-3
+        "198.18.0.1",    // Benchmarking
+        "240.0.0.1",     // Reserved
+    ] {
+        let ip: IpAddr = blocked.parse().unwrap();
+        assert!(is_blocked_ip(ip), "should block {blocked}");
+    }
+    // Public IPs must NOT be blocked.
+    for allowed in ["8.8.8.8", "1.1.1.1", "93.184.216.34"] {
+        let ip: IpAddr = allowed.parse().unwrap();
+        assert!(!is_blocked_ip(ip), "should allow {allowed}");
+    }
+}
+
+#[test]
+fn blocked_ip_ipv4_mapped_ipv6() {
+    use std::net::IpAddr;
+    // ::ffff:127.0.0.1 is IPv4-mapped — must be blocked.
+    let mapped_loopback: IpAddr = "::ffff:127.0.0.1".parse().unwrap();
+    assert!(is_blocked_ip(mapped_loopback), "::ffff:127.0.0.1 must be blocked");
+
+    let mapped_private: IpAddr = "::ffff:10.0.0.1".parse().unwrap();
+    assert!(is_blocked_ip(mapped_private), "::ffff:10.0.0.1 must be blocked");
+
+    let mapped_link_local: IpAddr = "::ffff:169.254.1.1".parse().unwrap();
+    assert!(is_blocked_ip(mapped_link_local), "::ffff:169.254.1.1 must be blocked");
+
+    // ::ffff:8.8.8.8 is public — must NOT be blocked.
+    let mapped_public: IpAddr = "::ffff:8.8.8.8".parse().unwrap();
+    assert!(!is_blocked_ip(mapped_public), "::ffff:8.8.8.8 should be allowed");
+}
+
+#[test]
+fn blocked_ip_ipv6_ranges() {
+    use std::net::IpAddr;
+    for blocked in [
+        "::1",                   // loopback
+        "::",                    // unspecified
+        "fc00::1",               // unique-local
+        "fe80::1",               // link-local
+        "2001:db8::1",           // documentation
+    ] {
+        let ip: IpAddr = blocked.parse().unwrap();
+        assert!(is_blocked_ip(ip), "should block {blocked}");
+    }
+    // Public IPv6 must NOT be blocked.
+    let public: IpAddr = "2606:4700:4700::1111".parse().unwrap();
+    assert!(!is_blocked_ip(public), "public IPv6 should be allowed");
+}
+
+// ---------------------------------------------------------------------------
 // SSRF redirect protection
 // ---------------------------------------------------------------------------
 
