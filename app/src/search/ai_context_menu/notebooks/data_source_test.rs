@@ -5,8 +5,8 @@ mod tests {
     use warpui::{App, SingletonEntity};
 
     use crate::auth::AuthStateProvider;
-    use crate::cloud_object::model::persistence::CloudModel;
-    use crate::cloud_object::model::view::CloudViewModel;
+    use crate::cloud_object::model::persistence::ObjectStoreModel;
+    use crate::cloud_object::model::view::ObjectStoreViewModel;
     use crate::cloud_object::update_manager::UpdateManager;
     use crate::cloud_object::{CloudObjectMetadata, CloudObjectPermissions, Revision};
     use crate::notebooks::manager::NotebookManager;
@@ -43,10 +43,10 @@ mod tests {
         app.add_singleton_model(|_| NetworkStatus::new());
         app.add_singleton_model(|_| SystemStats::new());
         app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
-        app.add_singleton_model(CloudModel::mock);
+        app.add_singleton_model(ObjectStoreModel::mock);
         app.add_singleton_model(|ctx| UpdateManager::new(None, ctx));
         app.add_singleton_model(|_| UserProfiles::new(Vec::new()));
-        app.add_singleton_model(CloudViewModel::new);
+        app.add_singleton_model(ObjectStoreViewModel::new);
         app.add_singleton_model(NotebookManager::mock);
         app.add_singleton_model(|_| SettingsManager::default());
         app.add_singleton_model(|_| AuthStateProvider::new_for_test());
@@ -60,7 +60,7 @@ mod tests {
             initialize_app(&mut app);
 
             let now = Utc::now();
-            CloudModel::handle(&app).update(&mut app, |model, _| {
+            ObjectStoreModel::handle(&app).update(&mut app, |model, _| {
                 for notebook in [
                     mock_notebook_with_revision(1, "oldest", (now - Duration::minutes(3)).into()),
                     mock_notebook_with_revision(2, "middle", (now - Duration::minutes(2)).into()),
@@ -90,7 +90,7 @@ mod tests {
 
             let now = Utc::now();
             // All titles contain "plan" so fuzzy scores should be similar
-            CloudModel::handle(&app).update(&mut app, |model, _| {
+            ObjectStoreModel::handle(&app).update(&mut app, |model, _| {
                 for notebook in [
                     mock_notebook_with_revision(
                         1,

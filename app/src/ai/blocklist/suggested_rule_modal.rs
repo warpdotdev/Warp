@@ -1,7 +1,7 @@
 use crate::ai::agent::SuggestedRule;
 use crate::ai::facts::AIFactObjectModel;
 use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
-use crate::cloud_object::model::persistence::{CloudModel, ObjectStoreEvent};
+use crate::cloud_object::model::persistence::{ObjectStoreEvent, ObjectStoreModel};
 use crate::cloud_object::update_manager::{
     ObjectOperation, OperationSuccessType, UpdateManagerEvent,
 };
@@ -244,7 +244,7 @@ impl SuggestedRuleView {
             me.handle_update_manager_event(event, ctx);
         });
 
-        let cloud_model = CloudModel::handle(ctx);
+        let cloud_model = ObjectStoreModel::handle(ctx);
         ctx.subscribe_to_model(&cloud_model, |me, _, event, ctx| {
             me.handle_object_store_event(event, ctx);
         });
@@ -496,7 +496,7 @@ impl SuggestedRuleView {
             return;
         };
 
-        let cloud_model = CloudModel::handle(ctx);
+        let cloud_model = ObjectStoreModel::handle(ctx);
         if let Some(rule) = cloud_model
             .as_ref(ctx)
             .get_object_of_type::<GenericStringObjectId, AIFactObjectModel>(sync_id)

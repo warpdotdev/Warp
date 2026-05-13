@@ -21,7 +21,7 @@ use crate::{
     workspaces::user_profiles::UserProfiles,
 };
 
-use super::persistence::{CloudModel, ObjectStoreEvent};
+use super::persistence::{ObjectStoreEvent, ObjectStoreModel};
 
 pub const EDITOR_TIMEOUT_DURATION_MINUTES: i64 = 15;
 
@@ -55,25 +55,28 @@ impl Editor {
 }
 
 /// Singleton model for storing and querying the data and logic logic needed by various view, based on the information
-/// stored in [CloudModel]. As a general, rule, any new API that requires logic beyond just retrieving the raw value
-/// in [CloudModel], should be stored here. This includes logic such as object trashed status, the object current editor,
+/// stored in [ObjectStoreModel]. As a general, rule, any new API that requires logic beyond just retrieving the raw value
+/// in [ObjectStoreModel], should be stored here. This includes logic such as object trashed status, the object current editor,
 /// and object location.
 ///
 /// Any API added to this model should be unit tested in model_test.rs
-pub struct CloudViewModel {
+pub struct ObjectStoreViewModel {
     folder_timestamp_cache: FolderTimestampCache,
 }
 
 type FolderTimestampCache = RefCell<HashMap<SyncId, ServerTimestamp>>;
 
-pub enum CloudViewModelEvent {
+pub enum ObjectStoreViewModelEvent {
     /// A model change has invalidated object sort timestamps.
     SortTimestampsChanged,
 }
 
-impl CloudViewModel {
+impl ObjectStoreViewModel {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
-        ctx.subscribe_to_model(&CloudModel::handle(ctx), Self::handle_object_store_event);
+        ctx.subscribe_to_model(
+            &ObjectStoreModel::handle(ctx),
+            Self::handle_object_store_event,
+        );
         ctx.subscribe_to_model(
             &UpdateManager::handle(ctx),
             Self::handle_update_manager_event,
@@ -88,14 +91,14 @@ impl CloudViewModel {
         Self::new(ctx)
     }
 
-    /// Returns the current editor of the object based on what current exists in CloudModel. If the current editor
+    /// Returns the current editor of the object based on what current exists in ObjectStoreModel. If the current editor
     /// matches the logged in user's email, we assume that that user is the current editor.
     /// If the current editor hasn't made an edit in the past 15 minutes, they are considered idle and
     /// we instead just return Editor::OtherUserIdle. This is to prevent introducing friction into the baton grabbing process
     /// when it's not needed. For more info see:
     /// https://docs.google.com/document/d/1KgDFLApPg1uDVP-vOwhZzL1kRIviS8mMECIZg2VCKLY/edit
     pub fn object_current_editor(&self, uid: &ObjectUid, ctx: &AppContext) -> Option<Editor> {
-        let cloud_model = CloudModel::as_ref(ctx);
+        let cloud_model = ObjectStoreModel::as_ref(ctx);
         let object = cloud_model.get_by_uid(uid)?;
 
         match &object.metadata().current_editor_uid {
@@ -157,7 +160,7 @@ impl CloudViewModel {
 
     /// Get the [`Space`] that contains an object.
     pub fn object_space(&self, id: &ObjectUid, app: &AppContext) -> Option<Space> {
-        CloudModel::as_ref(app)
+        ObjectStoreModel::as_ref(app)
             .get_by_uid(id)
             .map(|object| object.space(app))
     }
@@ -168,7 +171,7 @@ impl CloudViewModel {
     /// server is the source of truth for all permission data, and it may reject a request that the
     /// client expects is allowed.
     pub fn access_level(&self, object_uid: &ObjectUid, app: &AppContext) -> SharingAccessLevel {
-        match CloudModel::as_ref(app).get_by_uid(object_uid) {
+        match ObjectStoreModel::as_ref(app).get_by_uid(object_uid) {
             Some(object) => Self::object_access_level(object, app),
             None => SharingAccessLevel::View,
         }
@@ -218,7 +221,7 @@ impl CloudViewModel {
         object_uid: &ObjectUid,
         app: &AppContext,
     ) -> ContentEditability {
-        match CloudModel::as_ref(app).get_by_uid(object_uid) {
+        match ObjectStoreModel::as_ref(app).get_by_uid(object_uid) {
             Some(object) => {
                 let access_level = Self::object_access_level(object, app);
                 if access_level < SharingAccessLevel::Edit {
@@ -237,7 +240,7 @@ impl CloudViewModel {
                     ContentEditability::Editable
                 }
             }
-            // Assume objects not yet in CloudModel are new, and therefore editable.
+            // Assume objects not yet in ObjectStoreModel are new, and therefore editable.
             None => ContentEditability::Editable,
         }
     }
@@ -257,7 +260,7 @@ impl CloudViewModel {
             // When sorting in the main index, we consider all of the children of a folder. This
             // can be expensive, so it's cached.
             UpdateTimestamp::Revision => {
-                self.sorting_timestamp_rec(object, CloudModel::as_ref(app), app)
+                self.sorting_timestamp_rec(object, ObjectStoreModel::as_ref(app), app)
             }
         }
     }
@@ -269,7 +272,7 @@ impl CloudViewModel {
     fn sorting_timestamp_rec(
         &self,
         object: &dyn CloudObject,
-        cloud_model: &CloudModel,
+        cloud_model: &ObjectStoreModel,
         app: &AppContext,
     ) -> Option<ServerTimestamp> {
         let folder: Option<&FolderObject> = object.into();
@@ -320,8 +323,10 @@ impl CloudViewModel {
             | ObjectStoreEvent::ObjectUntrashed { type_and_id, .. }
             | ObjectStoreEvent::ObjectPermissionsUpdated { type_and_id, .. } => {
                 // If an object is updated, we need to recompute the timestamps of its parents.
-                if self.invalidate_object_timestamps(&type_and_id.uid(), CloudModel::as_ref(ctx)) {
-                    ctx.emit(CloudViewModelEvent::SortTimestampsChanged);
+                if self
+                    .invalidate_object_timestamps(&type_and_id.uid(), ObjectStoreModel::as_ref(ctx))
+                {
+                    ctx.emit(ObjectStoreViewModelEvent::SortTimestampsChanged);
                 }
             }
             ObjectStoreEvent::ObjectMoved {
@@ -332,7 +337,7 @@ impl CloudViewModel {
                 // Both the old parent and the new parent need to be invalidated, since this object
                 // could affect the sort timestamp of both. Even if the moved object were a folder,
                 // its own sort timestamp isn't affected.
-                let cloud_model = CloudModel::as_ref(ctx);
+                let cloud_model = ObjectStoreModel::as_ref(ctx);
                 let old_parent_changed = from_folder.is_some_and(|folder_id| {
                     self.invalidate_folder_timestamps(&folder_id, cloud_model)
                 });
@@ -340,7 +345,7 @@ impl CloudViewModel {
                     self.invalidate_folder_timestamps(&folder_id, cloud_model)
                 });
                 if old_parent_changed || new_parent_changed {
-                    ctx.emit(CloudViewModelEvent::SortTimestampsChanged);
+                    ctx.emit(ObjectStoreViewModelEvent::SortTimestampsChanged);
                 }
             }
             ObjectStoreEvent::ObjectCreated { type_and_id } => {
@@ -351,16 +356,18 @@ impl CloudViewModel {
                 // Because we sort on durable timestamps, only the second or third cases can affect
                 // sorting.
                 if type_and_id.has_server_id()
-                    && self
-                        .invalidate_object_timestamps(&type_and_id.uid(), CloudModel::as_ref(ctx))
+                    && self.invalidate_object_timestamps(
+                        &type_and_id.uid(),
+                        ObjectStoreModel::as_ref(ctx),
+                    )
                 {
-                    ctx.emit(CloudViewModelEvent::SortTimestampsChanged);
+                    ctx.emit(ObjectStoreViewModelEvent::SortTimestampsChanged);
                 }
             }
             ObjectStoreEvent::ObjectDeleted { folder_id, .. } => {
                 if let Some(folder_id) = folder_id {
-                    if self.invalidate_folder_timestamps(folder_id, CloudModel::as_ref(ctx)) {
-                        ctx.emit(CloudViewModelEvent::SortTimestampsChanged);
+                    if self.invalidate_folder_timestamps(folder_id, ObjectStoreModel::as_ref(ctx)) {
+                        ctx.emit(ObjectStoreViewModelEvent::SortTimestampsChanged);
                     }
                 }
             }
@@ -383,7 +390,7 @@ impl CloudViewModel {
             return;
         }
 
-        let cloud_model = CloudModel::as_ref(ctx);
+        let cloud_model = ObjectStoreModel::as_ref(ctx);
         if let ObjectOperation::Create { .. } = result.operation {
             // If a folder was created, remove the cache entry tied to its client ID.
             // TODO @ianhodge: Update the way we do this check once we remove the generic
@@ -402,14 +409,18 @@ impl CloudViewModel {
                 .and_then(|object| object.metadata().folder_id)
             {
                 if self.invalidate_folder_timestamps(&parent_id, cloud_model) {
-                    ctx.emit(CloudViewModelEvent::SortTimestampsChanged);
+                    ctx.emit(ObjectStoreViewModelEvent::SortTimestampsChanged);
                 }
             }
         }
     }
 
     /// Invalidate all cached timestamps for the object with the given ID, and its parents.
-    fn invalidate_object_timestamps(&mut self, uid: &ObjectUid, cloud_model: &CloudModel) -> bool {
+    fn invalidate_object_timestamps(
+        &mut self,
+        uid: &ObjectUid,
+        cloud_model: &ObjectStoreModel,
+    ) -> bool {
         let Some(object) = cloud_model.get_by_uid(uid) else {
             return false;
         };
@@ -430,7 +441,7 @@ impl CloudViewModel {
     fn invalidate_folder_timestamps(
         &mut self,
         folder_id: &SyncId,
-        cloud_model: &CloudModel,
+        cloud_model: &ObjectStoreModel,
     ) -> bool {
         let had_revision_ts = self
             .folder_timestamp_cache
@@ -446,12 +457,12 @@ impl CloudViewModel {
     }
 }
 
-impl Entity for CloudViewModel {
-    type Event = CloudViewModelEvent;
+impl Entity for ObjectStoreViewModel {
+    type Event = ObjectStoreViewModelEvent;
 }
 
-/// Mark CloudViewModel as global application state.
-impl SingletonEntity for CloudViewModel {}
+/// Mark ObjectStoreViewModel as global application state.
+impl SingletonEntity for ObjectStoreViewModel {}
 
 /// The timestamp to use when sorting objects by their last updated time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

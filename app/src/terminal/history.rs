@@ -15,7 +15,7 @@ use super::{
 };
 use crate::{
     cloud_object::{
-        model::{persistence::CloudModel, view::CloudViewModel},
+        model::{persistence::ObjectStoreModel, view::ObjectStoreViewModel},
         Space,
     },
     server::ids::{ClientId, HashableId as _, SyncId},
@@ -230,13 +230,13 @@ impl LinkedWorkflowData {
     pub fn linked_workflow(&self, ctx: &AppContext) -> Option<(WorkflowType, WorkflowSource)> {
         match self {
             LinkedWorkflowData::Id(id) => {
-                let cloud_model = CloudModel::as_ref(ctx);
+                let cloud_model = ObjectStoreModel::as_ref(ctx);
                 let workflow = cloud_model.get_workflow(id);
-                let workflow_source = match CloudViewModel::as_ref(ctx).object_space(&id.uid(), ctx)
-                {
-                    Some(Space::Team { team_uid }) => WorkflowSource::Team { team_uid },
-                    _ => WorkflowSource::PersonalCloud,
-                };
+                let workflow_source =
+                    match ObjectStoreViewModel::as_ref(ctx).object_space(&id.uid(), ctx) {
+                        Some(Space::Team { team_uid }) => WorkflowSource::Team { team_uid },
+                        _ => WorkflowSource::PersonalCloud,
+                    };
                 workflow.map(|workflow| {
                     (
                         WorkflowType::Cloud(Box::new(workflow.clone())),
@@ -390,7 +390,7 @@ impl HistoryEntry {
     /// workflow using `self.workflow_command`, if any.
     pub fn linked_workflow(&self, app: &AppContext) -> Option<Workflow> {
         match (&self.workflow_id, &self.workflow_command) {
-            (Some(workflow_id), _) => CloudModel::as_ref(app)
+            (Some(workflow_id), _) => ObjectStoreModel::as_ref(app)
                 .get_workflow(workflow_id)
                 .map(|workflow| workflow.model().data.clone()),
             (_, Some(workflow_command)) => LocalWorkflows::as_ref(app)

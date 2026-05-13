@@ -23,7 +23,7 @@ use warpui::AppContext;
 
 use crate::{
     cloud_object::{
-        model::view::{CloudViewModel, UpdateTimestamp},
+        model::view::{ObjectStoreViewModel, UpdateTimestamp},
         CloudObject, GenericStringObjectFormat, ObjectIdType, ObjectType,
     },
     server::ids::{HashedSqliteId, ObjectUid, ServerId, SyncId},
@@ -284,11 +284,11 @@ pub enum DriveSortOrder {
 
 impl DriveSortOrder {
     /// Returns the comparator that can be used for sorting items returned by
-    /// CloudModel::cloud_objects_in_space, for example (so more specifically, on the iterator of
+    /// ObjectStoreModel::cloud_objects_in_space, for example (so more specifically, on the iterator of
     /// type Iterator<Item = &'_ dyn CloudObject>)
     pub fn sort_by<'a>(
         &self,
-        cloud_model: &'a CloudViewModel,
+        cloud_model: &'a ObjectStoreViewModel,
         update_timestamp: UpdateTimestamp,
         app: &'a AppContext,
     ) -> Box<SortByComparator<'a>> {

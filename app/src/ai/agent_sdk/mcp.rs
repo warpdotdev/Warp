@@ -5,7 +5,7 @@ use warpui::{AppContext, ModelContext, SingletonEntity};
 
 use crate::ai::agent_sdk::output::{self, TableFormat};
 use crate::ai::mcp::TemplatableMCPServerManager;
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 
 /// Handle MCP-related CLI commands.
 pub fn run(
@@ -27,7 +27,7 @@ struct MCPCommandRunner;
 
 impl MCPCommandRunner {
     fn list(&self, global_options: GlobalOptions, ctx: &mut ModelContext<Self>) {
-        let initial_sync = CloudModel::as_ref(ctx).initial_load_complete();
+        let initial_sync = ObjectStoreModel::as_ref(ctx).initial_load_complete();
 
         ctx.spawn(initial_sync, move |_, _, ctx| {
             let mut servers = TemplatableMCPServerManager::get_all_runnable_mcp_servers(ctx);

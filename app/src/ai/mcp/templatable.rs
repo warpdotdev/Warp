@@ -12,7 +12,7 @@ use crate::{
         model::{
             generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
             json_model::{JsonModel, JsonSerializer},
-            persistence::CloudModel,
+            persistence::ObjectStoreModel,
         },
         GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
         JsonObjectType, UniquePer,
@@ -207,7 +207,7 @@ pub type TemplatableMCPServerObjectModel = GenericStringModel<TemplatableMCPServ
 
 impl TemplatableMCPServerObject {
     pub fn get_all(app: &AppContext) -> Vec<TemplatableMCPServerObject> {
-        CloudModel::as_ref(app)
+        ObjectStoreModel::as_ref(app)
             .get_all_objects_of_type::<GenericStringObjectId, TemplatableMCPServerObjectModel>()
             .cloned()
             .collect()
@@ -217,7 +217,7 @@ impl TemplatableMCPServerObject {
         sync_id: &'a SyncId,
         app: &'a AppContext,
     ) -> Option<&'a TemplatableMCPServerObject> {
-        CloudModel::as_ref(app)
+        ObjectStoreModel::as_ref(app)
             .get_object_of_type::<GenericStringObjectId, TemplatableMCPServerObjectModel>(sync_id)
     }
 
@@ -225,7 +225,7 @@ impl TemplatableMCPServerObject {
         uuid: &'a uuid::Uuid,
         app: &'a AppContext,
     ) -> Option<&'a TemplatableMCPServerObject> {
-        CloudModel::as_ref(app)
+        ObjectStoreModel::as_ref(app)
             .get_all_objects_of_type::<GenericStringObjectId, TemplatableMCPServerObjectModel>()
             .find(|server| server.model().string_model.uuid == *uuid)
     }

@@ -6,7 +6,7 @@ use warpui::{
 
 use crate::{
     ai::facts::{view::AIFactPage, AIMemory},
-    cloud_object::{model::persistence::CloudModel, Space},
+    cloud_object::{model::persistence::ObjectStoreModel, Space},
     integration_testing::view_getters::workspace_view,
     server::{
         cloud_object::update_manager::UpdateManager,
@@ -48,7 +48,7 @@ pub fn create_a_personal_rule(
             data.insert(key.clone(), sync_id);
         })
         .add_assertion(move |app, _| {
-            CloudModel::handle(app).read(app, |cloud_model, ctx| {
+            ObjectStoreModel::handle(app).read(app, |cloud_model, ctx| {
                 async_assert!(
                     cloud_model
                         .active_cloud_objects_in_space(Space::Personal, ctx)

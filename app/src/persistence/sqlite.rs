@@ -3225,7 +3225,7 @@ fn read_sqlite_data(
         running_mcp_servers,
     };
 
-    // Find the smallest refresh timestamp to pass into CloudModel.
+    // Find the smallest refresh timestamp to pass into ObjectStoreModel.
     let time_of_next_force_object_refresh: Option<DateTime<Utc>> =
         schema::cloud_objects_refreshes::dsl::cloud_objects_refreshes
             .load_iter::<model::CloudObjectsRefresh, DefaultLoadingMode>(conn)?

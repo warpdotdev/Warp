@@ -10,7 +10,7 @@ use warpui::{
 
 use crate::{
     cloud_object::{
-        model::persistence::{CloudModel, ObjectStoreEvent},
+        model::persistence::{ObjectStoreEvent, ObjectStoreModel},
         Owner,
     },
     drive::OpenWarpDriveObjectSettings,
@@ -75,7 +75,10 @@ pub enum NotebookSource {
 impl NotebookManager {
     /// Create a new [`NotebookManager`] singleton.
     pub fn new(cached_notebooks: Vec<NotebookObject>, ctx: &mut ModelContext<Self>) -> Self {
-        ctx.subscribe_to_model(&CloudModel::handle(ctx), Self::handle_object_store_event);
+        ctx.subscribe_to_model(
+            &ObjectStoreModel::handle(ctx),
+            Self::handle_object_store_event,
+        );
 
         let mut raw_text_by_hashed_id: HashMap<String, NotebookRawTextStatus> = HashMap::new();
         // Parse all the cached notebook raw text
@@ -184,7 +187,9 @@ impl NotebookManager {
 
         match source {
             NotebookSource::Existing(notebook_id) => {
-                let notebook = CloudModel::as_ref(ctx).get_notebook(notebook_id).cloned();
+                let notebook = ObjectStoreModel::as_ref(ctx)
+                    .get_notebook(notebook_id)
+                    .cloned();
                 if let Some(notebook) = notebook {
                     view.update(ctx, |view, ctx| view.load(notebook, settings, ctx));
                 } else {
@@ -263,7 +268,7 @@ impl NotebookManager {
     /// result to the cache ones the operation has been completed.
     fn update_raw_text_for_notebook(&mut self, notebook_id: SyncId, ctx: &mut ModelContext<Self>) {
         log::debug!("Updating raw text cache for {}", notebook_id.uid());
-        let Some(notebook) = CloudModel::handle(ctx).read(ctx, |model, _| {
+        let Some(notebook) = ObjectStoreModel::handle(ctx).read(ctx, |model, _| {
             Some(model.get_notebook(&notebook_id)?.clone())
         }) else {
             return;

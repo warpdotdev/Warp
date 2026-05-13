@@ -21,7 +21,7 @@ use crate::{
     cloud_object::{
         model::{
             generic_string_model::{CloudStringObject, GenericStringObjectId},
-            persistence::CloudModel,
+            persistence::ObjectStoreModel,
         },
         GenericCloudObject, GenericStringObjectFormat, JsonObjectType, ObjectType,
     },
@@ -130,12 +130,12 @@ pub(super) fn parse_context_attachments(
                 };
 
                 // Prefer live editor content from AIDocumentModel (picks up unsaved user edits).
-                // Fall back to the synced CloudModel notebook if the document isn't loaded in
+                // Fall back to the synced ObjectStoreModel notebook if the document isn't loaded in
                 // the current session.
                 let content = AIDocumentModel::as_ref(ctx)
                     .get_document_content(&ai_doc_id, ctx)
                     .or_else(|| {
-                        CloudModel::as_ref(ctx)
+                        ObjectStoreModel::as_ref(ctx)
                             .get_all_active_notebooks()
                             .find(|nb| nb.model().ai_document_id.as_ref() == Some(&ai_doc_id))
                             .map(|nb| nb.model().data.clone())
@@ -162,7 +162,7 @@ pub(super) fn parse_context_attachments(
                     _ => continue, // Skip unknown object types
                 };
 
-                // Try to get the object data from CloudModel
+                // Try to get the object data from ObjectStoreModel
                 let payload = get_object_attachment_payload(id_str, object_type, ctx);
 
                 // Create a DriveObject attachment with the object UID and payload
@@ -272,7 +272,7 @@ fn find_block_attachment_in_all_terminals(
     None
 }
 
-/// Gets the object payload from CloudModel for the given UID and object type.
+/// Gets the object payload from ObjectStoreModel for the given UID and object type.
 /// Returns None if the object is not found.
 fn get_object_attachment_payload(
     uid: &str,
@@ -280,25 +280,29 @@ fn get_object_attachment_payload(
     ctx: &AppContext,
 ) -> Option<DriveObjectPayload> {
     match object_type {
-        ObjectType::Workflow => CloudModel::as_ref(ctx)
-            .get_workflow_by_uid(uid)
-            .map(|workflow| {
-                let workflow_data = &workflow.model().data;
-                DriveObjectPayload::Workflow {
-                    name: workflow_data.name().to_string(),
-                    description: workflow_data.description().cloned().unwrap_or_default(),
-                    command: workflow_data.content().to_string(),
-                }
-            }),
-        ObjectType::Notebook => CloudModel::as_ref(ctx)
-            .get_notebook_by_uid(uid)
-            .map(|notebook| DriveObjectPayload::Notebook {
-                title: notebook.model().title.clone(),
-                content: notebook.model().data.clone(),
-            }),
+        ObjectType::Workflow => {
+            ObjectStoreModel::as_ref(ctx)
+                .get_workflow_by_uid(uid)
+                .map(|workflow| {
+                    let workflow_data = &workflow.model().data;
+                    DriveObjectPayload::Workflow {
+                        name: workflow_data.name().to_string(),
+                        description: workflow_data.description().cloned().unwrap_or_default(),
+                        command: workflow_data.content().to_string(),
+                    }
+                })
+        }
+        ObjectType::Notebook => {
+            ObjectStoreModel::as_ref(ctx)
+                .get_notebook_by_uid(uid)
+                .map(|notebook| DriveObjectPayload::Notebook {
+                    title: notebook.model().title.clone(),
+                    content: notebook.model().data.clone(),
+                })
+        }
         ObjectType::GenericStringObject(_) => {
             // For generic string objects, we only support AI facts (rules) for now
-            CloudModel::as_ref(ctx)
+            ObjectStoreModel::as_ref(ctx)
                 .get_by_uid(&uid.to_string())
                 .and_then(|object| {
                     if let Some(ai_fact) = object.as_any().downcast_ref::<GenericCloudObject<GenericStringObjectId, AIFactObjectModel>>() {

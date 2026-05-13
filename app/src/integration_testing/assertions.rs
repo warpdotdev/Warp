@@ -1,7 +1,7 @@
 use crate::{
     cloud_object::{
-        model::persistence::CloudModel, update_manager::UpdateManager, CloudObjectEventEntrypoint,
-        CloudObjectLocation, Space,
+        model::persistence::ObjectStoreModel, update_manager::UpdateManager,
+        CloudObjectEventEntrypoint, CloudObjectLocation, Space,
     },
     network::{NetworkStatus, NetworkStatusKind},
     server::ids::ClientId,
@@ -109,7 +109,7 @@ pub fn create_a_personal_workflow() -> TestStep {
             })
         })
         .add_assertion(move |app, _| {
-            CloudModel::handle(app).read(app, |cloud_model, ctx| {
+            ObjectStoreModel::handle(app).read(app, |cloud_model, ctx| {
                 async_assert!(
                     cloud_model
                         .active_cloud_objects_in_location_without_descendents(

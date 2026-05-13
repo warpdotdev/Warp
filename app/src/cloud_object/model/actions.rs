@@ -129,7 +129,7 @@ impl TryFrom<PersistedObjectAction> for ObjectAction {
         };
 
         // NOTE: This is needed since we only store the sqlite hash, but we need the uid (the second part of the hash)
-        // to index into CloudModel and store the object actions in memory.
+        // to index into ObjectStoreModel and store the object actions in memory.
         let uid = parse_sqlite_id_to_uid(hashed_object_id.clone())?;
 
         Ok(ObjectAction {

@@ -11,7 +11,7 @@
 //!   仅为减少跨上游 cherry-pick 的 diff 面而保留,不再具有任何云端含义。
 //! - `GenericCloudObject<K, M>` → 本地领域对象的泛型承载结构。
 //! - `CloudModelType` trait → 本地对象类型描述。
-//! - `CloudModel`(`model/persistence.rs`)→ 进程内本地对象全局存储 + SQLite 背存。
+//! - `ObjectStoreModel`(`model/persistence.rs`)→ 进程内本地对象全局存储 + SQLite 背存。
 //! - `ObjectStoreEvent` → 本地模型变更事件总线,被本地 UI 视图订阅。
 //! - `ObjectTypeAndId` → 本地 ID 判别式,被 Drive UI / search 等 60+ 处使用。
 //!
@@ -22,7 +22,7 @@
 //! 真正的 "服务端往返" 类型正在分批物理删除；服务端对象 enum、GraphQL 字段转换、
 //! 初始加载 fan-in 与旧服务端泛型对象承载结构已删除。
 
-use self::{breadcrumbs::ContainingObject, model::persistence::CloudModel};
+use self::{breadcrumbs::ContainingObject, model::persistence::ObjectStoreModel};
 use crate::{
     appearance::Appearance,
     auth::UserUid,
@@ -100,8 +100,8 @@ impl From<&str> for SerializedModel {
 ///
 /// Note that this trait must be object-safe and non-generic.  The reason for this
 /// is that (a) we need to be able to store instances of it as trait objects in
-/// CloudModel and (b) we need to be able to support mixed collections of different
-/// instances of it (e.g. in the map of id -> CloudObject in CloudModel).
+/// ObjectStoreModel and (b) we need to be able to support mixed collections of different
+/// instances of it (e.g. in the map of id -> CloudObject in ObjectStoreModel).
 ///
 /// There are two closely related types to this:
 /// 1) GenericCloudObject: This is the concrete generic implementation of CloudObject that
@@ -218,7 +218,7 @@ pub trait CloudObject: Debug {
         if self.space(app) == Space::Shared {
             self.metadata()
                 .folder_id
-                .is_none_or(|parent| CloudModel::as_ref(app).get_folder(&parent).is_none())
+                .is_none_or(|parent| ObjectStoreModel::as_ref(app).get_folder(&parent).is_none())
         } else {
             false
         }
@@ -242,7 +242,7 @@ pub trait CloudObject: Debug {
 
         match self.metadata().folder_id {
             Some(folder_id) => {
-                let cloud_model = CloudModel::as_ref(app);
+                let cloud_model = ObjectStoreModel::as_ref(app);
                 if let Some(folder) = cloud_model.get_folder_by_uid(&folder_id.uid()) {
                     let mut path = vec![];
                     let ancestors = folder.containing_objects_path(app);
@@ -279,7 +279,7 @@ pub trait CloudObject: Debug {
     /// Returns the direct location of the object. If the object
     /// is not in a folder, this will be the object's space. Otherwise, it will
     /// be the folder the object is placed in directly, even if that folder is nested.
-    fn location(&self, cloud_model: &CloudModel, app: &AppContext) -> CloudObjectLocation {
+    fn location(&self, cloud_model: &ObjectStoreModel, app: &AppContext) -> CloudObjectLocation {
         if let Some(folder_id) = self.metadata().folder_id {
             if cloud_model.get_folder(&folder_id).is_some() {
                 return CloudObjectLocation::Folder(folder_id);
@@ -291,14 +291,14 @@ pub trait CloudObject: Debug {
 
     /// Return true is this object or any of its ancestors are trashed. Also returns true
     /// if a cycle is detected.
-    fn is_trashed(&self, cloud_model: &CloudModel) -> bool {
+    fn is_trashed(&self, cloud_model: &ObjectStoreModel) -> bool {
         self.is_trashed_internal(cloud_model, &mut HashSet::new())
     }
 
     /// Helper function for is_trashed.
     fn is_trashed_internal(
         &self,
-        cloud_model: &CloudModel,
+        cloud_model: &ObjectStoreModel,
         ancestors: &mut HashSet<String>,
     ) -> bool {
         // Base case: If the object is trashed, return true.
@@ -318,7 +318,7 @@ pub trait CloudObject: Debug {
                 match cloud_model.get_by_uid(&hashed_parent_id) {
                     Some(parent) => parent.is_trashed_internal(cloud_model, ancestors),
                     None => {
-                        // If the object has a parent, but the parent is not in CloudModel, assume
+                        // If the object has a parent, but the parent is not in ObjectStoreModel, assume
                         // the object is shared, but not its parent. For backwards compatibility,
                         // if sharing is disabled, default to trashed rather than untrashed.
                         !FeatureFlag::SharedWithMe.is_enabled()
@@ -1021,9 +1021,9 @@ fn get_top_folder_trashed_ts(
     app: &AppContext,
 ) -> Option<ServerTimestamp> {
     let mut folder_id = folder_id;
-    let cloud_model = CloudModel::as_ref(app);
+    let cloud_model = ObjectStoreModel::as_ref(app);
     while let Some(current_folder_id) = folder_id {
-        // If the parent folder isn't in CloudModel, short-circuit so we don't loop forever.
+        // If the parent folder isn't in ObjectStoreModel, short-circuit so we don't loop forever.
         let folder = cloud_model.get_folder_by_uid(&current_folder_id.uid())?;
 
         if let Some(_parent_folder_id) = folder.metadata.folder_id {

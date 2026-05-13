@@ -15,7 +15,7 @@ pub use crate::server::ids::FolderId;
 pub struct FolderObjectModel {
     pub name: String,
     // TODO: since this is local only state, we should consider only surfacing it as part of the
-    // CloudViewModel. Right now, every object-backed folder uses FolderObjectModel, which means
+    // ObjectStoreViewModel. Right now, every object-backed folder uses FolderObjectModel, which means
     // it hardcodes a value of `false` for this property since it can't know what the local state is.
     pub is_open: bool,
     pub is_warp_pack: bool,

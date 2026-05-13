@@ -2,7 +2,7 @@ use serde::Serialize;
 use warpui::{AppContext, SingletonEntity};
 
 use crate::ai::llms::LLMId;
-use crate::CloudModel;
+use crate::ObjectStoreModel;
 use crate::{
     server::telemetry::AgentModeCitation as CitationForTelemetry,
     terminal::view::block_onboarding::onboarding_agentic_suggestions_block::OnboardingChipType,
@@ -26,7 +26,7 @@ impl ForTelemetry for AIAgentCitation {
     fn for_telemetry(&self, ctx: &AppContext) -> Option<Self::Output> {
         match self {
             Self::WarpDriveObject { uid } => {
-                CloudModel::as_ref(ctx).get_by_uid(uid).map(|object| {
+                ObjectStoreModel::as_ref(ctx).get_by_uid(uid).map(|object| {
                     CitationForTelemetry::WarpDriveObject {
                         object_type: object.object_type(),
                         uid: object.uid(),

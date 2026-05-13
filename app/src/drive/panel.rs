@@ -10,7 +10,7 @@ use warpui::{
 use crate::{
     ai::{document::ai_document_model::AIDocumentId, facts::AIFactObjectModel},
     cloud_object::{
-        model::{persistence::CloudModel, view::CloudViewModel},
+        model::{persistence::ObjectStoreModel, view::ObjectStoreViewModel},
         update_manager::{InitiatedBy, UpdateManager},
         CloudObjectEventEntrypoint, GenericStringObjectFormat, JsonObjectType, Owner, Space,
     },
@@ -124,7 +124,7 @@ impl DrivePanel {
         app: &AppContext,
     ) -> Option<Owner> {
         match initial_folder_id {
-            Some(folder_id) => CloudModel::as_ref(app)
+            Some(folder_id) => ObjectStoreModel::as_ref(app)
                 .get_folder(folder_id)
                 .map(|folder| folder.permissions.owner),
             None => UserWorkspaces::as_ref(app).space_to_owner(space, app),
@@ -232,7 +232,7 @@ impl DrivePanel {
                 object_type_and_id,
                 open_mode,
             } => {
-                let cloud_model = CloudModel::as_ref(ctx);
+                let cloud_model = ObjectStoreModel::as_ref(ctx);
                 let object = cloud_model.get_by_uid(&object_type_and_id.uid());
 
                 let workflow: Option<&WorkflowObject> = object.and_then(|object| object.into());
@@ -241,7 +241,7 @@ impl DrivePanel {
                 }
             }
             DriveIndexEvent::OpenObject(object_type_and_id) => {
-                let cloud_model = CloudModel::as_ref(ctx);
+                let cloud_model = ObjectStoreModel::as_ref(ctx);
                 let object = cloud_model.get_by_uid(&object_type_and_id.uid());
 
                 let notebook_id = object.and_then(|object| {
@@ -282,7 +282,7 @@ impl DrivePanel {
                 ctx.emit(DrivePanelEvent::OpenTeamSettingsPage)
             }
             DriveIndexEvent::RunObject(id) => {
-                let cloud_model = CloudModel::as_ref(ctx);
+                let cloud_model = ObjectStoreModel::as_ref(ctx);
                 let object = cloud_model.get_by_uid(&id.uid());
                 if let Some(cloud_object) = object {
                     let workflow: Option<&WorkflowObject> = cloud_object.into();
@@ -308,7 +308,7 @@ impl DrivePanel {
                     *team_uid,
                 )),
             DriveIndexEvent::InvokeEnvVarCollectionInSubshell(id) => {
-                let cloud_model = CloudModel::as_ref(ctx);
+                let cloud_model = ObjectStoreModel::as_ref(ctx);
                 let object = cloud_model.get_by_uid(&id.uid());
                 if let Some(cloud_object) = object {
                     let env_var_collection: Option<&EnvVarCollectionObject> = cloud_object.into();
@@ -357,7 +357,7 @@ impl DrivePanel {
         // Check if object being duplicated is in team space, if it is, then check
         // corresponding object limits for that team.
         if let Some(space) =
-            CloudViewModel::as_ref(ctx).object_space(&object_type_and_id.uid(), ctx)
+            ObjectStoreViewModel::as_ref(ctx).object_space(&object_type_and_id.uid(), ctx)
         {
             match space {
                 Space::Team { team_uid } => {

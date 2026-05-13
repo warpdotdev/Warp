@@ -125,7 +125,9 @@ use crate::{
     appearance::{Appearance, AppearanceEvent},
     channel::{Channel, ChannelState},
     cloud_object::{
-        model::{actions::ObjectActionType, persistence::CloudModel, view::CloudViewModel},
+        model::{
+            actions::ObjectActionType, persistence::ObjectStoreModel, view::ObjectStoreViewModel,
+        },
         update_manager::UpdateManager,
         CloudObject, Space,
     },
@@ -3857,7 +3859,7 @@ impl Input {
     ) {
         let InlinePromptsMenuEvent::SelectedPrompt { id } = event;
 
-        let Some(workflow) = CloudModel::as_ref(ctx).get_workflow(id).cloned() else {
+        let Some(workflow) = ObjectStoreModel::as_ref(ctx).get_workflow(id).cloned() else {
             log::warn!("Tried to open saved prompt for id {id:?} but it does not exist");
             return;
         };
@@ -6352,7 +6354,7 @@ impl Input {
                 let workflow_id = workflow.server_id();
                 let workflow_source = *workflow_source;
                 let space = workflow_id.and_then(|id| {
-                    CloudViewModel::as_ref(ctx)
+                    ObjectStoreViewModel::as_ref(ctx)
                         .object_space(&id.to_string(), ctx)
                         .map(Into::into)
                 });
@@ -6582,7 +6584,7 @@ impl Input {
                 });
 
                 // Get enum variants
-                let cloud_model = CloudModel::as_ref(ctx);
+                let cloud_model = ObjectStoreModel::as_ref(ctx);
                 let enum_variants_map = argument_index_to_object_id_map
                     .iter()
                     .filter_map(|(index, object_id)| {
@@ -6677,7 +6679,7 @@ impl Input {
     /// Builds a prefix for applying env vars to a command in the current session.
     fn env_vars_command_prefix(&self, env_vars_id: &SyncId, ctx: &AppContext) -> Option<String> {
         let shell_type = self.active_session(ctx)?.shell().shell_type();
-        let env_vars = &CloudModel::as_ref(ctx)
+        let env_vars = &ObjectStoreModel::as_ref(ctx)
             .get_env_var_collection(env_vars_id)?
             .model()
             .string_model;
@@ -6730,7 +6732,7 @@ impl Input {
                 // The ID may be `None` if the user is *clearing* environment variables.
                 if let Some(env_vars_id) = env_vars {
                     let env_vars_object =
-                        CloudModel::as_ref(ctx).get_env_var_collection(env_vars_id);
+                        ObjectStoreModel::as_ref(ctx).get_env_var_collection(env_vars_id);
                     let telemetry_metadata = EnvVarTelemetryMetadata {
                         object_id: env_vars_id.into_server().map(Into::into),
                         team_uid: env_vars_object
@@ -11874,7 +11876,8 @@ impl Input {
                 command_string.truncate(command_string.trim_end().len());
 
                 if let Some(alias) = WorkflowAliases::as_ref(ctx).match_alias(&command_string) {
-                    if let Some(workflow) = CloudModel::as_ref(ctx).get_workflow(&alias.workflow_id)
+                    if let Some(workflow) =
+                        ObjectStoreModel::as_ref(ctx).get_workflow(&alias.workflow_id)
                     {
                         let owner = workflow.clone().permissions.owner.into();
 

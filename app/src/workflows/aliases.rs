@@ -11,7 +11,7 @@ use warpui::{AppContext, ModelContext, SingletonEntity};
 
 use crate::{
     cloud_object::{
-        model::persistence::{CloudModel, ObjectStoreEvent},
+        model::persistence::{ObjectStoreEvent, ObjectStoreModel},
         CloudObject as _,
     },
     drive::ObjectTypeAndId,
@@ -45,7 +45,7 @@ pub struct WorkflowAlias {
 impl WorkflowAliases {
     /// Call once to subscribe to UpdateManager notifications that a workflow has been deleted.
     pub fn connect(&self, ctx: &mut ModelContext<Self>) {
-        ctx.subscribe_to_model(&CloudModel::handle(ctx), |me, event, ctx| {
+        ctx.subscribe_to_model(&ObjectStoreModel::handle(ctx), |me, event, ctx| {
             let result = match event {
                 ObjectStoreEvent::ObjectTrashed {
                     type_and_id: ObjectTypeAndId::Workflow(server_id),
@@ -66,7 +66,7 @@ impl WorkflowAliases {
 
     /// A mapping of all aliases, for autocomplete.
     pub fn autocomplete_data(&self, ctx: &AppContext) -> HashMap<String, String> {
-        let cloud_model = CloudModel::as_ref(ctx);
+        let cloud_model = ObjectStoreModel::as_ref(ctx);
         let mut alias_data = HashMap::with_capacity(self.aliases.len());
         for alias in self.aliases.iter() {
             if let Some(backing_workflow) = cloud_model.get_workflow(&alias.workflow_id) {

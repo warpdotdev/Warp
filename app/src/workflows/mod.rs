@@ -17,7 +17,7 @@ pub mod workflow_enum;
 pub mod workflow_view;
 
 use crate::appearance::Appearance;
-use crate::cloud_object::model::view::CloudViewModel;
+use crate::cloud_object::model::view::ObjectStoreViewModel;
 use crate::cloud_object::{CloudModelType, GenericCloudObject, ObjectType};
 
 use crate::cloud_object::SerializedModel;
@@ -85,7 +85,7 @@ impl WorkflowViewMode {
     pub fn supported_edit_mode(workflow_id: Option<SyncId>, app: &AppContext) -> Self {
         let can_edit = workflow_id
             .map(|id| {
-                CloudViewModel::as_ref(app)
+                ObjectStoreViewModel::as_ref(app)
                     .object_editability(&id.uid(), app)
                     .can_edit()
             })
@@ -105,7 +105,7 @@ impl WorkflowViewMode {
     pub fn supported_view_mode(workflow_id: Option<SyncId>, app: &AppContext) -> Self {
         let can_edit = workflow_id
             .map(|id| {
-                CloudViewModel::as_ref(app)
+                ObjectStoreViewModel::as_ref(app)
                     .object_editability(&id.uid(), app)
                     .can_edit()
             })

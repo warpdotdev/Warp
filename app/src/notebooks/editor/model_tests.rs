@@ -5,7 +5,7 @@ use super::super::rich_text_styles;
 use super::NotebooksEditorModel;
 use crate::appearance::Appearance;
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::cloud_object::{CloudObjectMetadata, CloudObjectPermissions, Revision};
 use crate::editor::InteractionState;
 use crate::notebooks::editor::keys::NotebookKeybindings;
@@ -90,9 +90,9 @@ fn model_from_markdown(
     app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(TerminalKeybindings::new);
 
-    // In some tests, we need to initialize CloudModel first to mock some server data. In those cases, avoid mocking it a second time.
+    // In some tests, we need to initialize ObjectStoreModel first to mock some server data. In those cases, avoid mocking it a second time.
     if should_initialize_cloud_model {
-        app.add_singleton_model(CloudModel::mock);
+        app.add_singleton_model(ObjectStoreModel::mock);
     }
 
     let (window, _) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
@@ -1655,7 +1655,7 @@ fn mock_server_workflow(id: i64, app: &mut App) {
         CloudObjectPermissions::mock_personal(),
     );
 
-    CloudModel::handle(app).update(app, |cloud_model, _| {
+    ObjectStoreModel::handle(app).update(app, |cloud_model, _| {
         cloud_model.add_object(sync_id, workflow);
     });
 }
@@ -1664,7 +1664,7 @@ fn mock_server_workflow(id: i64, app: &mut App) {
 fn test_interleaving_command_and_embedding() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
-        app.add_singleton_model(CloudModel::mock);
+        app.add_singleton_model(ObjectStoreModel::mock);
 
         // IDs are padded to be length 22.
         mock_server_workflow(123, &mut app);

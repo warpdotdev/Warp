@@ -14,7 +14,7 @@ use crate::workflows::{WorkflowObject, WorkflowObjectModel};
 use crate::{
     cloud_object::update_manager::UpdateManager,
     cloud_object::{
-        model::{persistence::CloudModel, view::CloudViewModel},
+        model::{persistence::ObjectStoreModel, view::ObjectStoreViewModel},
         Revision,
     },
     network::NetworkStatus,
@@ -70,10 +70,10 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
-    app.add_singleton_model(CloudModel::mock);
+    app.add_singleton_model(ObjectStoreModel::mock);
     app.add_singleton_model(|ctx| UpdateManager::new(None, ctx));
     app.add_singleton_model(|_| UserProfiles::new(Vec::new()));
-    app.add_singleton_model(CloudViewModel::new);
+    app.add_singleton_model(ObjectStoreViewModel::new);
     app.add_singleton_model(NotebookManager::mock);
     app.add_singleton_model(|_| SettingsManager::default());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
@@ -85,8 +85,8 @@ fn initialize_app(app: &mut App) {
 fn test_drive_data_source_correctly_filters_drive_filter() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
-        // Initialize CloudModel
-        CloudModel::handle(&app).update(&mut app, |model, _| {
+        // Initialize ObjectStoreModel
+        ObjectStoreModel::handle(&app).update(&mut app, |model, _| {
             let notebook = mock_notebook(1.into(), Owner::mock_current_user());
             model.add_object(notebook.id, notebook);
             let workflow = mock_workflow(2.into(), Owner::mock_current_user());
@@ -129,8 +129,8 @@ fn test_drive_data_source_correctly_filters_drive_filter() {
 fn test_drive_data_source_correctly_filters_no_filter() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
-        // Initialize CloudModel
-        CloudModel::handle(&app).update(&mut app, |model, _| {
+        // Initialize ObjectStoreModel
+        ObjectStoreModel::handle(&app).update(&mut app, |model, _| {
             let notebook = mock_notebook(1.into(), Owner::mock_current_user());
             model.add_object(notebook.id, notebook);
             let workflow = mock_workflow(2.into(), Owner::mock_current_user());
@@ -172,8 +172,8 @@ fn test_drive_data_source_correctly_filters_no_filter() {
 fn test_drive_data_source_correctly_filters_workflow_filter() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
-        // Initialize CloudModel
-        CloudModel::handle(&app).update(&mut app, |model, _| {
+        // Initialize ObjectStoreModel
+        ObjectStoreModel::handle(&app).update(&mut app, |model, _| {
             let notebook = mock_notebook(1.into(), Owner::mock_current_user());
             model.add_object(notebook.id, notebook);
             let workflow = mock_workflow(2.into(), Owner::mock_current_user());
@@ -217,8 +217,8 @@ fn test_drive_data_source_correctly_filters_workflow_filter() {
 fn test_drive_data_source_correctly_filters_notebook_filter() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
-        // Initialize CloudModel
-        CloudModel::handle(&app).update(&mut app, |model, _| {
+        // Initialize ObjectStoreModel
+        ObjectStoreModel::handle(&app).update(&mut app, |model, _| {
             let notebook = mock_notebook(1.into(), Owner::mock_current_user());
             model.add_object(notebook.id, notebook);
             let workflow = mock_workflow(2.into(), Owner::mock_current_user());

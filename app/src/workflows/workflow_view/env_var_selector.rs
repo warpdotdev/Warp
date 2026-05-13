@@ -6,7 +6,7 @@ use warpui::{
 
 use crate::{
     cloud_object::{
-        model::persistence::{CloudModel, ObjectStoreEvent},
+        model::persistence::{ObjectStoreEvent, ObjectStoreModel},
         CloudObject as _, GenericStringObjectFormat, JsonObjectType,
     },
     drive::ObjectTypeAndId,
@@ -34,7 +34,7 @@ const DEFAULT_DROPDOWN_WIDTH: f32 = super::argument_editor::ALIAS_ARGUMENT_EDITO
 
 impl EnvVarSelector {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
-        ctx.subscribe_to_model(&CloudModel::handle(ctx), |me, _, event, ctx| {
+        ctx.subscribe_to_model(&ObjectStoreModel::handle(ctx), |me, _, event, ctx| {
             me.handle_object_store_event(event, ctx);
         });
 
@@ -81,7 +81,7 @@ impl EnvVarSelector {
     }
 
     fn refresh_dropdown_items(&mut self, ctx: &mut ViewContext<Self>) {
-        let mut env_vars = CloudModel::as_ref(ctx)
+        let mut env_vars = ObjectStoreModel::as_ref(ctx)
             .get_all_active_env_var_collections()
             .map(|collection| (collection.display_name(), collection.sync_id()))
             .collect_vec();

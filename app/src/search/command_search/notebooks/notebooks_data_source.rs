@@ -3,7 +3,7 @@ use std::sync::Arc;
 use futures_lite::future::yield_now;
 use warpui::{AppContext, SingletonEntity};
 
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::notebooks::manager::NotebookManager;
 use crate::notebooks::NotebookObjectModel;
 use crate::search::async_snapshot_data_source::AsyncSnapshotDataSource;
@@ -34,7 +34,7 @@ pub fn notebooks_data_source() -> AsyncSnapshotDataSource<NotebooksSnapshot, Com
     AsyncSnapshotDataSource::new(
         |query: &Query, app: &AppContext| {
             let notebook_manager = NotebookManager::as_ref(app);
-            let candidates: Vec<NotebookMatchCandidate> = CloudModel::as_ref(app)
+            let candidates: Vec<NotebookMatchCandidate> = ObjectStoreModel::as_ref(app)
                 .get_all_active_notebooks()
                 .map(|notebook| NotebookMatchCandidate {
                     id: notebook.id,

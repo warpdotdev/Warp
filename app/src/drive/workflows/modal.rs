@@ -33,7 +33,7 @@ use crate::{
     appearance::Appearance,
     cloud_object::{
         breadcrumbs::{ContainingObject, ContainingObjectKind},
-        model::persistence::{CloudModel, ObjectStoreEvent},
+        model::persistence::{ObjectStoreEvent, ObjectStoreModel},
         update_manager::UpdateManager,
         CloudObject, CloudObjectEventEntrypoint, ObjectType, Owner, Revision,
     },
@@ -253,7 +253,7 @@ impl WorkflowModal {
             me.handle_content_editor_event(event, ctx);
         });
 
-        let cloud_model = CloudModel::handle(ctx);
+        let cloud_model = ObjectStoreModel::handle(ctx);
         ctx.subscribe_to_model(&cloud_model, |me, _, event, ctx| {
             me.handle_object_store_event(event, ctx);
         });
@@ -632,7 +632,7 @@ impl WorkflowModal {
     // Identical to logic in DriveIndexAction::CopyObjectToClipboard
     fn copy_object_to_clipboard(&mut self, ctx: &mut ViewContext<Self>) {
         if let Some(workflow_id) = self.workflow_id {
-            let cloud_model = CloudModel::as_ref(ctx);
+            let cloud_model = ObjectStoreModel::as_ref(ctx);
             let object = cloud_model.get_by_uid(&workflow_id.uid());
 
             if let Some(object) = object {
@@ -791,7 +791,7 @@ impl WorkflowModal {
     fn save_argument_objects(&self, ctx: &mut ViewContext<Self>) {
         let mut sent_requests: HashSet<SyncId> = HashSet::new();
         let owner = match (self.workflow_id, self.owner) {
-            (Some(workflow_id), None) => CloudModel::as_ref(ctx)
+            (Some(workflow_id), None) => ObjectStoreModel::as_ref(ctx)
                 .get_workflow(&workflow_id)
                 .map(|workflow| workflow.permissions.owner),
             (None, Some(owner)) => Some(owner),
@@ -882,7 +882,7 @@ impl WorkflowModal {
     // every time either the object store or workflow ID changes.
     fn compute_breadcrumbs(&mut self, ctx: &mut ViewContext<Self>) {
         self.breadcrumbs = self.workflow_id.and_then(|workflow_id| {
-            CloudModel::as_ref(ctx)
+            ObjectStoreModel::as_ref(ctx)
                 .get_workflow(&workflow_id)
                 .map(|workflow| {
                     workflow

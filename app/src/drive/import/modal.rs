@@ -1,6 +1,6 @@
 use crate::{
     appearance::Appearance,
-    cloud_object::{model::persistence::CloudModel, CloudObject, Owner},
+    cloud_object::{model::persistence::ObjectStoreModel, CloudObject, Owner},
     server::ids::SyncId,
     themes::theme::WarpTheme,
     workspaces::user_workspaces::UserWorkspaces,
@@ -154,7 +154,7 @@ impl ImportModal {
         let (text, highlight_start) = match self
             .folder_id
             .as_ref()
-            .and_then(|folder_id| CloudModel::as_ref(app).get_folder(folder_id))
+            .and_then(|folder_id| ObjectStoreModel::as_ref(app).get_folder(folder_id))
         {
             Some(folder) => {
                 let breadcrumbs = folder.breadcrumbs(app);

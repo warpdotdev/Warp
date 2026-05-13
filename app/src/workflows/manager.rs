@@ -1,6 +1,6 @@
 use super::{workflow::Workflow, WorkflowObjectModel};
 use crate::{
-    cloud_object::{model::persistence::CloudModel, GenericCloudObject, Owner},
+    cloud_object::{model::persistence::ObjectStoreModel, GenericCloudObject, Owner},
     drive::OpenWarpDriveObjectSettings,
     pane_group::{PaneContent, WorkflowPane},
     safe_warn,
@@ -68,7 +68,9 @@ impl WorkflowManager {
 
         match source {
             WorkflowOpenSource::Existing(workflow_id) => {
-                let workflow = CloudModel::as_ref(ctx).get_workflow(workflow_id).cloned();
+                let workflow = ObjectStoreModel::as_ref(ctx)
+                    .get_workflow(workflow_id)
+                    .cloned();
                 if let Some(workflow) = workflow {
                     view.update(ctx, |view, ctx| view.load(workflow, settings, mode, ctx));
                 } else {

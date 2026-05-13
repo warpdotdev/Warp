@@ -4,7 +4,7 @@ use warpui::{Entity, ModelContext, SingletonEntity};
 
 use crate::{
     cloud_object::{
-        model::persistence::CloudModel,
+        model::persistence::ObjectStoreModel,
         update_manager::{
             InitiatedBy, ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent,
         },
@@ -294,7 +294,7 @@ impl ImportQueue {
                 return;
             }
 
-            let cloud_model = CloudModel::as_ref(ctx);
+            let cloud_model = ObjectStoreModel::as_ref(ctx);
 
             let Some(folder_id) = cloud_model
                 .get_folder_by_uid(&result.server_id.expect("Expect id").uid())

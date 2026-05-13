@@ -6,13 +6,13 @@ use warpui::App;
 use super::*;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::appearance::Appearance;
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::test_util::settings::initialize_settings_for_tests;
 
 fn initialize_app_for_ai_document_tests(app: &mut App) {
     initialize_settings_for_tests(app);
     app.add_singleton_model(|_| Appearance::mock());
-    app.add_singleton_model(|_| CloudModel::new(None, Vec::new(), None));
+    app.add_singleton_model(|_| ObjectStoreModel::new(None, Vec::new(), None));
 }
 
 #[test]

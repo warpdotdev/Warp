@@ -6,7 +6,7 @@ use crate::ai::execution_profiles::{
 };
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::{CloudModel, ObjectStoreEvent};
+use crate::cloud_object::model::persistence::{ObjectStoreEvent, ObjectStoreModel};
 use crate::cloud_object::update_manager::UpdateManager;
 use crate::cloud_object::{CloudObjectMetadata, CloudObjectPermissions};
 use crate::network::NetworkStatus;
@@ -17,13 +17,13 @@ use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::LaunchMode;
 
 /// Install the minimal singleton graph needed to construct an
-/// `AIExecutionProfilesModel` and exercise its CloudModel interactions.
+/// `AIExecutionProfilesModel` and exercise its ObjectStoreModel interactions.
 fn install_singletons(app: &mut App, auth_state: AuthStateProvider) {
     initialize_settings_for_tests(app);
     app.add_singleton_model(|_| auth_state);
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(UpdateManager::mock);
-    app.add_singleton_model(CloudModel::mock);
+    app.add_singleton_model(ObjectStoreModel::mock);
     app.add_singleton_model(|_| TemplatableMCPServerManager::default());
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
@@ -79,11 +79,11 @@ fn edits_persist_on_unsynced_default_profile_when_logged_out() {
 }
 
 /// Regression test for the "log in to an existing user after onboarding"
-/// bug. Objects restored from local storage can already exist in `CloudModel`
+/// bug. Objects restored from local storage can already exist in `ObjectStoreModel`
 /// before `AIExecutionProfilesModel` observes per-object `ObjectCreated` events.
 /// The model reconciles when it receives `ObjectStoreEvent::InitialLoadCompleted`.
 /// Without the reconciliation handler for `InitialLoadCompleted`, the
-/// existing user's default profile sits in `CloudModel` but
+/// existing user's default profile sits in `ObjectStoreModel` but
 /// `AIExecutionProfilesModel` stays in `Unsynced`, so a subsequent
 /// onboarding edit creates a duplicate cloud default profile instead of
 /// editing the existing one. This test drives that sequence and asserts
@@ -96,7 +96,7 @@ fn reconciles_unsynced_default_profile_with_cloud_after_initial_load() {
             AIExecutionProfilesModel::new(&LaunchMode::new_for_unit_test(), ctx)
         });
 
-        // Baseline: CloudModel is empty, so the model starts Unsynced and
+        // Baseline: ObjectStoreModel is empty, so the model starts Unsynced and
         // `sync_id` is `None`.
         profile_model.read(&app, |model, ctx| {
             assert!(
@@ -124,9 +124,9 @@ fn reconciles_unsynced_default_profile_with_cloud_after_initial_load() {
             CloudObjectPermissions::mock_personal(),
         );
 
-        // Insert the object into CloudModel without per-object events and then
+        // Insert the object into ObjectStoreModel without per-object events and then
         // emit `InitialLoadCompleted` so the reconciliation handler fires.
-        CloudModel::handle(&app).update(&mut app, move |cloud_model, ctx| {
+        ObjectStoreModel::handle(&app).update(&mut app, move |cloud_model, ctx| {
             cloud_model.add_object(cloud_sync_id, profile_object);
             ctx.emit(ObjectStoreEvent::InitialLoadCompleted);
         });

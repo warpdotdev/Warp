@@ -1,17 +1,17 @@
-﻿use warpui::{SingletonEntity, ViewContext};
+use warpui::{SingletonEntity, ViewContext};
 
 use crate::{
     auth::{AuthManager, AuthStateProvider},
     cloud_object::{
-        model::persistence::CloudModel, GenericStringObjectFormat, JsonObjectType, ObjectType,
-        Space,
+        model::persistence::ObjectStoreModel, GenericStringObjectFormat, JsonObjectType,
+        ObjectType, Space,
     },
 };
 
 pub fn has_feature_gated_anonymous_user_reached_notebook_limit<V: warpui::View>(
     ctx: &mut ViewContext<V>,
 ) -> bool {
-    let count = CloudModel::handle(ctx).read(ctx, |model, ctx| {
+    let count = ObjectStoreModel::handle(ctx).read(ctx, |model, ctx| {
         model
             .active_non_welcome_notebooks_in_space(Space::Personal, ctx)
             .count()
@@ -34,7 +34,7 @@ pub fn has_feature_gated_anonymous_user_reached_notebook_limit<V: warpui::View>(
 pub fn has_feature_gated_anonymous_user_reached_workflow_limit<V: warpui::View>(
     ctx: &mut ViewContext<V>,
 ) -> bool {
-    let count = CloudModel::handle(ctx).read(ctx, |model, ctx| {
+    let count = ObjectStoreModel::handle(ctx).read(ctx, |model, ctx| {
         model
             .active_non_welcome_workflows_in_space(Space::Personal, ctx)
             .count()
@@ -57,7 +57,7 @@ pub fn has_feature_gated_anonymous_user_reached_workflow_limit<V: warpui::View>(
 pub fn has_feature_gated_anonymous_user_reached_env_var_limit<V: warpui::View>(
     ctx: &mut ViewContext<V>,
 ) -> bool {
-    let count = CloudModel::handle(ctx).read(ctx, |model, ctx| {
+    let count = ObjectStoreModel::handle(ctx).read(ctx, |model, ctx| {
         model
             .active_non_welcome_env_var_collections_in_space(Space::Personal, ctx)
             .count()

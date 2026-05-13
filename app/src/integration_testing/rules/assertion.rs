@@ -6,7 +6,9 @@ use warpui::{
 
 use crate::{
     ai::facts::{view::AIFactPage, AIFactObjectModel},
-    cloud_object::model::{generic_string_model::GenericStringObjectId, persistence::CloudModel},
+    cloud_object::model::{
+        generic_string_model::GenericStringObjectId, persistence::ObjectStoreModel,
+    },
     integration_testing::view_getters::workspace_view,
     server::ids::SyncId,
 };
@@ -20,7 +22,7 @@ pub fn assert_rule_exists(
     let expected_content = expected_content.into();
     Box::new(move |app, _window_id, data| {
         let sync_id: &SyncId = data.get(&expected_id_key).expect("No saved AI fact ID");
-        CloudModel::handle(app).read(app, |cloud_model, _| {
+        ObjectStoreModel::handle(app).read(app, |cloud_model, _| {
             if let Some(ai_fact) =
                 cloud_model.get_object_of_type::<GenericStringObjectId, AIFactObjectModel>(sync_id)
             {
@@ -38,7 +40,7 @@ pub fn assert_rule_exists(
 /// Assert that the total number of AI facts matches the expected count
 pub fn assert_rule_count(expected_count: usize) -> AssertionCallback {
     Box::new(move |app, _| {
-        CloudModel::handle(app).read(app, |cloud_model, ctx| {
+        ObjectStoreModel::handle(app).read(app, |cloud_model, ctx| {
             let count = rule_count(cloud_model, ctx);
             async_assert_eq!(count, expected_count, "Rule count should match")
         })
@@ -46,7 +48,7 @@ pub fn assert_rule_count(expected_count: usize) -> AssertionCallback {
 }
 
 /// Helper function to count AI facts in the cloud model
-pub fn rule_count(cloud_model: &CloudModel, _ctx: &AppContext) -> usize {
+pub fn rule_count(cloud_model: &ObjectStoreModel, _ctx: &AppContext) -> usize {
     cloud_model
         .get_all_objects_of_type::<GenericStringObjectId, AIFactObjectModel>()
         .count()

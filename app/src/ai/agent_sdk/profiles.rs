@@ -6,7 +6,7 @@ use warpui::{AppContext, ModelContext, SingletonEntity};
 use crate::ai::agent_sdk::output::{self, TableFormat};
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::cloud_object::model::generic_string_model::StringModel;
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::server::ids::SyncId;
 
 /// Handle Agent Profile-related CLI commands.
@@ -30,7 +30,7 @@ struct ProfilesCommandRunner;
 impl ProfilesCommandRunner {
     fn list(&self, global_options: GlobalOptions, ctx: &mut ModelContext<Self>) {
         // Ensure initial cloud sync completes so profiles from the server are available.
-        let initial_sync = CloudModel::as_ref(ctx).initial_load_complete();
+        let initial_sync = ObjectStoreModel::as_ref(ctx).initial_load_complete();
 
         ctx.spawn(initial_sync, move |_, _, ctx| {
             let profiles_model = AIExecutionProfilesModel::as_ref(ctx);

@@ -14,7 +14,7 @@ use crate::ai::agent_sdk::mcp_config::build_mcp_servers_from_specs;
 use crate::ai::aws_credentials::refresh_aws_credentials;
 use crate::ai::llms::LLMId;
 use crate::auth::{AuthManager, AuthManagerEvent, OwnerType};
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::workflows::workflow::Workflow;
 use ai::api_keys::{ApiKeyManager, AwsCredentialsRefreshStrategy};
 use anyhow::Context;
@@ -386,7 +386,8 @@ fn resolve_prompt(prompt: &Prompt, ctx: &AppContext) -> Result<String, AgentDriv
     match prompt {
         Prompt::PlainText(prompt_str) => Ok(prompt_str.to_string()),
         Prompt::SavedPrompt(workflow_id) => {
-            let Some(workflow) = CloudModel::as_ref(ctx).get_workflow_by_uid(workflow_id) else {
+            let Some(workflow) = ObjectStoreModel::as_ref(ctx).get_workflow_by_uid(workflow_id)
+            else {
                 return Err(AgentDriverError::AIWorkflowNotFound(workflow_id.to_owned()));
             };
 

@@ -28,7 +28,7 @@ use crate::{
     workspace::WorkspaceAction,
 };
 use crate::{
-    cloud_object::{model::persistence::CloudModel, Space},
+    cloud_object::{model::persistence::ObjectStoreModel, Space},
     safe_warn,
     view_components::DismissibleToast,
     workspace::{active_terminal_in_window, ToastStack},
@@ -106,7 +106,7 @@ impl ExportManager {
         let is_bulk = objects.len() > 1;
         let mut ids = Vec::new();
         for object in objects {
-            match CloudModel::as_ref(ctx).get_by_uid(&object.uid()) {
+            match ObjectStoreModel::as_ref(ctx).get_by_uid(&object.uid()) {
                 None => log::warn!("Tried to export unknown object {object:?}"),
                 Some(obj) if !obj.can_export() => {
                     log::warn!("Tried to export un-exportable object {object:?}")
@@ -269,7 +269,7 @@ impl ExportManager {
         shell_family: ShellFamily,
         ctx: &mut ModelContext<Self>,
     ) -> anyhow::Result<SpawnedFutureHandle> {
-        let cloud_model = CloudModel::as_ref(ctx);
+        let cloud_model = ObjectStoreModel::as_ref(ctx);
         let (name, extension, data) = match object {
             ObjectTypeAndId::Workflow(workflow_id) => {
                 let workflow = cloud_model
@@ -452,7 +452,7 @@ impl Drop for Export {
 impl ExportId {
     /// Display name for the root object being exported.
     pub fn display_name(self, ctx: &AppContext) -> Option<String> {
-        CloudModel::as_ref(ctx)
+        ObjectStoreModel::as_ref(ctx)
             .get_by_uid(&self.0.uid())
             .map(|object| {
                 let mut name = object.display_name();

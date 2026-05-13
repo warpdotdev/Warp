@@ -14,8 +14,8 @@ use crate::{
     cloud_object::{
         model::{
             actions::ObjectActions,
-            persistence::CloudModel,
-            view::{CloudViewModel, Editor, EditorState},
+            persistence::ObjectStoreModel,
+            view::{Editor, EditorState, ObjectStoreViewModel},
         },
         update_manager::UpdateManager,
         CloudObjectMetadata, CloudObjectPermissions, Owner,
@@ -53,7 +53,7 @@ fn initialize_app(app: &mut App) {
 
     let global_resources = GlobalResourceHandles::mock(app);
     app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resources));
-    app.add_singleton_model(CloudModel::mock);
+    app.add_singleton_model(ObjectStoreModel::mock);
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(|_| KeybindingChangedNotifier::new());
@@ -66,7 +66,7 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
     app.add_singleton_model(UpdateManager::mock);
-    app.add_singleton_model(CloudViewModel::mock);
+    app.add_singleton_model(ObjectStoreViewModel::mock);
     app.add_singleton_model(|_| UserProfiles::new(vec![]));
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(|_| ObjectActions::new(Vec::new()));
@@ -155,15 +155,16 @@ fn mock_stored_notebook(title: impl Into<String>, data: impl Into<String>) -> No
     local_notebook_with_id(ServerId::from(123).into(), title, data)
 }
 
-/// Seed changed objects directly into [`CloudModel`] so tests can simulate local restore.
+/// Seed changed objects directly into [`ObjectStoreModel`] so tests can simulate local restore.
 async fn initial_load(app: &mut App, updated_notebooks: impl Into<Vec<NotebookObject>>) {
-    CloudModel::handle(app).update(app, |model, _| {
+    ObjectStoreModel::handle(app).update(app, |model, _| {
         for notebook in updated_notebooks.into() {
             model.add_object(notebook.id, notebook);
         }
     });
     let load_complete = app.read(|ctx| {
-        crate::cloud_object::model::persistence::CloudModel::as_ref(ctx).initial_load_complete()
+        crate::cloud_object::model::persistence::ObjectStoreModel::as_ref(ctx)
+            .initial_load_complete()
     });
     load_complete.await
 }
@@ -358,7 +359,7 @@ fn test_eager_baton_grab_same_current_editor() {
         cloud_notebook.metadata.current_editor_uid = Some(TEST_USER_UID.to_string().clone());
 
         // Add the notebook to cloud model
-        CloudModel::handle(&app).update(&mut app, |model, _| {
+        ObjectStoreModel::handle(&app).update(&mut app, |model, _| {
             model.add_object(cloud_notebook.id, cloud_notebook.clone())
         });
 
@@ -412,7 +413,7 @@ fn test_not_eager_baton_grab_different_editor() {
         });
 
         // Add the notebook to cloud model
-        CloudModel::handle(&app).update(&mut app, |model, _| {
+        ObjectStoreModel::handle(&app).update(&mut app, |model, _| {
             model.add_object(cloud_notebook.id, cloud_notebook.clone())
         });
 
@@ -457,7 +458,7 @@ fn test_baton_grab_editor_changed_offline() {
         let cloud_notebook = updated_notebook.clone();
 
         // Add the notebook to the cloud model, with no editor.
-        CloudModel::handle(&app).update(&mut app, |cloud_model, _| {
+        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, _| {
             cloud_model.add_object(cloud_notebook.id, cloud_notebook.clone());
         });
 
@@ -513,7 +514,7 @@ fn test_baton_grab_editor_left_offline() {
         let cloud_notebook = updated_notebook.clone();
 
         // Add the notebook to the cloud model, with the saved editor.
-        CloudModel::handle(&app).update(&mut app, |cloud_model, _| {
+        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, _| {
             cloud_model.add_object(cloud_notebook.id, cloud_notebook.clone());
         });
 
@@ -557,7 +558,7 @@ fn test_close_unmodified() {
         let cloud_notebook = mock_stored_notebook("Test", "Some text");
         let notebook_id = cloud_notebook.id;
 
-        CloudModel::handle(&app).update(&mut app, |cloud_model, _| {
+        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, _| {
             cloud_model.add_object(cloud_notebook.id, cloud_notebook.clone());
         });
 
@@ -569,7 +570,7 @@ fn test_close_unmodified() {
         notebook_view.update(&mut app, |notebook, ctx| notebook.on_detach(ctx));
 
         app.read(|ctx| {
-            let object = CloudModel::as_ref(ctx)
+            let object = ObjectStoreModel::as_ref(ctx)
                 .get_by_uid(&notebook_id.uid())
                 .expect("Notebook should exist");
             assert!(!object.metadata().has_pending_content_changes());

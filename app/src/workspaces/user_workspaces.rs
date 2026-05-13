@@ -10,7 +10,7 @@ use crate::{
     auth::{UserUid, TEST_USER_UID},
     channel::ChannelState,
     cloud_object::{
-        model::persistence::CloudModel, CloudObjectEventEntrypoint, ObjectType, Owner, Space,
+        model::persistence::ObjectStoreModel, CloudObjectEventEntrypoint, ObjectType, Owner, Space,
     },
     pricing::{PricingInfo, PricingInfoModel},
     report_error,
@@ -191,7 +191,7 @@ impl UserWorkspaces {
         ctx: &AppContext,
         new_shared_notebooks: usize,
     ) -> bool {
-        let current_shared_notebooks = CloudModel::as_ref(ctx)
+        let current_shared_notebooks = ObjectStoreModel::as_ref(ctx)
             .active_notebooks_in_space(Space::Team { team_uid }, ctx)
             .count();
 
@@ -228,7 +228,7 @@ impl UserWorkspaces {
         ctx: &AppContext,
         new_shared_workflows: usize,
     ) -> bool {
-        let current_shared_workflows = CloudModel::as_ref(ctx)
+        let current_shared_workflows = ObjectStoreModel::as_ref(ctx)
             .active_workflows_in_space(Space::Team { team_uid }, ctx)
             .count();
 
@@ -520,7 +520,7 @@ impl UserWorkspaces {
         spaces.extend(self.team_spaces().iter());
 
         if FeatureFlag::SharedWithMe.is_enabled()
-            && CloudModel::as_ref(ctx).has_directly_shared_objects(self, ctx)
+            && ObjectStoreModel::as_ref(ctx).has_directly_shared_objects(self, ctx)
         {
             spaces.push(Space::Shared);
         }

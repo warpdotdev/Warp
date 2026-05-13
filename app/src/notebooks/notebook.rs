@@ -43,7 +43,7 @@ use crate::{
     cloud_object::{
         grab_edit_access_modal::{GrabEditAccessModal, GrabEditAccessModalEvent},
         model::{
-            persistence::{CloudModel, ObjectStoreEvent, UpdateSource},
+            persistence::{ObjectStoreEvent, ObjectStoreModel, UpdateSource},
             view::{Editor, EditorState},
         },
         update_manager::{FetchSingleObjectOption, UpdateManager},
@@ -406,7 +406,7 @@ impl NotebookView {
         let user_workspaces = UserWorkspaces::handle(ctx);
         ctx.observe(&user_workspaces, Self::on_user_workspaces_update);
 
-        let cloud_model = CloudModel::handle(ctx);
+        let cloud_model = ObjectStoreModel::handle(ctx);
         ctx.subscribe_to_model(&cloud_model, |notebook, _handle, event, ctx| {
             notebook.handle_object_store_event(event, ctx);
         });
@@ -741,7 +741,9 @@ impl NotebookView {
             } => {
                 if let Some(updated_notebook) = self
                     .as_active_notebook_id(type_and_id, ctx)
-                    .and_then(|notebook_id| CloudModel::as_ref(ctx).get_notebook(&notebook_id))
+                    .and_then(|notebook_id| {
+                        ObjectStoreModel::as_ref(ctx).get_notebook(&notebook_id)
+                    })
                     .cloned()
                 {
                     self.handle_notebook_updated(&updated_notebook, ctx);
@@ -1290,7 +1292,7 @@ impl NotebookView {
         let active_notebook = self.active_notebook_data.as_ref(ctx).active_notebook();
 
         let ai_document_id = match active_notebook {
-            ActiveNotebook::CommittedNotebook(id) => CloudModel::as_ref(ctx)
+            ActiveNotebook::CommittedNotebook(id) => ObjectStoreModel::as_ref(ctx)
                 .get_notebook(&id)
                 .and_then(|n| n.model().ai_document_id),
             ActiveNotebook::NewNotebook(notebook) => notebook.model().ai_document_id,
@@ -1352,7 +1354,7 @@ impl NotebookView {
         object_type_and_id: ObjectTypeAndId,
         app: &AppContext,
     ) -> bool {
-        if let Some(object) = CloudModel::as_ref(app).get_by_uid(&object_type_and_id.uid()) {
+        if let Some(object) = ObjectStoreModel::as_ref(app).get_by_uid(&object_type_and_id.uid()) {
             return self.is_online(app)
                 && object_type_and_id.has_server_id()
                 && !object.metadata().has_pending_online_only_change();
@@ -1364,7 +1366,7 @@ impl NotebookView {
     pub fn notebook_link(&self, ctx: &AppContext) -> Option<String> {
         let id = self.notebook_id(ctx)?;
 
-        if let Some(notebook) = CloudModel::as_ref(ctx).get_notebook(&id) {
+        if let Some(notebook) = ObjectStoreModel::as_ref(ctx).get_notebook(&id) {
             return notebook.object_link();
         }
 
@@ -1518,17 +1520,23 @@ impl NotebookView {
         ctx: &mut ViewContext<Self>,
     ) {
         let initial_load_complete =
-            crate::cloud_object::model::persistence::CloudModel::as_ref(ctx)
+            crate::cloud_object::model::persistence::ObjectStoreModel::as_ref(ctx)
                 .initial_load_complete();
         // TODO @ianhodge CLD-2002: it could be nice to have a loading screen here while we wait for the load
         let settings = settings.clone();
         ctx.spawn(initial_load_complete, move |me, _, ctx| {
-            let notebook = CloudModel::as_ref(ctx).get_notebook(&notebook_id).cloned();
+            let notebook = ObjectStoreModel::as_ref(ctx)
+                .get_notebook(&notebook_id)
+                .cloned();
             let fetch_needed = notebook.is_none()
                 || settings
                     .focused_folder_id
                     .map(SyncId::ServerId)
-                    .map(|folder_id| CloudModel::as_ref(ctx).get_folder(&folder_id).is_none())
+                    .map(|folder_id| {
+                        ObjectStoreModel::as_ref(ctx)
+                            .get_folder(&folder_id)
+                            .is_none()
+                    })
                     .unwrap_or(false);
             if fetch_needed {
                 if let Some(server_id) = notebook_id.into_server() {
@@ -1570,7 +1578,7 @@ impl NotebookView {
             });
         let settings = settings.clone();
         ctx.spawn(fetch_cloud_object_rx, move |me, _, ctx| {
-            if let Some(notebook) = CloudModel::as_ref(ctx)
+            if let Some(notebook) = ObjectStoreModel::as_ref(ctx)
                 .get_notebook(&SyncId::ServerId(notebook_id))
                 .cloned()
             {
@@ -1623,7 +1631,7 @@ impl NotebookView {
         );
 
         // Once we've received metadata from the server, check if we can eagerly edit the notebook.
-        let has_metadata = crate::cloud_object::model::persistence::CloudModel::as_ref(ctx)
+        let has_metadata = crate::cloud_object::model::persistence::ObjectStoreModel::as_ref(ctx)
             .initial_load_complete();
         let baton_future = ctx.spawn(has_metadata, |me, _, ctx| {
             let active_notebook_data = me.active_notebook_data.as_ref(ctx);
@@ -1844,7 +1852,7 @@ impl NotebookView {
 
         // Load the server's version of the notebook now that the cloud model has been updated.
         // This will also switch back to edit mode if there isn't an active editor.
-        if let Some(notebook) = CloudModel::as_ref(ctx).get_notebook(&id) {
+        if let Some(notebook) = ObjectStoreModel::as_ref(ctx).get_notebook(&id) {
             self.load(
                 notebook.clone(),
                 &OpenWarpDriveObjectSettings::default(),

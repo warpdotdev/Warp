@@ -10,7 +10,7 @@ use crate::auth::{AuthStateProvider, LoginFailureReason};
 use crate::auth::{LoginSlideEvent, LoginSlideSource, LoginSlideView};
 use crate::auth::{PasteAuthTokenModalEvent, PasteAuthTokenModalView};
 use crate::autoupdate::{AutoupdateState, AutoupdateStateEvent};
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::cloud_object::{GenericStringObjectFormat, JsonObjectType, ObjectType};
 use crate::drive::export::ExportManager;
 use crate::drive::items::WarpDriveItemId;
@@ -830,7 +830,7 @@ fn open_team_settings_with_email_invite_in_new_window(
         if let AuthOnboardingState::Terminal(workspace_view_handle) =
             &root_view.auth_onboarding_state
         {
-            let initial_load_complete = CloudModel::as_ref(ctx).initial_load_complete();
+            let initial_load_complete = ObjectStoreModel::as_ref(ctx).initial_load_complete();
             let email_invite = arg.invite_email.clone();
             workspace_view_handle.update(ctx, |_, ctx| {
                 let _ = ctx.spawn(initial_load_complete, move |workspace, _, ctx| {
@@ -866,7 +866,7 @@ fn open_mcp_settings_in_new_window(args: &OpenMCPSettingsArgs, ctx: &mut AppCont
         if let AuthOnboardingState::Terminal(workspace_view_handle) =
             &root_view.auth_onboarding_state
         {
-            let initial_load_complete = CloudModel::as_ref(ctx).initial_load_complete();
+            let initial_load_complete = ObjectStoreModel::as_ref(ctx).initial_load_complete();
             workspace_view_handle.update(ctx, |_, ctx| {
                 let _ = ctx.spawn(initial_load_complete, move |workspace, _, ctx| {
                     workspace.open_mcp_servers_page(
@@ -887,7 +887,7 @@ fn open_codex_in_new_window(_: &(), ctx: &mut AppContext) {
         if let AuthOnboardingState::Terminal(workspace_view_handle) =
             &root_view.auth_onboarding_state
         {
-            let initial_load_complete = CloudModel::as_ref(ctx).initial_load_complete();
+            let initial_load_complete = ObjectStoreModel::as_ref(ctx).initial_load_complete();
             workspace_view_handle.update(ctx, |_, ctx| {
                 let _ = ctx.spawn(initial_load_complete, move |workspace, _, ctx| {
                     workspace.open_codex_modal(ctx)
@@ -2362,7 +2362,7 @@ impl RootView {
         ctx: &mut ViewContext<Self>,
     ) -> bool {
         if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
-            let cloud_model = CloudModel::as_ref(ctx);
+            let cloud_model = ObjectStoreModel::as_ref(ctx);
 
             match arg.object_type {
                 ObjectType::Notebook => {
@@ -2569,7 +2569,7 @@ impl RootView {
     ) -> bool {
         if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
             let autoinstall = args.autoinstall.clone();
-            let initial_load_complete = CloudModel::as_ref(ctx).initial_load_complete();
+            let initial_load_complete = ObjectStoreModel::as_ref(ctx).initial_load_complete();
             handle.update(ctx, |_, ctx| {
                 let _ = ctx.spawn(initial_load_complete, move |workspace, _, ctx| {
                     workspace.open_mcp_servers_page(
@@ -2788,7 +2788,7 @@ impl RootView {
 
     fn export_all_warp_drive_objects(&mut self, ctx: &mut ViewContext<Self>) {
         let window_id = ctx.window_id();
-        let cloud_model = CloudModel::as_ref(ctx);
+        let cloud_model = ObjectStoreModel::as_ref(ctx);
         let exportable_objects = cloud_model.get_all_exportable_object_ids();
         ExportManager::handle(ctx).update(ctx, move |export_manager, ctx| {
             export_manager.export(window_id, &exportable_objects, ctx);

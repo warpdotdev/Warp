@@ -14,7 +14,7 @@ use crate::ai::ambient_agents::AmbientAgentTaskId;
 
 use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::cloud_object::Owner;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
@@ -108,7 +108,7 @@ pub fn refresh_workspace_metadata<C>(
 pub fn refresh_warp_drive(
     ctx: &AppContext,
 ) -> impl Future<Output = anyhow::Result<()>> + Send + 'static {
-    CloudModel::as_ref(ctx)
+    ObjectStoreModel::as_ref(ctx)
         .initial_load_complete()
         .with_timeout(WARP_DRIVE_SYNC_TIMEOUT)
         .map_err(|_| anyhow::anyhow!("Timed out waiting for Warp Drive to sync"))

@@ -24,9 +24,9 @@ use crate::workflows::{WorkflowObjectModel, WorkflowSource, WorkflowType};
 /// Holds workflow data for a `WorkflowSearchItem`, used to read workflow fields
 /// during rendering and to produce an `AcceptedWorkflow` payload on selection.
 ///
-/// Cloud workflows use a shared `Arc` pointer into CloudModel so the snapshot
+/// Cloud workflows use a shared `Arc` pointer into ObjectStoreModel so the snapshot
 /// avoids deep-cloning on every keystroke. Non-cloud workflows (local files,
-/// AI-generated) don't live in CloudModel, so they must carry owned data.
+/// AI-generated) don't live in ObjectStoreModel, so they must carry owned data.
 #[derive(Clone, Debug)]
 pub enum WorkflowIdentity {
     Cloud {

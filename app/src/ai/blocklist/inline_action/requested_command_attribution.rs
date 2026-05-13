@@ -9,7 +9,7 @@ use crate::env_vars::EnvVarValue;
 use crate::notebooks::NotebookObjectModel;
 use crate::terminal::shell::ShellType;
 use crate::{
-    ai::agent::AIAgentCitation, cloud_object::model::persistence::CloudModel,
+    ai::agent::AIAgentCitation, cloud_object::model::persistence::ObjectStoreModel,
     workflows::command_parser::command_matches_workflow,
 };
 use markdown_parser::{parse_markdown, FormattedTextLine};
@@ -39,11 +39,11 @@ fn is_command_copied_from_warp_drive_object(
     shell_type: Option<ShellType>,
     ctx: &AppContext,
 ) -> bool {
-    if let Some(workflow) = CloudModel::as_ref(ctx).get_workflow_by_uid(object_uid) {
+    if let Some(workflow) = ObjectStoreModel::as_ref(ctx).get_workflow_by_uid(object_uid) {
         command_matches_workflow(command, &workflow.model().data)
-    } else if let Some(notebook) = CloudModel::as_ref(ctx).get_notebook_by_uid(object_uid) {
+    } else if let Some(notebook) = ObjectStoreModel::as_ref(ctx).get_notebook_by_uid(object_uid) {
         is_command_copied_from_notebook(command, notebook.model())
-    } else if let Some((env_var_collection, shell_type)) = CloudModel::as_ref(ctx)
+    } else if let Some((env_var_collection, shell_type)) = ObjectStoreModel::as_ref(ctx)
         .get_env_var_collection_by_uid(object_uid)
         .zip(shell_type)
     {

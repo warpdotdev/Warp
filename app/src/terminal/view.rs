@@ -214,7 +214,7 @@ use crate::auth::AuthStateProvider;
 use crate::auth::AuthViewVariant;
 use crate::autoupdate::{self, get_update_state, AutoupdateStage};
 use crate::cloud_object::model::actions::ObjectActionType;
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::cloud_object::update_manager::UpdateManager;
 use crate::cloud_object::{CloudObject, GenericStringObjectFormat, JsonObjectType};
 #[cfg(feature = "local_fs")]
@@ -5954,7 +5954,7 @@ impl TerminalView {
                     })
                     .and_then(|citation| {
                         if let AIAgentCitation::WarpDriveObject { uid } = citation {
-                            CloudModel::as_ref(ctx).get_workflow_by_uid(&uid)
+                            ObjectStoreModel::as_ref(ctx).get_workflow_by_uid(&uid)
                         } else {
                             None
                         }
@@ -17782,7 +17782,7 @@ impl TerminalView {
                 ctx.emit(Event::OpenAIFactCollection { sync_id: *sync_id });
             }
             AIBlockEvent::OpenWorkflow { sync_id } => {
-                if let Some(object) = CloudModel::as_ref(ctx).get_workflow(sync_id) {
+                if let Some(object) = ObjectStoreModel::as_ref(ctx).get_workflow(sync_id) {
                     ctx.emit(Event::OpenWarpDriveObjectInPane(object.uid()));
                 }
             }

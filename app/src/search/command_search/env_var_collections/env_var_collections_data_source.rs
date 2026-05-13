@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use warpui::{AppContext, SingletonEntity};
 
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 
 use super::EnvVarCollectionSearchItem;
 use crate::search::command_search::searcher::CommandSearchItemAction;
@@ -28,7 +28,8 @@ impl SyncDataSource for EnvVarCollectionDataSource {
         app: &AppContext,
     ) -> Result<Vec<QueryResult<Self::Action>>, DataSourceRunErrorWrapper> {
         let query_str = query.text.as_str();
-        let env_var_collections = CloudModel::as_ref(app).get_all_active_env_var_collections();
+        let env_var_collections =
+            ObjectStoreModel::as_ref(app).get_all_active_env_var_collections();
 
         Ok(env_var_collections
             .flat_map(

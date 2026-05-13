@@ -12,7 +12,7 @@ use crate::{
         model::{
             generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
             json_model::{JsonModel, JsonSerializer},
-            persistence::CloudModel,
+            persistence::ObjectStoreModel,
         },
         GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
         JsonObjectType,
@@ -268,14 +268,14 @@ pub type MCPServerObjectModel = GenericStringModel<MCPServer, JsonSerializer>;
 
 impl MCPServerObject {
     pub fn get_all(app: &AppContext) -> Vec<MCPServerObject> {
-        CloudModel::as_ref(app)
+        ObjectStoreModel::as_ref(app)
             .get_all_objects_of_type::<GenericStringObjectId, MCPServerObjectModel>()
             .cloned()
             .collect()
     }
 
     pub fn get_by_id<'a>(sync_id: &'a SyncId, app: &'a AppContext) -> Option<&'a MCPServerObject> {
-        CloudModel::as_ref(app)
+        ObjectStoreModel::as_ref(app)
             .get_object_of_type::<GenericStringObjectId, MCPServerObjectModel>(sync_id)
     }
 
@@ -283,7 +283,7 @@ impl MCPServerObject {
         uuid: &'a uuid::Uuid,
         app: &'a AppContext,
     ) -> Option<&'a MCPServerObject> {
-        CloudModel::as_ref(app)
+        ObjectStoreModel::as_ref(app)
             .get_all_objects_of_type::<GenericStringObjectId, MCPServerObjectModel>()
             .find(|server| server.model().string_model.uuid == *uuid)
     }

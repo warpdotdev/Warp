@@ -15,7 +15,7 @@ use crate::{
     pane_group::PaneEvent,
     ui_components::icons::Icon,
     util::bindings::{keybinding_name_to_display_string, trigger_to_keystroke, CustomAction},
-    AppContext, CloudModel, FeatureFlag,
+    AppContext, FeatureFlag, ObjectStoreModel,
 };
 
 use super::env_var_collection::{EnvVarCollectionAction, EnvVarCollectionView, VariableRowIndex};
@@ -415,7 +415,7 @@ impl EnvVarCollectionView {
 
     pub(super) fn env_var_collection_link(&self, ctx: &AppContext) -> Option<String> {
         self.env_var_collection_id(ctx)
-            .and_then(|id| CloudModel::as_ref(ctx).get_env_var_collection(&id))
+            .and_then(|id| ObjectStoreModel::as_ref(ctx).get_env_var_collection(&id))
             .map(|env_var_collection| env_var_collection.object_link())?
     }
 

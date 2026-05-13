@@ -4,8 +4,8 @@ use warpui::{AppContext, SingletonEntity, ViewHandle};
 
 use crate::{
     cloud_object::{
-        model::persistence::CloudModel, update_manager::UpdateManager, CloudObjectEventEntrypoint,
-        Owner,
+        model::persistence::ObjectStoreModel, update_manager::UpdateManager,
+        CloudObjectEventEntrypoint, Owner,
     },
     editor::EditorView,
     server::ids::SyncId,
@@ -44,7 +44,7 @@ pub fn load_workflow_enums_with_owner<V>(
 where
     V: warpui::View,
 {
-    let cloud_model = CloudModel::as_ref(ctx);
+    let cloud_model = ObjectStoreModel::as_ref(ctx);
     cloud_model
         .workflow_enums_with_owner(owner, ctx)
         .filter(|workflow_enum| workflow_enum.model().string_model.is_shared)
@@ -80,7 +80,7 @@ pub fn load_argument_into_selector(
             selector.insert_enum_into_menu(enum_id, enum_data.name.clone(), ctx);
         } else {
             // Grab the revision_ts, enum name, and shared status from the cloud model
-            let cloud_model = CloudModel::as_ref(ctx);
+            let cloud_model = ObjectStoreModel::as_ref(ctx);
             let workflow_enum_model = cloud_model.get_workflow_enum(&enum_id);
             let revision_ts = workflow_enum_model.and_then(|model| model.metadata.revision.clone());
             let enum_data = workflow_enum_model.map(|workflow_enum| {

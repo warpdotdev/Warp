@@ -9,8 +9,8 @@ use crate::auth::UserUid;
 use crate::auth::TEST_USER_UID;
 use crate::cloud_object::model::actions::ObjectActions;
 use crate::cloud_object::model::generic_string_model::GenericStringModel;
-use crate::cloud_object::model::view::CloudViewModel;
 use crate::cloud_object::model::view::EditorState;
+use crate::cloud_object::model::view::ObjectStoreViewModel;
 use crate::cloud_object::model::view::UpdateTimestamp;
 use crate::cloud_object::model::view::EDITOR_TIMEOUT_DURATION_MINUTES;
 use crate::cloud_object::CloudObjectMetadata;
@@ -41,10 +41,10 @@ use super::*;
 fn create_cloud_model(
     app: &mut App,
     objects: Vec<Box<dyn CloudObject>>,
-) -> ModelHandle<CloudModel> {
-    // Make sure to register the CloudModel singleton - some CloudObject methods
+) -> ModelHandle<ObjectStoreModel> {
+    // Make sure to register the ObjectStoreModel singleton - some CloudObject methods
     // find it and other dependencies via the AppContext.
-    app.add_singleton_model(|_ctx| CloudModel::new(None, objects, None))
+    app.add_singleton_model(|_ctx| ObjectStoreModel::new(None, objects, None))
 }
 
 lazy_static! {
@@ -72,10 +72,10 @@ fn initialize_app(app: &mut App, cached_objects: Vec<Box<dyn CloudObject>>) {
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![TEST_WORKSPACE.clone()], ctx));
-    app.add_singleton_model(|_ctx| CloudModel::new(None, cached_objects, None));
+    app.add_singleton_model(|_ctx| ObjectStoreModel::new(None, cached_objects, None));
     app.add_singleton_model(|ctx| UpdateManager::new(None, ctx));
     app.add_singleton_model(|_| UserProfiles::new(Vec::new()));
-    app.add_singleton_model(CloudViewModel::new);
+    app.add_singleton_model(ObjectStoreViewModel::new);
     app.add_singleton_model(|_| ObjectActions::new(Vec::new()));
 }
 
@@ -162,7 +162,7 @@ fn mock_trashed_cloud_folder(id: SyncId, name: String, folder_id: Option<SyncId>
     folder
 }
 
-fn folder_from_cloud_model(model: &CloudModel, id: SyncId) -> &FolderObject {
+fn folder_from_cloud_model(model: &ObjectStoreModel, id: SyncId) -> &FolderObject {
     model.get_folder_by_uid(&id.uid()).expect("is a folder")
 }
 
@@ -172,7 +172,7 @@ fn folder_from_cloud_model(model: &CloudModel, id: SyncId) -> &FolderObject {
 // OpenWarp(本地化,Phase 2d-4a-1):RTC 入口 `received_message_from_server` 随 `Listener`
 // 一并物理删除,以下依赖 `receive_rtc_update` / `move_object` helper 的 4 个
 // folder 排序时间戳测试(test_update_folder_timestamp_from_*)与 helper 同一删除,
-// 本地写入路径下的 metadata 更新由 `CloudModel` 直接接手,无需 RTC 路径。
+// 本地写入路径下的 metadata 更新由 `ObjectStoreModel` 直接接手,无需 RTC 路径。
 
 #[test]
 fn test_create_json_object() {
@@ -223,7 +223,7 @@ fn test_create_json_object() {
 }
 
 fn check_cloud_folders(app: &mut App, number_of_folders: usize) {
-    CloudModel::handle(app).read(app, |model, _| {
+    ObjectStoreModel::handle(app).read(app, |model, _| {
         assert_eq!(
             number_of_folders,
             model.get_all_active_and_inactive_folders().count(),
@@ -235,7 +235,7 @@ fn check_cloud_folders(app: &mut App, number_of_folders: usize) {
 }
 
 fn check_cloud_workflows(app: &mut App, number_of_workflows: usize) {
-    CloudModel::handle(app).read(app, |model, _| {
+    ObjectStoreModel::handle(app).read(app, |model, _| {
         assert_eq!(
             number_of_workflows,
             model.get_all_active_and_inactive_workflows().count(),
@@ -247,7 +247,7 @@ fn check_cloud_workflows(app: &mut App, number_of_workflows: usize) {
 }
 
 fn check_cloud_notebooks(app: &mut App, number_of_notebooks: usize) {
-    CloudModel::handle(app).read(app, |model, _| {
+    ObjectStoreModel::handle(app).read(app, |model, _| {
         assert_eq!(
             number_of_notebooks,
             model.get_all_active_and_inactive_notebooks().count(),
@@ -451,8 +451,8 @@ fn test_object_editor_timeout() {
         let notebook_id: SyncId = SyncId::ServerId(1.into());
         let cloud_notebook = mock_cloud_notebook(notebook_id, "test1".into(), None);
 
-        CloudModel::handle(&app).update(&mut app, |model, _ctx| {
-            // Add a notebook to CloudModel
+        ObjectStoreModel::handle(&app).update(&mut app, |model, _ctx| {
+            // Add a notebook to ObjectStoreModel
             model.add_object(notebook_id, cloud_notebook.clone());
 
             let notebook = model
@@ -463,7 +463,7 @@ fn test_object_editor_timeout() {
             notebook.metadata.current_editor_uid = Some("ian@warp.dev".to_string());
         });
 
-        let current_editor = CloudViewModel::handle(&app).read(&app, |view_model, ctx| {
+        let current_editor = ObjectStoreViewModel::handle(&app).read(&app, |view_model, ctx| {
             view_model
                 .object_current_editor(&notebook_id.uid(), ctx)
                 .expect("expect editor to be set")
@@ -471,7 +471,7 @@ fn test_object_editor_timeout() {
         // Assert that the current editor is an active other user
         assert_eq!(current_editor.state, EditorState::OtherUserActive);
 
-        CloudModel::handle(&app).update(&mut app, |model, _ctx| {
+        ObjectStoreModel::handle(&app).update(&mut app, |model, _ctx| {
             let notebook = model
                 .get_notebook_mut(&notebook_id)
                 .expect("notebook should exist");
@@ -484,7 +484,7 @@ fn test_object_editor_timeout() {
             notebook.metadata.metadata_last_updated_ts = Some(timeout_timestamp.into());
         });
 
-        let current_editor = CloudViewModel::handle(&app).read(&app, |view_model, ctx| {
+        let current_editor = ObjectStoreViewModel::handle(&app).read(&app, |view_model, ctx| {
             view_model
                 .object_current_editor(&notebook_id.uid(), ctx)
                 .expect("expect editor to be set")
@@ -512,7 +512,7 @@ fn test_breadcrumbs() {
     App::test((), |mut app| async move {
         initialize_app(&mut app, folders.clone());
 
-        CloudModel::handle(&app).read(&app, |_, ctx| {
+        ObjectStoreModel::handle(&app).read(&app, |_, ctx| {
             assert_eq!("Personal".to_string(), folders[0].breadcrumbs(ctx));
             assert_eq!("Personal / test1".to_string(), folders[1].breadcrumbs(ctx));
             assert_eq!(
@@ -527,8 +527,12 @@ fn test_breadcrumbs() {
 #[track_caller]
 fn assert_sorting_timestamp(id: ServerId, expected_ts: impl Into<ServerTimestamp>, app: &App) {
     let sorting_timestamp = app.read(|ctx| {
-        let object = CloudModel::as_ref(ctx).get_by_uid(&id.uid())?;
-        CloudViewModel::as_ref(ctx).object_sorting_timestamp(object, UpdateTimestamp::Revision, ctx)
+        let object = ObjectStoreModel::as_ref(ctx).get_by_uid(&id.uid())?;
+        ObjectStoreViewModel::as_ref(ctx).object_sorting_timestamp(
+            object,
+            UpdateTimestamp::Revision,
+            ctx,
+        )
     });
     assert_eq!(
         sorting_timestamp,
@@ -565,12 +569,12 @@ fn test_shared_personal_object() {
             },
         );
 
-        CloudModel::handle(&app).update(&mut app, |cloud_model, ctx| {
+        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, ctx| {
             cloud_model.add_object(shared_notebook_id, shared_notebook);
 
             let space = cloud_model
                 .get_notebook(&shared_notebook_id)
-                .expect("Notebook is in CloudModel")
+                .expect("Notebook is in ObjectStoreModel")
                 .space(ctx);
             assert_eq!(space, Space::Shared);
         });
@@ -603,12 +607,12 @@ fn test_unshared_personal_object() {
             },
         );
 
-        CloudModel::handle(&app).update(&mut app, |cloud_model, ctx| {
+        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, ctx| {
             cloud_model.add_object(shared_notebook_id, shared_notebook);
 
             let space = cloud_model
                 .get_notebook(&shared_notebook_id)
-                .expect("Notebook is in CloudModel")
+                .expect("Notebook is in ObjectStoreModel")
                 .space(ctx);
             assert_eq!(space, Space::Personal);
         });
@@ -642,12 +646,12 @@ fn test_shared_team_object() {
             },
         );
 
-        CloudModel::handle(&app).update(&mut app, |cloud_model, ctx| {
+        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, ctx| {
             cloud_model.add_object(shared_notebook_id, shared_notebook);
 
             let space = cloud_model
                 .get_notebook(&shared_notebook_id)
-                .expect("Notebook is in CloudModel")
+                .expect("Notebook is in ObjectStoreModel")
                 .space(ctx);
             assert_eq!(space, Space::Shared);
         });
@@ -681,12 +685,12 @@ fn test_unshared_team_object() {
             },
         );
 
-        CloudModel::handle(&app).update(&mut app, |cloud_model, ctx| {
+        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, ctx| {
             cloud_model.add_object(shared_notebook_id, shared_notebook);
 
             let space = cloud_model
                 .get_notebook(&shared_notebook_id)
-                .expect("Notebook is in CloudModel")
+                .expect("Notebook is in ObjectStoreModel")
                 .space(ctx);
             assert_eq!(space, Space::Team { team_uid });
         });
@@ -723,11 +727,11 @@ fn test_shared_object_in_unshared_folder() {
         );
         shared_notebook.metadata_mut().folder_id = Some(unshared_folder_id);
 
-        CloudModel::handle(&app).update(&mut app, |cloud_model, ctx| {
+        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, ctx| {
             cloud_model.add_object(shared_notebook_id, shared_notebook);
             let notebook = cloud_model
                 .get_notebook(&shared_notebook_id)
-                .expect("Notebook is in CloudModel");
+                .expect("Notebook is in ObjectStoreModel");
 
             // Check space-based APIs.
             assert_eq!(notebook.space(ctx), Space::Shared);
@@ -787,7 +791,7 @@ fn test_shared_object_in_unshared_folder() {
 }
 
 /// Helper: compute active UIDs using the naive (non-memoized) is_trashed approach.
-fn naive_active_object_uids(model: &CloudModel) -> HashSet<String> {
+fn naive_active_object_uids(model: &ObjectStoreModel) -> HashSet<String> {
     model
         .as_cloud_objects()
         .filter(|obj| !obj.is_trashed(model))

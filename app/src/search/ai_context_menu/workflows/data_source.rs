@@ -1,5 +1,5 @@
 use super::search_item::WorkflowSearchItem;
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::cloud_object::CloudModelType;
 use crate::search::ai_context_menu::mixer::AIContextMenuSearchableAction;
 use crate::search::data_source::{Query, QueryResult};
@@ -32,8 +32,8 @@ impl SyncDataSource for WorkflowDataSource {
     ) -> Result<Vec<QueryResult<Self::Action>>, DataSourceRunErrorWrapper> {
         let query_text = &query.text;
 
-        // Get all workflows from CloudModel
-        let cloud_model = CloudModel::as_ref(app);
+        // Get all workflows from ObjectStoreModel
+        let cloud_model = ObjectStoreModel::as_ref(app);
         let _user_workspaces = UserWorkspaces::as_ref(app);
 
         // Get workflows from all spaces the user has access to

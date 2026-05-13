@@ -7,7 +7,9 @@ use crate::{
     ai::blocklist::BlocklistAIHistoryModel,
     auth::{AuthManager, AuthStateProvider},
     cloud_object::{
-        model::{actions::ObjectActions, persistence::CloudModel, view::CloudViewModel},
+        model::{
+            actions::ObjectActions, persistence::ObjectStoreModel, view::ObjectStoreViewModel,
+        },
         update_manager::UpdateManager,
         CloudObjectSyncStatus, ObjectType, Owner, Space,
     },
@@ -28,14 +30,14 @@ use super::{DriveIndex, DriveIndexAction};
 fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
 
-    app.add_singleton_model(CloudModel::mock);
+    app.add_singleton_model(ObjectStoreModel::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(UpdateManager::mock);
-    app.add_singleton_model(CloudViewModel::mock);
+    app.add_singleton_model(ObjectStoreViewModel::mock);
     app.add_singleton_model(|_| ObjectActions::new(Vec::new()));
     app.add_singleton_model(|_| UserProfiles::new(Vec::new()));
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
@@ -50,7 +52,7 @@ fn create_index(app: &mut App) -> ViewHandle<DriveIndex> {
 }
 
 fn create_workflow(app: &mut App) -> SyncId {
-    CloudModel::handle(app).update(app, |cloud_model, ctx| {
+    ObjectStoreModel::handle(app).update(app, |cloud_model, ctx| {
         let client_id = ClientId::new();
         let sync_id = SyncId::ClientId(client_id);
         let workflow = Workflow::new("my workflow", "my command");
@@ -69,7 +71,7 @@ fn create_workflow(app: &mut App) -> SyncId {
 }
 
 fn create_notebook(app: &mut App) -> SyncId {
-    CloudModel::handle(app).update(app, |cloud_model, ctx| {
+    ObjectStoreModel::handle(app).update(app, |cloud_model, ctx| {
         let client_id = ClientId::new();
         let sync_id = SyncId::ClientId(client_id);
         cloud_model.create_object(
@@ -87,9 +89,9 @@ fn create_notebook(app: &mut App) -> SyncId {
 }
 
 fn set_object_in_error(app: &mut App, object_type_and_id: &ObjectTypeAndId) {
-    CloudModel::handle(app).update(
+    ObjectStoreModel::handle(app).update(
         app,
-        |cloud_model, _ctx: &mut warpui::ModelContext<'_, CloudModel>| {
+        |cloud_model, _ctx: &mut warpui::ModelContext<'_, ObjectStoreModel>| {
             if let Some(object) = cloud_model.get_mut_by_uid(&object_type_and_id.uid()) {
                 object.set_pending_content_changes_status(CloudObjectSyncStatus::Errored);
             }
@@ -172,7 +174,7 @@ fn test_retry_menu_item_logic() {
         });
 
         // the item is now in flight
-        CloudModel::handle(&app).update(&mut app, |cloud_model, _ctx| {
+        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, _ctx| {
             if let Some(object) = cloud_model.get_mut_by_uid(&object_type_and_id.uid()) {
                 let _ = object;
             }

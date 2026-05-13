@@ -23,7 +23,7 @@ use crate::workspaces::team::{MembershipRole, TeamDeleteDisabledReason};
 use crate::{
     appearance::Appearance,
     channel::ChannelState,
-    cloud_object::{model::persistence::CloudModel, CloudObjectEventEntrypoint, Space},
+    cloud_object::{model::persistence::ObjectStoreModel, CloudObjectEventEntrypoint, Space},
     drive::cloud_action_confirmation_dialog::{
         CloudActionConfirmationDialog, CloudActionConfirmationDialogEvent,
         CloudActionConfirmationDialogVariant,
@@ -297,7 +297,7 @@ impl Tabs for TeamsInviteOption {
         TeamsPageAction::ChangeInviteViewOption(selection)
     }
 
-    fn label(&self, _team: &Team, _cloud_model: &CloudModel) -> String {
+    fn label(&self, _team: &Team, _cloud_model: &ObjectStoreModel) -> String {
         self.tab_name()
     }
 }
@@ -385,7 +385,7 @@ pub struct TeamsPageView {
     user_workspaces: ModelHandle<UserWorkspaces>,
     ai_request_usage_model: ModelHandle<AIRequestUsageModel>,
     pricing_info_model: ModelHandle<PricingInfoModel>,
-    cloud_model: ModelHandle<CloudModel>,
+    cloud_model: ModelHandle<ObjectStoreModel>,
     invite_view: TeamsInviteOption,
     team_members_mouse_state_handles: Vec<MouseStateHandle>,
     team_approved_domains_mouse_state_handles: Vec<MouseStateHandle>,
@@ -596,7 +596,7 @@ impl TeamsPageView {
             ctx.notify();
         });
 
-        let cloud_model = CloudModel::handle(ctx);
+        let cloud_model = ObjectStoreModel::handle(ctx);
         ctx.observe(&cloud_model, |me, _, ctx| {
             me.update_team_members_state(ctx);
             me.update_approved_domains_state(ctx);
@@ -1753,7 +1753,7 @@ impl TeamsWidget {
     fn render_team_management_page(
         &self,
         team_metadata: &Team,
-        cloud_model: &CloudModel,
+        cloud_model: &ObjectStoreModel,
         ai_request_usage_model: &AIRequestUsageModel,
         view: &TeamsPageView,
         appearance: &Appearance,
@@ -1990,7 +1990,7 @@ impl TeamsWidget {
     fn render_plan_usage(
         &self,
         team: &Team,
-        cloud_model: &CloudModel,
+        cloud_model: &ObjectStoreModel,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {

@@ -24,7 +24,7 @@ use warpui::{
 
 use super::super::palette_styles as styles;
 use crate::appearance::Appearance;
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::drive::ObjectTypeAndId;
 use crate::palette::PaletteMode;
 use crate::pane_group::pane::welcome_view::WelcomeViewAction;
@@ -806,7 +806,7 @@ impl WelcomePalette {
                 self.close(ctx, Some(result_action.result_type()));
             }
             CommandPaletteItemAction::ExecuteWorkflow { id } => {
-                let Some(workflow) = CloudModel::as_ref(ctx).get_workflow(id) else {
+                let Some(workflow) = ObjectStoreModel::as_ref(ctx).get_workflow(id) else {
                     log::warn!("Tried to execute workflow for id {id:?} but it does not exist");
                     return;
                 };

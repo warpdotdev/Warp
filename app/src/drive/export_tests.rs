@@ -13,8 +13,8 @@ use warpui::{AddSingletonModel, App, SingletonEntity, WindowId};
 
 use crate::{
     cloud_object::{
-        model::persistence::CloudModel, CloudObjectMetadata, CloudObjectPermissions, ObjectIdType,
-        ObjectType, Space,
+        model::persistence::ObjectStoreModel, CloudObjectMetadata, CloudObjectPermissions,
+        ObjectIdType, ObjectType, Space,
     },
     drive::ObjectTypeAndId,
     notebooks::{NotebookId, NotebookObject, NotebookObjectModel},
@@ -102,7 +102,7 @@ impl ExportTest {
 }
 
 fn initialize_app(app: &mut App) {
-    app.add_singleton_model(CloudModel::mock);
+    app.add_singleton_model(ObjectStoreModel::mock);
     app.add_singleton_model(ExportManager::new);
     app.add_singleton_model(UserWorkspaces::default_mock);
     app.add_singleton_model(|_| ToastStack);
@@ -110,7 +110,7 @@ fn initialize_app(app: &mut App) {
 
 /// Add a mocked workflow.
 fn add_workflow(id: SyncId, workflow: Workflow, app: &mut App) {
-    CloudModel::handle(app).update(app, |cloud_model, _ctx| {
+    ObjectStoreModel::handle(app).update(app, |cloud_model, _ctx| {
         cloud_model.add_object(
             id,
             WorkflowObject::new(
@@ -125,7 +125,7 @@ fn add_workflow(id: SyncId, workflow: Workflow, app: &mut App) {
 
 /// Add a mocked notebook.
 fn add_notebook(id: SyncId, title: impl Into<String>, data: impl Into<String>, app: &mut App) {
-    CloudModel::handle(app).update(app, |cloud_model, _ctx| {
+    ObjectStoreModel::handle(app).update(app, |cloud_model, _ctx| {
         cloud_model.add_object(
             id,
             NotebookObject::new(

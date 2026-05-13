@@ -412,7 +412,7 @@ use super::util::{
     PaneViewLocator, TabMovement, TerminalSessionFallbackBehavior, WelcomeTipsViewState,
     WorkspaceMouseStates, WorkspaceState,
 };
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::launch_configs::save_modal::{LaunchConfigModalEvent, LaunchConfigSaveModal};
 use crate::tab_configs::action_sidecar::SidecarItemKind;
 use crate::tab_configs::remove_confirmation_dialog::{
@@ -1344,8 +1344,9 @@ impl Workspace {
                 self.current_workspace_state.is_import_modal_open = false;
 
                 let mut id_to_force_expand = None;
-                if let Some(notebook) = CloudModel::as_ref(ctx).get_notebook_by_uid(server_id) {
-                    // Note that we had to call each CloudModel individually here because the IDs all have different typings.
+                if let Some(notebook) = ObjectStoreModel::as_ref(ctx).get_notebook_by_uid(server_id)
+                {
+                    // Note that we had to call each ObjectStoreModel individually here because the IDs all have different typings.
                     // TODO: @ianhodge - clean this up once generic is cleared.
                     id_to_force_expand = Some(notebook.id);
                 }
@@ -1356,13 +1357,14 @@ impl Workspace {
                         ctx,
                         true,
                     );
-                    CloudModel::handle(ctx).update(ctx, |cloud_model, ctx| {
+                    ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
                         cloud_model.force_expand_object_and_ancestors(id, ctx);
                     });
                 }
 
                 let mut id_to_force_expand = None;
-                if let Some(workflow) = CloudModel::as_ref(ctx).get_workflow_by_uid(server_id) {
+                if let Some(workflow) = ObjectStoreModel::as_ref(ctx).get_workflow_by_uid(server_id)
+                {
                     id_to_force_expand = Some(workflow.id);
                 }
                 if let Some(id) = id_to_force_expand {
@@ -1371,17 +1373,17 @@ impl Workspace {
                         &OpenWarpDriveObjectSettings::default(),
                         ctx,
                     );
-                    CloudModel::handle(ctx).update(ctx, |cloud_model, ctx| {
+                    ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
                         cloud_model.force_expand_object_and_ancestors(id, ctx);
                     });
                 }
 
                 let mut id_to_force_expand = None;
-                if let Some(folder) = CloudModel::as_ref(ctx).get_folder_by_uid(server_id) {
+                if let Some(folder) = ObjectStoreModel::as_ref(ctx).get_folder_by_uid(server_id) {
                     id_to_force_expand = Some(folder.id);
                 }
                 if let Some(id) = id_to_force_expand {
-                    CloudModel::handle(ctx).update(ctx, |cloud_model, ctx| {
+                    ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
                         cloud_model.force_expand_object_and_ancestors(id, ctx);
                     });
                 }
@@ -3628,18 +3630,18 @@ impl Workspace {
             // * The user is new to Warp, and went through the overall onboarding flow
             // * The user is on the web, so we can't open a terminal session.
             let initial_load_complete =
-                crate::cloud_object::model::persistence::CloudModel::as_ref(ctx)
+                crate::cloud_object::model::persistence::ObjectStoreModel::as_ref(ctx)
                     .initial_load_complete();
             ctx.spawn(initial_load_complete, move |me, _, ctx| {
                 // New Warp users can have non-welcome objects if they were directly invited OR if
                 // linked objects were copied over from an anonymous user.
-                if CloudModel::as_ref(ctx).has_non_welcome_objects() {
+                if ObjectStoreModel::as_ref(ctx).has_non_welcome_objects() {
                     me.open_or_toggle_warp_drive(false, false, ctx);
 
                     // After opening Warp Drive, if we rendered the Warp Home placeholder panel, replace it with one of
                     // the user's own objects.
                     if show_warp_home {
-                        let cloud_model = CloudModel::as_ref(ctx);
+                        let cloud_model = ObjectStoreModel::as_ref(ctx);
                         let candidate_objects = cloud_model
                             .cloud_objects()
                             .filter(|object| {
@@ -5541,7 +5543,7 @@ impl Workspace {
 
     fn export_all_warp_drive_objects(&mut self, ctx: &mut ViewContext<Self>) {
         let window_id = ctx.window_id();
-        let cloud_model = CloudModel::as_ref(ctx);
+        let cloud_model = ObjectStoreModel::as_ref(ctx);
         let exportable_objects = cloud_model.get_all_exportable_object_ids();
         ExportManager::handle(ctx).update(ctx, move |export_manager, ctx| {
             export_manager.export(window_id, &exportable_objects, ctx);
@@ -6273,7 +6275,7 @@ impl Workspace {
     /// Opens the Warp Drive object identified by `uid` in a new pane
     /// if it has a pane representation.
     fn open_warp_drive_object_in_new_pane(&mut self, uid: &ObjectUid, ctx: &mut ViewContext<Self>) {
-        let Some(object) = CloudModel::as_ref(ctx).get_by_uid(uid) else {
+        let Some(object) = ObjectStoreModel::as_ref(ctx).get_by_uid(uid) else {
             return;
         };
 
@@ -6404,7 +6406,10 @@ impl Workspace {
         // We don't want to run the workflow if the invitee email is set, as we want to open the share dialog instead with the
         // workflow open in a pane.
         if ContextFlag::RunWorkflow.is_enabled() && settings.invitee_email.is_none() {
-            match CloudModel::as_ref(ctx).get_workflow(&workflow_id).cloned() {
+            match ObjectStoreModel::as_ref(ctx)
+                .get_workflow(&workflow_id)
+                .cloned()
+            {
                 Some(workflow) => {
                     self.open_or_toggle_warp_drive(false, false, ctx);
                     self.run_cloud_workflow_in_active_input(
@@ -8784,7 +8789,7 @@ impl Workspace {
             // Check if workflow displayed in info box matches the one that was just updated.
             if open_workflow_id == Some(*workflow_id) {
                 // Fetch latest version of workflow and update info box with fresh contents
-                let cloud_model = CloudModel::as_ref(ctx);
+                let cloud_model = ObjectStoreModel::as_ref(ctx);
                 if let Some(workflow) = cloud_model.get_workflow(workflow_id) {
                     // Proc same behavior as DrivePanelEvent::RunWorkflow
                     self.run_cloud_workflow_in_active_input(
@@ -11638,7 +11643,7 @@ impl Workspace {
                 accepted_action_type,
             } => self.close_palette(true, *accepted_action_type, ctx),
             CommandPaletteEvent::ExecuteWorkflow { id } => {
-                let Some(workflow) = CloudModel::as_ref(ctx).get_workflow(id) else {
+                let Some(workflow) = ObjectStoreModel::as_ref(ctx).get_workflow(id) else {
                     log::warn!("Tried to execute workflow for id {id:?} but it does not exist");
                     return;
                 };
@@ -11651,7 +11656,8 @@ impl Workspace {
                 );
             }
             CommandPaletteEvent::InvokeEnvironmentVariables { id } => {
-                let Some(env_var_collection) = CloudModel::as_ref(ctx).get_env_var_collection(id)
+                let Some(env_var_collection) =
+                    ObjectStoreModel::as_ref(ctx).get_env_var_collection(id)
                 else {
                     log::warn!("Tried to execute EVC for id {id:?} but it does not exist");
                     return;
@@ -11711,7 +11717,7 @@ impl Workspace {
         });
 
         if let WarpDriveItemId::Object(object_id) = item_id {
-            CloudModel::handle(ctx).update(ctx, |model, ctx| {
+            ObjectStoreModel::handle(ctx).update(ctx, |model, ctx| {
                 model.force_expand_object_and_ancestors_cloud_id(object_id, ctx);
             });
         }
@@ -12143,7 +12149,7 @@ impl Workspace {
             pane_group::Event::OpenWarpDriveLink {
                 open_warp_drive_args,
             } => {
-                let object_found = CloudModel::as_ref(ctx)
+                let object_found = ObjectStoreModel::as_ref(ctx)
                     .get_by_uid(&open_warp_drive_args.server_id.uid())
                     .is_some();
 
@@ -13835,7 +13841,7 @@ impl Workspace {
                         let (workflow, workflow_source) = match accepted {
                             AcceptedWorkflow::Cloud { id, source } => {
                                 let Some(cloud_workflow) =
-                                    CloudModel::as_ref(ctx).get_workflow(id).cloned()
+                                    ObjectStoreModel::as_ref(ctx).get_workflow(id).cloned()
                                 else {
                                     self.toast_stack.update(ctx, |view, ctx| {
                                         view.add_ephemeral_toast(
@@ -13975,7 +13981,7 @@ impl Workspace {
             return;
         };
 
-        let cloud_model = CloudModel::as_ref(ctx);
+        let cloud_model = ObjectStoreModel::as_ref(ctx);
 
         let object_id = result
             .server_id
@@ -14188,7 +14194,7 @@ impl Workspace {
         if result.success_type == OperationSuccessType::Success
             && result.operation == ObjectOperation::Update
         {
-            let cloud_model = CloudModel::as_ref(ctx);
+            let cloud_model = ObjectStoreModel::as_ref(ctx);
             let updated_object = cloud_model
                 .get_by_uid(&result.server_id.expect("Expect server id on success").uid());
             if let Some(ObjectTypeAndId::Workflow(workflow_id)) =
@@ -14205,7 +14211,7 @@ impl Workspace {
         {
             if let Some(created_object) = result
                 .server_id
-                .and_then(|id| CloudModel::as_ref(ctx).get_by_uid(&id.uid()))
+                .and_then(|id| ObjectStoreModel::as_ref(ctx).get_by_uid(&id.uid()))
             {
                 // TODO(openwarp-cloud-removal Phase 5): drive sharing onboarding
                 // block 已退;`created_object` 仍是 cloud_object 创建结果,

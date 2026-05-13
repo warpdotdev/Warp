@@ -32,7 +32,7 @@ use crate::{
     },
     appearance::Appearance,
     cloud_object::{
-        model::persistence::{CloudModel, ObjectStoreEvent},
+        model::persistence::{ObjectStoreEvent, ObjectStoreModel},
         GenericStringObjectFormat, JsonObjectType,
     },
     drive::ObjectTypeAndId,
@@ -247,7 +247,7 @@ impl MCPServersListPageView {
     }
 
     fn listen_to_cloud_model_events(ctx: &mut ViewContext<Self>) {
-        let cloud_model = CloudModel::handle(ctx);
+        let cloud_model = ObjectStoreModel::handle(ctx);
         ctx.subscribe_to_model(&cloud_model, |me, _, event, ctx| match event {
             ObjectStoreEvent::ObjectUpdated {
                 type_and_id:

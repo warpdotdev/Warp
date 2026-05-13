@@ -8,7 +8,9 @@ use warpui::{
 };
 
 use crate::{
-    cloud_object::model::{generic_string_model::GenericStringObjectId, persistence::CloudModel},
+    cloud_object::model::{
+        generic_string_model::GenericStringObjectId, persistence::ObjectStoreModel,
+    },
     integration_testing::{
         cloud_object::assert_metadata_revision,
         terminal::util::ExpectedOutput,
@@ -41,7 +43,7 @@ pub fn assert_notebook_contents(
 pub fn assert_cloud_preference_exists(expected_preference: Preference) -> AssertionCallback {
     Box::new(move |app, _window_id| {
         let stored_preference =
-            app.get_singleton_model_handle::<CloudModel>()
+            app.get_singleton_model_handle::<ObjectStoreModel>()
                 .read(app, |cloud_model, _| {
                     let object = cloud_model
                         .get_all_objects_of_type::<GenericStringObjectId, CloudPreferenceModel>()

@@ -1,5 +1,5 @@
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::code::editor::view::CodeEditorRenderOptions;
 use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::workspace::ActiveSession;
@@ -50,7 +50,7 @@ fn initialize_code_editor_app(app: &mut App) {
     app.add_singleton_model(voice_input::VoiceInput::new);
 
     // Add mocks required by rich text editor (used in the CommentEditor)
-    app.add_singleton_model(CloudModel::mock);
+    app.add_singleton_model(ObjectStoreModel::mock);
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(NotebookKeybindings::new);
 

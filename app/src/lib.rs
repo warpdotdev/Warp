@@ -199,7 +199,7 @@ use crate::ai::AIRequestUsageModel;
 use crate::autoupdate::{AutoupdateState, RelaunchModel};
 use crate::changelog_model::ChangelogModel;
 use crate::cloud_object::model::actions::ObjectActions;
-use crate::cloud_object::model::view::CloudViewModel;
+use crate::cloud_object::model::view::ObjectStoreViewModel;
 use crate::cloud_object::update_manager::UpdateManager;
 use crate::code::global_buffer_model::GlobalBufferModel;
 use crate::context_chips::prompt::Prompt;
@@ -259,7 +259,7 @@ use warpui::{integration::TestDriver, App, AssetProvider, Event};
 
 use self::features::FeatureFlag;
 use crate::app_state::AppState;
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::drive::ObjectTypeAndId;
 use crate::experiments::ImprovedPaletteSearch;
 pub use crate::global_resource_handles::{GlobalResourceHandles, GlobalResourceHandlesProvider};
@@ -1552,7 +1552,7 @@ fn initialize_app(
         .collect::<Vec<_>>();
 
     let cloud_model = ctx.add_singleton_model(|_ctx| {
-        CloudModel::new(
+        ObjectStoreModel::new(
             persistence_writer.sender(),
             cloud_objects,
             time_of_next_force_object_refresh,
@@ -1652,9 +1652,9 @@ fn initialize_app(
     // SkillManager is used to cache SKILL.md files for all active terminal views and their working directories
     ctx.add_singleton_model(SkillManager::new);
 
-    // CloudViewModel subscribes to UpdateManager so that it can be notified when objects are
+    // ObjectStoreViewModel subscribes to UpdateManager so that it can be notified when objects are
     // created or mutated in the local object store.
-    ctx.add_singleton_model(CloudViewModel::new);
+    ctx.add_singleton_model(ObjectStoreViewModel::new);
 
     // AIDocumentModel subscribes to UpdateManager so that it can be notified when notebooks are created locally.
     ctx.add_singleton_model(AIDocumentModel::new);

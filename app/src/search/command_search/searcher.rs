@@ -17,10 +17,10 @@ pub struct AcceptedHistoryItem {
 /// Payload for `AcceptWorkflow`: identifies which workflow was selected.
 ///
 /// Cloud workflows carry only a `SyncId` so the handler can resolve the full
-/// object from `CloudModel` at accept time (produced by the async
+/// object from `ObjectStoreModel` at accept time (produced by the async
 /// `cloud_workflows_data_source`). Local/AI-generated workflows are produced
 /// by separate sync data sources and carry owned data since they don't live
-/// in `CloudModel`.
+/// in `ObjectStoreModel`.
 #[derive(Clone, Debug)]
 pub enum AcceptedWorkflow {
     Cloud {

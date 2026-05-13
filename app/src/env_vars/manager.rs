@@ -1,5 +1,5 @@
 use crate::{
-    cloud_object::{model::persistence::CloudModel, Owner},
+    cloud_object::{model::persistence::ObjectStoreModel, Owner},
     env_vars::view::env_var_collection::EnvVarCollectionView,
     pane_group::{EnvVarCollectionPane, PaneContent},
     safe_warn,
@@ -57,7 +57,7 @@ impl EnvVarCollectionManager {
 
         match source {
             EnvVarCollectionSource::Existing(env_var_collection_id) => {
-                let env_var_collection = CloudModel::as_ref(ctx)
+                let env_var_collection = ObjectStoreModel::as_ref(ctx)
                     .get_env_var_collection(env_var_collection_id)
                     .cloned();
                 if let Some(env_var_collection) = env_var_collection {
@@ -151,7 +151,7 @@ impl EnvVarCollectionManager {
         match source {
             EnvVarCollectionSource::Existing(env_var_collection_id) => {
                 if let Some(pane_data) = self.panes_by_hashed_id.get(&env_var_collection_id.uid()) {
-                    let env_var_collection = CloudModel::as_ref(ctx)
+                    let env_var_collection = ObjectStoreModel::as_ref(ctx)
                         .get_env_var_collection(env_var_collection_id)
                         .cloned();
                     if let Some(env_var_collection) = env_var_collection {

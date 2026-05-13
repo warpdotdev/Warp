@@ -10,7 +10,9 @@ use crate::{
     auth::{AuthManager, AuthStateProvider},
     cloud_object::update_manager::UpdateManager,
     cloud_object::{
-        model::{actions::ObjectActions, persistence::CloudModel, view::CloudViewModel},
+        model::{
+            actions::ObjectActions, persistence::ObjectStoreModel, view::ObjectStoreViewModel,
+        },
         Owner,
     },
     network::NetworkStatus,
@@ -69,7 +71,7 @@ fn initialize_app(app: &mut App) -> TestState {
 
     let global_resources = GlobalResourceHandles::mock(app);
     app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resources));
-    app.add_singleton_model(CloudModel::mock);
+    app.add_singleton_model(ObjectStoreModel::mock);
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(PrivacySettings::mock);
@@ -94,7 +96,7 @@ fn initialize_app(app: &mut App) -> TestState {
     app.add_singleton_model(|ctx| UpdateManager::new(Some(sender), ctx));
     // OpenWarp(Wave 4):SyncQueue 整删,原 `sync_queue.start_dequeueing(ctx)` 已不适用。
 
-    app.add_singleton_model(CloudViewModel::mock);
+    app.add_singleton_model(ObjectStoreViewModel::mock);
     let manager = app.add_singleton_model(NotebookManager::mock);
     TestState {
         manager,

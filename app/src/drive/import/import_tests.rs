@@ -4,8 +4,9 @@ use warp_core::ui::appearance::Appearance;
 use warpui::App;
 
 use crate::{
-    cloud_object::model::persistence::CloudModel, cloud_object::update_manager::UpdateManager,
-    network::NetworkStatus, workspaces::user_workspaces::UserWorkspaces, GlobalResourceHandles,
+    cloud_object::model::persistence::ObjectStoreModel,
+    cloud_object::update_manager::UpdateManager, network::NetworkStatus,
+    workspaces::user_workspaces::UserWorkspaces, GlobalResourceHandles,
     GlobalResourceHandlesProvider,
 };
 
@@ -18,7 +19,7 @@ fn test_expand_directories() {
 
         let global_resource_handles = GlobalResourceHandles::mock(&mut app);
         app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resource_handles));
-        app.add_singleton_model(CloudModel::mock);
+        app.add_singleton_model(ObjectStoreModel::mock);
         app.add_singleton_model(UserWorkspaces::default_mock);
         app.add_singleton_model(|_| Appearance::mock());
         app.add_singleton_model(|_| NetworkStatus::new());

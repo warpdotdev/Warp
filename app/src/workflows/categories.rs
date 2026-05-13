@@ -15,7 +15,7 @@ use crate::util::bindings::CustomAction;
 use crate::voltron::{VoltronFeatureViewMeta, VoltronMetadata};
 use crate::workflows::WorkflowType;
 use crate::{
-    cloud_object::model::persistence::CloudModel, workspaces::user_workspaces::UserWorkspaces,
+    cloud_object::model::persistence::ObjectStoreModel, workspaces::user_workspaces::UserWorkspaces,
 };
 use crate::{editor::Event as EditorEvent, send_telemetry_from_ctx};
 use crate::{server::telemetry::TelemetryEvent, user_config::WarpConfig};
@@ -496,7 +496,7 @@ impl CategoriesView {
 
     pub fn load_cloud_workflows(&mut self, ctx: &mut ViewContext<Self>) {
         let user_workspaces = UserWorkspaces::as_ref(ctx);
-        let cloud_model = CloudModel::as_ref(ctx);
+        let cloud_model = ObjectStoreModel::as_ref(ctx);
 
         for space in user_workspaces.all_user_spaces(ctx) {
             let workflows_in_space = cloud_model.active_workflows_in_space(space, ctx);

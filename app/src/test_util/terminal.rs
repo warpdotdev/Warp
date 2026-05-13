@@ -33,7 +33,7 @@ use crate::undo_close::UndoCloseStack;
 use crate::workspace::{OneTimeModalModel, WorkspaceRegistry};
 use crate::{
     ai::{blocklist::BlocklistAIHistoryModel, AIRequestUsageModel},
-    cloud_object::model::persistence::CloudModel,
+    cloud_object::model::persistence::ObjectStoreModel,
     cloud_object::update_manager::UpdateManager,
     context_chips::prompt::Prompt,
     experiments,
@@ -61,7 +61,7 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(|_| Prompt::mock());
-    app.add_singleton_model(CloudModel::mock);
+    app.add_singleton_model(ObjectStoreModel::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(MCPGalleryManager::new);

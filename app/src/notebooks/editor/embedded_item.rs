@@ -34,7 +34,7 @@ use warpui::{
 };
 
 use crate::{
-    cloud_object::{model::persistence::CloudModel, CloudObject},
+    cloud_object::{model::persistence::ObjectStoreModel, CloudObject},
     drive::{cloud_object_styling::warp_drive_icon_color, DriveObjectType},
     server::ids::{HashableId, ToServerId},
     ui_components::icons::Icon,
@@ -215,7 +215,7 @@ impl EmbeddedWorkflow {
         // TODO: @ianhodge - replace the `from_hash` when we create a new API for going from
         // sqlite hash id -> uid
         let uid = WorkflowId::from_hash(&self.hashed_id).map(|id| id.to_server_id().uid())?;
-        CloudModel::as_ref(app)
+        ObjectStoreModel::as_ref(app)
             .get_by_uid(&uid)
             .and_then(|object| object.as_any().downcast_ref())
     }
@@ -223,7 +223,7 @@ impl EmbeddedWorkflow {
 
 impl EmbeddedItem for EmbeddedWorkflow {
     fn layout(&self, text_layout: &TextLayout, app: &AppContext) -> Box<dyn LaidOutEmbeddedItem> {
-        let cloud_model = CloudModel::as_ref(app);
+        let cloud_model = ObjectStoreModel::as_ref(app);
         let cloud_workflow = self.get_workflow(app);
 
         let base_text_style = &text_layout.rich_text_styles().base_text;
@@ -305,7 +305,7 @@ impl EmbeddedItem for EmbeddedWorkflow {
     }
 
     fn to_rich_format(&self, app: &AppContext) -> EmbeddedItemRichFormat<'_> {
-        let cloud_model = CloudModel::as_ref(app);
+        let cloud_model = ObjectStoreModel::as_ref(app);
         let workflow = self.get_workflow(app);
 
         // If the workflow is no longer accessible or is trashed, set the content to

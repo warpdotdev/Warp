@@ -3,7 +3,9 @@ use warpui::{platform::WindowStyle, App, ViewHandle};
 
 use crate::auth::AuthStateProvider;
 use crate::{
-    cloud_object::model::{actions::ObjectActions, persistence::CloudModel, view::CloudViewModel},
+    cloud_object::model::{
+        actions::ObjectActions, persistence::ObjectStoreModel, view::ObjectStoreViewModel,
+    },
     cloud_object::update_manager::UpdateManager,
     env_vars::{
         active_env_var_collection_data::SavingStatus,
@@ -22,13 +24,13 @@ fn initialize_app(app: &mut App) {
 
     let global_resources = GlobalResourceHandles::mock(app);
     app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resources));
-    app.add_singleton_model(CloudModel::mock);
+    app.add_singleton_model(ObjectStoreModel::mock);
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| Appearance::mock());
 
     app.add_singleton_model(UserWorkspaces::default_mock);
     app.add_singleton_model(UpdateManager::mock);
-    app.add_singleton_model(CloudViewModel::mock);
+    app.add_singleton_model(ObjectStoreViewModel::mock);
     app.add_singleton_model(|_| UserProfiles::new(vec![]));
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(|_| ObjectActions::new(Vec::new()));

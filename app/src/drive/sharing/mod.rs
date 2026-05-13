@@ -10,7 +10,7 @@ use warpui::{
 
 use crate::{
     auth::UserUid,
-    cloud_object::{model::persistence::CloudModel, Owner},
+    cloud_object::{model::persistence::ObjectStoreModel, Owner},
     server::ids::ServerId,
     ui_components::{
         avatar::{Avatar, AvatarContent},
@@ -173,7 +173,7 @@ impl ShareableObject {
     /// The canonical link to this object.
     pub fn link(&self, app: &AppContext) -> Option<String> {
         match self {
-            ShareableObject::WarpDriveObject(id) => CloudModel::as_ref(app)
+            ShareableObject::WarpDriveObject(id) => ObjectStoreModel::as_ref(app)
                 .get_by_uid(&id.uid())
                 .and_then(|object| object.object_link()),
         }

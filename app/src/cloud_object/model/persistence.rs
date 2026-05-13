@@ -102,9 +102,9 @@ enum FolderOpenState {
 
 /// Persistence model for [CloudObject] information. In an ideal world, this singleton model
 /// is a 1:1 mapping for what we persisting in sqlite, and on the server. Any logic beyond a basic update
-/// or query to data in [CloudModel] should instead be stored in [CloudViewModel] and tested in
+/// or query to data in [ObjectStoreModel] should instead be stored in [ObjectStoreViewModel] and tested in
 /// model_test.rs.
-pub struct CloudModel {
+pub struct ObjectStoreModel {
     objects_by_id: HashMap<ObjectUid, Box<dyn CloudObject>>,
     model_event_sender: Option<SyncSender<ModelEvent>>,
     initial_load_complete: Condition,
@@ -112,7 +112,7 @@ pub struct CloudModel {
     time_of_next_force_refresh: Option<DateTime<Utc>>,
 }
 
-impl CloudModel {
+impl ObjectStoreModel {
     pub fn new(
         model_event_sender: Option<SyncSender<ModelEvent>>,
         cached_objects: Vec<Box<dyn CloudObject>>,
@@ -241,7 +241,7 @@ impl CloudModel {
         &mut self,
         id: SyncId,
         object: impl CloudObject + 'static,
-        ctx: &mut ModelContext<CloudModel>,
+        ctx: &mut ModelContext<ObjectStoreModel>,
     ) {
         ctx.emit(ObjectStoreEvent::ObjectCreated {
             type_and_id: object.object_type_and_id(),
@@ -282,7 +282,7 @@ impl CloudModel {
         (sync_ids_and_types, count)
     }
 
-    /// Remove an object and all its descendants from `CloudModel` recursively.
+    /// Remove an object and all its descendants from `ObjectStoreModel` recursively.
     pub fn delete_object_and_descendants(
         &mut self,
         uid: ObjectUid,
@@ -1345,12 +1345,12 @@ impl CloudModel {
     }
 }
 
-impl Entity for CloudModel {
+impl Entity for ObjectStoreModel {
     type Event = ObjectStoreEvent;
 }
 
-/// Mark CloudModel as global application state.
-impl SingletonEntity for CloudModel {}
+/// Mark ObjectStoreModel as global application state.
+impl SingletonEntity for ObjectStoreModel {}
 
 #[cfg(test)]
 #[path = "model_test.rs"]

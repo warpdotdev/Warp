@@ -11,7 +11,7 @@ use warpui::{AppContext, SingletonEntity};
 use std::{collections::HashMap, fmt, result::Result, str::FromStr};
 
 use crate::{
-    cloud_object::model::persistence::CloudModel,
+    cloud_object::model::persistence::ObjectStoreModel,
     server::ids::{ClientId, SyncId},
 };
 
@@ -55,7 +55,7 @@ impl ExportArgument {
     fn new(argument: &Argument, app: &AppContext) -> Self {
         let arg_type = match argument.arg_type {
             ArgumentType::Text => ExportArgumentType::Text,
-            ArgumentType::Enum { enum_id } => CloudModel::as_ref(app)
+            ArgumentType::Enum { enum_id } => ObjectStoreModel::as_ref(app)
                 .get_workflow_enum(&enum_id)
                 .map(|workflow_enum| {
                     let model = &workflow_enum.model().string_model;

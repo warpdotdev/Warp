@@ -19,8 +19,8 @@ use crate::{
     cloud_object::{
         breadcrumbs::ContainingObject,
         model::{
-            persistence::{CloudModel, ObjectStoreEvent},
-            view::CloudViewModel,
+            persistence::{ObjectStoreEvent, ObjectStoreModel},
+            view::ObjectStoreViewModel,
         },
         update_manager::{
             FetchSingleObjectOption, ObjectOperation, OperationSuccessType, UpdateManager,
@@ -517,9 +517,10 @@ impl WorkflowView {
     }
 
     fn subscribe_to_model_updates(&self, ctx: &mut ViewContext<Self>) {
-        ctx.subscribe_to_model(&CloudModel::handle(ctx), move |workflow, _, event, ctx| {
-            workflow.handle_object_store_event(event, ctx)
-        });
+        ctx.subscribe_to_model(
+            &ObjectStoreModel::handle(ctx),
+            move |workflow, _, event, ctx| workflow.handle_object_store_event(event, ctx),
+        );
 
         let update_manager = UpdateManager::handle(ctx);
         ctx.subscribe_to_model(&update_manager, |me, _, event, ctx| {
@@ -571,7 +572,7 @@ impl WorkflowView {
                 });
 
                 if let Some(workflow) =
-                    CloudModel::as_ref(ctx).get_workflow_by_uid(&server_id.uid())
+                    ObjectStoreModel::as_ref(ctx).get_workflow_by_uid(&server_id.uid())
                 {
                     self.load(
                         workflow.clone(),
@@ -629,18 +630,24 @@ impl WorkflowView {
         ctx: &mut ViewContext<Self>,
     ) {
         let initial_load_complete =
-            crate::cloud_object::model::persistence::CloudModel::as_ref(ctx)
+            crate::cloud_object::model::persistence::ObjectStoreModel::as_ref(ctx)
                 .initial_load_complete();
         // TODO @ianhodge CLD-2002: it could be nice to have a loading screen here while we wait for the load
         let settings = settings.clone();
         ctx.spawn(initial_load_complete, move |me, _, ctx| {
-            let workflow = CloudModel::as_ref(ctx).get_workflow(&workflow_id).cloned();
-            // If either the focused folder or the workflow can't be found in cloudmodel, fetch the object from the server
+            let workflow = ObjectStoreModel::as_ref(ctx)
+                .get_workflow(&workflow_id)
+                .cloned();
+            // If either the focused folder or the workflow can't be found in ObjectStoreModel, fetch the object from the server
             let fetch_needed = workflow.is_none()
                 || settings
                     .focused_folder_id
                     .map(SyncId::ServerId)
-                    .map(|folder_id| CloudModel::as_ref(ctx).get_folder(&folder_id).is_none())
+                    .map(|folder_id| {
+                        ObjectStoreModel::as_ref(ctx)
+                            .get_folder(&folder_id)
+                            .is_none()
+                    })
                     .unwrap_or(false);
             if fetch_needed {
                 if let Some(server_id) = workflow_id.into_server() {
@@ -683,7 +690,7 @@ impl WorkflowView {
             });
         let settings = settings.clone();
         ctx.spawn(fetch_cloud_object_rx, move |me, _, ctx| {
-            if let Some(workflow) = CloudModel::as_ref(ctx)
+            if let Some(workflow) = ObjectStoreModel::as_ref(ctx)
                 .get_workflow(&SyncId::ServerId(workflow_id))
                 .cloned()
             {
@@ -874,7 +881,7 @@ impl WorkflowView {
     pub fn workflow_link(&self, ctx: &AppContext) -> Option<String> {
         let id = self.workflow_id();
 
-        if let Some(workflow) = CloudModel::as_ref(ctx).get_workflow(&id) {
+        if let Some(workflow) = ObjectStoreModel::as_ref(ctx).get_workflow(&id) {
             return workflow.object_link();
         }
 
@@ -884,7 +891,7 @@ impl WorkflowView {
     /// Generic object telemetry metadata for the currently-open object.
     #[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
     fn telemetry_metadata(&self, ctx: &mut ViewContext<Self>) -> CloudObjectTelemetryMetadata {
-        let space = CloudModel::as_ref(ctx)
+        let space = ObjectStoreModel::as_ref(ctx)
             .get_workflow(&self.workflow_id)
             .map(|workflow| workflow.space(ctx));
 
@@ -905,12 +912,12 @@ impl WorkflowView {
 
     /// The current user's access level for this workflow.
     fn access_level(&self, app: &AppContext) -> SharingAccessLevel {
-        CloudViewModel::as_ref(app).access_level(&self.workflow_id.uid(), app)
+        ObjectStoreViewModel::as_ref(app).access_level(&self.workflow_id.uid(), app)
     }
 
     /// Whether or not the current user is allowed to edit this workflow.
     fn editability(&self, app: &AppContext) -> ContentEditability {
-        CloudViewModel::as_ref(app).object_editability(&self.workflow_id.uid(), app)
+        ObjectStoreViewModel::as_ref(app).object_editability(&self.workflow_id.uid(), app)
     }
 
     pub fn pane_configuration(&self) -> &ModelHandle<PaneConfiguration> {
@@ -1266,7 +1273,7 @@ impl WorkflowView {
         let mut sent_requests: HashSet<SyncId> = HashSet::new();
         let owner = match self.workflow_view_mode {
             WorkflowViewMode::View => None,
-            WorkflowViewMode::Edit => CloudModel::as_ref(ctx)
+            WorkflowViewMode::Edit => ObjectStoreModel::as_ref(ctx)
                 .get_workflow(&self.workflow_id)
                 .map(|workflow| workflow.permissions().owner),
             WorkflowViewMode::Create => self.owner,
@@ -1402,7 +1409,7 @@ impl WorkflowView {
     fn try_set_view_mode(&mut self, ctx: &mut ViewContext<Self>) {
         self.workflow_view_mode =
             WorkflowViewMode::supported_view_mode(Some(self.workflow_id), ctx);
-        // always reset with the cloudmodel version whether or not we successfully
+        // always reset with the ObjectStoreModel version whether or not we successfully
         // transition to the view mode. This reset doesn't always set the correct revision_ts
         // we rely on the load called when we handle the update_manager's change event.
         self.reset(ctx);
@@ -1811,7 +1818,7 @@ impl WorkflowView {
                 .map(BreadcrumbState::new)
                 .collect();
         } else {
-            log::warn!("Workflow not found from cloudmodel, could not update breadcrumb");
+            log::warn!("Workflow not found from ObjectStoreModel, could not update breadcrumb");
         }
     }
 
@@ -2035,11 +2042,13 @@ impl WorkflowView {
     }
 
     fn get_cloud_workflow(&mut self, ctx: &mut ViewContext<Self>) -> Option<WorkflowObject> {
-        if let Some(workflow) = CloudModel::as_ref(ctx).get_workflow(&self.workflow_id.clone()) {
+        if let Some(workflow) =
+            ObjectStoreModel::as_ref(ctx).get_workflow(&self.workflow_id.clone())
+        {
             return Some(workflow.clone());
         } else {
             log::warn!(
-                "Workflow for id: {} not found in cloudmodel",
+                "Workflow for id: {} not found in ObjectStoreModel",
                 self.workflow_id
             );
         }
@@ -2754,7 +2763,7 @@ impl WorkflowView {
     }
 
     pub(super) fn render_trash_banner(&self, app: &AppContext) -> Option<Box<dyn Element>> {
-        let cloud_model = CloudModel::as_ref(app);
+        let cloud_model = ObjectStoreModel::as_ref(app);
         let deleted = if matches!(self.workflow_view_mode, WorkflowViewMode::Create) {
             return None;
         } else {
@@ -3162,7 +3171,7 @@ impl BackingView for WorkflowView {
             }
         }
 
-        let space = CloudViewModel::as_ref(ctx).object_space(&self.workflow_id.uid(), ctx);
+        let space = ObjectStoreViewModel::as_ref(ctx).object_space(&self.workflow_id.uid(), ctx);
 
         // Add "Duplicate" to menu
         if space != Some(Space::Shared) {

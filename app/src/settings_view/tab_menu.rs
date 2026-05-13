@@ -2,7 +2,7 @@ use std::fmt::Display;
 use warpui::ui_components::button::ButtonVariant;
 
 use super::teams_page::TeamsPageAction;
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::workspaces::team::Team;
 use crate::Appearance;
 use warpui::elements::MouseStateHandle;
@@ -30,7 +30,7 @@ pub trait Tabs: PartialEq + Display + Copy {
     fn render_tab(
         &self,
         team: &Team,
-        cloud_model: &CloudModel,
+        cloud_model: &ObjectStoreModel,
         selected_view_option: &Self,
         mouse_state_handle: MouseStateHandle,
         appearance: &Appearance,
@@ -54,5 +54,5 @@ pub trait Tabs: PartialEq + Display + Copy {
     #[allow(dead_code)]
     fn action_on_click(&self, selection: Self) -> TeamsPageAction;
     #[allow(dead_code)]
-    fn label(&self, team: &Team, cloud_model: &CloudModel) -> String;
+    fn label(&self, team: &Team, cloud_model: &ObjectStoreModel) -> String;
 }

@@ -3,7 +3,7 @@ use warpui::{
 };
 
 use crate::{
-    cloud_object::{model::persistence::CloudModel, CloudObjectEventEntrypoint, Space},
+    cloud_object::{model::persistence::ObjectStoreModel, CloudObjectEventEntrypoint, Space},
     drive::OpenWarpDriveObjectSettings,
     integration_testing::view_getters::workspace_view,
     server::{
@@ -41,7 +41,7 @@ pub fn create_a_personal_workflow(key: impl Into<String>) -> TestStep {
             data.insert(key.clone(), sync_id);
         })
         .add_assertion(move |app, _| {
-            CloudModel::handle(app).read(app, |cloud_model, ctx| {
+            ObjectStoreModel::handle(app).read(app, |cloud_model, ctx| {
                 async_assert!(
                     cloud_model
                         .active_cloud_objects_in_space(Space::Personal, ctx)

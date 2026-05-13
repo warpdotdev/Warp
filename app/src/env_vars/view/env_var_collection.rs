@@ -23,7 +23,7 @@ use crate::{
     ai::blocklist::block::secret_redaction::find_secrets_in_text_with_levels,
     cloud_object::{
         breadcrumbs::ContainingObject,
-        model::persistence::{CloudModel, ObjectStoreEvent},
+        model::persistence::{ObjectStoreEvent, ObjectStoreModel},
         update_manager::{FetchSingleObjectOption, UpdateManager},
         CloudObjectEventEntrypoint, Owner,
     },
@@ -487,7 +487,7 @@ impl EnvVarCollectionView {
         let appearance = Appearance::as_ref(ctx);
         let ui_font_family = appearance.ui_font_family();
 
-        let cloud_model = CloudModel::handle(ctx);
+        let cloud_model = ObjectStoreModel::handle(ctx);
         ctx.subscribe_to_model(&cloud_model, |view, _handle, event, ctx| {
             view.handle_object_store_event(event, ctx);
         });
@@ -601,10 +601,10 @@ impl EnvVarCollectionView {
         ctx: &mut ViewContext<Self>,
     ) {
         let initial_load_complete =
-            crate::cloud_object::model::persistence::CloudModel::as_ref(ctx)
+            crate::cloud_object::model::persistence::ObjectStoreModel::as_ref(ctx)
                 .initial_load_complete();
         ctx.spawn(initial_load_complete, move |me, _, ctx| {
-            let env_var_collection = CloudModel::as_ref(ctx)
+            let env_var_collection = ObjectStoreModel::as_ref(ctx)
                 .get_env_var_collection(&env_var_collection_id)
                 .cloned();
             if let Some(env_var_collection) = env_var_collection {
@@ -639,7 +639,7 @@ impl EnvVarCollectionView {
                 )
             });
         ctx.spawn(fetch_cloud_object_rx, move |me, _, ctx| {
-            if let Some(env_var_collection) = CloudModel::as_ref(ctx)
+            if let Some(env_var_collection) = ObjectStoreModel::as_ref(ctx)
                 .get_env_var_collection(&SyncId::ServerId(env_var_collection_id))
                 .cloned()
             {
@@ -744,7 +744,7 @@ impl EnvVarCollectionView {
             .active_env_var_collection
         {
             ActiveEnvVarCollection::CommittedEnvVarCollection(id) => {
-                let cloud_model = CloudModel::as_ref(ctx);
+                let cloud_model = ObjectStoreModel::as_ref(ctx);
                 if let Some(cloud_env_var) = cloud_model.get_env_var_collection(id) {
                     ctx.emit(EnvVarCollectionEvent::Invoke(EnvVarCollectionType::Object(
                         Box::new(cloud_env_var.clone()),

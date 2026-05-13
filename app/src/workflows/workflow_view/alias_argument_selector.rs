@@ -10,7 +10,7 @@ use warpui::{
 };
 
 use crate::{
-    cloud_object::model::persistence::CloudModel,
+    cloud_object::model::persistence::ObjectStoreModel,
     drive::workflows::enum_creation_dialog::WorkflowEnumData,
     editor::{
         EditOrigin, EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys,
@@ -117,7 +117,7 @@ impl AliasArgumentSelector {
                 self.argument_type = AliasArgumentType::Text;
             }
             ArgumentType::Enum { enum_id } => {
-                let cloud_model = CloudModel::as_ref(ctx);
+                let cloud_model = ObjectStoreModel::as_ref(ctx);
 
                 // Get the variants from the unsaved enum data, if it exists.
                 // Otherwise, pull it from the cloud model.

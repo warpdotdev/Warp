@@ -39,7 +39,7 @@ use warpui::AppContext;
 pub mod agent_sdk;
 // OpenWarp Wave 7-3:`cloud_agent_settings` 随 Cloud Mode UI 子系统物理删。
 // OpenWarp Wave 7-2:Cloud environments 的 CLI / 表单 / 环境准备链路已删；
-// 本地对象数据类型仍暂存于此，供 CloudModel 反序列化与现有视图过滤使用。
+// 本地对象数据类型仍暂存于此，供 ObjectStoreModel 反序列化与现有视图过滤使用。
 pub mod execution_profiles;
 pub mod facts;
 // OpenWarp Wave 6-8:`generate_block_title` 随 `BlockClient::generate_shared_block_title`

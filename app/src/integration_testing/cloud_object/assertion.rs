@@ -1,7 +1,9 @@
 use warpui::{async_assert, integration::AssertionCallback};
 
 use crate::{
-    cloud_object::{model::persistence::CloudModel, CloudModelType, GenericCloudObject, Revision},
+    cloud_object::{
+        model::persistence::ObjectStoreModel, CloudModelType, GenericCloudObject, Revision,
+    },
     server::ids::{HashableId, ServerId, SyncId, ToServerId},
 };
 
@@ -15,7 +17,7 @@ where
     let id = SyncId::ServerId(ServerId::try_from(id).expect("ID is invalid"));
     Box::new(move |app, _window_id| {
         let revision =
-            app.get_singleton_model_handle::<CloudModel>()
+            app.get_singleton_model_handle::<ObjectStoreModel>()
                 .read(app, |cloud_model, _| {
                     let object = cloud_model
                         .get_object_of_type::<K, M>(&id)

@@ -16,7 +16,7 @@ use warpui::{
 };
 
 use crate::{
-    cloud_object::model::persistence::{CloudModel, ObjectStoreEvent},
+    cloud_object::model::persistence::{ObjectStoreEvent, ObjectStoreModel},
     debounce::debounce,
     editor::InteractionState,
     notebooks::telemetry::BlockInfo,
@@ -215,7 +215,7 @@ impl NotebooksEditorModel {
             Self::handle_interaction_state_model_event,
         );
 
-        let cloud_model = CloudModel::handle(ctx);
+        let cloud_model = ObjectStoreModel::handle(ctx);
         ctx.subscribe_to_model(&cloud_model, |me, event, ctx| {
             me.handle_object_store_event(event, ctx)
         });

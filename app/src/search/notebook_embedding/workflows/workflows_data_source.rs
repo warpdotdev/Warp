@@ -7,7 +7,7 @@ use crate::search::notebook_embedding::is_embed_accessible;
 use crate::search::notebook_embedding::searcher::EmbeddingSearchItemAction;
 use crate::workflows::WorkflowObject;
 
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::search::data_source::{Query, QueryResult};
 use crate::search::mixer::{DataSourceRunErrorWrapper, SyncDataSource};
 
@@ -21,7 +21,7 @@ pub struct CloudWorkflowsDataSource {
 
 impl CloudWorkflowsDataSource {
     pub fn new(notebook_space: Space, app: &mut AppContext) -> Self {
-        let cloud_model = CloudModel::as_ref(app);
+        let cloud_model = ObjectStoreModel::as_ref(app);
         Self {
             embedding_space: notebook_space,
             workflows: cloud_model

@@ -19,7 +19,7 @@ use warpui::{
 
 use crate::{
     appearance::Appearance,
-    cloud_object::{model::persistence::CloudModel, CloudObject},
+    cloud_object::{model::persistence::ObjectStoreModel, CloudObject},
     completer::SessionAgnosticContext,
     notebooks::{
         styles::block_footer_action_button,
@@ -178,7 +178,7 @@ impl NotebookEmbed {
     }
 
     fn maybe_get_workflow<'a>(&self, ctx: &'a AppContext) -> Option<&'a WorkflowObject> {
-        let cloud_model = CloudModel::as_ref(ctx);
+        let cloud_model = ObjectStoreModel::as_ref(ctx);
 
         // Currently we are only supporting embedded workflows. We could support
         // more drive objects in the future.

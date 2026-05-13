@@ -5,8 +5,8 @@ use crate::{
     cloud_object::{
         breadcrumbs::ContainingObject,
         model::{
-            persistence::{CloudModel, ObjectStoreEvent},
-            view::{CloudViewModel, Editor, EditorState},
+            persistence::{ObjectStoreEvent, ObjectStoreModel},
+            view::{Editor, EditorState, ObjectStoreViewModel},
         },
         CloudObject, Owner, Space,
     },
@@ -21,11 +21,11 @@ use super::NotebookObjectModel;
 pub enum ActiveNotebook {
     #[default]
     None,
-    // A notebook already stored in CloudModel, all relevant data should be queried
-    // from CloudModel directly
+    // A notebook already stored in ObjectStoreModel, all relevant data should be queried
+    // from ObjectStoreModel directly
     CommittedNotebook(SyncId),
     // A notebook that has been created and displayed in the view, but is not yet
-    // committed to CloudModel
+    // committed to ObjectStoreModel
     NewNotebook(Box<NotebookObject>),
 }
 
@@ -61,7 +61,7 @@ pub struct ActiveNotebookData {
 
 impl ActiveNotebookData {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
-        let cloud_model = CloudModel::handle(ctx);
+        let cloud_model = ObjectStoreModel::handle(ctx);
         ctx.subscribe_to_model(&cloud_model, |me, event, ctx| {
             me.handle_object_store_event(event, ctx);
         });
@@ -79,8 +79,8 @@ impl ActiveNotebookData {
         match event {
             ObjectStoreEvent::NotebookEditorChangedExternally { notebook_id } => {
                 if self.is_active_notebook(*notebook_id) {
-                    if let Some(new_editor) =
-                        CloudViewModel::as_ref(ctx).object_current_editor(&notebook_id.uid(), ctx)
+                    if let Some(new_editor) = ObjectStoreViewModel::as_ref(ctx)
+                        .object_current_editor(&notebook_id.uid(), ctx)
                     {
                         if self.mode == Mode::Editing
                             && matches!(new_editor.state, EditorState::OtherUserActive)
@@ -151,7 +151,7 @@ impl ActiveNotebookData {
     pub fn ai_document_id(&self, ctx: &AppContext) -> Option<AIDocumentId> {
         match &self.active_notebook {
             ActiveNotebook::None => None,
-            ActiveNotebook::CommittedNotebook(id) => CloudModel::as_ref(ctx)
+            ActiveNotebook::CommittedNotebook(id) => ObjectStoreModel::as_ref(ctx)
                 .get_notebook(id)
                 .and_then(|n| n.model().ai_document_id),
             ActiveNotebook::NewNotebook(notebook) => notebook.model().ai_document_id,
@@ -174,7 +174,7 @@ impl ActiveNotebookData {
     pub fn breadcrumbs(&self, ctx: &AppContext) -> Option<Vec<ContainingObject>> {
         let cloud_notebook = match &self.active_notebook {
             ActiveNotebook::None => None,
-            ActiveNotebook::CommittedNotebook(id) => CloudModel::as_ref(ctx).get_notebook(id),
+            ActiveNotebook::CommittedNotebook(id) => ObjectStoreModel::as_ref(ctx).get_notebook(id),
             ActiveNotebook::NewNotebook(notebook) => Some(notebook.as_ref()),
         };
 
@@ -185,7 +185,7 @@ impl ActiveNotebookData {
     pub fn space(&self, app: &AppContext) -> Option<Space> {
         match &self.active_notebook {
             ActiveNotebook::None => None,
-            ActiveNotebook::CommittedNotebook(id) => CloudModel::as_ref(app)
+            ActiveNotebook::CommittedNotebook(id) => ObjectStoreModel::as_ref(app)
                 .get_notebook(id)
                 .map(|notebook| notebook.space(app)),
             ActiveNotebook::NewNotebook(notebook) => Some(notebook.space(app)),
@@ -196,7 +196,7 @@ impl ActiveNotebookData {
     pub fn owner(&self, app: &AppContext) -> Option<Owner> {
         match &self.active_notebook {
             ActiveNotebook::None => None,
-            ActiveNotebook::CommittedNotebook(id) => CloudModel::as_ref(app)
+            ActiveNotebook::CommittedNotebook(id) => ObjectStoreModel::as_ref(app)
                 .get_notebook(id)
                 .map(|notebook| notebook.permissions.owner),
             ActiveNotebook::NewNotebook(notebook) => Some(notebook.permissions.owner),
@@ -218,7 +218,7 @@ impl ActiveNotebookData {
     /// all pending requests have returned.
     pub fn has_conflicts(&self, ctx: &AppContext) -> bool {
         self.id()
-            .and_then(|id| CloudModel::as_ref(ctx).get_by_uid(&id.uid()))
+            .and_then(|id| ObjectStoreModel::as_ref(ctx).get_by_uid(&id.uid()))
             .is_some_and(|object| {
                 object.has_conflicting_changes() && !object.metadata().has_pending_content_changes()
             })
@@ -232,7 +232,7 @@ impl ActiveNotebookData {
     /// if there is not currently an active notebook
     pub fn current_editor(&self, ctx: &AppContext) -> Option<Editor> {
         let id = self.id()?;
-        CloudViewModel::as_ref(ctx).object_current_editor(&id.uid(), ctx)
+        ObjectStoreViewModel::as_ref(ctx).object_current_editor(&id.uid(), ctx)
     }
 
     /// Checks if this notebook is trashed or deleted.
@@ -240,7 +240,7 @@ impl ActiveNotebookData {
         match &self.active_notebook {
             ActiveNotebook::None | ActiveNotebook::NewNotebook(_) => TrashStatus::Active,
             ActiveNotebook::CommittedNotebook(id) => {
-                let cloud_model = CloudModel::as_ref(ctx);
+                let cloud_model = ObjectStoreModel::as_ref(ctx);
                 match cloud_model.get_notebook(id) {
                     Some(notebook) => {
                         if notebook.is_trashed(cloud_model) {
@@ -259,7 +259,7 @@ impl ActiveNotebookData {
     pub fn access_level(&self, app: &AppContext) -> SharingAccessLevel {
         match &self.active_notebook {
             ActiveNotebook::CommittedNotebook(object_id) => {
-                CloudViewModel::as_ref(app).access_level(&object_id.uid(), app)
+                ObjectStoreViewModel::as_ref(app).access_level(&object_id.uid(), app)
             }
             ActiveNotebook::None | ActiveNotebook::NewNotebook(_) => SharingAccessLevel::Full,
         }
@@ -269,7 +269,7 @@ impl ActiveNotebookData {
     pub fn editability(&self, app: &AppContext) -> ContentEditability {
         match &self.active_notebook {
             ActiveNotebook::CommittedNotebook(object_id) => {
-                CloudViewModel::as_ref(app).object_editability(&object_id.uid(), app)
+                ObjectStoreViewModel::as_ref(app).object_editability(&object_id.uid(), app)
             }
             ActiveNotebook::None | ActiveNotebook::NewNotebook(_) => ContentEditability::Editable,
         }

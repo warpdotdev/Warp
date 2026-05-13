@@ -21,7 +21,7 @@ use crate::ai::mcp::{
 use crate::ai::mcp::parsing::resolve_json;
 use crate::ai::mcp::TemplatableMCPServer;
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::{CloudModel, ObjectStoreEvent};
+use crate::cloud_object::model::persistence::{ObjectStoreEvent, ObjectStoreModel};
 use crate::cloud_object::update_manager::{InitiatedBy, UpdateManager};
 use crate::cloud_object::{CloudObject, CloudObjectLocation, CloudObjectMetadataExt, Space};
 use crate::server::ids::{ClientId, ServerId};
@@ -196,7 +196,7 @@ impl TemplatableMCPServerManager {
         });
 
         // TemplatableMCPServerManager is the source of truth for templatable MCP servers stored on the cloud
-        let cloud_model = CloudModel::handle(ctx);
+        let cloud_model = ObjectStoreModel::handle(ctx);
         ctx.subscribe_to_model(&cloud_model, |me, event, ctx| match event {
             ObjectStoreEvent::ObjectUpdated {
                 type_and_id:

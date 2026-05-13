@@ -3,7 +3,7 @@ use std::sync::Arc;
 use futures_lite::future::yield_now;
 use warpui::{AppContext, SingletonEntity};
 
-use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::search::async_snapshot_data_source::AsyncSnapshotDataSource;
 use crate::search::command_search::searcher::CommandSearchItemAction;
 use crate::search::data_source::{Query, QueryResult};
@@ -40,7 +40,7 @@ pub fn cloud_workflows_data_source(
             let filter_to_command_workflows =
                 query.filters.contains(&QueryFilter::Workflows) || !is_ai_enabled;
 
-            let cloud_model = CloudModel::as_ref(app);
+            let cloud_model = ObjectStoreModel::as_ref(app);
             let user_workspaces = UserWorkspaces::as_ref(app);
 
             let candidates: Vec<WorkflowMatchCandidate> = user_workspaces

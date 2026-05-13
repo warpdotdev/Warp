@@ -1,7 +1,7 @@
 use crate::ai::agent::{SuggestedAgentModeWorkflow, SuggestedLoggingId, SuggestedRule};
 use crate::ai::facts::AIFactObjectModel;
 use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
-use crate::cloud_object::model::persistence::{CloudModel, ObjectStoreEvent};
+use crate::cloud_object::model::persistence::{ObjectStoreEvent, ObjectStoreModel};
 use crate::cloud_object::update_manager::{
     ObjectOperation, OperationSuccessType, UpdateManagerEvent,
 };
@@ -262,7 +262,7 @@ impl SuggestionChipView {
             me.handle_update_manager_event(event, ctx);
         });
 
-        let cloud_model = CloudModel::handle(ctx);
+        let cloud_model = ObjectStoreModel::handle(ctx);
         ctx.subscribe_to_model(&cloud_model, |me, _, event, ctx| {
             me.handle_object_store_event(event, ctx);
         });
@@ -346,7 +346,7 @@ impl SuggestionChipView {
 
     /// Fetches the rule from the cloud model, and updates the UI to reflect that.
     fn load_suggestion(&mut self, ctx: &mut ViewContext<Self>) {
-        let cloud_model = CloudModel::handle(ctx);
+        let cloud_model = ObjectStoreModel::handle(ctx);
         let tooltip = self.suggestion.tooltip();
 
         match &mut self.suggestion {
@@ -418,7 +418,7 @@ impl TypedActionView for SuggestionChipView {
         match action {
             SuggestedViewAction::ChipClicked => match &self.suggestion {
                 Suggestion::Rule { rule, .. } => {
-                    if CloudModel::as_ref(ctx)
+                    if ObjectStoreModel::as_ref(ctx)
                         .get_object_of_type::<GenericStringObjectId, AIFactObjectModel>(
                             &self.sync_id,
                         )
@@ -440,7 +440,7 @@ impl TypedActionView for SuggestionChipView {
                     }
                 }
                 Suggestion::AgentModeWorkflow { workflow, .. } => {
-                    if CloudModel::as_ref(ctx)
+                    if ObjectStoreModel::as_ref(ctx)
                         .get_workflow(&self.sync_id)
                         .is_some()
                     {

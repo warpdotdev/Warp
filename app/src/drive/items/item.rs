@@ -19,7 +19,7 @@ use warpui::{
 
 use crate::{
     cloud_object::{
-        model::{persistence::CloudModel, view::CloudViewModel},
+        model::{persistence::ObjectStoreModel, view::ObjectStoreViewModel},
         CloudObject, CloudObjectMetadataExt, Owner,
     },
     drive::ObjectTypeAndId,
@@ -433,11 +433,13 @@ impl<'a> WarpDriveRow<'a> {
             return None;
         };
 
-        if CloudViewModel::as_ref(app).object_space(&object_id.uid(), app) != Some(Space::Shared) {
+        if ObjectStoreViewModel::as_ref(app).object_space(&object_id.uid(), app)
+            != Some(Space::Shared)
+        {
             return None;
         }
 
-        let owner = CloudModel::as_ref(app)
+        let owner = ObjectStoreModel::as_ref(app)
             .get_by_uid(&object_id.uid())?
             .permissions()
             .owner;
@@ -837,7 +839,7 @@ impl UiComponent for WarpDriveRow<'_> {
                                 else {
                                     return AcceptedByDropTarget::No;
                                 };
-                                let cloud_model = CloudModel::handle(app);
+                                let cloud_model = ObjectStoreModel::handle(app);
                                 if cloud_model.as_ref(app).can_move_object_to_location(
                                     &item.uid(),
                                     *location,

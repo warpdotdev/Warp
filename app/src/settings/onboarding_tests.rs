@@ -9,7 +9,7 @@ use crate::ai::execution_profiles::{
 };
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::{CloudModel, ObjectStoreEvent};
+use crate::cloud_object::model::persistence::{ObjectStoreEvent, ObjectStoreModel};
 use crate::cloud_object::update_manager::UpdateManager;
 use crate::cloud_object::{CloudObjectMetadata, CloudObjectPermissions};
 use crate::network::NetworkStatus;
@@ -42,7 +42,7 @@ fn apply_onboarding_settings_preserves_existing_profile_object_on_existing_user_
         app.add_singleton_model(|_| AuthStateProvider::new_for_test());
         app.add_singleton_model(|_| NetworkStatus::new());
         app.add_singleton_model(UpdateManager::mock);
-        app.add_singleton_model(CloudModel::mock);
+        app.add_singleton_model(ObjectStoreModel::mock);
         app.add_singleton_model(|_| TemplatableMCPServerManager::default());
         app.add_singleton_model(PrivacySettings::mock);
         app.add_singleton_model(UserWorkspaces::default_mock);
@@ -77,7 +77,7 @@ fn apply_onboarding_settings_preserves_existing_profile_object_on_existing_user_
         // Insert the existing user's stored profile without per-object events
         // and emit `InitialLoadCompleted` so `AIExecutionProfilesModel`
         // reconciles to `Synced`.
-        CloudModel::handle(&app).update(&mut app, move |cloud_model, ctx| {
+        ObjectStoreModel::handle(&app).update(&mut app, move |cloud_model, ctx| {
             cloud_model.add_object(cloud_sync_id, profile_object);
             ctx.emit(ObjectStoreEvent::InitialLoadCompleted);
         });
