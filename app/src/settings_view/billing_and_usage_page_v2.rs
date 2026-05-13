@@ -993,7 +993,7 @@ impl BillingAndUsagePageV2View {
 
         let purchase_restriction_message =
             match (team_can_purchase, can_upgrade, has_admin_permissions) {
-                (true, _, true) => None,
+                (true, _, _) => None,
                 (false, true, true) => {
                     let url = UserWorkspaces::upgrade_link_for_team(team_uid);
                     let is_legacy = UserWorkspaces::handle(app)
@@ -1089,45 +1089,6 @@ impl BillingAndUsagePageV2View {
             .build()
             .finish();
 
-        let info_icon = render_info_icon(
-            appearance,
-            AdditionalInfo::<BillingAndUsagePageAction> {
-                mouse_state: self.buy_credits_mouse_states.addon_info_icon.clone(),
-                on_click_action: None,
-                secondary_text: None,
-                tooltip_override_text: Some(
-                    "Sets the monthly limit spent on add-on credits".to_string(),
-                ),
-            },
-        );
-
-        let spend_limit = workspace
-            .settings
-            .addon_credits_settings
-            .max_monthly_spend_cents
-            .map(|c| format!("${:.2}", c as f64 / 100.0))
-            .unwrap_or_else(|| "$200.00".to_string());
-
-        let spend_row = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_children([
-                ui_builder.span("Monthly spend limit").build().finish(),
-                Shrinkable::new(1., Align::new(info_icon).left().finish()).finish(),
-                icon_button(
-                    appearance,
-                    Icon::Pencil,
-                    false,
-                    self.buy_credits_mouse_states.edit_monthly_limit.clone(),
-                )
-                .build()
-                .on_click(|ctx, _, _| {
-                    ctx.dispatch_typed_action(BillingAndUsagePageAction::ShowAddOnCreditModal);
-                })
-                .finish(),
-                ui_builder.span(spend_limit).build().finish(),
-            ])
-            .finish();
-
         let selected_credit_option = self
             .addon_credits
             .options
@@ -1149,8 +1110,50 @@ impl BillingAndUsagePageV2View {
             .finish();
 
         let mut upper_section = Flex::column()
-            .with_children([header, paragraph, spend_row])
+            .with_children([header, paragraph])
             .with_spacing(8.);
+
+        if has_admin_permissions {
+            let info_icon = render_info_icon(
+                appearance,
+                AdditionalInfo::<BillingAndUsagePageAction> {
+                    mouse_state: self.buy_credits_mouse_states.addon_info_icon.clone(),
+                    on_click_action: None,
+                    secondary_text: None,
+                    tooltip_override_text: Some(
+                        "Sets the monthly limit spent on add-on credits".to_string(),
+                    ),
+                },
+            );
+
+            let spend_limit = workspace
+                .settings
+                .addon_credits_settings
+                .max_monthly_spend_cents
+                .map(|c| format!("${:.2}", c as f64 / 100.0))
+                .unwrap_or_else(|| "$200.00".to_string());
+
+            let spend_row = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_children([
+                    ui_builder.span("Monthly spend limit").build().finish(),
+                    Shrinkable::new(1., Align::new(info_icon).left().finish()).finish(),
+                    icon_button(
+                        appearance,
+                        Icon::Pencil,
+                        false,
+                        self.buy_credits_mouse_states.edit_monthly_limit.clone(),
+                    )
+                    .build()
+                    .on_click(|ctx, _, _| {
+                        ctx.dispatch_typed_action(BillingAndUsagePageAction::ShowAddOnCreditModal);
+                    })
+                    .finish(),
+                    ui_builder.span(spend_limit).build().finish(),
+                ])
+                .finish();
+            upper_section.add_child(spend_row);
+        }
 
         let would_exceed = selected_credit_option.is_some_and(|opt| {
             let limit = workspace
@@ -1213,7 +1216,7 @@ impl BillingAndUsagePageV2View {
                 .check(auto_reload_enabled);
             let cannot_enable_auto_reload =
                 !auto_reload_enabled && selected_credit_option.is_none();
-            if delinquent || cannot_enable_auto_reload {
+            if !has_admin_permissions || delinquent || cannot_enable_auto_reload {
                 switch_builder.disable().build().finish()
             } else {
                 switch_builder
