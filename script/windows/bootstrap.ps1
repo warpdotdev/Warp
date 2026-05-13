@@ -30,7 +30,7 @@ function Show-Usage {
     Write-Output '      Override the remote warpdotdev/common-skills ref used when fetching scripts.'
 }
 
-function Normalize-CommonSkillsTarget {
+function ConvertTo-CommonSkillsTarget {
     param([string]$Target)
 
     switch ($Target.ToLowerInvariant()) {
@@ -71,7 +71,7 @@ if ($Help) {
 }
 $script:ResolvedCommonSkillsTarget = ''
 if ($InstallCommonSkills -and $CommonSkillsTarget) {
-    $script:ResolvedCommonSkillsTarget = Normalize-CommonSkillsTarget $CommonSkillsTarget
+    $script:ResolvedCommonSkillsTarget = ConvertTo-CommonSkillsTarget $CommonSkillsTarget
 }
 
 Show-BootstrapPreview
