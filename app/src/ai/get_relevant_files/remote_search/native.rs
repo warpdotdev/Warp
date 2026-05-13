@@ -60,7 +60,7 @@ pub(super) fn send_request(
     match availability {
         RemoteCodebaseSearchAvailability::Ready(search_context) => {
             let Some(client) = remote_server::manager::RemoteServerManager::as_ref(ctx)
-                .client_for_host(&search_context.host_id)
+                .client_for_host(&search_context.remote_path.host_id)
                 .cloned()
             else {
                 return RemoteSearchRequest::Ready(SearchCodebaseResult::Failed {
@@ -116,13 +116,14 @@ async fn execute_remote_codebase_search(
 ) -> Result<SearchCodebaseResult, anyhow::Error> {
     let root_hash = search_context.root_hash;
     let root_hash_string = root_hash.to_string();
+    let repo_path = search_context.remote_path.path.as_str().to_string();
     let candidate_hashes = store_client
         .get_relevant_fragments(
             search_context.embedding_config,
             query.clone(),
             root_hash,
             RepoMetadata {
-                path: Some(search_context.repo_path.clone()),
+                path: Some(repo_path.clone()),
             },
         )
         .await?;
@@ -136,7 +137,7 @@ async fn execute_remote_codebase_search(
         .collect_vec();
     let metadata_response = client
         .get_fragment_metadata_from_hash(
-            search_context.repo_path.clone(),
+            repo_path.clone(),
             root_hash_string,
             candidate_hash_strings,
         )
@@ -145,7 +146,7 @@ async fn execute_remote_codebase_search(
         log::warn!(
             "Remote codebase search metadata lookup missed {} hashes for repo {}",
             metadata_response.missing_hashes.len(),
-            search_context.repo_path
+            repo_path
         );
     }
     let mut metadata = metadata_response.fragments;
@@ -365,27 +366,30 @@ fn remote_availability_failure(
             reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
             message: "The current remote directory is not in a known codebase.".to_string(),
         },
-        RemoteCodebaseSearchAvailability::NotIndexed { repo_path } => {
+        RemoteCodebaseSearchAvailability::NotIndexed { remote_path } => {
             SearchCodebaseResult::Failed {
                 reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
                 message: format!(
-                    "The remote codebase at {repo_path} is not indexed yet. Indexing has been requested; try again after it finishes."
+                    "The remote codebase at {} is not indexed yet. Indexing has been requested; try again after it finishes.",
+                    remote_path.path.as_str()
                 ),
             }
         }
-        RemoteCodebaseSearchAvailability::Indexing { repo_path } => {
+        RemoteCodebaseSearchAvailability::Indexing { remote_path } => {
             SearchCodebaseResult::Failed {
                 reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
                 message: format!(
-                    "The remote codebase at {repo_path} is still being indexed. Try again later."
+                    "The remote codebase at {} is still being indexed. Try again later.",
+                    remote_path.path.as_str()
                 ),
             }
         }
-        RemoteCodebaseSearchAvailability::Unavailable { repo_path, message } => {
+        RemoteCodebaseSearchAvailability::Unavailable { remote_path, message } => {
             SearchCodebaseResult::Failed {
                 reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
                 message: format!(
-                    "Remote codebase search is unavailable for {repo_path}: {message}"
+                    "Remote codebase search is unavailable for {}: {message}",
+                    remote_path.path.as_str()
                 ),
             }
         }

@@ -28,6 +28,8 @@ use serde::Serialize;
 #[cfg(not(target_family = "wasm"))]
 use warp_core::channel::ChannelState;
 use warp_core::SessionId;
+use warp_util::remote_path::RemotePath;
+use warp_util::standardized_path::StandardizedPath;
 #[cfg(not(target_family = "wasm"))]
 use warpui::r#async::FutureExt as _;
 use warpui::{Entity, ModelContext, ModelSpawner, SingletonEntity};
@@ -217,6 +219,21 @@ fn client_event_kind(event: &ClientEvent) -> &'static str {
     }
 }
 
+fn remote_path_for_status(
+    host_id: &HostId,
+    status: &RemoteCodebaseIndexStatus,
+) -> Option<RemotePath> {
+    StandardizedPath::try_new(&status.repo_path)
+        .ok()
+        .map(|path| RemotePath::new(host_id.clone(), path))
+}
+
+#[derive(Clone, Debug)]
+pub struct RemoteCodebaseIndexStatusWithPath {
+    pub remote_path: RemotePath,
+    pub status: RemoteCodebaseIndexStatus,
+}
+
 /// Per-session connection state. Encodes which data is available at each
 /// lifecycle stage so the compiler prevents invalid combinations.
 ///
@@ -369,8 +386,7 @@ pub enum RemoteServerManagerEvent {
     /// Response to a `navigate_to_directory` request.
     NavigatedToDirectory {
         session_id: SessionId,
-        host_id: HostId,
-        indexed_path: String,
+        remote_path: RemotePath,
         is_git: bool,
     },
     /// A full or lazy-loaded repo metadata snapshot was pushed by the server.
@@ -391,11 +407,11 @@ pub enum RemoteServerManagerEvent {
     /// A full remote codebase-index status snapshot was pushed or requested.
     CodebaseIndexStatusesSnapshot {
         host_id: HostId,
-        statuses: Vec<RemoteCodebaseIndexStatus>,
+        statuses: Vec<RemoteCodebaseIndexStatusWithPath>,
     },
     /// A single remote codebase-index status update was pushed by the daemon.
     CodebaseIndexStatusUpdated {
-        host_id: HostId,
+        remote_path: RemotePath,
         status: RemoteCodebaseIndexStatus,
     },
     /// A buffer was updated on the remote host (file changed on disk).
@@ -1289,34 +1305,25 @@ impl RemoteServerManager {
         })
     }
 
-    /// Sends an `IndexCodebase` request to a connected daemon for this host.
-    pub fn index_codebase(
-        &mut self,
-        host_id: HostId,
-        repo_path: String,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        self.mutate_codebase_index(host_id, repo_path, RemoteCodebaseIndexMutation::Index, ctx);
+    /// Sends an `IndexCodebase` request to a connected daemon for this remote path.
+    pub fn index_codebase(&mut self, remote_path: RemotePath, ctx: &mut ModelContext<Self>) {
+        self.mutate_codebase_index(remote_path, RemoteCodebaseIndexMutation::Index, ctx);
     }
 
-    /// Sends a `DropCodebaseIndex` request to a connected daemon for this host.
-    pub fn drop_codebase_index(
-        &mut self,
-        host_id: HostId,
-        repo_path: String,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        self.mutate_codebase_index(host_id, repo_path, RemoteCodebaseIndexMutation::Drop, ctx);
+    /// Sends a `DropCodebaseIndex` request to a connected daemon for this remote path.
+    pub fn drop_codebase_index(&mut self, remote_path: RemotePath, ctx: &mut ModelContext<Self>) {
+        self.mutate_codebase_index(remote_path, RemoteCodebaseIndexMutation::Drop, ctx);
     }
 
     fn mutate_codebase_index(
         &mut self,
-        host_id: HostId,
-        repo_path: String,
+        remote_path: RemotePath,
         mutation: RemoteCodebaseIndexMutation,
         ctx: &mut ModelContext<Self>,
     ) {
         let operation = mutation.operation();
+        let host_id = remote_path.host_id.clone();
+        let repo_path = remote_path.path.as_str().to_string();
 
         let Some(auth_context) = self.auth_context.clone() else {
             log::warn!(
@@ -1372,10 +1379,11 @@ impl RemoteServerManager {
                             status.repo_path,
                             status.state
                         );
+                        let remote_path = remote_path_for_status(&host_id, &status).unwrap_or(remote_path);
                         let _ = spawner
                             .spawn(move |_me, ctx| {
                                 ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
-                                    host_id,
+                                    remote_path,
                                     status,
                                 });
                             })
@@ -1441,10 +1449,20 @@ impl RemoteServerManager {
                     Ok(resp) => {
                         let _ = spawner
                             .spawn(move |_me, ctx| {
+                                let Some(remote_path) = StandardizedPath::try_new(&resp.indexed_path)
+                                    .ok()
+                                    .map(|path| RemotePath::new(host_id, path))
+                                else {
+                                    log::warn!(
+                                        "Remote server dropped navigation event with invalid indexed path: \
+                                         session={session_id:?} indexed_path={}",
+                                        resp.indexed_path
+                                    );
+                                    return;
+                                };
                                 ctx.emit(RemoteServerManagerEvent::NavigatedToDirectory {
                                     session_id,
-                                    host_id,
-                                    indexed_path: resp.indexed_path,
+                                    remote_path,
                                     is_git: resp.is_git,
                                 });
                             })
@@ -1591,13 +1609,41 @@ impl RemoteServerManager {
                 ctx.emit(RemoteServerManagerEvent::RepoMetadataUpdated { host_id, update });
             }
             ClientEvent::CodebaseIndexStatusesSnapshotReceived { statuses } => {
+                let statuses = statuses
+                    .into_iter()
+                    .filter_map(|status| {
+                        let Some(remote_path) = remote_path_for_status(&host_id, &status) else {
+                            log::warn!(
+                                "Remote server dropped codebase index snapshot status with invalid repo path: \
+                                 host={host_id} repo_path={}",
+                                status.repo_path
+                            );
+                            return None;
+                        };
+                        Some(RemoteCodebaseIndexStatusWithPath {
+                            remote_path,
+                            status,
+                        })
+                    })
+                    .collect();
                 ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot {
                     host_id,
                     statuses,
                 });
             }
             ClientEvent::CodebaseIndexStatusUpdated { status } => {
-                ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusUpdated { host_id, status });
+                let Some(remote_path) = remote_path_for_status(&host_id, &status) else {
+                    log::warn!(
+                        "Remote server dropped codebase index status update with invalid repo path: \
+                         host={host_id} repo_path={}",
+                        status.repo_path
+                    );
+                    return;
+                };
+                ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
+                    remote_path,
+                    status,
+                });
             }
             ClientEvent::MessageDecodingError => {
                 ctx.emit(RemoteServerManagerEvent::ServerMessageDecodingError { session_id });

@@ -4,6 +4,10 @@ fn host() -> HostId {
     HostId::new("host".to_string())
 }
 
+fn remote_path(repo_path: &str) -> RemotePath {
+    remote_path_from_repo_path(&host(), repo_path).unwrap()
+}
+
 fn ready_status(repo_path: &str) -> RemoteCodebaseIndexStatus {
     RemoteCodebaseIndexStatus {
         repo_path: repo_path.to_string(),
@@ -17,24 +21,30 @@ fn ready_status(repo_path: &str) -> RemoteCodebaseIndexStatus {
         ),
     }
 }
+fn status_with_path(repo_path: &str) -> RemoteCodebaseIndexStatusWithPath {
+    RemoteCodebaseIndexStatusWithPath {
+        remote_path: remote_path(repo_path),
+        status: ready_status(repo_path),
+    }
+}
 
 #[test]
 fn snapshot_replaces_statuses_for_host() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
-    model.apply_status_update(&host, ready_status("/old"));
-    model.apply_statuses_snapshot(&host, &[ready_status("/new")]);
+    model.apply_status_update(remote_path("/old"), ready_status("/old"));
+    model.apply_statuses_snapshot(&host, &[status_with_path("/new")]);
 
-    assert!(model.status_for_repo(&host, "/old").is_none());
-    assert!(model.status_for_repo(&host, "/new").is_some());
+    assert!(model.status_for_repo(&remote_path("/old")).is_none());
+    assert!(model.status_for_repo(&remote_path("/new")).is_some());
 }
 
 #[test]
 fn availability_uses_active_navigated_repo() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
-    model.record_navigated_directory(host.clone(), "/repo".to_string());
-    model.apply_status_update(&host, ready_status("/repo"));
+    model.record_navigated_directory(&remote_path("/repo"));
+    model.apply_status_update(remote_path("/repo"), ready_status("/repo"));
 
     let availability = model.availability_for_remote(&host, Some("/repo/src"), None);
 
@@ -46,8 +56,8 @@ fn availability_uses_active_navigated_repo() {
 fn availability_uses_active_navigated_non_git_directory() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
-    model.record_navigated_directory(host.clone(), "/directory".to_string());
-    model.apply_status_update(&host, ready_status("/directory"));
+    model.record_navigated_directory(&remote_path("/directory"));
+    model.apply_status_update(remote_path("/directory"), ready_status("/directory"));
 
     let availability = model.availability_for_remote(&host, Some("/repo/src"), None);
 
@@ -59,8 +69,8 @@ fn availability_uses_active_navigated_non_git_directory() {
 fn availability_falls_back_to_longest_status_prefix() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
-    model.apply_status_update(&host, ready_status("/repo"));
-    model.apply_status_update(&host, ready_status("/repo/nested"));
+    model.apply_status_update(remote_path("/repo"), ready_status("/repo"));
+    model.apply_status_update(remote_path("/repo/nested"), ready_status("/repo/nested"));
 
     let availability = model.availability_for_remote(&host, Some("/repo/nested/src"), None);
 
@@ -73,7 +83,7 @@ fn indexing_state_is_not_ready() {
     let mut status = ready_status("/repo");
     status.state = RemoteCodebaseIndexState::Indexing;
 
-    let availability = search_availability_for_status(&status, host());
+    let availability = search_availability_for_status(&status, remote_path("/repo"));
 
     assert!(matches!(
         availability,
@@ -86,7 +96,7 @@ fn missing_root_hash_is_unavailable() {
     let mut status = ready_status("/repo");
     status.root_hash = None;
 
-    let availability = search_availability_for_status(&status, host());
+    let availability = search_availability_for_status(&status, remote_path("/repo"));
 
     assert!(matches!(
         availability,

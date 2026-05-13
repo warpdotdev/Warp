@@ -13,12 +13,13 @@ use crate::features::FeatureFlag;
 use crate::settings::CodeSettings;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
-use super::manager::{RemoteServerManager, RemoteServerManagerEvent};
+use super::manager::{
+    RemoteCodebaseIndexStatusWithPath, RemoteServerManager, RemoteServerManagerEvent,
+};
 
 #[derive(Clone, Debug)]
 pub struct RemoteCodebaseSearchContext {
-    pub host_id: HostId,
-    pub repo_path: String,
+    pub remote_path: RemotePath,
     pub root_hash: NodeHash,
     pub embedding_config: EmbeddingConfig,
 }
@@ -27,9 +28,16 @@ pub struct RemoteCodebaseSearchContext {
 pub enum RemoteCodebaseSearchAvailability {
     NoConnectedHost,
     NoActiveRepo,
-    NotIndexed { repo_path: String },
-    Indexing { repo_path: String },
-    Unavailable { repo_path: String, message: String },
+    NotIndexed {
+        remote_path: RemotePath,
+    },
+    Indexing {
+        remote_path: RemotePath,
+    },
+    Unavailable {
+        remote_path: RemotePath,
+        message: String,
+    },
     Ready(RemoteCodebaseSearchContext),
 }
 
@@ -41,19 +49,12 @@ impl RemoteCodebaseSearchAvailability {
     fn repo_path(&self) -> Option<&str> {
         match self {
             Self::NoConnectedHost | Self::NoActiveRepo => None,
-            Self::NotIndexed { repo_path }
-            | Self::Indexing { repo_path }
-            | Self::Unavailable { repo_path, .. } => Some(repo_path),
-            Self::Ready(context) => Some(context.repo_path.as_str()),
+            Self::NotIndexed { remote_path }
+            | Self::Indexing { remote_path }
+            | Self::Unavailable { remote_path, .. } => Some(remote_path.path.as_str()),
+            Self::Ready(context) => Some(context.remote_path.path.as_str()),
         }
     }
-}
-
-fn remote_path_for_status(
-    host_id: &HostId,
-    status: &RemoteCodebaseIndexStatus,
-) -> Option<RemotePath> {
-    remote_path_from_repo_path(host_id, &status.repo_path)
 }
 
 fn remote_path_from_repo_path(host_id: &HostId, repo_path: &str) -> Option<RemotePath> {
@@ -82,12 +83,12 @@ impl RemoteCodebaseIndexModel {
         session_context: &SessionContext,
         explicit_repo_path: Option<&str>,
     ) -> RemoteCodebaseSearchAvailability {
-        let Some(host_id) = session_context.host_id().cloned() else {
+        let Some(host_id) = session_context.host_id() else {
             return RemoteCodebaseSearchAvailability::NoConnectedHost;
         };
 
         self.availability_for_remote(
-            &host_id,
+            host_id,
             session_context.current_working_directory().as_deref(),
             explicit_repo_path,
         )
@@ -109,18 +110,19 @@ impl RemoteCodebaseIndexModel {
         explicit_repo_path: Option<&str>,
         ctx: &mut ModelContext<Self>,
     ) -> bool {
-        let Some(host_id) = session_context.host_id().cloned() else {
+        let Some(host_id) = session_context.host_id() else {
             return false;
         };
-        let Some(repo_path) = self
+        let Some(remote_path) = self
             .active_repo_path(session_context, explicit_repo_path)
             .or_else(|| session_context.current_working_directory().clone())
+            .and_then(|repo_path| remote_path_from_repo_path(host_id, &repo_path))
         else {
             return false;
         };
 
         RemoteServerManager::handle(ctx).update(ctx, |manager, ctx| {
-            manager.index_codebase(host_id, repo_path, ctx);
+            manager.index_codebase(remote_path, ctx);
         });
         true
     }
@@ -134,22 +136,25 @@ impl RemoteCodebaseIndexModel {
             RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot { host_id, statuses } => {
                 self.apply_statuses_snapshot(host_id, statuses);
             }
-            RemoteServerManagerEvent::CodebaseIndexStatusUpdated { host_id, status } => {
-                self.apply_status_update(host_id, status.clone());
+            RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
+                remote_path,
+                status,
+            } => {
+                self.apply_status_update(remote_path.clone(), status.clone());
             }
             RemoteServerManagerEvent::NavigatedToDirectory {
                 session_id: _,
-                host_id,
-                indexed_path,
+                remote_path,
                 is_git,
             } => {
-                self.record_navigated_directory(host_id.clone(), indexed_path.clone());
+                self.record_navigated_directory(remote_path);
                 if *is_git && should_auto_index_remote_codebase(ctx) {
                     // Mirrors local auto-indexing for the thin remote E2E path. TODO(APP-3792):
                     // route remote indexing through the speedbump/consent flow instead of
                     // requesting immediately on navigation.
+                    let remote_path = remote_path.clone();
                     RemoteServerManager::handle(ctx).update(ctx, |manager, ctx| {
-                        manager.index_codebase(host_id.clone(), indexed_path.clone(), ctx);
+                        manager.index_codebase(remote_path, ctx);
                     });
                 }
             }
@@ -182,26 +187,24 @@ impl RemoteCodebaseIndexModel {
     fn apply_statuses_snapshot(
         &mut self,
         host_id: &HostId,
-        statuses: &[RemoteCodebaseIndexStatus],
+        statuses: &[RemoteCodebaseIndexStatusWithPath],
     ) {
         self.statuses.retain(|key, _| key.host_id != *host_id);
-        for status in statuses {
-            self.apply_status_update(host_id, status.clone());
+        for status_with_path in statuses {
+            self.apply_status_update(
+                status_with_path.remote_path.clone(),
+                status_with_path.status.clone(),
+            );
         }
     }
 
-    fn apply_status_update(&mut self, host_id: &HostId, status: RemoteCodebaseIndexStatus) {
-        let Some(remote_path) = remote_path_for_status(host_id, &status) else {
-            return;
-        };
+    fn apply_status_update(&mut self, remote_path: RemotePath, status: RemoteCodebaseIndexStatus) {
         self.statuses.insert(remote_path, status);
     }
 
-    fn record_navigated_directory(&mut self, host_id: HostId, repo_path: String) {
-        let Some(remote_path) = remote_path_from_repo_path(&host_id, &repo_path) else {
-            return;
-        };
-        self.active_repos_by_host.insert(host_id, remote_path);
+    fn record_navigated_directory(&mut self, remote_path: &RemotePath) {
+        self.active_repos_by_host
+            .insert(remote_path.host_id.clone(), remote_path.clone());
     }
 
     fn remove_host(&mut self, host_id: &HostId) {
@@ -215,50 +218,39 @@ impl RemoteCodebaseIndexModel {
         current_working_directory: Option<&str>,
         explicit_repo_path: Option<&str>,
     ) -> RemoteCodebaseSearchAvailability {
-        let repo_path = explicit_repo_path
-            .map(ToOwned::to_owned)
-            .or_else(|| {
-                self.active_repos_by_host
-                    .get(host_id)
-                    .map(|repo| repo.path.as_str().to_string())
-            })
+        let remote_path = explicit_repo_path
+            .and_then(|repo_path| remote_path_from_repo_path(host_id, repo_path))
+            .or_else(|| self.active_repos_by_host.get(host_id).cloned())
             .or_else(|| {
                 current_working_directory.and_then(|cwd| {
                     self.best_status_for_path(host_id, cwd)
-                        .map(|status| status.repo_path.clone())
+                        .map(|(remote_path, _)| remote_path.clone())
                 })
             });
 
-        let Some(repo_path) = repo_path else {
+        let Some(remote_path) = remote_path else {
             return RemoteCodebaseSearchAvailability::NoActiveRepo;
         };
-
-        let Some(status) = self.status_for_repo(host_id, &repo_path) else {
-            return RemoteCodebaseSearchAvailability::NotIndexed { repo_path };
+        let Some(status) = self.status_for_repo(&remote_path) else {
+            return RemoteCodebaseSearchAvailability::NotIndexed { remote_path };
         };
-        search_availability_for_status(status, host_id.clone())
+        search_availability_for_status(status, remote_path)
     }
 
-    fn status_for_repo(
-        &self,
-        host_id: &HostId,
-        repo_path: &str,
-    ) -> Option<&RemoteCodebaseIndexStatus> {
-        remote_path_from_repo_path(host_id, repo_path)
-            .and_then(|remote_path| self.statuses.get(&remote_path))
+    fn status_for_repo(&self, remote_path: &RemotePath) -> Option<&RemoteCodebaseIndexStatus> {
+        self.statuses.get(remote_path)
     }
 
     fn best_status_for_path(
         &self,
         host_id: &HostId,
         path: &str,
-    ) -> Option<&RemoteCodebaseIndexStatus> {
+    ) -> Option<(&RemotePath, &RemoteCodebaseIndexStatus)> {
         let path = StandardizedPath::try_new(path).ok()?;
         self.statuses
             .iter()
             .filter(|(key, _)| key.host_id == *host_id && path.starts_with(&key.path))
-            .map(|(_, status)| status)
-            .max_by_key(|status| status.repo_path.len())
+            .max_by_key(|(remote_path, _)| remote_path.path.as_str().len())
     }
 }
 
@@ -270,9 +262,8 @@ impl SingletonEntity for RemoteCodebaseIndexModel {}
 
 fn search_availability_for_status(
     status: &RemoteCodebaseIndexStatus,
-    host_id: HostId,
+    remote_path: RemotePath,
 ) -> RemoteCodebaseSearchAvailability {
-    let repo_path = status.repo_path.clone();
     match status.state {
         RemoteCodebaseIndexState::Ready | RemoteCodebaseIndexState::Stale => {
             let Some(root_hash) = status
@@ -281,25 +272,24 @@ fn search_availability_for_status(
                 .and_then(|hash| NodeHash::from_str(hash).ok())
             else {
                 return RemoteCodebaseSearchAvailability::Unavailable {
-                    repo_path,
+                    remote_path,
                     message: "The remote codebase index is missing its root hash.".to_string(),
                 };
             };
             RemoteCodebaseSearchAvailability::Ready(RemoteCodebaseSearchContext {
-                host_id,
-                repo_path,
+                remote_path,
                 root_hash,
                 embedding_config: EmbeddingConfig::default(),
             })
         }
         RemoteCodebaseIndexState::Queued | RemoteCodebaseIndexState::Indexing => {
-            RemoteCodebaseSearchAvailability::Indexing { repo_path }
+            RemoteCodebaseSearchAvailability::Indexing { remote_path }
         }
         RemoteCodebaseIndexState::Failed
         | RemoteCodebaseIndexState::NotEnabled
         | RemoteCodebaseIndexState::Unavailable
         | RemoteCodebaseIndexState::Disabled => RemoteCodebaseSearchAvailability::Unavailable {
-            repo_path,
+            remote_path,
             message: status
                 .failure_message
                 .clone()
