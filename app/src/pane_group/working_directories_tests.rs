@@ -4,7 +4,6 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
-use remote_server::manager::RemoteServerManager;
 use repo_metadata::repositories::DetectedRepositories;
 use warpui::{App, EntityId};
 
@@ -14,7 +13,6 @@ use crate::pane_group::WorkingDirectoriesModel;
 fn refresh_working_directories_collapses_subroots_to_nearest_repo_root() {
     App::test((), |mut app| async move {
         let detected_repos_handle = app.add_singleton_model(|_| DetectedRepositories::default());
-        app.add_singleton_model(RemoteServerManager::new);
 
         let temp_dir = tempfile::TempDir::new().expect("temp dir");
         let repo_root = temp_dir.path().join("repo");
@@ -41,7 +39,7 @@ fn refresh_working_directories_collapses_subroots_to_nearest_repo_root() {
         let terminal_1 = EntityId::new();
         let terminal_2 = EntityId::new();
 
-        let working_directories_handle = app.add_model(WorkingDirectoriesModel::new);
+        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
         let roots: Vec<PathBuf> = working_directories_handle.update(&mut app, |model, ctx| {
             model.refresh_working_directories_for_pane_group(
                 pane_group_id,
@@ -70,7 +68,6 @@ fn refresh_working_directories_collapses_subroots_to_nearest_repo_root() {
 fn refresh_working_directories_preserves_non_repo_paths_and_dedupes() {
     App::test((), |mut app| async move {
         app.add_singleton_model(|_| DetectedRepositories::default());
-        app.add_singleton_model(RemoteServerManager::new);
 
         let temp_dir = tempfile::TempDir::new().expect("temp dir");
         let dir_1 = temp_dir.path().join("dir-1");
@@ -88,7 +85,7 @@ fn refresh_working_directories_preserves_non_repo_paths_and_dedupes() {
         let terminal_2 = EntityId::new();
         let terminal_3 = EntityId::new();
 
-        let working_directories_handle = app.add_model(WorkingDirectoriesModel::new);
+        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
         let roots: HashSet<PathBuf> = working_directories_handle.update(&mut app, |model, ctx| {
             model.refresh_working_directories_for_pane_group(
                 pane_group_id,
@@ -125,7 +122,6 @@ fn refresh_working_directories_preserves_non_repo_paths_and_dedupes() {
 fn selected_review_repo_is_remembered_per_pane_group() {
     App::test((), |mut app| async move {
         app.add_singleton_model(|_| DetectedRepositories::default());
-        app.add_singleton_model(RemoteServerManager::new);
 
         let pane_group_a = EntityId::new();
         let pane_group_b = EntityId::new();
@@ -133,7 +129,7 @@ fn selected_review_repo_is_remembered_per_pane_group() {
         let repo_y = PathBuf::from("/repos/y");
         let repo_p = PathBuf::from("/repos/p");
 
-        let working_directories_handle = app.add_model(WorkingDirectoriesModel::new);
+        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
 
         // Initially nothing is saved for either pane group.
         working_directories_handle.update(&mut app, |model, _ctx| {
@@ -191,12 +187,11 @@ fn selected_review_repo_is_remembered_per_pane_group() {
 fn selected_review_repo_is_cleared_when_pane_group_is_removed() {
     App::test((), |mut app| async move {
         app.add_singleton_model(|_| DetectedRepositories::default());
-        app.add_singleton_model(RemoteServerManager::new);
 
         let pane_group_id = EntityId::new();
         let repo = PathBuf::from("/repos/x");
 
-        let working_directories_handle = app.add_model(WorkingDirectoriesModel::new);
+        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
 
         working_directories_handle.update(&mut app, |model, ctx| {
             model.set_selected_review_repo(pane_group_id, repo.clone());
@@ -218,14 +213,13 @@ fn selected_review_repo_is_cleared_when_pane_group_is_removed() {
 fn clear_selected_review_repo_removes_only_the_targeted_pane_group_entry() {
     App::test((), |mut app| async move {
         app.add_singleton_model(|_| DetectedRepositories::default());
-        app.add_singleton_model(RemoteServerManager::new);
 
         let pane_group_a = EntityId::new();
         let pane_group_b = EntityId::new();
         let repo_a = PathBuf::from("/repos/a");
         let repo_b = PathBuf::from("/repos/b");
 
-        let working_directories_handle = app.add_model(WorkingDirectoriesModel::new);
+        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
 
         working_directories_handle.update(&mut app, |model, _ctx| {
             model.set_selected_review_repo(pane_group_a, repo_a.clone());

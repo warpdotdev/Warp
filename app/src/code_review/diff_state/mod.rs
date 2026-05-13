@@ -477,14 +477,6 @@ impl DiffStateModel {
         }
     }
 
-    /// Returns the active subscription session for a remote-backed model or `None` for a local-backed one.
-    pub(crate) fn remote_session_id(&self, ctx: &AppContext) -> Option<SessionId> {
-        match self {
-            Self::Local(_) => None,
-            Self::Remote(m) => Some(m.as_ref(ctx).session_id()),
-        }
-    }
-
     // ── Unified write API ─────────────────────────────────────────────
 
     pub(crate) fn set_diff_mode(
@@ -599,32 +591,6 @@ impl DiffStateModel {
             Self::Remote(remote) => {
                 remote.update(ctx, |remote, ctx| {
                     remote.unsubscribe(ctx);
-                });
-            }
-        }
-    }
-
-    /// Transitions a remote-backed model to `Disconnected` and emits
-    /// `ConnectionLost`. No-op for local-backed models.
-    pub(crate) fn mark_disconnected(&self, ctx: &mut ModelContext<Self>) {
-        match self {
-            Self::Local(_) => {}
-            Self::Remote(remote) => {
-                remote.update(ctx, |remote, ctx| {
-                    remote.mark_disconnected(ctx);
-                });
-            }
-        }
-    }
-
-    /// Re-sends `GetDiffState` for a remote-backed model through its
-    /// existing session. No-op for local-backed models.
-    pub(crate) fn resubscribe(&self, ctx: &mut ModelContext<Self>) {
-        match self {
-            Self::Local(_) => {}
-            Self::Remote(remote) => {
-                remote.update(ctx, |remote, ctx| {
-                    remote.resubscribe(ctx);
                 });
             }
         }

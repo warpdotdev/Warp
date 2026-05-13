@@ -140,15 +140,32 @@ impl RemoteDiffStateModel {
                 }
                 self.handle_file_delta_received(delta, ctx);
             }
+            RemoteServerManagerEvent::HostDisconnected { host_id }
+                if host_id == &self.remote_path.host_id =>
+            {
+                self.mark_disconnected(ctx);
+            }
+            RemoteServerManagerEvent::SessionDisconnected {
+                session_id,
+                host_id,
+                ..
+            } if *session_id == self.session_id && host_id == &self.remote_path.host_id => {
+                self.mark_disconnected(ctx);
+            }
+            RemoteServerManagerEvent::SessionReconnected {
+                session_id,
+                host_id,
+                ..
+            } if *session_id == self.session_id && host_id == &self.remote_path.host_id => {
+                self.resubscribe(ctx);
+            }
             _ => {}
         }
     }
 
-    // ── Lifecycle hooks (called by WorkingDirectoriesModel) ─────────────
-
     /// Marks the model as disconnected, preserving any stale data and
     /// emitting `ConnectionLost`.
-    pub fn mark_disconnected(&mut self, ctx: &mut ModelContext<Self>) {
+    fn mark_disconnected(&mut self, ctx: &mut ModelContext<Self>) {
         if matches!(self.state, InternalRemoteDiffState::Disconnected) {
             return;
         }
@@ -158,7 +175,7 @@ impl RemoteDiffStateModel {
 
     /// Re-sends `GetDiffState` through the model's existing `session_id`
     /// and transitions to `Loading` while waiting for a fresh snapshot.
-    pub fn resubscribe(&mut self, ctx: &mut ModelContext<Self>) {
+    fn resubscribe(&mut self, ctx: &mut ModelContext<Self>) {
         let remote_path = self.remote_path.clone();
         let mode = self.mode.clone();
         let session_id = self.session_id;
