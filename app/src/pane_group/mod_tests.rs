@@ -1546,6 +1546,7 @@ fn test_initial_widths_are_computed_correctly() {
                     commands: vec![],
                     pane_mode: PaneMode::Terminal,
                     shell: None,
+                    agent_profile_name: None,
                 }
             };
         }
@@ -2068,6 +2069,7 @@ fn test_pane_focus_does_not_have_an_infinite_event_loop() {
                         commands: vec![],
                         pane_mode: PaneMode::Terminal,
                         shell: None,
+                        agent_profile_name: None,
                     },
                     PaneTemplateType::PaneTemplate {
                         is_focused: None,
@@ -2075,6 +2077,7 @@ fn test_pane_focus_does_not_have_an_infinite_event_loop() {
                         commands: vec![],
                         pane_mode: PaneMode::Terminal,
                         shell: None,
+                        agent_profile_name: None,
                     },
                 ],
             }),
@@ -2194,6 +2197,7 @@ fn test_focused_pane_is_synchronized_with_application_focus() {
                     commands: vec![],
                     pane_mode: PaneMode::Terminal,
                     shell: None,
+                    agent_profile_name: None,
                 },
                 PaneTemplateType::PaneTemplate {
                     is_focused: None,
@@ -2201,6 +2205,7 @@ fn test_focused_pane_is_synchronized_with_application_focus() {
                     commands: vec![],
                     pane_mode: PaneMode::Terminal,
                     shell: None,
+                    agent_profile_name: None,
                 },
             ],
         });
@@ -2274,6 +2279,246 @@ fn test_focused_pane_is_synchronized_with_application_focus() {
             // effect queue doesn't get processed or further modified before we
             // enqueue this event on the effect queue.
             ctx.emit(Event::OpenPromptEditor);
+        });
+    });
+}
+
+/// Observer used by the missing-profile dedup test to count how many
+/// `pane_group::Event::ShowToast` events are emitted for each toast message.
+/// `pane_group::pane::terminal_pane` re-emits a child `TerminalView`'s
+/// `ShowToast` event as a `pane_group::Event::ShowToast` (see the forwarding
+/// arm in `terminal_pane.rs`), so subscribing to the pane group is sufficient
+/// to observe toasts emitted from BOTH the immediate path
+/// (`PaneGroup::apply_tab_config_agent_profile`) and the deferred path
+/// (`TerminalView::apply_pending_agent_profile`).
+struct ToastCounterView {
+    pane_group: ViewHandle<PaneGroup>,
+    toast_counts: HashMap<String, u32>,
+}
+
+impl ToastCounterView {
+    fn new(pane_group: ViewHandle<PaneGroup>, ctx: &mut ViewContext<Self>) -> Self {
+        ctx.subscribe_to_view(&pane_group, |me, _pane_group, event, _ctx| {
+            if let Event::ShowToast { message, .. } = event {
+                *me.toast_counts.entry(message.clone()).or_insert(0) += 1;
+            }
+        });
+        Self {
+            pane_group,
+            toast_counts: HashMap::new(),
+        }
+    }
+}
+
+impl Entity for ToastCounterView {
+    type Event = ();
+}
+
+impl View for ToastCounterView {
+    fn ui_name() -> &'static str {
+        "ToastCounterView"
+    }
+
+    fn render(&self, _app: &AppContext) -> Box<dyn Element> {
+        ChildView::new(&self.pane_group).finish()
+    }
+}
+
+impl TypedActionView for ToastCounterView {
+    type Action = ();
+}
+
+/// Verifies the per-launch dedup contract for the
+/// "agent profile not found in tab config; using Default" toast across the
+/// mixed immediate-AND-deferred resolution paths that a single tab-config
+/// launch can produce in `PaneGroup::pane_tree_from_template_recursive`:
+///
+///  - One pane has no setup commands → resolves through the immediate path
+///    (`PaneGroup::apply_tab_config_agent_profile`, called inside the
+///    recursion at the `if commands.is_empty()` branch in
+///    `pane_group/mod.rs:1367`).
+///  - One pane has setup commands → resolves through the deferred path
+///    (`TerminalView::set_pending_agent_profile` is called with the
+///    production tracker around `pane_group/mod.rs:1395`, and
+///    `TerminalView::apply_pending_agent_profile` fires later from the
+///    `PendingCommandCompleted` handler in `terminal/view.rs:10911`).
+///
+/// Production wires BOTH calls in a single launch to the SAME
+/// `LaunchToastDedup` tracker created in `pane_tree_from_template`
+/// (`pane_group/mod.rs:1266`) and threaded through the recursion at
+/// `pane_group/mod.rs:1462`, so a tab config that references the same
+/// missing profile from both kinds of panes must produce exactly ONE toast
+/// for that launch. A subsequent `pane_tree_from_template` build creates a
+/// FRESH tracker, so the same missing profile name must surface again.
+#[test]
+fn missing_profile_toast_dedups_per_launch_across_immediate_and_deferred_paths() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let missing_name = "MissingProfileX";
+        let toast_msg =
+            format!("Agent profile '{missing_name}' not found in tab config; using Default.");
+
+        // Build the launch template the production code drives:
+        //   - both panes are `PaneMode::Agent` with the same missing
+        //     `agent_profile_name`, so each one will run through the agent
+        //     branch in `pane_tree_from_template_recursive`.
+        //   - pane #0 has `commands: vec![]`, so the recursion takes the
+        //     immediate branch at `pane_group/mod.rs:1367` and calls
+        //     `apply_tab_config_agent_profile` with the launch-scoped tracker.
+        //   - pane #1 has a non-empty `commands: vec![...]`, so the recursion
+        //     takes the deferred branch and calls `set_pending_agent_profile`
+        //     with that same launch-scoped tracker.
+        let make_template = || {
+            PanesLayout::Template(PaneTemplateType::PaneBranchTemplate {
+                split_direction: launch_config::SplitDirection::Horizontal,
+                panes: vec![
+                    PaneTemplateType::PaneTemplate {
+                        is_focused: Some(true),
+                        cwd: "/".into(),
+                        commands: vec![],
+                        pane_mode: PaneMode::Agent,
+                        shell: None,
+                        agent_profile_name: Some(missing_name.to_string()),
+                    },
+                    PaneTemplateType::PaneTemplate {
+                        is_focused: None,
+                        cwd: "/".into(),
+                        commands: vec!["echo deferred".into()],
+                        pane_mode: PaneMode::Agent,
+                        shell: None,
+                        agent_profile_name: Some(missing_name.to_string()),
+                    },
+                ],
+            })
+        };
+
+        let tips_model = app.add_model(|_| TipsCompleted::default());
+        let tips_model_for_launch_1 = tips_model.clone();
+        let tips_model_for_launch_2 = tips_model;
+
+        // ── Launch #1: a single `pane_tree_from_template` build that triggers
+        // BOTH the immediate-branch toast emission and the deferred-branch
+        // tracker stash through the production tracker. ──
+        //
+        // `ToastCounterView` wraps the pane group as the window root view;
+        // its `subscribe_to_view` runs inside the same
+        // `add_window_with_bounds` closure as the pane group's construction,
+        // so the subscription is in place before the effect queue flushes
+        // the construction-time `Event::ShowToast` emissions to subscribers.
+        let (_, observer_1) =
+            app.add_window_with_bounds(WindowStyle::NotStealFocus, WindowBounds::Default, |ctx| {
+                let user_default_shell_changed_banner_dismissal_model_handle =
+                    ctx.add_model(|_| BannerState::default());
+                let block_lists = Arc::new(HashMap::new());
+                let pane_group = ctx.add_typed_action_view(|ctx| {
+                    PaneGroup::new_with_panes_layout(
+                        tips_model_for_launch_1,
+                        user_default_shell_changed_banner_dismissal_model_handle,
+                        ServerApiProvider::as_ref(ctx).get(),
+                        make_template(),
+                        block_lists,
+                        None,
+                        ctx,
+                    )
+                });
+                ToastCounterView::new(pane_group, ctx)
+            });
+
+        let pane_group_1 = observer_1.read(&app, |observer, _ctx| observer.pane_group.clone());
+
+        // After construction, the immediate branch has already gone through
+        // `apply_tab_config_agent_profile` with the production tracker and
+        // emitted the toast.
+        observer_1.read(&app, |observer, _ctx| {
+            assert_eq!(
+                observer.toast_counts.get(&toast_msg).copied().unwrap_or(0),
+                1,
+                "launch #1: immediate-branch construction should emit exactly \
+                 ONE missing-profile toast through the production tracker \
+                 (got {:?})",
+                observer.toast_counts,
+            );
+        });
+
+        // The deferred branch stashed the production tracker on the second
+        // pane's `TerminalView` via `set_pending_agent_profile` (the same
+        // `LaunchToastDedup` used by the immediate branch above). Manually
+        // fire `apply_pending_agent_profile` here to simulate what the
+        // `PendingCommandCompleted` handler at `terminal/view.rs:10911`
+        // would do once the setup commands finished — the production tracker
+        // taken at the top of `apply_pending_agent_profile` already has
+        // `MissingProfileX` recorded, so no second toast must be emitted.
+        // Locate the deferred pane: it's the one that is NOT the initially
+        // focused pane (the template marks pane #0 as focused, and pane #0
+        // is the immediate-branch pane). Pane ordering from
+        // `pane_ids()` is not deterministic (it iterates a HashMap), so
+        // discriminate on focus state.
+        let (focused_pane_id, deferred_terminal_view) =
+            pane_group_1.read(&app, |pane_group: &PaneGroup, ctx| {
+                let focused_pane_id = pane_group.focused_pane_id(ctx);
+                let deferred_pane_id = pane_group
+                    .pane_ids()
+                    .find(|pane_id| *pane_id != focused_pane_id)
+                    .expect("launch #1: template should produce two distinct panes");
+                let deferred_terminal_view = pane_group
+                    .terminal_view_from_pane_id(deferred_pane_id, ctx)
+                    .expect("launch #1: deferred pane should be a terminal pane");
+                (focused_pane_id, deferred_terminal_view)
+            });
+        assert_ne!(
+            focused_pane_id.as_terminal_pane_id(),
+            None,
+            "launch #1: the focused immediate-branch pane should be a terminal pane",
+        );
+        let deferred_pane = deferred_terminal_view;
+        deferred_pane.update(&mut app, |view: &mut TerminalView, ctx| {
+            view.apply_pending_agent_profile(missing_name, ctx);
+        });
+
+        observer_1.read(&app, |observer, _ctx| {
+            assert_eq!(
+                observer.toast_counts.get(&toast_msg).copied().unwrap_or(0),
+                1,
+                "launch #1: deferred branch must reuse the same launch-scoped \
+                 tracker as the immediate branch and suppress the duplicate \
+                 toast (got {:?})",
+                observer.toast_counts,
+            );
+        });
+
+        // ── Launch #2: a SEPARATE `pane_tree_from_template` build, which
+        // creates a fresh `LaunchToastDedup` (`pane_group/mod.rs:1266`).
+        // Same missing profile name must surface again because dedup is
+        // per-launch, not per-app-session. ──
+        let (_, observer_2) =
+            app.add_window_with_bounds(WindowStyle::NotStealFocus, WindowBounds::Default, |ctx| {
+                let user_default_shell_changed_banner_dismissal_model_handle =
+                    ctx.add_model(|_| BannerState::default());
+                let block_lists = Arc::new(HashMap::new());
+                let pane_group = ctx.add_typed_action_view(|ctx| {
+                    PaneGroup::new_with_panes_layout(
+                        tips_model_for_launch_2,
+                        user_default_shell_changed_banner_dismissal_model_handle,
+                        ServerApiProvider::as_ref(ctx).get(),
+                        make_template(),
+                        block_lists,
+                        None,
+                        ctx,
+                    )
+                });
+                ToastCounterView::new(pane_group, ctx)
+            });
+
+        observer_2.read(&app, |observer, _ctx| {
+            assert_eq!(
+                observer.toast_counts.get(&toast_msg).copied().unwrap_or(0),
+                1,
+                "launch #2: a brand-new `pane_tree_from_template` build must \
+                 create a fresh `LaunchToastDedup` and emit the missing-profile \
+                 toast again (got {:?})",
+                observer.toast_counts,
+            );
         });
     });
 }

@@ -105,6 +105,11 @@ pub enum PaneTemplateType {
         /// Sourced from the `shell` field of a tab config pane node.
         #[serde(skip_serializing_if = "Option::is_none", default)]
         shell: Option<String>,
+        /// Optional AI execution profile to apply to an agent pane, matched
+        /// by display name. Sourced from the `profile` field of a tab config
+        /// pane node. Trimmed; empty after trim is treated as `None`.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        agent_profile_name: Option<String>,
     },
     PaneBranchTemplate {
         split_direction: SplitDirection,
@@ -143,6 +148,7 @@ impl TryFrom<PaneNodeSnapshot> for PaneTemplateType {
                     is_focused: Some(leaf.is_focused),
                     pane_mode: PaneMode::Terminal,
                     shell: None,
+                    agent_profile_name: None,
                 }),
                 // Currently, notebook panes cannot be saved in launch configurations.
                 LeafContents::Notebook(_)
@@ -244,6 +250,7 @@ pub fn make_mock_single_window_launch_config() -> LaunchConfig {
                         commands: vec!["echo test_command".into()],
                         pane_mode: PaneMode::Terminal,
                         shell: None,
+                        agent_profile_name: None,
                     },
                     color: None,
                 },
@@ -255,6 +262,7 @@ pub fn make_mock_single_window_launch_config() -> LaunchConfig {
                         commands: vec!["echo test_command_on_another_tab".into()],
                         pane_mode: PaneMode::Terminal,
                         shell: None,
+                        agent_profile_name: None,
                     },
                     color: None,
                 },

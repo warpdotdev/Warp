@@ -52,6 +52,7 @@ fn build_test_tab_config_toml(name: &str, commands: Vec<String>) -> String {
             directory: Some("/Users/me/repo".to_string()),
             commands: Some(commands),
             shell: None,
+            profile: None,
         }],
         params: HashMap::new(),
         source_path: None,
@@ -903,4 +904,146 @@ directory = "~/a"
     } else {
         panic!("Expected fallback PaneTemplate");
     }
+}
+
+// ── tab-config `profile` field tests (issue #10171) ─────────────────
+
+#[test]
+fn test_render_tab_config_propagates_profile_field() {
+    let toml_str = r#"
+name = "Coder Tab"
+
+[[panes]]
+id = "main"
+type = "agent"
+profile = "Coder"
+"#;
+    let config: TabConfig = toml::from_str(toml_str).expect("Should parse");
+    let (_, template) = render_tab_config(&config, &HashMap::new(), None);
+    if let PaneTemplateType::PaneTemplate {
+        agent_profile_name,
+        pane_mode,
+        ..
+    } = template
+    {
+        assert_eq!(
+            pane_mode,
+            crate::launch_configs::launch_config::PaneMode::Agent
+        );
+        assert_eq!(agent_profile_name.as_deref(), Some("Coder"));
+    } else {
+        panic!("Expected PaneTemplate variant");
+    }
+}
+
+#[test]
+fn test_render_tab_config_trims_profile_whitespace() {
+    let toml_str = r#"
+name = "Trim Tab"
+
+[[panes]]
+id = "main"
+type = "agent"
+profile = "  Coder  "
+"#;
+    let config: TabConfig = toml::from_str(toml_str).expect("Should parse");
+    let (_, template) = render_tab_config(&config, &HashMap::new(), None);
+    if let PaneTemplateType::PaneTemplate {
+        agent_profile_name, ..
+    } = template
+    {
+        assert_eq!(
+            agent_profile_name.as_deref(),
+            Some("Coder"),
+            "expected leading/trailing whitespace to be trimmed",
+        );
+    } else {
+        panic!("Expected PaneTemplate variant");
+    }
+}
+
+#[test]
+fn test_render_tab_config_empty_profile_treated_as_omitted() {
+    let toml_str = r#"
+name = "Empty Profile Tab"
+
+[[panes]]
+id = "main"
+type = "agent"
+profile = ""
+"#;
+    let config: TabConfig = toml::from_str(toml_str).expect("Should parse");
+    let (_, template) = render_tab_config(&config, &HashMap::new(), None);
+    if let PaneTemplateType::PaneTemplate {
+        agent_profile_name, ..
+    } = template
+    {
+        assert!(
+            agent_profile_name.is_none(),
+            "expected empty `profile` to be treated as omitted, got {agent_profile_name:?}",
+        );
+    } else {
+        panic!("Expected PaneTemplate variant");
+    }
+}
+
+#[test]
+fn test_render_tab_config_profile_on_terminal_pane_passes() {
+    // A `profile` value on a `type = "terminal"` pane is benign — the schema
+    // accepts it and the renderer logs a `log::warn!` (verified at apply
+    // time in `pane_group/mod.rs`). Critically, the entire tab config does
+    // not fail to render.
+    let toml_str = r#"
+name = "Terminal With Profile"
+
+[[panes]]
+id = "main"
+type = "terminal"
+profile = "Coder"
+"#;
+    let config: TabConfig =
+        toml::from_str(toml_str).expect("terminal pane with profile should parse cleanly");
+    let (_, template) = render_tab_config(&config, &HashMap::new(), None);
+    if let PaneTemplateType::PaneTemplate {
+        agent_profile_name,
+        pane_mode,
+        ..
+    } = template
+    {
+        assert_eq!(
+            pane_mode,
+            crate::launch_configs::launch_config::PaneMode::Terminal,
+        );
+        // The renderer carries the field through; the apply site (pane_group)
+        // is responsible for ignoring it on non-agent panes.
+        assert_eq!(agent_profile_name.as_deref(), Some("Coder"));
+    } else {
+        panic!("Expected PaneTemplate variant");
+    }
+}
+
+#[test]
+fn test_render_tab_config_roundtrip_profile() {
+    let toml_str = r#"
+name = "Roundtrip"
+
+[[panes]]
+id = "main"
+type = "agent"
+profile = "Coder"
+"#;
+    // Parse, re-serialize, and re-parse — the `profile` field must survive
+    // the round-trip so user-edited tab configs aren't silently rewritten.
+    let parsed: TabConfig = toml::from_str(toml_str).expect("Should parse");
+    let serialized = toml::to_string(&parsed).expect("Should serialize");
+    assert!(
+        serialized.contains("profile = \"Coder\""),
+        "serialized TOML missing profile field: {serialized}",
+    );
+    let reparsed: TabConfig = toml::from_str(&serialized).expect("Should re-parse");
+    assert_eq!(
+        reparsed.panes[0].profile.as_deref(),
+        Some("Coder"),
+        "profile field did not survive TOML round-trip",
+    );
 }

@@ -166,6 +166,7 @@ pub fn build_tab_config(
                 Some(commands)
             },
             shell: None,
+            profile: None,
         }],
         params,
         source_path: None,
@@ -266,6 +267,7 @@ fn snapshot_to_flat_panes(
                     directory: None,
                     commands: None,
                     shell: None,
+                    profile: None,
                 },
             );
 
@@ -303,6 +305,7 @@ fn snapshot_to_flat_panes(
                 directory,
                 commands: None,
                 shell: None,
+                profile: None,
             });
 
             my_id

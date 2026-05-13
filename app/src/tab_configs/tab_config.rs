@@ -131,6 +131,15 @@ pub struct TabConfigPaneNode {
     /// Only applies to `terminal` and `agent` pane types.
     /// If omitted or the shell is not found, the user's default shell is used.
     pub shell: Option<String>,
+    /// Optional AI execution profile to apply to this pane, matched by display
+    /// name against the user's configured profiles. Only meaningful for
+    /// `type = "agent"` panes; ignored (with a `log::warn!`) on `terminal` and
+    /// `cloud` panes. Whitespace is trimmed; an empty value is treated as
+    /// omitted. If multiple profiles share the requested name, an error toast
+    /// is shown and the pane stays as a terminal. If no profile matches, the
+    /// default profile is used and a warning toast is shown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
 }
 
 // ── TabConfig ───────────────────────────────────────────────────────
@@ -234,6 +243,7 @@ pub fn render_tab_config(
                 is_focused: Some(true),
                 pane_mode: PaneMode::Terminal,
                 shell: None,
+                agent_profile_name: None,
             }
         }
     };
@@ -393,6 +403,24 @@ fn resolve_pane_node(
         let is_focused = explicitly_focused || auto_focus_first_leaf;
         let did_consume = is_focused && !explicitly_focused;
 
+        // Trim/normalize the profile field; empty after trim is treated as omitted.
+        let agent_profile_name = node
+            .profile
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        // `profile` is only meaningful on agent panes. Match the existing soft
+        // resolution-error precedent and warn-and-ignore rather than failing
+        // the whole tab config for a benign typo on a terminal/cloud pane.
+        if agent_profile_name.is_some() && !matches!(pane_mode, PaneMode::Agent) {
+            log::warn!(
+                "tab config pane '{}' specifies `profile` but is not an agent pane; \
+                 ignoring profile field",
+                node.id,
+            );
+        }
+
         Ok((
             PaneTemplateType::PaneTemplate {
                 cwd,
@@ -400,6 +428,7 @@ fn resolve_pane_node(
                 is_focused: Some(is_focused),
                 pane_mode,
                 shell: node.shell.clone(),
+                agent_profile_name,
             },
             explicitly_focused || did_consume,
         ))

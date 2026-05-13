@@ -14,7 +14,9 @@ use crate::ai::blocklist::suggested_agent_mode_workflow_modal::SuggestedAgentMod
 use crate::ai::blocklist::suggested_rule_modal::SuggestedRuleAndId;
 use crate::ai::blocklist::{BlocklistAIHistoryModel, InputConfig};
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentModel, AIDocumentVersion};
-use crate::ai::execution_profiles::profiles::{AIExecutionProfilesModel, ClientProfileId};
+use crate::ai::execution_profiles::profiles::{
+    AIExecutionProfilesModel, ClientProfileId, LaunchToastDedup, ProfileLookupError,
+};
 use crate::ai::llms::LLMId;
 use crate::ai::restored_conversations::RestoredAgentConversations;
 use crate::auth::auth_manager::AuthManager;
@@ -1271,6 +1273,10 @@ impl PaneGroup {
         view_size: Vector2F,
         model_event_sender: Option<SyncSender<ModelEvent>>,
     ) -> (PaneData, InitialFocus) {
+        // Track which "agent profile not found" warnings we've already emitted
+        // for this launch so a tab config that references the same missing
+        // profile from multiple panes only produces one toast.
+        let launch_warned_missing_profiles = LaunchToastDedup::default();
         let (leftmost_pane_id, pane_data, initial_focus) =
             PaneGroup::pane_tree_from_template_recursive(
                 root,
@@ -1281,6 +1287,7 @@ impl PaneGroup {
                 user_default_shell_unsupported_banner_model_handle,
                 view_size,
                 model_event_sender,
+                launch_warned_missing_profiles,
             );
         if initial_focus.focused_pane.is_some() && initial_focus.active_session.is_some() {
             (pane_data, initial_focus)
@@ -1306,6 +1313,7 @@ impl PaneGroup {
         user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
         view_size: Vector2F,
         model_event_sender: Option<SyncSender<ModelEvent>>,
+        launch_warned_missing_profiles: LaunchToastDedup,
     ) -> (Option<LeftmostPaneId>, PaneData, InitialFocus) {
         match root {
             PaneTemplateType::PaneTemplate {
@@ -1314,6 +1322,7 @@ impl PaneGroup {
                 is_focused,
                 pane_mode,
                 shell,
+                agent_profile_name,
             } => {
                 let uuid = Uuid::new_v4();
 
@@ -1357,24 +1366,50 @@ impl PaneGroup {
                     });
                 }
 
-                // Agent mode: enter the agent view. When setup commands are
-                // pending (e.g. worktree creation), defer entry until they
-                // complete so they run in terminal mode.
+                // Agent mode: optionally apply the requested profile, then
+                // enter the agent view. When setup commands are pending (e.g.
+                // worktree creation), defer entry until they complete so they
+                // run in terminal mode.
                 if matches!(pane_mode, PaneMode::Agent) {
-                    if commands.is_empty() {
-                        view.update(ctx, |terminal_view, ctx| {
-                            terminal_view.enter_agent_view_for_new_conversation(
-                                None,
-                                AgentViewEntryOrigin::Input {
-                                    was_prompt_autodetected: false,
-                                },
+                    let mut should_enter_agent = true;
+
+                    // Apply the immediate-path profile (no pending commands).
+                    // Deferred-path application is handled in `TerminalView`
+                    // after `PendingCommandCompleted`.
+                    if let Some(profile_name) = agent_profile_name.as_ref() {
+                        if commands.is_empty() {
+                            should_enter_agent = Self::apply_tab_config_agent_profile(
+                                &view,
+                                profile_name,
+                                launch_warned_missing_profiles.clone(),
                                 ctx,
                             );
-                        });
-                    } else {
-                        view.update(ctx, |terminal_view, _| {
-                            terminal_view.set_enter_agent_view_after_pending_commands();
-                        });
+                        }
+                    }
+
+                    if should_enter_agent {
+                        if commands.is_empty() {
+                            view.update(ctx, |terminal_view, ctx| {
+                                terminal_view.enter_agent_view_for_new_conversation(
+                                    None,
+                                    AgentViewEntryOrigin::Input {
+                                        was_prompt_autodetected: false,
+                                    },
+                                    ctx,
+                                );
+                            });
+                        } else {
+                            // Stash the profile name so the deferred entry path
+                            // applies it before `enter_agent_view_for_new_conversation`.
+                            let pending_profile = agent_profile_name.clone();
+                            let dedup = launch_warned_missing_profiles.clone();
+                            view.update(ctx, |terminal_view, _| {
+                                if let Some(name) = pending_profile {
+                                    terminal_view.set_pending_agent_profile(name, dedup);
+                                }
+                                terminal_view.set_enter_agent_view_after_pending_commands();
+                            });
+                        }
                     }
                 }
 
@@ -1437,6 +1472,7 @@ impl PaneGroup {
                             user_default_shell_unsupported_banner_model_handle.clone(),
                             view_size,
                             model_event_sender.clone(),
+                            launch_warned_missing_profiles.clone(),
                         );
                     len += child.len();
                     nodes.push((PaneFlex(pane_flex), child.root));
@@ -1449,6 +1485,66 @@ impl PaneGroup {
                     PaneData::new_branch(split_direction.into(), nodes, len),
                     focus,
                 )
+            }
+        }
+    }
+
+    /// Resolve a tab-config `agent_profile_name` against the user's profiles
+    /// and apply it to the given terminal view, emitting a toast on the
+    /// no-match / ambiguous-match cases.
+    ///
+    /// Returns `true` when agent-mode entry should proceed and `false` when
+    /// it should be aborted (i.e. ambiguous profile name — the pane stays as
+    /// a terminal). On a missing profile we fall through to the default
+    /// profile (no `set_active_profile` call) and still enter agent mode,
+    /// matching the locked design decision in the FINAL_PLAN.
+    fn apply_tab_config_agent_profile(
+        view: &ViewHandle<TerminalView>,
+        profile_name: &str,
+        launch_warned_missing_profiles: LaunchToastDedup,
+        ctx: &mut ViewContext<PaneGroup>,
+    ) -> bool {
+        let profiles_model = AIExecutionProfilesModel::handle(ctx);
+        let view_id = view.id();
+        let lookup = profiles_model
+            .as_ref(ctx)
+            .find_profile_by_display_name(profile_name, ctx);
+        match lookup {
+            Ok(profile_id) => {
+                profiles_model.update(ctx, |model, ctx| {
+                    model.set_active_profile(view_id, profile_id, ctx);
+                });
+                true
+            }
+            Err(ProfileLookupError::NotFound(name)) => {
+                // Per-launch dedup: only one toast per missing-name even if
+                // multiple panes in the same tab config reference it.
+                if launch_warned_missing_profiles.record(name.clone()) {
+                    ctx.emit(Event::ShowToast {
+                        message: format!(
+                            "Agent profile '{name}' not found in tab config; using Default."
+                        ),
+                        // `ToastFlavor` has no Warning variant; Default is the
+                        // closest match for an informational fall-back notice.
+                        flavor: ToastFlavor::Default,
+                        pane_id: None,
+                    });
+                }
+                // No `set_active_profile` call — `active_profile(Some(id))`
+                // already falls back to the default profile when no per-session
+                // entry exists.
+                true
+            }
+            Err(ProfileLookupError::Ambiguous { name, count }) => {
+                ctx.emit(Event::ShowToast {
+                    message: format!(
+                        "Multiple agent profiles named '{name}' exist ({count}); rename one in \
+                         Settings → Agents → Profiles. Agent mode not entered."
+                    ),
+                    flavor: ToastFlavor::Error,
+                    pane_id: None,
+                });
+                false
             }
         }
     }

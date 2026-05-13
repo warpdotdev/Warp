@@ -1009,6 +1009,17 @@ fn handle_terminal_view_event(
                     pane_id: Some(pane_id),
                 })
             }
+            Event::ShowToast { message, flavor } => {
+                // Propagate per-terminal toasts (e.g. tab-config agent
+                // profile fall-back / ambiguous notices emitted from the
+                // deferred-launch entry path) up to the pane group so the
+                // workspace toast stack actually renders them.
+                ctx.emit(pane_group::Event::ShowToast {
+                    message: message.clone(),
+                    flavor: *flavor,
+                    pane_id: Some(pane_id),
+                });
+            }
             Event::AppStateChanged => {
                 ctx.emit(pane_group::Event::AppStateChanged);
             }

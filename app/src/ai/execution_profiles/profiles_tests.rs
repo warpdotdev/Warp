@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use warpui::{App, SingletonEntity};
 
-use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
+use crate::ai::execution_profiles::profiles::{AIExecutionProfilesModel, ProfileLookupError};
 use crate::ai::execution_profiles::{
     AIExecutionProfile, ActionPermission, CloudAIExecutionProfileModel,
 };
@@ -188,6 +188,201 @@ fn reconciles_unsynced_default_profile_with_cloud_after_initial_load() {
                 info.data().apply_code_diffs,
                 ActionPermission::AlwaysAsk,
                 "edit should be reflected on the existing cloud profile"
+            );
+        });
+    })
+}
+
+// ── find_profile_by_display_name tests ──────────────────────────────
+//
+// These tests cover the lookup helper used by tab-config agent panes.
+// They install a model that already has the default profile populated
+// from the in-memory `Unsynced` state, then push named profiles into
+// `CloudModel` via the initial-load path so the model reconciles them
+// and they become discoverable via `find_profile_by_display_name`.
+
+/// Insert a custom (non-default) AI execution profile into `CloudModel`
+/// and reconcile so the profile model picks up the new sync_id.
+fn install_custom_profile(
+    app: &mut App,
+    profile_model: warpui::ModelHandle<AIExecutionProfilesModel>,
+    server_id_raw: i64,
+    name: &str,
+) {
+    let cloud_uid = ServerId::from(server_id_raw);
+    let cloud_sync_id = SyncId::ServerId(cloud_uid);
+    let cloud_profile = AIExecutionProfile {
+        name: name.to_string(),
+        is_default_profile: false,
+        ..Default::default()
+    };
+    let server_object = ServerAIExecutionProfile {
+        id: cloud_sync_id,
+        model: CloudAIExecutionProfileModel::new(cloud_profile),
+        metadata: mock_server_metadata(cloud_uid),
+        permissions: ServerPermissions::mock_personal(),
+    };
+
+    CloudModel::handle(app).update(app, move |cloud_model, ctx| {
+        let server_objects: Vec<ServerAIExecutionProfile> = vec![server_object];
+        cloud_model.update_objects_from_initial_load(server_objects, false, false, ctx);
+        ctx.emit(CloudModelEvent::InitialLoadCompleted);
+    });
+
+    // Sanity: the profile model has registered a new sync id.
+    profile_model.read(app, |model, _ctx| {
+        assert!(
+            model
+                .get_all_profile_ids()
+                .iter()
+                .any(|id| model.default_profile_id() != *id),
+            "expected a non-default profile to be registered after initial load",
+        );
+    });
+}
+
+#[test]
+fn find_profile_by_display_name_unique_match() {
+    App::test((), |mut app| async move {
+        install_singletons(&mut app, AuthStateProvider::new_for_test());
+        let profile_model = app.add_singleton_model(|ctx| {
+            AIExecutionProfilesModel::new(&LaunchMode::new_for_unit_test(), ctx)
+        });
+
+        install_custom_profile(&mut app, profile_model.clone(), 100, "Coder");
+
+        profile_model.read(&app, |model, ctx| {
+            let result = model.find_profile_by_display_name("Coder", ctx);
+            assert!(
+                result.is_ok(),
+                "expected unique match for 'Coder', got {result:?}",
+            );
+        });
+    })
+}
+
+#[test]
+fn find_profile_by_display_name_not_found() {
+    App::test((), |mut app| async move {
+        install_singletons(&mut app, AuthStateProvider::new_for_test());
+        let profile_model = app.add_singleton_model(|ctx| {
+            AIExecutionProfilesModel::new(&LaunchMode::new_for_unit_test(), ctx)
+        });
+
+        profile_model.read(&app, |model, ctx| {
+            let result = model.find_profile_by_display_name("Nonexistent", ctx);
+            assert!(
+                matches!(result, Err(ProfileLookupError::NotFound(ref n)) if n == "Nonexistent"),
+                "expected NotFound for 'Nonexistent', got {result:?}",
+            );
+        });
+    })
+}
+
+#[test]
+fn find_profile_by_display_name_ambiguous_two_custom_same_name() {
+    App::test((), |mut app| async move {
+        install_singletons(&mut app, AuthStateProvider::new_for_test());
+        let profile_model = app.add_singleton_model(|ctx| {
+            AIExecutionProfilesModel::new(&LaunchMode::new_for_unit_test(), ctx)
+        });
+
+        install_custom_profile(&mut app, profile_model.clone(), 200, "Work");
+        install_custom_profile(&mut app, profile_model.clone(), 201, "Work");
+
+        profile_model.read(&app, |model, ctx| {
+            let result = model.find_profile_by_display_name("Work", ctx);
+            match result {
+                Err(ProfileLookupError::Ambiguous { ref name, count }) => {
+                    assert_eq!(name, "Work");
+                    assert_eq!(count, 2);
+                }
+                other => panic!("expected Ambiguous for 'Work', got {other:?}"),
+            }
+        });
+    })
+}
+
+#[test]
+fn find_profile_by_display_name_default_resolves() {
+    App::test((), |mut app| async move {
+        install_singletons(&mut app, AuthStateProvider::new_for_test());
+        let profile_model = app.add_singleton_model(|ctx| {
+            AIExecutionProfilesModel::new(&LaunchMode::new_for_unit_test(), ctx)
+        });
+
+        // The default profile's `display_name()` is hard-coded to "Default"
+        // regardless of the stored name field (see `mod.rs:444-452`).
+        profile_model.read(&app, |model, ctx| {
+            let result = model.find_profile_by_display_name("Default", ctx);
+            let default_id = model.default_profile_id();
+            match result {
+                Ok(id) => assert_eq!(id, default_id, "expected default profile id, got {id:?}",),
+                other => panic!("expected default profile to resolve, got {other:?}"),
+            }
+        });
+    })
+}
+
+#[test]
+fn find_profile_by_display_name_two_untitled_collide() {
+    App::test((), |mut app| async move {
+        install_singletons(&mut app, AuthStateProvider::new_for_test());
+        let profile_model = app.add_singleton_model(|ctx| {
+            AIExecutionProfilesModel::new(&LaunchMode::new_for_unit_test(), ctx)
+        });
+
+        // Profiles with empty `name` display as "Untitled" — two such
+        // profiles collide into Ambiguous when looked up by "Untitled".
+        install_custom_profile(&mut app, profile_model.clone(), 300, "");
+        install_custom_profile(&mut app, profile_model.clone(), 301, "");
+
+        profile_model.read(&app, |model, ctx| {
+            let result = model.find_profile_by_display_name("Untitled", ctx);
+            match result {
+                Err(ProfileLookupError::Ambiguous { ref name, count }) => {
+                    assert_eq!(name, "Untitled");
+                    assert_eq!(count, 2);
+                }
+                other => panic!("expected Ambiguous for 'Untitled', got {other:?}"),
+            }
+        });
+    })
+}
+
+#[test]
+fn find_profile_by_display_name_trims_input() {
+    App::test((), |mut app| async move {
+        install_singletons(&mut app, AuthStateProvider::new_for_test());
+        let profile_model = app.add_singleton_model(|ctx| {
+            AIExecutionProfilesModel::new(&LaunchMode::new_for_unit_test(), ctx)
+        });
+
+        install_custom_profile(&mut app, profile_model.clone(), 400, "Coder");
+
+        profile_model.read(&app, |model, ctx| {
+            let result = model.find_profile_by_display_name("  Coder  ", ctx);
+            assert!(
+                result.is_ok(),
+                "expected trimmed lookup to succeed, got {result:?}",
+            );
+        });
+    })
+}
+
+#[test]
+fn find_profile_by_display_name_empty_input_returns_not_found() {
+    App::test((), |mut app| async move {
+        install_singletons(&mut app, AuthStateProvider::new_for_test());
+        let profile_model = app.add_singleton_model(|ctx| {
+            AIExecutionProfilesModel::new(&LaunchMode::new_for_unit_test(), ctx)
+        });
+
+        profile_model.read(&app, |model, ctx| {
+            let result = model.find_profile_by_display_name("   ", ctx);
+            assert!(
+                matches!(result, Err(ProfileLookupError::NotFound(_))),
+                "expected NotFound for whitespace-only input, got {result:?}",
             );
         });
     })
