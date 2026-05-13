@@ -207,12 +207,20 @@ en:
     cannot_be_undone: "This cannot be undone."
     auth_token: "Auth Token"
     browser_auth_token: "Browser auth token"
+    enter_auth_token: "Enter auth token"
     export_your_data: "Export your data"
     disable_warp_drive: "Disable Warp Drive"
     disable_ai_features: "Disable AI features"
     enable_warp_drive: "Enable Warp Drive"
     enable_ai_features: "Enable AI features"
     help_improve_warp: "Help improve Warp"
+    login_troubleshooting_prefix: " Not the first time? See our "
+    troubleshooting_docs: "troubleshooting docs"
+    invalid_auth_token_entered: "An invalid auth token was entered into the modal."
+    failed_login_copy_token: "Failed to log in. Try manually copying the auth token from the authentication web page and pasting into the modal."
+    login_request_failed: "Request to log in failed."
+    signup_request_failed: "Request to sign up failed."
+    redirect_url_not_from_app: "The redirect URL pasted did not originate from this app. Please click the button below to try again."
 
   # ── Billing ──
   billing:
@@ -375,6 +383,10 @@ en:
     install_nvm_description: "This menu helps you switch between Node.js versions — but it requires nvm to be installed."
     no_versions_installed: "No node versions installed"
     try_installing_with_nvm: "Try installing versions with nvm"
+    installed: "Installed"
+
+  input_suggestions:
+    ignore_this_suggestion: "Ignore this suggestion"
 
   env_vars:
     education_text: "Add secret or command. Warp never stores external secrets"
@@ -816,6 +828,8 @@ en:
     get_warping: "Get Warping"
     enabled: "Enabled"
     disabled: "Disabled"
+    set_by_team_workspace: "Set by Team Workspace"
+    disable_warp_agent: "Disable Warp Agent"
     intro:
       subtitle: "A modern terminal with state of the art agents built in."
       already_have_account: "Already have an account? "
@@ -936,6 +950,9 @@ en:
   build_plan_migration:
     learn_more_prefix: "Learn more on our "
     pricing_page: "pricing page"
+
+  global_search:
+    search_in_files: "Search in files"
 
   # ── Shared Blocks ──
   shared_blocks:
@@ -1493,6 +1510,7 @@ en:
     continue: "Continue"
     period: "."
     search: "Search"
+    custom_ellipsis: "Custom..."
     split_pane_right: "Split pane right"
     split_pane_left: "Split pane left"
     split_pane_down: "Split pane down"

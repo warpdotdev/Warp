@@ -207,12 +207,20 @@ zh-CN:
     cannot_be_undone: "此操作无法撤销。"
     auth_token: "Auth Token"
     browser_auth_token: "浏览器认证 token"
+    enter_auth_token: "输入认证 token"
     export_your_data: "导出数据"
     disable_warp_drive: "禁用 Warp 云盘"
     disable_ai_features: "禁用 AI 功能"
     enable_warp_drive: "启用 Warp 云盘"
     enable_ai_features: "启用 AI 功能"
     help_improve_warp: "帮助改进 Warp"
+    login_troubleshooting_prefix: " 不是第一次遇到？请查看我们的"
+    troubleshooting_docs: "故障排查文档"
+    invalid_auth_token_entered: "输入到弹窗中的认证 token 无效。"
+    failed_login_copy_token: "登录失败。请尝试从认证网页手动复制认证 token，并粘贴到弹窗中。"
+    login_request_failed: "登录请求失败。"
+    signup_request_failed: "注册请求失败。"
+    redirect_url_not_from_app: "粘贴的重定向 URL 不是来自此应用。请点击下方按钮重试。"
 
   # ── 账单 ──
   billing:
@@ -375,6 +383,10 @@ zh-CN:
     install_nvm_description: "此菜单可帮助你在 Node.js 版本之间切换，但需要先安装 nvm。"
     no_versions_installed: "未安装 Node 版本"
     try_installing_with_nvm: "尝试使用 nvm 安装版本"
+    installed: "已安装"
+
+  input_suggestions:
+    ignore_this_suggestion: "忽略此建议"
 
   env_vars:
     education_text: "添加密钥或命令。Warp 永远不会存储外部密钥"
@@ -816,6 +828,8 @@ zh-CN:
     get_warping: "开始使用 Warp"
     enabled: "启用"
     disabled: "禁用"
+    set_by_team_workspace: "由团队工作区设置"
+    disable_warp_agent: "禁用 Warp Agent"
     intro:
       subtitle: "内置先进智能体的现代终端。"
       already_have_account: "已有账号？"
@@ -936,6 +950,9 @@ zh-CN:
   build_plan_migration:
     learn_more_prefix: "在我们的"
     pricing_page: "定价页面了解更多"
+
+  global_search:
+    search_in_files: "搜索文件"
 
   # ── 共享区块 ──
   shared_blocks:
@@ -1493,6 +1510,7 @@ zh-CN:
     continue: "继续"
     period: "。"
     search: "搜索"
+    custom_ellipsis: "自定义..."
     split_pane_right: "向右拆分面板"
     split_pane_left: "向左拆分面板"
     split_pane_down: "向下拆分面板"

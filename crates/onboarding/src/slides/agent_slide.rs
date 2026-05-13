@@ -819,7 +819,7 @@ impl AgentSlide {
         let title_color = internal_colors::text_main(theme, background_for_text);
         let subtitle_color = internal_colors::text_sub(theme, background_for_text);
 
-        let title_el = Text::new("Set by Team Workspace", ui_font_family, 14.0)
+        let title_el = Text::new(t!("onboarding.set_by_team_workspace"), ui_font_family, 14.0)
             .with_color(title_color)
             .with_style(Properties {
                 weight: Weight::Normal,
@@ -955,14 +955,18 @@ impl AgentSlide {
             .on_click(|ctx, _, _| ctx.dispatch_typed_action(AgentSlideAction::ToggleDisableOz))
             .finish();
 
-        let label = Text::new("Disable Warp Agent", appearance.ui_font_family(), 14.0)
-            .with_color(internal_colors::text_sub(theme, background_for_text))
-            .with_style(Properties {
-                weight: Weight::Normal,
-                ..Default::default()
-            })
-            .with_line_height_ratio(1.0)
-            .finish();
+        let label = Text::new(
+            t!("onboarding.disable_warp_agent"),
+            appearance.ui_font_family(),
+            14.0,
+        )
+        .with_color(internal_colors::text_sub(theme, background_for_text))
+        .with_style(Properties {
+            weight: Weight::Normal,
+            ..Default::default()
+        })
+        .with_line_height_ratio(1.0)
+        .finish();
 
         Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)

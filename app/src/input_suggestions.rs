@@ -885,7 +885,10 @@ impl InputSuggestions {
 
                                             let tooltip_element = appearance
                                                 .ui_builder()
-                                                .tool_tip("Ignore this suggestion".to_string())
+                                                .tool_tip(
+                                                    t!("input_suggestions.ignore_this_suggestion")
+                                                        .to_string(),
+                                                )
                                                 .build()
                                                 .finish();
 

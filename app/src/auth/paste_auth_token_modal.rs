@@ -120,7 +120,7 @@ impl PasteAuthTokenModalView {
                 },
                 ctx,
             );
-            editor.set_placeholder_text("Enter auth token", ctx);
+            editor.set_placeholder_text(t!("auth.enter_auth_token"), ctx);
             editor
         });
 
