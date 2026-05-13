@@ -614,7 +614,7 @@ impl EnvVarCollectionView {
             } else {
                 ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     toast_stack.add_ephemeral_toast_by_type(
-                        ToastType::CloudObjectNotFound,
+                        ToastType::StoredObjectNotFound,
                         window_id,
                         ctx,
                     );
@@ -646,7 +646,7 @@ impl EnvVarCollectionView {
                 me.load(env_var_collection, ctx);
             } else {
                 ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    toast_stack.add_ephemeral_toast_by_type(ToastType::CloudObjectNotFound, window_id, ctx);
+                    toast_stack.add_ephemeral_toast_by_type(ToastType::StoredObjectNotFound, window_id, ctx);
                 });
                 log::warn!("Tried to open unknown env var collection {env_var_collection_id:?} after fetching");
             }

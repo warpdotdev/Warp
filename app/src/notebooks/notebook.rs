@@ -1549,7 +1549,7 @@ impl NotebookView {
             } else {
                 ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     toast_stack.add_ephemeral_toast_by_type(
-                        ToastType::CloudObjectNotFound,
+                        ToastType::StoredObjectNotFound,
                         window_id,
                         ctx,
                     );
@@ -1586,7 +1586,7 @@ impl NotebookView {
             } else {
                 ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     toast_stack.add_ephemeral_toast_by_type(
-                        ToastType::CloudObjectNotFound,
+                        ToastType::StoredObjectNotFound,
                         window_id,
                         ctx,
                     );

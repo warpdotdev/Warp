@@ -38,7 +38,7 @@ const BUTTON_MARGIN_BETWEEN: f32 = 8.;
 /// This dialog can be opened for a folder or a space. If open_for_folder_id = None, it's a space.
 /// If open_for_folder_id = Some, it's a specific folder.
 #[derive(Clone)]
-pub struct CloudObjectNamingDialog {
+pub struct ObjectNamingDialog {
     pub title_editor: ViewHandle<EditorView>,
     cancel_mouse_state: MouseStateHandle,
     primary_action_mouse_state: MouseStateHandle,
@@ -49,7 +49,7 @@ pub struct CloudObjectNamingDialog {
     pub open_for_folder_id: Option<SyncId>,
 }
 
-impl CloudObjectNamingDialog {
+impl ObjectNamingDialog {
     pub fn new(title_editor: ViewHandle<EditorView>) -> Self {
         Self {
             title_editor,
@@ -261,9 +261,7 @@ impl CloudObjectNamingDialog {
                             .build()
                             .with_cursor(Cursor::PointingHand)
                             .on_click(move |ctx, _, _| {
-                                ctx.dispatch_typed_action(
-                                    DriveIndexAction::CloseCloudObjectNamingDialog,
-                                )
+                                ctx.dispatch_typed_action(DriveIndexAction::CloseObjectNamingDialog)
                             })
                             .finish(),
                     )
@@ -319,7 +317,7 @@ impl CloudObjectNamingDialog {
         )
         .prevent_interaction_with_other_elements()
         .on_dismiss(|ctx, _app| {
-            ctx.dispatch_typed_action(DriveIndexAction::CloseCloudObjectNamingDialog)
+            ctx.dispatch_typed_action(DriveIndexAction::CloseObjectNamingDialog)
         })
         .finish()
     }

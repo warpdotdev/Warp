@@ -23,33 +23,33 @@ const BUTTON_BORDER_RADIUS: f32 = 4.;
 const BORDER_WIDTH: f32 = 1.;
 
 const DIALOG_WIDTH: f32 = 450.;
-pub enum CloudActionConfirmationDialogEvent {
+pub enum ActionConfirmationDialogEvent {
     Cancel,
     Confirm,
 }
 
 #[derive(Debug)]
-pub enum CloudActionConfirmationDialogAction {
+pub enum ActionConfirmationDialogAction {
     Cancel,
     Confirm,
 }
 
 #[derive(Default)]
-pub enum CloudActionConfirmationDialogVariant {
+pub enum ActionConfirmationDialogVariant {
     LeaveTeam,
     DeleteTeam,
     #[default]
     None,
 }
 
-pub struct CloudActionConfirmationDialog {
+pub struct ActionConfirmationDialog {
     cancel_mouse_state: MouseStateHandle,
     confirm_mouse_state: MouseStateHandle,
-    variant: CloudActionConfirmationDialogVariant,
+    variant: ActionConfirmationDialogVariant,
     confirmation_button_enabled: bool,
 }
 
-impl CloudActionConfirmationDialog {
+impl ActionConfirmationDialog {
     pub fn new() -> Self {
         Self {
             cancel_mouse_state: Default::default(),
@@ -59,7 +59,7 @@ impl CloudActionConfirmationDialog {
         }
     }
 
-    pub fn set_variant(&mut self, variant: CloudActionConfirmationDialogVariant) {
+    pub fn set_variant(&mut self, variant: ActionConfirmationDialogVariant) {
         self.variant = variant;
     }
 
@@ -69,48 +69,48 @@ impl CloudActionConfirmationDialog {
 
     fn title_text(&self) -> String {
         match self.variant {
-            CloudActionConfirmationDialogVariant::LeaveTeam => {
+            ActionConfirmationDialogVariant::LeaveTeam => {
                 crate::t!("drive-cloud-action-leave-team-title")
             }
-            CloudActionConfirmationDialogVariant::DeleteTeam => {
+            ActionConfirmationDialogVariant::DeleteTeam => {
                 crate::t!("drive-cloud-action-delete-team-title")
             }
-            CloudActionConfirmationDialogVariant::None => "".to_string(),
+            ActionConfirmationDialogVariant::None => "".to_string(),
         }
     }
 
     fn body_text(&self) -> String {
         match self.variant {
-            CloudActionConfirmationDialogVariant::LeaveTeam => {
+            ActionConfirmationDialogVariant::LeaveTeam => {
                 crate::t!("drive-cloud-action-leave-team-body")
             }
-            CloudActionConfirmationDialogVariant::DeleteTeam => {
+            ActionConfirmationDialogVariant::DeleteTeam => {
                 crate::t!("drive-cloud-action-delete-team-body")
             }
-            CloudActionConfirmationDialogVariant::None => "".to_string(),
+            ActionConfirmationDialogVariant::None => "".to_string(),
         }
     }
 
     fn confirm_button_text(&self) -> String {
         match self.variant {
-            CloudActionConfirmationDialogVariant::LeaveTeam => {
+            ActionConfirmationDialogVariant::LeaveTeam => {
                 crate::t!("drive-cloud-action-leave-team-confirm")
             }
-            CloudActionConfirmationDialogVariant::DeleteTeam => {
+            ActionConfirmationDialogVariant::DeleteTeam => {
                 crate::t!("drive-cloud-action-delete-team-confirm")
             }
-            CloudActionConfirmationDialogVariant::None => "".to_string(),
+            ActionConfirmationDialogVariant::None => "".to_string(),
         }
     }
 }
 
-impl Entity for CloudActionConfirmationDialog {
-    type Event = CloudActionConfirmationDialogEvent;
+impl Entity for ActionConfirmationDialog {
+    type Event = ActionConfirmationDialogEvent;
 }
 
-impl View for CloudActionConfirmationDialog {
+impl View for ActionConfirmationDialog {
     fn ui_name() -> &'static str {
-        "CloudActionConfirmationDialog"
+        "ActionConfirmationDialog"
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
@@ -159,7 +159,7 @@ impl View for CloudActionConfirmationDialog {
             .build()
             .with_cursor(Cursor::PointingHand)
             .on_click(move |ctx, _, _| {
-                ctx.dispatch_typed_action(CloudActionConfirmationDialogAction::Cancel)
+                ctx.dispatch_typed_action(ActionConfirmationDialogAction::Cancel)
             })
             .finish();
 
@@ -177,7 +177,7 @@ impl View for CloudActionConfirmationDialog {
             .build()
             .with_cursor(Cursor::PointingHand)
             .on_click(move |ctx, _, _| {
-                ctx.dispatch_typed_action(CloudActionConfirmationDialogAction::Confirm)
+                ctx.dispatch_typed_action(ActionConfirmationDialogAction::Confirm)
             });
 
         let confirm_button = if self.confirmation_button_enabled {
@@ -200,24 +200,24 @@ impl View for CloudActionConfirmationDialog {
         Dismiss::new(dialog)
             .prevent_interaction_with_other_elements()
             .on_dismiss(|ctx, _app| {
-                ctx.dispatch_typed_action(CloudActionConfirmationDialogAction::Cancel)
+                ctx.dispatch_typed_action(ActionConfirmationDialogAction::Cancel)
             })
             .finish()
     }
 }
 
-impl TypedActionView for CloudActionConfirmationDialog {
-    type Action = CloudActionConfirmationDialogAction;
+impl TypedActionView for ActionConfirmationDialog {
+    type Action = ActionConfirmationDialogAction;
 
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
-            CloudActionConfirmationDialogAction::Cancel => {
-                ctx.emit(CloudActionConfirmationDialogEvent::Cancel)
+            ActionConfirmationDialogAction::Cancel => {
+                ctx.emit(ActionConfirmationDialogEvent::Cancel)
             }
-            CloudActionConfirmationDialogAction::Confirm => {
+            ActionConfirmationDialogAction::Confirm => {
                 self.set_confirmation_button_enabled(false);
                 ctx.notify();
-                ctx.emit(CloudActionConfirmationDialogEvent::Confirm)
+                ctx.emit(ActionConfirmationDialogEvent::Confirm)
             }
         }
     }

@@ -326,7 +326,7 @@ pub struct DismissibleToast<A: Action + Clone> {
 }
 
 pub enum ToastType {
-    CloudObjectNotFound,
+    StoredObjectNotFound,
 }
 
 impl<A: Action + Clone> DismissibleToast<A> {

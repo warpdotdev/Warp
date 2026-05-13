@@ -45,7 +45,7 @@ use crate::{
 };
 
 use super::{
-    cloud_object_naming_dialog::CloudObjectNamingDialog,
+    cloud_object_naming_dialog::ObjectNamingDialog,
     drive_helpers::{
         has_feature_gated_anonymous_user_reached_env_var_limit,
         has_feature_gated_anonymous_user_reached_notebook_limit,
@@ -232,14 +232,14 @@ pub enum DriveIndexAction {
         object_type_and_id: ObjectTypeAndId,
         new_space: Space,
     },
-    OpenCloudObjectNamingDialog {
+    OpenObjectNamingDialog {
         space: Space,
         object_type: DriveObjectType,
         // only present when renaming an existing item
         object_type_and_id: Option<ObjectTypeAndId>,
         initial_folder_id: Option<SyncId>,
     },
-    CloseCloudObjectNamingDialog,
+    CloseObjectNamingDialog,
     DropIndexItem {
         object_type_and_id: ObjectTypeAndId,
         drop_target_location: StoredObjectLocation,
@@ -313,7 +313,7 @@ impl DriveIndexAction {
     ) -> Self {
         match (space, object_type) {
             // creating a folder requires a name, which is entered from the cloud object dialog
-            (_, DriveObjectType::Folder) => DriveIndexAction::OpenCloudObjectNamingDialog {
+            (_, DriveObjectType::Folder) => DriveIndexAction::OpenObjectNamingDialog {
                 object_type,
                 space,
                 object_type_and_id: None,
@@ -457,7 +457,7 @@ pub struct DriveIndex {
     section_states: HashMap<DriveIndexSection, DriveIndexSectionState>,
     clipped_scroll_state: ClippedScrollStateHandle,
     mouse_state_handles: MouseStateHandles,
-    cloud_object_naming_dialog: CloudObjectNamingDialog,
+    cloud_object_naming_dialog: ObjectNamingDialog,
     current_drop_target: Option<StoredObjectLocation>,
     empty_trash_confirmation_dialog: ViewHandle<EmptyTrashConfirmationDialog>,
     empty_trash_confirmation_dialog_space: Option<Space>,
@@ -924,7 +924,7 @@ impl DriveIndex {
             section_states: Default::default(),
             clipped_scroll_state: Default::default(),
             mouse_state_handles: Default::default(),
-            cloud_object_naming_dialog: CloudObjectNamingDialog::new(title_editor),
+            cloud_object_naming_dialog: ObjectNamingDialog::new(title_editor),
             current_drop_target: None,
             empty_trash_confirmation_dialog,
             empty_trash_confirmation_dialog_space: None,
@@ -4190,14 +4190,12 @@ impl DriveIndex {
                     if !FeatureFlag::SharedWithMe.is_enabled() || editability.can_edit() {
                         menu_items.push(
                             MenuItemFields::new(crate::t!("drive-rename"))
-                                .with_on_select_action(
-                                    DriveIndexAction::OpenCloudObjectNamingDialog {
-                                        space: *space,
-                                        object_type: DriveObjectType::Folder,
-                                        initial_folder_id: Some(*folder_id),
-                                        object_type_and_id: Some(*object_type_and_id),
-                                    },
-                                )
+                                .with_on_select_action(DriveIndexAction::OpenObjectNamingDialog {
+                                    space: *space,
+                                    object_type: DriveObjectType::Folder,
+                                    initial_folder_id: Some(*folder_id),
+                                    object_type_and_id: Some(*object_type_and_id),
+                                })
                                 .with_icon(Icon::Rename)
                                 .into_item(),
                         );
@@ -5048,7 +5046,7 @@ impl TypedActionView for DriveIndex {
             DriveIndexAction::ToggleSpaceOverflowMenu { space, offset } => {
                 self.toggle_space_menu(space, *offset, ctx);
             }
-            DriveIndexAction::OpenCloudObjectNamingDialog {
+            DriveIndexAction::OpenObjectNamingDialog {
                 object_type,
                 space,
                 initial_folder_id,
@@ -5105,7 +5103,7 @@ impl TypedActionView for DriveIndex {
 
                 ctx.notify();
             }
-            DriveIndexAction::CloseCloudObjectNamingDialog => {
+            DriveIndexAction::CloseObjectNamingDialog => {
                 self.cloud_object_naming_dialog.close(ctx);
                 ctx.notify();
             }

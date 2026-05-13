@@ -25,8 +25,7 @@ use crate::{
     channel::ChannelState,
     cloud_object::{model::persistence::ObjectStoreModel, Space, StoredObjectEventEntrypoint},
     drive::cloud_action_confirmation_dialog::{
-        CloudActionConfirmationDialog, CloudActionConfirmationDialogEvent,
-        CloudActionConfirmationDialogVariant,
+        ActionConfirmationDialog, ActionConfirmationDialogEvent, ActionConfirmationDialogVariant,
     },
     editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions, TextOptions},
     network::NetworkStatus,
@@ -389,7 +388,7 @@ pub struct TeamsPageView {
     invite_view: TeamsInviteOption,
     team_members_mouse_state_handles: Vec<MouseStateHandle>,
     team_approved_domains_mouse_state_handles: Vec<MouseStateHandle>,
-    delete_or_leave_team_confirmation_dialog: ViewHandle<CloudActionConfirmationDialog>,
+    delete_or_leave_team_confirmation_dialog: ViewHandle<ActionConfirmationDialog>,
     show_delete_or_leave_team_confirmation_dialog: bool,
     transfer_ownership_modal_state: ModalViewState<Modal<TransferOwnershipConfirmationModal>>,
     clipped_scroll_state: ClippedScrollStateHandle,
@@ -442,7 +441,7 @@ impl TypedActionView for TeamsPageView {
             TeamsPageAction::ShowLeaveTeamConfirmationDialog => {
                 self.delete_or_leave_team_confirmation_dialog
                     .update(ctx, |dialog, ctx| {
-                        dialog.set_variant(CloudActionConfirmationDialogVariant::LeaveTeam);
+                        dialog.set_variant(ActionConfirmationDialogVariant::LeaveTeam);
                         ctx.notify();
                     });
                 self.show_delete_or_leave_team_confirmation_dialog = true;
@@ -451,7 +450,7 @@ impl TypedActionView for TeamsPageView {
             TeamsPageAction::ShowDeleteTeamConfirmationDialog => {
                 self.delete_or_leave_team_confirmation_dialog
                     .update(ctx, |dialog, ctx| {
-                        dialog.set_variant(CloudActionConfirmationDialogVariant::DeleteTeam);
+                        dialog.set_variant(ActionConfirmationDialogVariant::DeleteTeam);
                         ctx.notify();
                     });
                 self.show_delete_or_leave_team_confirmation_dialog = true;
@@ -678,7 +677,7 @@ impl TeamsPageView {
         });
 
         let delete_or_leave_team_confirmation_dialog =
-            ctx.add_typed_action_view(|_| CloudActionConfirmationDialog::new());
+            ctx.add_typed_action_view(|_| ActionConfirmationDialog::new());
         ctx.subscribe_to_view(
             &delete_or_leave_team_confirmation_dialog,
             |me, _, event, ctx| {
@@ -983,15 +982,15 @@ impl TeamsPageView {
 
     fn handle_cloud_action_confirmation_dialog_event(
         &mut self,
-        event: &CloudActionConfirmationDialogEvent,
+        event: &ActionConfirmationDialogEvent,
         ctx: &mut ViewContext<Self>,
     ) {
         match event {
-            CloudActionConfirmationDialogEvent::Cancel => {
+            ActionConfirmationDialogEvent::Cancel => {
                 self.show_delete_or_leave_team_confirmation_dialog = false;
                 ctx.notify();
             }
-            CloudActionConfirmationDialogEvent::Confirm => {
+            ActionConfirmationDialogEvent::Confirm => {
                 self.leave_team(ctx);
                 self.show_delete_or_leave_team_confirmation_dialog = false;
             }

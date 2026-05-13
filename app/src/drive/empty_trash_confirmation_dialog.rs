@@ -15,8 +15,8 @@ use crate::{
 };
 
 // This follows our new design standard for confirmation dialogs (e.g. used in the session sharing dialog)
-// Design team has discouraged us from continuing to use CloudActionConfirmationDialog's current design
-// TODO: update CloudActionConfirmationDialog to use this design
+// Design team has discouraged us from continuing to use ActionConfirmationDialog's current design
+// TODO: update ActionConfirmationDialog to use this design
 pub enum EmptyTrashConfirmationEvent {
     Confirm,
     Cancel,
