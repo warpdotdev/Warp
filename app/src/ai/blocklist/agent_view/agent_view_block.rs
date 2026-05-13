@@ -34,7 +34,7 @@ use super::{AgentViewController, AgentViewEntryOrigin};
 struct StateHandles {
     block: MouseStateHandle,
     fork_button: MouseStateHandle,
-    chevron_button: MouseStateHandle,
+    open_conversation_button: MouseStateHandle,
 }
 
 pub struct AgentViewEntryBlockParams {
@@ -56,6 +56,7 @@ pub struct AgentViewEntryBlock {
     /// Cached title for rendering when conversation no longer exists (i.e. after deletion).
     cached_title: Option<String>,
     state_handles: StateHandles,
+    /// UI instance anchor for positioning the entry context menu.
     view_id: EntityId,
 }
 
@@ -166,6 +167,10 @@ fn render_subtext(text: String, appearance: &Appearance) -> Box<dyn Element> {
 }
 
 /// Renders a custom button with icon and hover/click states for the Agent View Block.
+///
+/// This button component is currently used for the "fork" and "open agent conversation" actions
+/// within the Agent View. Future actions re-using this pattern should use this component for
+/// visually consistent icon-based interaction.
 fn render_agent_view_block_button<F>(
     icon: Icon,
     icon_color: ColorU,
@@ -314,9 +319,7 @@ impl View for AgentViewEntryBlock {
             None
         };
 
-        // Build the title+subtext section. Wrapping it in Expanded causes it
-        // to fill all remaining horizontal space, pinning the action buttons
-        // to the far right edge of the banner.
+        // Build the title+subtext section.
         let mut title_section = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_child(
@@ -364,10 +367,10 @@ impl View for AgentViewEntryBlock {
         .with_width(20.)
         .finish();
 
-        let chevron_button = ConstrainedBox::new(render_agent_view_block_button(
+        let open_conversation_button = ConstrainedBox::new(render_agent_view_block_button(
             Icon::ChevronRight,
             icon_color,
-            self.state_handles.chevron_button.clone(),
+            self.state_handles.open_conversation_button.clone(),
             appearance,
             move |ctx, _, _| {
                 ctx.dispatch_typed_action(EnterAgentBlockAction::EnterAgentMode {
@@ -398,7 +401,7 @@ impl View for AgentViewEntryBlock {
             // Expanded fills all remaining space, pushing buttons to the right.
             .with_child(Expanded::new(1., title_section.finish()).finish())
             .with_child(Container::new(fork_button).with_margin_left(8.).finish())
-            .with_child(chevron_button);
+            .with_child(open_conversation_button);
 
         let origin = self.origin;
         let entry_block_id = self.view_id;
