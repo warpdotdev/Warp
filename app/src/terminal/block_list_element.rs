@@ -153,11 +153,6 @@ const LINEAR_SCROLLING: ScrollingAcceleration = ScrollingAcceleration::Polynomia
 /// have a height that extends down to the bottom of the window when there's a horizontal scroll bar, which messes with the on-hover behavior.
 const BLOCK_HOVER_BUTTON_HEIGHT: f32 = 28.;
 
-const TAG_AGENT_FOR_ASSISTANCE_TEXT: &str = "Tag agent for assistance";
-
-const SAVE_AS_WORKFLOW_TEXT: &str = "Save as Workflow";
-const SAVE_AS_WORKFLOW_SECRETS_TEXT: &str = "Blocks containing secrets cannot be saved.";
-
 enum ScrollingAcceleration {
     Polynomial(f32),
 }
@@ -1164,7 +1159,7 @@ impl BlockListElement {
                 if has_active_long_running_command && active_block.index() == block_index {
                     (
                         Some(TerminalAction::SetInputModeAgent),
-                        TAG_AGENT_FOR_ASSISTANCE_TEXT.to_string(),
+                        t!("block_list.tag_agent_for_assistance").to_string(),
                     )
                 } else {
                     (
@@ -1225,7 +1220,7 @@ impl BlockListElement {
                 render_hoverable_block_button(
                     icon,
                     Some(ToolbeltButtonTooltip {
-                        label: SAVE_AS_WORKFLOW_SECRETS_TEXT.to_owned(),
+                        label: t!("block_list.save_as_workflow_secrets").to_string(),
                         tool_tip_below_button: should_render_tooltip_below_button,
                     }),
                     false,
@@ -1245,7 +1240,7 @@ impl BlockListElement {
                 render_hoverable_block_button(
                     icon,
                     Some(ToolbeltButtonTooltip {
-                        label: SAVE_AS_WORKFLOW_TEXT.to_owned(),
+                        label: t!("block_list.save_as_workflow").to_string(),
                         tool_tip_below_button: should_render_tooltip_below_button,
                     }),
                     false,

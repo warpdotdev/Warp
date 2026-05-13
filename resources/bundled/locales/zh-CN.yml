@@ -515,6 +515,25 @@ zh-CN:
     indexing_enabled_admin: "团队管理员已启用代码库索引。"
     indexing_disabled_global_ai: "必须启用 AI 功能才能使用代码库索引。"
 
+  code_file_tree:
+    open_in_new_pane: "在新面板中打开"
+    open_in_new_tab: "在新标签页中打开"
+    open_file: "打开文件"
+    new_file: "新建文件"
+    cd_to_directory: "cd 到目录"
+    reveal_in_finder: "在 Finder 中显示"
+    reveal_in_explorer: "在 Explorer 中显示"
+    reveal_in_file_manager: "在文件管理器中显示"
+    rename: "重命名"
+    delete: "删除"
+    attach_as_context: "作为上下文附加"
+    copy_path: "复制路径"
+    copy_relative_path: "复制相对路径"
+    project_explorer_unavailable: "项目资源管理器不可用"
+    remote_unavailable: "项目资源管理器需要访问你的本地工作区，远程会话不支持。"
+    inactive_unavailable: "项目资源管理器需要访问你的本地工作区。请打开新会话或导航到活动会话以查看。"
+    wsl_unavailable: "项目资源管理器当前不支持 WSL。"
+
   privacy:
     secret_redaction: "密钥遮盖"
     custom_secret_redaction: "自定义密钥遮盖"
@@ -901,6 +920,53 @@ zh-CN:
     view_plugin_install: "查看安装 Warp 插件的说明"
     new_plugin_version: "有新版本的 Warp 插件可用"
     view_plugin_update: "查看更新 Warp 插件的说明"
+
+  # ── 终端上下文菜单 ──
+  terminal_context_menu:
+    copy_prompt: "复制提示词"
+    copy_output_markdown: "以 Markdown 复制输出"
+    copy_url: "复制 URL"
+    copy_path: "复制路径"
+    copy_command: "复制命令"
+    copy_git_branch: "复制 Git 分支"
+    save_as_prompt: "另存为提示词"
+    copy_share_link: "复制共享链接"
+    copy_conversation_text: "复制会话文本"
+    copy_debugging_link: "复制调试链接"
+    copy_conversation_id: "复制会话 ID"
+    copy_debugging_id: "复制调试 ID"
+    fork: "派生"
+    fork_from_here: "从此处派生"
+    rewind_to_before_here: "回退到此处之前"
+
+  # ── 查找 / 过滤 ──
+  find:
+    placeholder: "查找"
+    regex_toggle: "Regex 开关"
+    case_sensitive_search: "区分大小写搜索"
+    find_in_selected_block: "在选中区块中查找"
+    a11y_value: "输入搜索短语。"
+    a11y_help: "按 Escape 退出，按 Enter 和 Shift-Enter 在匹配项之间导航"
+    result_count: "第 {index} 个结果，共 {count} 个。"
+    result_help: "按 Enter 和 Shift-Enter 在匹配项之间导航。按 Escape 退出。"
+    no_results: "无结果。"
+    enable_regex_search: "启用 regex 搜索"
+    disable_regex_search: "禁用 regex 搜索"
+    enable_case_sensitive_search: "启用区分大小写搜索"
+    disable_case_sensitive_search: "禁用区分大小写搜索"
+    focus_next_match: "聚焦下一个匹配项"
+    focus_previous_match: "聚焦上一个匹配项"
+    close_find_bar: "关闭查找栏"
+
+  block_filter:
+    placeholder: "过滤区块输出"
+    context_lines_tooltip: "显示匹配项周围的上下文行"
+    invert_filter: "反向过滤"
+
+  block_list:
+    tag_agent_for_assistance: "标记 Agent 协助"
+    save_as_workflow: "另存为工作流"
+    save_as_workflow_secrets: "包含密钥的区块无法保存。"
 
   # ── 通用 ──
   common:

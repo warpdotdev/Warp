@@ -515,6 +515,25 @@ en:
     indexing_enabled_admin: "Team admins have enabled codebase indexing."
     indexing_disabled_global_ai: "AI Features must be enabled to use codebase indexing."
 
+  code_file_tree:
+    open_in_new_pane: "Open in new pane"
+    open_in_new_tab: "Open in new tab"
+    open_file: "Open file"
+    new_file: "New file"
+    cd_to_directory: "cd to directory"
+    reveal_in_finder: "Reveal in Finder"
+    reveal_in_explorer: "Reveal in Explorer"
+    reveal_in_file_manager: "Reveal in file manager"
+    rename: "Rename"
+    delete: "Delete"
+    attach_as_context: "Attach as context"
+    copy_path: "Copy path"
+    copy_relative_path: "Copy relative path"
+    project_explorer_unavailable: "Project explorer unavailable"
+    remote_unavailable: "The Project Explorer requires access to your local workspace, which isn’t supported in remote sessions."
+    inactive_unavailable: "The Project Explorer requires access to your local workspace. Open a new session or navigate to an active session to view."
+    wsl_unavailable: "The Project Explorer doesn't currently work in WSL."
+
   privacy:
     secret_redaction: "Secret redaction"
     custom_secret_redaction: "Custom secret redaction"
@@ -901,6 +920,53 @@ en:
     view_plugin_install: "View instructions to install the Warp plugin"
     new_plugin_version: "A new version of the Warp plugin is available"
     view_plugin_update: "View instructions to update the Warp plugin"
+
+  # ── Terminal Context Menu ──
+  terminal_context_menu:
+    copy_prompt: "Copy prompt"
+    copy_output_markdown: "Copy output as Markdown"
+    copy_url: "Copy URL"
+    copy_path: "Copy path"
+    copy_command: "Copy command"
+    copy_git_branch: "Copy git branch"
+    save_as_prompt: "Save as prompt"
+    copy_share_link: "Copy share link"
+    copy_conversation_text: "Copy conversation text"
+    copy_debugging_link: "Copy debugging link"
+    copy_conversation_id: "Copy conversation ID"
+    copy_debugging_id: "Copy debugging ID"
+    fork: "Fork"
+    fork_from_here: "Fork from here"
+    rewind_to_before_here: "Rewind to before here"
+
+  # ── Find / Filter ──
+  find:
+    placeholder: "Find"
+    regex_toggle: "Regex toggle"
+    case_sensitive_search: "Case sensitive search"
+    find_in_selected_block: "Find in selected block"
+    a11y_value: "Type searched phrase."
+    a11y_help: "Press escape to quit, use enter and shift-enter to navigate between matches"
+    result_count: "Result {index} of {count}."
+    result_help: "Use enter and shift-enter to navigate between matches. Escape to quit."
+    no_results: "No results."
+    enable_regex_search: "Enable regex search"
+    disable_regex_search: "Disable regex search"
+    enable_case_sensitive_search: "Enable case-sensitive search"
+    disable_case_sensitive_search: "Disable case-sensitive search"
+    focus_next_match: "Focus next match"
+    focus_previous_match: "Focus previous match"
+    close_find_bar: "Close find bar"
+
+  block_filter:
+    placeholder: "Filter block output"
+    context_lines_tooltip: "Show context lines around matches"
+    invert_filter: "Invert filter"
+
+  block_list:
+    tag_agent_for_assistance: "Tag agent for assistance"
+    save_as_workflow: "Save as Workflow"
+    save_as_workflow_secrets: "Blocks containing secrets cannot be saved."
 
   # ── Common ──
   common:
