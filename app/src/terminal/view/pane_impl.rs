@@ -140,9 +140,9 @@ impl TerminalView {
             return;
         }
 
-        // In cloud mode, we want to preserve the shared session sharing dialog even after the shared session has ended.
-        // We need this to be able to view and change permissions on a cloud mode shared session that failed before
-        // any conversation started, to view cloud mode sessions that failed during setup.
+        // In ambient-agent, we want to preserve the shared session sharing dialog even after the shared session has ended.
+        // We need this to be able to view and change permissions on a ambient-agent shared session that failed before
+        // any conversation started, to view ambient-agent sessions that failed during setup.
         let is_ambient_agent = self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
         if !is_ambient_agent {
             self.pane_configuration.update(ctx, |pane_config, ctx| {
@@ -731,7 +731,7 @@ impl TerminalView {
                 );
                 if state.is_hovered() {
                     let tooltip = ui_builder
-                        .tool_tip(crate::t!("terminal-cloud-agent-run"))
+                        .tool_tip(crate::t!("terminal-agent-run"))
                         .build()
                         .finish();
                     stack.add_positioned_overlay_child(
@@ -773,7 +773,7 @@ impl TerminalView {
                 }
             };
 
-        // Hide role change button in cloud mode conversations
+        // Hide role change button in ambient-agent conversations
         let hide_role_change_button = self.model.lock().is_shared_ambient_agent_session();
 
         // Render participant avatars and role elements

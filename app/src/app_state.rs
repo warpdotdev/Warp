@@ -123,7 +123,7 @@ pub enum LeafContents {
     AIDocument(AIDocumentPaneSnapshot),
     Code(CodePaneSnapShot),
     EnvVarCollection(EnvVarCollectionPaneSnapshot),
-    // OpenWarp Wave 7-3:`EnvironmentManagement` LeafContents variant 随 Cloud Mode UI
+    // OpenWarp Wave 7-3:`EnvironmentManagement` LeafContents variant 随 Ambient Agent UI
     // 子系统物理删。
     Workflow(WorkflowPaneSnapshot),
     Settings(SettingsPaneSnapshot),
@@ -184,7 +184,7 @@ impl LeafContents {
 pub struct AmbientAgentPaneSnapshot {
     pub uuid: Vec<u8>,
     // `task_id` is purposefully optional,
-    // as you can have a valid state (i.e. an empty cloud mode pane) where it is None.
+    // as you can have a valid state (i.e. an empty ambient-agent pane) where it is None.
     pub task_id: Option<AmbientAgentTaskId>,
 }
 

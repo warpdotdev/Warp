@@ -7,7 +7,7 @@ use crate::ai::AIRequestUsageModel;
 use warpui::prelude::Empty;
 
 use crate::ai::blocklist::{agent_view::AgentViewEntryOrigin, BlocklistAIHistoryModel};
-use crate::terminal::view::ambient_agent::CloudModeInitialUserQuery;
+use crate::terminal::view::ambient_agent::AmbientAgentInitialUserQuery;
 use crate::terminal::view::rich_content::RichContentInsertionPosition;
 use crate::terminal::view::TerminalView;
 use crate::terminal::CLIAgent;
@@ -17,8 +17,8 @@ use warpui::elements::Align;
 use warpui::{AppContext, Element, EntityId, SingletonEntity, ViewContext};
 
 use super::loading_screen::{
-    render_cloud_mode_cancelled_screen, render_cloud_mode_error_screen,
-    render_cloud_mode_github_auth_required_screen, render_cloud_mode_loading_screen,
+    render_ambient_agent_cancelled_screen, render_ambient_agent_error_screen,
+    render_ambient_agent_github_auth_required_screen, render_ambient_agent_loading_screen,
 };
 use super::AmbientAgentViewModelEvent;
 const CHILD_AGENT_GITHUB_AUTH_REQUIRED_BLOCKED_ACTION: &str =
@@ -83,7 +83,7 @@ impl TerminalView {
         event: &AmbientAgentViewModelEvent,
         ctx: &mut ViewContext<Self>,
     ) {
-        // Tear down the non-oz cloud-mode queued-prompt block on terminal / transition
+        // Tear down the non-oz ambient-agent queued-prompt block on terminal / transition
         // events that replace it. `Failed`, `NeedsGithubAuth`, and `Cancelled` hand off
         // to the existing error / auth / cancelled UI; `HarnessCommandStarted` hands
         // off to the live harness CLI block. Idempotent and cheap when no block exists.
@@ -113,7 +113,7 @@ impl TerminalView {
                 self.update_pane_configuration(ctx);
                 // Only the spawner's view handles `DispatchedAgent`. Viewer surfaces (shared
                 // ambient agent session or transcript viewer) have no submitted prompt to render
-                // and should not insert cloud-mode rich content here.
+                // and should not insert ambient-agent rich content here.
                 let is_viewer = self.is_shared_ambient_agent_session()
                     || self.model.lock().is_conversation_transcript_viewer();
                 if is_viewer {
@@ -136,11 +136,11 @@ impl TerminalView {
                             .map(|request| request.prompt.clone())
                             .unwrap_or_default();
                         if !prompt.is_empty() {
-                            self.insert_cloud_mode_queued_user_query_block(prompt, ctx);
+                            self.insert_ambient_agent_queued_user_query_block(prompt, ctx);
                         }
                     } else {
                         let initial_user_query = ctx.add_view(|ctx| {
-                            CloudModeInitialUserQuery::new(
+                            AmbientAgentInitialUserQuery::new(
                                 self.ambient_agent_view_model.clone(),
                                 ctx,
                             )
@@ -155,7 +155,7 @@ impl TerminalView {
                             ctx,
                         );
                         self.ambient_agent_view_model.update(ctx, |model, _| {
-                            model.set_has_inserted_cloud_mode_user_query_block(true);
+                            model.set_has_inserted_ambient_agent_user_query_block(true);
                         });
                     }
                 } else {
@@ -174,8 +174,8 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::SessionReady => {
-                // Auto-open details panel for local cloud mode once the session is ready.
-                self.maybe_auto_open_cloud_mode_details_panel(ctx);
+                // Auto-open details panel for local ambient-agent once the session is ready.
+                self.maybe_auto_open_ambient_agent_details_panel(ctx);
                 // Re-render to hide the loading screen now that the session is ready.
                 ctx.notify();
             }
@@ -376,10 +376,10 @@ impl TerminalView {
         let ui_state = &ambient_agent_model.ui_state;
         let screen = if ambient_agent_model.is_cancelled() {
             // Show cancelled screen
-            render_cloud_mode_cancelled_screen(appearance)
+            render_ambient_agent_cancelled_screen(appearance)
         } else if let Some(auth_url) = ambient_agent_model.github_auth_url() {
             // Show GitHub auth required screen
-            render_cloud_mode_github_auth_required_screen(
+            render_ambient_agent_github_auth_required_screen(
                 auth_url,
                 appearance,
                 &ui_state.auth_button_mouse_state,
@@ -387,7 +387,7 @@ impl TerminalView {
             )
         } else if let Some(error_message) = ambient_agent_model.error_message() {
             // Show error screen
-            render_cloud_mode_error_screen(
+            render_ambient_agent_error_screen(
                 error_message,
                 appearance,
                 &ui_state.error_selection_handle,
@@ -404,7 +404,7 @@ impl TerminalView {
                 "Connecting to Host (Step 1/3)"
             };
 
-            render_cloud_mode_loading_screen(
+            render_ambient_agent_loading_screen(
                 message,
                 appearance,
                 &ui_state.loading_shimmer_handle,
@@ -417,8 +417,8 @@ impl TerminalView {
         Align::new(screen).finish()
     }
 
-    /// Auto-opens the cloud mode details panel once. No-op (cloud removed).
-    pub(in crate::terminal::view) fn maybe_auto_open_cloud_mode_details_panel(
+    /// Auto-opens the ambient-agent details panel once. No-op (cloud removed).
+    pub(in crate::terminal::view) fn maybe_auto_open_ambient_agent_details_panel(
         &mut self,
         _ctx: &mut ViewContext<Self>,
     ) {

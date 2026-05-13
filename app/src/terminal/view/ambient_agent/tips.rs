@@ -6,12 +6,12 @@ use warpui::AppContext;
 
 /// A local fallback tip with text and optional link.
 #[derive(Clone, Debug)]
-pub struct CloudModeTip {
+pub struct AmbientAgentTip {
     text: String,
     link: Option<String>,
 }
 
-impl CloudModeTip {
+impl AmbientAgentTip {
     pub fn new(text: impl Into<String>, link: Option<impl Into<String>>) -> Self {
         Self {
             text: text.into(),
@@ -20,7 +20,7 @@ impl CloudModeTip {
     }
 }
 
-impl AITip for CloudModeTip {
+impl AITip for AmbientAgentTip {
     fn keystroke(&self, _app: &AppContext) -> Option<Keystroke> {
         None
     }
@@ -37,6 +37,6 @@ impl AITip for CloudModeTip {
 }
 
 /// Returns a collection of tips for the ambient-agent loading screen.
-pub fn get_cloud_mode_tips() -> Vec<CloudModeTip> {
+pub fn get_ambient_agent_tips() -> Vec<AmbientAgentTip> {
     Vec::new()
 }

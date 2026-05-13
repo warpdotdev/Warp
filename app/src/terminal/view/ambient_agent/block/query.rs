@@ -14,12 +14,12 @@ use crate::{
     workspace::view::DEFAULT_USER_DISPLAY_NAME,
 };
 
-/// Renders the submitted prompt immediately while the environment is still being set up, so cloud mode feels like local agent mode even before the first exchange is available in history.
-pub struct CloudModeInitialUserQuery {
+/// Renders the submitted prompt immediately while the environment is still being set up, so ambient-agent setup feels like local agent mode even before the first exchange is available in history.
+pub struct AmbientAgentInitialUserQuery {
     view_model: ModelHandle<AmbientAgentViewModel>,
 }
 
-impl CloudModeInitialUserQuery {
+impl AmbientAgentInitialUserQuery {
     pub fn new(
         view_model: ModelHandle<AmbientAgentViewModel>,
         ctx: &mut ViewContext<Self>,
@@ -37,11 +37,11 @@ impl CloudModeInitialUserQuery {
     }
 }
 
-impl Entity for CloudModeInitialUserQuery {
+impl Entity for AmbientAgentInitialUserQuery {
     type Event = ();
 }
 
-impl View for CloudModeInitialUserQuery {
+impl View for AmbientAgentInitialUserQuery {
     fn ui_name() -> &'static str {
         "InitialUserQuery"
     }
