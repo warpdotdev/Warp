@@ -132,6 +132,7 @@ pub struct CodebaseContextSettings {
 #[derive(cynic::QueryFragment, Debug, Clone)]
 pub struct AmbientAgentSettings {
     pub enable_warp_attribution: AdminEnablementSetting,
+    pub default_host_slug: Option<String>,
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone)]
@@ -284,6 +285,7 @@ pub enum MembershipRole {
 #[derive(cynic::Enum, Clone, Debug)]
 pub enum LlmModelHost {
     AwsBedrock,
+    CustomEndpoint,
     DirectApi,
     #[cynic(fallback)]
     Other(String),

@@ -612,7 +612,7 @@ impl BlockList {
                     0,
                     inverted_blocklist,
                 ) {
-                    // If None, the tail is arleady at the bottom-most grid at the maximum row and col.
+                    // If None, the tail is already at the bottom-most grid at the maximum row and col.
                     None => tail,
                     Some(block_point) => block_point,
                 }

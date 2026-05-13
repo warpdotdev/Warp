@@ -72,7 +72,7 @@ pub fn initialize_settings_for_tests_with_mode(
     KeysSettings::register(app);
     LigatureSettings::register(app);
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     {
         use crate::settings::LinuxAppConfiguration;
         LinuxAppConfiguration::register(app);

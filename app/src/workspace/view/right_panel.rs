@@ -25,13 +25,17 @@ use crate::view_components::{Dropdown, DropdownItem};
 use crate::workspace::view::TOGGLE_RIGHT_PANEL_BINDING_NAME;
 use crate::workspace::WorkspaceAction;
 use crate::{
-    appearance::Appearance,
+    appearance::{Appearance, AppearanceEvent},
     drive::panel::{MAX_SIDEBAR_WIDTH_RATIO, MIN_SIDEBAR_WIDTH},
     terminal::resizable_data::{ModalType, ResizableData},
 };
-use crate::{code_review::diff_state::DiffStateModel, terminal::view::TerminalView};
+use crate::{
+    code::buffer_location::FileLocation, code_review::diff_state::DiffStateModel,
+    terminal::view::TerminalView,
+};
 use dunce::canonicalize;
 use itertools::Itertools;
+use pathfinder_color::ColorU;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -136,16 +140,27 @@ struct CodeReviewSessionEnv {
     is_wsl: bool,
 }
 
+/// Resolve the repo-switcher dropdown's text color from the current theme.
+/// Kept as a free function so the construction site and the
+/// `AppearanceEvent::ThemeChanged` subscription compute the exact same color.
+fn repo_dropdown_font_color(appearance: &Appearance) -> ColorU {
+    appearance
+        .theme()
+        .sub_text_color(appearance.theme().background())
+        .into_solid()
+}
+
 impl CodeReviewState {
     pub fn new(ctx: &mut ViewContext<RightPanelView>) -> Self {
         CodeReviewState {
             dropdown: ctx.add_typed_action_view(|ctx| {
-                let appearance = Appearance::as_ref(ctx);
-                let font_color = appearance
-                    .theme()
-                    .sub_text_color(appearance.theme().background())
-                    .into_solid();
-                let ui_font_size = appearance.ui_font_size();
+                let (font_color, ui_font_size) = {
+                    let appearance = Appearance::as_ref(ctx);
+                    (
+                        repo_dropdown_font_color(appearance),
+                        appearance.ui_font_size(),
+                    )
+                };
                 let mut dropdown = Dropdown::new(ctx);
                 dropdown.set_menu_position(
                     PositionedElementAnchor::BottomRight,
@@ -158,6 +173,19 @@ impl CodeReviewState {
                 dropdown.set_vertical_margin(0., ctx);
                 dropdown.set_top_bar_height(warp_core::ui::icons::ICON_DIMENSIONS, ctx);
                 dropdown.set_padding(HEADER_BUTTON_PADDING, ctx);
+
+                // The font color above is derived from the active theme and
+                // cached inside the dropdown. Without this subscription, the
+                // cached value goes stale across light/dark switches and the
+                // header label becomes unreadable on the new background
+                // (e.g. white-on-white in light mode after starting in dark).
+                ctx.subscribe_to_model(&Appearance::handle(ctx), |dropdown, _, event, ctx| {
+                    if matches!(event, AppearanceEvent::ThemeChanged) {
+                        let font_color = repo_dropdown_font_color(Appearance::as_ref(ctx));
+                        dropdown.set_font_color(font_color, ctx);
+                    }
+                });
+
                 dropdown
             }),
             available_repos: vec![],
@@ -570,12 +598,24 @@ impl RightPanelView {
         self.active_pane_group = Some(pane_group);
 
         if let Some(state) = &mut self.code_review_state {
-            let active_repositories = working_directories_model.read(ctx, |model, _| {
-                model
-                    .most_recent_repositories_for_pane_group(pane_group_id)
-                    .map(|repos| repos.collect())
-                    .unwrap_or_default()
-            });
+            let (active_repositories, saved_selection) =
+                working_directories_model.read(ctx, |model, _| {
+                    let repos: Vec<PathBuf> = model
+                        .most_recent_repositories_for_pane_group(pane_group_id)
+                        .map(|repos| repos.collect())
+                        .unwrap_or_default();
+                    let saved = model
+                        .get_selected_review_repo(pane_group_id)
+                        .map(Path::to_path_buf);
+                    (repos, saved)
+                });
+
+            // Replace the carried-over selection from a different pane group
+            // with whatever was saved for this pane group (if anything). This
+            // ensures `set_available_repos` either keeps the saved selection
+            // (when it's still in the repo list) or falls back to auto-selecting
+            // the first repo, instead of preserving the previous tab's repo.
+            state.selected_repo_path = saved_selection;
             state.set_available_repos(active_repositories, ctx);
         }
 
@@ -623,7 +663,7 @@ impl RightPanelView {
         if let Some(view) = existing_view {
             view.update(ctx, |view, ctx| {
                 view.set_terminal_view(terminal_view);
-                view.on_open(Some(repo_path.clone()), ctx);
+                view.on_open(ctx);
             });
             self.recompute_terminal_availability(ctx);
         } else if let Some(view) = self.create_code_review_view(
@@ -634,7 +674,7 @@ impl RightPanelView {
             ctx,
         ) {
             view.update(ctx, |view, ctx| {
-                view.on_open(Some(repo_path.clone()), ctx);
+                view.on_open(ctx);
             });
             self.recompute_terminal_availability(ctx);
         };
@@ -856,7 +896,7 @@ impl RightPanelView {
         let repo_path = crv.repo_path();
         let branch_name = crv
             .diff_state_model()
-            .read(app, |model, _| model.get_current_branch_name());
+            .read(app, |model, ctx| model.get_current_branch_name(ctx));
         let diff_stats = crv.loaded_diff_stats();
 
         let repo_path_element = repo_path.map(|repo_path| {
@@ -1440,7 +1480,10 @@ impl RightPanelView {
                 terminal_status.is_available(),
                 Self::format_optional_path(terminal_status.active_session_path.as_deref()),
                 Self::format_optional_path(terminal_status.current_repo_path.as_deref()),
-                terminal_status.active_cli_agent.as_deref().unwrap_or("<none>"),
+                terminal_status
+                    .active_cli_agent
+                    .as_deref()
+                    .unwrap_or("<none>"),
                 terminal_status.is_executing,
                 terminal_status.is_input_box_visible,
                 unavailable_reasons,
@@ -1585,14 +1628,16 @@ impl RightPanelView {
             if is_panel_open {
                 // on_open is idempotent (guards on is_open), so this is safe for
                 // already-open views and correctly re-opens cached-but-closed ones.
-                let repo_path = repo_path.to_path_buf();
                 view.update(ctx, |view, ctx| {
-                    view.on_open(Some(repo_path), ctx);
+                    view.on_open(ctx);
                 });
             }
         } else {
             let diff_state_model = self.working_directories_model.update(ctx, |model, ctx| {
-                model.get_or_create_diff_state_model(repo_path.to_path_buf(), ctx)
+                model.get_or_create_diff_state_model(
+                    FileLocation::Local(repo_path.to_path_buf()),
+                    ctx,
+                )
             });
 
             let Some(diff_state_model) = diff_state_model else {
@@ -1620,9 +1665,8 @@ impl RightPanelView {
                         ctx,
                     ) {
                         if is_panel_open {
-                            let repo_path = repo_path.to_path_buf();
                             view.update(ctx, |view, ctx| {
-                                view.on_open(Some(repo_path), ctx);
+                                view.on_open(ctx);
                             });
                         }
                     }
@@ -1682,6 +1726,20 @@ impl TypedActionView for RightPanelView {
                         ctx,
                     );
                     self.ensure_code_review_view_exists(repo_path, ctx);
+
+                    // Persist the user's manual selection so it can be restored when
+                    // they leave this pane group's session and come back. We only
+                    // persist explicit `SelectRepo` actions (i.e. dropdown picks or
+                    // contextual opens) so that the auto-selected default doesn't
+                    // overwrite an earlier manual choice for a different pane group.
+                    if let Some(pane_group) = &self.active_pane_group {
+                        let pane_group_id = pane_group.id();
+                        let repo_path = repo_path.clone();
+                        self.working_directories_model.update(ctx, |model, _| {
+                            model.set_selected_review_repo(pane_group_id, repo_path);
+                        });
+                    }
+
                     ctx.notify();
                 }
             }

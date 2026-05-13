@@ -952,7 +952,7 @@ impl NotebookView {
         report_if_error!(self
             .save_tx
             .try_send(NotebookUpdateRequestDebounceArg {})
-            .context("Error enqueing content save"));
+            .context("Error enqueuing content save"));
         self.active_notebook_data.update(ctx, |data, ctx| {
             // Mark the notebook as saving as soon as there are changes to be saved. It won't be
             // marked as Saved until we get a response from the server.
@@ -968,7 +968,7 @@ impl NotebookView {
         report_if_error!(self
             .save_tx
             .try_send(NotebookUpdateRequestDebounceArg {})
-            .context("Error enqueing title save"));
+            .context("Error enqueuing title save"));
     }
 
     fn handle_input_editor_event(&mut self, event: &EditorViewEvent, ctx: &mut ViewContext<Self>) {

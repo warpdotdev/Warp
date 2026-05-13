@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use warp_core::HostId;
+use warp_util::remote_path::RemotePath;
 use warp_util::standardized_path::StandardizedPath;
 
 /// Identifies a repository across local and remote environments.
@@ -8,9 +8,12 @@ use warp_util::standardized_path::StandardizedPath;
 pub enum RepositoryIdentifier {
     /// A repository on the local filesystem, identified by its standardized path.
     Local(StandardizedPath),
-    /// A repository on a remote server, identified by session + path.
-    Remote(RemoteRepositoryIdentifier),
+    /// A repository on a remote server, identified by host + path.
+    Remote(RemotePath),
 }
+
+/// Type alias preserved for backward compatibility.
+pub type RemoteRepositoryIdentifier = RemotePath;
 
 impl RepositoryIdentifier {
     /// Convenience constructor for a local repository identifier.
@@ -43,26 +46,8 @@ impl RepositoryIdentifier {
     }
 }
 
-/// Identifies a repository on a remote server.
-///
-/// Pairs a [`HostId`] (to deduplicate across multiple SSH sessions to the
-/// same host) with the server-side [`StandardizedPath`]. The path lives on
-/// the remote machine and is constructed without I/O using encoding
-/// information from the remote OS.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct RemoteRepositoryIdentifier {
-    pub host_id: HostId,
-    pub path: StandardizedPath,
-}
-
-impl RemoteRepositoryIdentifier {
-    pub fn new(host_id: HostId, path: StandardizedPath) -> Self {
-        Self { host_id, path }
-    }
-}
-
-impl From<RemoteRepositoryIdentifier> for RepositoryIdentifier {
-    fn from(id: RemoteRepositoryIdentifier) -> Self {
+impl From<RemotePath> for RepositoryIdentifier {
+    fn from(id: RemotePath) -> Self {
         Self::Remote(id)
     }
 }

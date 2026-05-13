@@ -325,7 +325,7 @@ if [ -z "$WARP_BOOTSTRAPPED" ]; then
 
           # If the array is not empty, kill the ongoing pids.
           if [[ ! -z $pids ]]; then
-            # Surpress stderr output; kill writes to stderr if any of the given
+            # Suppress stderr output; kill writes to stderr if any of the given
             # PIDS are not running (which might rarely be the case due to race
             # conditions in checking which PIDS to cancel and this kill command.
             kill -9 $pids >/dev/null 2>/dev/null
@@ -362,7 +362,7 @@ if [ -z "$WARP_BOOTSTRAPPED" ]; then
       fi
 
       # Note that in older versions of bash (the one builtin with MacOS) the `~` character is just that, 
-      # howerver, when used within `""` (double quotes) on a newer (homebrew) bash version,
+      # however, when used within `""` (double quotes) on a newer (homebrew) bash version,
       # it automatically EXPANDS to the actual value of $HOME and needs to be escaped to give a proper
       # tilde character. So instead, we have it as a separate variable that uses `''` (single quote)
       # to avoid expanding, and use it later within the new bash term title. This way both old and

@@ -276,6 +276,29 @@ fn agent_run_cloud_accepts_model() {
 }
 
 #[test]
+fn agent_run_cloud_accepts_agent_flag() {
+    let args = Args::try_parse_from([
+        "warp",
+        "agent",
+        "run-cloud",
+        "--prompt",
+        "hello",
+        "--agent",
+        "agent_123",
+    ])
+    .unwrap();
+
+    let Some(Command::CommandLine(boxed_cmd)) = args.command else {
+        panic!("Expected `warp agent run-cloud` command");
+    };
+    let CliCommand::Agent(AgentCommand::RunCloud(run_args)) = boxed_cmd.as_ref() else {
+        panic!("Expected `warp agent run-cloud` command");
+    };
+
+    assert_eq!(run_args.agent_uid.as_deref(), Some("agent_123"));
+}
+
+#[test]
 fn agent_run_cloud_accepts_mcp() {
     let uuid = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
 
@@ -1402,6 +1425,30 @@ fn agent_run_cloud_accepts_snapshot_flags() {
 }
 
 #[test]
+fn agent_run_accepts_task_id_with_conversation_for_worker_followups() {
+    let args = Args::try_parse_from([
+        "warp",
+        "agent",
+        "run",
+        "--task-id",
+        "task-123",
+        "--conversation",
+        "conv-123",
+    ])
+    .unwrap();
+
+    let Some(Command::CommandLine(boxed_cmd)) = args.command else {
+        panic!("Expected `warp agent run` command");
+    };
+    let CliCommand::Agent(AgentCommand::Run(run_args)) = boxed_cmd.as_ref() else {
+        panic!("Expected `warp agent run` command");
+    };
+
+    assert_eq!(run_args.task_id.as_deref(), Some("task-123"));
+    assert_eq!(run_args.conversation.as_deref(), Some("conv-123"));
+}
+
+#[test]
 fn agent_run_cloud_accepts_computer_use_flag() {
     let args = Args::try_parse_from([
         "warp",
@@ -1547,8 +1594,11 @@ fn harness_parse_orchestration_harness_accepts_codex() {
 }
 
 #[test]
-fn harness_parse_local_child_harness_rejects_codex() {
-    assert_eq!(Harness::parse_local_child_harness("codex"), None);
+fn harness_parse_local_child_harness_accepts_codex() {
+    assert_eq!(
+        Harness::parse_local_child_harness("codex"),
+        Some(Harness::Codex)
+    );
 }
 
 #[test]
@@ -1866,4 +1916,61 @@ fn finish_task_rejects_missing_status() {
         "no status",
     ]);
     assert!(result.is_err());
+}
+
+#[test]
+fn report_shutdown_clean_parses() {
+    let args = Args::try_parse_from([
+        "warp",
+        "harness-support",
+        "--run-id",
+        "run-1",
+        "report-shutdown",
+    ])
+    .unwrap();
+
+    let Some(Command::CommandLine(boxed_cmd)) = args.command else {
+        panic!("Expected harness-support command");
+    };
+    let CliCommand::HarnessSupport(hs_args) = boxed_cmd.as_ref() else {
+        panic!("Expected harness-support command");
+    };
+    let HarnessSupportCommand::ReportShutdown(shutdown_args) = &hs_args.command else {
+        panic!("Expected report-shutdown subcommand");
+    };
+
+    assert!(shutdown_args.error_category.is_none());
+    assert!(shutdown_args.error_message.is_none());
+}
+
+#[test]
+fn report_shutdown_abnormal_parses() {
+    let args = Args::try_parse_from([
+        "warp",
+        "harness-support",
+        "--run-id",
+        "run-1",
+        "report-shutdown",
+        "--error-category",
+        "oom",
+        "--error-message",
+        "out of memory",
+    ])
+    .unwrap();
+
+    let Some(Command::CommandLine(boxed_cmd)) = args.command else {
+        panic!("Expected harness-support command");
+    };
+    let CliCommand::HarnessSupport(hs_args) = boxed_cmd.as_ref() else {
+        panic!("Expected harness-support command");
+    };
+    let HarnessSupportCommand::ReportShutdown(shutdown_args) = &hs_args.command else {
+        panic!("Expected report-shutdown subcommand");
+    };
+
+    assert_eq!(shutdown_args.error_category.as_deref(), Some("oom"));
+    assert_eq!(
+        shutdown_args.error_message.as_deref(),
+        Some("out of memory")
+    );
 }

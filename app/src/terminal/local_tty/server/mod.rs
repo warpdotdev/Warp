@@ -112,7 +112,7 @@ fn spawn_message_receiver_thread(socket_fd: RawFd, terminated_children: Arc<Mute
 /// Unlike a standard pipe, Unix domain sockets support sending file descriptors
 /// between processes, enabling the Warp application process to communicate
 /// directly with the pty (grandchild) process - this is much more performant
-/// than communicating with the grandchild via the termial server as an
+/// than communicating with the grandchild via the terminal server as an
 /// intermediary.
 pub(super) struct TerminalServer {
     /// The terminal server child process.

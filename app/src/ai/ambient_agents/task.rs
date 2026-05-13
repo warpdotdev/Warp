@@ -74,40 +74,31 @@ pub struct HarnessConfig {
         deserialize_with = "deserialize_harness"
     )]
     pub harness_type: Harness,
+    /// The model to use with this harness. None means use the harness default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
 }
 
 impl HarnessConfig {
     /// Builds a harness config from just the harness type.
     pub fn from_harness_type(harness_type: Harness) -> Self {
-        Self { harness_type }
-    }
-}
-
-/// Parses a harness type name (e.g. `"claude"`) into a [`Harness`] variant.
-/// Unknown values fall back to [`Harness::Unknown`] so we don't
-/// misrepresent a future-server harness as Oz; UI surfaces should treat
-/// `Unknown` as a non-Oz, non-runnable harness.
-pub(crate) fn harness_from_name(name: &str) -> Harness {
-    match name {
-        "claude" => Harness::Claude,
-        "opencode" => Harness::OpenCode,
-        "gemini" => Harness::Gemini,
-        "codex" => Harness::Codex,
-        "oz" => Harness::Oz,
-        other => {
-            log::warn!("Unknown harness config name: {other:?}; treating as Unknown");
-            Harness::Unknown
+        Self {
+            harness_type,
+            model_id: None,
         }
     }
 }
 
 fn serialize_harness<S: Serializer>(harness: &Harness, serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(&harness.to_string())
+    serializer.serialize_str(harness.config_name())
 }
 
 fn deserialize_harness<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Harness, D::Error> {
     let name = String::deserialize(deserializer)?;
-    Ok(harness_from_name(&name))
+    Ok(Harness::from_config_name(&name).unwrap_or_else(|| {
+        log::warn!("Unknown harness config name: {name:?}; treating as Unknown");
+        Harness::Unknown
+    }))
 }
 
 /// Authentication secrets for third-party harnesses.
@@ -116,6 +107,9 @@ pub struct HarnessAuthSecretsConfig {
     /// Name of a managed secret for Claude Code harness authentication.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude_auth_secret_name: Option<String>,
+    /// Name of a managed secret for Codex harness authentication.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_auth_secret_name: Option<String>,
 }
 
 impl AgentConfigSnapshot {
@@ -252,7 +246,9 @@ pub struct AmbientAgentTask {
     pub source: Option<AgentSource>,
     pub session_id: Option<String>,
     pub session_link: Option<String>,
-    pub creator: Option<TaskCreatorInfo>,
+    pub creator: Option<TaskPrincipalInfo>,
+    #[serde(default)]
+    pub executor: Option<TaskPrincipalInfo>,
     pub conversation_id: Option<String>,
     pub request_usage: Option<RequestUsage>,
     pub is_sandbox_running: bool,
@@ -284,6 +280,16 @@ pub struct RunExecution<'a> {
     pub session_link: Option<&'a str>,
     pub request_usage: Option<&'a RequestUsage>,
     pub is_sandbox_running: bool,
+}
+
+impl RunExecution<'_> {
+    pub fn has_joinable_session(&self) -> bool {
+        self.session_id.is_some() || self.session_link.is_some()
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.is_sandbox_running && self.has_joinable_session()
+    }
 }
 
 /// Represents a single attachment input from the client (e.g., file upload)
@@ -321,11 +327,42 @@ impl AmbientAgentTask {
         }
     }
 
-    /// Total credits used (inference + compute).
+    pub fn active_execution_session_id(&self) -> Option<&str> {
+        let execution = self.active_run_execution();
+        if self.state == AmbientAgentTaskState::InProgress && execution.is_active() {
+            execution.session_id
+        } else {
+            None
+        }
+    }
+
+    pub fn active_execution_conversation_id(&self) -> Option<&str> {
+        if self.has_active_execution() {
+            self.conversation_id()
+        } else {
+            None
+        }
+    }
+
+    pub fn has_active_execution(&self) -> bool {
+        self.state == AmbientAgentTaskState::InProgress && self.active_run_execution().is_active()
+    }
+
+    pub fn is_terminal_run_state(&self) -> bool {
+        self.state.is_terminal()
+    }
+
+    pub fn can_submit_cloud_followup(&self) -> bool {
+        self.is_terminal_run_state() && !self.has_active_execution()
+    }
+
+    /// Total credits used (inference + compute + platform).
     pub fn credits_used(&self) -> Option<f32> {
-        self.active_run_execution()
-            .request_usage
-            .map(|u| (u.inference_cost.unwrap_or(0.0) + u.compute_cost.unwrap_or(0.0)) as f32)
+        self.active_run_execution().request_usage.map(|u| {
+            (u.inference_cost.unwrap_or(0.0)
+                + u.compute_cost.unwrap_or(0.0)
+                + u.platform_cost.unwrap_or(0.0)) as f32
+        })
     }
 
     /// Duration from started_at to updated_at.
@@ -338,6 +375,11 @@ impl AmbientAgentTask {
     /// Creator's display name, if available.
     pub fn creator_display_name(&self) -> Option<String> {
         self.creator.as_ref().and_then(|c| c.display_name.clone())
+    }
+
+    /// Principal the run executed as, formatted for user-facing surfaces.
+    pub fn executor_display_name(&self) -> Option<String> {
+        self.executor.as_ref().and_then(|e| e.display_name.clone())
     }
 
     /// Returns true if the underlying session for the ambient agent is no longer running.
@@ -468,7 +510,7 @@ impl std::fmt::Display for AmbientAgentTaskState {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-pub struct TaskCreatorInfo {
+pub struct TaskPrincipalInfo {
     #[serde(rename = "type")]
     pub creator_type: String,
     pub uid: String,
@@ -484,6 +526,7 @@ pub struct TaskStatusMessage {
 pub struct RequestUsage {
     pub inference_cost: Option<f64>,
     pub compute_cost: Option<f64>,
+    pub platform_cost: Option<f64>,
 }
 
 /// Cancel an ambient agent task and show a toast with the result.
@@ -504,6 +547,19 @@ pub fn cancel_task_with_toast<V: View>(task_id: AmbientAgentTaskId, ctx: &mut Vi
                 let toast = DismissibleToast::default(message);
                 toast_stack.add_ephemeral_toast(toast, window_id, ctx);
             });
+        },
+    );
+}
+
+/// Cancel an ambient agent task without surfacing a toast to the user.
+pub fn cancel_task_silently<V: View>(task_id: AmbientAgentTaskId, ctx: &mut ViewContext<V>) {
+    let ai_client = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
+    ctx.spawn(
+        async move { ai_client.cancel_ambient_agent_task(&task_id).await },
+        move |_view, result, _| {
+            if let Err(e) = result {
+                log::error!("Failed to cancel task: {e}");
+            }
         },
     );
 }

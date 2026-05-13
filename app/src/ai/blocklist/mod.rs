@@ -5,6 +5,15 @@ pub mod block;
 pub mod code_block;
 mod context_model;
 mod controller;
+#[cfg(feature = "local_fs")]
+pub(crate) mod handoff;
+
+pub(crate) fn is_local_to_cloud_handoff_available() -> bool {
+    use crate::features::FeatureFlag;
+    FeatureFlag::OzHandoff.is_enabled()
+        && FeatureFlag::HandoffLocalCloud.is_enabled()
+        && cfg!(all(feature = "local_fs", not(target_family = "wasm")))
+}
 pub(crate) mod orchestration_event_streamer;
 pub(crate) mod orchestration_events;
 mod passive_suggestions;
@@ -32,6 +41,7 @@ pub(crate) use action_model::{
     apply_edits, read_local_file_context, BlocklistAIActionEvent, BlocklistAIActionModel,
     FileReadResult, ReadFileContextResult, RequestFileEditsFormatKind, ShellCommandExecutor,
     ShellCommandExecutorEvent, StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
+    StartAgentRequestId,
 };
 
 #[cfg(any(test, feature = "integration_tests"))]
@@ -48,7 +58,7 @@ pub(crate) use controller::{
 };
 pub(crate) use history_model::{
     AIQueryHistory, AIQueryHistoryOutputStatus, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
-    FORK_PREFIX, PRE_REWIND_PREFIX,
+    ConversationStatusUpdate, FORK_PREFIX, PRE_REWIND_PREFIX,
 };
 pub(crate) use input_model::{
     BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig, InputType,

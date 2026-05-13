@@ -68,11 +68,14 @@ fn get_binary_confidence_color(is_correct: bool, is_low_confidence: bool) -> Str
 }
 use warp_completer::{ParsedTokensSnapshot, util::parse_current_commands_and_tokens};
 
-#[cfg(feature = "fasttext")]
-use input_classifier::FasttextClassifier;
-
 #[cfg(feature = "onnx")]
 use input_classifier::{OnnxClassifier, OnnxModel};
+
+// Pick the ONNX model whose bytes are actually embedded in the binary
+#[cfg(feature = "nld_classifier_v1")]
+const DEFAULT_ONNX_MODEL: OnnxModel = OnnxModel::BertTinyV1;
+#[cfg(feature = "nld_classifier_v2")]
+const DEFAULT_ONNX_MODEL: OnnxModel = OnnxModel::BertTinyV2;
 
 #[derive(Parser)]
 struct InputSource {
@@ -97,11 +100,6 @@ struct Args {
     /// Use heuristic classifier
     #[arg(long)]
     heuristic: bool,
-
-    /// Use fasttext classifier
-    #[cfg(feature = "fasttext")]
-    #[arg(long)]
-    fasttext: bool,
 
     /// Use ONNX classifier
     #[cfg(feature = "onnx")]
@@ -135,17 +133,6 @@ fn create_classifiers(args: &Args) -> Vec<(&'static str, Box<dyn InputClassifier
     let mut classifiers: Vec<(&'static str, Box<dyn InputClassifier>)> = Vec::new();
 
     // Default to all available classifiers if none specified
-    let fasttext_specified = {
-        #[cfg(feature = "fasttext")]
-        {
-            args.fasttext
-        }
-        #[cfg(not(feature = "fasttext"))]
-        {
-            false
-        }
-    };
-
     let onnx_specified = {
         #[cfg(feature = "onnx")]
         {
@@ -157,27 +144,15 @@ fn create_classifiers(args: &Args) -> Vec<(&'static str, Box<dyn InputClassifier
         }
     };
 
-    let use_all = !args.heuristic && !fasttext_specified && !onnx_specified;
+    let use_all = !args.heuristic && !onnx_specified;
 
     if args.heuristic || use_all {
         classifiers.push(("heuristic", Box::new(HeuristicClassifier)));
     }
 
-    #[cfg(feature = "fasttext")]
-    if args.fasttext || use_all {
-        match FasttextClassifier::new() {
-            Ok(classifier) => {
-                classifiers.push(("fasttext", Box::new(classifier)));
-            }
-            Err(e) => {
-                eprintln!("Warning: Failed to initialize FastText classifier: {e}");
-            }
-        }
-    }
-
     #[cfg(feature = "onnx")]
     if args.onnx || use_all {
-        match OnnxClassifier::new(OnnxModel::BertTiny) {
+        match OnnxClassifier::new(DEFAULT_ONNX_MODEL) {
             Ok(classifier) => {
                 classifiers.push(("onnx", Box::new(classifier)));
             }

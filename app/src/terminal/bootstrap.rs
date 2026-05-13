@@ -17,7 +17,7 @@ use super::{
 };
 
 lazy_static! {
-    /// A memoized cache of the fully-interpolated boostrap script for each
+    /// A memoized cache of the fully-interpolated bootstrap script for each
     /// shell.  We store the full version here as an optimization so that we
     /// don't have to regenerate it every time we spawn a shell.
     static ref BOOTSTRAP_CACHE: MemoMap<ShellType, Vec<u8>> = Default::default();
@@ -323,5 +323,5 @@ fn load_script(file_path: &str, assets: &dyn AssetProvider) -> String {
 }
 
 #[cfg(test)]
-#[path = "bootstrap_test.rs"]
+#[path = "bootstrap_tests.rs"]
 mod tests;

@@ -35,7 +35,7 @@ use super::{
     priority_queue::{BuildQueue, Priority},
     snapshot::*,
     store_client::StoreClient,
-    CodebaseIndex, EmbeddingConfig, Error as CodebaseIndexError, NodeHash,
+    CodebaseIndex, ContentHash, EmbeddingConfig, Error as CodebaseIndexError, NodeHash,
 };
 
 use crate::{
@@ -67,6 +67,19 @@ pub enum RetrieveFileError {
     IndexFailed(CodebaseIndexingError),
     #[error("Codebase index not found")]
     IndexNotFound,
+}
+
+#[derive(Error, Debug)]
+pub enum FragmentMetadataLookupError {
+    #[error("Codebase index not found")]
+    IndexNotFound,
+    #[error("Codebase index has no synced root hash")]
+    IndexNotSynced,
+    #[error("Codebase index root hash mismatch: requested {requested}, current {current}")]
+    RootHashMismatch {
+        requested: NodeHash,
+        current: NodeHash,
+    },
 }
 
 pub enum CodebaseIndexManagerEvent {
@@ -132,6 +145,7 @@ pub struct CodebaseIndexStatus {
     pub(super) has_synced_version: bool,
     pub(super) last_sync_successful: Option<CodebaseIndexFinishedStatus>,
     pub(super) sync_progress: Option<SyncProgress>,
+    pub(super) root_hash: Option<NodeHash>,
 }
 
 impl CodebaseIndexStatus {
@@ -156,6 +170,10 @@ impl CodebaseIndexStatus {
     pub fn sync_progress(&self) -> Option<&SyncProgress> {
         self.sync_progress.as_ref()
     }
+
+    pub fn root_hash(&self) -> Option<&NodeHash> {
+        self.root_hash.as_ref()
+    }
 }
 
 pub enum BuildSource<'a> {
@@ -179,6 +197,8 @@ pub struct CodebaseIndexManager {
     max_files_repo_limit: usize,
 
     embedding_generation_batch_size: usize,
+
+    indexing_enabled: bool,
 }
 
 impl CodebaseIndexManager {
@@ -189,6 +209,7 @@ impl CodebaseIndexManager {
         max_files_repo_limit: usize,
         embedding_generation_batch_size: usize,
         store_client: Arc<dyn StoreClient>,
+        indexing_enabled: bool,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
         cfg_if::cfg_if! {
@@ -196,6 +217,24 @@ impl CodebaseIndexManager {
                 let file_watcher = ctx.add_model(|ctx| BulkFilesystemWatcher::new(REPO_WATCHER_DEBOUNCE_DURATION, ctx));
                 ctx.subscribe_to_model(&file_watcher, Self::handle_watcher_event);
             }
+        }
+        if !indexing_enabled {
+            log::debug!(
+                "Codebase indexing disabled for this launch mode; skipping restore of {:?} persisted codebase indices",
+                persisted_index_metadata.len()
+            );
+
+            return Self {
+                codebase_indices: HashMap::new(),
+                store_client,
+                #[cfg(feature = "local_fs")]
+                watcher: file_watcher,
+                build_queue: BuildQueue::empty(),
+                max_indices: max_index_count,
+                max_files_repo_limit,
+                embedding_generation_batch_size,
+                indexing_enabled,
+            };
         }
 
         log::debug!(
@@ -234,6 +273,7 @@ impl CodebaseIndexManager {
             max_indices: max_index_count,
             max_files_repo_limit,
             embedding_generation_batch_size,
+            indexing_enabled,
         };
 
         // Start building the first index in the queue.
@@ -257,6 +297,7 @@ impl CodebaseIndexManager {
             max_indices: None,
             max_files_repo_limit: 0,
             embedding_generation_batch_size: 100,
+            indexing_enabled: true,
         }
     }
 
@@ -317,7 +358,7 @@ impl CodebaseIndexManager {
         });
     }
 
-    /// Remove the gien index snapshots from disk.
+    /// Remove the given index snapshots from disk.
     async fn drop_index_snapshots(to_drop: Vec<PathBuf>) {
         if let Some(snapshot_dir) = snapshot_dir() {
             for codebase_root in &to_drop {
@@ -462,6 +503,9 @@ impl CodebaseIndexManager {
     }
 
     pub fn handle_active_session_changed(&mut self, active_directory: &Path) {
+        if !self.is_indexing_enabled() {
+            return;
+        }
         let Some(root_path) = self.root_path_for_codebase(active_directory) else {
             return;
         };
@@ -517,11 +561,17 @@ impl CodebaseIndexManager {
 
     /// Ensures the current number of indices is below the maximum.
     pub fn can_create_new_indices(&self) -> bool {
+        if !self.is_indexing_enabled() {
+            return false;
+        }
         self.max_indices
             .is_none_or(|max_indices| self.codebase_indices.len() < max_indices)
     }
 
     pub fn handle_session_bootstrapped(&mut self, working_directory: &Path) {
+        if !self.is_indexing_enabled() {
+            return;
+        }
         let Some(root_path) = self.root_path_for_codebase(working_directory) else {
             return;
         };
@@ -553,6 +603,22 @@ impl CodebaseIndexManager {
         })
     }
 
+    pub fn fragment_metadatas_from_hashes(
+        &self,
+        repo_path: &Path,
+        root_hash: &NodeHash,
+        content_hashes: &[ContentHash],
+        app: &AppContext,
+    ) -> Result<HashMap<ContentHash, Vec<FragmentMetadata>>, FragmentMetadataLookupError> {
+        let (codebase_index, _) = self
+            .get_codebase_index_internal(repo_path)
+            .map_err(|_| FragmentMetadataLookupError::IndexNotFound)?;
+
+        codebase_index
+            .as_ref(app)
+            .fragment_metadatas_from_hashes(root_hash, content_hashes)
+    }
+
     pub fn get_codebase_paths(&self) -> impl Iterator<Item = &PathBuf> {
         self.codebase_indices.keys()
     }
@@ -561,7 +627,14 @@ impl CodebaseIndexManager {
         self.codebase_indices.len()
     }
 
+    pub fn is_indexing_enabled(&self) -> bool {
+        self.indexing_enabled
+    }
+
     pub fn index_directory(&mut self, directory: PathBuf, ctx: &mut ModelContext<Self>) {
+        if !self.is_indexing_enabled() {
+            return;
+        }
         let directory = dunce::canonicalize(&directory).unwrap_or(directory);
         if !self.codebase_indices.contains_key(&directory) {
             self.build_and_sync_codebase_index(BuildSource::FromPath(&directory), ctx);
@@ -608,6 +681,9 @@ impl CodebaseIndexManager {
         build_source: BuildSource,
         ctx: &mut ModelContext<Self>,
     ) {
+        if !self.is_indexing_enabled() {
+            return;
+        }
         if !self.can_create_new_indices() {
             return;
         }
@@ -974,6 +1050,9 @@ impl CodebaseIndexManager {
         directory_path: &Path,
         ctx: &mut ModelContext<Self>,
     ) -> anyhow::Result<()> {
+        if !self.is_indexing_enabled() {
+            return Ok(());
+        }
         // Find the root path for this directory's codebase
         let Some(repo_path) = self.root_path_for_codebase(directory_path) else {
             return Err(anyhow::anyhow!("Failed to find root path for directory"));
@@ -1013,3 +1092,7 @@ impl Entity for CodebaseIndexManager {
 }
 
 impl SingletonEntity for CodebaseIndexManager {}
+
+#[cfg(test)]
+#[path = "manager_tests.rs"]
+mod tests;

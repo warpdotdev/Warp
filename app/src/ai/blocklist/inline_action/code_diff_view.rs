@@ -3042,7 +3042,7 @@ pub fn convert_file_edits_to_file_diffs(
 
                 for (index, (_, search_content)) in search_blocks_with_ranges.iter().enumerate() {
                     if index > 0 {
-                        // add "..." between each edit to indicate the seperation
+                        // add "..." between each edit to indicate the separation
                         dummy_content.push_str("...\n");
                     }
                     for search_line in search_content.lines() {

@@ -432,6 +432,15 @@ void init_warp_nswindow(NSWindow<WarpWindowProtocol> *window, bool testMode, boo
     // We need to bypass the default performKeyEquivalent implementation which, in the case of
     // having keybinding conflicts with MacOS itself, yields priority to the OS.
     if ([event type] == NSEventTypeKeyDown) {
+        // Skip the key-equivalent priority path while the IME has marked text. Arrow keys carry
+        // NSEventModifierFlagFunction, so AppKit delivers them here before keyDown:. If we call
+        // keyDownImpl and Rust suppresses the keystroke (composing mode), we return NO, and AppKit
+        // proceeds to call keyDown: — running interpretKeyEvents a second time for the same event.
+        // See #9709.
+        if ([(WarpHostView *)self.contentView hasMarkedText]) {
+            return [super performKeyEquivalent:event];
+        }
+
         NSApplication *application = [NSApplication sharedApplication];
 
         // If we are recording a keystroke for an EditableBinding.
@@ -456,8 +465,12 @@ void init_warp_nswindow(NSWindow<WarpWindowProtocol> *window, bool testMode, boo
       WarpWindowDelegate *delegate = self.delegate;
       if (forceTermination) {
           [delegate setForceTermination];
+          // Bypass performClose: (which can be deferred or vetoed by the
+          // delegate's shouldClose) and tear the window down right away.
+          [self close];
+      } else {
+          [self performClose:nil];
       }
-      [self performClose:nil];
     });
 }
 
@@ -999,6 +1012,15 @@ void hide_window(WarpWindow<WarpWindowProtocol> *window) {
 
     // Order out removes window from the screen but still maintains the NSWindow object.
     [window orderOut:nil];
+}
+
+// Sets the per-window opacity. Unlike `hide_window`, this does not change the
+// window's z-order, key state, or the app's active state — making it a much
+// cheaper way to visually hide a window (e.g. a tab drag preview) without
+// triggering AppKit's `orderOut:` machinery or the previous-app activation
+// dance.
+void set_window_alpha(WarpWindow<WarpWindowProtocol> *window, double alpha) {
+    [window setAlphaValue:alpha];
 }
 
 void set_window_title(id window, NSString *title) {

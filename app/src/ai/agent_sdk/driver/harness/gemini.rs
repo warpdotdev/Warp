@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -9,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tempfile::NamedTempFile;
 use warp_cli::agent::Harness;
-use warp_managed_secrets::ManagedSecretValue;
 use warpui::{ModelHandle, ModelSpawner};
 
 use crate::ai::agent::conversation::AIConversationId;
@@ -18,11 +18,15 @@ use crate::server::server_api::harness_support::HarnessSupportClient;
 use crate::server::server_api::ServerApi;
 use crate::terminal::model::block::BlockId;
 use crate::terminal::CLIAgent;
+use warp_managed_secrets::ManagedSecretValue;
 
 use super::super::terminal::{CommandHandle, TerminalDriver};
 use super::super::{AgentDriver, AgentDriverError};
 use super::json_utils::{read_json_file_or_default, write_json_file};
-use super::{write_temp_file, HarnessRunner, ResumePayload, SavePoint, ThirdPartyHarness};
+use super::{
+    write_temp_file, HarnessCleanupDisposition, HarnessRunner, JSONMCPServer, ResumePayload,
+    SavePoint, ThirdPartyHarness,
+};
 
 pub(crate) struct GeminiHarness;
 
@@ -46,38 +50,42 @@ impl ThirdPartyHarness for GeminiHarness {
         Some("https://geminicli.com/")
     }
 
-    fn prepare_environment_config(
-        &self,
-        working_dir: &Path,
-        system_prompt: Option<&str>,
-        _secrets: &HashMap<String, ManagedSecretValue>,
-    ) -> Result<(), AgentDriverError> {
-        prepare_gemini_environment_config(working_dir, system_prompt).map_err(|error| {
-            AgentDriverError::HarnessConfigSetupFailed {
-                harness: self.cli_agent().command_prefix().to_owned(),
-                error,
-            }
-        })
-    }
-
     fn build_runner(
         &self,
         prompt: &str,
         system_prompt: Option<&str>,
         _resumption_prompt: Option<&str>,
+        context: Option<&str>,
         working_dir: &Path,
         _task_id: Option<AmbientAgentTaskId>,
         server_api: Arc<ServerApi>,
         terminal_driver: ModelHandle<TerminalDriver>,
         _resume: Option<ResumePayload>,
+        _resolved_env_vars: &HashMap<OsString, OsString>,
+        _resolved_secrets: &HashMap<String, ManagedSecretValue>,
+        _resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
+        _third_party_harness_model_id: Option<&str>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
+        // Prepare the environment config files.
+        prepare_gemini_environment_config(working_dir, system_prompt).map_err(|error| {
+            AgentDriverError::HarnessConfigSetupFailed {
+                harness: self.cli_agent().command_prefix().to_owned(),
+                error,
+            }
+        })?;
+
         // Gemini does not support conversation resume yet. When it does, it will add its
         // own `ResumePayload::Gemini(..)` variant and override `fetch_resume_payload`,
         // and decide how to surface the user-turn resumption preamble.
+        // Prepend server context to the prompt if available.
+        let effective_prompt = match context {
+            Some(ctx) if !ctx.is_empty() => format!("{ctx}\n\n{prompt}"),
+            _ => prompt.to_string(),
+        };
         let client: Arc<dyn HarnessSupportClient> = server_api;
         Ok(Box::new(GeminiHarnessRunner::new(
             self.cli_agent().command_prefix(),
-            prompt,
+            &effective_prompt,
             system_prompt,
             working_dir,
             client,
@@ -120,7 +128,7 @@ impl GeminiHarnessRunner {
         client: Arc<dyn HarnessSupportClient>,
         terminal_driver: ModelHandle<TerminalDriver>,
     ) -> Result<Self, AgentDriverError> {
-        let temp_file = write_temp_file("oz_prompt_", prompt)?;
+        let temp_file = write_temp_file("oz_prompt_", prompt, ".txt")?;
         let prompt_path = temp_file.path().display().to_string();
 
         Ok(Self {
@@ -214,6 +222,14 @@ impl HarnessRunner for GeminiHarnessRunner {
             block_id,
         )
         .await
+    }
+
+    async fn cleanup(
+        &self,
+        _cleanup_disposition: HarnessCleanupDisposition,
+        _foreground: &ModelSpawner<AgentDriver>,
+    ) -> Result<()> {
+        Ok(())
     }
 }
 
