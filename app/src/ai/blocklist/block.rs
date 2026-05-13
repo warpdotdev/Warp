@@ -94,7 +94,7 @@ use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
 use crate::server::ids::SyncId;
 use crate::server::telemetry::AgentModeRewindEntrypoint;
-use crate::settings::InputSettings;
+use crate::settings::{InputSettings, SelectionSettings};
 use crate::terminal::view::{CodeDiffAction, TerminalAction};
 use crate::ui_components::icons::Icon;
 #[cfg(feature = "local_fs")]
@@ -1191,11 +1191,12 @@ impl AIBlock {
         for (id, content) in comment_data {
             let state = CommentElementState::new(id, &content, ctx);
             ctx.subscribe_to_view(&state.rich_text_editor, |me, view, event, ctx| {
-                if matches!(event, EditorViewEvent::TextSelectionChanged)
-                    && view.as_ref(ctx).selected_text(ctx).is_some()
-                {
-                    me.clear_other_selections(Some(view.id()), ctx.window_id(), ctx);
-                    ctx.emit(AIBlockEvent::ChildViewTextSelected);
+                if matches!(event, EditorViewEvent::TextSelectionChanged) {
+                    if let Some(selected_text) = view.as_ref(ctx).selected_text(ctx) {
+                        me.maybe_copy_on_select(selected_text, ctx);
+                        me.clear_other_selections(Some(view.id()), ctx.window_id(), ctx);
+                        ctx.emit(AIBlockEvent::ChildViewTextSelected);
+                    }
                 }
             });
             comment_states.insert(id, state);
@@ -2534,7 +2535,8 @@ impl AIBlock {
                         // The `is_some` check is necessary because `CodeEditorEvent::SelectionChanged` is
                         // also emitted when the editor's selection is cleared via external means
                         // (i.e. when a text selection is made outside the `CodeEditorView`).
-                        if view.as_ref(ctx).selected_text(ctx).is_some() {
+                        if let Some(selected_text) = view.as_ref(ctx).selected_text(ctx) {
+                            me.maybe_copy_on_select(selected_text, ctx);
                             me.clear_other_selections(Some(view.id()), ctx.window_id(), ctx);
                             ctx.emit(AIBlockEvent::ChildViewTextSelected);
                         }
@@ -2701,6 +2703,9 @@ impl AIBlock {
                 CodeDiffViewEvent::TextSelected => {
                     // If there's an ongoing text selection, clear all other selections within the
                     // `AIBlock`'s view sub-hierarchy to ensure only one component has a selection at a time.
+                    if let Some(selected_text) = view.as_ref(ctx).selected_text(ctx) {
+                        me.maybe_copy_on_select(selected_text, ctx);
+                    }
                     me.clear_other_selections(Some(view.id()), ctx.window_id(), ctx);
                     ctx.emit(AIBlockEvent::ChildViewTextSelected);
                 }
@@ -2993,6 +2998,9 @@ impl AIBlock {
             RequestedCommandViewEvent::TextSelected => {
                 // If there's an ongoing text selection, clear all other selections within the
                 // `AIBlock`'s view sub-hierarchy to ensure only one component has a selection at a time.
+                if let Some(selected_text) = view.as_ref(ctx).selected_text(ctx) {
+                    self.maybe_copy_on_select(selected_text, ctx);
+                }
                 self.clear_other_selections(Some(view.id()), ctx.window_id(), ctx);
                 ctx.emit(AIBlockEvent::ChildViewTextSelected);
             }
@@ -3096,6 +3104,9 @@ impl AIBlock {
             RequestedCommandViewEvent::TextSelected => {
                 // If there's an ongoing text selection, clear all other selections within the
                 // `AIBlock`'s view sub-hierarchy to ensure only one component has a selection at a time.
+                if let Some(selected_text) = view.as_ref(ctx).selected_text(ctx) {
+                    self.maybe_copy_on_select(selected_text, ctx);
+                }
                 self.clear_other_selections(Some(view.id()), ctx.window_id(), ctx);
                 ctx.emit(AIBlockEvent::ChildViewTextSelected);
             }
@@ -4117,6 +4128,12 @@ impl AIBlock {
                     .find_map(|comment| comment.rich_text_editor.as_ref(ctx).selected_text(ctx))
             })
             .or_else(|| self.selected_text.read().clone())
+    }
+
+    fn maybe_copy_on_select(&self, selection: String, ctx: &mut ViewContext<Self>) {
+        SelectionSettings::handle(ctx).update(ctx, |selection_settings, ctx| {
+            selection_settings.maybe_copy_on_select(ClipboardContent::plain_text(selection), ctx);
+        });
     }
 
     /// Start a selection at the top left corner of the block's SelectableArea.
@@ -5212,6 +5229,8 @@ pub enum AIBlockAction {
     /// are responsible for managing their own text selection states.
     SelectText,
 
+    CopyOnSelect(String),
+
     CopyAIBlockCodeSnippet(String),
 
     /// Continue the conversation using this response
@@ -5413,6 +5432,9 @@ impl TypedActionView for AIBlock {
                 // If we have a selection, we should use the default cursor, even if it's over a link.
                 ctx.reset_cursor();
                 self.dismiss_ai_tooltips(ctx);
+            }
+            AIBlockAction::CopyOnSelect(selection) => {
+                self.maybe_copy_on_select(selection.clone(), ctx);
             }
             AIBlockAction::CopyAIBlockCodeSnippet(text) => {
                 ctx.clipboard()

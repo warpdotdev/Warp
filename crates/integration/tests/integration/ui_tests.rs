@@ -294,6 +294,8 @@ integration_tests! {
     #[ignore = "Affected by agent_view feature flag UI changes"]
     test_selection_last_to_ai_simple,
     #[ignore = "Affected by agent_view feature flag UI changes"]
+    test_copy_on_select_within_ai_simple,
+    #[ignore = "Affected by agent_view feature flag UI changes"]
     test_selection_last_to_ai_semantic,
     #[ignore = "Affected by agent_view feature flag UI changes"]
     test_selection_last_to_ai_lines,

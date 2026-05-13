@@ -1192,8 +1192,14 @@ impl View for AIBlock {
 
         let mut selectable = SelectableArea::new(
             self.state_handles.selection_handle.clone(),
-            move |selection_args, _, _| {
-                *selected_text.write() = selection_args.selection;
+            move |selection_args, ctx, _| {
+                let selection = selection_args.selection;
+                if let Some(selection) =
+                    selection.as_ref().filter(|selection| !selection.is_empty())
+                {
+                    ctx.dispatch_typed_action(AIBlockAction::CopyOnSelect(selection.clone()));
+                }
+                *selected_text.write() = selection;
             },
             SavePosition::new(content.finish(), self.saved_position_id().as_str()).finish(),
         )
