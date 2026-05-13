@@ -3272,6 +3272,7 @@ impl TelemetryEvent {
                     FileTarget::SystemDefault => ("system_default", None, None),
                     FileTarget::SystemGeneric => ("system_generic", None, None),
                     FileTarget::ExternalEditor(editor) => ("external_editor", None, Some(*editor)),
+                    FileTarget::ImagePreview => ("image_preview", None, None),
                 };
 
                 Some(json!({
