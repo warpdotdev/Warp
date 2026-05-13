@@ -1810,7 +1810,10 @@ impl UsageWidget {
         let monthly_spend_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_children([
-                ui_builder.span(t!("settings.monthly_spend_limit").to_string()).build().finish(),
+                ui_builder
+                    .span(t!("settings.monthly_spend_limit").to_string())
+                    .build()
+                    .finish(),
                 Shrinkable::new(1., Align::new(info_icon).left().finish()).finish(),
                 icon_button(
                     appearance,
@@ -2089,7 +2092,10 @@ impl UsageWidget {
                 .finish();
 
             let mut card_content_lower_children = vec![
-                ui_builder.span(t!("settings.one_time_purchase").to_string()).build().finish(),
+                ui_builder
+                    .span(t!("settings.one_time_purchase").to_string())
+                    .build()
+                    .finish(),
                 buy_row.finish(),
             ];
 
@@ -2108,14 +2114,12 @@ impl UsageWidget {
                 ));
             } else if would_exceed_limit {
                 let warning_fragments = vec![
-                    FormattedTextFragment::plain_text(
-                        "Reloading would exceed your monthly limit. ",
-                    ),
+                    FormattedTextFragment::plain_text(t!("billing.reload_exceeds_monthly_limit")),
                     FormattedTextFragment::hyperlink_action(
-                        "Increase your limit",
+                        t!("billing.increase_your_limit"),
                         BillingAndUsagePageAction::ShowAddOnCreditModal,
                     ),
-                    FormattedTextFragment::plain_text(" to continue."),
+                    FormattedTextFragment::plain_text(t!("billing.to_continue")),
                 ];
                 card_content_lower_children
                     .push(self.render_warning_row_with_link(appearance, warning_fragments));
@@ -2739,7 +2743,7 @@ impl UsageWidget {
             let text_fragments = vec![
                 FormattedTextFragment::plain_text(t!("billing.enterprise_usage_admin_prefix")),
                 FormattedTextFragment::hyperlink(t!("billing.visit_admin_panel"), admin_panel_url),
-                FormattedTextFragment::plain_text("."),
+                FormattedTextFragment::plain_text(t!("common.period")),
             ];
             FormattedTextElement::new(
                 FormattedText::new([FormattedTextLine::Line(text_fragments)]),
@@ -3109,18 +3113,18 @@ impl UsageWidget {
                 if has_admin_permissions {
                     vec![
                         FormattedTextFragment::hyperlink_action(
-                            "Manage billing",
+                            t!("billing.manage_billing"),
                             BillingAndUsagePageAction::GenerateStripeBillingPortalLink {
                                 team_uid: team.uid,
                             },
                         ),
-                        FormattedTextFragment::plain_text(" to regain access to AI features."),
+                        FormattedTextFragment::plain_text(t!("billing.regain_ai_access_suffix")),
                     ]
                 } else {
                     // Non-admin team member - show message to contact admin
-                    vec![FormattedTextFragment::plain_text(
-                        "Contact your team admin to resolve billing issues.",
-                    )]
+                    vec![FormattedTextFragment::plain_text(t!(
+                        "billing.contact_admin_resolve_billing"
+                    ))]
                 }
             } else if team.billing_metadata.can_upgrade_to_higher_tier_plan() {
                 let upgrade_url = UserWorkspaces::upgrade_link_for_team(team.uid);
@@ -3129,39 +3133,41 @@ impl UsageWidget {
                         if team.billing_metadata.is_on_legacy_paid_plan() {
                             vec![
                                 FormattedTextFragment::hyperlink(
-                                    "Switch to the Build plan",
+                                    t!("billing.switch_to_build_plan"),
                                     upgrade_url,
                                 ),
-                                FormattedTextFragment::plain_text(
-                                    " for a more flexible pricing model.",
-                                ),
+                                FormattedTextFragment::plain_text(t!(
+                                    "billing.flexible_pricing_suffix"
+                                )),
                             ]
                         } else {
                             let mut fragments = vec![FormattedTextFragment::hyperlink(
-                                "Upgrade to the Build plan",
+                                t!("billing.upgrade_to_build_plan"),
                                 upgrade_url,
                             )];
                             if team.billing_metadata.is_byo_api_key_enabled() {
-                                fragments.push(FormattedTextFragment::plain_text(" or "));
+                                fragments.push(FormattedTextFragment::plain_text(t!(
+                                    "billing.or_separator"
+                                )));
                                 fragments.push(FormattedTextFragment::hyperlink_action(
-                                    "bring your own key",
+                                    t!("billing.bring_your_own_key"),
                                     BillingAndUsagePageAction::NavigateToByokSettings,
                                 ));
                             }
-                            fragments.push(FormattedTextFragment::plain_text(
-                                " for increased access to AI features.",
-                            ));
+                            fragments.push(FormattedTextFragment::plain_text(t!(
+                                "billing.increased_ai_access_suffix"
+                            )));
                             fragments
                         }
                     } else {
                         let upgrade_text = match team.billing_metadata.customer_type {
-                            CustomerType::Prosumer => "Upgrade to Turbo plan",
-                            CustomerType::Turbo => "Upgrade to Lightspeed plan",
-                            _ => "Upgrade",
+                            CustomerType::Prosumer => t!("billing.upgrade_to_turbo").to_string(),
+                            CustomerType::Turbo => t!("billing.upgrade_to_lightspeed").to_string(),
+                            _ => t!("billing.upgrade").to_string(),
                         };
                         vec![
                             FormattedTextFragment::hyperlink(upgrade_text, upgrade_url),
-                            FormattedTextFragment::plain_text(" to get more AI usage."),
+                            FormattedTextFragment::plain_text(t!("billing.to_get_more_ai_usage")),
                         ]
                     }
                 } else {
@@ -3170,33 +3176,34 @@ impl UsageWidget {
             } else if team.billing_metadata.is_on_build_plan() {
                 vec![
                     FormattedTextFragment::hyperlink(
-                        "Upgrade to Max",
+                        t!("billing.upgrade_to_max"),
                         UserWorkspaces::upgrade_link_for_team(team.uid),
                     ),
-                    FormattedTextFragment::plain_text(" for more AI credits."),
+                    FormattedTextFragment::plain_text(t!("billing.for_more_ai_credits")),
                 ]
             } else if team.billing_metadata.is_on_build_max_plan() {
                 vec![
                     FormattedTextFragment::hyperlink(
-                        "Switch to Business",
+                        t!("billing.switch_to_business"),
                         UserWorkspaces::upgrade_link_for_team(team.uid),
                     ),
-                    FormattedTextFragment::plain_text(
-                        " for security features like SSO and automatically applied zero data retention.",
-                    ),
+                    FormattedTextFragment::plain_text(t!("billing.business_security_suffix")),
                 ]
             } else if team.billing_metadata.is_on_build_business_plan() {
                 vec![
                     FormattedTextFragment::hyperlink(
-                        "Upgrade to Enterprise",
+                        t!("billing.upgrade_to_enterprise"),
                         "mailto:sales@warp.dev",
                     ),
-                    FormattedTextFragment::plain_text(" for custom limits and dedicated support."),
+                    FormattedTextFragment::plain_text(t!("billing.enterprise_limits_suffix")),
                 ]
             } else if !team.billing_metadata.is_usage_based_pricing_toggleable() {
                 vec![
-                    FormattedTextFragment::hyperlink("Contact support", "mailto:support@warp.dev"),
-                    FormattedTextFragment::plain_text(" for more AI usage."),
+                    FormattedTextFragment::hyperlink(
+                        t!("billing.contact_support"),
+                        "mailto:support@warp.dev",
+                    ),
+                    FormattedTextFragment::plain_text(t!("billing.for_more_ai_usage")),
                 ]
             } else {
                 vec![]
@@ -3205,19 +3212,21 @@ impl UsageWidget {
             let user_id = auth_state.user_id().unwrap_or_default();
             let upgrade_url = UserWorkspaces::upgrade_link(user_id);
             let mut fragments = vec![FormattedTextFragment::hyperlink(
-                "Upgrade to the Build plan",
+                t!("billing.upgrade_to_build_plan"),
                 upgrade_url,
             )];
             if UserWorkspaces::as_ref(app).is_byo_api_key_enabled(app) {
-                fragments.push(FormattedTextFragment::plain_text(" or "));
+                fragments.push(FormattedTextFragment::plain_text(t!(
+                    "billing.or_separator"
+                )));
                 fragments.push(FormattedTextFragment::hyperlink_action(
-                    "bring your own key",
+                    t!("billing.bring_your_own_key"),
                     BillingAndUsagePageAction::NavigateToByokSettings,
                 ));
             }
-            fragments.push(FormattedTextFragment::plain_text(
-                " for more credits and access to more models.",
-            ));
+            fragments.push(FormattedTextFragment::plain_text(t!(
+                "billing.more_credits_models_suffix"
+            )));
             fragments
         };
 
