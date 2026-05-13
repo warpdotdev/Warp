@@ -1016,7 +1016,10 @@ fn render_agent_tip(tip: &AgentTip, app: &AppContext) -> Box<dyn Element> {
         fragments.push(FormattedTextFragment::hyperlink_action(text, action));
     } else if let Some(link_target) = tip.link.clone() {
         fragments.push(FormattedTextFragment::plain_text(" "));
-        fragments.push(FormattedTextFragment::hyperlink("Learn more", link_target));
+        fragments.push(FormattedTextFragment::hyperlink(
+            t!("workspace.learn_more"),
+            link_target,
+        ));
     }
 
     let formatted_text =
