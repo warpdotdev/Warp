@@ -1,10 +1,12 @@
 use super::*;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
+use crate::test_util::settings::initialize_history_persistence_for_tests;
 use warpui::{App, EntityId};
 
 #[test]
 fn descendant_conversation_ids_in_spawn_order_flattens_nested_children_preorder() {
     App::test((), |mut app| async move {
+        initialize_history_persistence_for_tests(&mut app);
         let terminal_view_id = EntityId::new();
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
 
@@ -99,6 +101,7 @@ fn navigation_action_for_orchestrator_pill_switches_in_place() {
 #[test]
 fn descendant_conversation_ids_in_spawn_order_returns_empty_without_children() {
     App::test((), |mut app| async move {
+        initialize_history_persistence_for_tests(&mut app);
         let terminal_view_id = EntityId::new();
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
 

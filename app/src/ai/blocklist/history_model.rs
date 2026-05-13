@@ -429,6 +429,7 @@ impl BlocklistAIHistoryModel {
             }
         }
         self.set_parent_for_conversation(conversation_id, parent_conversation_id);
+        self.persist_conversation_state(conversation_id, ctx);
         conversation_id
     }
 
@@ -459,6 +460,31 @@ impl BlocklistAIHistoryModel {
             .unwrap_or_default()
     }
 
+    fn persist_conversation_state(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) else {
+            return;
+        };
+        conversation.write_updated_conversation_state(ctx);
+    }
+
+    pub fn mark_conversation_as_remote_child(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        {
+            let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) else {
+                return;
+            };
+            conversation.mark_as_remote_child();
+        }
+        self.persist_conversation_state(conversation_id, ctx);
+    }
+
     /// Updates the persisted `last_event_sequence` for a conversation and
     /// writes the updated conversation state to SQLite. Used by the
     /// orchestration event poller after draining an event batch to keep the
@@ -469,11 +495,13 @@ impl BlocklistAIHistoryModel {
         sequence: i64,
         ctx: &mut ModelContext<Self>,
     ) {
-        let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) else {
-            return;
-        };
-        conversation.set_last_event_sequence(sequence);
-        conversation.write_updated_conversation_state(ctx);
+        {
+            let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) else {
+                return;
+            };
+            conversation.set_last_event_sequence(sequence);
+        }
+        self.persist_conversation_state(conversation_id, ctx);
     }
 
     /// Sets a live conversation's server token, and updates the mapping in the history
@@ -932,6 +960,8 @@ impl BlocklistAIHistoryModel {
         init_event: warp_multi_agent_api::response_event::StreamInit,
         ctx: &mut ModelContext<Self>,
     ) {
+        let mut should_emit_server_token_assigned = false;
+        let mut should_persist = false;
         if let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) {
             let had_token_before = conversation.server_conversation_token().is_some();
 
@@ -953,14 +983,20 @@ impl BlocklistAIHistoryModel {
                 self.server_token_to_conversation_id
                     .insert(token.clone(), conversation_id);
             }
+            should_emit_server_token_assigned =
+                !had_token_before && conversation.server_conversation_token().is_some();
+            should_persist = true;
+        }
 
-            // Notify observers when a conversation first receives its server token.
-            if !had_token_before && conversation.server_conversation_token().is_some() {
-                ctx.emit(BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
-                    conversation_id,
-                    terminal_view_id,
-                });
-            }
+        if should_persist {
+            self.persist_conversation_state(conversation_id, ctx);
+        }
+
+        if should_emit_server_token_assigned {
+            ctx.emit(BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
+                conversation_id,
+                terminal_view_id,
+            });
         }
     }
 
@@ -976,27 +1012,33 @@ impl BlocklistAIHistoryModel {
         terminal_view_id: EntityId,
         ctx: &mut ModelContext<Self>,
     ) {
-        let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) else {
-            log::warn!(
-                "assign_run_id_for_conversation: conversation {conversation_id:?} not found"
-            );
-            return;
+        let (agent_key, server_token) = {
+            let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) else {
+                log::warn!(
+                    "assign_run_id_for_conversation: conversation {conversation_id:?} not found"
+                );
+                return;
+            };
+            conversation.set_run_id(run_id);
+            if let Some(task_id) = task_id {
+                conversation.set_task_id(task_id);
+            }
+            (
+                agent_id_key(conversation),
+                conversation.server_conversation_token().cloned(),
+            )
         };
-        conversation.set_run_id(run_id);
-        if let Some(task_id) = task_id {
-            conversation.set_task_id(task_id);
-        }
 
-        if let Some(key) = agent_id_key(conversation) {
+        if let Some(key) = agent_key {
             self.agent_id_to_conversation_id
                 .insert(key, conversation_id);
         }
-
-        if let Some(token) = conversation.server_conversation_token() {
+        if let Some(token) = server_token {
             self.server_token_to_conversation_id
-                .insert(token.clone(), conversation_id);
+                .insert(token, conversation_id);
         }
 
+        self.persist_conversation_state(conversation_id, ctx);
         ctx.emit(BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
             conversation_id,
             terminal_view_id,

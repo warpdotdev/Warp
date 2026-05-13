@@ -568,6 +568,21 @@ impl Task {
         self.try_get_source().ok()
     }
 
+    pub(super) fn source_for_persistence(&self) -> Option<api::Task> {
+        match &self.data {
+            TaskImpl::Server(server_data) => Some(server_data.source.clone()),
+            TaskImpl::Optimistic(optimistic::Task::Root) => Some(api::Task {
+                id: self.id.to_string(),
+                messages: vec![],
+                dependencies: None,
+                description: String::new(),
+                summary: String::new(),
+                server_data: String::new(),
+            }),
+            TaskImpl::Optimistic(optimistic::Task::CLIAgent(_)) => None,
+        }
+    }
+
     pub fn messages(&self) -> impl Iterator<Item = &api::Message> {
         self.source()
             .into_iter()
