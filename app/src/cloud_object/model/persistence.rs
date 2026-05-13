@@ -9,7 +9,7 @@ use crate::drive::{
     should_auto_open_welcome_folder, write_has_auto_opened_welcome_folder_to_user_defaults,
     CloudObjectTypeAndId, DriveIndexVariant,
 };
-use crate::env_vars::{CloudEnvVarCollection, CloudEnvVarCollectionModel, EnvVarCollection};
+use crate::env_vars::{EnvVarCollection, EnvVarCollectionObject, EnvVarCollectionObjectModel};
 use crate::notebooks::CloudNotebook;
 use crate::persistence::ModelEvent;
 use crate::server::ids::{HashableId, ObjectUid, SyncId, ToServerId};
@@ -483,11 +483,12 @@ impl CloudModel {
         ctx: &mut ModelContext<Self>,
     ) {
         if let Some(cloud_env_var_collection) = self
-            .get_object_of_type_mut::<GenericStringObjectId, CloudEnvVarCollectionModel>(
+            .get_object_of_type_mut::<GenericStringObjectId, EnvVarCollectionObjectModel>(
                 &env_var_collection_id,
             )
         {
-            cloud_env_var_collection.set_model(CloudEnvVarCollectionModel::new(env_var_collection));
+            cloud_env_var_collection
+                .set_model(EnvVarCollectionObjectModel::new(env_var_collection));
             ctx.emit(CloudModelEvent::ObjectUpdated {
                 type_and_id: cloud_env_var_collection.cloud_object_type_and_id(),
                 source: UpdateSource::Server,
@@ -911,7 +912,7 @@ impl CloudModel {
         &'a self,
         space: Space,
         app: &'a AppContext,
-    ) -> impl Iterator<Item = &'a CloudEnvVarCollection> + 'a {
+    ) -> impl Iterator<Item = &'a EnvVarCollectionObject> + 'a {
         self.active_non_welcome_cloud_objects_in_space(space, app)
             .filter_map(|object| object.into())
     }
@@ -1000,20 +1001,20 @@ impl CloudModel {
     pub fn get_env_var_collection(
         &self,
         env_var_collection_id: &SyncId,
-    ) -> Option<&CloudEnvVarCollection> {
+    ) -> Option<&EnvVarCollectionObject> {
         self.objects_by_id
             .get(&env_var_collection_id.uid())
             .and_then(|object| object.into())
     }
 
-    pub fn get_env_var_collection_by_uid(&self, uid: &str) -> Option<&CloudEnvVarCollection> {
+    pub fn get_env_var_collection_by_uid(&self, uid: &str) -> Option<&EnvVarCollectionObject> {
         self.objects_by_id.get(uid).and_then(|object| object.into())
     }
 
     /// Returns only active (not trashed) EVCs in cloud model.
     pub fn get_all_active_env_var_collections(
         &self,
-    ) -> impl Iterator<Item = &CloudEnvVarCollection> {
+    ) -> impl Iterator<Item = &EnvVarCollectionObject> {
         self.objects_by_id
             .values()
             .filter(|object| !object.is_trashed(self))

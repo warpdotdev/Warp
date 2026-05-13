@@ -5,14 +5,14 @@ use crate::{
         CloudObject, Owner, Revision, Space,
     },
     drive::sharing::{ContentEditability, SharingAccessLevel},
-    env_vars::CloudEnvVarCollection,
+    env_vars::EnvVarCollectionObject,
     server::ids::{ClientId, SyncId},
     AppContext, CloudModel,
 };
 
 use warpui::{Entity, ModelContext, SingletonEntity};
 
-use super::CloudEnvVarCollectionModel;
+use super::EnvVarCollectionObjectModel;
 
 #[derive(Default, Clone)]
 pub enum ActiveEnvVarCollection {
@@ -23,7 +23,7 @@ pub enum ActiveEnvVarCollection {
     CommittedEnvVarCollection(SyncId),
     // An EnvVarCollection that has been created and displayed in the view, but is not yet
     // committed to CloudModel
-    NewEnvVarCollection(Box<CloudEnvVarCollection>),
+    NewEnvVarCollection(Box<EnvVarCollectionObject>),
 }
 
 #[derive(Default, PartialEq, Debug)]
@@ -84,8 +84,8 @@ impl ActiveEnvVarCollectionData {
 
         // Set the active env var collection to be an uncommitted collection
         self.active_env_var_collection = ActiveEnvVarCollection::NewEnvVarCollection(Box::new(
-            CloudEnvVarCollection::new_local(
-                CloudEnvVarCollectionModel::default(),
+            EnvVarCollectionObject::new_local(
+                EnvVarCollectionObjectModel::default(),
                 owner,
                 initial_folder_id,
                 new_id,

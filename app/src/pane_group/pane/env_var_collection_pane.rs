@@ -88,7 +88,7 @@ impl PaneContent for EnvVarCollectionPane {
             .env_var_collection_view(app)
             .as_ref(app)
             .env_var_collection_id(app);
-        LeafContents::EnvVarCollection(EnvVarCollectionPaneSnapshot::CloudEnvVarCollection {
+        LeafContents::EnvVarCollection(EnvVarCollectionPaneSnapshot::EnvVarCollectionObject {
             env_var_collection_id,
         })
     }

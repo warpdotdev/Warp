@@ -12,7 +12,7 @@ use warpui::{
 
 use crate::{
     appearance::Appearance,
-    env_vars::CloudEnvVarCollection,
+    env_vars::EnvVarCollectionObject,
     search::{
         command_search::searcher::CommandSearchItemAction,
         env_var_collections::fuzzy_match::FuzzyMatchEnvVarCollectionResult, item::SearchItem,
@@ -25,7 +25,7 @@ const ENV_VAR_COLLECTION_ICON_PATH: &str = "bundled/svg/env-var-collection.svg";
 /// Struct designed to be the implementation of CommandSearchItem for EnvVarCollections.
 #[derive(Clone, Debug)]
 pub struct EnvVarCollectionSearchItem {
-    pub env_var_collection: CloudEnvVarCollection,
+    pub env_var_collection: EnvVarCollectionObject,
     pub fuzzy_matched_env_var_collection: FuzzyMatchEnvVarCollectionResult,
 }
 

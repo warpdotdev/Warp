@@ -1652,7 +1652,7 @@ impl PaneGroup {
             )),
             LeafContents::EnvVarCollection(snapshot) => {
                 let pane: Box<dyn AnyPaneContent + 'static> = match snapshot {
-                    EnvVarCollectionPaneSnapshot::CloudEnvVarCollection {
+                    EnvVarCollectionPaneSnapshot::EnvVarCollectionObject {
                         env_var_collection_id,
                     } => Box::new(EnvVarCollectionPane::restore(env_var_collection_id, ctx)?),
                 };

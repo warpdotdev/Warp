@@ -194,7 +194,7 @@ use crate::drive::items::WarpDriveItemId;
 use crate::drive::settings::WarpDriveSettingsChangedEvent;
 use crate::env_vars::{
     manager::{EnvVarCollectionManager, EnvVarCollectionSource},
-    CloudEnvVarCollection,
+    EnvVarCollectionObject,
 };
 use crate::settings::cloud_preferences::CloudPreferencesSettings;
 
@@ -12265,7 +12265,7 @@ impl Workspace {
                 env_var_collection,
                 in_subshell,
             } => self.invoke_environment_variables(
-                env_var_collection.as_cloud_env_var_collection().clone(),
+                env_var_collection.as_env_var_collection_object().clone(),
                 *in_subshell,
                 ctx,
             ),
@@ -13747,7 +13747,7 @@ impl Workspace {
 
     fn invoke_environment_variables(
         &mut self,
-        env_var_collection: CloudEnvVarCollection,
+        env_var_collection: EnvVarCollectionObject,
         in_subshell: bool,
         ctx: &mut ViewContext<Self>,
     ) {
@@ -14006,7 +14006,7 @@ impl Workspace {
                 ) {
                     let workflow: Option<&CloudWorkflow> = object.into();
                     let cloned_workflow = workflow.cloned();
-                    let env_var_collection: Option<&CloudEnvVarCollection> = object.into();
+                    let env_var_collection: Option<&EnvVarCollectionObject> = object.into();
                     let cloned_env_var_collection = env_var_collection.cloned();
 
                     let notebook: Option<&CloudNotebook> = object.into();

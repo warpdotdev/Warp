@@ -34,7 +34,7 @@ use crate::{
             ActiveEnvVarCollection, ActiveEnvVarCollectionData, ActiveEnvVarCollectionDataEvent,
             SavingStatus, TrashStatus,
         },
-        CloudEnvVarCollection, CloudEnvVarCollectionModel, EnvVar, EnvVarCollection,
+        EnvVar, EnvVarCollection, EnvVarCollectionObject, EnvVarCollectionObjectModel,
         EnvVarCollectionType, EnvVarValue,
     },
     external_secrets::SecretManager,
@@ -653,7 +653,11 @@ impl EnvVarCollectionView {
         });
     }
 
-    pub fn load(&mut self, env_var_collection: CloudEnvVarCollection, ctx: &mut ViewContext<Self>) {
+    pub fn load(
+        &mut self,
+        env_var_collection: EnvVarCollectionObject,
+        ctx: &mut ViewContext<Self>,
+    ) {
         self.active_env_var_collection_data
             .update(ctx, |data, ctx| {
                 data.open_existing(env_var_collection.id, ctx);
@@ -742,7 +746,7 @@ impl EnvVarCollectionView {
             ActiveEnvVarCollection::CommittedEnvVarCollection(id) => {
                 let cloud_model = CloudModel::as_ref(ctx);
                 if let Some(cloud_env_var) = cloud_model.get_env_var_collection(id) {
-                    ctx.emit(EnvVarCollectionEvent::Invoke(EnvVarCollectionType::Cloud(
+                    ctx.emit(EnvVarCollectionEvent::Invoke(EnvVarCollectionType::Object(
                         Box::new(cloud_env_var.clone()),
                     )));
                 } else {
@@ -760,7 +764,7 @@ impl EnvVarCollectionView {
                 }
             }
             ActiveEnvVarCollection::NewEnvVarCollection(env_var_collection) => {
-                ctx.emit(EnvVarCollectionEvent::Invoke(EnvVarCollectionType::Cloud(
+                ctx.emit(EnvVarCollectionEvent::Invoke(EnvVarCollectionType::Object(
                     Box::new(env_var_collection.as_ref().clone()),
                 )))
             }
@@ -854,7 +858,7 @@ impl EnvVarCollectionView {
                             client_id,
                             env_var_collection.permissions.owner,
                             env_var_collection.metadata.folder_id,
-                            CloudEnvVarCollectionModel::new(new_env_var_collection),
+                            EnvVarCollectionObjectModel::new(new_env_var_collection),
                             CloudObjectEventEntrypoint::Unknown,
                             true,
                             ctx,

@@ -226,7 +226,7 @@ use crate::drive::settings::WarpDriveSettings;
 use crate::drive::CloudObjectTypeAndId;
 use crate::env_vars::{
     env_var_collection_block::{EnvVarCollectionBlock, EnvVarCollectionBlockEvent},
-    CloudEnvVarCollection, EnvVar,
+    EnvVar, EnvVarCollectionObject,
 };
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::persistence::{self, FinishedCommandMetadata};
@@ -2478,7 +2478,7 @@ pub struct TerminalView {
     ai_input_model: ModelHandle<BlocklistAIInputModel>,
     ai_context_model: ModelHandle<BlocklistAIContextModel>,
 
-    pending_env_var_collection: Option<CloudEnvVarCollection>,
+    pending_env_var_collection: Option<EnvVarCollectionObject>,
 
     ai_render_context: Rc<RefCell<BlocklistAIRenderContext>>,
 
@@ -22303,7 +22303,7 @@ impl TerminalView {
 
     pub fn invoke_environment_variables(
         &mut self,
-        cloud_env_var_collection: CloudEnvVarCollection,
+        cloud_env_var_collection: EnvVarCollectionObject,
         in_subshell: bool,
         ctx: &mut ViewContext<Self>,
     ) {
@@ -22347,7 +22347,7 @@ impl TerminalView {
 
     fn invoke_env_vars_in_current_session(
         &mut self,
-        cloud_env_var_collection: CloudEnvVarCollection,
+        cloud_env_var_collection: EnvVarCollectionObject,
         shell_type: ShellType,
         session_id: Option<SessionId>,
         ctx: &mut ViewContext<Self>,
@@ -22391,7 +22391,7 @@ impl TerminalView {
 
     fn invoke_env_vars_in_subshell(
         &mut self,
-        cloud_env_var_collection: CloudEnvVarCollection,
+        cloud_env_var_collection: EnvVarCollectionObject,
         shell_session_info: (String, ShellType),
         window_id: WindowId,
         ctx: &mut ViewContext<Self>,

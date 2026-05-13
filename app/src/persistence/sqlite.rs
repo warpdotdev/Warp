@@ -78,7 +78,7 @@ use crate::cloud_object::{
 use crate::code::editor_management::CodeSource;
 use crate::drive::folders::{CloudFolder, CloudFolderModel, FolderId};
 use crate::drive::OpenWarpDriveObjectSettings;
-use crate::env_vars::{CloudEnvVarCollection, CloudEnvVarCollectionModel};
+use crate::env_vars::{EnvVarCollectionObject, EnvVarCollectionObjectModel};
 use crate::features::FeatureFlag;
 use crate::notebooks::{CloudNotebook, NotebookId};
 use crate::persistence::agent::read_agent_conversations;
@@ -1404,7 +1404,7 @@ fn save_pane_state(
         }
         LeafContents::EnvVarCollection(env_var_collection_snapshot) => {
             let env_var_collection_id = match env_var_collection_snapshot {
-                EnvVarCollectionPaneSnapshot::CloudEnvVarCollection {
+                EnvVarCollectionPaneSnapshot::EnvVarCollectionObject {
                     env_var_collection_id,
                 } => env_var_collection_id
                     .map(|id| id.sqlite_uid_hash(ObjectIdType::GenericStringObject)),
@@ -2559,7 +2559,7 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
                         });
 
                     LeafContents::EnvVarCollection(
-                        EnvVarCollectionPaneSnapshot::CloudEnvVarCollection {
+                        EnvVarCollectionPaneSnapshot::EnvVarCollectionObject {
                             env_var_collection_id,
                         },
                     )
@@ -3011,10 +3011,10 @@ fn read_sqlite_data(
                             }
                             JsonObjectType::EnvVarCollection => {
                                 let model =
-                                    CloudEnvVarCollectionModel::deserialize_owned(&object.data);
+                                    EnvVarCollectionObjectModel::deserialize_owned(&object.data);
                                 model.ok().map(|model| {
                                     let boxed: Box<dyn CloudObject> =
-                                        Box::new(CloudEnvVarCollection::new(
+                                        Box::new(EnvVarCollectionObject::new(
                                             server_id,
                                             model,
                                             to_cloud_object_metadata(metadata),

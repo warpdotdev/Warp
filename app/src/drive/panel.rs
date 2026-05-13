@@ -14,7 +14,7 @@ use crate::{
         update_manager::{InitiatedBy, UpdateManager},
         CloudObjectEventEntrypoint, GenericStringObjectFormat, JsonObjectType, Owner, Space,
     },
-    env_vars::{manager::EnvVarCollectionSource, CloudEnvVarCollection},
+    env_vars::{manager::EnvVarCollectionSource, EnvVarCollectionObject},
     notebooks::{manager::NotebookSource, CloudNotebook},
     server::ids::{ClientId, ServerId, SyncId},
     workflows::{manager::WorkflowOpenSource, CloudWorkflow, WorkflowViewMode},
@@ -63,7 +63,7 @@ pub enum DrivePanelAction {
 pub enum DrivePanelEvent {
     RunWorkflow(Box<CloudWorkflow>),
     InvokeEnvironmentVariables {
-        env_var_collection: Box<CloudEnvVarCollection>,
+        env_var_collection: Box<EnvVarCollectionObject>,
         in_subshell: bool,
     },
     OpenSearch,
@@ -252,7 +252,7 @@ impl DrivePanel {
                 let workflow: Option<&CloudWorkflow> = object.and_then(|object| object.into());
 
                 let env_var_collection_id = object.and_then(|object| {
-                    let env_var_collection: Option<&CloudEnvVarCollection> = object.into();
+                    let env_var_collection: Option<&EnvVarCollectionObject> = object.into();
                     env_var_collection.map(|env_var_collection| env_var_collection.id)
                 });
 
@@ -286,7 +286,7 @@ impl DrivePanel {
                 let object = cloud_model.get_by_uid(&id.uid());
                 if let Some(cloud_object) = object {
                     let workflow: Option<&CloudWorkflow> = cloud_object.into();
-                    let env_var_collection: Option<&CloudEnvVarCollection> = cloud_object.into();
+                    let env_var_collection: Option<&EnvVarCollectionObject> = cloud_object.into();
                     if let Some(workflow) = workflow {
                         self.run_workflow(workflow.clone(), ctx);
                     } else if let Some(env_var_collection) = env_var_collection {
@@ -311,7 +311,7 @@ impl DrivePanel {
                 let cloud_model = CloudModel::as_ref(ctx);
                 let object = cloud_model.get_by_uid(&id.uid());
                 if let Some(cloud_object) = object {
-                    let env_var_collection: Option<&CloudEnvVarCollection> = cloud_object.into();
+                    let env_var_collection: Option<&EnvVarCollectionObject> = cloud_object.into();
                     if let Some(env_var_collection) = env_var_collection {
                         self.invoke_environment_variables(env_var_collection.clone(), true, ctx);
                     }
@@ -467,7 +467,7 @@ impl DrivePanel {
 
     pub fn invoke_environment_variables(
         &mut self,
-        env_var_collection: CloudEnvVarCollection,
+        env_var_collection: EnvVarCollectionObject,
         in_subshell: bool,
         ctx: &mut ViewContext<Self>,
     ) {

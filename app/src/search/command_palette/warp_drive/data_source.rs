@@ -6,7 +6,7 @@ use crate::cloud_object::{
     CloudObject, CloudObjectLocation, GenericStringObjectFormat, JsonObjectType, ObjectType,
 };
 use crate::drive::folders::CloudFolder;
-use crate::env_vars::CloudEnvVarCollection;
+use crate::env_vars::EnvVarCollectionObject;
 use crate::notebooks::CloudNotebook;
 use crate::search::command_palette::mixer::CommandPaletteItemAction;
 use crate::search::data_source::{DataSourceSearchError, Query, QueryResult};
@@ -236,7 +236,7 @@ impl DataSource {
             }));
         }
 
-        let env_var_collection: Option<&CloudEnvVarCollection> = object.into();
+        let env_var_collection: Option<&EnvVarCollectionObject> = object.into();
         if let Some(env_var_collection) = env_var_collection {
             return Some(QueryResult::from(EnvVarCollectionSearchItem {
                 match_result: FuzzyMatchEnvVarCollectionResult::no_match(),
@@ -301,7 +301,7 @@ trait WarpDriveSearcher {
 struct FuzzyWarpDriveSearcher {
     notebooks: HashMap<ObjectUid, CloudNotebook>,
     workflows: HashMap<ObjectUid, CloudWorkflow>,
-    env_vars: HashMap<ObjectUid, CloudEnvVarCollection>,
+    env_vars: HashMap<ObjectUid, EnvVarCollectionObject>,
 }
 
 impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
@@ -331,11 +331,11 @@ impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
             ObjectType::GenericStringObject(GenericStringObjectFormat::Json(
                 JsonObjectType::EnvVarCollection,
             )) => {
-                let env_var: Option<&CloudEnvVarCollection> = object.into();
+                let env_var: Option<&EnvVarCollectionObject> = object.into();
                 if let Some(env_var) = env_var {
                     self.env_vars.insert(env_var.uid(), env_var.clone());
                 } else {
-                    anyhow::bail!("Expected CloudEnvVarCollection, got {:?}", object);
+                    anyhow::bail!("Expected EnvVarCollectionObject, got {:?}", object);
                 }
             }
             ObjectType::Folder => {
@@ -413,7 +413,7 @@ impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
                 self.workflows.insert(workflow.uid(), workflow.clone());
             } else if let Some(notebook) = <Option<&CloudNotebook>>::from(object.as_ref()) {
                 self.notebooks.insert(notebook.uid(), notebook.clone());
-            } else if let Some(env_var) = <Option<&CloudEnvVarCollection>>::from(object.as_ref()) {
+            } else if let Some(env_var) = <Option<&EnvVarCollectionObject>>::from(object.as_ref()) {
                 self.env_vars.insert(env_var.uid(), env_var.clone());
             }
         }
@@ -523,7 +523,7 @@ mod full_text_searcher {
     };
     use crate::define_search_schema;
     use crate::drive::folders::CloudFolder;
-    use crate::env_vars::CloudEnvVarCollection;
+    use crate::env_vars::EnvVarCollectionObject;
     use crate::notebooks::manager::NotebookManager;
     use crate::notebooks::CloudNotebook;
     use crate::search::command_palette::warp_drive::data_source::WarpDriveSearcher;
@@ -731,7 +731,7 @@ mod full_text_searcher {
                 ObjectType::GenericStringObject(GenericStringObjectFormat::Json(
                     JsonObjectType::EnvVarCollection,
                 )) => {
-                    let env_var: Option<&CloudEnvVarCollection> = object.into();
+                    let env_var: Option<&EnvVarCollectionObject> = object.into();
                     if let Some(cloud_env_var) = env_var {
                         let env_var_collection = &cloud_env_var.model().string_model;
 
@@ -762,7 +762,7 @@ mod full_text_searcher {
                         };
                         self.env_var_searcher.insert_document_async(document)
                     } else {
-                        anyhow::bail!("Expected CloudEnvVarCollection, got {:?}", object);
+                        anyhow::bail!("Expected EnvVarCollectionObject, got {:?}", object);
                     }
                 }
                 ObjectType::Folder => {
@@ -891,7 +891,7 @@ mod full_text_searcher {
                 .cloud_objects()
                 .filter(|obj| active_uids.contains(&obj.uid()))
                 .filter_map(|obj| {
-                    let cloud_env_var: Option<&CloudEnvVarCollection> = obj.as_ref().into();
+                    let cloud_env_var: Option<&EnvVarCollectionObject> = obj.as_ref().into();
                     cloud_env_var.map(|cloud_env_var| {
                         let env_var_collection = &cloud_env_var.model().string_model;
                         let title = env_var_collection
@@ -1033,7 +1033,7 @@ mod full_text_searcher {
                     .get_all_doc_ids()?
                     .into_iter()
                     .filter_map(|search_match| {
-                        let env_var_collection: Option<&CloudEnvVarCollection> =
+                        let env_var_collection: Option<&EnvVarCollectionObject> =
                             CloudModel::as_ref(app)
                                 .get_by_uid(&search_match.uid)?
                                 .into();
@@ -1052,7 +1052,7 @@ mod full_text_searcher {
                 .search_id(query)?
                 .into_iter()
                 .filter_map(|search_match| {
-                    let env_var_collection: Option<&CloudEnvVarCollection> =
+                    let env_var_collection: Option<&EnvVarCollectionObject> =
                         CloudModel::as_ref(app)
                             .get_by_uid(&search_match.values.uid)?
                             .into();

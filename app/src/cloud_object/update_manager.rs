@@ -23,7 +23,7 @@ use crate::{
         folders::{CloudFolderModel, FolderId},
         CloudObjectTypeAndId,
     },
-    env_vars::{CloudEnvVarCollectionModel, EnvVarCollection},
+    env_vars::{EnvVarCollection, EnvVarCollectionObjectModel},
     notebooks::{CloudNotebookModel, NotebookId},
     persistence::ModelEvent,
     server::ids::{ClientId, HashableId, ObjectUid, ServerId, SyncId, ToServerId},
@@ -355,7 +355,7 @@ impl UpdateManager {
         ctx: &mut ModelContext<Self>,
     ) {
         self.update_object(
-            CloudEnvVarCollectionModel::new(env_var_collection),
+            EnvVarCollectionObjectModel::new(env_var_collection),
             env_var_collection_id,
             revision_ts,
             ctx,
@@ -700,7 +700,7 @@ impl UpdateManager {
                 if let GenericStringObjectFormat::Json(JsonObjectType::EnvVarCollection) =
                     object_type
                 {
-                    self.duplicate_object_internal::<GenericStringObjectId, CloudEnvVarCollectionModel>(
+                    self.duplicate_object_internal::<GenericStringObjectId, EnvVarCollectionObjectModel>(
                         id, ctx,
                     );
                 } else {
@@ -968,7 +968,7 @@ impl UpdateManager {
         client_id: ClientId,
         owner: Owner,
         initial_folder_id: Option<SyncId>,
-        model: CloudEnvVarCollectionModel,
+        model: EnvVarCollectionObjectModel,
         entrypoint: CloudObjectEventEntrypoint,
         force_expand: bool,
         ctx: &mut ModelContext<Self>,

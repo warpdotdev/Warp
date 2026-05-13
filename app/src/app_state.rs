@@ -262,9 +262,9 @@ pub enum WorkflowPaneSnapshot {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EnvVarCollectionPaneSnapshot {
-    // CloudEnvVarCollection snapshots operate under the same heuristics
+    // EnvVarCollectionObject snapshots operate under the same heuristics
     // as NotebookPaneSnapshot::CloudNotebook
-    CloudEnvVarCollection {
+    EnvVarCollectionObject {
         env_var_collection_id: Option<SyncId>,
     },
 }

@@ -19,7 +19,7 @@ use crate::{
         JsonObjectType, ObjectType, Space,
     },
     editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions},
-    env_vars::CloudEnvVarCollection,
+    env_vars::EnvVarCollectionObject,
     features::FeatureFlag,
     menu::{Event, Menu, MenuItem, MenuItemFields},
     network::NetworkStatus,
@@ -4285,7 +4285,7 @@ impl DriveIndex {
                 }
 
                 let workflow: Option<&CloudWorkflow> = object.into();
-                let env_var_collection: Option<&CloudEnvVarCollection> = object.into();
+                let env_var_collection: Option<&EnvVarCollectionObject> = object.into();
 
                 if self.edit_object_enabled(cloud_object_type_and_id, app) {
                     if let Some(notebook) =
@@ -5016,7 +5016,7 @@ impl TypedActionView for DriveIndex {
                         ObjectType::GenericStringObject(GenericStringObjectFormat::Json(
                             JsonObjectType::EnvVarCollection,
                         )) => {
-                            let env_var_collection: Option<&CloudEnvVarCollection> = object.into();
+                            let env_var_collection: Option<&EnvVarCollectionObject> = object.into();
                             if let Some(env_var_collection) = env_var_collection {
                                 let vars = env_var_collection
                                     .model()

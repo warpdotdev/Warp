@@ -14,7 +14,7 @@ use crate::{
         CloudObjectMetadata,
     },
     drive::{index::DriveIndexAction, CloudObjectTypeAndId, DriveObjectType},
-    env_vars::{CloudEnvVarCollection, EnvVarValue},
+    env_vars::{EnvVarCollectionObject, EnvVarValue},
     themes::theme::Fill,
 };
 
@@ -23,11 +23,11 @@ use super::{WarpDriveItem, WarpDriveItemId};
 #[derive(Clone)]
 pub struct WarpDriveEnvVarCollection {
     id: CloudObjectTypeAndId,
-    env_var_collection: CloudEnvVarCollection,
+    env_var_collection: EnvVarCollectionObject,
 }
 
 impl WarpDriveEnvVarCollection {
-    pub fn new(id: CloudObjectTypeAndId, env_var_collection: CloudEnvVarCollection) -> Self {
+    pub fn new(id: CloudObjectTypeAndId, env_var_collection: EnvVarCollectionObject) -> Self {
         Self {
             id,
             env_var_collection,

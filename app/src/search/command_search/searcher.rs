@@ -1,4 +1,4 @@
-use crate::env_vars::CloudEnvVarCollection;
+use crate::env_vars::EnvVarCollectionObject;
 use crate::search::mixer::SearchMixer;
 use crate::server::ids::SyncId;
 use crate::terminal::history::LinkedWorkflowData;
@@ -52,7 +52,7 @@ pub enum CommandSearchItemAction {
     AcceptNotebook(SyncId),
 
     /// The user accepted an EVC search item.
-    AcceptEnvVarCollection(Box<CloudEnvVarCollection>),
+    AcceptEnvVarCollection(Box<EnvVarCollectionObject>),
 
     /// The user accepted the AI query search item with this query text.
     AcceptAIQuery(String),
