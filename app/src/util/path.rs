@@ -79,5 +79,5 @@ fn windows_path_extensions() -> impl Iterator<Item = String> {
 }
 
 #[cfg(test)]
-#[path = "path_test.rs"]
+#[path = "path_tests.rs"]
 mod tests;

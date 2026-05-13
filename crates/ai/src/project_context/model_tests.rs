@@ -183,3 +183,114 @@ fn test_find_applicable_rules_with_relative_paths() {
     assert!(paths.contains(&PathBuf::from("src/WARP.md")));
     assert!(paths.contains(&PathBuf::from("src/components/WARP.md")));
 }
+
+fn make_rule_path(path: &str) -> ProjectRulePath {
+    ProjectRulePath {
+        path: PathBuf::from(path),
+        project_root: PathBuf::from("/project"),
+    }
+}
+
+#[test]
+fn test_merge_independent_deltas() {
+    let mut delta = RulesDelta {
+        discovered_rules: vec![make_rule_path("/a/WARP.md")],
+        deleted_rules: vec![],
+    };
+    delta.merge(RulesDelta {
+        discovered_rules: vec![],
+        deleted_rules: vec![PathBuf::from("/b/WARP.md")],
+    });
+
+    assert_eq!(delta.discovered_rules.len(), 1);
+    assert_eq!(delta.discovered_rules[0].path, PathBuf::from("/a/WARP.md"));
+    assert_eq!(delta.deleted_rules, vec![PathBuf::from("/b/WARP.md")]);
+}
+
+#[test]
+fn test_merge_add_then_delete_yields_delete() {
+    let mut delta = RulesDelta {
+        discovered_rules: vec![make_rule_path("/a/WARP.md")],
+        deleted_rules: vec![],
+    };
+    delta.merge(RulesDelta {
+        discovered_rules: vec![],
+        deleted_rules: vec![PathBuf::from("/a/WARP.md")],
+    });
+
+    assert!(delta.discovered_rules.is_empty());
+    assert_eq!(delta.deleted_rules, vec![PathBuf::from("/a/WARP.md")]);
+}
+
+#[test]
+fn test_merge_delete_then_add_yields_add() {
+    let mut delta = RulesDelta {
+        discovered_rules: vec![],
+        deleted_rules: vec![PathBuf::from("/a/WARP.md")],
+    };
+    delta.merge(RulesDelta {
+        discovered_rules: vec![make_rule_path("/a/WARP.md")],
+        deleted_rules: vec![],
+    });
+
+    assert_eq!(delta.discovered_rules.len(), 1);
+    assert_eq!(delta.discovered_rules[0].path, PathBuf::from("/a/WARP.md"));
+    assert!(delta.deleted_rules.is_empty());
+}
+
+#[test]
+fn test_merge_add_delete_add_yields_add() {
+    let mut delta = RulesDelta::default();
+    delta.merge(RulesDelta {
+        discovered_rules: vec![make_rule_path("/a/WARP.md")],
+        deleted_rules: vec![],
+    });
+    delta.merge(RulesDelta {
+        discovered_rules: vec![],
+        deleted_rules: vec![PathBuf::from("/a/WARP.md")],
+    });
+    delta.merge(RulesDelta {
+        discovered_rules: vec![make_rule_path("/a/WARP.md")],
+        deleted_rules: vec![],
+    });
+
+    assert_eq!(delta.discovered_rules.len(), 1);
+    assert_eq!(delta.discovered_rules[0].path, PathBuf::from("/a/WARP.md"));
+    assert!(delta.deleted_rules.is_empty());
+}
+
+#[test]
+fn test_merge_delete_add_delete_yields_delete() {
+    let mut delta = RulesDelta::default();
+    delta.merge(RulesDelta {
+        discovered_rules: vec![],
+        deleted_rules: vec![PathBuf::from("/a/WARP.md")],
+    });
+    delta.merge(RulesDelta {
+        discovered_rules: vec![make_rule_path("/a/WARP.md")],
+        deleted_rules: vec![],
+    });
+    delta.merge(RulesDelta {
+        discovered_rules: vec![],
+        deleted_rules: vec![PathBuf::from("/a/WARP.md")],
+    });
+
+    assert!(delta.discovered_rules.is_empty());
+    assert_eq!(delta.deleted_rules, vec![PathBuf::from("/a/WARP.md")]);
+}
+
+#[test]
+fn test_merge_rediscovery_keeps_latest() {
+    let mut delta = RulesDelta {
+        discovered_rules: vec![make_rule_path("/a/WARP.md")],
+        deleted_rules: vec![],
+    };
+    // A second discovery of the same path (content update) should deduplicate.
+    delta.merge(RulesDelta {
+        discovered_rules: vec![make_rule_path("/a/WARP.md")],
+        deleted_rules: vec![],
+    });
+
+    assert_eq!(delta.discovered_rules.len(), 1);
+    assert!(delta.deleted_rules.is_empty());
+}

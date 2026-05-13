@@ -36,7 +36,7 @@ Use this skill when the user needs to work with PDF files...
 Every SKILL.md must start with YAML frontmatter containing:
 
 - **name**: Kebab-case identifier (lowercase letters, numbers, hyphens only)
-  - Example: `add-feature-flag`, `rust-unit-tests`, `update-skill`
+  - Example: `add-feature-flag`, `pdf-processing`, `update-skill`
 - **description**: Specific description of what the skill does and when to use it
   - Must be non-empty
   - Should include key terms for skill discovery
@@ -101,7 +101,6 @@ Keep only essential workflow and procedural instructions in SKILL.md. Move detai
 For reference on structure and style:
 
 - `.agents/skills/add-feature-flag/SKILL.md` - Multi-step workflow with clear sequential steps
-- `.agents/skills/rust-unit-tests/SKILL.md` - Comprehensive guide with code examples and helper utilities
 - `.agents/skills/remove-feature-flag/SKILL.md` - Cleanup workflow with search commands
 
 ## Best Practices

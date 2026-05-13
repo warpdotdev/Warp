@@ -21,6 +21,7 @@ use crate::{send_telemetry_from_ctx, TelemetryEvent};
 use remote_server::setup::{
     PreinstallCheckResult, PreinstallStatus, RemoteLibc, RemotePlatform, UnsupportedReason,
 };
+use remote_server::transport::Error;
 
 use super::pty_controller::{EventLoopSender, PtyController};
 
@@ -120,7 +121,11 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                     ctx,
                 );
             }
-            RemoteServerManagerEvent::BinaryInstallComplete { session_id, result } => {
+            RemoteServerManagerEvent::BinaryInstallComplete {
+                session_id,
+                result,
+                install_source: _,
+            } => {
                 me.on_binary_install_complete(*session_id, result.clone(), ctx);
             }
             RemoteServerManagerEvent::SessionConnected { session_id, .. } => {
@@ -139,9 +144,16 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
             | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
             | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
+            | RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot { .. }
+            | RemoteServerManagerEvent::CodebaseIndexStatusUpdated { .. }
             | RemoteServerManagerEvent::SetupStateChanged { .. }
             | RemoteServerManagerEvent::ClientRequestFailed { .. }
-            | RemoteServerManagerEvent::ServerMessageDecodingError { .. } => {}
+            | RemoteServerManagerEvent::ServerMessageDecodingError { .. }
+            | RemoteServerManagerEvent::BufferUpdated { .. }
+            | RemoteServerManagerEvent::BufferConflictDetected { .. }
+            | RemoteServerManagerEvent::DiffStateSnapshotReceived { .. }
+            | RemoteServerManagerEvent::DiffStateMetadataUpdateReceived { .. }
+            | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. } => {}
         });
 
         Self {
@@ -212,7 +224,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
     fn on_binary_check_complete(
         &mut self,
         session_id: SessionId,
-        result: Result<bool, String>,
+        result: Result<bool, Arc<Error>>,
         preinstall_check: Option<PreinstallCheckResult>,
         has_old_binary: bool,
         ctx: &mut ModelContext<Self>,
@@ -465,7 +477,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
     fn on_binary_install_complete(
         &mut self,
         session_id: SessionId,
-        result: Result<(), String>,
+        result: Result<(), Arc<Error>>,
         ctx: &mut ModelContext<Self>,
     ) {
         let expected = match &self.state {

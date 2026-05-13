@@ -311,6 +311,20 @@ pub enum Icon {
     HeartHand,
     MessageChatSquare,
     Pin,
+    Atom02,
+    Cognition,
+    Dataflow04,
+    // Language-specific icons for the code block dropdown
+    MermaidLang,
+    GoLang,
+    CppLang,
+    JavaScriptLang,
+    PythonLang,
+    RustLang,
+    SqlLang,
+    JsonLang,
+    PhpLang,
+    KotlinLang,
 }
 
 impl From<Icon> for &'static str {
@@ -619,6 +633,19 @@ impl From<Icon> for &'static str {
             Icon::ClockPlus => "bundled/svg/clock-plus.svg",
             Icon::HeartHand => "bundled/svg/heart-hand.svg",
             Icon::MessageChatSquare => "bundled/svg/message-chat-square.svg",
+            Icon::Atom02 => "bundled/svg/atom-02.svg",
+            Icon::Cognition => "bundled/svg/cognition.svg",
+            Icon::Dataflow04 => "bundled/svg/dataflow-04.svg",
+            Icon::MermaidLang => "bundled/svg/file_type/mermaid.svg",
+            Icon::GoLang => "bundled/svg/file_type/go.svg",
+            Icon::CppLang => "bundled/svg/file_type/cpp.svg",
+            Icon::JavaScriptLang => "bundled/svg/file_type/javascript.svg",
+            Icon::PythonLang => "bundled/svg/file_type/python.svg",
+            Icon::RustLang => "bundled/svg/file_type/rust.svg",
+            Icon::SqlLang => "bundled/svg/file_type/sql.svg",
+            Icon::JsonLang => "bundled/svg/file_type/json.svg",
+            Icon::PhpLang => "bundled/svg/file_type/php.svg",
+            Icon::KotlinLang => "bundled/svg/file_type/kotlin.svg",
         }
     }
 }

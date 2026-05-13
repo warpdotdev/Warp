@@ -10,10 +10,11 @@ pub(crate) mod launch_modal;
 pub(crate) mod left_panel;
 pub(crate) mod onboarding;
 pub(crate) mod openwarp_launch_modal;
+pub(crate) mod orchestration_launch_modal;
 pub(crate) mod right_panel;
 mod startup_directory;
 #[cfg(test)]
-#[path = "view_test.rs"]
+#[path = "view_tests.rs"]
 mod tests;
 mod vertical_tabs;
 #[cfg(target_family = "wasm")]
@@ -32,8 +33,9 @@ pub(crate) use onboarding::OnboardingTutorial;
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::agent::conversation::AIConversation;
-use crate::ai::agent_conversations_model::AgentConversationsModel;
-use crate::ai::agent_conversations_model::ConversationOrTask;
+use crate::ai::agent_conversations_model::{
+    AgentConversationNavigationSubject, AgentConversationsModel,
+};
 use crate::ai::agent_management::notifications::toast_stack::AgentNotificationToastStack;
 use crate::ai::agent_management::notifications::view::{
     NotificationMailboxView, NotificationMailboxViewEvent,
@@ -84,6 +86,7 @@ use crate::app_state::{
     PaneNodeSnapshot, PaneUuid, RightPanelSnapshot, SettingsPaneSnapshot, TabSnapshot,
     TerminalPaneSnapshot, WindowSnapshot, WorkflowPaneSnapshot,
 };
+use crate::code::buffer_location::FileLocation;
 use crate::code_review::diff_state::DiffStateModel;
 #[cfg(feature = "local_fs")]
 use crate::code_review::CodeReviewTelemetryEvent;
@@ -146,6 +149,9 @@ use crate::workspace::view::launch_modal::{LaunchModal, LaunchModalEvent, OzLaun
 use crate::workspace::view::openwarp_launch_modal::{
     OpenWarpLaunchModal, OpenWarpLaunchModalEvent,
 };
+use crate::workspace::view::orchestration_launch_modal::{
+    OrchestrationLaunchModal, OrchestrationLaunchModalEvent,
+};
 use crate::workspace::{ForkFromExchange, ForkedConversationDestination};
 use crate::BlocklistAIHistoryModel;
 use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
@@ -176,8 +182,9 @@ use crate::drive::export::ExportManager;
 use crate::drive::settings::WarpDriveSettings;
 use crate::launch_configs::launch_config::WindowTemplate;
 use crate::pane_group::{
-    AIFactPane, CodeReviewPanelArg, Direction as PaneGroupDirection, EnvironmentManagementPane,
-    ExecutionProfileEditorPane, NetworkLogPane, PaneGroup, PaneId, TerminalPaneId,
+    AIFactPane, ChildAgentOrigin, CodeReviewPanelArg, Direction as PaneGroupDirection,
+    EnvironmentManagementPane, ExecutionProfileEditorPane, NetworkLogPane, PaneGroup, PaneId,
+    TerminalPaneId,
 };
 use crate::quit_warning::UnsavedStateSummary;
 use crate::search::command_palette::view::NavigationMode;
@@ -267,6 +274,8 @@ use crate::terminal::keys_settings::KeysSettings;
 use crate::terminal::shared_session::SharedSessionActionSource;
 
 use crate::ai::blocklist::agent_view::editor::{AgentToolbarEditorEvent, AgentToolbarEditorModal};
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::blocklist::handoff::PendingCloudLaunch;
 use crate::prompt::editor_modal::{
     EditorModal as PromptEditorModal, EditorModalEvent as PromptEditorModalEvent,
     OpenSource as PromptEditorOpenSource,
@@ -293,7 +302,7 @@ use crate::server::telemetry::{
     MCPServerCollectionPaneEntrypoint, OpenedWarpAISource, SharingDialogSource, TierLimitHitEvent,
     WarpDriveSource,
 };
-use crate::session_management::{SessionNavigationData, SessionSource};
+use crate::session_management::{SessionNavigationData, SessionSource, TabNavigationData};
 use crate::settings::{
     active_theme_kind, respect_system_theme, AccessibilitySettings, AliasExpansionSettings,
     AppEditorSettings, BlockVisibilitySettings, ChangelogSettings, CursorBlink, DebugSettings,
@@ -323,7 +332,7 @@ use crate::terminal::settings::{SpacingMode, TerminalSettings};
 use crate::terminal::shell::ShellType;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::terminal::view::ambient_agent::{
-    HandoffSubmissionState, PendingHandoff, SnapshotUploadStatus,
+    AmbientAgentViewModel, HandoffSubmissionState, PendingHandoff, SnapshotUploadStatus,
 };
 #[cfg(feature = "local_tty")]
 use crate::terminal::view::docker_sandbox::DEFAULT_DOCKER_SANDBOX_BASE_IMAGE;
@@ -417,7 +426,7 @@ use warpui::elements::{
     MouseInBehavior, Rect,
 };
 use warpui::ui_components::button::{Button, ButtonVariant};
-use warpui::windowing::{StateEvent, WindowManager};
+use warpui::windowing::{state::ApplicationStage, StateEvent, WindowManager};
 use warpui::{elements::MouseStateHandle, fonts::Properties};
 
 use crate::{autoupdate, channel::ChannelState};
@@ -912,6 +921,9 @@ pub struct Workspace {
     window_id: WindowId,
     pub(crate) tabs: Vec<TabData>,
     active_tab_index: usize,
+    /// Tracks tab activation order (most-recently-used first).
+    /// Each entry is the `pane_group.id()` of the corresponding tab.
+    tab_mru_order: Vec<EntityId>,
     pub(crate) hovered_tab_index: Option<TabBarHoverIndex>,
     tab_bar_hover_state: MouseStateHandle,
     tab_fixed_width: Option<f32>,
@@ -990,6 +1002,7 @@ pub struct Workspace {
     suggested_rule_modal: ViewHandle<SuggestedRuleModal>,
     oz_launch_modal: ModalWithTab<LaunchModal<OzLaunchSlide>>,
     openwarp_launch_modal: ViewHandle<OpenWarpLaunchModal>,
+    orchestration_launch_modal: ViewHandle<OrchestrationLaunchModal>,
     enable_auto_reload_modal: ViewHandle<EnableAutoReloadModal>,
     build_plan_migration_modal: ViewHandle<BuildPlanMigrationModal>,
     codex_modal: ViewHandle<CodexModal>,
@@ -2704,6 +2717,11 @@ impl Workspace {
             me.handle_openwarp_launch_modal_event(event, ctx);
         });
 
+        let orchestration_launch_view = ctx.add_typed_action_view(OrchestrationLaunchModal::new);
+        ctx.subscribe_to_view(&orchestration_launch_view, |me, _, event, ctx| {
+            me.handle_orchestration_launch_modal_event(event, ctx);
+        });
+
         let launch_config_save_modal = Self::build_launch_config_save_modal(ctx);
 
         let tab_config_params_modal = Self::build_tab_config_params_modal(ctx);
@@ -3044,6 +3062,8 @@ impl Workspace {
                         me.open_tab_and_focus_oz_launch_modal(ctx);
                     } else if model_ref.is_openwarp_launch_modal_open() {
                         me.focus_openwarp_launch_modal(ctx);
+                    } else if model_ref.is_orchestration_launch_modal_open() {
+                        me.focus_orchestration_launch_modal(ctx);
                     } else if model_ref.is_hoa_onboarding_open() {
                         me.show_hoa_onboarding_flow(ctx);
                     } else if model_ref.is_build_plan_migration_modal_open() {
@@ -3070,6 +3090,7 @@ impl Workspace {
         let mut ws = Self {
             tabs: Vec::new(),
             active_tab_index: 0,
+            tab_mru_order: Vec::new(),
             hovered_tab_index: None,
             tab_bar_hover_state: Default::default(),
             traffic_light_mouse_states: Default::default(),
@@ -3176,6 +3197,7 @@ impl Workspace {
                 tab_pane_group_id: None,
             },
             openwarp_launch_modal: openwarp_launch_view,
+            orchestration_launch_modal: orchestration_launch_view,
             enable_auto_reload_modal,
             agent_management_view,
             notification_mailbox_view,
@@ -3987,7 +4009,7 @@ impl Workspace {
         let history = BlocklistAIHistoryModel::as_ref(ctx);
         let Some(conversation_id) = history.find_conversation_id_by_server_token(&server_token)
         else {
-            self.load_cloud_conversation_into_new_transcript_viewer(server_token, ctx);
+            self.load_cloud_conversation_into_new_transcript_viewer(server_token, None, ctx);
             return;
         };
 
@@ -4008,40 +4030,18 @@ impl Workspace {
         };
 
         if !conversation_is_owned_by_current_user {
-            self.load_cloud_conversation_into_new_transcript_viewer(server_token, ctx);
+            self.load_cloud_conversation_into_new_transcript_viewer(server_token, None, ctx);
             return;
         }
 
-        // If the conversation is open in a pane this session, grab its nav data so we can
-        // navigate directly to it. Otherwise we'll restore from scratch into a new tab.
-        let nav_data = AgentConversationsModel::as_ref(ctx)
-            .get_conversation(&conversation_id)
-            .and_then(|entry| match entry {
-                ConversationOrTask::Conversation(metadata) => Some(&metadata.nav_data),
-                ConversationOrTask::Task(_) => None,
-            });
-
-        if let Some(nav_data) = nav_data {
-            let is_active =
-                ActiveAgentViewsModel::as_ref(ctx).is_conversation_open(nav_data.id, ctx);
-            let pane_view_locator = is_active.then_some(nav_data.pane_view_locator).flatten();
-            self.restore_or_navigate_to_conversation(
-                nav_data.id,
-                nav_data.window_id,
-                pane_view_locator,
-                nav_data.terminal_view_id,
-                Some(RestoreConversationLayout::NewTab),
-                ctx,
-            );
+        if let Some(action) = AgentConversationsModel::resolve_open_action(
+            AgentConversationNavigationSubject::ServerToken(server_token.clone()),
+            Some(RestoreConversationLayout::NewTab),
+            ctx,
+        ) {
+            ctx.dispatch_typed_action_deferred(action);
         } else {
-            self.restore_or_navigate_to_conversation(
-                conversation_id,
-                None,
-                None,
-                None,
-                Some(RestoreConversationLayout::NewTab),
-                ctx,
-            );
+            self.load_cloud_conversation_into_new_transcript_viewer(server_token, None, ctx);
         }
     }
 
@@ -4049,6 +4049,7 @@ impl Workspace {
     pub fn load_cloud_conversation_into_new_transcript_viewer(
         &mut self,
         conversation_id: ServerConversationToken,
+        ambient_agent_task_id: Option<AmbientAgentTaskId>,
         ctx: &mut ViewContext<Self>,
     ) {
         // Create the tab immediately with a loading state
@@ -4069,6 +4070,8 @@ impl Workspace {
 
         self.tabs.push(TabData::new(new_pane_group.clone()));
         let new_tab_index = self.tab_count() - 1;
+        self.tab_mru_order
+            .push(self.tabs[new_tab_index].pane_group.id());
         self.activate_tab_internal(new_tab_index, ctx);
 
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
@@ -4093,8 +4096,11 @@ impl Workspace {
 
                 // Update the pane group with the loaded conversation
                 new_pane_group.update(ctx, |pane_group, ctx| {
-                    pane_group
-                        .load_data_into_conversation_transcript_viewer(cloud_conversation, ctx);
+                    pane_group.load_data_into_conversation_transcript_viewer(
+                        cloud_conversation,
+                        ambient_agent_task_id,
+                        ctx,
+                    );
                 });
 
                 // Open the transcript details panel by default on WASM (unless on mobile)
@@ -4116,9 +4122,8 @@ impl Workspace {
                         .as_ref(ctx)
                         .active_session_view(ctx)
                         .map(|view| view.id());
-                    let ambient_agent_task_id = me
-                        .get_active_session_terminal_model(ctx)
-                        .and_then(|model| model.lock().ambient_agent_task_id());
+                    let ambient_agent_task_id =
+                        me.ambient_agent_task_id_for_focused_terminal_view(ctx);
                     me.notify_terminal_focus_change(
                         focused_terminal_view_id,
                         ambient_agent_task_id,
@@ -4795,6 +4800,58 @@ impl Workspace {
         self.tabs.len()
     }
 
+    #[cfg(test)]
+    pub fn tab_mru_order(&self) -> &[EntityId] {
+        &self.tab_mru_order
+    }
+
+    pub(crate) fn activate_tab_by_pane_group_id(
+        &mut self,
+        pane_group_id: EntityId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if let Some(index) = self
+            .tabs
+            .iter()
+            .position(|t| t.pane_group.id() == pane_group_id)
+        {
+            self.activate_tab(index, ctx);
+        }
+    }
+
+    fn tab_navigation_data(&self, window_id: WindowId, ctx: &AppContext) -> Vec<TabNavigationData> {
+        self.tab_mru_order
+            .iter()
+            .filter_map(|&pane_group_id| {
+                let (tab_index, tab) = self
+                    .tabs
+                    .iter()
+                    .enumerate()
+                    .find(|(_, t)| t.pane_group.id() == pane_group_id)?;
+                let title = tab.pane_group.as_ref(ctx).display_title(ctx);
+                let subtitle = tab
+                    .pane_group
+                    .as_ref(ctx)
+                    .active_session_path(ctx)
+                    .map(|p| {
+                        if let Some(home) = dirs::home_dir() {
+                            if let Ok(stripped) = p.strip_prefix(&home) {
+                                return format!("~/{}", stripped.display());
+                            }
+                        }
+                        p.display().to_string()
+                    });
+                Some(TabNavigationData {
+                    pane_group_id,
+                    title,
+                    subtitle,
+                    window_id,
+                    tab_index: tab_index + 1,
+                })
+            })
+            .collect()
+    }
+
     pub fn tab_views(&self) -> impl Iterator<Item = &ViewHandle<PaneGroup>> {
         self.tabs.iter().map(|s| &s.pane_group)
     }
@@ -4818,7 +4875,7 @@ impl Workspace {
 
         self.tabs.iter().enumerate().find_map(|(index, tab)| {
             let pane_group = tab.pane_group.as_ref(ctx);
-            let has_task = pane_group.terminal_pane_ids().into_iter().any(|pane_id| {
+            let has_task = pane_group.visible_pane_ids().into_iter().any(|pane_id| {
                 pane_group
                     .terminal_view_from_pane_id(pane_id, ctx)
                     .is_some_and(|tv| {
@@ -4826,8 +4883,8 @@ impl Workspace {
                         if active_terminal_view_id == Some(tv.id()) {
                             return true;
                         }
-                        // Fall back to checking the terminal model directly
-                        tv.as_ref(ctx).model.lock().ambient_agent_task_id() == Some(task_id)
+                        // Fall back to checking the terminal view directly.
+                        tv.as_ref(ctx).ambient_agent_task_id_for_details_panel(ctx) == Some(task_id)
                     })
             });
             has_task.then_some(index)
@@ -4921,6 +4978,21 @@ impl Workspace {
     }
 
     /// Notifies the agent views model and notifications model that a terminal view gained focus.
+    fn ambient_agent_task_id_for_focused_terminal_view(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<AmbientAgentTaskId> {
+        let pane_group = self.active_tab_pane_group().as_ref(ctx);
+        let focused_pane_id = pane_group.focused_pane_id(ctx);
+        pane_group
+            .terminal_view_from_pane_id(focused_pane_id, ctx)
+            .and_then(|view| {
+                view.as_ref(ctx)
+                    .ambient_agent_task_id_for_details_panel(ctx)
+            })
+    }
+
+    /// Notifies the agent views model and notifications model that a terminal view gained focus.
     fn notify_terminal_focus_change(
         &self,
         focused_terminal_view_id: Option<EntityId>,
@@ -4961,6 +5033,11 @@ impl Workspace {
 
         self.active_tab_index = index;
 
+        if let Some(tab) = self.tabs.get(index) {
+            let pane_group_id = tab.pane_group.id();
+            self.tab_mru_order.retain(|id| *id != pane_group_id);
+            self.tab_mru_order.insert(0, pane_group_id);
+        }
         if self.vertical_tabs_panel_open
             && FeatureFlag::VerticalTabs.is_enabled()
             && *TabSettings::as_ref(ctx).use_vertical_tabs
@@ -4997,9 +5074,7 @@ impl Workspace {
             .as_ref(ctx)
             .terminal_view_from_pane_id(pane_group.as_ref(ctx).focused_pane_id(ctx), ctx)
             .map(|tv| tv.id());
-        let ambient_agent_task_id = self
-            .get_active_session_terminal_model(ctx)
-            .and_then(|model| model.lock().ambient_agent_task_id());
+        let ambient_agent_task_id = self.ambient_agent_task_id_for_focused_terminal_view(ctx);
         self.notify_terminal_focus_change(focused_terminal_view_id, ambient_agent_task_id, ctx);
 
         self.update_active_session(ctx);
@@ -5323,7 +5398,8 @@ impl Workspace {
             .collect::<Vec<_>>()
     }
 
-    /// Focuses the given pane within the pane group.
+    /// Focuses the given pane, revealing it first if it is hidden behind a
+    /// temporary swap.
     pub fn focus_pane(&mut self, pane_view_locator: PaneViewLocator, ctx: &mut ViewContext<Self>) {
         if let Some((index, tab)) = self
             .tabs
@@ -5338,7 +5414,7 @@ impl Workspace {
             // remain focused (as opposed to the pane with pane_id) since its
             // input would remain focused.
             tab.pane_group.update(ctx, |view, ctx| {
-                view.focus_pane_by_id(pane_view_locator.pane_id, ctx);
+                view.reveal_and_focus_pane(pane_view_locator.pane_id, ctx);
             });
             self.activate_tab_internal(index, ctx);
             ctx.notify();
@@ -5845,17 +5921,35 @@ impl Workspace {
                 self.handle_warp_drive_event(drive_event, ctx);
             }
             LeftPanelEvent::OpenFileWithTarget {
-                path,
+                location,
                 target,
                 line_col,
             } => {
-                self.open_file_with_target(
-                    path.clone(),
-                    target.clone(),
-                    *line_col,
-                    CodeSource::FileTree { path: path.clone() },
-                    ctx,
-                );
+                let code_source = CodeSource::FileTree {
+                    location: location.clone(),
+                };
+                match location {
+                    FileLocation::Local(path) => {
+                        self.open_file_with_target(
+                            path.clone(),
+                            target.clone(),
+                            *line_col,
+                            code_source,
+                            ctx,
+                        );
+                    }
+                    FileLocation::Remote(_) => {
+                        #[cfg(feature = "local_fs")]
+                        self.open_code(
+                            code_source,
+                            crate::util::openable_file_type::EditorLayout::SplitPane,
+                            None,
+                            false,
+                            &[],
+                            ctx,
+                        );
+                    }
+                }
             }
             LeftPanelEvent::NewConversationInNewTab => {
                 self.add_terminal_tab_with_new_agent_view(ctx);
@@ -7328,10 +7422,18 @@ impl Workspace {
                     if preview {
                         code_view.open_in_preview_or_promote_and_jump(path, line_col, ctx);
                     } else {
-                        code_view.open_or_focus_existing(Some(path), line_col, ctx);
+                        code_view.open_or_focus_existing(
+                            Some(FileLocation::Local(path)),
+                            line_col,
+                            ctx,
+                        );
                     }
                     for extra in additional_paths {
-                        code_view.open_or_focus_existing(Some(extra.clone()), None, ctx);
+                        code_view.open_or_focus_existing(
+                            Some(FileLocation::Local(extra.clone())),
+                            None,
+                            ctx,
+                        );
                     }
                 });
                 // Only focus the pane for non-preview opens
@@ -7367,7 +7469,7 @@ impl Workspace {
                                     );
                                 } else {
                                     code_view.open_or_focus_existing(
-                                        Some(path.clone()),
+                                        Some(FileLocation::Local(path.clone())),
                                         line_col,
                                         ctx,
                                     );
@@ -7375,7 +7477,7 @@ impl Workspace {
 
                                 for extra in additional_paths {
                                     code_view.open_or_focus_existing(
-                                        Some(extra.clone()),
+                                        Some(FileLocation::Local(extra.clone())),
                                         None,
                                         ctx,
                                     );
@@ -7433,7 +7535,11 @@ impl Workspace {
             if let Some(code_view) = code_view_handle {
                 code_view.update(ctx, |code_view, ctx| {
                     for path in additional_paths {
-                        code_view.open_or_focus_existing(Some(path.clone()), None, ctx);
+                        code_view.open_or_focus_existing(
+                            Some(FileLocation::Local(path.clone())),
+                            None,
+                            ctx,
+                        );
                     }
                 });
             }
@@ -8008,7 +8114,10 @@ impl Workspace {
                 |(repo_path, terminal_view): (Option<PathBuf>, WeakViewHandle<TerminalView>)| {
                     let diff_state_model = repo_path.as_ref().and_then(|rp: &PathBuf| {
                         self.working_directories_model.update(ctx, |model, ctx| {
-                            model.get_or_create_diff_state_model(rp.clone(), ctx)
+                            model.get_or_create_diff_state_model(
+                                FileLocation::Local(rp.clone()),
+                                ctx,
+                            )
                         })
                     })?;
                     Some((repo_path, diff_state_model, terminal_view))
@@ -8053,7 +8162,7 @@ impl Workspace {
         let repo_path = panel_context.repo_path.clone();
         let diff_state_model = repo_path.as_ref().and_then(|rp| {
             self.working_directories_model.update(ctx, |model, ctx| {
-                model.get_or_create_diff_state_model(rp.clone(), ctx)
+                model.get_or_create_diff_state_model(FileLocation::Local(rp.clone()), ctx)
             })
         });
         let Some(diff_state_model) = diff_state_model else {
@@ -8170,7 +8279,7 @@ impl Workspace {
             |(repo_path, terminal_view): (Option<PathBuf>, WeakViewHandle<TerminalView>)| {
                 let diff_state_model = repo_path.as_ref().and_then(|rp: &PathBuf| {
                     self.working_directories_model.update(ctx, |model, ctx| {
-                        model.get_or_create_diff_state_model(rp.clone(), ctx)
+                        model.get_or_create_diff_state_model(FileLocation::Local(rp.clone()), ctx)
                     })
                 })?;
                 Some(CodeReviewPaneContext {
@@ -10051,7 +10160,8 @@ impl Workspace {
 
     fn cycle_session(&mut self, direction: SessionCycleDirection, ctx: &mut ViewContext<Self>) {
         let keys_settings = KeysSettings::as_ref(ctx);
-        match *keys_settings.ctrl_tab_behavior {
+        let ctrl_tab_behavior = *keys_settings.ctrl_tab_behavior;
+        match ctrl_tab_behavior {
             CtrlTabBehavior::ActivatePrevNextTab => match direction {
                 SessionCycleDirection::Next => {
                     self.activate_next_tab(ctx);
@@ -10060,9 +10170,10 @@ impl Workspace {
                     self.activate_prev_tab(ctx);
                 }
             },
-            CtrlTabBehavior::CycleMostRecentSession => {
+            CtrlTabBehavior::CycleMostRecentSession | CtrlTabBehavior::CycleMostRecentTab => {
                 self.current_workspace_state.is_palette_open = false;
-                if !self.current_workspace_state.is_ctrl_tab_palette_open {
+                let palette_was_open = self.current_workspace_state.is_ctrl_tab_palette_open;
+                if !palette_was_open {
                     self.open_palette_action(
                         PaletteMode::Navigation,
                         PaletteSource::CtrlTab {
@@ -10075,15 +10186,22 @@ impl Workspace {
                         ctx,
                     );
                 }
-                self.ctrl_tab_palette
-                    .update(ctx, |palette, ctx| match direction {
-                        SessionCycleDirection::Next => {
-                            palette.select_next_item(ctx);
-                        }
-                        SessionCycleDirection::Previous => {
-                            palette.select_prev_item(ctx);
-                        }
-                    });
+                // CycleMostRecentSession: always advance (async sources need explicit
+                // advance after palette open). CycleMostRecentTab: advance only when
+                // palette was already open (sync offset handles first-open selection).
+                if palette_was_open
+                    || matches!(ctrl_tab_behavior, CtrlTabBehavior::CycleMostRecentSession)
+                {
+                    self.ctrl_tab_palette
+                        .update(ctx, |palette, ctx| match direction {
+                            SessionCycleDirection::Next => {
+                                palette.select_next_item(ctx);
+                            }
+                            SessionCycleDirection::Previous => {
+                                palette.select_prev_item(ctx);
+                            }
+                        });
+                }
                 ctx.notify();
             }
         }
@@ -10143,6 +10261,51 @@ impl Workspace {
         }
     }
 
+    /// If a closing tab is an untouched split-off child-agent tab, move its
+    /// pane back to the original tab instead of closing it. Returns true if
+    /// handled.
+    fn try_re_adopt_split_off_child_agent_tab(
+        &mut self,
+        index: usize,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        let Some(tab_data) = self.tabs.get(index) else {
+            return false;
+        };
+        let Some(origin) = tab_data
+            .pane_group
+            .as_ref(ctx)
+            .child_agent_origin()
+            .cloned()
+        else {
+            return false;
+        };
+        let Some(source_pane_group) = origin.source_pane_group.upgrade(ctx) else {
+            return false;
+        };
+
+        let pane_group = tab_data.pane_group.clone();
+        // Only re-adopt untouched split-off tabs; changed layouts use normal
+        // close handling.
+        let pane_ids: Vec<PaneId> = pane_group.as_ref(ctx).pane_ids().collect();
+        if pane_ids.len() != 1 {
+            return false;
+        }
+        let pane_id = pane_ids[0];
+
+        let Some(pane_content) =
+            pane_group.update(ctx, |pg, ctx| pg.remove_pane_for_move(&pane_id, ctx))
+        else {
+            return false;
+        };
+
+        source_pane_group.update(ctx, |pg, ctx| {
+            pg.re_adopt_child_agent_pane(pane_content, origin.conversation_id, ctx);
+        });
+
+        true
+    }
+
     fn remove_tab(
         &mut self,
         index: usize,
@@ -10150,17 +10313,14 @@ impl Workspace {
         detach_panes_for_close: bool,
         ctx: &mut ViewContext<Self>,
     ) {
-        let Some(tab_data) = self.tabs.get(index) else {
+        let Some(pane_group) = self.tabs.get(index).map(|t| t.pane_group.clone()) else {
             debug_assert!(false, "Tried to remove a tab with an invalid index");
             return;
         };
 
-        // If the vertical-tabs detail sidecar is anchored to this tab's pane group, clear it.
-        // Otherwise it will try to position itself against a pane row that is about to disappear
-        // (either because the tab is being removed from `self.tabs`, or because we're about to
-        // close the window for the last tab).
+        // Clear a detail sidecar anchored to this tab before the tab disappears.
         self.vertical_tabs_panel
-            .clear_detail_sidecar_if_for_pane_group(tab_data.pane_group.id());
+            .clear_detail_sidecar_if_for_pane_group(pane_group.id());
 
         // If this is the last tab, close the window instead of actually removing
         // the tab.
@@ -10171,9 +10331,15 @@ impl Workspace {
             return;
         }
 
-        if detach_panes_for_close {
+        // Preserve split-off child-agent tabs by moving their lone pane back
+        // before close cleanup. Skip tab moves so the destination keeps the
+        // pane.
+        let re_adopted =
+            detach_panes_for_close && self.try_re_adopt_split_off_child_agent_tab(index, ctx);
+
+        if !re_adopted && detach_panes_for_close {
             let working_directories_model = self.working_directories_model.clone();
-            tab_data.pane_group.update(ctx, |pane_group, ctx| {
+            pane_group.update(ctx, |pane_group, ctx| {
                 pane_group.for_all_terminal_panes(
                     |terminal_view, ctx| {
                         if terminal_view
@@ -10195,7 +10361,12 @@ impl Workspace {
 
         let tab_data = self.tabs.remove(index);
 
-        if add_to_undo_stack {
+        let removed_pane_group_id = tab_data.pane_group.id();
+        self.tab_mru_order.retain(|id| *id != removed_pane_group_id);
+
+        // Re-adopted child tabs leave no useful tab contents to restore; the
+        // live pane already moved back.
+        if add_to_undo_stack && !re_adopted {
             let handle = ctx.handle();
             UndoCloseStack::handle(ctx).update(ctx, |stack, ctx| {
                 log::info!("storing data for closed tab");
@@ -10509,6 +10680,8 @@ impl Workspace {
         });
 
         self.tabs.insert(tab_index, tab_data);
+        self.tab_mru_order
+            .push(self.tabs[tab_index].pane_group.id());
         self.activate_tab(tab_index, ctx);
 
         ctx.notify();
@@ -10818,17 +10991,23 @@ impl Workspace {
         match new_tab_placement_setting {
             NewTabPlacement::AfterAllTabs => {
                 self.tabs.push(TabData::new(new_pane_group));
+                self.tab_mru_order
+                    .push(self.tabs.last().unwrap().pane_group.id());
                 self.activate_tab_internal(self.tab_count() - 1, ctx);
             }
             // Add tab after current tab
             _ => {
                 if self.tab_count() == 0 {
                     self.tabs.push(TabData::new(new_pane_group));
+                    self.tab_mru_order
+                        .push(self.tabs.last().unwrap().pane_group.id());
                     self.activate_tab_internal(self.tab_count() - 1, ctx);
                 } else {
-                    self.tabs
-                        .insert(self.active_tab_index + 1, TabData::new(new_pane_group));
-                    self.activate_tab_internal(self.active_tab_index + 1, ctx);
+                    let insert_idx = self.active_tab_index + 1;
+                    self.tabs.insert(insert_idx, TabData::new(new_pane_group));
+                    self.tab_mru_order
+                        .push(self.tabs[insert_idx].pane_group.id());
+                    self.activate_tab_internal(insert_idx, ctx);
                 }
             }
         }
@@ -10892,9 +11071,12 @@ impl Workspace {
 
         if self.tab_count() == 0 {
             self.tabs.push(TabData::new(new_pane_group));
+            self.tab_mru_order
+                .push(self.tabs.last().unwrap().pane_group.id());
             self.activate_tab_internal(self.tab_count() - 1, ctx);
         } else {
             self.tabs.insert(new_idx, TabData::new(new_pane_group));
+            self.tab_mru_order.push(self.tabs[new_idx].pane_group.id());
             self.activate_tab_internal(new_idx, ctx);
         }
     }
@@ -11573,6 +11755,7 @@ impl Workspace {
                         fork_from.exchange_id,
                         fork_from.fork_from_exact_exchange,
                         FORK_PREFIX,
+                        None,
                         ctx,
                     )
                 } else {
@@ -11580,6 +11763,7 @@ impl Workspace {
                         &source_conversation,
                         FORK_PREFIX,
                         false, /* preserve_task_ids */
+                        None,
                         ctx,
                     )
                 }
@@ -12147,15 +12331,59 @@ impl Workspace {
 
     fn open_ctrl_tab_palette(
         &mut self,
+        query_filter: QueryFilter,
         shift_pressed_initially: bool,
         ctx: &mut ViewContext<Self>,
     ) {
         let offset = if shift_pressed_initially { -1 } else { 1 };
+
         self.ctrl_tab_palette.update(ctx, |view, ctx| {
             view.reset(ctx);
-            view.set_active_query_filter(QueryFilter::Sessions, ctx);
-            view.set_initial_selection_offset(offset, ctx);
         });
+
+        let mixer = self
+            .ctrl_tab_palette
+            .as_ref(ctx)
+            .search_bar
+            .as_ref(ctx)
+            .mixer()
+            .clone();
+        let data_source_store = self.ctrl_tab_palette.as_ref(ctx).data_source_store.clone();
+
+        match query_filter {
+            QueryFilter::Tabs => {
+                let window_id = ctx.window_id();
+                let tabs = self.tab_navigation_data(window_id, ctx.as_ref());
+                data_source_store.update(ctx, |store, ctx| {
+                    store.reset_ctrl_tab_mixer(mixer, tabs, ctx);
+                });
+            }
+            QueryFilter::Sessions => {
+                data_source_store.update(ctx, |store, ctx| {
+                    store.restore_ctrl_tab_session_mixer(mixer, ctx);
+                });
+            }
+            _ => {}
+        }
+
+        self.ctrl_tab_palette.update(ctx, |view, ctx| {
+            match query_filter {
+                QueryFilter::Tabs => {
+                    // Set offset BEFORE filter: the tabs query is synchronous, so results
+                    // arrive during set_active_query_filter. The offset must already be
+                    // stored so on_mixer_results_changed picks it up.
+                    view.set_initial_selection_offset(offset, ctx);
+                    view.set_active_query_filter(query_filter, ctx);
+                }
+                _ => {
+                    // Sessions (and other async sources): set filter first, then offset.
+                    // The existing post-open select_next_item handles initial selection.
+                    view.set_active_query_filter(query_filter, ctx);
+                    view.set_initial_selection_offset(offset, ctx);
+                }
+            }
+        });
+
         ctx.notify();
     }
 
@@ -12324,7 +12552,13 @@ impl Workspace {
             PaletteMode::Navigation => match source {
                 PaletteSource::CtrlTab {
                     shift_pressed_initially,
-                } => self.open_ctrl_tab_palette(shift_pressed_initially, ctx),
+                } => {
+                    let filter = match *KeysSettings::as_ref(ctx).ctrl_tab_behavior {
+                        CtrlTabBehavior::CycleMostRecentTab => QueryFilter::Tabs,
+                        _ => QueryFilter::Sessions,
+                    };
+                    self.open_ctrl_tab_palette(filter, shift_pressed_initially, ctx);
+                }
                 _ => self.open_navigation_palette(ctx),
             },
             PaletteMode::LaunchConfig => self.open_launch_config_palette(ctx),
@@ -12857,237 +13091,64 @@ impl Workspace {
         });
     }
 
-    /// Open a local-to-cloud handoff pane in place over the active local pane.
-    /// Triggered by the `/move-to-cloud` slash command and the "Hand off to
-    /// cloud" footer chip.
-    ///
-    /// When the active conversation is non-empty and has a server token, mints a
-    /// server-side fork via `POST /agent/conversations/{conversation_id}/fork`,
-    /// then pushes a fresh cloud-mode view onto the active pane's navigation stack
-    /// and pre-populates it with the forked conversation. Pressing Escape in the
-    /// cloud-mode view pops back to the original local pane (the same pattern used
-    /// by Cmd-Alt-Enter / Ctrl-Alt-Enter to enter cloud mode from a local session).
-    ///
-    /// All failure modes — ineligibility, fork RPC failure, and local fork
-    /// materialization failure — surface an error toast and **do not open** any
-    /// pane. The local conversation is unaffected.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-    fn start_local_to_cloud_handoff(
-        &mut self,
-        initial_prompt: Option<String>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if !FeatureFlag::OzHandoff.is_enabled() || !FeatureFlag::HandoffLocalCloud.is_enabled() {
-            return;
-        }
-
-        let source = self
-            .active_tab_pane_group()
-            .as_ref(ctx)
-            .active_session_view(ctx)
-            .and_then(|view| {
-                let terminal_view_id = view.id();
-                let history = BlocklistAIHistoryModel::handle(ctx);
-                history
-                    .as_ref(ctx)
-                    .active_conversation(terminal_view_id)
-                    .filter(|c| !c.is_empty())
-                    .and_then(|conversation| {
-                        conversation
-                            .server_conversation_token()
-                            .cloned()
-                            .map(|token| (view.clone(), conversation.clone(), token))
-                    })
-            });
-
-        let Some((source_view, source_conversation, source_token)) = source else {
-            // Ineligible: don't open a fresh unrelated pane — the chip is a
-            // hand-off-this-conversation action.
-            let window_id = ctx.window_id();
-            WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                let toast = DismissibleToast::error(
-                    "Failed to prepare handoff. Please try again.".to_owned(),
-                );
-                toast_stack.add_ephemeral_toast(toast, window_id, ctx);
-            });
-            return;
-        };
-
-        let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-        let source_conversation_id = source_token.as_str().to_string();
-        ctx.spawn(
-            async move { ai_client.fork_conversation(source_conversation_id).await },
-            move |me, result, ctx| match result {
-                Ok(response) => {
-                    me.complete_local_to_cloud_handoff_open(
-                        source_view,
-                        source_conversation,
-                        response.forked_conversation_id,
-                        initial_prompt,
-                        ctx,
-                    );
-                }
-                Err(err) => {
-                    log::warn!("fork_conversation failed: {err:#}");
-                    let window_id = ctx.window_id();
-                    WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                        let toast = DismissibleToast::error(
-                            "Failed to prepare handoff. Please try again.".to_owned(),
-                        );
-                        toast_stack.add_ephemeral_toast(toast, window_id, ctx);
-                    });
-                }
-            },
-        );
+    fn show_handoff_prepare_failed_toast(window_id: WindowId, ctx: &mut ViewContext<Self>) {
+        WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+            let toast =
+                DismissibleToast::error("Failed to prepare handoff. Please try again.".to_owned());
+            toast_stack.add_ephemeral_toast(toast, window_id, ctx);
+        });
     }
 
-    /// Finishes the local-to-cloud handoff open after the fork RPC returns.
-    /// Materializes a local fork bound to the server's forked conversation id,
-    /// pushes a fresh cloud-mode view onto `source_view`'s navigation stack,
-    /// restores the forked conversation into it, exits the source pane's agent
-    /// view (so Esc returns to a clean terminal), seeds `PendingHandoff`, and
-    /// kicks off async derivation + snapshot upload.
-    ///
-    /// The source's agent-view exit happens AFTER the new pane is pushed, so the
-    /// source pane is hidden behind the cloud-mode view when its chrome flips
-    /// from agent mode to terminal mode — the user never sees the transition.
-    /// The pane-stack pop logic in `terminal/view.rs` skips popping when the
-    /// `ExitedAgentView` event has `is_exit_before_new_entrance: true`, which
-    /// prevents the bookkeeping exit triggered by `restore_conversation_after_view_creation`
-    /// (re-entering agent view for the forked conversation) from tearing down
-    /// the just-pushed pane.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-    fn complete_local_to_cloud_handoff_open(
-        &mut self,
-        source_view: ViewHandle<TerminalView>,
-        source_conversation: AIConversation,
-        forked_conversation_id: String,
-        initial_prompt: Option<String>,
+    fn restore_source_handoff_draft(
+        source_view: &ViewHandle<TerminalView>,
+        launch: Option<PendingCloudLaunch>,
+        explicit_environment_id: Option<SyncId>,
         ctx: &mut ViewContext<Self>,
     ) {
-        // Materialize the local fork up-front so the new pane has something to restore.
-        // Preserve source task ids so the local fork's task store matches the cloud-side
-        // fork (the cloud agent's ClientActions reference these task ids).
-        let history_model = BlocklistAIHistoryModel::handle(ctx);
-        let local_fork = match history_model.update(ctx, |history_model, ctx| {
-            history_model.fork_conversation(
-                &source_conversation,
-                FORK_PREFIX,
-                true, /* preserve_task_ids */
-                ctx,
-            )
-        }) {
-            Ok(forked) => forked,
-            Err(err) => {
-                log::warn!("Failed to materialize local fork for handoff: {err:#}");
-                let window_id = ctx.window_id();
-                WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    let toast = DismissibleToast::error(
-                        "Failed to prepare handoff. Please try again.".to_owned(),
-                    );
-                    toast_stack.add_ephemeral_toast(toast, window_id, ctx);
-                });
-                return;
-            }
-        };
-        let local_fork_id = local_fork.id();
-
-        // Push the cloud-mode pane onto the source's nav stack.
-        let Some((new_pane_view, model_handle)) = source_view.update(ctx, |view, view_ctx| {
-            view.start_local_to_cloud_handoff_pane(view_ctx)
-        }) else {
-            log::warn!("start_local_to_cloud_handoff: failed to push cloud-mode pane");
-            let window_id = ctx.window_id();
-            WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                let toast = DismissibleToast::error(
-                    "Failed to prepare handoff. Please try again.".to_owned(),
-                );
-                toast_stack.add_ephemeral_toast(toast, window_id, ctx);
-            });
+        let Some(launch) = launch else {
             return;
         };
-
-        if let Some(prompt) = initial_prompt.as_deref().filter(|p| !p.is_empty()) {
-            new_pane_view.update(ctx, |terminal_view, view_ctx| {
-                terminal_view.input().update(view_ctx, |input, input_ctx| {
-                    input.replace_buffer_content(prompt, input_ctx);
-                });
+        source_view.update(ctx, |view, ctx| {
+            let input = view.input().clone();
+            input.update(ctx, |input, ctx| {
+                input.restore_cloud_handoff_draft(launch, explicit_environment_id, ctx);
             });
-        }
-
-        // Restore the forked conversation into the new pane so its AI exchanges are
-        // visible immediately. This re-enters agent view for the forked conversation,
-        // which emits an internal `ExitedAgentView { is_exit_before_new_entrance: true }`
-        // for the cloud-mode placeholder; the pane-stack pop is skipped for that flag.
-        new_pane_view.update(ctx, |terminal_view, view_ctx| {
-            terminal_view.restore_conversation_after_view_creation(
-                RestoredAIConversation::new(local_fork.clone()),
-                /* use_live_appearance */ true,
-                view_ctx,
-            );
         });
+    }
 
-        // Enter fullscreen agent view for the restored fork in the new pane. Without this the
-        // pane sits in shared-session-viewer-pending mode and the input renders read-only;
-        // entering agent view activates the editable cloud-mode input flow. Use
-        // `RestoreExistingConversation` to indicate the conversation is restored (not new) —
-        // the `is_local_to_cloud_handoff` flag set via `set_pending_handoff` below is the
-        // authoritative "this is a cloud agent pane" signal for downstream gating
-        // (`is_cloud_agent_pre_first_exchange`, etc.).
-        new_pane_view.update(ctx, |terminal_view, view_ctx| {
-            terminal_view.enter_agent_view_for_conversation(
-                None,
-                AgentViewEntryOrigin::RestoreExistingConversation,
-                local_fork_id,
-                view_ctx,
-            );
-        });
-
-        // Bind the local fork to the cloud-side conversation id and mark it as a shared conversation.
-        history_model.update(ctx, |history_model, _| {
-            history_model.set_server_conversation_token_for_conversation(
-                local_fork_id,
-                forked_conversation_id.clone(),
-            );
-            history_model.set_viewing_shared_session_for_conversation(local_fork_id, true);
-        });
-
-        // Exit the source pane's fullscreen agent view (if active) so pressing Esc in the
-        // cloud-mode pane returns to a terminal-mode source. This runs AFTER the push, so
-        // the source pane is hidden behind the cloud-mode view and the transition is
-        // invisible to the user. `was_ambient_agent` is false for a local source, so this
-        // exit doesn't pop the pane stack.
-        let source_agent_view_controller = source_view.as_ref(ctx).agent_view_controller().clone();
-        if source_agent_view_controller
-            .as_ref(ctx)
-            .agent_view_state()
-            .is_fullscreen()
-        {
-            source_agent_view_controller.update(ctx, |controller, ctx| {
-                controller.exit_agent_view_without_confirmation(ctx);
-            });
-        }
-
-        let pending = PendingHandoff {
-            forked_conversation_id: forked_conversation_id.clone(),
-            touched_workspace: None,
-            snapshot_upload: SnapshotUploadStatus::Pending,
-            submission_state: HandoffSubmissionState::Idle,
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    fn maybe_auto_submit_handoff(
+        _target_view: &ViewHandle<TerminalView>,
+        model_handle: &ModelHandle<AmbientAgentViewModel>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let launch = model_handle.update(ctx, |model, ctx| model.maybe_auto_submit_handoff(ctx));
+        let Some(launch) = launch else {
+            return;
         };
-        model_handle.update(ctx, |model, model_ctx| {
-            model.set_pending_handoff(Some(pending), model_ctx);
+        model_handle.update(ctx, |model, ctx| {
+            model.submit_handoff(launch.prompt, launch.attachments.request_attachments, ctx);
         });
+    }
 
-        // Async background prep: derive the touched workspace, then upload the
-        // snapshot. The pane is fully interactive throughout. `submit_handoff`
-        // gates on both completing before allowing a spawn.
-        let async_model_handle = model_handle.clone();
+    /// Spawns the async snapshot upload pipeline for a handoff pane. Derives the
+    /// touched workspace from `paths`, uploads repo patches + orphan files, sets
+    /// environment overlap, and settles the snapshot status on the model. Shared
+    /// by both the conversation-fork and fresh-launch handoff paths.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    fn spawn_handoff_snapshot_upload(
+        paths: Vec<PathBuf>,
+        pane_view: ViewHandle<TerminalView>,
+        model_handle: ModelHandle<AmbientAgentViewModel>,
+        ctx: &mut ViewContext<Self>,
+    ) {
         let server_api_provider = ServerApiProvider::as_ref(ctx);
         let ai_client = server_api_provider.get_ai_client();
         let http = server_api_provider.get_http_client();
         ctx.spawn(
             async move {
-                let paths = extract_paths_from_conversation(&source_conversation);
                 let workspace = derive_touched_workspace(paths).await;
                 let repo_paths: Vec<_> =
                     workspace.repos.iter().map(|r| r.git_root.clone()).collect();
@@ -13101,14 +13162,18 @@ impl Workspace {
                 (workspace, upload_result)
             },
             move |_workspace, (derived_workspace, upload_result), ctx| {
-                async_model_handle.update(ctx, |model, model_ctx| {
+                model_handle.update(ctx, |model, model_ctx| {
                     if !model.is_local_to_cloud_handoff() {
                         return;
                     }
-                    let mut envs = CloudAmbientAgentEnvironment::get_all(model_ctx);
-                    sort_environments_by_recency(&mut envs);
-                    if let Some(overlap_env) = pick_handoff_overlap_env(&derived_workspace, envs) {
-                        model.set_environment_id(Some(overlap_env), model_ctx);
+                    if !model.pending_handoff_has_explicit_environment() {
+                        let mut envs = CloudAmbientAgentEnvironment::get_all(model_ctx);
+                        sort_environments_by_recency(&mut envs);
+                        if let Some(overlap_env) =
+                            pick_handoff_overlap_env(&derived_workspace, envs)
+                        {
+                            model.set_environment_id(Some(overlap_env), model_ctx);
+                        }
                     }
                     model.set_pending_handoff_workspace(derived_workspace, model_ctx);
                     match upload_result {
@@ -13131,8 +13196,279 @@ impl Workspace {
                         }
                     }
                 });
+                Self::maybe_auto_submit_handoff(&pane_view, &model_handle, ctx);
             },
         );
+    }
+
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    fn show_handoff_success_toast(ctx: &mut ViewContext<Self>) {
+        let window_id = ctx.window_id();
+        WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+            toast_stack.add_ephemeral_toast(
+                DismissibleToast::default(
+                    "Starting cloud environment for this session...".to_owned(),
+                ),
+                window_id,
+                ctx,
+            );
+        });
+    }
+
+    /// Opens a cloud pane without forking when there is no local conversation to hand off.
+    /// Still snapshots the source pane's pwd so the cloud agent receives the local repo's
+    /// branch info and uncommitted diffs.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    fn start_fresh_cloud_launch(
+        &mut self,
+        source_view: ViewHandle<TerminalView>,
+        launch: Option<PendingCloudLaunch>,
+        explicit_environment_id: Option<SyncId>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        // Push a cloud-mode pane for the fresh launch.
+        let Some((new_pane_view, model_handle)) = source_view.update(ctx, |view, view_ctx| {
+            view.start_local_to_cloud_handoff_pane(view_ctx)
+        }) else {
+            log::warn!("start_local_to_cloud_handoff: failed to push fresh cloud-mode pane");
+            Self::restore_source_handoff_draft(&source_view, launch, explicit_environment_id, ctx);
+            Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
+            return;
+        };
+
+        if let Some(env_id) = explicit_environment_id {
+            model_handle.update(ctx, |model, ctx| {
+                model.set_environment_id(Some(env_id), ctx);
+            });
+        }
+        Self::show_handoff_success_toast(ctx);
+
+        let pending = PendingHandoff {
+            forked_conversation_id: None,
+            title: None,
+            touched_workspace: None,
+            snapshot_upload: SnapshotUploadStatus::Pending,
+            submission_state: HandoffSubmissionState::Idle,
+            auto_submit: launch,
+            explicit_environment_id,
+        };
+        model_handle.update(ctx, |model, model_ctx| {
+            model.set_pending_handoff(Some(pending), model_ctx);
+        });
+        model_handle.update(ctx, |model, ctx| {
+            model.queue_handoff_auto_submit(ctx);
+        });
+
+        let source_pwd = source_view.as_ref(ctx).active_session_path_if_local(ctx);
+        let paths: Vec<PathBuf> = source_pwd.into_iter().collect();
+        Self::spawn_handoff_snapshot_upload(paths, new_pane_view, model_handle, ctx);
+    }
+
+    /// Opens a local-to-cloud handoff pane in place over the active local pane.
+    /// Triggered by `/move-to-cloud`, `&` compose mode, and the handoff footer chip.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    fn start_local_to_cloud_handoff(
+        &mut self,
+        launch: Option<PendingCloudLaunch>,
+        explicit_environment_id: Option<SyncId>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if !FeatureFlag::OzHandoff.is_enabled() || !FeatureFlag::HandoffLocalCloud.is_enabled() {
+            return;
+        }
+
+        let Some(source_view) = self
+            .active_tab_pane_group()
+            .as_ref(ctx)
+            .active_session_view(ctx)
+        else {
+            Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
+            return;
+        };
+
+        let terminal_view_id = source_view.id();
+        let source_conversation = BlocklistAIHistoryModel::handle(ctx)
+            .as_ref(ctx)
+            .active_conversation(terminal_view_id)
+            .cloned();
+
+        let Some(source_conversation) =
+            source_conversation.filter(|conversation| !conversation.is_empty())
+        else {
+            self.start_fresh_cloud_launch(source_view, launch, explicit_environment_id, ctx);
+            return;
+        };
+
+        if source_conversation.status().is_in_progress()
+            || source_conversation.status().is_blocked()
+        {
+            Self::restore_source_handoff_draft(&source_view, launch, explicit_environment_id, ctx);
+            Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
+            return;
+        }
+
+        let Some(source_token) = source_conversation.server_conversation_token().cloned() else {
+            Self::restore_source_handoff_draft(&source_view, launch, explicit_environment_id, ctx);
+            Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
+            return;
+        };
+
+        let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
+        let source_conversation_id = source_token.as_str().to_string();
+        let title_for_fork = source_conversation
+            .title()
+            .map(|t| format!("{t} (Moved to cloud)"));
+        ctx.spawn(
+            async move {
+                ai_client
+                    .fork_conversation(source_conversation_id, title_for_fork)
+                    .await
+            },
+            move |me, result, ctx| match result {
+                Ok(response) => {
+                    me.complete_local_to_cloud_handoff_open(
+                        source_view,
+                        source_conversation,
+                        response.forked_conversation_id,
+                        launch,
+                        explicit_environment_id,
+                        ctx,
+                    );
+                }
+                Err(err) => {
+                    log::warn!("fork_conversation failed: {err:#}");
+                    Self::restore_source_handoff_draft(
+                        &source_view,
+                        launch,
+                        explicit_environment_id,
+                        ctx,
+                    );
+                    Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
+                }
+            },
+        );
+    }
+
+    /// Finishes the handoff after the fork RPC returns by restoring the forked
+    /// conversation in a cloud pane and starting snapshot prep.
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+    fn complete_local_to_cloud_handoff_open(
+        &mut self,
+        source_view: ViewHandle<TerminalView>,
+        source_conversation: AIConversation,
+        forked_conversation_id: String,
+        launch: Option<PendingCloudLaunch>,
+        explicit_environment_id: Option<SyncId>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let history_model = BlocklistAIHistoryModel::handle(ctx);
+        // Materialize the fork locally so the new pane can restore it.
+        let title_override = source_conversation
+            .title()
+            .map(|t| format!("{t} (Moved to cloud)"));
+        let local_fork = match history_model.update(ctx, |history_model, ctx| {
+            history_model.fork_conversation(
+                &source_conversation,
+                FORK_PREFIX,
+                true,
+                title_override.as_deref(),
+                ctx,
+            )
+        }) {
+            Ok(forked) => forked,
+            Err(err) => {
+                log::warn!("Failed to materialize local fork for handoff: {err:#}");
+                Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
+                return;
+            }
+        };
+        let local_fork_id = local_fork.id();
+
+        // Push the cloud-mode pane before attaching the forked conversation.
+        let Some((new_pane_view, model_handle)) = source_view.update(ctx, |view, view_ctx| {
+            view.start_local_to_cloud_handoff_pane(view_ctx)
+        }) else {
+            log::warn!("start_local_to_cloud_handoff: failed to push cloud-mode pane");
+            Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
+            return;
+        };
+        // Restore the forked conversation into the newly-created pane.
+        new_pane_view.update(ctx, |terminal_view, view_ctx| {
+            terminal_view.restore_conversation_after_view_creation(
+                RestoredAIConversation::new(local_fork.clone()),
+                true,
+                view_ctx,
+            );
+        });
+
+        // Enter fullscreen agent view once restoration has populated history.
+        new_pane_view.update(ctx, |terminal_view, view_ctx| {
+            terminal_view.enter_agent_view_for_conversation(
+                None,
+                AgentViewEntryOrigin::RestoreExistingConversation,
+                local_fork_id,
+                view_ctx,
+            );
+        });
+
+        // Bind the local fork to the server fork token.
+        history_model.update(ctx, |history_model, _| {
+            history_model.set_server_conversation_token_for_conversation(
+                local_fork_id,
+                forked_conversation_id.clone(),
+            );
+            history_model.set_viewing_shared_session_for_conversation(local_fork_id, true);
+        });
+
+        let source_agent_view_controller = source_view.as_ref(ctx).agent_view_controller().clone();
+        if source_agent_view_controller
+            .as_ref(ctx)
+            .agent_view_state()
+            .is_fullscreen()
+        {
+            // Exit the source pane so focus and input move to the cloud pane.
+            source_agent_view_controller.update(ctx, |controller, ctx| {
+                controller.exit_agent_view_without_confirmation(ctx);
+            });
+        }
+
+        if let Some(env_id) = explicit_environment_id {
+            model_handle.update(ctx, |model, ctx| {
+                model.set_environment_id(Some(env_id), ctx);
+            });
+        }
+
+        // Keep handoff state on the cloud model until snapshot prep and submit finish.
+        let pending = PendingHandoff {
+            forked_conversation_id: Some(forked_conversation_id.clone()),
+            title: title_override,
+            touched_workspace: None,
+            snapshot_upload: SnapshotUploadStatus::Pending,
+            submission_state: HandoffSubmissionState::Idle,
+            auto_submit: launch,
+            explicit_environment_id,
+        };
+        model_handle.update(ctx, |model, model_ctx| {
+            model.set_pending_handoff(Some(pending), model_ctx);
+        });
+
+        Self::show_handoff_success_toast(ctx);
+        model_handle.update(ctx, |model, ctx| {
+            model.queue_handoff_auto_submit(ctx);
+        });
+
+        let source_pwd = source_view.as_ref(ctx).active_session_path_if_local(ctx);
+        // Derive touched repos and upload the initial snapshot off the UI thread.
+        // The paths list is built from the conversation's write actions plus the
+        // source pane's pwd (so the current repo is always captured).
+        let paths = {
+            let mut p = extract_paths_from_conversation(&source_conversation);
+            if let Some(pwd) = source_pwd {
+                p.push(pwd);
+            }
+            p
+        };
+        Self::spawn_handoff_snapshot_upload(paths, new_pane_view, model_handle, ctx);
     }
 
     pub(crate) fn handle_file_tree_event(
@@ -13648,9 +13984,8 @@ impl Workspace {
                         .terminal_view_from_pane_id(pane_group.focused_pane_id(ctx), ctx)
                         .map(|tv| tv.id())
                 };
-                let ambient_agent_task_id = self
-                    .get_active_session_terminal_model(ctx)
-                    .and_then(|model| model.lock().ambient_agent_task_id());
+                let ambient_agent_task_id =
+                    self.ambient_agent_task_id_for_focused_terminal_view(ctx);
                 self.notify_terminal_focus_change(
                     focused_terminal_view_id,
                     ambient_agent_task_id,
@@ -13698,39 +14033,34 @@ impl Workspace {
             #[cfg(not(feature = "local_fs"))]
             pane_group::Event::RemoteRepoNavigated { .. } => {}
             pane_group::Event::OpenChildAgentInNewTab { conversation_id } => {
-                // "Open in new tab" from the orchestration pill bar's 3-dot
-                // menu. Spawn a fresh session tab and enter agent view for
-                // the child conversation. The conversation already lives in
-                // `BlocklistAIHistoryModel`, so the new terminal view can
-                // adopt it without any restoration plumbing — just call
-                // `enter_agent_view_for_conversation` on it.
+                // Move the existing child pane into a new tab so the live
+                // session stays intact.
                 let conversation_id = *conversation_id;
-                let window_id = ctx.window_id();
-                self.add_new_session_tab_with_default_mode(
-                    NewSessionSource::Tab,
-                    Some(window_id),
-                    None, /* chosen_shell */
-                    None, /* conversation_restoration */
-                    true, /* hide_homepage */
-                    ctx,
-                );
-                if let Some(terminal_view) = self
-                    .active_tab_pane_group()
-                    .as_ref(ctx)
-                    .active_session_view(ctx)
-                {
-                    terminal_view.update(ctx, |view, ctx| {
-                        view.enter_agent_view_for_conversation(
-                            None,
-                            AgentViewEntryOrigin::OrchestrationPillBar,
-                            conversation_id,
-                            ctx,
-                        );
-                    });
-                } else {
+                let removed_pane = pane_group.update(ctx, |pg, ctx| {
+                    pg.take_child_agent_pane_for_split_off(conversation_id, ctx)
+                });
+                let Some(removed_pane) = removed_pane else {
                     log::warn!(
-                        "OpenChildAgentInNewTab: no active terminal view in newly created tab"
+                        "OpenChildAgentInNewTab: no hidden child pane registered for conversation {conversation_id:?}"
                     );
+                    return;
+                };
+                let new_tab_index = match TabSettings::as_ref(ctx).new_tab_placement {
+                    NewTabPlacement::AfterAllTabs => self.tab_count(),
+                    NewTabPlacement::AfterCurrentTab => self.active_tab_index + 1,
+                };
+                let source_pane_group = pane_group.downgrade();
+                self.add_tab_from_existing_pane(removed_pane, new_tab_index, ctx);
+                // Mark the new tab so closing it can move the pane back.
+                if let Some(new_pane_group) =
+                    self.get_pane_group_view(self.active_tab_index).cloned()
+                {
+                    new_pane_group.update(ctx, |pg, _ctx| {
+                        pg.set_child_agent_origin(ChildAgentOrigin {
+                            source_pane_group,
+                            conversation_id,
+                        });
+                    });
                 }
             }
             pane_group::Event::DroppedOnTabBar { origin, pane_id } => {
@@ -13831,7 +14161,11 @@ impl Workspace {
                                         // After removing the file from the origin's editor, we want to open it in the target's editor.
                                         if let Some(path) = moved_file_path {
                                             target_code_view.update(ctx, |view, ctx| {
-                                                view.open_or_focus_existing(Some(path), None, ctx);
+                                                view.open_or_focus_existing(
+                                                    Some(FileLocation::Local(path)),
+                                                    None,
+                                                    ctx,
+                                                );
                                             });
                                         }
                                         return;
@@ -16019,11 +16353,41 @@ impl Workspace {
     fn handle_window_state_change(&mut self, event: &StateEvent, ctx: &mut ViewContext<Self>) {
         match &event {
             StateEvent::ValueChanged { current, previous } => {
+                let did_window_change_focus =
+                    WindowManager::did_window_change_focus(self.window_id, current, previous);
+                let cached_window_is_active = current.active_window == Some(self.window_id);
+                let app_became_active = previous.stage != ApplicationStage::Active
+                    && current.stage == ApplicationStage::Active;
+                let platform_window_is_active =
+                    ctx.windows().active_window() == Some(self.window_id);
+
+                // Notify focus listeners when this window is active after either a window focus
+                // change or app reactivation while the active window stayed the same.
+                // On macOS, app activation can beat the deferred key-window update, so
+                // reactivation also verifies the live platform window.
+                if cached_window_is_active
+                    && (did_window_change_focus || (app_became_active && platform_window_is_active))
+                {
+                    if let Some(terminal_view) = self
+                        .active_tab_pane_group()
+                        .as_ref(ctx)
+                        .focused_session_view(ctx)
+                    {
+                        let ambient_agent_task_id = terminal_view
+                            .as_ref(ctx)
+                            .ambient_agent_task_id_for_details_panel(ctx);
+                        self.notify_terminal_focus_change(
+                            Some(terminal_view.id()),
+                            ambient_agent_task_id,
+                            ctx,
+                        );
+                    }
+                }
+
                 // Re-render if fullscreen state for active window has changed.
                 if current.is_active_window_fullscreen != previous.is_active_window_fullscreen {
                     ctx.notify();
-                } else if WindowManager::did_window_change_focus(self.window_id, current, previous)
-                {
+                } else if did_window_change_focus {
                     // Re-render if this window's focus state has changed.
                     ctx.notify();
                 } else if current.stage != previous.stage {
@@ -16084,6 +16448,22 @@ impl Workspace {
             OpenWarpLaunchModalEvent::Close => {
                 OneTimeModalModel::handle(ctx).update(ctx, |model, ctx| {
                     model.mark_openwarp_launch_modal_dismissed(ctx);
+                });
+                self.focus_active_tab(ctx);
+                ctx.notify();
+            }
+        }
+    }
+
+    fn handle_orchestration_launch_modal_event(
+        &mut self,
+        event: &OrchestrationLaunchModalEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        match event {
+            OrchestrationLaunchModalEvent::Close => {
+                OneTimeModalModel::handle(ctx).update(ctx, |model, ctx| {
+                    model.mark_orchestration_launch_modal_dismissed(ctx);
                 });
                 self.focus_active_tab(ctx);
                 ctx.notify();
@@ -17806,15 +18186,7 @@ impl Workspace {
         let zoom_factor = WindowSettings::as_ref(ctx).zoom_level.as_zoom_factor();
         let traffic_light_data = traffic_light_data(ctx, self.window_id);
         if let Some(traffic_light_data) = traffic_light_data.as_ref() {
-            let vertical_tabs_active = FeatureFlag::VerticalTabs.is_enabled()
-                && *TabSettings::as_ref(ctx).use_vertical_tabs;
-            let right_panel_open = self.current_workspace_state.is_right_panel_open();
-            let should_reserve_right_traffic_light_space =
-                vertical_tabs_active || !right_panel_open;
-
-            if traffic_light_data.side == TrafficLightSide::Right
-                && should_reserve_right_traffic_light_space
-            {
+            if should_reserve_traffic_light_space_in_tab_bar(traffic_light_data.side) {
                 target.add_child(
                     ConstrainedBox::new(Empty::new().finish())
                         .with_width(traffic_light_data.width(zoom_factor))
@@ -19921,6 +20293,10 @@ impl Workspace {
         ctx.focus(&self.openwarp_launch_modal);
     }
 
+    fn focus_orchestration_launch_modal(&mut self, ctx: &mut ViewContext<Self>) {
+        ctx.focus(&self.orchestration_launch_modal);
+    }
+
     fn open_tab_and_focus_oz_launch_modal(&mut self, ctx: &mut ViewContext<Self>) {
         // Create a new tab with one terminal session titled "Introducing Oz"
         self.add_tab_with_pane_layout(
@@ -20105,6 +20481,18 @@ impl TypedActionView for Workspace {
             RenamePane(locator) => self.rename_pane(*locator, ctx),
             ResetPaneName(locator) => self.clear_pane_name(*locator, ctx),
             RenameActiveTab => self.rename_tab(self.active_tab_index, ctx),
+            RenameActivePane => {
+                let pane_group = self.active_tab_pane_group().clone();
+                let pane_group_id = pane_group.id();
+                let pane_id = pane_group.as_ref(ctx).focused_pane_id(ctx);
+                self.rename_pane(
+                    PaneViewLocator {
+                        pane_group_id,
+                        pane_id,
+                    },
+                    ctx,
+                );
+            }
             SetActiveTabName(name) => self.set_active_tab_name(name, ctx),
             SetActiveTabColor(color) => self.set_tab_color(self.active_tab_index, *color, ctx),
             ToggleTabRightClickMenu { tab_index, anchor } => {
@@ -20320,11 +20708,16 @@ impl TypedActionView for Workspace {
                 let path = crate::settings::user_preferences_toml_file_path();
                 self.add_tab_for_code_file(path, None, ctx);
             }
-            OpenLocalToCloudHandoffPane { initial_prompt } => {
+            OpenLocalToCloudHandoffPane {
+                launch,
+                explicit_environment_id,
+            } => {
                 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-                self.start_local_to_cloud_handoff(initial_prompt.clone(), ctx);
+                self.start_local_to_cloud_handoff(launch.clone(), *explicit_environment_id, ctx);
                 #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
-                let _ = initial_prompt;
+                {
+                    let _ = (launch, explicit_environment_id);
+                }
             }
             OpenNetworkLogPane => {
                 self.open_network_log_pane(ctx);
@@ -20698,7 +21091,10 @@ impl TypedActionView for Workspace {
                     if let Some((repo_path, terminal_view)) = read_result {
                         let diff_state_model = repo_path.as_ref().and_then(|rp| {
                             self.working_directories_model.update(ctx, |model, ctx| {
-                                model.get_or_create_diff_state_model(rp.clone(), ctx)
+                                model.get_or_create_diff_state_model(
+                                    FileLocation::Local(rp.clone()),
+                                    ctx,
+                                )
                             })
                         });
                         if let Some(diff_state_model) = diff_state_model {
@@ -21542,6 +21938,7 @@ impl TypedActionView for Workspace {
                 }
                 self.load_cloud_conversation_into_new_transcript_viewer(
                     conversation_id.clone(),
+                    *ambient_agent_task_id,
                     ctx,
                 );
             }
@@ -21754,6 +22151,34 @@ impl TypedActionView for Workspace {
                     old_value,
                     new_value,
                     FeatureFlag::OpenWarpLaunchModal.is_enabled()
+                );
+            }
+            #[cfg(debug_assertions)]
+            OpenOrchestrationLaunchModal => {
+                OneTimeModalModel::handle(ctx).update(ctx, |model, ctx| {
+                    model.force_open_orchestration_launch_modal(ctx);
+                });
+                ctx.notify();
+            }
+            #[cfg(debug_assertions)]
+            ResetOrchestrationLaunchModalState => {
+                let old_value =
+                    *AISettings::as_ref(ctx).did_check_to_trigger_orchestration_launch_modal;
+                AISettings::handle(ctx).update(ctx, |ai_settings, ctx| {
+                    if let Err(e) = ai_settings
+                        .did_check_to_trigger_orchestration_launch_modal
+                        .set_value(false, ctx)
+                    {
+                        log::warn!(
+                            "Failed to reset orchestration launch modal dismissed setting: {e}"
+                        );
+                    }
+                });
+                let new_value =
+                    *AISettings::as_ref(ctx).did_check_to_trigger_orchestration_launch_modal;
+                log::info!(
+                    "Orchestration launch modal state: old={old_value}, new={new_value}, feature_flag_enabled={}",
+                    FeatureFlag::OrchestrationLaunchModal.is_enabled()
                 );
             }
             #[cfg(debug_assertions)]
@@ -22948,6 +23373,10 @@ impl View for Workspace {
             stack.add_child(ChildView::new(&self.openwarp_launch_modal).finish());
         }
 
+        if should_show_modal && one_time_modal_model.is_orchestration_launch_modal_open() {
+            stack.add_child(ChildView::new(&self.orchestration_launch_modal).finish());
+        }
+
         if let Some(hoa_flow) = &self.hoa_onboarding_flow {
             let step = hoa_flow.as_ref(app).step();
 
@@ -23672,6 +24101,11 @@ impl Workspace {
         // the placeholder so its terminals are properly detached.
         let placeholder_pane_group =
             std::mem::replace(&mut placeholder_tab.pane_group, new_pane_group.clone());
+        let old_id = placeholder_pane_group.id();
+        let new_id = placeholder_tab.pane_group.id();
+        if let Some(pos) = self.tab_mru_order.iter().position(|&id| id == old_id) {
+            self.tab_mru_order[pos] = new_id;
+        }
 
         // Re-route pane-group event subscriptions from the placeholder onto
         // the transferred pane group. The workspace was subscribed to the
@@ -24166,6 +24600,10 @@ impl Workspace {
 
         current_index
     }
+}
+
+fn should_reserve_traffic_light_space_in_tab_bar(side: TrafficLightSide) -> bool {
+    side == TrafficLightSide::Right
 }
 
 /// Returns every tab-bar-equivalent rect laid out in `window_id` (horizontal

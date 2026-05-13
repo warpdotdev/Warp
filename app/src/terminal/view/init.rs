@@ -323,7 +323,7 @@ pub fn init(app: &mut AppContext) {
         EditableBinding::new(
             OPEN_CLI_AGENT_RICH_INPUT_KEYBINDING,
             "Toggle CLI Agent Rich Input",
-            TerminalAction::OpenCLIAgentRichInput,
+            TerminalAction::ToggleCLIAgentRichInput,
         )
         .with_key_binding("ctrl-g")
         .with_context_predicate(

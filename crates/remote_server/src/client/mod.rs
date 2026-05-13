@@ -4,22 +4,26 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::codebase_index_proto::{
+    proto_to_codebase_index_status_updated, proto_to_codebase_index_statuses_snapshot,
+    RemoteCodebaseIndexStatus,
+};
 use dashmap::DashMap;
 use futures::channel::oneshot;
 use futures::io::{AsyncRead, AsyncWrite};
 use warpui::r#async::{executor, FutureExt as _};
 
 use crate::proto::{
-    client_message, server_message, Abort, Authenticate, ClientMessage, DeleteFile, ErrorCode,
-    Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
-    NavigatedToDirectoryResponse, ReadFileContextRequest, ReadFileContextResponse,
-    RunCommandRequest, RunCommandResponse, ServerMessage, SessionBootstrapped, WriteFile,
+    client_message, server_message, Abort, Authenticate, BufferEdit, ClientMessage, CloseBuffer,
+    DeleteFile, DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot, DropCodebaseIndex,
+    ErrorCode, IndexCodebase, Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
+    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextRequest,
+    ReadFileContextResponse, RunCommandRequest, RunCommandResponse, SaveBuffer, ServerMessage,
+    SessionBootstrapped, TextEdit, WriteFile,
 };
 
 use crate::protocol::{self, ProtocolError, RequestId};
-
-use warp_core::SessionId;
-use warp_core::{safe_error, safe_warn};
+use warp_core::{safe_error, safe_warn, SessionId};
 use warpui::r#async::TransportStream;
 
 /// Default request timeout (2 minutes).
@@ -68,9 +72,34 @@ pub enum ClientEvent {
     RepoMetadataUpdated {
         update: repo_metadata::RepoMetadataUpdate,
     },
+    /// A full remote codebase-index status snapshot was pushed by the server.
+    CodebaseIndexStatusesSnapshotReceived {
+        statuses: Vec<RemoteCodebaseIndexStatus>,
+    },
+    /// A single remote codebase-index status update was pushed by the server.
+    CodebaseIndexStatusUpdated { status: RemoteCodebaseIndexStatus },
     /// A server message could not be decoded and had no parseable request_id.
     MessageDecodingError,
+    /// A buffer was updated on the server (file changed on disk).
+    BufferUpdated {
+        path: String,
+        new_server_version: u64,
+        expected_client_version: u64,
+        edits: Vec<crate::proto::TextEdit>,
+    },
+    /// The file changed on disk while the client had unsaved edits.
+    /// The server did NOT apply the change; the client should show a
+    /// conflict resolution banner.
+    BufferConflictDetected { path: String },
+    /// A full diff state snapshot was pushed by the server (NewDiffsComputed).
+    DiffStateSnapshotReceived { snapshot: DiffStateSnapshot },
+    /// A metadata-only diff state update was pushed by the server
+    /// (MetadataRefreshed or CurrentBranchChanged).
+    DiffStateMetadataUpdateReceived { update: DiffStateMetadataUpdate },
+    /// A single-file diff delta was pushed by the server (SingleFileUpdated).
+    DiffStateFileDeltaReceived { delta: DiffStateFileDelta },
 }
+
 /// Parameters for the `Initialize` handshake, sent to the daemon at
 /// connection time.
 pub struct InitializeParams {
@@ -216,6 +245,92 @@ impl RemoteServerClient {
                     safe: ("Remote server unexpected response for Initialize"),
                     full: ("Remote server unexpected response for Initialize: response={other:?}")
                 );
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
+    }
+
+    /// Sends an `IndexCodebase` request and awaits the initial status update.
+    pub async fn index_codebase(
+        &self,
+        repo_path: String,
+        auth_token: String,
+    ) -> Result<RemoteCodebaseIndexStatus, ClientError> {
+        let request_id = RequestId::new();
+        let repo_path_for_log = repo_path.clone();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::IndexCodebase(IndexCodebase {
+                repo_path,
+                auth_token,
+            })),
+        };
+        log::info!(
+            "[Remote codebase indexing] Client sending IndexCodebase: request_id={request_id} \
+             repo_path={repo_path_for_log}"
+        );
+
+        let response = self.send_request(request_id, msg).await?;
+
+        match response.message {
+            Some(server_message::Message::CodebaseIndexStatusUpdated(update)) => {
+                let status =
+                    crate::codebase_index_proto::proto_to_codebase_index_status_updated(&update)
+                        .ok_or(ClientError::UnexpectedResponse)?;
+                log::info!(
+                    "[Remote codebase indexing] Client received IndexCodebase response: \
+                     repo_path={} state={:?}",
+                    status.repo_path,
+                    status.state
+                );
+                Ok(status)
+            }
+            other => {
+                log::error!("Unexpected response variant for IndexCodebase: {other:?}");
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
+    }
+
+    /// Sends a `DropCodebaseIndex` request and awaits the resulting status update.
+    pub async fn drop_codebase_index(
+        &self,
+        repo_path: String,
+        auth_token: String,
+    ) -> Result<RemoteCodebaseIndexStatus, ClientError> {
+        let request_id = RequestId::new();
+        let repo_path_for_log = repo_path.clone();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::DropCodebaseIndex(
+                DropCodebaseIndex {
+                    repo_path,
+                    auth_token,
+                },
+            )),
+        };
+        log::info!(
+            "[Remote codebase indexing] Client sending DropCodebaseIndex: request_id={request_id} \
+             repo_path={repo_path_for_log}"
+        );
+
+        let response = self.send_request(request_id, msg).await?;
+
+        match response.message {
+            Some(server_message::Message::CodebaseIndexStatusUpdated(update)) => {
+                let status =
+                    crate::codebase_index_proto::proto_to_codebase_index_status_updated(&update)
+                        .ok_or(ClientError::UnexpectedResponse)?;
+                log::info!(
+                    "[Remote codebase indexing] Client received DropCodebaseIndex response: \
+                     repo_path={} state={:?}",
+                    status.repo_path,
+                    status.state
+                );
+                Ok(status)
+            }
+            other => {
+                log::error!("Unexpected response variant for DropCodebaseIndex: {other:?}");
                 Err(ClientError::UnexpectedResponse)
             }
         }
@@ -383,6 +498,84 @@ impl RemoteServerClient {
         }
     }
 
+    /// Opens a buffer on the remote host for bidirectional syncing.
+    ///
+    /// When `force_reload` is true, the server discards any in-memory buffer
+    /// state and re-reads the file from disk. Used to resolve conflicts.
+    pub async fn open_buffer(
+        &self,
+        path: String,
+        force_reload: bool,
+    ) -> Result<OpenBufferResponse, ClientError> {
+        let request_id = RequestId::new();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::OpenBuffer(OpenBuffer {
+                path,
+                force_reload,
+            })),
+        };
+        let response = self.send_request(request_id, msg).await?;
+        match response.message {
+            Some(server_message::Message::OpenBufferResponse(resp)) => Ok(resp),
+            other => {
+                log::error!("Unexpected response variant for OpenBuffer: {other:?}");
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
+    }
+
+    /// Sends a buffer edit notification (fire-and-forget) to the remote host.
+    pub fn send_buffer_edit(
+        &self,
+        path: String,
+        expected_server_version: u64,
+        new_client_version: u64,
+        edits: Vec<TextEdit>,
+    ) {
+        let msg = ClientMessage {
+            request_id: String::new(), // notification — no response expected
+            message: Some(client_message::Message::BufferEdit(BufferEdit {
+                path,
+                expected_server_version,
+                new_client_version,
+                edits,
+            })),
+        };
+        self.send_notification(msg);
+    }
+
+    /// Saves a buffer on the remote host to disk.
+    pub async fn save_buffer(&self, path: String) -> Result<(), ClientError> {
+        let request_id = RequestId::new();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::SaveBuffer(SaveBuffer { path })),
+        };
+        let response = self.send_request(request_id, msg).await?;
+        match response.message {
+            Some(server_message::Message::SaveBufferResponse(resp)) => match resp.result {
+                Some(crate::proto::save_buffer_response::Result::Success(_)) | None => Ok(()),
+                Some(crate::proto::save_buffer_response::Result::Error(e)) => {
+                    Err(ClientError::FileOperationFailed(e.message))
+                }
+            },
+            other => {
+                log::error!("Unexpected response variant for SaveBuffer: {other:?}");
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
+    }
+
+    /// Tells the remote host to close a buffer (stop watching).
+    pub fn close_buffer(&self, path: String) {
+        let msg = ClientMessage {
+            request_id: String::new(),
+            message: Some(client_message::Message::CloseBuffer(CloseBuffer { path })),
+        };
+        self.send_notification(msg);
+    }
+
     /// Deletes a file on the remote host.
     pub async fn delete_file(&self, path: String) -> Result<(), ClientError> {
         let request_id = RequestId::new();
@@ -418,6 +611,43 @@ impl RemoteServerClient {
             server_message::Message::RepoMetadataUpdate(push) => {
                 let update = crate::repo_metadata_proto::proto_to_repo_metadata_update(&push)?;
                 Some(ClientEvent::RepoMetadataUpdated { update })
+            }
+            server_message::Message::CodebaseIndexStatusesSnapshot(snapshot) => {
+                let statuses = proto_to_codebase_index_statuses_snapshot(&snapshot);
+                log::info!(
+                    "[Remote codebase indexing] Client received codebase index statuses push: \
+                     status_count={}",
+                    statuses.len()
+                );
+                Some(ClientEvent::CodebaseIndexStatusesSnapshotReceived { statuses })
+            }
+            server_message::Message::CodebaseIndexStatusUpdated(update) => {
+                let status = proto_to_codebase_index_status_updated(&update)?;
+                log::info!(
+                    "[Remote codebase indexing] Client received codebase index status push: \
+                     repo_path={} state={:?}",
+                    status.repo_path,
+                    status.state
+                );
+                Some(ClientEvent::CodebaseIndexStatusUpdated { status })
+            }
+            server_message::Message::BufferUpdated(push) => Some(ClientEvent::BufferUpdated {
+                path: push.path,
+                new_server_version: push.new_server_version,
+                expected_client_version: push.expected_client_version,
+                edits: push.edits,
+            }),
+            server_message::Message::BufferConflictDetected(push) => {
+                Some(ClientEvent::BufferConflictDetected { path: push.path })
+            }
+            server_message::Message::DiffStateSnapshot(snapshot) => {
+                Some(ClientEvent::DiffStateSnapshotReceived { snapshot })
+            }
+            server_message::Message::DiffStateMetadataUpdate(update) => {
+                Some(ClientEvent::DiffStateMetadataUpdateReceived { update })
+            }
+            server_message::Message::DiffStateFileDelta(delta) => {
+                Some(ClientEvent::DiffStateFileDeltaReceived { delta })
             }
             other => {
                 safe_warn!(

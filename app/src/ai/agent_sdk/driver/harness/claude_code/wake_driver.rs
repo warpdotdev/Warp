@@ -218,6 +218,7 @@ impl ClaudeHarness {
             &remote.session_id,
             &prompt_path.display().to_string(),
             None,
+            None,
             true,
         );
         let env_vars = local_wake_task_env_vars(Some(&task_id), parent_run_id.as_deref());

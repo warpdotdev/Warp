@@ -77,6 +77,27 @@ fn autoupdate_log_file() -> Result<PathBuf> {
     warp_logging::log_directory().map(|dir| dir.join(UPDATE_LOG_FILENAME))
 }
 
+/// Parses the taskkill exit code from an Inno Setup log containing a
+/// "force-kill failed for" line. Returns `None` if no such line is found or
+/// the exit code cannot be parsed.
+fn parse_forcekill_exit_code(contents_lowercase: &[u8]) -> Option<i32> {
+    const FAILED_MARKER: &[u8] = b"force-kill failed for";
+    const EXIT_CODE_MARKER: &[u8] = b"exit code: ";
+
+    let failed_pos = memchr::memmem::find(contents_lowercase, FAILED_MARKER)?;
+    let after_failed = &contents_lowercase[failed_pos..];
+    let marker_pos = memchr::memmem::find(after_failed, EXIT_CODE_MARKER)?;
+    let after_marker = &after_failed[marker_pos + EXIT_CODE_MARKER.len()..];
+    let digit_len = after_marker
+        .iter()
+        .take_while(|b| b.is_ascii_digit())
+        .count();
+    std::str::from_utf8(&after_marker[..digit_len])
+        .ok()?
+        .parse()
+        .ok()
+}
+
 /// Checks the autoupdate log file from a previous update attempt.
 /// Sends telemetry for specific known issues, and sends a Sentry event if errors are found.
 /// The log file is renamed after processing to avoid duplicate reports on subsequent launches.
@@ -134,10 +155,15 @@ pub(super) fn check_and_report_update_errors(ctx: &mut AppContext) {
     }
 
     // Fired when taskkill returned non-zero after the mutex timeout.
-    let has_forcekill_failed =
-        memchr::memmem::find(&contents_lowercase, b"force-kill failed for").is_some();
-    if has_forcekill_failed {
-        crate::send_telemetry_sync_from_app_ctx!(TelemetryEvent::AutoupdateForcekillFailed, ctx);
+    // Exit code 128 means "no matching process found" — the process was already
+    // gone when taskkill ran — so suppress that harmless race condition.
+    if let Some(exit_code) = parse_forcekill_exit_code(&contents_lowercase) {
+        if exit_code != 128 {
+            crate::send_telemetry_sync_from_app_ctx!(
+                TelemetryEvent::AutoupdateForcekillFailed { exit_code },
+                ctx
+            );
+        }
     }
 
     #[cfg(feature = "crash_reporting")]
@@ -264,5 +290,58 @@ fn app_name_prefix(channel: Channel) -> &'static str {
         Channel::Integration => "integration",
         Channel::Dev => "WarpDev",
         Channel::Oss => "warp-oss",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_forcekill_exit_code;
+
+    fn log(line: &str) -> Vec<u8> {
+        line.to_ascii_lowercase().into_bytes()
+    }
+
+    #[test]
+    fn parses_typical_failure() {
+        // Typical Inno Setup log line for a real taskkill failure (e.g. access denied).
+        let contents = log("force-kill failed for dev.exe (exit code: 1)");
+        assert_eq!(parse_forcekill_exit_code(&contents), Some(1));
+    }
+
+    #[test]
+    fn parses_exit_code_128() {
+        // Exit code 128 = "no matching process" — the harmless race condition.
+        let contents = log("force-kill failed for dev.exe (exit code: 128)");
+        assert_eq!(parse_forcekill_exit_code(&contents), Some(128));
+    }
+
+    #[test]
+    fn parses_exit_code_embedded_in_multiline_log() {
+        // The pattern appears after several unrelated log lines.
+        let contents = log(
+            "[2024-01-01 00:00:00] Warp mutex still held after timeout; force-killing remaining processes.\n\
+             [2024-01-01 00:00:01] force-kill failed for warp.exe (exit code: 5)\n\
+             [2024-01-01 00:00:02] Installation complete.",
+        );
+        assert_eq!(parse_forcekill_exit_code(&contents), Some(5));
+    }
+
+    #[test]
+    fn returns_none_when_no_forcekill_line() {
+        // Log contains no force-kill attempt at all.
+        let contents = log("warp mutex still held after timeout; proceeding.");
+        assert_eq!(parse_forcekill_exit_code(&contents), None);
+    }
+
+    #[test]
+    fn returns_none_when_forcekill_marker_present_but_no_exit_code() {
+        // Malformed log line — marker present but no "exit code:" substring.
+        let contents = log("force-kill failed for dev.exe");
+        assert_eq!(parse_forcekill_exit_code(&contents), None);
+    }
+
+    #[test]
+    fn returns_none_for_empty_log() {
+        assert_eq!(parse_forcekill_exit_code(b""), None);
     }
 }

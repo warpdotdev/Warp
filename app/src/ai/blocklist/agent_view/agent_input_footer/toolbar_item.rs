@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::ai::blocklist::is_local_to_cloud_handoff_available;
 use crate::context_chips::{agent_footer_available_chips, available_chips, ContextChipKind};
 use crate::features::FeatureFlag;
 use crate::terminal::shared_session::SharedSessionStatus;
@@ -74,11 +75,6 @@ pub enum AgentToolbarItemKind {
 }
 
 impl AgentToolbarItemKind {
-    pub fn handoff_to_cloud_available() -> bool {
-        FeatureFlag::OzHandoff.is_enabled()
-            && FeatureFlag::HandoffLocalCloud.is_enabled()
-            && cfg!(all(feature = "local_fs", not(target_family = "wasm")))
-    }
     pub fn available_in(&self) -> ToolbarAvailability {
         match self {
             Self::ContextChip(_) | Self::VoiceInput | Self::FileAttach | Self::ShareSession => {
@@ -154,6 +150,23 @@ impl AgentToolbarItemKind {
         }
     }
 
+    /// Whether this item should remain visible during `&` handoff-compose mode.
+    /// Only items relevant to composing a cloud run are shown.
+    pub(super) fn is_available_during_handoff_compose(&self) -> bool {
+        match self {
+            Self::ModelSelector | Self::VoiceInput | Self::FileAttach => true,
+            Self::ContextChip(_)
+            | Self::NLDToggle
+            | Self::ContextWindowUsage
+            | Self::FastForwardToggle
+            | Self::HandoffToCloud
+            | Self::ShareSession
+            | Self::FileExplorer
+            | Self::RichInput
+            | Self::Settings => false,
+        }
+    }
+
     pub fn is_context_chip(&self) -> bool {
         matches!(self, Self::ContextChip(_))
     }
@@ -192,7 +205,7 @@ impl AgentToolbarItemKind {
         {
             items.push(Self::ShareSession);
         }
-        if Self::handoff_to_cloud_available() {
+        if is_local_to_cloud_handoff_available() {
             items.push(Self::HandoffToCloud);
         }
         items.push(Self::VoiceInput);
@@ -221,7 +234,7 @@ impl AgentToolbarItemKind {
         {
             items.push(Self::ShareSession);
         }
-        if Self::handoff_to_cloud_available() {
+        if is_local_to_cloud_handoff_available() {
             items.push(Self::HandoffToCloud);
         }
         items

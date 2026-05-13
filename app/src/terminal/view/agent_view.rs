@@ -85,6 +85,43 @@ impl TerminalView {
         self.redetermine_global_focus(ctx);
     }
 
+    // Enters the agent view for a restored CLI agent transcript, setting the title using the
+    // restored CLI conversation metadata if we have it.
+    pub(crate) fn enter_agent_view_for_restored_cli_agent(
+        &mut self,
+        fallback_title: String,
+        ctx: &mut ViewContext<Self>,
+    ) -> Option<AIConversationId> {
+        let origin = AgentViewEntryOrigin::ThirdPartyCloudAgent;
+        let conversation_id = BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
+            let conversation_id = history.start_new_conversation(self.view_id, false, false, ctx);
+            let title = fallback_title.trim();
+            if !title.is_empty() {
+                if let Some(conversation) = history.conversation_mut(&conversation_id) {
+                    conversation.set_fallback_display_title(title.to_owned());
+                }
+            }
+            conversation_id
+        });
+
+        match self.try_enter_agent_view(None, origin, Some(conversation_id), ctx) {
+            Ok(conversation_id) => {
+                self.redetermine_global_focus(ctx);
+                Some(conversation_id)
+            }
+            Err(e) => {
+                log::error!(
+                    "Failed to enter agent view for restored CLI agent from origin {:?}: {:?}",
+                    origin,
+                    e
+                );
+                self.show_error_toast(e.to_string(), ctx);
+                self.redetermine_global_focus(ctx);
+                None
+            }
+        }
+    }
+
     pub fn enter_agent_view_for_conversation(
         &mut self,
         initial_prompt: Option<String>,

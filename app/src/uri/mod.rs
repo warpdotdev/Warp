@@ -1447,5 +1447,5 @@ fn decode_uuid_hex(hex: &str) -> Option<Vec<u8>> {
 }
 
 #[cfg(test)]
-#[path = "uri_test.rs"]
+#[path = "uri_tests.rs"]
 mod tests;
