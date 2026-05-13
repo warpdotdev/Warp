@@ -921,6 +921,54 @@ zh-CN:
     new_plugin_version: "有新版本的 Warp 插件可用"
     view_plugin_update: "查看更新 Warp 插件的说明"
 
+  # ── Prompt Alert ──
+  prompt_alert:
+    no_connection: "无互联网连接"
+    telemetry_disabled_primary: "要使用 AI 功能，"
+    at_limit: "已达上限 -"
+    restricted_payment: "因付款问题受限"
+    out_of_credits: "Credits 已用完"
+    enable_analytics: "启用分析"
+    or_separator: " 或 "
+    sentence_period: "。"
+    upgrade: "升级"
+    upgrade_to_build: "升级到 Build"
+    sign_up_for_credits: "注册以获取更多 AI credits"
+    manage_billing: "管理账单"
+    contact_team_admin: "，请联系团队管理员"
+    enable_premium_overages: "启用高级超额用量"
+    ask_admin_enable_overages: "，请让团队管理员启用超额用量"
+    increase_monthly_spend_limit: "提高每月支出上限"
+    ask_admin_increase_overages: "，请让团队管理员提高超额用量上限"
+    compare_plans: "比较套餐"
+    contact_support: "联系支持"
+    use_own_api_keys: "使用你自己的 API keys"
+    add_credits: "添加 credits"
+
+  # ── Cloud Setup Guide ──
+  cloud_setup_guide:
+    title: "Oz 云端 Agent 入门"
+    subtitle: "可直接在 Warp 中从集成（Linear、Slack）、事件（GitHub、内置计划任务）启动 Oz 云端 Agent，也可以通过 Oz SDK 或 CLI 以编程方式启动。"
+    docs_prefix: "查看 "
+    oz_documentation: "Oz 文档"
+    docs_suffix: " 了解更多。"
+    quick_start: "快速开始：访问 oz.warp.dev，使用基于 UI 的设置体验。"
+    manual_setup: "手动设置：使用 Oz CLI 创建 Slack 或 Linear 集成"
+    create_environment: "创建环境"
+    create_environment_cli: "创建环境（CLI）"
+    create_slack_integration: "创建 Slack 集成"
+    create_linear_integration: "创建 Linear 集成"
+    repo_argument_description: "仓库的 GitHub 链接或本地文件路径"
+    name_argument_description: "环境名称"
+    docker_image_argument_description: "用于环境的 Docker image"
+    environment_id_argument_description: "要集成的环境 ID"
+    environment_description: "首先，设置一个环境来创建集成。"
+    environment_docs_prefix: "使用 Warp 的环境设置命令，让 Agent 帮你完成。"
+    visit_docs: "查看文档"
+    existing_docker_image: "或者，提供你自己的现有 Docker image。"
+    create_integration: "创建集成"
+    integration_docs_prefix: "集成 Slack 或 Linear，通过 @Warp 给 Warp 的 Agent 分配任务。"
+
   # ── 终端上下文菜单 ──
   terminal_context_menu:
     copy_prompt: "复制提示词"
@@ -967,6 +1015,18 @@ zh-CN:
     tag_agent_for_assistance: "标记 Agent 协助"
     save_as_workflow: "另存为工作流"
     save_as_workflow_secrets: "包含密钥的区块无法保存。"
+
+  onboarding_prompt:
+    line_one: "接下来，设置你的提示符。Warp 提供自定义提示符构建器，你也可以选择 PS1 来沿用已有的提示符配置。"
+    line_two: "Warp 支持许多自定义提示符，例如 oh-my-zsh、Starship、Powerlevel10K。"
+    learn_more: "了解更多"
+    confirm: "确认"
+    shell_prompt: "Shell 提示符（PS1）"
+    no_existing_prompt: "没有现有提示符。"
+    look_incorrect: "看起来不对？"
+    let_us_know: "告诉我们。"
+    warp_prompt: "Warp 提示符"
+    customizable_in_appearance_settings: "可在外观设置中自定义。"
 
   # ── 通用 ──
   common:

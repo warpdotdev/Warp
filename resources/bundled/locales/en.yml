@@ -921,6 +921,54 @@ en:
     new_plugin_version: "A new version of the Warp plugin is available"
     view_plugin_update: "View instructions to update the Warp plugin"
 
+  # ── Prompt Alert ──
+  prompt_alert:
+    no_connection: "No internet connection"
+    telemetry_disabled_primary: "To use AI features,"
+    at_limit: "At Limit -"
+    restricted_payment: "Restricted due to payment issue"
+    out_of_credits: "Out of credits"
+    enable_analytics: "enable analytics"
+    or_separator: " or "
+    sentence_period: "."
+    upgrade: "upgrade"
+    upgrade_to_build: "Upgrade to Build"
+    sign_up_for_credits: "Sign up for more AI credits"
+    manage_billing: "Manage billing"
+    contact_team_admin: ", contact a team admin"
+    enable_premium_overages: "Enable premium overages"
+    ask_admin_enable_overages: ", ask a team admin to enable overages"
+    increase_monthly_spend_limit: "Increase monthly spend limit"
+    ask_admin_increase_overages: ", ask a team admin to increase overages"
+    compare_plans: "Compare plans"
+    contact_support: "Contact support"
+    use_own_api_keys: "use your own API keys"
+    add_credits: "Add credits"
+
+  # ── Cloud Setup Guide ──
+  cloud_setup_guide:
+    title: "Getting started with Oz cloud agents"
+    subtitle: "Start Oz cloud agents directly in Warp from an integration (Linear, Slack), with an event (GitHub, built-in schedule), or programmatically with the Oz SDK or CLI."
+    docs_prefix: "Check out the "
+    oz_documentation: "Oz documentation"
+    docs_suffix: " to learn more."
+    quick_start: "Quick start: Visit oz.warp.dev for a UI-based setup experience."
+    manual_setup: "Manual setup: Create a Slack or Linear integration with the Oz CLI"
+    create_environment: "Create Environment"
+    create_environment_cli: "Create Environment (CLI)"
+    create_slack_integration: "Create Slack Integration"
+    create_linear_integration: "Create Linear Integration"
+    repo_argument_description: "GitHub link or local filepath to the repository"
+    name_argument_description: "Name for the environment"
+    docker_image_argument_description: "Docker image to use for the environment"
+    environment_id_argument_description: "ID of the environment to integrate with"
+    environment_description: "First, set up an environment to create an integration."
+    environment_docs_prefix: "Use Warp's environment setup command to have an agent help you through it. "
+    visit_docs: "Visit docs"
+    existing_docker_image: "Or, supply your own existing docker image."
+    create_integration: "Create an integration"
+    integration_docs_prefix: "Integrate Slack or Linear to assign Warp's Agent tasks with @Warp. "
+
   # ── Terminal Context Menu ──
   terminal_context_menu:
     copy_prompt: "Copy prompt"
@@ -967,6 +1015,18 @@ en:
     tag_agent_for_assistance: "Tag agent for assistance"
     save_as_workflow: "Save as Workflow"
     save_as_workflow_secrets: "Blocks containing secrets cannot be saved."
+
+  onboarding_prompt:
+    line_one: "Next, let’s set up your prompt. Warp has a custom prompt builder or you can select PS1 to honor your pre-existing prompt configuration."
+    line_two: "Warp works with many custom prompts like oh-my-zsh, Starship, Powerlevel10K. "
+    learn_more: "Learn more"
+    confirm: "Confirm"
+    shell_prompt: "Shell prompt (PS1)"
+    no_existing_prompt: "No existing prompt."
+    look_incorrect: "Look incorrect? "
+    let_us_know: "Let us know."
+    warp_prompt: "Warp prompt"
+    customizable_in_appearance_settings: "Customizable in appearance settings."
 
   # ── Common ──
   common:
