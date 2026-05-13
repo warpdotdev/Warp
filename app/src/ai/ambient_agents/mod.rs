@@ -21,7 +21,7 @@ pub const SERVER_OVERLOADED_TASK_FAILURE_MESSAGE: &str =
     "Warp is temporarily overloaded. Please try again shortly.";
 
 /// JSON payload for starting an agent run. In OpenWarp this is only used by local UI/CLI
-/// plumbing; the cloud `POST /agent/run` endpoint is disabled.
+/// plumbing.
 #[derive(Debug, Clone, Serialize)]
 pub struct SpawnAgentRequest {
     pub prompt: String,

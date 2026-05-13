@@ -17,7 +17,7 @@ use super::AmbientAgentTaskId;
 ///
 /// This is the merged/resolved config used when spawning or running an agent.
 /// It combines settings from config files and CLI args.
-/// Unlike `AgentConfig` (the cloud model), field names here use the runtime format
+/// Unlike `AgentConfig`, field names here use the runtime format
 /// (e.g. `model_id` instead of `base_model_id`).
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct AgentConfigSnapshot {
@@ -34,7 +34,7 @@ pub struct AgentConfigSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp_servers: Option<serde_json::Map<String, serde_json::Value>>,
     /// Profile ID for local agent runs. This configures the terminal session
-    /// with the specified execution profile. Only used for local runs, not cloud runs.
+    /// with the specified execution profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
     /// Self-hosted worker ID that should execute this task.
