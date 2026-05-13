@@ -624,6 +624,10 @@ zh-CN:
     indexing_disabled_admin: "团队管理员已禁用代码库索引。"
     indexing_enabled_admin: "团队管理员已启用代码库索引。"
     indexing_disabled_global_ai: "必须启用 AI 功能才能使用代码库索引。"
+    copy_file_path: "复制文件路径"
+    view_markdown_preview: "查看 Markdown 预览"
+    go_to_definition: "转到定义"
+    find_references: "查找引用"
 
   code_file_tree:
     open_in_new_pane: "在新面板中打开"
@@ -756,6 +760,8 @@ zh-CN:
     run_in_warp: "在 Warp 中运行"
     sign_in_to_edit: "登录后编辑"
     restore_workflow_from_trash: "从废纸篓恢复工作流"
+    untitled: "未命名"
+    or: "或"
 
   # ── 笔记本 ──
   notebook:
@@ -1365,6 +1371,17 @@ zh-CN:
     make_editor: "设为编辑者"
     make_viewer: "设为查看者"
     change_role: "更改角色"
+    share_session: "共享会话..."
+    stop_sharing: "停止共享"
+    copy_session_sharing_link: "复制会话共享链接"
+
+  # ── Ambient Agent ──
+  ambient_agent:
+    learn_more: "了解更多"
+    running_on_machine: "你的 Agent 当前正在 {specs} 机器上运行。"
+    upgrade: "升级"
+    powerful_cloud_agents_suffix: "以获得更强大的云端 Agents。"
+    authenticate_with_github: "使用 GitHub 认证"
 
   # ── SSH 文件上传 ──
   ssh_file_upload:

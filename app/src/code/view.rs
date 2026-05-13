@@ -1995,15 +1995,15 @@ impl CodeView {
         #[cfg(feature = "local_fs")]
         if let Some(path) = self.local_path(ctx) {
             let reveal_label = if cfg!(target_os = "macos") {
-                "Reveal in Finder"
+                t!("code_file_tree.reveal_in_finder").to_string()
             } else if cfg!(target_os = "windows") {
-                "Reveal in Explorer"
+                t!("code_file_tree.reveal_in_explorer").to_string()
             } else {
-                "Reveal in file manager"
+                t!("code_file_tree.reveal_in_file_manager").to_string()
             };
             items.extend([
                 MenuItem::Separator,
-                MenuItemFields::new("Copy file path")
+                MenuItemFields::new(t!("code.copy_file_path"))
                     .with_on_select_action(CodeViewAction::CopyFilePath)
                     .into_item(),
                 MenuItemFields::new(reveal_label)
@@ -2013,7 +2013,7 @@ impl CodeView {
 
             if is_markdown_file(&path) {
                 items.push(
-                    MenuItemFields::new("View Markdown preview")
+                    MenuItemFields::new(t!("code.view_markdown_preview"))
                         .with_on_select_action(CodeViewAction::RenderMarkdown)
                         .into_item(),
                 );

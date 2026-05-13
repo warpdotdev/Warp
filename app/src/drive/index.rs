@@ -907,7 +907,7 @@ impl DriveIndex {
                 ..Default::default()
             };
             let mut editor = EditorView::single_line(options, ctx);
-            editor.set_placeholder_text("Untitled", ctx);
+            editor.set_placeholder_text(t!("drive.untitled"), ctx);
             editor
         });
 
@@ -2234,7 +2234,7 @@ impl DriveIndex {
         .finish();
 
         let or_text = Container::new(
-            Text::new_inline("Or", appearance.ui_font_family(), ITEM_FONT_SIZE)
+            Text::new_inline(t!("drive.or"), appearance.ui_font_family(), ITEM_FONT_SIZE)
                 .with_color(appearance.theme().nonactive_ui_text_color().into())
                 .with_style(Properties::default().weight(Weight::Medium))
                 .finish(),

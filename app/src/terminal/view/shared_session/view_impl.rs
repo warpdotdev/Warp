@@ -1759,7 +1759,7 @@ impl TerminalView {
 
         if !model.shared_session_status().is_sharer_or_viewer() {
             items.push(
-                MenuItemFields::new("Share session...")
+                MenuItemFields::new(t!("shared_session.share_session"))
                     .with_on_select_action(TerminalAction::ContextMenu(
                         ContextMenuAction::OpenShareSessionModal,
                     ))
@@ -1768,7 +1768,7 @@ impl TerminalView {
             );
         } else if model.shared_session_status().is_active_sharer() {
             items.push(
-                MenuItemFields::new("Stop sharing")
+                MenuItemFields::new(t!("shared_session.stop_sharing"))
                     .with_on_select_action(TerminalAction::ContextMenu(
                         ContextMenuAction::StopSharing,
                     ))
@@ -1778,7 +1778,7 @@ impl TerminalView {
 
         if model.shared_session_status().is_sharer_or_viewer() {
             items.push(
-                MenuItemFields::new("Copy session sharing link")
+                MenuItemFields::new(t!("shared_session.copy_session_sharing_link"))
                     .with_on_select_action(TerminalAction::CopySharedSessionLink {
                         source: SharedSessionActionSource::RightClickMenu,
                     })

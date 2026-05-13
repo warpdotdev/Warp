@@ -624,6 +624,10 @@ en:
     indexing_disabled_admin: "Team admins have disabled codebase indexing."
     indexing_enabled_admin: "Team admins have enabled codebase indexing."
     indexing_disabled_global_ai: "AI Features must be enabled to use codebase indexing."
+    copy_file_path: "Copy file path"
+    view_markdown_preview: "View Markdown preview"
+    go_to_definition: "Go to definition"
+    find_references: "Find references"
 
   code_file_tree:
     open_in_new_pane: "Open in new pane"
@@ -756,6 +760,8 @@ en:
     run_in_warp: "Run in Warp"
     sign_in_to_edit: "Sign in to edit"
     restore_workflow_from_trash: "Restore workflow from trash"
+    untitled: "Untitled"
+    or: "Or"
 
   # ── Notebooks ──
   notebook:
@@ -1365,6 +1371,17 @@ en:
     make_editor: "Make editor"
     make_viewer: "Make viewer"
     change_role: "Change role"
+    share_session: "Share session..."
+    stop_sharing: "Stop sharing"
+    copy_session_sharing_link: "Copy session sharing link"
+
+  # ── Ambient Agent ──
+  ambient_agent:
+    learn_more: "Learn more"
+    running_on_machine: "Your agent is currently running on a {specs} machine. "
+    upgrade: "Upgrade"
+    powerful_cloud_agents_suffix: " for more powerful cloud agents."
+    authenticate_with_github: "Authenticate with GitHub"
 
   # ── SSH File Upload ──
   ssh_file_upload:
