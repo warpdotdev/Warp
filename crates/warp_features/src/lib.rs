@@ -925,8 +925,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::ConversationApi,
     FeatureFlag::RememberFastForwardState,
     FeatureFlag::HOANotifications,
-    FeatureFlag::OrchestrationV2,
-    FeatureFlag::OrchestrationPillBar,
     FeatureFlag::RunAgentsTool,
     FeatureFlag::GeminiNotifications,
     FeatureFlag::LocalDockerSandbox,
@@ -946,6 +944,8 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
 /// All PREVIEW_FLAGS are also automatically added to dogfood builds (WarpDev).
 pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::Orchestration,
+    FeatureFlag::OrchestrationV2,
+    FeatureFlag::OrchestrationPillBar,
     FeatureFlag::BlocklistMarkdownTableRendering,
     FeatureFlag::MarkdownTables,
     FeatureFlag::GitOperationsInCodeReview,
