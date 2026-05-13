@@ -144,9 +144,8 @@ pub(super) fn relaunch() -> Result<()> {
     // Pass a flag to the app to let it know it was restarted as part of the
     // autoupdate process.
     launch_command.push(format!(" --args {}", warp_cli::finish_update_flag()));
-    // If we're testing with a local copy of channel_versions.json, have the
-    // newly-started binary also reference that same file (so we can test
-    // displaying an updated changelog after an autoupdate).
+    // 测试本地通道版本 JSON 时，让新启动的二进制继续引用同一个文件，
+    // 以便验证自动更新后的 changelog 展示。
     if let Ok(path) = env::var("WARP_CHANNEL_VERSIONS_PATH") {
         launch_command.push(format!(" --env WARP_CHANNEL_VERSIONS_PATH={path}"));
     }

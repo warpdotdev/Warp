@@ -4,7 +4,7 @@ Section: devel
 Depends: zlib1g
 Priority: optional
 Architecture: @@ARCH@@
-Maintainer: Warp Linux Maintainers <linux-maintainers@warp.dev>
+Maintainer: OpenWarp Maintainers <openwarp-maintainers@localhost>
 Homepage: https://warp.dev/
 Replaces: warp-cli@@CHANNEL_SUFFIX@@ (<< @@VERSION@@), oz (= 0.2026.02.09.06.06.stable.00), oz (= 0.2026.02.09.06.06.stable.02), oz (= 0.2026.02.10.11.37.stable.00), oz (= 0.2026.02.10.11.37.stable.01), oz (= 0.2026.02.11.08.23.stable.00)
 Conflicts: warp-cli@@CHANNEL_SUFFIX@@ (<< @@VERSION@@), oz (= 0.2026.02.09.06.06.stable.00), oz (= 0.2026.02.09.06.06.stable.02), oz (= 0.2026.02.10.11.37.stable.00), oz (= 0.2026.02.10.11.37.stable.01), oz (= 0.2026.02.11.08.23.stable.00)

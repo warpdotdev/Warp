@@ -2,9 +2,9 @@
 #
 # 与上游 create_release.yml 的差异:
 # - 仅 macOS arm64 + Windows x64 + Linux x86_64(AppImage),
-#   Web/CLI/Universal/Win-arm64/macOS x86_64/Linux 的 deb/rpm/arch 全砍
+#   Web/CLI/Universal/Win-arm64/macOS x86_64/Linux 的 rpm/arch 全砍
 #   (macOS x86_64 在 macos-26-intel 上 release 编译稳定爆 3h job 上限,直接砍掉;
-#    Linux 只产 AppImage,deb/rpm 模板里写死了 releases.warp.dev 源/GPG key,对 OSS fork 不适用)
+#    Linux 只产 AppImage/deb,不发布上游 Warp 仓库源或签名 key)
 # - 单 channel: preview(由 release_configurations.json 提供配置)
 # - 不签名:不传 --read-passwords-from-env(macOS) / 不设 SIGN_TOOL_CMD(Windows)
 # - 不上传 GCS / Sentry / Slack / changelog,不调 channel-versions repository_dispatch

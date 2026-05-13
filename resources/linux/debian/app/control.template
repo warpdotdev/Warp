@@ -5,7 +5,7 @@ Depends: fontconfig, libegl1, libwayland-client0, libwayland-egl1, libx11-6, lib
 Recommends: libgl1-mesa-dri, yaru-icon-theme | adwaita-icon-theme-full
 Priority: optional
 Architecture: @@ARCH@@
-Maintainer: Warp Linux Maintainers <linux-maintainers@warp.dev>
+Maintainer: OpenWarp Maintainers <openwarp-maintainers@localhost>
 Homepage: https://warp.dev/
 Description: Warp, the Rust-based terminal for developers and teams
  Warp is a modern, Rust-based terminal with AI built in so teams can

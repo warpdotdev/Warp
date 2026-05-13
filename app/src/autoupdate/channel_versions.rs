@@ -1,14 +1,11 @@
-use std::{env, fs::read_to_string, time::Duration};
+use std::{env, fs::read_to_string};
 
 use anyhow::{Context as _, Result};
 use channel_versions::{ChannelChangelogs, ChannelVersion, ChannelVersions, VersionInfo};
 
-use crate::channel::{Channel, ChannelState};
+use crate::channel::ChannelState;
 
-const FETCH_CHANNEL_VERSIONS_TIMEOUT: Duration = Duration::from_secs(60);
-
-// Fetches channel versions asynchronously from the Warp server. If the Warp server request fails,
-// then fetches from GCP JSON storage as a fallback.
+// 只从本地状态加载通道版本。OpenWarp 不再向 Warp 或 GCP 请求 release-channel 元数据。
 pub async fn fetch_channel_versions(
     nonce: &str,
     client: &http_client::Client,
@@ -25,14 +22,7 @@ pub async fn fetch_channel_versions(
     }
 
     let _ = (nonce, client, is_daily);
-    if matches!(
-        ChannelState::channel(),
-        Channel::Stable | Channel::Preview | Channel::Dev
-    ) {
-        return Ok(local_channel_versions(include_changelogs));
-    }
-
-    fetch_channel_versions_from_json_storage(client, nonce).await
+    Ok(local_channel_versions(include_changelogs))
 }
 
 fn local_channel_versions(include_changelogs: bool) -> ChannelVersions {
@@ -51,30 +41,4 @@ fn local_channel_versions(include_changelogs: bool) -> ChannelVersions {
         stable: channel_version,
         changelogs,
     }
-}
-
-// Synchronously fetches updated Warp [`ChannelVersions`] from GCP JSON storage. This will soon
-// be deprecated in favor of retrieving updated channel versions from the Warp Server.
-// Note, in order to run against a test file you can use the "channel_versions_test.json" file
-// and update the file using gsutil cp channel_versions_test.json gs://warp-releases/channel_versions_test.json
-async fn fetch_channel_versions_from_json_storage(
-    client: &http_client::Client,
-    nonce: &str,
-) -> Result<ChannelVersions> {
-    log::info!("Fetching channel versions from GCP JSON storage");
-    let res = client
-        .get(
-            format!(
-                "{}/channel_versions.json?r={}",
-                ChannelState::releases_base_url(),
-                nonce
-            )
-            .as_str(),
-        )
-        .timeout(FETCH_CHANNEL_VERSIONS_TIMEOUT)
-        .send()
-        .await?;
-    let versions: ChannelVersions = res.json().await?;
-    log::info!("Received channel versions from GCP JSON storage: {versions}");
-    Ok(versions)
 }
