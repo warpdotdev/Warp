@@ -62,7 +62,7 @@ use warpui::{
     ui_components::{
         button::ButtonVariant,
         components::{Coords, UiComponent, UiComponentStyles},
-        switch::{SwitchStateHandle, TooltipConfig},
+        switch::SwitchStateHandle,
     },
     Action, AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
@@ -1471,8 +1471,8 @@ impl AISettingsPageView {
                 widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
                 widgets.push(Box::new(AgentProvidersWidget::new(ctx)));
                 widgets.push(Box::new(OtherAIWidget::default()));
-                if FeatureFlag::AgentModeComputerUse.is_enabled() {
-                    widgets.push(Box::new(CloudAgentComputerUseWidget::default()));
+                if FeatureFlag::Orchestration.is_enabled() {
+                    widgets.push(Box::new(OrchestrationWidget::default()));
                 }
             }
             Some(AISubpage::WarpAgent) => {
@@ -1505,8 +1505,8 @@ impl AISettingsPageView {
                 }
                 widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
                 widgets.push(Box::new(OtherAIWidget::default()));
-                if FeatureFlag::AgentModeComputerUse.is_enabled() {
-                    widgets.push(Box::new(CloudAgentComputerUseWidget::default()));
+                if FeatureFlag::Orchestration.is_enabled() {
+                    widgets.push(Box::new(OrchestrationWidget::default()));
                 }
             }
             Some(AISubpage::Providers) => {
@@ -2217,7 +2217,6 @@ pub enum AISettingsPageAction {
     ToggleAwsBedrockAutoLogin,
     ToggleAwsBedrockCredentialsEnabled,
     RefreshAwsBedrockCredentials,
-    ToggleCloudAgentComputerUse,
     ToggleFileBasedMcp,
     ToggleIncludeAgentCommandsInHistory,
     #[cfg(feature = "local_fs")]
@@ -2976,14 +2975,6 @@ impl TypedActionView for AISettingsPageView {
                 #[cfg(not(target_family = "wasm"))]
                 ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
                     drop(refresh_aws_credentials(manager, ctx));
-                });
-                ctx.notify();
-            }
-            AISettingsPageAction::ToggleCloudAgentComputerUse => {
-                AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings
-                        .cloud_agent_computer_use_enabled
-                        .toggle_and_save_value(ctx));
                 });
                 ctx.notify();
             }
@@ -6357,16 +6348,15 @@ impl SettingsWidget for CLIAgentWidget {
 }
 
 #[derive(Default)]
-struct CloudAgentComputerUseWidget {
-    toggle: SwitchStateHandle,
+struct OrchestrationWidget {
     orchestration_toggle: SwitchStateHandle,
 }
 
-impl SettingsWidget for CloudAgentComputerUseWidget {
+impl SettingsWidget for OrchestrationWidget {
     type View = AISettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "oz cloud agent computer use orchestration multi-agent"
+        "oz orchestration multi-agent"
     }
 
     fn render(
@@ -6375,65 +6365,8 @@ impl SettingsWidget for CloudAgentComputerUseWidget {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        use crate::ai::execution_profiles::{CloudAgentComputerUseState, ComputerUsePermission};
-
         let is_any_ai_enabled = AISettings::as_ref(app).is_any_ai_enabled(app);
-
-        // Determine toggle state based on workspace autonomy setting and user preference
-        let CloudAgentComputerUseState {
-            enabled: is_checked,
-            is_forced_by_org,
-        } = ComputerUsePermission::resolve_cloud_agent_state(app);
-
-        // Toggle is disabled if forced by org settings OR if AI is globally disabled
-        let is_disabled = is_forced_by_org || !is_any_ai_enabled;
-
-        let ui_builder = appearance.ui_builder();
-        let toggle = if is_forced_by_org {
-            // Disabled by organization setting - show tooltip on hover
-            ui_builder
-                .switch(self.toggle.clone())
-                .check(is_checked)
-                .with_tooltip(TooltipConfig {
-                    text: crate::t!("settings-ai-org-enforced-tooltip"),
-                    styles: ui_builder.default_tool_tip_styles(),
-                })
-                .disable()
-                .build()
-                .finish()
-        } else if !is_any_ai_enabled {
-            // Disabled because AI is off globally - no tooltip needed
-            ui_builder
-                .switch(self.toggle.clone())
-                .check(is_checked)
-                .with_disabled(true)
-                .build()
-                .finish()
-        } else {
-            // Enabled - allow toggling
-            ui_builder
-                .switch(self.toggle.clone())
-                .check(is_checked)
-                .build()
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(AISettingsPageAction::ToggleCloudAgentComputerUse);
-                })
-                .finish()
-        };
-
-        let toggle_row = build_toggle_element(
-            render_body_item_label::<AISettingsPageAction>(
-                crate::t!("settings-ai-cloud-agent-computer-use"),
-                Some(styles::header_font_color(!is_disabled, app)),
-                None,
-                LocalOnlyIconState::Hidden,
-                ToggleState::Enabled,
-                appearance,
-            ),
-            toggle,
-            appearance,
-            None,
-        );
+        let ai_settings = AISettings::as_ref(app);
 
         let mut column = Flex::column()
             .with_child(render_separator(appearance))
@@ -6445,31 +6378,22 @@ impl SettingsWidget for CloudAgentComputerUseWidget {
                 )
                 .with_padding_bottom(HEADER_PADDING)
                 .finish(),
-            )
-            .with_child(toggle_row)
-            .with_child(render_ai_setting_description(
-                crate::t!("settings-ai-cloud-agent-computer-use-description"),
-                !is_disabled,
-                app,
-            ));
+            );
 
-        if FeatureFlag::Orchestration.is_enabled() {
-            let ai_settings = AISettings::as_ref(app);
-            column.add_child(render_ai_setting_toggle::<OrchestrationEnabled>(
-                crate::t!("settings-ai-orchestration-label"),
-                AISettingsPageAction::ToggleOrchestration,
-                *ai_settings.orchestration_enabled,
-                is_any_ai_enabled,
-                self.orchestration_toggle.clone(),
-                &view.local_only_icon_tooltip_states,
-                app,
-            ));
-            column.add_child(render_ai_setting_description(
-                crate::t!("settings-ai-orchestration-description"),
-                is_any_ai_enabled,
-                app,
-            ));
-        }
+        column.add_child(render_ai_setting_toggle::<OrchestrationEnabled>(
+            crate::t!("settings-ai-orchestration-label"),
+            AISettingsPageAction::ToggleOrchestration,
+            *ai_settings.orchestration_enabled,
+            is_any_ai_enabled,
+            self.orchestration_toggle.clone(),
+            &view.local_only_icon_tooltip_states,
+            app,
+        ));
+        column.add_child(render_ai_setting_description(
+            crate::t!("settings-ai-orchestration-description"),
+            is_any_ai_enabled,
+            app,
+        ));
 
         column.finish()
     }

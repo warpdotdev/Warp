@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use crate::cloud_object::UniquePer;
 use crate::settings::AISettings;
-use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{
     cloud_object::{
         model::{
@@ -104,15 +103,6 @@ pub enum ComputerUsePermission {
     Unknown,
 }
 
-/// Result of resolving the cloud agent computer use setting.
-/// Contains both the effective value and whether it's forced by organization policy.
-pub struct CloudAgentComputerUseState {
-    /// Whether computer use is enabled for cloud agents.
-    pub enabled: bool,
-    /// Whether this value is forced by organization settings (true = user cannot change it).
-    pub is_forced_by_org: bool,
-}
-
 impl ComputerUsePermission {
     pub fn description(&self) -> &'static str {
         match self {
@@ -135,45 +125,6 @@ impl ComputerUsePermission {
 
     pub fn is_always_allow(&self) -> bool {
         matches!(self, Self::AlwaysAllow)
-    }
-
-    /// Resolves the effective cloud agent computer use state by reading the workspace
-    /// autonomy setting and user's local preference from their respective singletons.
-    pub fn resolve_cloud_agent_state(ctx: &AppContext) -> CloudAgentComputerUseState {
-        if !FeatureFlag::AgentModeComputerUse.is_enabled() {
-            return CloudAgentComputerUseState {
-                enabled: false,
-                is_forced_by_org: false,
-            };
-        }
-
-        let autonomy_setting = UserWorkspaces::as_ref(ctx)
-            .ai_autonomy_settings()
-            .computer_use_setting;
-        let user_preference = *AISettings::as_ref(ctx).cloud_agent_computer_use_enabled;
-
-        match autonomy_setting {
-            Some(ComputerUsePermission::Never) => CloudAgentComputerUseState {
-                enabled: false,
-                is_forced_by_org: true,
-            },
-            Some(ComputerUsePermission::AlwaysAllow) => CloudAgentComputerUseState {
-                enabled: true,
-                is_forced_by_org: true,
-            },
-            // TODO(QUALITY-297): Currently this case should never be hit because the
-            // AlwaysAsk variant isn't accessible in the admin console. We need to figure
-            // out how to handle it when it eventually becomes available. For now, I'm
-            // treating this conservatively and marking computer use as disabled.
-            Some(ComputerUsePermission::AlwaysAsk) => CloudAgentComputerUseState {
-                enabled: false,
-                is_forced_by_org: true,
-            },
-            Some(ComputerUsePermission::Unknown) | None => CloudAgentComputerUseState {
-                enabled: user_preference,
-                is_forced_by_org: false,
-            },
-        }
     }
 }
 

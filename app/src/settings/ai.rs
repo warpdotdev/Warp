@@ -1711,18 +1711,6 @@ define_settings_group!(AISettings, settings: [
         toml_path: "general.default_tab_config_path",
     }
 
-    // Whether computer use is enabled for cloud agent conversations started from the Warp app.
-    // This setting is only used when the AI autonomy setting is AlwaysAsk or not set.
-    cloud_agent_computer_use_enabled: CloudAgentComputerUseEnabled {
-        type: bool,
-        default: warp_core::channel::ChannelState::channel().is_dogfood(),
-        supported_platforms: SupportedPlatforms::DESKTOP,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        private: false,
-        toml_path: "agents.warp_agent.other.cloud_agent_computer_use_enabled",
-        description: "Whether computer use is enabled for cloud agent conversations.",
-    }
-
     // Whether multi-agent orchestration is enabled. When enabled, the agent can
     // spawn and coordinate parallel sub-agents via StartAgent / SendMessageToAgent
     // tools. This setting is only effective when FeatureFlag::Orchestration is also

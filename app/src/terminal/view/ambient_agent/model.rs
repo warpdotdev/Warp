@@ -16,7 +16,7 @@ use crate::ai::ambient_agents::{
 };
 use crate::ai::api_error::AIApiError;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
-use crate::ai::execution_profiles::{CloudAgentComputerUseState, ComputerUsePermission};
+use crate::ai::blocklist::BlocklistAIPermissions;
 use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::terminal::view::ambient_agent::SetupCommandState;
 
@@ -359,10 +359,13 @@ impl AmbientAgentViewModel {
             .id
             .to_string();
 
-        // Determine computer_use_enabled based on workspace AI autonomy settings
-        let CloudAgentComputerUseState { enabled, .. } =
-            ComputerUsePermission::resolve_cloud_agent_state(ctx);
-        let computer_use_enabled = Some(enabled);
+        let computer_use_enabled = Some(
+            FeatureFlag::AgentModeComputerUse.is_enabled()
+                && BlocklistAIPermissions::as_ref(ctx)
+                    .get_computer_use_setting(ctx, Some(self.terminal_view_id))
+                    .is_enabled()
+                && computer_use::is_supported_on_current_platform(),
+        );
 
         let default_host = std::env::var("WARP_CLOUD_MODE_DEFAULT_HOST")
             .ok()
