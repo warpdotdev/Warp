@@ -7,6 +7,7 @@ use ai::skills::SkillReference;
 use std::path::PathBuf;
 
 use super::RunAgentsEditState;
+use crate::ai::blocklist::inline_action::orchestration_controls::OrchestrationEditState;
 
 fn make_request(harness: &str, mode: RunAgentsExecutionMode) -> RunAgentsRequest {
     make_request_with_skills(harness, mode, Vec::new())
@@ -29,6 +30,24 @@ fn make_request_with_skills(
             prompt: "do work".to_string(),
             title: "Child agent".to_string(),
         }],
+    }
+}
+
+fn make_edit_state_with_orch_fields(
+    harness: &str,
+    mode: RunAgentsExecutionMode,
+) -> RunAgentsEditState {
+    let request = make_request(harness, mode);
+    RunAgentsEditState {
+        orch: OrchestrationEditState::from_run_agents_fields(
+            &request.model_id,
+            &request.harness_type,
+            &request.execution_mode,
+        ),
+        agent_run_configs: request.agent_run_configs,
+        base_prompt: request.base_prompt,
+        summary: request.summary,
+        skills: request.skills,
     }
 }
 
@@ -136,8 +155,7 @@ fn local_with_disabled_claude_or_codex_disables_accept() {
             "Local Codex child agents are temporarily disabled.",
         ),
     ] {
-        let state =
-            RunAgentsEditState::from_request(&make_request(harness, RunAgentsExecutionMode::Local));
+        let state = make_edit_state_with_orch_fields(harness, RunAgentsExecutionMode::Local);
         assert_eq!(state.orch.accept_disabled_reason(), Some(expected));
     }
 }
@@ -498,10 +516,7 @@ mod should_auto_launch_tests {
 
     #[test]
     fn returns_false_when_accept_is_disabled() {
-        let state = RunAgentsEditState::from_request(&make_request(
-            "claude",
-            RunAgentsExecutionMode::Local,
-        ));
+        let state = make_edit_state_with_orch_fields("claude", RunAgentsExecutionMode::Local);
         let config = Some((
             OrchestrationConfig {
                 model_id: "auto".to_string(),
