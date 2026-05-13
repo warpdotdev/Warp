@@ -840,7 +840,7 @@ fn test_shared_followup_on_existing_conversation_converts_user_query_input() {
         let conversation_id =
             BlocklistAIHistoryModel::handle(&app).update(&mut app, |model, ctx| {
                 let conversation_id =
-                    model.start_new_conversation(terminal_view_id, false, false, ctx);
+                    model.start_new_conversation(terminal_view_id, false, false, false, ctx);
                 model.set_server_conversation_token_for_conversation(
                     conversation_id,
                     conversation_token.to_string(),
@@ -1022,7 +1022,8 @@ fn test_on_ambient_agent_execution_ended_refreshes_open_details_panel_to_termina
             model.insert_task_for_test(task);
         });
         BlocklistAIHistoryModel::handle(&app).update(&mut app, |model, ctx| {
-            let conversation_id = model.start_new_conversation(terminal.id(), false, false, ctx);
+            let conversation_id =
+                model.start_new_conversation(terminal.id(), false, false, false, ctx);
             model.assign_run_id_for_conversation(
                 conversation_id,
                 task_id.to_string(),

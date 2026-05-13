@@ -129,7 +129,7 @@ fn append_exchange_with_inputs_and_handle_event(
     let (conversation_id, task_id, exchange_id, response_stream_id) =
         history_model.update(ctx, |history_model, ctx| {
             let conversation_id =
-                history_model.start_new_conversation(view.view_id, false, false, ctx);
+                history_model.start_new_conversation(view.view_id, false, false, false, ctx);
             let task_id = history_model
                 .conversation(&conversation_id)
                 .expect("conversation should exist")
@@ -1015,6 +1015,7 @@ fn cloud_mode_dispatched_agent_inserts_queued_user_query() {
                             referenced_attachments: vec![],
                             conversation_id: None,
                             initial_snapshot_token: None,
+                            snapshot_disabled: None,
                         },
                         ctx,
                     );
@@ -4362,6 +4363,109 @@ fn ctrl_g_closes_cli_agent_rich_input_when_editor_is_focused() {
     })
 }
 
+/// Verifies that Ctrl-G closes CLI agent rich input when dispatched from the
+/// terminal context alone (no editor in the responder chain). Regression test
+/// for #9916 where the keybinding only opened rich input but did not close it
+/// in scenarios where focus was outside the embedded editor and the active
+/// block had transitioned out of `LongRunningCommand` — for example, when the
+/// CLI agent has paused waiting for user input.
+#[test]
+fn ctrl_g_closes_cli_agent_rich_input_from_terminal_context() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        app.add_singleton_model(ImportedConfigModel::new);
+        // Register keybindings so keystroke dispatch can match the Ctrl-G binding.
+        app.update(|ctx| {
+            crate::terminal::init(ctx);
+            crate::editor::init(ctx);
+        });
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cli_rich = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+
+        let (window_id, terminal) =
+            open_cli_agent_rich_input_for_agent_with_window_id(&mut app, CLIAgent::OpenCode);
+
+        // Dispatch Ctrl-G with only the terminal view in the responder chain.
+        // This simulates the case where focus is not on the embedded editor
+        // (e.g., on the block list) and the previous Case 1 / Case 2 predicates
+        // would both fail to match.
+        let handled = app
+            .dispatch_keystroke(
+                window_id,
+                &[terminal.id()],
+                &warpui::keymap::Keystroke::parse("ctrl-g").expect("valid keystroke"),
+                false,
+            )
+            .expect("dispatch should succeed");
+
+        assert!(
+            handled,
+            "ctrl-g should be handled from the terminal context when rich input is open"
+        );
+        terminal.read(&app, |view, ctx| {
+            assert!(
+                !view.has_active_cli_agent_input_session(ctx),
+                "rich input should be closed after Ctrl-G from terminal context"
+            );
+        });
+    })
+}
+
+/// Verifies that Ctrl-G is a true toggle: opens then closes rich input from
+/// the terminal context. Regression test for #9916.
+#[test]
+fn ctrl_g_toggles_cli_agent_rich_input_from_terminal_context() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        app.add_singleton_model(ImportedConfigModel::new);
+        app.update(|ctx| {
+            crate::terminal::init(ctx);
+            crate::editor::init(ctx);
+        });
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cli_rich = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+
+        // Start with rich input open, then close via Ctrl-G, then re-open via
+        // direct call (Ctrl-G open path requires LongRunningCommand which is
+        // tricky to simulate in a unit test), then close via Ctrl-G again.
+        let (window_id, terminal) =
+            open_cli_agent_rich_input_for_agent_with_window_id(&mut app, CLIAgent::OpenCode);
+
+        let keystroke = warpui::keymap::Keystroke::parse("ctrl-g").expect("valid keystroke");
+
+        // First close: rich input is open → Ctrl-G should close.
+        let handled = app
+            .dispatch_keystroke(window_id, &[terminal.id()], &keystroke, false)
+            .expect("dispatch should succeed");
+        assert!(handled, "first ctrl-g should be handled (close)");
+        terminal.read(&app, |view, ctx| {
+            assert!(
+                !view.has_active_cli_agent_input_session(ctx),
+                "rich input should be closed after first Ctrl-G"
+            );
+        });
+
+        // Re-open programmatically (mirrors the user re-triggering open via
+        // Ctrl-G in a long-running context).
+        terminal.update(&mut app, |view, ctx| {
+            view.open_cli_agent_rich_input(CLIAgentInputEntrypoint::CtrlG, ctx);
+            assert!(view.has_active_cli_agent_input_session(ctx));
+        });
+
+        // Second close: rich input is open again → Ctrl-G should close again.
+        let handled = app
+            .dispatch_keystroke(window_id, &[terminal.id()], &keystroke, false)
+            .expect("dispatch should succeed");
+        assert!(handled, "second ctrl-g should be handled (close again)");
+        terminal.read(&app, |view, ctx| {
+            assert!(
+                !view.has_active_cli_agent_input_session(ctx),
+                "rich input should be closed after second Ctrl-G"
+            );
+        });
+    })
+}
+
 #[test]
 fn cli_agent_rich_input_hint_text_mentions_active_cli_agent() {
     App::test((), |mut app| async move {
@@ -4894,6 +4998,79 @@ fn status_in_progress_auto_opens_rich_input_after_blocked() {
     })
 }
 
+// Regression test for https://github.com/warpdotdev/warp/issues/9059.
+// Codex's listener doesn't emit Blocked-state events (it only forwards opaque
+// OSC 9 notifications as Stop), so auto-toggling rich input would trap arrow
+// keys when Codex shows interactive option menus. Auto-toggle must not fire
+// for agents whose handlers report `supports_rich_status() == false`.
+#[test]
+fn codex_status_change_does_not_auto_open_rich_input() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cli_rich = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+        // auto_toggle_rich_input defaults to true.
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        terminal.update(&mut app, |view, ctx| {
+            let listener = ctx.add_model(|ctx| {
+                CLIAgentSessionListener::new(
+                    view.view_id,
+                    CLIAgent::Codex,
+                    &view.model_events_handle,
+                    ctx,
+                )
+            });
+            CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                sessions.set_session(
+                    view.view_id,
+                    CLIAgentSession {
+                        agent: CLIAgent::Codex,
+                        status: CLIAgentSessionStatus::InProgress,
+                        session_context: CLIAgentSessionContext::default(),
+                        input_state: CLIAgentInputState::Closed,
+                        should_auto_toggle_input: true,
+                        listener: Some(listener),
+                        remote_host: None,
+                        plugin_version: None,
+                        draft_text: None,
+                        custom_command_prefix: None,
+                    },
+                    ctx,
+                );
+            });
+
+            // Rich input starts closed. Simulating a Stop event (the only
+            // status Codex's handler ever emits) must not re-open it,
+            // because the user may be navigating Codex's option menus.
+            assert!(!view.has_active_cli_agent_input_session(ctx));
+            CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                sessions.update_from_event(
+                    view.view_id,
+                    &CLIAgentEvent {
+                        v: 1,
+                        agent: CLIAgent::Codex,
+                        event: CLIAgentEventType::Stop,
+                        session_id: None,
+                        cwd: None,
+                        project: None,
+                        payload: CLIAgentEventPayload {
+                            query: Some("Agent turn complete".to_owned()),
+                            ..Default::default()
+                        },
+                    },
+                    ctx,
+                );
+            });
+        });
+
+        terminal.read(&app, |view, ctx| {
+            assert!(!view.has_active_cli_agent_input_session(ctx));
+        });
+    })
+}
+
 #[test]
 fn cli_session_status_updates_active_child_conversation() {
     App::test((), |mut app| async move {
@@ -4905,7 +5082,7 @@ fn cli_session_status_updates_active_child_conversation() {
         let child_conversation_id = terminal.update(&mut app, |view, ctx| {
             let parent_conversation_id =
                 BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                    history_model.start_new_conversation(view.view_id, false, false, ctx)
+                    history_model.start_new_conversation(view.view_id, false, false, false, ctx)
                 });
             let child_conversation_id =
                 BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
@@ -5053,7 +5230,7 @@ fn cli_session_status_updates_single_child_conversation_without_agent_view() {
         let child_conversation_id = terminal.update(&mut app, |view, ctx| {
             let parent_conversation_id =
                 BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                    history_model.start_new_conversation(view.view_id, false, false, ctx)
+                    history_model.start_new_conversation(view.view_id, false, false, false, ctx)
                 });
             let child_conversation_id =
                 BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {

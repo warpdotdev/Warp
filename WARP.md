@@ -99,6 +99,7 @@ This is a Rust-based terminal emulator with a custom UI framework called **WarpU
   functions that take a closure parameter, in which case the closure should be last.
 - Always remove unused parameters completely rather than prefixing them with `_`. Update the function signature and all call sites accordingly.
 - Prefer inline format arguments in macros like `println!`, `eprintln!`, and `format!` (for example, `eprintln!("{message}")` instead of `eprintln!("{}", message)`) to satisfy Clippy's `uninlined_format_args` lint.
+- Do not pass `Itertools::format` results directly to logging macros (`log::*`, `safe_*`, etc.). `Itertools::format` produces a single-use formatter, while logging implementations may format a message more than once. Use a reusable `String` such as `iter.join(", ")` for logging arguments instead. Direct use in `format!` or `write!` is fine.
 - Do not remove existing comments when making unrelated changes. Only remove or modify a comment if the logic it describes has changed.
 
 **Terminal Model Locking**:

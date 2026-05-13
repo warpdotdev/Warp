@@ -112,7 +112,7 @@
 /app/src/terminal/warpify/ @zachbai
 /app/src/settings_view/warpify_page.rs @zachbai
 /app/assets/bundled/bootstrap/ @zachbai
-/crates/warp_completer/ @zachbai @szgupta @alokedesai
+/crates/warp_completer/ @zachbai @szgupta @alokedesai @acarl005
 
 # Agent mode
 /app/src/ai/agent/ @zachbai
@@ -148,6 +148,17 @@
 /app/src/workspace/rewind_confirmation_dialog.rs @alokedesai
 /app/src/platform/mac/ @alokedesai
 /resources/linux/ @acarl005
+
+# Windows and Linux (and winit) platform
+/crates/warpui/src/windowing/winit/ @acarl005 @vorporeal @alokedesai
+/app/src/terminal/local_tty/windows/ @abhishekp106 @vorporeal @acarl005
+/app/src/autoupdate/windows.rs @acarl005
+/app/src/autoupdate/linux.rs @vorporeal
+/app/src/app_services/windows/ @acarl005
+/app/src/app_services/linux/ @vorporeal
+/app/src/terminal/writeable_pty/bootstrap_file/windows.rs @acarl005
+/app/assets/bundled/bootstrap/pwsh.ps1 @acarl005
+/app/assets/bundled/bootstrap/pwsh_init_shell.ps1 @acarl005
 
 # /pr-comments
 /app/src/search/slash_command_menu/static_commands/commands.rs @lucieleblanc

@@ -4154,8 +4154,10 @@ impl CodeReviewView {
                     .finish(),
             );
         } else if let Some(repo_path) = self.repo_path() {
-            // Check for initialized rules
-            if let Some(rules) = ProjectContextModel::as_ref(app).find_applicable_rules(repo_path) {
+            // Check for initialized project-scoped rules.
+            if let Some(rules) =
+                ProjectContextModel::as_ref(app).find_applicable_project_rules(repo_path)
+            {
                 if let Some(first_rule) = rules.active_rules.first() {
                     if let Some(file_name) = first_rule.path.file_name().and_then(|n| n.to_str()) {
                         zero_state_column.add_child(
