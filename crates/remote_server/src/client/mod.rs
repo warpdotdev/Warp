@@ -116,6 +116,17 @@ pub struct InitializeParams {
     pub crash_reporting_enabled: bool,
 }
 
+/// A request-failure notification emitted by [`RemoteServerClient::send_request`].
+/// Delivered on a dedicated channel separate from the lifecycle
+/// [`ClientEvent`] stream so that holding this sender does not prevent
+/// the lifecycle stream from closing (which would block
+/// `mark_session_disconnected`).
+#[derive(Clone, Debug)]
+pub struct RequestFailedEvent {
+    pub operation: crate::manager::RemoteServerOperation,
+    pub error_kind: crate::manager::RemoteServerErrorKind,
+}
+
 /// Client for communicating with a `remote_server` process over the remote server protocol.
 ///
 /// Exposes async request/response APIs over generic I/O streams (child-process pipes,
@@ -135,18 +146,6 @@ pub struct InitializeParams {
 /// rather than by `Arc` refcount -- cloning `Arc<RemoteServerClient>`
 /// into other owners (e.g. the command executor) no longer keeps the
 /// child alive.
-
-/// A request-failure notification emitted by [`RemoteServerClient::send_request`].
-/// Delivered on a dedicated channel separate from the lifecycle
-/// [`ClientEvent`] stream so that holding this sender does not prevent
-/// the lifecycle stream from closing (which would block
-/// `mark_session_disconnected`).
-#[derive(Clone, Debug)]
-pub struct RequestFailedEvent {
-    pub operation: crate::manager::RemoteServerOperation,
-    pub error_kind: crate::manager::RemoteServerErrorKind,
-}
-
 pub struct RemoteServerClient {
     /// Channel for queuing ClientMessages to send to the remote server.
     outbound_tx: async_channel::Sender<ClientMessage>,
