@@ -37,7 +37,7 @@ use crate::ai::blocklist::{
 };
 use crate::ai::llms::LLMId;
 use crate::context_chips::prompt::Prompt;
-use crate::editor::{AutosuggestionLocation, AutosuggestionType};
+use crate::editor::{AutosuggestionLocation, AutosuggestionType, CrdtOperation};
 use crate::features::FeatureFlag;
 use crate::pane_group::focus_state::PaneGroupFocusState;
 use crate::pane_group::{pane::PaneStack, BackingView, TerminalPaneId};
@@ -98,6 +98,21 @@ fn has_pending_user_query_block(view: &TerminalView) -> bool {
     };
     view.rich_content_views.iter().any(|rich_content| {
         rich_content.view_id() == view_id && rich_content.is_pending_user_query()
+    })
+}
+fn input_operations_for_buffer_content(app: &mut App, content: &str) -> Vec<CrdtOperation> {
+    let terminal = add_window_with_terminal(app, None);
+    terminal.update(app, |view, ctx| {
+        view.input().update(ctx, |input, ctx| {
+            input.replace_buffer_content(content, ctx);
+        });
+    });
+    terminal.read(app, |view, ctx| {
+        view.input()
+            .as_ref(ctx)
+            .latest_buffer_operations()
+            .cloned()
+            .collect()
     })
 }
 
@@ -1458,6 +1473,67 @@ fn cloud_mode_followup_dispatched_inserts_queued_user_query() {
             view.handle_ambient_agent_event(&AmbientAgentViewModelEvent::FollowupDispatched, ctx);
 
             assert!(has_pending_user_query_block(view));
+        });
+    });
+}
+
+#[test]
+fn cloud_mode_setup_v2_suppresses_sharer_input_updates_while_followup_setup_commands_run() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cloud_mode = FeatureFlag::CloudMode.override_enabled(true);
+        let _handoff = FeatureFlag::HandoffCloudCloud.override_enabled(true);
+        let _setup_v2 = FeatureFlag::CloudModeSetupV2.override_enabled(true);
+        let setup_command_ops = input_operations_for_buffer_content(&mut app, "setup command text");
+        let normal_input_ops = input_operations_for_buffer_content(&mut app, "normal sync text");
+
+        let terminal = add_window_with_cloud_mode_terminal(&mut app);
+        let task_id = AmbientAgentTaskId::from_str("123e4567-e89b-12d3-a456-426614174000")
+            .expect("valid task id");
+
+        terminal.update(&mut app, |view, ctx| {
+            let ambient_agent_view_model = view
+                .ambient_agent_view_model()
+                .expect("cloud mode terminal should have ambient model")
+                .clone();
+            ambient_agent_view_model.update(ctx, |model, ctx| {
+                model.enter_viewing_existing_session(task_id, ctx);
+            });
+            view.handle_ambient_agent_event(&AmbientAgentViewModelEvent::FollowupDispatched, ctx);
+
+            {
+                let model = view.model.lock();
+                assert!(view.is_input_box_visible(&model, ctx));
+            }
+            assert!(view.should_suppress_ambient_setup_input_sync(ctx));
+
+            let active_block_id = view.model.lock().block_list().active_block_id().clone();
+            view.input().update(ctx, |input, ctx| {
+                input.refresh_deferred_remote_operations(ctx);
+            });
+            view.apply_viewer_shared_session_input_update(&active_block_id, setup_command_ops, ctx);
+            assert_eq!(view.input().as_ref(ctx).buffer_text(ctx), "");
+            ambient_agent_view_model.update(ctx, |model, _| {
+                model
+                    .setup_command_state_mut()
+                    .set_did_execute_a_setup_command(true);
+            });
+            assert!(view.should_suppress_ambient_setup_input_sync(ctx));
+
+            ambient_agent_view_model.update(ctx, |model, _| {
+                let group_id = model.setup_command_state().current_group_id();
+                model.setup_command_state_mut().finish_group(group_id);
+            });
+            assert!(!view.should_suppress_ambient_setup_input_sync(ctx));
+            view.apply_viewer_shared_session_input_update(&active_block_id, normal_input_ops, ctx);
+            assert_eq!(
+                view.input().as_ref(ctx).buffer_text(ctx),
+                "normal sync text"
+            );
+
+            let model = view.model.lock();
+            assert!(view.is_input_box_visible(&model, ctx));
         });
     });
 }
