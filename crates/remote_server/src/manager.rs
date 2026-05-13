@@ -61,6 +61,7 @@ struct ReconnectParams {
 struct InitializeHandshake {
     host_id: HostId,
     event_rx: async_channel::Receiver<ClientEvent>,
+    failure_rx: async_channel::Receiver<crate::client::RequestFailedEvent>,
 }
 
 /// Error from [`RemoteServerManager::run_connect_and_handshake`] that
@@ -222,7 +223,6 @@ fn client_event_kind(event: &ClientEvent) -> &'static str {
         ClientEvent::DiffStateMetadataUpdateReceived { .. } => "diff_state_metadata_update",
         ClientEvent::DiffStateFileDeltaReceived { .. } => "diff_state_file_delta",
         ClientEvent::MessageDecodingError => "message_decoding_error",
-        ClientEvent::RequestFailed { .. } => "request_failed",
     }
 }
 
@@ -1001,6 +1001,7 @@ impl RemoteServerManager {
         let Connection {
             client,
             event_rx,
+            failure_rx,
             child,
             control_path,
         } = transport
@@ -1099,6 +1100,7 @@ impl RemoteServerManager {
         Ok(InitializeHandshake {
             host_id: HostId::new(resp.host_id),
             event_rx,
+            failure_rx,
         })
     }
 
@@ -1666,16 +1668,6 @@ impl RemoteServerManager {
             ClientEvent::DiffStateFileDeltaReceived { delta } => {
                 ctx.emit(RemoteServerManagerEvent::DiffStateFileDeltaReceived { host_id, delta });
             }
-            ClientEvent::RequestFailed {
-                operation,
-                error_kind,
-            } => {
-                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
-                    session_id,
-                    operation,
-                    error_kind,
-                });
-            }
             ClientEvent::Disconnected => {
                 // Handled by the drain loop's completion callback.
             }
@@ -1693,7 +1685,11 @@ impl RemoteServerManager {
         transport: Arc<dyn RemoteTransport>,
         ctx: &mut ModelContext<Self>,
     ) {
-        let InitializeHandshake { host_id, event_rx } = handshake;
+        let InitializeHandshake {
+            host_id,
+            event_rx,
+            failure_rx,
+        } = handshake;
         log::info!("Remote server connected: session={session_id:?} host={host_id}");
 
         // Only transition if the session is still in Initializing state.
@@ -1730,6 +1726,20 @@ impl RemoteServerManager {
             move |me, ctx| {
                 me.mark_session_disconnected(session_id, ctx);
             },
+        );
+        // Drain the separate failure channel for request-failed telemetry.
+        // This stream is independent of the lifecycle stream above, so
+        // holding its sender on the client does not block disconnect.
+        ctx.spawn_stream_local(
+            failure_rx,
+            move |_me, event, ctx| {
+                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
+                    session_id,
+                    operation: event.operation,
+                    error_kind: event.error_kind,
+                });
+            },
+            |_, _| {}, // no-op on done
         );
         if is_first_session {
             ctx.emit(RemoteServerManagerEvent::HostConnected {

@@ -88,15 +88,6 @@ pub enum ClientEvent {
     CodebaseIndexStatusUpdated { status: RemoteCodebaseIndexStatus },
     /// A server message could not be decoded and had no parseable request_id.
     MessageDecodingError,
-    /// A client request to the remote server failed at the transport level
-    /// (timeout, disconnect, protocol error, etc.). Emitted automatically by
-    /// `send_request` so upstream callers get telemetry for free.
-    RequestFailed {
-        /// Which RPC failed.
-        operation: crate::manager::RemoteServerOperation,
-        /// Classified error kind for telemetry aggregation.
-        error_kind: crate::manager::RemoteServerErrorKind,
-    },
     /// A buffer was updated on the server (file changed on disk).
     BufferUpdated {
         path: String,
@@ -144,6 +135,18 @@ pub struct InitializeParams {
 /// rather than by `Arc` refcount -- cloning `Arc<RemoteServerClient>`
 /// into other owners (e.g. the command executor) no longer keeps the
 /// child alive.
+
+/// A request-failure notification emitted by [`RemoteServerClient::send_request`].
+/// Delivered on a dedicated channel separate from the lifecycle
+/// [`ClientEvent`] stream so that holding this sender does not prevent
+/// the lifecycle stream from closing (which would block
+/// `mark_session_disconnected`).
+#[derive(Clone, Debug)]
+pub struct RequestFailedEvent {
+    pub operation: crate::manager::RemoteServerOperation,
+    pub error_kind: crate::manager::RemoteServerErrorKind,
+}
+
 pub struct RemoteServerClient {
     /// Channel for queuing ClientMessages to send to the remote server.
     outbound_tx: async_channel::Sender<ClientMessage>,
@@ -156,10 +159,11 @@ pub struct RemoteServerClient {
     /// on a dead connection.
     disconnected: Arc<AtomicBool>,
 
-    /// Clone of the event channel used by the reader task. Stored here so
-    /// `send_request` can fire `ClientEvent::RequestFailed` events
-    /// without requiring callers to thread the channel through.
-    event_tx: async_channel::Sender<ClientEvent>,
+    /// Dedicated channel for `RequestFailed` telemetry events. Separate from
+    /// the lifecycle `event_tx` so that holding this sender does not keep the
+    /// lifecycle stream alive (which would prevent `spawn_stream_local`'s
+    /// completion callback from firing `mark_session_disconnected`).
+    failure_tx: async_channel::Sender<RequestFailedEvent>,
 }
 
 impl fmt::Debug for RemoteServerClient {
@@ -191,7 +195,11 @@ impl RemoteServerClient {
         stdout: async_process::ChildStdout,
         stderr: async_process::ChildStderr,
         executor: &executor::Background,
-    ) -> (Self, async_channel::Receiver<ClientEvent>) {
+    ) -> (
+        Self,
+        async_channel::Receiver<ClientEvent>,
+        async_channel::Receiver<RequestFailedEvent>,
+    ) {
         spawn_stderr_forwarder(stderr, executor);
         Self::new(stdout, stdin, executor)
     }
@@ -207,15 +215,18 @@ impl RemoteServerClient {
         reader: impl AsyncRead + TransportStream,
         writer: impl AsyncWrite + TransportStream,
         executor: &executor::Background,
-    ) -> (Self, async_channel::Receiver<ClientEvent>) {
+    ) -> (
+        Self,
+        async_channel::Receiver<ClientEvent>,
+        async_channel::Receiver<RequestFailedEvent>,
+    ) {
         let pending_requests: Arc<
             DashMap<RequestId, oneshot::Sender<Result<ServerMessage, ClientError>>>,
         > = Arc::new(DashMap::new());
         let (outbound_tx, outbound_rx) = async_channel::unbounded::<ClientMessage>();
         let (event_tx, event_rx) = async_channel::unbounded::<ClientEvent>();
+        let (failure_tx, failure_rx) = async_channel::unbounded::<RequestFailedEvent>();
         let disconnected = Arc::new(AtomicBool::new(false));
-        // Clone before moving into background tasks so the struct can hold one.
-        let event_tx_for_client = event_tx.clone();
 
         executor
             .spawn(Self::writer_task(
@@ -238,9 +249,10 @@ impl RemoteServerClient {
                 outbound_tx,
                 pending_requests,
                 disconnected,
-                event_tx: event_tx_for_client,
+                failure_tx,
             },
             event_rx,
+            failure_rx,
         )
     }
 
@@ -851,9 +863,7 @@ impl RemoteServerClient {
         let result = self.send_request_internal(request_id, msg).await;
         if let Err(ref e) = result {
             let error_kind = crate::manager::RemoteServerErrorKind::from_client_error(e);
-            // Best-effort: if the channel is closed the disconnect event
-            // will fire separately via the reader task.
-            let _ = self.event_tx.try_send(ClientEvent::RequestFailed {
+            let _ = self.failure_tx.try_send(RequestFailedEvent {
                 operation,
                 error_kind,
             });
