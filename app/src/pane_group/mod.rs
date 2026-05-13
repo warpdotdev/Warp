@@ -82,10 +82,10 @@ use uuid::Uuid;
 use warp_cli::agent::Harness;
 use warp_core::command::ExitCode;
 use warp_core::context_flag::ContextFlag;
-use warp_core::HostId;
 use warp_util::path::convert_wsl_to_windows_host_path;
 #[cfg(feature = "local_fs")]
 use warp_util::path::LineAndColumnArg;
+use warp_util::remote_path::RemotePath;
 use warpui::elements::{
     Clipped, CrossAxisAlignment, DispatchEventResult, EventHandler, Flex, MainAxisSize, Shrinkable,
     Stack,
@@ -581,8 +581,7 @@ pub enum Event {
     MaximizePaneToggled,
     /// A remote server resolved the repo root for a session in this pane group.
     RemoteRepoNavigated {
-        host_id: HostId,
-        indexed_path: String,
+        remote_path: RemotePath,
     },
     /// Refresh the workspace-level active session state.
     ActiveSessionChanged,
@@ -1618,14 +1617,20 @@ impl PaneGroup {
                     .copied()
                     .collect();
 
-                let conversation_restoration = vec1::Vec1::try_from_vec(filtered_conversation_ids)
-                    .ok()
-                    .map(
-                        |conversation_ids| ConversationRestorationInNewPaneType::Startup {
-                            conversation_ids,
-                            active_conversation_id: terminal_snapshot.active_conversation_id,
-                        },
-                    );
+                let conversation_restoration = {
+                    let conversations = RestoredAgentConversations::handle(ctx)
+                        .update(ctx, |store, _| {
+                            store.take_conversations(&filtered_conversation_ids)
+                        });
+                    vec1::Vec1::try_from_vec(conversations)
+                        .ok()
+                        .map(
+                            |conversations| ConversationRestorationInNewPaneType::Startup {
+                                conversations,
+                                active_conversation_id: terminal_snapshot.active_conversation_id,
+                            },
+                        )
+                };
                 let (terminal_view, terminal_manager) = PaneGroup::create_session(
                     startup_directory,
                     HashMap::new(),
@@ -3542,9 +3547,9 @@ impl PaneGroup {
     ) {
         let history_model_handle = BlocklistAIHistoryModel::handle(ctx);
 
-        let future = history_model_handle
-            .as_ref(ctx)
-            .load_conversation_by_server_token(&server_conversation_token, ctx);
+        let future = history_model_handle.update(ctx, |history_model, ctx| {
+            history_model.load_conversation_by_server_token(&server_conversation_token, ctx)
+        });
         ctx.spawn(future, move |group, conversation, ctx| {
             if let Some(conversation) = conversation {
                 group.load_data_into_transcript_viewer(
@@ -5209,13 +5214,9 @@ impl PaneGroup {
             PaneEvent::RepoChanged => {
                 ctx.emit(Event::RepoChanged);
             }
-            PaneEvent::RemoteRepoNavigated {
-                host_id,
-                indexed_path,
-            } => {
+            PaneEvent::RemoteRepoNavigated { remote_path } => {
                 ctx.emit(Event::RemoteRepoNavigated {
-                    host_id: host_id.clone(),
-                    indexed_path: indexed_path.clone(),
+                    remote_path: remote_path.clone(),
                 });
             }
         }
@@ -5448,6 +5449,16 @@ impl PaneGroup {
     ) {
         let mut conversation_id = None;
         terminal_view.update(ctx, |view, ctx| {
+            // The cloud-mode terminal model starts with
+            // `is_executing_oz_environment_startup_commands = true`. Clear it
+            // before restoring so that `maybe_insert_setup_command_blocks`
+            // doesn't wrap restored command blocks in a "Running setup
+            // commands..." group.
+            view.model
+                .lock()
+                .block_list_mut()
+                .set_is_executing_oz_environment_startup_commands(false);
+
             match cloud_conversation {
                 CloudConversationData::Oz(conversation) => {
                     let id = conversation.id();

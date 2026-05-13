@@ -38,7 +38,7 @@ const MENU_HORIZONTAL_PADDING: f32 = 16.;
 
 const ITEM_VERTICAL_PADDING: f32 = 8.;
 
-const MENU_WIDTH: f32 = 208.;
+const MENU_WIDTH: f32 = 232.;
 
 const SIDECAR_WIDTH: f32 = 220.;
 
@@ -52,7 +52,7 @@ const MENU_HEADER_LABEL: &str = "API key";
 
 const SIDECAR_HEADER_LABEL: &str = "Choose a type";
 
-const NO_SECRET_LABEL: &str = "No API key";
+const NO_SECRET_LABEL: &str = "Inherit key from environment";
 
 const NEW_ITEM_LABEL: &str = "New";
 
@@ -407,7 +407,7 @@ fn build_main_menu_items(
     let mut items = vec![header];
 
     items.push(MenuItem::Item(
-        MenuItemFields::new("No secret")
+        MenuItemFields::new(NO_SECRET_LABEL)
             .with_font_size_override(ITEM_FONT_SIZE)
             .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
             .with_override_hover_background_color(hover_background)

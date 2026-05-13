@@ -80,6 +80,27 @@ maybe_install_common_skills() {
   fi
 }
 
+# This repository requires Git LFS; ensure it is installed and initialized
+# for this checkout.
+ensure_git_lfs() {
+  if ! command -v git-lfs >/dev/null 2>&1; then
+    echo
+    echo "warning: git-lfs is not installed. Install it before continuing:"
+    case "${OS_TYPE}" in
+      Darwin)               echo "  brew install git-lfs" ;;
+      Linux)                echo "  sudo apt-get install -y git-lfs   # or your distro's package manager" ;;
+      MINGW64_NT*|MSYS_NT*)  echo "  choco install git-lfs            # or: winget install GitHub.GitLFS" ;;
+      *)                    echo "  See https://git-lfs.com for install instructions." ;;
+    esac
+    echo "After installing, re-run ./script/bootstrap."
+    return 1
+  fi
+  git lfs install --local >/dev/null
+  git lfs pull
+}
+
+ensure_git_lfs
+
 if [[ "$OS_TYPE" = "Darwin" ]]; then
   print_bootstrap_preview "macOS"
   ./script/macos/bootstrap "${PLATFORM_ARGS[@]}"

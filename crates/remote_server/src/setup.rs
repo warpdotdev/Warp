@@ -343,6 +343,30 @@ pub fn remote_server_daemon_data_dir(identity_key: &str) -> String {
     format!("{}/data", remote_server_daemon_dir(identity_key))
 }
 
+/// Returns the daemon socket filename, versioned when a release tag is
+/// baked in.
+///
+/// - With `GIT_RELEASE_TAG`:    `server-{version}.sock`
+/// - Without (plain cargo run): `server.sock`
+pub fn daemon_socket_name() -> String {
+    match ChannelState::app_version() {
+        Some(version) => format!("server-{version}.sock"),
+        None => "server.sock".to_string(),
+    }
+}
+
+/// Returns the daemon PID filename, versioned when a release tag is
+/// baked in.
+///
+/// - With `GIT_RELEASE_TAG`:    `server-{version}.pid`
+/// - Without (plain cargo run): `server.pid`
+pub fn daemon_pid_name() -> String {
+    match ChannelState::app_version() {
+        Some(version) => format!("server-{version}.pid"),
+        None => "server.pid".to_string(),
+    }
+}
+
 /// Returns the binary name, keyed by channel.
 ///
 /// Matches the CLI command names: `oz` (stable), `oz-preview`, `oz-dev`.

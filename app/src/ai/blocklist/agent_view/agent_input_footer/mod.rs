@@ -29,7 +29,7 @@ use crate::{
     network::NetworkStatus,
     send_telemetry_from_ctx,
     server::telemetry::{PluginChipTelemetryKind, TelemetryEvent},
-    settings::{AISettings, AISettingsChangedEvent},
+    settings::{AISettings, AISettingsChangedEvent, PrivacySettings, PrivacySettingsChangedEvent},
     settings_view::SettingsSection,
     terminal::{
         cli_agent_sessions::{
@@ -708,7 +708,19 @@ impl AgentInputFooter {
             ctx.notify()
         });
         ctx.subscribe_to_model(&AISettings::handle(ctx), |_, _, event, ctx| {
-            if let AISettingsChangedEvent::AIAutoDetectionEnabled { .. } = event {
+            if matches!(
+                event,
+                AISettingsChangedEvent::AIAutoDetectionEnabled { .. }
+                    | AISettingsChangedEvent::ShouldForceDisableCloudHandoff { .. }
+            ) {
+                ctx.notify()
+            }
+        });
+        ctx.subscribe_to_model(&PrivacySettings::handle(ctx), |_, _, event, ctx| {
+            if matches!(
+                event,
+                PrivacySettingsChangedEvent::UpdateIsCloudConversationStorageEnabled { .. }
+            ) {
                 ctx.notify()
             }
         });
@@ -1405,6 +1417,15 @@ impl AgentInputFooter {
             return None;
         }
 
+        // Hide ShareSession for shared ambient (cloud) agent sessions —
+        // it doesn't make sense to offer remote-control when already
+        // viewing a cloud agent's shared session.
+        if matches!(item, AgentToolbarItemKind::ShareSession)
+            && self.terminal_model.lock().is_shared_ambient_agent_session()
+        {
+            return None;
+        }
+
         match item {
             AgentToolbarItemKind::ContextChip(chip_kind) => {
                 self.cli_display_chip(chip_kind.clone(), app)
@@ -2041,7 +2062,7 @@ impl AgentInputFooter {
                 .is_enabled()
                 .then(|| ChildView::new(&self.fast_forward_button).finish()),
             AgentToolbarItemKind::HandoffToCloud => {
-                if !is_local_to_cloud_handoff_available() {
+                if !AISettings::as_ref(app).is_cloud_handoff_enabled(app) {
                     return None;
                 }
 
