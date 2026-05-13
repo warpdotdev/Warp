@@ -107,15 +107,16 @@ Output JSON:
 
 ### Step 5 — Fetch issue reporters
 
-Collect all unique `linked_issues` from Step 2 and fetch the original reporter for each:
+Collect all unique `linked_issues` from Step 2 and fetch the original reporter for each. Pass `--org` so the script checks org membership and filters out internal reporters automatically:
 
 ```bash
 python3 .agents/skills/changelog-draft/scripts/fetch_issue_reporters.py \
   --repo warpdotdev/warp \
+  --org warpdotdev \
   --issues 5678,9012
 ```
 
-Output JSON:
+Output JSON (only external reporters are included):
 ```json
 {
   "issue_reporters": [
@@ -129,7 +130,7 @@ Output JSON:
 }
 ```
 
-Only include reporters who are **not** internal contributors (cross-reference with Step 3). These reporters will be credited in the "Community" section of the changelog.
+The `--org` flag checks each reporter's org membership via the GitHub API, filtering out internal members so they aren't misattributed as external community reporters. These reporters will be credited in the "Community" section of the changelog.
 
 ### Step 6 — Classify unmarked PRs
 

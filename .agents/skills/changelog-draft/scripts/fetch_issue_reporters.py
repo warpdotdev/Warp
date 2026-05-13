@@ -20,6 +20,30 @@ def run(cmd: list[str], *, check: bool = True) -> str:
     return result.stdout.strip()
 
 
+def run_full(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, capture_output=True, text=True, check=check)
+
+
+def is_org_member(org: str, username: str) -> bool:
+    """Check if a user is a member of the given GitHub org.
+
+    Returns True for members (HTTP 204), False for non-members (HTTP 404),
+    and True (conservative) for auth failures so internal users aren't
+    misattributed as external.
+    """
+    result = run_full(
+        ["gh", "api", f"orgs/{org}/members/{username}", "--silent"],
+        check=False,
+    )
+    if result.returncode == 0:
+        return True
+    stderr = result.stderr.lower()
+    # Auth failure — be conservative, treat as internal
+    if "403" in stderr or "401" in stderr or "saml" in stderr:
+        return True
+    return False
+
+
 def fetch_issue_reporter(repo: str, issue_number: int) -> dict | None:
     """Fetch the reporter (author) of a GitHub issue via gh CLI."""
     raw = run(
@@ -62,6 +86,12 @@ def main() -> None:
     )
     parser.add_argument("--repo", required=True, help="GitHub repo (owner/name)")
     parser.add_argument(
+        "--org",
+        required=False,
+        default="",
+        help="GitHub org to filter out internal reporters (e.g. warpdotdev)",
+    )
+    parser.add_argument(
         "--issues",
         required=True,
         help="Comma-separated issue numbers",
@@ -72,11 +102,21 @@ def main() -> None:
         int(n.strip()) for n in args.issues.split(",") if n.strip().isdigit()
     ]
 
+    org = args.org
     reporters: list[dict] = []
+    seen_reporters: set[str] = set()
     for num in issue_numbers:
         info = fetch_issue_reporter(args.repo, num)
-        if info:
-            reporters.append(info)
+        if not info or not info["reporter"]:
+            continue
+        username = info["reporter"]
+        # Skip internal org members when --org is provided
+        if org and username not in seen_reporters and is_org_member(org, username):
+            seen_reporters.add(username)
+            continue
+        if username not in seen_reporters:
+            seen_reporters.add(username)
+        reporters.append(info)
 
     json.dump({"issue_reporters": reporters}, sys.stdout, indent=2)
     print()  # trailing newline
