@@ -11,7 +11,7 @@ use warpui::{
 };
 
 use crate::appearance::Appearance;
-use crate::notebooks::CloudNotebookModel;
+use crate::notebooks::NotebookObjectModel;
 use crate::search::command_search::searcher::CommandSearchItemAction;
 use crate::search::item::SearchItem;
 use crate::search::notebooks::fuzzy_match::render_notebook_matched_content_with_highlight;
@@ -25,7 +25,7 @@ const NAME_WEIGHT: f64 = 0.6;
 #[derive(Clone, Debug)]
 pub struct NotebookSearchItem {
     pub id: SyncId,
-    pub model: Arc<CloudNotebookModel>,
+    pub model: Arc<NotebookObjectModel>,
     pub name_match_result: Option<fuzzy_match::FuzzyMatchResult>,
     pub content_match_result: Option<fuzzy_match::FuzzyMatchResult>,
 }

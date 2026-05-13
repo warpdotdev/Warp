@@ -522,7 +522,7 @@ fn snapshot_non_terminal_leaf_replaced_with_terminal() {
     let notebook_leaf = PaneNodeSnapshot::Leaf(LeafSnapshot {
         is_focused: false,
         custom_vertical_tabs_title: None,
-        contents: LeafContents::Notebook(NotebookPaneSnapshot::CloudNotebook {
+        contents: LeafContents::Notebook(NotebookPaneSnapshot::NotebookObject {
             notebook_id: None,
             settings: OpenWarpDriveObjectSettings::default(),
         }),

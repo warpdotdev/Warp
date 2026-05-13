@@ -10,7 +10,7 @@ mod tests {
     use crate::cloud_object::update_manager::UpdateManager;
     use crate::cloud_object::{CloudObjectMetadata, CloudObjectPermissions, Revision};
     use crate::notebooks::manager::NotebookManager;
-    use crate::notebooks::{CloudNotebook, CloudNotebookModel};
+    use crate::notebooks::{NotebookObject, NotebookObjectModel};
     use crate::search::ai_context_menu::notebooks::data_source::NotebookDataSource;
     use crate::search::data_source::Query;
     use crate::search::mixer::SyncDataSource;
@@ -21,14 +21,14 @@ mod tests {
     use crate::workspaces::user_workspaces::UserWorkspaces;
     use crate::NetworkStatus;
 
-    fn mock_notebook_with_revision(id: i64, title: &str, revision: Revision) -> CloudNotebook {
+    fn mock_notebook_with_revision(id: i64, title: &str, revision: Revision) -> NotebookObject {
         let sync_id = SyncId::ServerId(id.into());
         let mut metadata = CloudObjectMetadata::mock();
         metadata.revision = Some(revision);
 
-        CloudNotebook::new(
+        NotebookObject::new(
             sync_id,
-            CloudNotebookModel {
+            NotebookObjectModel {
                 title: title.to_string(),
                 data: format!("{title} content"),
                 ai_document_id: None,

@@ -210,7 +210,7 @@ use crate::gpu_state::GPUState;
 use crate::network::NetworkStatus;
 use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::notebooks::manager::NotebookManager;
-use crate::notebooks::CloudNotebook;
+use crate::notebooks::NotebookObject;
 use crate::palette::PaletteMode;
 use crate::persistence::PersistenceWriter;
 use crate::projects::ProjectManagementModel;
@@ -1545,7 +1545,7 @@ fn initialize_app(
     let notebooks = cloud_objects
         .iter()
         .filter_map(|object| {
-            let notebook: Option<&CloudNotebook> = object.into();
+            let notebook: Option<&NotebookObject> = object.into();
             notebook
         })
         .cloned()

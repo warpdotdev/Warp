@@ -14,7 +14,7 @@ use crate::{
         terminal::util::ExpectedOutput,
         view_getters::{notebook_view, terminal_view},
     },
-    notebooks::{notebook::NotebookView, CloudNotebookModel, NotebookId},
+    notebooks::{notebook::NotebookView, NotebookId, NotebookObjectModel},
     pane_group::PaneGroup,
     server::ids::SyncId,
     settings::{CloudPreferenceModel, Preference},
@@ -62,7 +62,7 @@ pub fn assert_notebook_metadata_revision(
     id: impl AsRef<str>,
     expected_revision: i64,
 ) -> AssertionCallback {
-    assert_metadata_revision::<NotebookId, CloudNotebookModel>(id.as_ref(), expected_revision)
+    assert_metadata_revision::<NotebookId, NotebookObjectModel>(id.as_ref(), expected_revision)
 }
 
 /// Asserts that a pane has the given notebook open.

@@ -2,7 +2,7 @@ use crate::appearance::Appearance;
 use crate::cloud_object::CloudObject;
 use crate::drive::cloud_object_styling::warp_drive_icon_color;
 use crate::drive::{CloudObjectTypeAndId, DriveObjectType};
-use crate::notebooks::CloudNotebook;
+use crate::notebooks::NotebookObject;
 use crate::search::command_palette::mixer::CommandPaletteItemAction;
 use crate::search::command_palette::render_util::render_search_item_icon;
 use crate::search::command_palette::styles::SEARCH_ITEM_TEXT_PADDING;
@@ -20,7 +20,7 @@ use warpui::{AppContext, Element, SingletonEntity};
 /// Search item result for a cloud notebook.
 #[derive(Debug)]
 pub struct NotebookSearchItem {
-    pub cloud_notebook: CloudNotebook,
+    pub cloud_notebook: NotebookObject,
     pub match_result: FuzzyMatchNotebookResult,
 }
 

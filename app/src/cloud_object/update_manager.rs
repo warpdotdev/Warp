@@ -20,11 +20,11 @@ use crate::{
         Owner, Revision, Space,
     },
     drive::{
-        folders::{CloudFolderModel, FolderId},
+        folders::{FolderId, FolderObjectModel},
         CloudObjectTypeAndId,
     },
     env_vars::{EnvVarCollection, EnvVarCollectionObjectModel},
-    notebooks::{CloudNotebookModel, NotebookId},
+    notebooks::{NotebookId, NotebookObjectModel},
     persistence::ModelEvent,
     server::ids::{ClientId, HashableId, ObjectUid, ServerId, SyncId, ToServerId},
     server_time::ServerTimestamp,
@@ -371,7 +371,7 @@ impl UpdateManager {
         let cloud_model = CloudModel::as_ref(ctx);
         let revision = cloud_model.current_revision(&notebook_id).cloned();
         if let Some(notebook) = cloud_model.get_notebook(&notebook_id) {
-            let new_notebook = CloudNotebookModel {
+            let new_notebook = NotebookObjectModel {
                 title: notebook.model().title.to_owned(),
                 data: data.to_string(),
                 ai_document_id: notebook.model().ai_document_id,
@@ -392,7 +392,7 @@ impl UpdateManager {
         let cloud_model = CloudModel::as_ref(ctx);
         let revision = cloud_model.current_revision(&notebook_id).cloned();
         if let Some(notebook) = cloud_model.get_notebook(&notebook_id) {
-            let new_notebook = CloudNotebookModel {
+            let new_notebook = NotebookObjectModel {
                 title: title.to_string(),
                 data: notebook.model().data.to_owned(),
                 ai_document_id: notebook.model().ai_document_id,
@@ -691,7 +691,7 @@ impl UpdateManager {
     ) {
         match cloud_object_type_and_id {
             CloudObjectTypeAndId::Notebook(notebook_id) => {
-                self.duplicate_object_internal::<NotebookId, CloudNotebookModel>(notebook_id, ctx);
+                self.duplicate_object_internal::<NotebookId, NotebookObjectModel>(notebook_id, ctx);
             }
             CloudObjectTypeAndId::Workflow(workflow_id) => {
                 self.duplicate_object_internal::<WorkflowId, WorkflowObjectModel>(workflow_id, ctx);
@@ -865,7 +865,7 @@ impl UpdateManager {
         client_id: ClientId,
         owner: Owner,
         initial_folder_id: Option<SyncId>,
-        model: CloudNotebookModel,
+        model: NotebookObjectModel,
         entrypoint: CloudObjectEventEntrypoint,
         force_expand: bool,
         ctx: &mut ModelContext<Self>,
@@ -1000,7 +1000,7 @@ impl UpdateManager {
     ) {
         self.create_object(
             // TODO(INT-789): support creating folders as warp packs
-            CloudFolderModel::new(&name, false),
+            FolderObjectModel::new(&name, false),
             owner,
             client_id,
             Default::default(),
@@ -1565,7 +1565,7 @@ impl UpdateManager {
         let cloud_model = CloudModel::as_ref(ctx);
         let revision = cloud_model.current_revision(&folder_id).cloned();
         if let Some(folder) = cloud_model.get_folder(&folder_id) {
-            let new_folder = CloudFolderModel {
+            let new_folder = FolderObjectModel {
                 name: new_name,
                 is_open: folder.model().is_open,
                 is_warp_pack: folder.model().is_warp_pack,

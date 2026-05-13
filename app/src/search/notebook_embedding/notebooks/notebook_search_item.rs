@@ -24,7 +24,7 @@ use crate::{
     themes::theme::Fill,
     ui_components::icons::Icon,
 };
-use crate::{notebooks::CloudNotebook, search::item::SearchItem};
+use crate::{notebooks::NotebookObject, search::item::SearchItem};
 
 /// The size of the object type icons, in pixels.
 const ICON_SIZE: f32 = 16.;
@@ -32,7 +32,7 @@ const ICON_SIZE: f32 = 16.;
 /// Struct designed to be the implementation of CommandSearchItem for notebooks.
 #[derive(Clone, Debug)]
 pub struct NotebookSearchItem {
-    pub cloud_notebook: CloudNotebook,
+    pub cloud_notebook: NotebookObject,
     pub fuzzy_matched_notebook: FuzzyMatchEmbeddedObjectResult,
     /// Whether or not this notebook is accessible to all users that have access to the object
     /// being embedded into.

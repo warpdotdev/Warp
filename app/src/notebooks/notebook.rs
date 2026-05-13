@@ -64,7 +64,7 @@ use crate::{
     network::{NetworkStatus, NetworkStatusEvent},
     notebooks::{
         editor::{model::NotebooksEditorModel, rich_text_styles},
-        CloudNotebook,
+        NotebookObject,
     },
     pane_group::{
         focus_state::{PaneFocusHandle, PaneGroupFocusEvent},
@@ -113,7 +113,7 @@ use super::{
     manager::NotebookManager,
     styles,
     telemetry::NotebookTelemetryAction,
-    CloudNotebookModel, NotebookId, NotebookLocation,
+    NotebookId, NotebookLocation, NotebookObjectModel,
 };
 
 mod details_bar;
@@ -708,7 +708,7 @@ impl NotebookView {
     }
 
     /// Reload an updated notebook.
-    fn handle_notebook_updated(&mut self, notebook: &CloudNotebook, ctx: &mut ViewContext<Self>) {
+    fn handle_notebook_updated(&mut self, notebook: &NotebookObject, ctx: &mut ViewContext<Self>) {
         self.set_title(&notebook.model().title, ctx);
         self.input.update(ctx, |input_editor, ctx| {
             input_editor.system_clear_buffer(ctx);
@@ -839,7 +839,7 @@ impl NotebookView {
                             client_id,
                             notebook.permissions.owner,
                             notebook.metadata.folder_id,
-                            CloudNotebookModel {
+                            NotebookObjectModel {
                                 title: notebook.model().title.clone(),
                                 data: content.to_string(),
                                 ai_document_id: notebook.model().ai_document_id,
@@ -1175,7 +1175,7 @@ impl NotebookView {
         });
     }
 
-    fn set_content(&mut self, notebook: &CloudNotebook, ctx: &mut ViewContext<Self>) {
+    fn set_content(&mut self, notebook: &NotebookObject, ctx: &mut ViewContext<Self>) {
         // Initialize the content length so we can get a delta when editing.
         self.last_content_length = notebook.model().data.len();
         self.input.update(ctx, |input, ctx| {
@@ -1310,7 +1310,7 @@ impl NotebookView {
                 copy_client_id,
                 personal_drive,
                 None,
-                CloudNotebookModel {
+                NotebookObjectModel {
                     title: title.clone(),
                     data: content,
                     ai_document_id,
@@ -1588,7 +1588,7 @@ impl NotebookView {
         });
     }
 
-    /// Takes a `CloudNotebook` and loads it into the view.
+    /// Takes a `NotebookObject` and loads it into the view.
     ///
     /// Namely, we reset the title and body's undo stack and we set the buffer to be
     /// that of the cloud notebook's content.
@@ -1597,7 +1597,7 @@ impl NotebookView {
     /// editing if there is not already an editor.
     pub fn load(
         &mut self,
-        notebook: CloudNotebook,
+        notebook: NotebookObject,
         settings: &OpenWarpDriveObjectSettings,
         ctx: &mut ViewContext<Self>,
     ) -> SpawnedFutureHandle {
@@ -1758,7 +1758,7 @@ impl NotebookView {
                             client_id,
                             notebook.permissions.owner,
                             notebook.metadata.folder_id,
-                            CloudNotebookModel {
+                            NotebookObjectModel {
                                 title: title.to_string(),
                                 data: notebook.model().data.to_owned(),
                                 ai_document_id: notebook.model().ai_document_id,

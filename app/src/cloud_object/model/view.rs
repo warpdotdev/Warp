@@ -12,7 +12,7 @@ use crate::{
         CloudObject, CloudObjectLocation, Space,
     },
     drive::{
-        folders::CloudFolder,
+        folders::FolderObject,
         sharing::{ContentEditability, SharingAccessLevel},
     },
     safe_info,
@@ -272,7 +272,7 @@ impl CloudViewModel {
         cloud_model: &CloudModel,
         app: &AppContext,
     ) -> Option<ServerTimestamp> {
-        let folder: Option<&CloudFolder> = object.into();
+        let folder: Option<&FolderObject> = object.into();
         match folder {
             // For non-folder objects, always use the object's own timestamp.
             None => object.metadata().revision.clone().map(Into::into),
@@ -410,7 +410,7 @@ impl CloudViewModel {
         let Some(object) = cloud_model.get_by_uid(uid) else {
             return false;
         };
-        let folder: Option<&CloudFolder> = object.into();
+        let folder: Option<&FolderObject> = object.into();
         match folder {
             Some(folder) => self.invalidate_folder_timestamps(&folder.id, cloud_model),
             None => {

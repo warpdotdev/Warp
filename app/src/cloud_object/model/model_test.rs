@@ -18,10 +18,10 @@ use crate::cloud_object::CloudObjectPermissions;
 use crate::cloud_object::CloudObjectStatuses;
 use crate::cloud_object::CloudObjectSyncStatus;
 use crate::cloud_object::Owner;
-use crate::drive::folders::CloudFolderModel;
+use crate::drive::folders::FolderObjectModel;
 use crate::drive::DriveIndexVariant;
 use crate::features::FeatureFlag;
-use crate::notebooks::CloudNotebookModel;
+use crate::notebooks::NotebookObjectModel;
 use crate::server::ids::ClientId;
 use crate::server::ids::ServerId;
 use crate::settings::init_and_register_user_preferences;
@@ -95,10 +95,10 @@ fn mock_permissions() -> CloudObjectPermissions {
     }
 }
 
-fn mock_cloud_folder(id: SyncId, name: String, folder_id: Option<SyncId>) -> CloudFolder {
-    CloudFolder::new(
+fn mock_cloud_folder(id: SyncId, name: String, folder_id: Option<SyncId>) -> FolderObject {
+    FolderObject::new(
         id,
-        CloudFolderModel {
+        FolderObjectModel {
             name,
             is_open: true,
             is_warp_pack: false,
@@ -125,10 +125,10 @@ fn mock_cloud_folder(id: SyncId, name: String, folder_id: Option<SyncId>) -> Clo
     )
 }
 
-fn mock_cloud_notebook(id: SyncId, title: String, folder_id: Option<SyncId>) -> CloudNotebook {
-    CloudNotebook::new(
+fn mock_cloud_notebook(id: SyncId, title: String, folder_id: Option<SyncId>) -> NotebookObject {
+    NotebookObject::new(
         id,
-        CloudNotebookModel {
+        NotebookObjectModel {
             title,
             data: "test".into(),
             ai_document_id: None,
@@ -156,13 +156,13 @@ fn mock_cloud_notebook(id: SyncId, title: String, folder_id: Option<SyncId>) -> 
     )
 }
 
-fn mock_trashed_cloud_folder(id: SyncId, name: String, folder_id: Option<SyncId>) -> CloudFolder {
+fn mock_trashed_cloud_folder(id: SyncId, name: String, folder_id: Option<SyncId>) -> FolderObject {
     let mut folder = mock_cloud_folder(id, name, folder_id);
     folder.metadata.trashed_ts = Some(ServerTimestamp::from_unix_timestamp_micros(10).unwrap());
     folder
 }
 
-fn folder_from_cloud_model(model: &CloudModel, id: SyncId) -> &CloudFolder {
+fn folder_from_cloud_model(model: &CloudModel, id: SyncId) -> &FolderObject {
     model.get_folder_by_uid(&id.uid()).expect("is a folder")
 }
 
@@ -546,9 +546,9 @@ fn test_shared_personal_object() {
 
         let other_user = UserUid::new("other_user");
         let shared_notebook_id = SyncId::ServerId(123.into());
-        let shared_notebook = CloudNotebook::new(
+        let shared_notebook = NotebookObject::new(
             shared_notebook_id,
-            CloudNotebookModel {
+            NotebookObjectModel {
                 title: "Shared Notebook".to_string(),
                 data: "Hello".to_string(),
                 ai_document_id: None,
@@ -584,9 +584,9 @@ fn test_unshared_personal_object() {
         initialize_app(&mut app, Vec::new());
 
         let shared_notebook_id = SyncId::ServerId(123.into());
-        let shared_notebook = CloudNotebook::new(
+        let shared_notebook = NotebookObject::new(
             shared_notebook_id,
-            CloudNotebookModel {
+            NotebookObjectModel {
                 title: "Shared Notebook".to_string(),
                 data: "Hello".to_string(),
                 ai_document_id: None,
@@ -625,9 +625,9 @@ fn test_shared_team_object() {
         let team_uid = ServerId::from(456);
 
         let shared_notebook_id = SyncId::ServerId(123.into());
-        let shared_notebook = CloudNotebook::new(
+        let shared_notebook = NotebookObject::new(
             shared_notebook_id,
-            CloudNotebookModel {
+            NotebookObjectModel {
                 title: "Shared Notebook".to_string(),
                 data: "Hello".to_string(),
                 ai_document_id: None,
@@ -664,9 +664,9 @@ fn test_unshared_team_object() {
         // Use the current user's team.
         let team_uid = TEST_TEAM.uid;
         let shared_notebook_id = SyncId::ServerId(123.into());
-        let shared_notebook = CloudNotebook::new(
+        let shared_notebook = NotebookObject::new(
             shared_notebook_id,
-            CloudNotebookModel {
+            NotebookObjectModel {
                 title: "Shared Notebook".to_string(),
                 data: "Hello".to_string(),
                 ai_document_id: None,
@@ -703,9 +703,9 @@ fn test_shared_object_in_unshared_folder() {
         let other_user = UserUid::new("other_user");
         let unshared_folder_id = SyncId::ServerId(567.into());
         let shared_notebook_id = SyncId::ServerId(123.into());
-        let mut shared_notebook = CloudNotebook::new(
+        let mut shared_notebook = NotebookObject::new(
             shared_notebook_id,
-            CloudNotebookModel {
+            NotebookObjectModel {
                 title: "Shared Notebook".to_string(),
                 data: "Hello".to_string(),
                 ai_document_id: None,

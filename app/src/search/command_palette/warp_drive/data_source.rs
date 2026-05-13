@@ -5,9 +5,9 @@ use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::cloud_object::{
     CloudObject, CloudObjectLocation, GenericStringObjectFormat, JsonObjectType, ObjectType,
 };
-use crate::drive::folders::CloudFolder;
+use crate::drive::folders::FolderObject;
 use crate::env_vars::EnvVarCollectionObject;
-use crate::notebooks::CloudNotebook;
+use crate::notebooks::NotebookObject;
 use crate::search::command_palette::mixer::CommandPaletteItemAction;
 use crate::search::data_source::{DataSourceSearchError, Query, QueryResult};
 use crate::search::env_var_collections::fuzzy_match::FuzzyMatchEnvVarCollectionResult;
@@ -228,7 +228,7 @@ impl DataSource {
             }));
         }
 
-        let notebook: Option<&CloudNotebook> = object.into();
+        let notebook: Option<&NotebookObject> = object.into();
         if let Some(notebook) = notebook {
             return Some(QueryResult::from(NotebookSearchItem {
                 match_result: FuzzyMatchNotebookResult::no_match(),
@@ -299,7 +299,7 @@ trait WarpDriveSearcher {
 
 #[derive(Default)]
 struct FuzzyWarpDriveSearcher {
-    notebooks: HashMap<ObjectUid, CloudNotebook>,
+    notebooks: HashMap<ObjectUid, NotebookObject>,
     workflows: HashMap<ObjectUid, WorkflowObject>,
     env_vars: HashMap<ObjectUid, EnvVarCollectionObject>,
 }
@@ -313,11 +313,11 @@ impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
     ) -> anyhow::Result<()> {
         match object_type {
             ObjectType::Notebook => {
-                let notebook: Option<&CloudNotebook> = object.into();
+                let notebook: Option<&NotebookObject> = object.into();
                 if let Some(notebook) = notebook {
                     self.notebooks.insert(notebook.uid(), notebook.clone());
                 } else {
-                    anyhow::bail!("Expected CloudNotebook, got {:?}", object);
+                    anyhow::bail!("Expected NotebookObject, got {:?}", object);
                 }
             }
             ObjectType::Workflow => {
@@ -339,7 +339,7 @@ impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
                 }
             }
             ObjectType::Folder => {
-                let folder: Option<&CloudFolder> = object.into();
+                let folder: Option<&FolderObject> = object.into();
                 if let Some(folder) = folder {
                     let location = CloudObjectLocation::Folder(folder.id);
                     for obj in CloudModel::as_ref(app)
@@ -348,7 +348,7 @@ impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
                         self.insert_searchable_object(obj, obj.object_type(), app)?
                     }
                 } else {
-                    anyhow::bail!("Expected CloudFolder, got {:?}", object);
+                    anyhow::bail!("Expected FolderObject, got {:?}", object);
                 }
             }
             // We don't care about other object types for now.
@@ -380,7 +380,7 @@ impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
                 let Some(obj) = model.get_by_uid(&uid) else {
                     anyhow::bail!("Object with ID {:?} not found in CloudModel", uid);
                 };
-                let folder: Option<&CloudFolder> = obj.into();
+                let folder: Option<&FolderObject> = obj.into();
                 if let Some(folder) = folder {
                     let location = CloudObjectLocation::Folder(folder.id);
                     for obj in
@@ -389,7 +389,7 @@ impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
                         self.delete_searchable_object(obj.uid(), obj.object_type(), app)?
                     }
                 } else {
-                    anyhow::bail!("Expected CloudFolder, got {:?}", obj);
+                    anyhow::bail!("Expected FolderObject, got {:?}", obj);
                 }
             }
             // We don't care about other object types for now.
@@ -411,7 +411,7 @@ impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
             }
             if let Some(workflow) = <Option<&WorkflowObject>>::from(object.as_ref()) {
                 self.workflows.insert(workflow.uid(), workflow.clone());
-            } else if let Some(notebook) = <Option<&CloudNotebook>>::from(object.as_ref()) {
+            } else if let Some(notebook) = <Option<&NotebookObject>>::from(object.as_ref()) {
                 self.notebooks.insert(notebook.uid(), notebook.clone());
             } else if let Some(env_var) = <Option<&EnvVarCollectionObject>>::from(object.as_ref()) {
                 self.env_vars.insert(env_var.uid(), env_var.clone());
@@ -522,10 +522,10 @@ mod full_text_searcher {
         CloudObject, CloudObjectLocation, GenericStringObjectFormat, JsonObjectType, ObjectType,
     };
     use crate::define_search_schema;
-    use crate::drive::folders::CloudFolder;
+    use crate::drive::folders::FolderObject;
     use crate::env_vars::EnvVarCollectionObject;
     use crate::notebooks::manager::NotebookManager;
-    use crate::notebooks::CloudNotebook;
+    use crate::notebooks::NotebookObject;
     use crate::search::command_palette::warp_drive::data_source::WarpDriveSearcher;
     use crate::search::command_palette::warp_drive::env_var_collection_search_item::{
         EnvVarCollectionSearchItem, ENV_VAR_NAME_SEPARATOR,
@@ -616,7 +616,7 @@ mod full_text_searcher {
                     .get_all_doc_ids()?
                     .into_iter()
                     .filter_map(|search_match| {
-                        let notebook: Option<&CloudNotebook> = CloudModel::as_ref(app)
+                        let notebook: Option<&NotebookObject> = CloudModel::as_ref(app)
                             .get_by_uid(&search_match.uid)?
                             .into();
                         let cloud_notebook = notebook?;
@@ -637,7 +637,7 @@ mod full_text_searcher {
                 .search_id(query)?
                 .into_iter()
                 .filter_map(|search_match| {
-                    let notebook: Option<&CloudNotebook> = CloudModel::as_ref(app)
+                    let notebook: Option<&NotebookObject> = CloudModel::as_ref(app)
                         .get_by_uid(&search_match.values.uid)?
                         .into();
                     let notebook = notebook?;
@@ -682,7 +682,7 @@ mod full_text_searcher {
         ) -> anyhow::Result<()> {
             match object_type {
                 ObjectType::Notebook => {
-                    let notebook: Option<&CloudNotebook> = object.into();
+                    let notebook: Option<&NotebookObject> = object.into();
                     if let Some(notebook) = notebook {
                         let name = notebook.model().title.to_lowercase();
                         let content = NotebookManager::as_ref(app)
@@ -700,7 +700,7 @@ mod full_text_searcher {
                         };
                         self.notebook_searcher.insert_document_async(document)
                     } else {
-                        anyhow::bail!("Expected CloudNotebook, got {:?}", object);
+                        anyhow::bail!("Expected NotebookObject, got {:?}", object);
                     }
                 }
                 ObjectType::Workflow => {
@@ -766,7 +766,7 @@ mod full_text_searcher {
                     }
                 }
                 ObjectType::Folder => {
-                    let folder: Option<&CloudFolder> = object.into();
+                    let folder: Option<&FolderObject> = object.into();
                     if let Some(folder) = folder {
                         let location = CloudObjectLocation::Folder(folder.id);
                         for obj in CloudModel::as_ref(app)
@@ -776,7 +776,7 @@ mod full_text_searcher {
                         }
                         Ok(())
                     } else {
-                        anyhow::bail!("Expected CloudFolder, got {:?}", object);
+                        anyhow::bail!("Expected FolderObject, got {:?}", object);
                     }
                 }
                 // We don't care about other object types for now.
@@ -812,7 +812,7 @@ mod full_text_searcher {
                     let Some(obj) = CloudModel::as_ref(app).get_by_uid(&uid) else {
                         anyhow::bail!("Object with ID {:?} not found in CloudModel", uid);
                     };
-                    let folder: Option<&CloudFolder> = obj.into();
+                    let folder: Option<&FolderObject> = obj.into();
                     if let Some(folder) = folder {
                         let location = CloudObjectLocation::Folder(folder.id);
                         for obj in CloudModel::as_ref(app)
@@ -822,7 +822,7 @@ mod full_text_searcher {
                         }
                         Ok(())
                     } else {
-                        anyhow::bail!("Expected CloudFolder, got {:?}", folder);
+                        anyhow::bail!("Expected FolderObject, got {:?}", folder);
                     }
                 }
                 // We don't care about other object types for now.
@@ -841,7 +841,7 @@ mod full_text_searcher {
                 .cloud_objects()
                 .filter(|obj| active_uids.contains(&obj.uid()))
                 .filter_map(|obj| {
-                    let notebook: Option<&CloudNotebook> = obj.as_ref().into();
+                    let notebook: Option<&NotebookObject> = obj.as_ref().into();
                     notebook.map(|notebook| {
                         let name = notebook.model().title.to_lowercase();
                         let content = NotebookManager::as_ref(app)

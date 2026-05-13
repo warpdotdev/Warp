@@ -39,8 +39,8 @@ use crate::cloud_object::model::actions::ObjectAction;
 use crate::cloud_object::model::generic_string_model::CloudStringObject;
 
 use crate::cloud_object::{CloudObject, CloudObjectMetadata, ObjectIdType};
-use crate::drive::folders::CloudFolder;
-use crate::notebooks::CloudNotebook;
+use crate::drive::folders::FolderObject;
+use crate::notebooks::NotebookObject;
 use crate::server::experiments::ServerExperiment;
 use crate::server::ids::SyncId;
 use crate::suggestions::ignored_suggestions_model::SuggestionType;
@@ -241,21 +241,21 @@ pub enum ModelEvent {
     DeleteBlocks(Vec<u8>),
     Snapshot(AppState),
     UpsertWorkflows(Vec<WorkflowObject>),
-    UpsertNotebooks(Vec<CloudNotebook>),
-    UpsertFolders(Vec<CloudFolder>),
+    UpsertNotebooks(Vec<NotebookObject>),
+    UpsertFolders(Vec<FolderObject>),
     IncrementRetryCount(String),
     UpsertGenericStringObject {
         object: Box<dyn CloudStringObject>,
     },
     UpsertGenericStringObjects(Vec<Box<dyn CloudStringObject>>),
     UpsertNotebook {
-        notebook: CloudNotebook,
+        notebook: NotebookObject,
     },
     UpsertWorkflow {
         workflow: WorkflowObject,
     },
     UpsertFolder {
-        folder: CloudFolder,
+        folder: FolderObject,
     },
     DeleteObjects {
         ids: Vec<(SyncId, ObjectIdType)>,

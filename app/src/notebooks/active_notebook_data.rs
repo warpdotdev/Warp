@@ -11,11 +11,11 @@ use crate::{
         CloudObject, Owner, Space,
     },
     drive::sharing::{ContentEditability, SharingAccessLevel},
-    notebooks::CloudNotebook,
+    notebooks::NotebookObject,
     server::ids::{ClientId, SyncId},
 };
 
-use super::CloudNotebookModel;
+use super::NotebookObjectModel;
 
 #[derive(Default, Clone)]
 pub enum ActiveNotebook {
@@ -26,7 +26,7 @@ pub enum ActiveNotebook {
     CommittedNotebook(SyncId),
     // A notebook that has been created and displayed in the view, but is not yet
     // committed to CloudModel
-    NewNotebook(Box<CloudNotebook>),
+    NewNotebook(Box<NotebookObject>),
 }
 
 #[derive(PartialEq, Eq, Default, Clone, Copy, Debug)]
@@ -121,8 +121,8 @@ impl ActiveNotebookData {
         let new_id = ClientId::default();
 
         // Set the active notebook to be an uncommitted notebook
-        self.active_notebook = ActiveNotebook::NewNotebook(Box::new(CloudNotebook::new_local(
-            CloudNotebookModel::default(),
+        self.active_notebook = ActiveNotebook::NewNotebook(Box::new(NotebookObject::new_local(
+            NotebookObjectModel::default(),
             owner,
             initial_folder_id,
             new_id,

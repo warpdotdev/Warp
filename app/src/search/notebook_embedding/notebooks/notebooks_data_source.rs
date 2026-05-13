@@ -2,7 +2,7 @@ use itertools::Itertools;
 use warpui::{AppContext, SingletonEntity};
 
 use crate::cloud_object::{CloudObject, Space};
-use crate::notebooks::CloudNotebook;
+use crate::notebooks::NotebookObject;
 use crate::search::notebook_embedding::embedded_fuzzy_match::FuzzyMatchEmbeddedObjectResult;
 use crate::search::notebook_embedding::is_embed_accessible;
 use crate::search::notebook_embedding::searcher::EmbeddingSearchItemAction;
@@ -16,7 +16,7 @@ use super::notebook_search_item::NotebookSearchItem;
 pub struct CloudNotebooksDataSource {
     /// The space containing the object we are embedding into.
     embedding_space: Space,
-    notebooks: Vec<CloudNotebook>,
+    notebooks: Vec<NotebookObject>,
 }
 
 impl CloudNotebooksDataSource {

@@ -11,7 +11,7 @@ use crate::{
     },
     cloud_object::{CloudObjectPermissions, Owner},
     code::editor_management::CodeSource,
-    notebooks::{CloudNotebook, CloudNotebookModel},
+    notebooks::{NotebookObject, NotebookObjectModel},
     persistence::{model::ObjectPermissions, BlockCompleted, ModelEvent},
     server::ids::ClientId,
     server_time::ServerTimestamp,
@@ -26,8 +26,8 @@ use super::{
 
 #[test]
 fn test_deduplicate_snapshots() {
-    let local_notebook = CloudNotebook::new_local(
-        CloudNotebookModel {
+    let local_notebook = NotebookObject::new_local(
+        NotebookObjectModel {
             title: "Hello".to_string(),
             data: "World".to_string(),
             ai_document_id: None,

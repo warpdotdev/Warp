@@ -1,5 +1,5 @@
 use crate::notebooks::manager::NotebookManager;
-use crate::notebooks::CloudNotebook;
+use crate::notebooks::NotebookObject;
 use crate::search::result_renderer::ItemHighlightState;
 use crate::server::ids::SyncId;
 use crate::{appearance::Appearance, cloud_object::CloudObject};
@@ -71,7 +71,7 @@ impl FuzzyMatchNotebookResult {
     /// Attempts to fuzzy match the `notebook`. Returns `None` if the `notebook` was not matched.
     pub fn try_match(
         query: &str,
-        notebook: &CloudNotebook,
+        notebook: &NotebookObject,
         app: &AppContext,
     ) -> Option<FuzzyMatchNotebookResult> {
         let name_match_result =

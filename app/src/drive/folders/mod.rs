@@ -10,18 +10,18 @@ use crate::{
 
 pub use crate::server::ids::FolderId;
 
-/// The model for a `CloudFolder`.
+/// The model for a `FolderObject`.
 #[derive(Clone, Debug, PartialEq)]
-pub struct CloudFolderModel {
+pub struct FolderObjectModel {
     pub name: String,
     // TODO: since this is local only state, we should consider only surfacing it as part of the
-    // CloudViewModel. Right now, every server folder uses CloudFolderModel, which means it
-    // hardcodes a value of `false` for this property since it can't know what the local state is.
+    // CloudViewModel. Right now, every object-backed folder uses FolderObjectModel, which means
+    // it hardcodes a value of `false` for this property since it can't know what the local state is.
     pub is_open: bool,
     pub is_warp_pack: bool,
 }
 
-impl CloudFolderModel {
+impl FolderObjectModel {
     pub fn new(name: &str, is_warp_pack: bool) -> Self {
         Self {
             name: name.to_owned(),
@@ -31,11 +31,11 @@ impl CloudFolderModel {
     }
 }
 
-/// `CloudFolder` is a folder retrieved from the server.
-pub type CloudFolder = GenericCloudObject<FolderId, CloudFolderModel>;
+/// `FolderObject` is an object-store backed folder.
+pub type FolderObject = GenericCloudObject<FolderId, FolderObjectModel>;
 
-impl CloudModelType for CloudFolderModel {
-    type CloudObjectType = CloudFolder;
+impl CloudModelType for FolderObjectModel {
+    type CloudObjectType = FolderObject;
     type IdType = FolderId;
 
     fn model_type_name(&self) -> &'static str {
@@ -54,13 +54,13 @@ impl CloudModelType for CloudFolderModel {
         self.name.clone()
     }
 
-    fn upsert_event(&self, folder: &CloudFolder) -> ModelEvent {
+    fn upsert_event(&self, folder: &FolderObject) -> ModelEvent {
         ModelEvent::UpsertFolder {
             folder: folder.clone(),
         }
     }
 
-    fn bulk_upsert_event(objects: &[CloudFolder]) -> ModelEvent {
+    fn bulk_upsert_event(objects: &[FolderObject]) -> ModelEvent {
         ModelEvent::UpsertFolders(objects.to_vec())
     }
 
@@ -89,7 +89,7 @@ impl CloudModelType for CloudFolderModel {
         &self,
         id: SyncId,
         _appearance: &Appearance,
-        folder: &CloudFolder,
+        folder: &FolderObject,
     ) -> Option<Box<dyn WarpDriveItem>> {
         Some(Box::new(WarpDriveFolder::new(
             self.cloud_object_type_and_id(id),

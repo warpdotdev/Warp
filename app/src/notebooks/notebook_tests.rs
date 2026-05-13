@@ -29,7 +29,7 @@ use crate::{
             keys::NotebookKeybindings, notebook_command::NotebookCommand, view::EditorViewAction,
         },
         notebook::FocusedComponent,
-        CloudNotebook, CloudNotebookModel, NotebookLocation,
+        NotebookLocation, NotebookObject, NotebookObjectModel,
     },
     pane_group::PaneEvent,
     search::files::model::FileSearchModel,
@@ -121,7 +121,7 @@ fn create_notebook(app: &mut App) -> (WindowId, ViewHandle<NotebookView>, ViewHa
 fn open_notebook(
     app: &mut App,
     handle: &ViewHandle<NotebookView>,
-    notebook: CloudNotebook,
+    notebook: NotebookObject,
 ) -> BoxFuture<'static, ()> {
     let load_future = handle.update(app, |view, ctx| {
         view.load(notebook, &OpenWarpDriveObjectSettings::default(), ctx)
@@ -129,7 +129,7 @@ fn open_notebook(
     app.update(|ctx| ctx.await_spawned_future(load_future.future_id()))
 }
 
-fn cloud_notebook(title: impl Into<String>, data: impl Into<String>) -> CloudNotebook {
+fn cloud_notebook(title: impl Into<String>, data: impl Into<String>) -> NotebookObject {
     local_notebook_with_id(SyncId::ClientId(ClientId::new()), title, data)
 }
 
@@ -137,10 +137,10 @@ fn local_notebook_with_id(
     id: crate::server::ids::SyncId,
     title: impl Into<String>,
     data: impl Into<String>,
-) -> CloudNotebook {
-    CloudNotebook::new(
+) -> NotebookObject {
+    NotebookObject::new(
         id,
-        CloudNotebookModel {
+        NotebookObjectModel {
             title: title.into(),
             data: data.into(),
             ai_document_id: None,
@@ -151,12 +151,12 @@ fn local_notebook_with_id(
     )
 }
 
-fn mock_stored_notebook(title: impl Into<String>, data: impl Into<String>) -> CloudNotebook {
+fn mock_stored_notebook(title: impl Into<String>, data: impl Into<String>) -> NotebookObject {
     local_notebook_with_id(ServerId::from(123).into(), title, data)
 }
 
 /// Seed changed objects directly into [`CloudModel`] so tests can simulate local restore.
-async fn initial_load(app: &mut App, updated_notebooks: impl Into<Vec<CloudNotebook>>) {
+async fn initial_load(app: &mut App, updated_notebooks: impl Into<Vec<NotebookObject>>) {
     CloudModel::handle(app).update(app, |model, _| {
         for notebook in updated_notebooks.into() {
             model.add_object(notebook.id, notebook);

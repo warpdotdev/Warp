@@ -17,7 +17,7 @@ use crate::{
         ObjectType, Space,
     },
     drive::CloudObjectTypeAndId,
-    notebooks::{CloudNotebook, CloudNotebookModel, NotebookId},
+    notebooks::{NotebookId, NotebookObject, NotebookObjectModel},
     server::ids::SyncId,
     workflows::{workflow::Workflow, WorkflowId, WorkflowObject, WorkflowObjectModel},
     workspace::ToastStack,
@@ -128,9 +128,9 @@ fn add_notebook(id: SyncId, title: impl Into<String>, data: impl Into<String>, a
     CloudModel::handle(app).update(app, |cloud_model, _ctx| {
         cloud_model.add_object(
             id,
-            CloudNotebook::new(
+            NotebookObject::new(
                 id,
-                CloudNotebookModel {
+                NotebookObjectModel {
                     title: title.into(),
                     data: data.into(),
                     ai_document_id: None,

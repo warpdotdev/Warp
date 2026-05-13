@@ -79,7 +79,7 @@ impl PaneContent for NotebookPane {
 
     fn snapshot(&self, app: &AppContext) -> LeafContents {
         let notebook_id = self.notebook_view(app).as_ref(app).notebook_id(app);
-        LeafContents::Notebook(NotebookPaneSnapshot::CloudNotebook {
+        LeafContents::Notebook(NotebookPaneSnapshot::NotebookObject {
             notebook_id,
             settings: OpenWarpDriveObjectSettings::default(),
         })

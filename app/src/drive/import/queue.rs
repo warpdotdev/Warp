@@ -11,7 +11,7 @@ use crate::{
         CloudObjectEventEntrypoint, Owner,
     },
     drive::folders::FolderId,
-    notebooks::CloudNotebookModel,
+    notebooks::NotebookObjectModel,
     server::ids::{ClientId, SyncId},
     workflows::{workflow::Workflow, workflow_enum::WorkflowEnum},
 };
@@ -208,7 +208,7 @@ impl ImportQueue {
                             client_id,
                             dequeued_item.owner,
                             parent_id,
-                            CloudNotebookModel {
+                            NotebookObjectModel {
                                 title,
                                 data,
                                 ai_document_id: None,

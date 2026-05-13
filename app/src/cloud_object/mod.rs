@@ -448,7 +448,7 @@ pub trait CloudObject: Debug {
 /// When building new model types (e.g. for settings or launch configs) we should just
 /// have to implement this trait, and not the entire CloudObject trait.
 pub trait CloudModelType: Debug + Clone + Send + Sync {
-    /// The associated CloudObject type for this model (e.g. CloudNotebook, WorkflowObject, etc)
+    /// The associated CloudObject type for this model (e.g. NotebookObject, WorkflowObject, etc)
     type CloudObjectType: CloudObject + 'static;
     // TODO: @ianhodge - remove for sync ID refactor.
     type IdType: HashableId + ToServerId + Debug + Into<String> + Clone + 'static;
@@ -540,9 +540,9 @@ lazy_static! {
 /// For instance, rather than directly implementing the CloudObject trait, CloudObjects can
 /// implement GenericCloudObject<K, M> where K is their id type and M is their model type.
 ///
-/// For example, CloudNotebook becomes:
+/// For example, NotebookObject becomes:
 ///
-///   pub type CloudNotebook = GenericCloudObject<NotebookId, CloudNotebookModel>
+///   pub type NotebookObject = GenericCloudObject<NotebookId, NotebookObjectModel>
 ///
 /// The advantage of using the generic model is you get common implementations
 /// of CloudObject methods like ```versions``` for free.

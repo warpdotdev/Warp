@@ -14,7 +14,7 @@ use crate::{
     drive::{items::WarpDriveItemId, CloudObjectTypeAndId},
     menu::MenuItem,
     network::NetworkStatus,
-    notebooks::{CloudNotebook, CloudNotebookModel},
+    notebooks::{NotebookObject, NotebookObjectModel},
     server::ids::{ClientId, SyncId},
     settings_view::keybindings::KeybindingChangedNotifier,
     test_util::settings::initialize_settings_for_tests,
@@ -74,8 +74,8 @@ fn create_notebook(app: &mut App) -> SyncId {
         let sync_id = SyncId::ClientId(client_id);
         cloud_model.create_object(
             sync_id,
-            CloudNotebook::new_local(
-                CloudNotebookModel::default(),
+            NotebookObject::new_local(
+                NotebookObjectModel::default(),
                 Owner::mock_current_user(),
                 None,
                 client_id,

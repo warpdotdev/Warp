@@ -23,7 +23,7 @@ use crate::{
     features::FeatureFlag,
     menu::{Event, Menu, MenuItem, MenuItemFields},
     network::NetworkStatus,
-    notebooks::CloudNotebookModel,
+    notebooks::NotebookObjectModel,
     report_if_error, send_telemetry_from_ctx,
     server::{
         ids::{ClientId, ObjectUid, ServerId, SyncId},
@@ -52,7 +52,7 @@ use super::{
         has_feature_gated_anonymous_user_reached_workflow_limit,
     },
     empty_trash_confirmation_dialog::{EmptyTrashConfirmationDialog, EmptyTrashConfirmationEvent},
-    folders::CloudFolder,
+    folders::FolderObject,
     items::{
         ai_fact_collection::WarpDriveAIFactCollection,
         item::{tools_panel_menu_direction, ItemStates, WarpDriveRow},
@@ -701,7 +701,7 @@ impl DriveIndex {
             item_iter
                 .map(|object| {
                     if object.object_type() == ObjectType::Folder {
-                        let folder: Option<&CloudFolder> = object.into();
+                        let folder: Option<&FolderObject> = object.into();
                         if let Some(folder) = folder {
                             if folder.model().is_open {
                                 self.sort_location(
@@ -2657,7 +2657,7 @@ impl DriveIndex {
 
         // If the item is a folder and the folder is open, render all of the
         // folders children as well.
-        let folder: Option<&CloudFolder> = object.into();
+        let folder: Option<&FolderObject> = object.into();
         if let Some(folder) = folder {
             let mut item_and_children = vec![rendered_item];
 
@@ -4289,9 +4289,9 @@ impl DriveIndex {
 
                 if self.edit_object_enabled(cloud_object_type_and_id, app) {
                     if let Some(notebook) =
-                        <GenericCloudObject<_, CloudNotebookModel> as CloudObject>::as_model_type::<
+                        <GenericCloudObject<_, NotebookObjectModel> as CloudObject>::as_model_type::<
                             _,
-                            CloudNotebookModel,
+                            NotebookObjectModel,
                         >(object)
                     {
                         if let Some(ai_document_id) = notebook.model().ai_document_id {

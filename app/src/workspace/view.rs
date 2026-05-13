@@ -64,7 +64,7 @@ use crate::code_review::CodeReviewTelemetryEvent;
 use crate::code_review::GlobalCodeReviewModel;
 use crate::coding_panel_enablement_state::CodingPanelEnablementState;
 use crate::default_terminal::DefaultTerminal;
-use crate::notebooks::CloudNotebook;
+use crate::notebooks::NotebookObject;
 use crate::notification::NotificationContext;
 use crate::notifications::model::NotificationsModel;
 use crate::notifications::{
@@ -10169,7 +10169,7 @@ impl Workspace {
         let panes_layout = PanesLayout::Snapshot(Box::new(PaneNodeSnapshot::Leaf(LeafSnapshot {
             is_focused: true,
             custom_vertical_tabs_title: None,
-            contents: LeafContents::Notebook(NotebookPaneSnapshot::CloudNotebook {
+            contents: LeafContents::Notebook(NotebookPaneSnapshot::NotebookObject {
                 notebook_id: Some(notebook_id),
                 settings: settings.clone(),
             }),
@@ -14009,7 +14009,7 @@ impl Workspace {
                     let env_var_collection: Option<&EnvVarCollectionObject> = object.into();
                     let cloned_env_var_collection = env_var_collection.cloned();
 
-                    let notebook: Option<&CloudNotebook> = object.into();
+                    let notebook: Option<&NotebookObject> = object.into();
                     let cloned_notebook = notebook.cloned();
 
                     self.toast_stack

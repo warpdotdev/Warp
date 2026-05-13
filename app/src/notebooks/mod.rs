@@ -35,9 +35,9 @@ pub(crate) struct SerializedNotebook {
     pub(crate) conversation_id: Option<String>,
 }
 
-/// `CloudNotebook` is a notebook retrieved from the server.
+/// `NotebookObject` is an object-store backed notebook.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct CloudNotebookModel {
+pub struct NotebookObjectModel {
     pub title: String,
     pub data: String,
     pub ai_document_id: Option<AIDocumentId>,
@@ -45,10 +45,10 @@ pub struct CloudNotebookModel {
     pub conversation_id: Option<String>,
 }
 
-pub type CloudNotebook = GenericCloudObject<NotebookId, CloudNotebookModel>;
+pub type NotebookObject = GenericCloudObject<NotebookId, NotebookObjectModel>;
 
-impl CloudModelType for CloudNotebookModel {
-    type CloudObjectType = CloudNotebook;
+impl CloudModelType for NotebookObjectModel {
+    type CloudObjectType = NotebookObject;
     type IdType = NotebookId;
 
     fn model_type_name(&self) -> &'static str {
@@ -75,13 +75,13 @@ impl CloudModelType for CloudNotebookModel {
         name.clone_into(&mut self.title);
     }
 
-    fn upsert_event(&self, notebook: &CloudNotebook) -> ModelEvent {
+    fn upsert_event(&self, notebook: &NotebookObject) -> ModelEvent {
         ModelEvent::UpsertNotebook {
             notebook: notebook.clone(),
         }
     }
 
-    fn bulk_upsert_event(objects: &[CloudNotebook]) -> ModelEvent {
+    fn bulk_upsert_event(objects: &[NotebookObject]) -> ModelEvent {
         ModelEvent::UpsertNotebooks(objects.to_vec())
     }
 
@@ -111,7 +111,7 @@ impl CloudModelType for CloudNotebookModel {
         &self,
         id: SyncId,
         _appearance: &Appearance,
-        notebook: &CloudNotebook,
+        notebook: &NotebookObject,
     ) -> Option<Box<dyn WarpDriveItem>> {
         Some(Box::new(WarpDriveNotebook::new(
             self.cloud_object_type_and_id(id),
@@ -132,12 +132,12 @@ impl From<NotebookId> for SyncId {
     }
 }
 
-/// A notebook location. Mainly, this lets us distinguish between cloud and file-based notebooks.
+/// A notebook location. Mainly, this lets us distinguish between object-backed and file-based notebooks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum NotebookLocation {
-    /// A cloud notebook in the user's personal space.
+    /// An object-backed notebook in the user's personal space.
     PersonalCloud,
-    /// A cloud notebook in a team space.
+    /// An object-backed notebook in a team space.
     Team,
     /// A notebook backed by a local file.
     LocalFile,

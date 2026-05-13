@@ -6,7 +6,7 @@ use warpui::SingletonEntity;
 
 use crate::env_vars::EnvVarCollection;
 use crate::env_vars::EnvVarValue;
-use crate::notebooks::CloudNotebookModel;
+use crate::notebooks::NotebookObjectModel;
 use crate::terminal::shell::ShellType;
 use crate::{
     ai::agent::AIAgentCitation, cloud_object::model::persistence::CloudModel,
@@ -59,7 +59,7 @@ fn is_command_copied_from_warp_drive_object(
 
 /// Returns true iff the `command` was copied directly from one of the
 /// notebook's code blocks.
-fn is_command_copied_from_notebook(command: &str, notebook: &CloudNotebookModel) -> bool {
+fn is_command_copied_from_notebook(command: &str, notebook: &NotebookObjectModel) -> bool {
     let Ok(md) = parse_markdown(notebook.data.as_str()) else {
         return false;
     };

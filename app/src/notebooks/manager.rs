@@ -20,7 +20,7 @@ use crate::{
     workspace::PaneViewLocator,
 };
 
-use super::{notebook::NotebookView, CloudNotebook};
+use super::{notebook::NotebookView, NotebookObject};
 
 #[cfg(test)]
 #[path = "manager_tests.rs"]
@@ -74,7 +74,7 @@ pub enum NotebookSource {
 
 impl NotebookManager {
     /// Create a new [`NotebookManager`] singleton.
-    pub fn new(cached_notebooks: Vec<CloudNotebook>, ctx: &mut ModelContext<Self>) -> Self {
+    pub fn new(cached_notebooks: Vec<NotebookObject>, ctx: &mut ModelContext<Self>) -> Self {
         ctx.subscribe_to_model(&CloudModel::handle(ctx), Self::handle_cloud_model_event);
 
         let mut raw_text_by_hashed_id: HashMap<String, NotebookRawTextStatus> = HashMap::new();
@@ -96,7 +96,7 @@ impl NotebookManager {
     }
 
     fn spawn_raw_text_parse_for_notebook(
-        notebook: CloudNotebook,
+        notebook: NotebookObject,
         ctx: &mut ModelContext<Self>,
     ) -> SpawnedFutureHandle {
         let hashed_id = notebook.id.uid();

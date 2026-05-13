@@ -76,11 +76,11 @@ use crate::cloud_object::{
     JSON_OBJECT_PREFIX,
 };
 use crate::code::editor_management::CodeSource;
-use crate::drive::folders::{CloudFolder, CloudFolderModel, FolderId};
+use crate::drive::folders::{FolderId, FolderObject, FolderObjectModel};
 use crate::drive::OpenWarpDriveObjectSettings;
 use crate::env_vars::{EnvVarCollectionObject, EnvVarCollectionObjectModel};
 use crate::features::FeatureFlag;
-use crate::notebooks::{CloudNotebook, NotebookId};
+use crate::notebooks::{NotebookId, NotebookObject};
 use crate::persistence::agent::read_agent_conversations;
 use crate::persistence::block_list::{get_all_restored_blocks, read_ai_queries};
 use crate::persistence::model::{
@@ -113,7 +113,7 @@ use crate::{
 };
 use crate::{
     cloud_object::{CloudObjectMetadata, NumInFlightRequests, Revision},
-    notebooks::CloudNotebookModel,
+    notebooks::NotebookObjectModel,
 };
 use crate::{
     cloud_object::{CloudObjectPermissions, CloudObjectStatuses, CloudObjectSyncStatus},
@@ -1349,7 +1349,7 @@ fn save_pane_state(
         }
         LeafContents::Notebook(notebook_snapshot) => {
             let (notebook_id, local_path) = match notebook_snapshot {
-                NotebookPaneSnapshot::CloudNotebook {
+                NotebookPaneSnapshot::NotebookObject {
                     notebook_id,
                     settings: _,
                 } => (
@@ -2285,7 +2285,7 @@ fn upsert_workflows(
 
 fn upsert_notebooks(
     conn: &mut SqliteConnection,
-    cloud_notebooks: Vec<CloudNotebook>,
+    cloud_notebooks: Vec<NotebookObject>,
 ) -> Result<(), Error> {
     use schema::notebooks::dsl::*;
     conn.transaction::<(), Error, _>(|conn| {
@@ -2342,7 +2342,7 @@ fn upsert_notebooks(
 
 fn upsert_folders(
     conn: &mut SqliteConnection,
-    cloud_folders: Vec<CloudFolder>,
+    cloud_folders: Vec<FolderObject>,
 ) -> Result<(), Error> {
     use schema::folders::dsl::*;
     conn.transaction::<(), Error, _>(|conn| {
@@ -2486,7 +2486,7 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
                     // notebook than an unreadable local file.
                     LeafContents::Notebook(match local_path {
                         Some(path) => NotebookPaneSnapshot::LocalFileNotebook { path: Some(path) },
-                        None => NotebookPaneSnapshot::CloudNotebook {
+                        None => NotebookPaneSnapshot::NotebookObject {
                             notebook_id,
                             settings: OpenWarpDriveObjectSettings::default(),
                         },
@@ -2925,9 +2925,9 @@ fn read_sqlite_data(
                                 notebook.ai_document_id.as_ref().and_then(|doc_id_str| {
                                     AIDocumentId::try_from(doc_id_str.as_str()).ok()
                                 });
-                            let boxed: Box<dyn CloudObject> = Box::new(CloudNotebook::new(
+                            let boxed: Box<dyn CloudObject> = Box::new(NotebookObject::new(
                                 server_id,
-                                CloudNotebookModel {
+                                NotebookObjectModel {
                                     title: notebook.title.clone().unwrap_or_default(),
                                     data: notebook.data.clone().unwrap_or_default(),
                                     ai_document_id,
@@ -2959,9 +2959,9 @@ fn read_sqlite_data(
                         let cloud_object_permissions =
                             to_cloud_object_permissions(permissions, current_user_id)?;
                         folder_id.map(|server_id| {
-                            let boxed: Box<dyn CloudObject> = Box::new(CloudFolder::new(
+                            let boxed: Box<dyn CloudObject> = Box::new(FolderObject::new(
                                 server_id,
-                                CloudFolderModel {
+                                FolderObjectModel {
                                     name: folder.name.clone(),
                                     is_open: folder.is_open,
                                     is_warp_pack: folder.is_warp_pack,

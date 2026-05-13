@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn test_is_command_copied_from_notebook() {
-    let notebook = CloudNotebookModel {
+    let notebook = NotebookObjectModel {
         title: String::from(""),
         data: String::from("hello world\n```\n foobar \n```\n"),
         ai_document_id: None,

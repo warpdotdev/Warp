@@ -5,8 +5,8 @@ use crate::{
     appearance::Appearance,
     cloud_object::CloudObjectMetadata,
     drive::{
-        cloud_object_styling::warp_drive_icon_color, folders::CloudFolder, index::DriveIndexAction,
-        CloudObjectTypeAndId, DriveObjectType,
+        cloud_object_styling::warp_drive_icon_color, folders::FolderObject,
+        index::DriveIndexAction, CloudObjectTypeAndId, DriveObjectType,
     },
     themes::theme::Fill,
     ui_components::icons::Icon,
@@ -17,11 +17,11 @@ use super::{WarpDriveItem, WarpDriveItemId};
 #[derive(Clone)]
 pub struct WarpDriveFolder {
     id: CloudObjectTypeAndId,
-    folder: CloudFolder,
+    folder: FolderObject,
 }
 
 impl WarpDriveFolder {
-    pub fn new(id: CloudObjectTypeAndId, folder: CloudFolder) -> Self {
+    pub fn new(id: CloudObjectTypeAndId, folder: FolderObject) -> Self {
         Self { id, folder }
     }
 }

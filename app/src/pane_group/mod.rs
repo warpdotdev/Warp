@@ -1598,7 +1598,7 @@ impl PaneGroup {
             }
             LeafContents::Notebook(snapshot) => {
                 let pane: Box<dyn AnyPaneContent + 'static> = match snapshot {
-                    NotebookPaneSnapshot::CloudNotebook {
+                    NotebookPaneSnapshot::NotebookObject {
                         notebook_id,
                         settings,
                     } => Box::new(NotebookPane::restore(notebook_id, &settings, ctx)?),

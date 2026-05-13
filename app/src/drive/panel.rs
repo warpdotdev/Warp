@@ -15,7 +15,7 @@ use crate::{
         CloudObjectEventEntrypoint, GenericStringObjectFormat, JsonObjectType, Owner, Space,
     },
     env_vars::{manager::EnvVarCollectionSource, EnvVarCollectionObject},
-    notebooks::{manager::NotebookSource, CloudNotebook},
+    notebooks::{manager::NotebookSource, NotebookObject},
     server::ids::{ClientId, ServerId, SyncId},
     workflows::{manager::WorkflowOpenSource, WorkflowObject, WorkflowViewMode},
     workspaces::user_workspaces::UserWorkspaces,
@@ -245,7 +245,7 @@ impl DrivePanel {
                 let object = cloud_model.get_by_uid(&cloud_object_type_and_id.uid());
 
                 let notebook_id = object.and_then(|object| {
-                    let notebook: Option<&CloudNotebook> = object.into();
+                    let notebook: Option<&NotebookObject> = object.into();
                     notebook.map(|notebook| notebook.id)
                 });
 

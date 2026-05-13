@@ -4,13 +4,13 @@ use crate::cloud_object::{
     CloudModelType, CloudObjectLocation, GenericCloudObject, GenericStringObjectFormat,
     JsonObjectType, ObjectIdType, ObjectType, Owner, Revision, Space,
 };
-use crate::drive::folders::{CloudFolder, CloudFolderModel};
+use crate::drive::folders::{FolderObject, FolderObjectModel};
 use crate::drive::{
     should_auto_open_welcome_folder, write_has_auto_opened_welcome_folder_to_user_defaults,
     CloudObjectTypeAndId, DriveIndexVariant,
 };
 use crate::env_vars::{EnvVarCollection, EnvVarCollectionObject, EnvVarCollectionObjectModel};
-use crate::notebooks::CloudNotebook;
+use crate::notebooks::NotebookObject;
 use crate::persistence::ModelEvent;
 use crate::server::ids::{HashableId, ObjectUid, SyncId, ToServerId};
 use crate::server_time::ServerTimestamp;
@@ -175,7 +175,7 @@ impl CloudModel {
             }
 
             if let CloudObjectLocation::Folder(target_folder_id) = new_location {
-                let folder_to_move: Option<&CloudFolder> = object.into();
+                let folder_to_move: Option<&FolderObject> = object.into();
                 if let Some(folder_to_move) = folder_to_move {
                     // We do not want to move a folder into itself.
                     if folder_to_move.id == target_folder_id {
@@ -530,7 +530,7 @@ impl CloudModel {
                 FolderOpenState::Reversed => !folder.model.is_open,
             };
 
-            folder.set_model(CloudFolderModel {
+            folder.set_model(FolderObjectModel {
                 is_open,
                 is_warp_pack: folder.model.is_warp_pack,
                 name: folder.model.name.clone(),
@@ -594,7 +594,7 @@ impl CloudModel {
             DriveIndexVariant::MainIndex => self
                 .active_cloud_objects_in_location_without_descendents(location, app)
                 .for_each(|object| {
-                    let folder: Option<&CloudFolder> = object.into();
+                    let folder: Option<&FolderObject> = object.into();
                     if let Some(folder) = folder {
                         self.collapse_all_in_location_helper(
                             CloudObjectLocation::Folder(folder.id),
@@ -608,7 +608,7 @@ impl CloudModel {
                 if let CloudObjectLocation::Space(space) = location {
                     self.directly_trashed_cloud_objects_in_space(space, app)
                         .for_each(|object| {
-                            let folder: Option<&CloudFolder> = object.into();
+                            let folder: Option<&FolderObject> = object.into();
                             if let Some(folder) = folder {
                                 self.collapse_all_in_location_helper(
                                     CloudObjectLocation::Folder(folder.id),
@@ -623,7 +623,7 @@ impl CloudModel {
                         location, app,
                     )
                     .for_each(|object| {
-                        let folder: Option<&CloudFolder> = object.into();
+                        let folder: Option<&FolderObject> = object.into();
                         if let Some(folder) = folder {
                             self.collapse_all_in_location_helper(
                                 CloudObjectLocation::Folder(folder.id),
@@ -662,7 +662,7 @@ impl CloudModel {
         };
 
         let parent_folder_id = object.metadata().folder_id;
-        let folder: Option<&CloudFolder> = object.into();
+        let folder: Option<&FolderObject> = object.into();
 
         if let Some(folder) = folder {
             self.set_folder_open_state(folder.id, FolderOpenState::Open, ctx);
@@ -766,17 +766,17 @@ impl CloudModel {
         })
     }
 
-    pub fn get_folder_by_uid(&self, uid: &str) -> Option<&CloudFolder> {
+    pub fn get_folder_by_uid(&self, uid: &str) -> Option<&FolderObject> {
         self.objects_by_id.get(uid).and_then(|object| object.into())
     }
 
-    pub fn get_folder(&self, folder_id: &SyncId) -> Option<&CloudFolder> {
+    pub fn get_folder(&self, folder_id: &SyncId) -> Option<&FolderObject> {
         self.objects_by_id
             .get(&folder_id.uid())
             .and_then(|object| object.into())
     }
 
-    pub fn get_folder_mut(&mut self, folder_id: &SyncId) -> Option<&mut CloudFolder> {
+    pub fn get_folder_mut(&mut self, folder_id: &SyncId) -> Option<&mut FolderObject> {
         self.objects_by_id
             .get_mut(&folder_id.uid())
             .and_then(|object| object.into())
@@ -792,7 +792,7 @@ impl CloudModel {
 
     #[allow(unused)]
     /// Returns only active (not trashed) folders in cloud model.
-    pub fn get_all_active_folders(&self) -> impl Iterator<Item = &CloudFolder> {
+    pub fn get_all_active_folders(&self) -> impl Iterator<Item = &FolderObject> {
         self.objects_by_id
             .values()
             .filter(|object| !object.is_trashed(self))
@@ -800,7 +800,7 @@ impl CloudModel {
     }
 
     /// Returns all folders (trashed or not) in cloud model.
-    pub fn get_all_active_and_inactive_folders(&self) -> impl Iterator<Item = &CloudFolder> {
+    pub fn get_all_active_and_inactive_folders(&self) -> impl Iterator<Item = &FolderObject> {
         self.objects_by_id
             .values()
             .filter_map(|object| object.into())
@@ -892,7 +892,7 @@ impl CloudModel {
         &'a self,
         space: Space,
         app: &'a AppContext,
-    ) -> impl Iterator<Item = &'a CloudNotebook> + 'a {
+    ) -> impl Iterator<Item = &'a NotebookObject> + 'a {
         self.active_cloud_objects_in_space(space, app)
             .filter_map(|object| object.into())
     }
@@ -902,7 +902,7 @@ impl CloudModel {
         &'a self,
         space: Space,
         app: &'a AppContext,
-    ) -> impl Iterator<Item = &'a CloudNotebook> + 'a {
+    ) -> impl Iterator<Item = &'a NotebookObject> + 'a {
         self.active_non_welcome_cloud_objects_in_space(space, app)
             .filter_map(|object| object.into())
     }
@@ -982,17 +982,17 @@ impl CloudModel {
             .filter_map(|object| object.into())
     }
 
-    pub fn get_notebook(&self, notebook_id: &SyncId) -> Option<&CloudNotebook> {
+    pub fn get_notebook(&self, notebook_id: &SyncId) -> Option<&NotebookObject> {
         self.objects_by_id
             .get(&notebook_id.uid())
             .and_then(|object| object.into())
     }
 
-    pub fn get_notebook_by_uid(&self, uid: &str) -> Option<&CloudNotebook> {
+    pub fn get_notebook_by_uid(&self, uid: &str) -> Option<&NotebookObject> {
         self.objects_by_id.get(uid).and_then(|object| object.into())
     }
 
-    pub fn get_notebook_mut(&mut self, notebook_id: &SyncId) -> Option<&mut CloudNotebook> {
+    pub fn get_notebook_mut(&mut self, notebook_id: &SyncId) -> Option<&mut NotebookObject> {
         self.objects_by_id
             .get_mut(&notebook_id.uid())
             .and_then(|notebook| notebook.into())
@@ -1028,7 +1028,7 @@ impl CloudModel {
     }
 
     /// Returns only active (not trashed) notebooks in cloud model.
-    pub fn get_all_active_notebooks(&self) -> impl Iterator<Item = &CloudNotebook> {
+    pub fn get_all_active_notebooks(&self) -> impl Iterator<Item = &NotebookObject> {
         self.objects_by_id
             .values()
             .filter(|object| !object.is_trashed(self))
@@ -1036,7 +1036,7 @@ impl CloudModel {
     }
 
     /// Returns all notebooks (trashed or not) in cloud model.
-    pub fn get_all_active_and_inactive_notebooks(&self) -> impl Iterator<Item = &CloudNotebook> {
+    pub fn get_all_active_and_inactive_notebooks(&self) -> impl Iterator<Item = &NotebookObject> {
         self.objects_by_id
             .values()
             .filter_map(|object| object.into())
@@ -1163,7 +1163,7 @@ impl CloudModel {
         self.trashed_cloud_objects_in_location_without_descendents(location, app)
             .for_each(|object| {
                 trashed_objects.push(object.object_type());
-                let folder: Option<&CloudFolder> = object.into();
+                let folder: Option<&FolderObject> = object.into();
                 // If any of the direct descendants are folders, recursively traverse through them
                 if let Some(folder) = folder {
                     self.trashed_cloud_object_types_in_location_with_descendants_helper(
@@ -1305,7 +1305,7 @@ impl CloudModel {
     // If the object is a folder and a welcome object, open it if we haven't opened a welcome folder before.
     fn maybe_open_welcome_folder(&mut self, object_id: &SyncId, ctx: &mut ModelContext<Self>) {
         if let Some(object) = self.get_by_uid(&object_id.uid()) {
-            let folder: Option<&CloudFolder> = object.into();
+            let folder: Option<&FolderObject> = object.into();
             if let Some(folder) = folder {
                 if folder.metadata().is_welcome_object {
                     // Doing this as a nested check as a slight optimization

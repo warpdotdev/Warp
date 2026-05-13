@@ -207,7 +207,7 @@ pub struct TerminalPaneSnapshot {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum NotebookPaneSnapshot {
-    CloudNotebook {
+    NotebookObject {
         /// The ID of the notebook that was open in this pane. There are 3 possibilities:
         /// 1. The pane contains a newly-created notebook that has not been edited yet. It might not
         ///    have an ID yet (client or server), so this will be `None`.
@@ -263,7 +263,7 @@ pub enum WorkflowPaneSnapshot {
 #[derive(Clone, Debug, PartialEq)]
 pub enum EnvVarCollectionPaneSnapshot {
     // EnvVarCollectionObject snapshots operate under the same heuristics
-    // as NotebookPaneSnapshot::CloudNotebook
+    // as NotebookPaneSnapshot::NotebookObject
     EnvVarCollectionObject {
         env_var_collection_id: Option<SyncId>,
     },

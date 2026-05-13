@@ -6,7 +6,7 @@ use super::*;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::{CloudObjectMetadata, CloudObjectPermissions, Owner};
 use crate::notebooks::manager::NotebookManager;
-use crate::notebooks::{CloudNotebook, CloudNotebookModel};
+use crate::notebooks::{NotebookObject, NotebookObjectModel};
 use crate::server::ids::SyncId::{self};
 use crate::settings::AISettings;
 use crate::workflows::workflow::Workflow;
@@ -50,11 +50,11 @@ fn mock_workflow(id: WorkflowId, owner: Owner) -> WorkflowObject {
     )
 }
 
-fn mock_notebook(id: NotebookId, owner: Owner) -> CloudNotebook {
+fn mock_notebook(id: NotebookId, owner: Owner) -> NotebookObject {
     let sync_id = SyncId::ServerId(id.into());
-    CloudNotebook::new(
+    NotebookObject::new(
         sync_id,
-        CloudNotebookModel {
+        NotebookObjectModel {
             title: format!("foo{id}"),
             data: format!("bar{id}"),
             ai_document_id: None,
