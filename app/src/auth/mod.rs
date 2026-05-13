@@ -46,9 +46,9 @@ pub const API_KEY_PREFIX: &str = "wk-";
 
 // ---------- Credentials / AuthToken / LoginToken ----------
 //
-// 原来用于云端 token / API key / SessionCookie 几种认证方式的运行时分支。OpenWarp
+// 原来用于托管 token / API key / SessionCookie 几种认证方式的运行时分支。OpenWarp
 // 本地化后只保留 `ApiKey` / `Test` 两种实际用得到的 variant 加上为编译兼容保留的
-// `SessionCookie`。云端 token variant 物理删,所有原云鉴权分支在 OpenWarp 下
+// `SessionCookie`。托管 token variant 已物理删除,所有原外部账号分支在 OpenWarp 下
 // 永远走 `None` / 早 return。
 
 /// 表示用户与 Warp 的认证方式。
@@ -261,7 +261,7 @@ impl AuthState {
     }
 
     /// 初始化 AuthState。`api_key` 参数被忠实保留(BYOP 入口仍可能传入),
-    /// 但其他云端账号检查路径全部 no-op。
+    /// 但其他外部账号检查路径全部 no-op。
     #[cfg_attr(target_family = "wasm", allow(unused_variables))]
     pub fn initialize(_ctx: &AppContext, api_key: Option<String>) -> Self {
         let state = Self::new();
