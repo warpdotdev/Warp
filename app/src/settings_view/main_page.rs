@@ -14,7 +14,6 @@ use crate::{appearance::Appearance, auth::AuthState};
 use pathfinder_color::ColorU;
 use std::sync::Arc;
 use warp_core::{channel::ChannelState, context_flag::ContextFlag};
-use warpui::fonts::Weight;
 use warpui::{
     assets::asset_cache::AssetSource,
     elements::{Border, Empty, MainAxisAlignment, MainAxisSize},
@@ -29,10 +28,7 @@ use warpui::{
 };
 use warpui::{
     elements::{CacheOption, Image},
-    ui_components::{
-        button::ButtonVariant,
-        components::{Coords, UiComponent, UiComponentStyles},
-    },
+    ui_components::components::{UiComponent, UiComponentStyles},
 };
 use warpui::{
     Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
@@ -48,7 +44,6 @@ pub enum MainPageAction {
     Relaunch,
     DownloadUpdate,
     CheckForUpdate,
-    SignupAnonymousUser,
 }
 
 #[derive(Clone, Copy)]
@@ -56,7 +51,6 @@ pub enum MainSettingsPageEvent {
     CheckForUpdate,
     #[allow(dead_code)]
     OpenWarpDrive,
-    SignupAnonymousUser,
 }
 
 pub struct MainSettingsPageView {
@@ -82,9 +76,6 @@ impl TypedActionView for MainSettingsPageView {
             MainPageAction::CheckForUpdate => {
                 ctx.emit(MainSettingsPageEvent::CheckForUpdate);
                 ctx.notify();
-            }
-            MainPageAction::SignupAnonymousUser => {
-                ctx.emit(MainSettingsPageEvent::SignupAnonymousUser);
             }
         }
     }
@@ -141,42 +132,19 @@ impl MainSettingsPageView {
 }
 
 #[derive(Default)]
-struct AccountWidgetStateHandles {
-    anonymous_user_sign_up_button: MouseStateHandle,
-}
-
-#[derive(Default)]
-struct AccountWidget {
-    ui_state_handles: AccountWidgetStateHandles,
-}
+struct AccountWidget;
 
 impl AccountWidget {
     fn render_anonymous_account_info(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let button_styles = UiComponentStyles {
-            font_size: Some(14.),
-            font_weight: Some(Weight::Semibold),
-            border_radius: Some(CornerRadius::with_all(Radius::Pixels(4.))),
-            padding: Some(Coords {
-                top: 12.,
-                bottom: 12.,
-                left: 40.,
-                right: 40.,
-            }),
-            ..Default::default()
-        };
-
         let user_info = appearance
             .ui_builder()
-            .button(
-                ButtonVariant::Accent,
-                self.ui_state_handles.anonymous_user_sign_up_button.clone(),
-            )
-            .with_style(button_styles)
-            .with_text_label(crate::t!("settings-main-sign-up"))
-            .build()
-            .on_click(move |ctx, _, _| {
-                ctx.dispatch_typed_action(MainPageAction::SignupAnonymousUser);
+            .paragraph(crate::t!("settings-main-local-profile"))
+            .with_style(UiComponentStyles {
+                font_color: Some(appearance.theme().active_ui_text_color().into()),
+                font_size: Some(16.),
+                ..Default::default()
             })
+            .build()
             .finish();
 
         let mut plan_info = Flex::column()

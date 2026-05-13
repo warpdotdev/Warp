@@ -55,8 +55,7 @@ use crate::terminal::model::session::SessionType;
 use crate::{
     ai::{
         blocklist::{
-            prompt::prompt_alert::{PromptAlertEvent, PromptAlertView},
-            BlocklistAIInputModel, InputConfig, InputType,
+            prompt::prompt_alert::PromptAlertView, BlocklistAIInputModel, InputConfig, InputType,
         },
         execution_profiles::profiles::AIExecutionProfilesModel,
         AIRequestUsageModel,
@@ -315,7 +314,6 @@ pub enum UniversalDeveloperInputButtonBarEvent {
     EnableAutoDetection,
     SelectFile,
     SetAIContextMenuOpen(bool),
-    PromptAlert(PromptAlertEvent),
     ModelSelectorOpened,
     ModelSelectorClosed,
     OpenSettings(SettingsSection),
@@ -521,11 +519,6 @@ impl UniversalDeveloperInputButtonBar {
         });
 
         let prompt_alert = ctx.add_typed_action_view(PromptAlertView::new);
-        ctx.subscribe_to_view(&prompt_alert, |_, _, event, ctx| {
-            ctx.emit(UniversalDeveloperInputButtonBarEvent::PromptAlert(
-                event.clone(),
-            ));
-        });
 
         ctx.subscribe_to_model(&NetworkStatus::handle(ctx), |_, _, _, ctx| {
             ctx.notify();

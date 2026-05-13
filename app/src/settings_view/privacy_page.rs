@@ -1661,24 +1661,29 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
     context: &ContextPredicate,
     builder: fn(SettingsAction) -> T,
 ) {
-    let mut toggle_binding_pairs = vec![
-        ToggleSettingActionPair::new(
+    let mut toggle_binding_pairs = vec![];
+
+    if ChannelState::is_telemetry_available() {
+        toggle_binding_pairs.push(ToggleSettingActionPair::new(
             &crate::t!("toggle-suffix-app-analytics"),
             builder(SettingsAction::PrivacyPageToggle(
                 PrivacyPageAction::ToggleTelemetry,
             )),
             context,
             flags::TELEMETRY_FLAG,
-        ),
-        ToggleSettingActionPair::new(
+        ));
+    }
+
+    if ChannelState::is_crash_reporting_available() {
+        toggle_binding_pairs.push(ToggleSettingActionPair::new(
             &crate::t!("toggle-suffix-crash-reporting"),
             builder(SettingsAction::PrivacyPageToggle(
                 PrivacyPageAction::ToggleCrashReporting,
             )),
             context,
             flags::CRASH_REPORTING_FLAG,
-        ),
-    ];
+        ));
+    }
 
     toggle_binding_pairs.push(ToggleSettingActionPair::new(
         &crate::t!("toggle-suffix-secret-redaction"),

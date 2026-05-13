@@ -32,6 +32,4 @@ pub enum OnboardingEvent {
     SlideNavigatedNext,
     /// The user navigated to the previous slide.
     SlideNavigatedBack,
-    /// The user clicked the "Log in" link on the welcome/intro slide.
-    WelcomeLoginClicked,
 }

@@ -741,7 +741,6 @@ fn handle_terminal_view_event(
             }
             // OpenWarp Wave 7-3:`Event::EnvironmentSetupModeSelectorToggled` handler 随
             // ambient-agent UI 子系统物理删。
-            Event::AnonymousUserSignup => ctx.emit(pane_group::Event::AnonymousUserSignup),
             #[cfg(feature = "local_fs")]
             Event::OpenFileWithTarget {
                 path,
@@ -817,11 +816,6 @@ fn handle_terminal_view_event(
                     remote_pane_id: terminal_pane_id,
                     upload_id: *upload_id,
                 })
-            }
-            Event::SignupAnonymousUser { entrypoint } => {
-                ctx.emit(pane_group::Event::SignupAnonymousUser {
-                    entrypoint: *entrypoint,
-                });
             }
             Event::OpenThemeChooser => {
                 ctx.emit(pane_group::Event::OpenThemeChooser);

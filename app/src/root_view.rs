@@ -1890,12 +1890,6 @@ impl RootView {
                 ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
                 ctx.notify();
             }
-            AgentOnboardingEvent::PrivacySettingsFromTerminalThemeSlideRequested => {
-                // OpenWarp removes the cloud auth/privacy login slide.
-            }
-            AgentOnboardingEvent::LoginFromWelcomeRequested => {
-                // OpenWarp removes the cloud account sign-in flow.
-            }
         }
     }
 

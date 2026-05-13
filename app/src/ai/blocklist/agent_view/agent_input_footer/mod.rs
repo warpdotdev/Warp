@@ -8,7 +8,7 @@ use crate::{
     ai::{
         blocklist::{
             history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel},
-            prompt::prompt_alert::{PromptAlertEvent, PromptAlertView},
+            prompt::prompt_alert::PromptAlertView,
             usage::icon_for_context_window_usage,
             BlocklistAIInputModel,
         },
@@ -587,9 +587,6 @@ impl AgentInputFooter {
         });
 
         let prompt_alert = ctx.add_typed_action_view(PromptAlertView::new);
-        ctx.subscribe_to_view(&prompt_alert, |_, _, event, ctx| {
-            ctx.emit(AgentInputFooterEvent::PromptAlert(event.clone()));
-        });
 
         ctx.subscribe_to_model(&NetworkStatus::handle(ctx), |_, _, _, ctx| {
             ctx.notify();
@@ -2231,7 +2228,6 @@ pub enum AgentInputFooterEvent {
         open: bool,
     },
     TryExecuteChipCommand(String),
-    PromptAlert(PromptAlertEvent),
     ModelSelectorOpened,
     ModelSelectorClosed,
     ToggleInlineModelSelector {

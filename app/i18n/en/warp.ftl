@@ -363,8 +363,8 @@ settings-startup-shell-executable-path-placeholder = Executable path
 settings-agent-providers-base-url-placeholder = https://api.deepseek.com/v1
 drive-sharing-only-people-invited = Only people invited
 drive-sharing-anyone-with-link = Anyone with the link
-drive-sharing-only-invited-teammates = Only invited teammates
-drive-sharing-teammates-with-link = Teammates with the link
+drive-sharing-only-invited-teammates = Local access only
+drive-sharing-teammates-with-link = Local access with link
 terminal-warpify-subshell = Warpify subshell
 terminal-warpify-subshell-tooltip = Enable Warp shell integration in this session
 terminal-use-agent = Use agent
@@ -614,7 +614,8 @@ settings-about-update-check-now = Check for updates
 settings-about-update-open-release = Download from GitHub
 
 # main_page.rs — account
-settings-main-sign-up = Sign up
+settings-main-sign-up = Local profile
+settings-main-local-profile = Local profile
 settings-main-plan-free = Free
 settings-main-compare-plans = Compare plans
 settings-main-contact-support = Contact support
@@ -648,21 +649,21 @@ settings-mcp-install-from-link-failed = MCP server '{$name}' cannot be installed
 
 # ---- destructive_mcp_confirmation_dialog.rs ----
 settings-mcp-confirm-delete-local-title = Delete MCP server?
-settings-mcp-confirm-delete-local-description = This will uninstall and remove this MCP server from all your devices.
-settings-mcp-confirm-delete-shared-title = Delete shared MCP server?
-settings-mcp-confirm-delete-shared-description = This will not only delete this MCP server for yourself, but also uninstall and remove this MCP server from Warp and across all of your teammates' devices.
-settings-mcp-confirm-unshare-title = Remove shared MCP server from team?
-settings-mcp-confirm-unshare-description = This will uninstall and remove this MCP server from Warp and across all of your teammates' devices.
+settings-mcp-confirm-delete-local-description = This will uninstall and remove this MCP server from this device.
+settings-mcp-confirm-delete-shared-title = Delete MCP server?
+settings-mcp-confirm-delete-shared-description = This removes the saved MCP server from this device.
+settings-mcp-confirm-unshare-title = Remove saved MCP server?
+settings-mcp-confirm-unshare-description = This removes the saved MCP server from this device.
 settings-mcp-confirm-delete-button = Delete MCP
-settings-mcp-confirm-remove-from-team-button = Remove from team
+settings-mcp-confirm-remove-from-team-button = Remove saved copy
 settings-mcp-confirm-cancel-button = Cancel
 
 # ---- edit_page.rs ----
 settings-mcp-edit-save = Save
 settings-mcp-edit-edit-variables = Edit Variables
 settings-mcp-edit-delete = Delete MCP
-settings-mcp-edit-remove-from-team = Remove from team
-settings-mcp-edit-editing-disabled-banner = Only team admins and the creator of the MCP server can edit the MCP server.
+settings-mcp-edit-remove-from-team = Remove saved copy
+settings-mcp-edit-editing-disabled-banner = This MCP server cannot be edited from this view.
 settings-mcp-edit-add-new-title = Add New MCP Server
 settings-mcp-edit-edit-named-title = Edit { $name } MCP Server
 settings-mcp-edit-edit-title = Edit MCP Server
@@ -673,14 +674,14 @@ settings-mcp-edit-multiple-servers-error = Cannot add multiple MCP servers while
 
 # ---- installation_modal.rs ----
 settings-mcp-install-modal-title = Install { $name }
-settings-mcp-install-modal-source-shared = Shared from team
+settings-mcp-install-modal-source-shared = Saved preset
 settings-mcp-install-modal-source-other-device = From another device
 settings-mcp-install-modal-cancel = Cancel
 settings-mcp-install-modal-install = Install
 settings-mcp-install-modal-no-server = No MCP server selected
 
 # ---- list_page.rs ----
-settings-mcp-list-description = Add MCP servers to extend the Warp Agent's capabilities. MCP servers expose data sources or tools to agents through a standardized interface, essentially acting like plugins. Add a custom server, or use the presets to get started with popular servers. You can also find team servers that have been shared with you here.
+settings-mcp-list-description = Add MCP servers to extend the Warp Agent's capabilities. MCP servers expose data sources or tools to agents through a standardized interface, essentially acting like plugins. Add a custom server, or use the presets to get started with popular servers.
 settings-mcp-list-learn-more = Learn more.
 settings-mcp-list-empty-state = Once you add a MCP server, it will be shown here.
 settings-mcp-list-no-search-results = No search results found
@@ -693,13 +694,13 @@ settings-mcp-list-template-available-to-install = Available to install
 settings-mcp-list-file-based-detected = Detected from config file
 settings-mcp-list-toast-server-updated = MCP server updated
 settings-mcp-list-section-my-mcps = My MCPs
-settings-mcp-list-section-shared-by-warp-and-team = Shared by Warp and { $name }
+settings-mcp-list-section-shared-by-warp-and-team = Available from Warp and { $name }
 settings-mcp-list-section-shared-by-warp-and-other-devices = Shared by Warp and from other devices
 settings-mcp-list-section-shared-from-warp = Shared from Warp
 settings-mcp-list-section-detected-from = Detected from { $provider }
 settings-mcp-list-chip-global = global
 settings-mcp-list-chip-shared-by-creator = Shared by: { $creator }
-settings-mcp-list-chip-shared-by-team-member = Shared by a team member
+settings-mcp-list-chip-shared-by-team-member = Saved preset
 settings-mcp-list-chip-from-another-device = From another device
 
 # ---- server_card.rs ----
@@ -723,7 +724,7 @@ settings-mcp-update-modal-default-name = Server
 settings-mcp-update-modal-title = Update { $name }
 settings-mcp-update-modal-description = This server has { $count } updates available, which would you like to proceed with?
 settings-mcp-update-modal-publisher-another-device = another device
-settings-mcp-update-modal-publisher-team-member = a team member
+settings-mcp-update-modal-publisher-team-member = a local source
 settings-mcp-update-modal-update-from = Update from { $publisher }
 settings-mcp-update-modal-version = Version { $version }
 settings-mcp-update-modal-cancel = Cancel
@@ -786,8 +787,8 @@ settings-keybindings-command-column = Command
 
 # --- ANCHOR-SUB-REFERRALS (agent-settings-referrals) ---
 settings-referrals-page-title = Invite a friend to Warp
-settings-referrals-anonymous-header = Sign up to participate in Warp's referral program
-settings-referrals-sign-up = Sign up
+settings-referrals-anonymous-header = Referral program is unavailable in local OpenWarp builds
+settings-referrals-sign-up = Unavailable locally
 settings-referrals-link-label = Link
 settings-referrals-email-label = Email
 settings-referrals-link-error = Failed to load referral code.
@@ -898,8 +899,8 @@ settings-ai-agents-description = Set the boundaries for how your Agent operates.
 settings-ai-profiles-description = Profiles let you define how your Agent operates — from the actions it can take and when it needs approval, to the models it uses for tasks like coding and planning. You can also scope them to individual projects.
 
 # Anonymous / org gates
-settings-ai-sign-up = Sign up
-settings-ai-anonymous-create-account = To use AI features, please create an account.
+settings-ai-sign-up = Enable local AI
+settings-ai-anonymous-create-account = Local AI features do not require an account.
 settings-ai-org-disallows-remote-session = Your organization disallows AI when the active pane contains content from a remote session
 settings-ai-org-enforced-tooltip = This option is enforced by your organization's settings and cannot be customized.
 settings-ai-restricted-billing = Restricted due to billing issue
@@ -1001,7 +1002,7 @@ settings-features-max-rows-per-block = Maximum rows in a block
 settings-features-ssh-wrapper = Warp SSH Wrapper
 settings-features-receive-desktop-notifications = Receive desktop notifications from Warp
 settings-features-show-in-app-agent-notifications = Show in-app agent notifications
-settings-features-confirm-close-shared-session = Confirm before closing shared session
+settings-features-confirm-close-shared-session = Confirm before closing read-only session
 settings-features-global-hotkey-label = Global hotkey:
 settings-features-global-hotkey-not-supported-on-wayland = Not supported on Wayland.
 settings-features-autocomplete-symbols = Autocomplete quotes, parentheses, and brackets
@@ -1142,9 +1143,9 @@ settings-privacy-safe-mode-description = When this setting is enabled, Warp will
 settings-privacy-user-secret-regex-title = Custom secret redaction
 settings-privacy-user-secret-regex-description = Use regex to define additional secrets or data you'd like to redact. This will take effect when the next command runs. You can use the inline (?i) flag as a prefix to your regex to make it case-insensitive.
 settings-privacy-telemetry-title = Help improve Warp
-settings-privacy-telemetry-description = App analytics help us make the product better for you. We may collect certain console interactions to improve Warp's AI capabilities.
-settings-privacy-telemetry-description-old = App analytics help us make the product better for you. We only collect app usage metadata, never console input or output.
-settings-privacy-telemetry-free-tier-note = On the free tier, analytics must be enabled to use AI features.
+settings-privacy-telemetry-description = OpenWarp runs without cloud analytics by default. Local Agent features do not require analytics.
+settings-privacy-telemetry-description-old = OpenWarp runs without cloud analytics by default. Console input and output stay local unless you configure an external provider.
+settings-privacy-telemetry-free-tier-note = Local Agent features do not require analytics.
 settings-privacy-telemetry-docs-link = Read more about Warp's use of data
 settings-privacy-policy-title = Privacy policy
 settings-privacy-policy-link = Read Warp's privacy policy
@@ -1410,7 +1411,7 @@ settings-environments-page-description = Environments define where your ambient 
 settings-environments-search-placeholder = Search environments...
 settings-environments-no-matches = No environments match your search.
 settings-environments-section-personal = Personal
-settings-environments-section-team-default = Shared by Warp and your team
+settings-environments-section-team-default = Provided by Warp and this device
 settings-environments-section-team-named = Shared by Warp and { $team }
 settings-environments-env-id-prefix = Env ID: { $id }
 settings-environments-detail-image = Image: { $image }
@@ -2347,7 +2348,7 @@ menu-tab-default-no-color = Default (no color)
 
 # --- pane header 溢出菜单(terminal/view/pane_impl.rs) ---
 menu-pane-copy-link = Copy link
-menu-pane-stop-sharing-session = Stop sharing session
+menu-pane-stop-sharing-session = Stop session broadcast
 menu-pane-open-on-desktop = Open on Desktop
 
 # --- 文件树右键菜单(code/file_tree/view.rs) ---
@@ -2590,9 +2591,10 @@ drive-empty-trash = Empty trash
 drive-trash-section-title = TRASH
 drive-trash-title = Trash
 drive-trash-deletion-warning = Items in the trash will be deleted forever after 30 days.
-drive-team-space-zero-state = Drag or move a personal workflow or notebook here to share it with your team.
-drive-sign-up-storage-limit = Sign up for free to increase your storage limit and unlock more features.
-drive-sign-up = Sign up
+drive-team-space-zero-state = Team spaces are unavailable in local builds. Manage workflows and notebooks in Personal.
+drive-sign-up-storage-limit = Local storage limits are enforced on this device.
+drive-local-storage-limit-description = Local storage limits are enforced on this device. Remove unused items to create space for new Warp Drive objects.
+drive-sign-up = Manage locally
 drive-copy-link = Copy link
 drive-collapse-all = Collapse all
 drive-revert-to-server = Revert to server
@@ -2882,7 +2884,7 @@ auth-logout-running-processes-warning = You have { $count } { $count ->
         [one] process
        *[other] processes
     } running.
-auth-logout-shared-sessions-warning = You have { $count } shared { $count ->
+auth-logout-shared-sessions-warning = You have { $count } remote { $count ->
         [one] session
        *[other] sessions
     }.
@@ -2970,7 +2972,7 @@ agent-tip-drag-image = Drag an image into the pane to attach it as agent context
 agent-tip-interactive-tools = Prompt the agent to control interactive tools like node, python, postgres, gdb, or vim.
 agent-tip-code-review-panel = <keybinding> to open the code review panel and review the agent's changes.
 agent-tip-add-mcp = `/add-mcp` to add an MCP server to your workspace.
-agent-tip-open-mcp-servers = `/open-mcp-servers` to view and share MCP servers with your team.
+agent-tip-open-mcp-servers = `/open-mcp-servers` to view and manage local MCP servers.
 agent-tip-add-prompt = `/add-prompt` to create a reusable prompt for repeatable workflows.
 agent-tip-add-rule = `/add-rule` to create a global agent rule.
 agent-tip-fork = `/fork` to create a fresh copy of the current conversation, optionally with a new prompt.
@@ -3116,13 +3118,14 @@ onboarding-customize-warp-drive = Warp Drive
 onboarding-customize-tools-panel = Tools panel
 onboarding-customize-code-review = Code review
 
-auth-opt-out-line-1 = If you'd like to opt out of analytics and AI features,
-auth-opt-out-line-2-prefix = you can adjust your{" "}
-auth-privacy-settings-prefix = If you'd like to opt out of analytics, you can adjust your{" "}
-auth-privacy-settings-ai-prefix = If you'd like to opt out of analytics and AI features, you can adjust your{" "}
+auth-opt-out-line-1 = OpenWarp stores onboarding choices locally.
+auth-opt-out-line-2-prefix = You can adjust your{" "}
+auth-privacy-settings-prefix = You can adjust your{" "}
+auth-privacy-settings-ai-prefix = You can adjust your local AI preferences in{" "}
 auth-privacy-settings = Privacy Settings
-auth-terms-prefix = By continuing, you agree to Warp's{" "}
-auth-terms-of-service = Terms of Service
+auth-local-privacy-note = OpenWarp stores onboarding choices locally on this device.
+auth-terms-prefix = Continuing keeps this setup on your device.{" "}
+auth-terms-of-service = Local setup
 auth-log-in = Log in
 auth-paste-token-from-browser = Click here to paste your token from the browser
 auth-login-slide-title-warp-drive = Get started with Warp Drive
@@ -3141,7 +3144,7 @@ auth-disable-ai-features-confirm-title = Are you sure you want to disable AI fea
 auth-disable-warp-drive-confirm-body = Warp Drive lets you save workflows and knowledge across devices and share them with your team. By continuing, you won't have access to the following features:
 auth-disable-ai-features-confirm-body = Warp is better with AI. By continuing, you won't have access to any of the following features:
 auth-feature-session-sharing = Session Sharing
-auth-sign-up = Sign up
+auth-sign-up = Continue locally
 auth-sign-in = Sign in
 auth-already-have-account = Already have an account?{" "}
 auth-dont-want-sign-in-now = Don't want to sign in right now?{" "}
@@ -3150,11 +3153,11 @@ auth-skip-login-confirm-title = Are you sure you want to skip login?
 auth-skip-login-confirm-line-1 = You can sign up later, but some features, such as AI,
 auth-skip-login-confirm-line-2-prefix = are only available to logged-in users.{" "}
 auth-yes-skip-login = Yes, skip login
-auth-require-login-ai-collaboration = In order to use Warp's AI features or collaborate with others, please create an account.
-auth-require-login-drive-limit = In order to create more objects in Warp Drive, please create an account.
-auth-require-login-share = In order to share, please create an account.
+auth-require-login-ai-collaboration = Local AI features do not require a Warp account.
+auth-require-login-drive-limit = Warp Drive objects are stored locally in OpenWarp.
+auth-require-login-share = Sharing is unavailable in local OpenWarp builds.
 auth-welcome-title = Welcome to Warp!
-auth-sign-up-for-warp = Sign up for Warp
+auth-sign-up-for-warp = Continue in OpenWarp
 auth-browser-sign-in-title = Sign in on your browser\nto continue
 auth-open-page-manually-suffix = and open the page manually.
 
@@ -3471,7 +3474,7 @@ notebook-apply-link = Apply link
 notebook-sync-conflict-resolution-message = This notebook could not be saved because changes were made while you were editing. Please copy your work and refresh.
 notebook-sync-feature-not-available-message = This notebook could not be saved to the server because the feature is temporarily unavailable. The changes are saved locally. Please retry later.
 notebook-link-copied-toast = Link copied
-settings-share-with-team = Share with team
+settings-share-with-team = Save locally
 tooltip-secrets-not-sent-to-warp-server = *Secrets are not sent to Warp's server.
 editor-voice-limit-hit-toast = You have hit the limit for Voice requests. Your limit will be refreshed as a part of your next cycle.
 editor-voice-error-toast = An error occurred while processing your voice input.

@@ -70,7 +70,7 @@ use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::{vec2f, Vector2F};
 use std::{any::Any, collections::HashMap, sync::Arc};
 use url::Url;
-use warp_core::{context_flag::ContextFlag, settings::Setting, ui::theme::color::internal_colors};
+use warp_core::{context_flag::ContextFlag, settings::Setting};
 use warpui::{
     clipboard::ClipboardContent,
     elements::{
@@ -295,7 +295,6 @@ pub enum DriveIndexAction {
     EscapeKey,
     /// Hitting cmd+enter on a WD item toggles the context menu.
     ToggleDriveItemContextMenu,
-    SignupAnonymousUser,
     DismissPersonalObjectLimits,
     SetCurrentWorkspace(WorkspaceUid),
     AttachPlanAsContext(AIDocumentId),
@@ -405,7 +404,6 @@ struct MouseStateHandles {
     retry_button_mouse_state: MouseStateHandle,
     trash_row_mouse_state: MouseStateHandle,
     exit_trash_button_mouse_state: MouseStateHandle,
-    anonymous_sign_up_button_mouse_state: MouseStateHandle,
     anonymous_object_limit_close_button_mouse_state: MouseStateHandle,
     search_button_mouse_state: MouseStateHandle,
 }
@@ -3458,7 +3456,7 @@ impl DriveIndex {
             .with_child(close_icon_button)
             .finish();
 
-        let personal_object_limit_description = crate::t!("drive-sign-up-storage-limit");
+        let personal_object_limit_description = crate::t!("drive-local-storage-limit-description");
 
         let body_text = appearance
             .ui_builder()
@@ -3510,50 +3508,6 @@ impl DriveIndex {
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
         .finish();
 
-        let button_styles = UiComponentStyles {
-            font_size: Some(14.),
-            font_family_id: Some(appearance.ui_font_family()),
-            font_color: Some(
-                appearance
-                    .theme()
-                    .main_text_color(appearance.theme().accent())
-                    .into(),
-            ),
-            font_weight: Some(Weight::Bold),
-            padding: Some(Coords {
-                top: 8.,
-                bottom: 8.,
-                left: 64.,
-                right: 64.,
-            }),
-            border_color: Some(appearance.theme().outline().into()),
-            background: Some(appearance.theme().accent().into()),
-            ..Default::default()
-        };
-
-        let hovered_and_clicked_styles = UiComponentStyles {
-            background: Some(internal_colors::accent_bg_strong(appearance.theme()).into()),
-            ..button_styles
-        };
-
-        let button = appearance
-            .ui_builder()
-            .button(
-                ButtonVariant::Basic,
-                self.mouse_state_handles
-                    .anonymous_sign_up_button_mouse_state
-                    .clone(),
-            )
-            .with_style(button_styles)
-            .with_hovered_styles(hovered_and_clicked_styles)
-            .with_active_styles(hovered_and_clicked_styles)
-            .with_centered_text_label(crate::t!("drive-sign-up"))
-            .build()
-            // 去中心化分支:Sign up 按钮 dispatch 已删除。
-            .on_click(|_ctx, _, _| {})
-            .with_cursor(Cursor::PointingHand)
-            .finish();
-
         Some(
             ConstrainedBox::new(
                 Container::new(
@@ -3568,7 +3522,6 @@ impl DriveIndex {
                                 .finish(),
                         )
                         .with_child(usage_section)
-                        .with_child(Container::new(button).with_margin_top(12.).finish())
                         .finish(),
                 )
                 .with_background(background_color)
@@ -4964,8 +4917,6 @@ impl TypedActionView for DriveIndex {
             DriveIndexAction::InvokeEnvVarCollectionInSubshell(id) => {
                 ctx.emit(DriveIndexEvent::InvokeEnvVarCollectionInSubshell(*id))
             }
-            // 去中心化分支:`DriveIndexAction::SignupAnonymousUser` 已 noop。
-            DriveIndexAction::SignupAnonymousUser => {}
             DriveIndexAction::DismissPersonalObjectLimits => {
                 self.dismiss_personal_object_limit_status(ctx);
             }

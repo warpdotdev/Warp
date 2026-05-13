@@ -27,7 +27,7 @@ const ANONYMOUS_USER_REQUEST_LIMIT_HARD_GATE_PRIMARY_TEXT: &str = "At Limit -";
 const DELINQUENT_DUE_TO_PAYMENT_ISSUE_PRIMARY_TEXT: &str = "Restricted due to payment issue";
 const OUT_OF_REQUESTS_PRIMARY_TEXT: &str = "Out of credits";
 
-const ANONYMOUS_USER_REQUEST_LIMIT_ACTION_TEXT: &str = "Sign up for more AI credits";
+const ANONYMOUS_USER_REQUEST_LIMIT_ACTION_TEXT: &str = "Configure local AI provider";
 const OVERAGES_TOGGLEABLE_BUT_NOT_ENABLED_ACTION_TEXT: &str = "Enable premium overages";
 const MONTHLY_OVERAGES_SPEND_LIMIT_REACHED_ACTION_TEXT: &str = "Increase monthly spend limit";
 const NON_ADMIN_CONTACT_ADMIN_TEXT: &str = ", contact a team admin";
@@ -37,13 +37,7 @@ const NON_ADMIN_ASK_ADMIN_TO_INCREASE_OVERAGES_TEXT: &str =
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptAlertAction {
-    SignUpClickedForAnonymousUser,
     OpenSettingsClicked,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PromptAlertEvent {
-    SignupAnonymousUser,
 }
 
 /// The alert state of the chip that appears to the right of certain parts of the prompt.
@@ -237,7 +231,10 @@ impl PromptAlertView {
                 text_fragments.push(FormattedTextFragment::plain_text("  "));
                 text_fragments.push(FormattedTextFragment::hyperlink_action(
                     ANONYMOUS_USER_REQUEST_LIMIT_ACTION_TEXT,
-                    PromptAlertAction::SignUpClickedForAnonymousUser,
+                    WorkspaceAction::ShowSettingsPageWithSearch {
+                        search_query: "api".to_string(),
+                        section: Some(SettingsSection::WarpAgent),
+                    },
                 ));
             }
             PromptAlertState::DelinquentDueToPaymentIssue => {
@@ -301,7 +298,7 @@ fn does_alert_block_ai_requests(state: &PromptAlertState) -> bool {
 }
 
 impl Entity for PromptAlertView {
-    type Event = PromptAlertEvent;
+    type Event = ();
 }
 
 impl View for PromptAlertView {
@@ -377,11 +374,8 @@ impl View for PromptAlertView {
 impl TypedActionView for PromptAlertView {
     type Action = PromptAlertAction;
 
-    fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
+    fn handle_action(&mut self, action: &Self::Action, _ctx: &mut ViewContext<Self>) {
         match action {
-            PromptAlertAction::SignUpClickedForAnonymousUser => {
-                ctx.emit(PromptAlertEvent::SignupAnonymousUser);
-            }
             PromptAlertAction::OpenSettingsClicked => {
                 // 去云端分支:不再跳转 billing & usage
             }

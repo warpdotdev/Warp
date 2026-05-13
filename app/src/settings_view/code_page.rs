@@ -121,13 +121,11 @@ impl View for CodeSettingsPageView {
 
 #[derive(Debug, Clone)]
 pub enum CodeSettingsPageEvent {
-    SignupAnonymousUser,
     OpenProjectRules { rule_paths: Vec<PathBuf> },
 }
 
 #[derive(Debug, Clone)]
 pub enum CodeSettingsPageAction {
-    SignupAnonymousUser,
     OpenProjectRules { rule_paths: Vec<PathBuf> },
     ToggleCodeReviewPanel,
     ToggleShowCodeReviewDiffStats,
@@ -141,9 +139,6 @@ impl TypedActionView for CodeSettingsPageView {
 
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
-            CodeSettingsPageAction::SignupAnonymousUser => {
-                ctx.emit(CodeSettingsPageEvent::SignupAnonymousUser);
-            }
             CodeSettingsPageAction::OpenProjectRules { rule_paths } => {
                 ctx.emit(CodeSettingsPageEvent::OpenProjectRules {
                     rule_paths: rule_paths.clone(),
