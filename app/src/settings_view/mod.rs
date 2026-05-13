@@ -28,6 +28,7 @@ use about_page::AboutPageView;
 use ai_page::{AISettingsPageAction, AISettingsPageEvent, AISettingsPageView, AISubpage};
 use appearance_page::{AppearancePageAction, AppearanceSettingsPageView};
 use billing_and_usage_page::{BillingAndUsagePageEvent, BillingAndUsagePageView};
+use billing_and_usage_page_v2::BillingAndUsagePageV2View;
 use code_page::CodeSubpage;
 use code_page::{CodeSettingsPageAction, CodeSettingsPageEvent};
 use environments_page::EnvironmentsPageView;
@@ -80,6 +81,7 @@ mod ai_page;
 mod appearance_page;
 mod billing_and_usage;
 mod billing_and_usage_page;
+mod billing_and_usage_page_v2;
 mod code_page;
 mod delete_environment_confirmation_dialog;
 mod directory_color_add_picker;
@@ -972,6 +974,7 @@ macro_rules! update_page {
             SettingsPageViewHandle::About(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Code(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::BillingAndUsage(handle) => $ctx.update_view(handle, $update),
+            SettingsPageViewHandle::BillingAndUsageV2(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::MCPServers(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::WarpDrive(handle) => $ctx.update_view(handle, $update),
         }
@@ -1067,11 +1070,20 @@ impl SettingsView {
             me.handle_environments_page_event(event, ctx);
         });
 
-        // Billing and usage page
-        let billing_and_usage_page_handle = ctx.add_typed_action_view(BillingAndUsagePageView::new);
-        ctx.subscribe_to_view(&billing_and_usage_page_handle, |me, _, event, ctx| {
-            me.handle_billing_and_usage_page_event(event, ctx);
-        });
+        let billing_and_usage_page: SettingsPage =
+            if FeatureFlag::BillingAndUsagePageV2.is_enabled() {
+                let handle = ctx.add_view(BillingAndUsagePageV2View::new);
+                ctx.subscribe_to_view(&handle, |me, _, event, ctx| {
+                    me.handle_billing_and_usage_page_event(event, ctx);
+                });
+                SettingsPage::new(handle)
+            } else {
+                let handle = ctx.add_typed_action_view(BillingAndUsagePageView::new);
+                ctx.subscribe_to_view(&handle, |me, _, event, ctx| {
+                    me.handle_billing_and_usage_page_event(event, ctx);
+                });
+                SettingsPage::new(handle)
+            };
 
         // Keybindings page
         let keybindings_handle = ctx.add_typed_action_view(KeybindingsView::new);
@@ -1164,7 +1176,7 @@ impl SettingsView {
         let mut settings_pages = vec![
             SettingsPage::new(main_page_handle),
             SettingsPage::new(ai_page_handle),
-            SettingsPage::new(billing_and_usage_page_handle),
+            billing_and_usage_page,
             SettingsPage::new(code_page_handle),
             SettingsPage::new(teams_page_handle),
             SettingsPage::new(appearance_page_handle),
@@ -1956,6 +1968,7 @@ impl SettingsView {
             SettingsPageViewHandle::Features(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Appearance(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::BillingAndUsage(v) => v.as_ref(app).should_render(app),
+            SettingsPageViewHandle::BillingAndUsageV2(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::About(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::OzCloudAPIKeys(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Privacy(v) => v.as_ref(app).should_render(app),

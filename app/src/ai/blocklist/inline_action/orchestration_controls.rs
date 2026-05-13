@@ -26,11 +26,12 @@ use warpui::{
     SingletonEntity, SizeConstraint, View, ViewContext, ViewHandle,
 };
 
+use settings::Setting;
 use warp_cli::agent::Harness;
 use warp_core::channel::{Channel, ChannelState};
-use warp_core::ui::color::blend::Blend;
 use warp_core::ui::theme::Fill;
 
+use crate::ai::cloud_agent_settings::CloudAgentSettings;
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::execution_profiles::model_menu_items::available_model_menu_items;
 use crate::ai::harness_availability::HarnessAvailabilityModel;
@@ -182,6 +183,42 @@ impl OrchestrationEditState {
         }
     }
 
+    /// Unconditionally overrides model, harness, and execution mode
+    /// from the approved orchestration config. The plan config is the
+    /// user-approved source of truth — the LLM's run_agents call may
+    /// omit or set these differently, but the config always wins.
+    ///
+    /// `computer_use_enabled` is preserved from the current state when
+    /// both sides are Remote, since it is a per-call flag set by the LLM.
+    pub fn override_from_approved_config(&mut self, config: &OrchestrationConfig) {
+        self.model_id = config.model_id.clone();
+        self.harness_type = config.harness_type.clone();
+
+        let preserve_computer_use = match (&self.execution_mode, &config.execution_mode) {
+            (
+                RunAgentsExecutionMode::Remote {
+                    computer_use_enabled,
+                    ..
+                },
+                OrchestrationExecutionMode::Remote { .. },
+            ) => Some(*computer_use_enabled),
+            _ => None,
+        };
+
+        self.execution_mode = Self::from_orchestration_config(config).execution_mode;
+
+        if let (
+            Some(cue),
+            RunAgentsExecutionMode::Remote {
+                computer_use_enabled,
+                ..
+            },
+        ) = (preserve_computer_use, &mut self.execution_mode)
+        {
+            *computer_use_enabled = cue;
+        }
+    }
+
     /// Converts to a native `OrchestrationConfig` for storage / match.
     pub fn to_orchestration_config(&self) -> OrchestrationConfig {
         let execution_mode = match &self.execution_mode {
@@ -243,22 +280,22 @@ pub fn picker_styles(appearance: &Appearance) -> (UiComponentStyles, PickerColor
     };
     let corner_radius = CornerRadius::with_all(Radius::Pixels(ORCHESTRATION_PICKER_RADIUS));
     // The picker bg is a translucent overlay (surface_overlay_1 =
-    // fg at 5%). Composite it against the card background to derive
-    // opaque text color that works on any theme.
+    // fg at 5%). It must stay translucent so that the accent-tinted
+    // card background in the config block shows through, and so that
+    // gradient-background themes render correctly.
     let background_fill: Fill = theme.surface_overlay_1();
-    let composited_bg = theme.background().blend(&background_fill).into_solid();
-    let border_color: warpui::elements::Fill = theme.surface_2().into();
-    let font_color = blended_colors::text_main(theme, composited_bg);
     let background: warpui::elements::Fill = background_fill.into();
+    // Border and font colors are intentionally left to the dropdown's
+    // default ButtonVariant::Secondary styling, which uses
+    // theme.outline() and theme.main_text_color() — both are
+    // contrast-aware and adapt correctly to all themes.
 
     let styles = UiComponentStyles {
         height: Some(ORCHESTRATION_PICKER_HEIGHT),
         background: Some(background),
-        border_color: Some(border_color),
         border_width: Some(ORCHESTRATION_PICKER_BORDER_WIDTH),
         border_radius: Some(corner_radius),
         font_size: Some(ORCHESTRATION_PICKER_FONT_SIZE),
-        font_color: Some(font_color),
         padding: Some(padding),
         ..Default::default()
     };
@@ -266,8 +303,6 @@ pub fn picker_styles(appearance: &Appearance) -> (UiComponentStyles, PickerColor
         padding,
         corner_radius,
         background,
-        border_color,
-        font_color,
     };
     (styles, colors)
 }
@@ -277,8 +312,6 @@ pub struct PickerColors {
     pub padding: Coords,
     pub corner_radius: CornerRadius,
     pub background: warpui::elements::Fill,
-    pub border_color: warpui::elements::Fill,
-    pub font_color: ColorU,
 }
 
 // ── Picker creation (generic over action type) ──────────────────────
@@ -292,8 +325,6 @@ pub fn new_standard_picker_dropdown<A: OrchestrationControlAction, V: View>(
     let padding = colors.padding;
     let corner_radius = colors.corner_radius;
     let background = colors.background;
-    let border_color = colors.border_color;
-    let font_color = colors.font_color;
     ctx.add_typed_action_view(move |ctx_dropdown| {
         let mut dropdown = Dropdown::<A>::new(ctx_dropdown);
         dropdown.set_use_overlay_layer(false, ctx_dropdown);
@@ -304,10 +335,8 @@ pub fn new_standard_picker_dropdown<A: OrchestrationControlAction, V: View>(
         dropdown.set_padding(padding, ctx_dropdown);
         dropdown.set_border_radius(corner_radius, ctx_dropdown);
         dropdown.set_background(background, ctx_dropdown);
-        dropdown.set_border_color(border_color, ctx_dropdown);
         dropdown.set_border_width(ORCHESTRATION_PICKER_BORDER_WIDTH, ctx_dropdown);
         dropdown.set_font_size(ORCHESTRATION_PICKER_FONT_SIZE, ctx_dropdown);
-        dropdown.set_font_color(font_color, ctx_dropdown);
         dropdown
     })
 }
@@ -630,6 +659,57 @@ pub fn harness_save_key(harness_type: &str) -> &str {
     }
 }
 
+// ── Default environment resolution ──────────────────────────────────
+
+/// Resolves a default environment ID using the same logic as the
+/// `/cloud-agent` environment selector: first tries the user's
+/// last-selected environment from settings, then falls back to the
+/// most recently used environment.
+pub fn resolve_default_environment_id(ctx: &AppContext) -> Option<String> {
+    if let Some(env_id) = *CloudAgentSettings::as_ref(ctx)
+        .last_selected_environment_id
+        .value()
+    {
+        if CloudAmbientAgentEnvironment::get_by_id(&env_id, ctx).is_some() {
+            return Some(env_id.uid());
+        }
+    }
+    let mut envs = CloudAmbientAgentEnvironment::get_all(ctx);
+    envs.sort_by(|a, b| {
+        b.metadata
+            .last_task_run_ts
+            .cmp(&a.metadata.last_task_run_ts)
+            .then_with(|| {
+                a.model()
+                    .string_model
+                    .name
+                    .cmp(&b.model().string_model.name)
+            })
+    });
+    envs.first().map(|e| e.id.uid())
+}
+
+/// Persists the user's environment selection to settings so it can
+/// be restored as the default next time. Shared by both the plan
+/// card and confirmation card `EnvironmentChanged` handlers.
+pub fn persist_environment_selection<V: View>(environment_id: &str, ctx: &mut ViewContext<V>) {
+    if environment_id.is_empty() {
+        return;
+    }
+    let all_envs = CloudAmbientAgentEnvironment::get_all(ctx);
+    if let Some(env) = all_envs.iter().find(|e| e.id.uid() == environment_id) {
+        let sync_id = env.id;
+        CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+            if let Err(e) = settings
+                .last_selected_environment_id
+                .set_value(Some(sync_id), ctx)
+            {
+                log::warn!("Failed to persist environment selection: {e:?}");
+            }
+        });
+    }
+}
+
 // ── Shared action helpers ───────────────────────────────────────────
 
 /// Handles a harness change for both card views: saves the current
@@ -687,6 +767,17 @@ pub fn apply_execution_mode_change<A: OrchestrationControlAction, V: View>(
     ctx: &mut ViewContext<V>,
 ) {
     state.toggle_execution_mode_to_remote(is_remote);
+    // When switching to Cloud with no environment set, pre-fill with
+    // the user's last-selected or most recently used environment.
+    if is_remote {
+        if let RunAgentsExecutionMode::Remote { environment_id, .. } = &state.execution_mode {
+            if environment_id.is_empty() {
+                if let Some(default_env) = resolve_default_environment_id(ctx) {
+                    state.set_environment_id(default_env);
+                }
+            }
+        }
+    }
     let is_local = !state.execution_mode.is_remote();
     if !is_model_in_filtered_choices(&state.model_id, &state.harness_type, is_local, ctx) {
         let reset_id = fallback_base_model_id(ctx)

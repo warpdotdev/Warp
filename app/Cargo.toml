@@ -103,7 +103,6 @@ email_address = { git = "https://github.com/warpdotdev/rust-email_address", bran
 embed_plist = "1.2"
 enclose = "1.1.8"
 enum-iterator.workspace = true
-event-listener = "5.4.0"
 field_mask.workspace = true
 firebase.workspace = true
 flate2 = "1.0.17"
@@ -619,6 +618,7 @@ default = [
     "open_code_notifications",
     "cli_agent_rich_input",
     "vertical_tabs",
+    "vertical_tabs_summary_mode",
     "tab_configs",
     "hoa_onboarding_flow",
     "hoa_remote_control",
@@ -659,6 +659,8 @@ grep_tool = []
 # For the most part, including GUI code in headless builds is fine; the main use case is
 # for things that pull in external dependencies.
 gui = ["voice_input"]
+nld_classifier_v1 = ["input_classifier/onnx_candle"]
+nld_classifier_v2 = ["input_classifier/onnx_candle"]
 msys2_shells = []
 file_retrieval_tools = []
 welcome_tab = []
@@ -743,6 +745,8 @@ predict_am_queries = []
 quake_mode = []
 record_app_active_events = []
 recording_mode = []
+remote_codebase_indexing = ["full_source_code_embedding"]
+
 # This feature should only be enabled when building a release bundle with
 # the bundle script, and can be used to conditionally enable functionality
 # accordingly.
@@ -808,8 +812,6 @@ use_tantivy_search = []
 agent_management_popup = []
 simulate_github_unauthed = []
 reload_stale_conversation_files = []
-nld_fasttext_model = ["input_classifier/fasttext"]
-nld_onnx_model = ["input_classifier/onnx_candle"]
 shared_block_title_generation = []
 retry_truncated_code_responses = []
 usage_based_pricing = []
@@ -842,7 +844,6 @@ sync_ambient_plans = []
 projects = []
 vim_code_editor = []
 allow_opening_file_links_using_editor_env = []
-nld_improvements = ["nld_onnx_model"]
 undo_closed_panes = []
 revert_diff_hunk = []
 code_review_save_changes = []

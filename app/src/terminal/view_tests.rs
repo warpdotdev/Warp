@@ -54,6 +54,7 @@ use crate::terminal::model::terminal_model::WithinBlock;
 use crate::terminal::session_settings::AgentToolbarChipSelection;
 use crate::terminal::shared_session::SharedSessionStatus;
 use crate::terminal::view::ambient_agent::AmbientAgentViewModelEvent;
+use crate::terminal::view::load_ai_conversation::RestoredAIConversation;
 use crate::terminal::CLIAgent;
 
 use crate::terminal::{MockTerminalManager, TerminalManager, TerminalModel};
@@ -192,6 +193,18 @@ fn update_exchange_input_and_handle_event(
         },
         ctx,
     );
+}
+
+fn ai_block_count(view: &TerminalView) -> usize {
+    view.rich_content_views
+        .iter()
+        .filter(|rich_content| {
+            matches!(
+                rich_content.metadata(),
+                Some(RichContentMetadata::AIBlock(_))
+            )
+        })
+        .count()
 }
 
 struct TestTerminalManager {
@@ -470,6 +483,137 @@ fn clear_buffer_action_in_fullscreen_agent_view_starts_new_conversation() {
                 .active_conversation_id()
                 .expect("agent view should still be active");
             assert_ne!(new_conversation_id, original_conversation_id);
+        });
+    })
+}
+
+#[test]
+fn appended_exchange_renders_in_current_owner_after_conversation_transfer() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        let original_owner = add_window_with_terminal(&mut app, None);
+        let transferred_owner = add_window_with_terminal(&mut app, None);
+
+        let original_owner_view_id = original_owner.read(&app, |view, _| view.view_id);
+        let transferred_owner_view_id = transferred_owner.read(&app, |view, _| view.view_id);
+
+        let conversation_id = original_owner.update(&mut app, |view, ctx| {
+            let (conversation_id, _, _, _) = append_exchange_with_inputs_and_handle_event(
+                view,
+                vec![AIAgentInput::UserQuery {
+                    query: "first query".to_owned(),
+                    context: Default::default(),
+                    static_query_type: None,
+                    referenced_attachments: Default::default(),
+                    user_query_mode: UserQueryMode::Normal,
+                    running_command: None,
+                    intended_agent: None,
+                }],
+                ctx,
+            );
+            conversation_id
+        });
+
+        let restored_conversation =
+            BlocklistAIHistoryModel::handle(&app).read(&app, |history, _| {
+                history
+                    .conversation(&conversation_id)
+                    .cloned()
+                    .expect("conversation should exist")
+            });
+
+        transferred_owner.update(&mut app, |view, ctx| {
+            view.restore_conversation_after_view_creation(
+                RestoredAIConversation::new(restored_conversation),
+                true,
+                ctx,
+            );
+        });
+
+        BlocklistAIHistoryModel::handle(&app).read(&app, |history, _| {
+            assert_eq!(
+                history.terminal_view_id_for_conversation(&conversation_id),
+                Some(transferred_owner_view_id)
+            );
+        });
+
+        let original_owner_block_count_after_restore =
+            original_owner.read(&app, |view, _| ai_block_count(view));
+        let transferred_owner_block_count_after_restore =
+            transferred_owner.read(&app, |view, _| ai_block_count(view));
+        assert_eq!(transferred_owner_block_count_after_restore, 1);
+
+        let (task_id, exchange_id, response_stream_id) = BlocklistAIHistoryModel::handle(&app)
+            .update(&mut app, |history, ctx| {
+                let conversation = history
+                    .conversation_mut(&conversation_id)
+                    .expect("conversation should exist");
+                let task_id = conversation.get_root_task_id().clone();
+                let response_stream_id = ResponseStreamId::new_for_test();
+                let exchange = exchange_with_inputs(vec![AIAgentInput::UserQuery {
+                    query: "follow up".to_owned(),
+                    context: Default::default(),
+                    static_query_type: None,
+                    referenced_attachments: Default::default(),
+                    user_query_mode: UserQueryMode::Normal,
+                    running_command: None,
+                    intended_agent: None,
+                }]);
+                let exchange_id = exchange.id;
+                conversation
+                    .append_reassigned_exchange(
+                        &response_stream_id,
+                        exchange,
+                        original_owner_view_id,
+                        ctx,
+                    )
+                    .expect("exchange should append");
+                (task_id, exchange_id, response_stream_id)
+            });
+
+        original_owner.update(&mut app, |view, ctx| {
+            view.handle_ai_history_model_event(
+                BlocklistAIHistoryModel::handle(ctx),
+                &BlocklistAIHistoryEvent::AppendedExchange {
+                    exchange_id,
+                    task_id: task_id.clone(),
+                    terminal_view_id: original_owner_view_id,
+                    conversation_id,
+                    is_hidden: false,
+                    response_stream_id: Some(response_stream_id.clone()),
+                },
+                ctx,
+            );
+        });
+
+        transferred_owner.update(&mut app, |view, ctx| {
+            view.handle_ai_history_model_event(
+                BlocklistAIHistoryModel::handle(ctx),
+                &BlocklistAIHistoryEvent::AppendedExchange {
+                    exchange_id,
+                    task_id,
+                    terminal_view_id: original_owner_view_id,
+                    conversation_id,
+                    is_hidden: false,
+                    response_stream_id: Some(response_stream_id),
+                },
+                ctx,
+            );
+        });
+
+        original_owner.read(&app, |view, _| {
+            assert_eq!(
+                ai_block_count(view),
+                original_owner_block_count_after_restore
+            );
+        });
+        transferred_owner.read(&app, |view, _| {
+            assert_eq!(
+                ai_block_count(view),
+                transferred_owner_block_count_after_restore + 1
+            );
         });
     })
 }
@@ -4746,6 +4890,79 @@ fn status_in_progress_auto_opens_rich_input_after_blocked() {
         // Rich input should auto-open because should_auto_toggle_input was preserved.
         terminal.read(&app, |view, ctx| {
             assert!(view.has_active_cli_agent_input_session(ctx));
+        });
+    })
+}
+
+// Regression test for https://github.com/warpdotdev/warp/issues/9059.
+// Codex's listener doesn't emit Blocked-state events (it only forwards opaque
+// OSC 9 notifications as Stop), so auto-toggling rich input would trap arrow
+// keys when Codex shows interactive option menus. Auto-toggle must not fire
+// for agents whose handlers report `supports_rich_status() == false`.
+#[test]
+fn codex_status_change_does_not_auto_open_rich_input() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cli_rich = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+        // auto_toggle_rich_input defaults to true.
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        terminal.update(&mut app, |view, ctx| {
+            let listener = ctx.add_model(|ctx| {
+                CLIAgentSessionListener::new(
+                    view.view_id,
+                    CLIAgent::Codex,
+                    &view.model_events_handle,
+                    ctx,
+                )
+            });
+            CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                sessions.set_session(
+                    view.view_id,
+                    CLIAgentSession {
+                        agent: CLIAgent::Codex,
+                        status: CLIAgentSessionStatus::InProgress,
+                        session_context: CLIAgentSessionContext::default(),
+                        input_state: CLIAgentInputState::Closed,
+                        should_auto_toggle_input: true,
+                        listener: Some(listener),
+                        remote_host: None,
+                        plugin_version: None,
+                        draft_text: None,
+                        custom_command_prefix: None,
+                    },
+                    ctx,
+                );
+            });
+
+            // Rich input starts closed. Simulating a Stop event (the only
+            // status Codex's handler ever emits) must not re-open it,
+            // because the user may be navigating Codex's option menus.
+            assert!(!view.has_active_cli_agent_input_session(ctx));
+            CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                sessions.update_from_event(
+                    view.view_id,
+                    &CLIAgentEvent {
+                        v: 1,
+                        agent: CLIAgent::Codex,
+                        event: CLIAgentEventType::Stop,
+                        session_id: None,
+                        cwd: None,
+                        project: None,
+                        payload: CLIAgentEventPayload {
+                            query: Some("Agent turn complete".to_owned()),
+                            ..Default::default()
+                        },
+                    },
+                    ctx,
+                );
+            });
+        });
+
+        terminal.read(&app, |view, ctx| {
+            assert!(!view.has_active_cli_agent_input_session(ctx));
         });
     })
 }

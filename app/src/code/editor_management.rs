@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use super::buffer_location::FileLocation;
 use crate::ai::skills::SkillOpenOrigin;
 use ai::skills::SkillReference;
 use serde::{Deserialize, Serialize};
@@ -118,8 +119,8 @@ pub enum CodeSource {
     AIAction { id: AIAgentActionId },
     /// Opened from project rules (WARP.md) file.
     ProjectRules { path: PathBuf },
-    /// Opened from file tree.
-    FileTree { path: PathBuf },
+    /// Opened from file tree (local or remote).
+    FileTree { location: FileLocation },
     /// Opened from macOS Finder via "Open With".
     Finder { path: PathBuf },
     /// Opened from a skill.
@@ -148,11 +149,38 @@ impl CodeSource {
     pub fn path(&self) -> Option<PathBuf> {
         match self {
             Self::New { .. } | Self::AIAction { .. } => None,
+            Self::FileTree { location, .. } => match location {
+                FileLocation::Local(path) => Some(path.clone()),
+                FileLocation::Remote(_) => None,
+            },
             Self::Link { path, .. }
             | Self::ProjectRules { path }
-            | Self::FileTree { path }
             | Self::Finder { path }
             | Self::Skill { path, .. } => Some(path.clone()),
+        }
+    }
+
+    /// Returns the `FileLocation` for file tree sources.
+    pub fn file_location(&self) -> Option<&FileLocation> {
+        match self {
+            Self::FileTree { location } => Some(location),
+            _ => None,
+        }
+    }
+
+    /// Returns the `FileLocation` for any source that has a backing file.
+    ///
+    /// Unlike `path()` (which only returns local paths) and `file_location()`
+    /// (which only covers `FileTree`), this covers every variant that maps to
+    /// a file — local or remote.
+    pub fn location(&self) -> Option<FileLocation> {
+        match self {
+            Self::New { .. } | Self::AIAction { .. } => None,
+            Self::FileTree { location } => Some(location.clone()),
+            Self::Link { path, .. }
+            | Self::ProjectRules { path }
+            | Self::Finder { path }
+            | Self::Skill { path, .. } => Some(FileLocation::Local(path.clone())),
         }
     }
 
@@ -186,6 +214,9 @@ impl CodeSource {
             Self::Link { .. } => "link",
             Self::AIAction { .. } => "ai_action",
             Self::ProjectRules { .. } => "project_rules",
+            Self::FileTree {
+                location: FileLocation::Remote(_),
+            } => "remote_file_tree",
             Self::FileTree { .. } => "file_tree",
             Self::Finder { .. } => "finder",
             Self::Skill { .. } => "skill",
@@ -197,7 +228,13 @@ impl CodeSource {
     /// `AIAction` is ephemeral (tied to a live conversation) and should not
     /// be restored.
     pub fn is_restorable(&self) -> bool {
-        !matches!(self, Self::AIAction { .. })
+        !matches!(
+            self,
+            Self::AIAction { .. }
+                | Self::FileTree {
+                    location: FileLocation::Remote(_),
+                }
+        )
     }
 }
 

@@ -1458,7 +1458,7 @@ fn test_fork_then_bind_handoff_token_resolves_to_forked_conversation() {
                 .expect("source conversation must be in memory after restore")
                 .clone();
             let forked = model
-                .fork_conversation(&source, "[Fork] ", false, ctx)
+                .fork_conversation(&source, "[Fork] ", false, None, ctx)
                 .expect("fork must succeed when sqlite sender is wired up");
             assert_eq!(
                 forked
@@ -1554,7 +1554,7 @@ fn test_fork_conversation_preserves_task_ids_when_requested() {
                 .expect("source conversation must be in memory after restore")
                 .clone();
             let forked = model
-                .fork_conversation(&source, "[Fork] ", true, ctx)
+                .fork_conversation(&source, "[Fork] ", true, None, ctx)
                 .expect("fork must succeed when sqlite sender is wired up");
 
             let forked_tasks: Vec<&warp_multi_agent_api::Task> =
@@ -1582,6 +1582,74 @@ fn test_fork_conversation_preserves_task_ids_when_requested() {
             assert_eq!(
                 forked_subtask.description, "Original subtask",
                 "subtask description must not be prefixed",
+            );
+        });
+    });
+}
+
+#[test]
+fn test_fork_conversation_title_override_replaces_prefix() {
+    use crate::ai::agent::conversation::AIConversation;
+    use crate::persistence::model::AgentConversationData;
+    use crate::test_util::ai_agent_tasks::{create_api_task, create_message};
+
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+
+        let (sender, _receiver) = std::sync::mpsc::sync_channel(2);
+        let mut global_resource_handles = GlobalResourceHandles::mock(&mut app);
+        global_resource_handles.model_event_sender = Some(sender);
+        app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resource_handles));
+
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let terminal_view_id = EntityId::new();
+
+        let source_id = AIConversationId::new();
+        let mut root_task = create_api_task(
+            "root-task-id",
+            vec![create_message("root-msg", "root-task-id")],
+        );
+        root_task.description = "Original root".to_string();
+        let source = AIConversation::new_restored(
+            source_id,
+            vec![root_task],
+            Some(AgentConversationData {
+                server_conversation_token: None,
+                conversation_usage_metadata: None,
+                reverted_action_ids: None,
+                forked_from_server_conversation_token: None,
+                artifacts_json: None,
+                parent_agent_id: None,
+                agent_name: None,
+                orchestration_harness_type: None,
+                parent_conversation_id: None,
+                is_remote_child: false,
+                run_id: None,
+                autoexecute_override: None,
+                last_event_sequence: None,
+            }),
+        )
+        .expect("restored source conversation should build");
+        history_model.update(&mut app, |model, ctx| {
+            model.restore_conversations(terminal_view_id, vec![source], ctx);
+        });
+
+        history_model.update(&mut app, |model, ctx| {
+            let source = model
+                .conversation(&source_id)
+                .expect("source must be in memory")
+                .clone();
+            let forked = model
+                .fork_conversation(&source, "[Fork] ", false, Some("Custom title"), ctx)
+                .expect("fork must succeed");
+
+            let forked_root = forked
+                .all_tasks()
+                .find_map(|t| t.source())
+                .expect("forked conversation must have a root task");
+            assert_eq!(
+                forked_root.description, "Custom title",
+                "title_override must replace the prefix+description",
             );
         });
     });

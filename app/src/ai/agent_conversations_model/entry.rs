@@ -91,7 +91,8 @@ pub struct AgentConversationDisplayData {
     pub created_at: DateTime<Utc>,
     pub last_updated: DateTime<Utc>,
     pub status: AgentRunDisplayStatus,
-    pub creator: AgentConversationCreator,
+    pub creator: AgentConversationPrincipal,
+    pub executor: Option<AgentConversationPrincipal>,
     pub request_usage: Option<f32>,
     pub run_time: Option<String>,
     pub session_status: Option<SessionStatus>,
@@ -102,11 +103,36 @@ pub struct AgentConversationDisplayData {
     pub artifacts: Vec<Artifact>,
 }
 
-/// Creator information normalized across local conversations and ambient runs.
+/// Type of principal that created or executed a run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrincipalType {
+    User,
+    ServiceAccount,
+}
+
+impl PrincipalType {
+    /// Parse from the wire-format string sent by the server.
+    pub fn parse(s: &str) -> Option<Self> {
+        if s.eq_ignore_ascii_case("user") {
+            Some(PrincipalType::User)
+        } else if s.eq_ignore_ascii_case("service_account") || s.eq_ignore_ascii_case("agent") {
+            Some(PrincipalType::ServiceAccount)
+        } else {
+            None
+        }
+    }
+
+    pub fn is_service_account(self) -> bool {
+        self == PrincipalType::ServiceAccount
+    }
+}
+
+/// Principal information normalized across local conversations and ambient runs.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct AgentConversationCreator {
+pub struct AgentConversationPrincipal {
     pub name: Option<String>,
     pub uid: Option<String>,
+    pub principal_type: Option<PrincipalType>,
 }
 
 /// Source category that explains why an entry exists and which backing systems can refresh it.
@@ -418,10 +444,22 @@ pub(super) fn entry_for_task(
             created_at: task.created_at,
             last_updated: task.updated_at,
             status: status.clone(),
-            creator: AgentConversationCreator {
+            creator: AgentConversationPrincipal {
                 name: task_creator_name(task, app),
                 uid: task_creator_uid(task),
+                principal_type: task
+                    .creator
+                    .as_ref()
+                    .and_then(|c| PrincipalType::parse(&c.creator_type)),
             },
+            executor: task
+                .executor
+                .as_ref()
+                .map(|executor| AgentConversationPrincipal {
+                    name: executor.display_name.clone(),
+                    uid: Some(executor.uid.clone()),
+                    principal_type: PrincipalType::parse(&executor.creator_type),
+                }),
             request_usage: task.credits_used(),
             run_time: task_run_time(task),
             session_status: Some(task_session_status(task)),
@@ -527,10 +565,12 @@ fn entry_for_conversation_parts(
             created_at: metadata.nav_data.last_updated.into(),
             last_updated: metadata.nav_data.last_updated.into(),
             status: status.clone(),
-            creator: AgentConversationCreator {
+            creator: AgentConversationPrincipal {
                 name: current_user_name(app),
                 uid: current_user_uid(app),
+                principal_type: Some(PrincipalType::User),
             },
+            executor: None,
             request_usage: conversation_request_usage(&metadata, history_model),
             run_time: None,
             session_status: None,

@@ -114,3 +114,124 @@ fn refresh_working_directories_preserves_non_repo_paths_and_dedupes() {
         );
     });
 }
+
+// Regression test for GH-10598: the code review panel's manually selected
+// repository must be remembered per pane group so it survives leaving and
+// returning to an Agent session.
+#[test]
+fn selected_review_repo_is_remembered_per_pane_group() {
+    App::test((), |mut app| async move {
+        app.add_singleton_model(|_| DetectedRepositories::default());
+
+        let pane_group_a = EntityId::new();
+        let pane_group_b = EntityId::new();
+        let repo_x = PathBuf::from("/repos/x");
+        let repo_y = PathBuf::from("/repos/y");
+        let repo_p = PathBuf::from("/repos/p");
+
+        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
+
+        // Initially nothing is saved for either pane group.
+        working_directories_handle.update(&mut app, |model, _ctx| {
+            assert!(model.get_selected_review_repo(pane_group_a).is_none());
+            assert!(model.get_selected_review_repo(pane_group_b).is_none());
+        });
+
+        // User selects repo Y in pane group A.
+        working_directories_handle.update(&mut app, |model, _ctx| {
+            model.set_selected_review_repo(pane_group_a, repo_y.clone());
+        });
+
+        // The selection for A is remembered and is independent from B's.
+        working_directories_handle.update(&mut app, |model, _ctx| {
+            assert_eq!(
+                model.get_selected_review_repo(pane_group_a),
+                Some(repo_y.as_path()),
+                "pane group A should remember its manual selection"
+            );
+            assert!(
+                model.get_selected_review_repo(pane_group_b).is_none(),
+                "pane group B should be untouched by selections in A"
+            );
+        });
+
+        // User selects repo P in pane group B; A's selection must not change.
+        working_directories_handle.update(&mut app, |model, _ctx| {
+            model.set_selected_review_repo(pane_group_b, repo_p.clone());
+            assert_eq!(
+                model.get_selected_review_repo(pane_group_a),
+                Some(repo_y.as_path()),
+                "selecting in B must not clobber A's saved selection"
+            );
+            assert_eq!(
+                model.get_selected_review_repo(pane_group_b),
+                Some(repo_p.as_path()),
+            );
+        });
+
+        // Updating A's selection overwrites the previous saved value for A.
+        working_directories_handle.update(&mut app, |model, _ctx| {
+            model.set_selected_review_repo(pane_group_a, repo_x.clone());
+            assert_eq!(
+                model.get_selected_review_repo(pane_group_a),
+                Some(repo_x.as_path()),
+            );
+        });
+    });
+}
+
+// Regression test for GH-10598: closing a tab (i.e. destroying a pane group)
+// must clean up the saved code-review-panel selection so it cannot leak into
+// or be confused with a future pane group that happens to reuse an EntityId.
+#[test]
+fn selected_review_repo_is_cleared_when_pane_group_is_removed() {
+    App::test((), |mut app| async move {
+        app.add_singleton_model(|_| DetectedRepositories::default());
+
+        let pane_group_id = EntityId::new();
+        let repo = PathBuf::from("/repos/x");
+
+        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
+
+        working_directories_handle.update(&mut app, |model, ctx| {
+            model.set_selected_review_repo(pane_group_id, repo.clone());
+            assert_eq!(
+                model.get_selected_review_repo(pane_group_id),
+                Some(repo.as_path()),
+            );
+
+            model.remove_pane_group(pane_group_id, ctx);
+            assert!(
+                model.get_selected_review_repo(pane_group_id).is_none(),
+                "removing a pane group must clear its saved review-panel selection"
+            );
+        });
+    });
+}
+
+#[test]
+fn clear_selected_review_repo_removes_only_the_targeted_pane_group_entry() {
+    App::test((), |mut app| async move {
+        app.add_singleton_model(|_| DetectedRepositories::default());
+
+        let pane_group_a = EntityId::new();
+        let pane_group_b = EntityId::new();
+        let repo_a = PathBuf::from("/repos/a");
+        let repo_b = PathBuf::from("/repos/b");
+
+        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
+
+        working_directories_handle.update(&mut app, |model, _ctx| {
+            model.set_selected_review_repo(pane_group_a, repo_a.clone());
+            model.set_selected_review_repo(pane_group_b, repo_b.clone());
+
+            model.clear_selected_review_repo(pane_group_a);
+
+            assert!(model.get_selected_review_repo(pane_group_a).is_none());
+            assert_eq!(
+                model.get_selected_review_repo(pane_group_b),
+                Some(repo_b.as_path()),
+            );
+        });
+    });
+}

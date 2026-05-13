@@ -5,7 +5,7 @@ use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::Fill;
 use warpui::elements::{
-    Border, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
+    Border, ChildView, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
     Expanded, Flex, Hoverable, MainAxisSize, MouseStateHandle, ParentElement as _, Radius, Text,
 };
 use warpui::fonts::{Properties, Weight};
@@ -13,6 +13,8 @@ use warpui::{
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
 };
+
+use settings::Setting as _;
 
 use crate::ai::auth_secret_types::{
     auth_secret_types_for_harness, build_managed_secret_value, AuthSecretTypeInfo,
@@ -108,6 +110,10 @@ impl AuthSecretFtuxView {
                 });
                 CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
                     settings.mark_harness_auth_ftux_completed(harness, ctx);
+                    // Persist the selection so the secret is sticky across sessions.
+                    let mut map = settings.last_selected_auth_secret.value().clone();
+                    map.insert(harness.config_name().to_string(), name.clone());
+                    let _ = settings.last_selected_auth_secret.set_value(map, ctx);
                 });
                 me.clear_all_editor_buffers(ctx);
                 me.creation_state = None;
@@ -257,7 +263,8 @@ impl AuthSecretFtuxView {
         };
         let mut editors = Vec::with_capacity(info.fields.len());
         for (field_idx, field) in info.fields.iter().enumerate() {
-            let editor = make_single_line_editor(Some(field.label), true, ctx);
+            let placeholder = field.placeholder.unwrap_or(field.label);
+            let editor = make_single_line_editor(Some(placeholder), field.sensitive, ctx);
             let editor_index = field_idx + 1;
             ctx.subscribe_to_view(&editor, move |me, _, event, ctx| {
                 me.handle_form_editor_nav(editor_index, event, ctx);
@@ -390,10 +397,14 @@ impl AuthSecretFtuxView {
         });
         let vm = self.ambient_agent_model.clone();
         vm.update(ctx, |model, ctx| {
-            model.set_harness_auth_secret_name(Some(name), ctx);
+            model.set_harness_auth_secret_name(Some(name.clone()), ctx);
         });
         CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
             settings.mark_harness_auth_ftux_completed(harness, ctx);
+            // Persist the newly created secret so it is sticky across sessions.
+            let mut map = settings.last_selected_auth_secret.value().clone();
+            map.insert(harness.config_name().to_string(), name);
+            let _ = settings.last_selected_auth_secret.set_value(map, ctx);
         });
         self.clear_creation_state(ctx);
         ctx.notify();
@@ -441,18 +452,24 @@ impl AuthSecretFtuxView {
         let border_color = internal_colors::neutral_3(theme);
         let background = internal_colors::fg_overlay_1(theme);
         let editor_element = ChildView::new(editor).finish();
-        ConstrainedBox::new(
-            Container::new(editor_element)
-                .with_padding_left(FIELD_EDITOR_PADDING)
-                .with_padding_right(FIELD_EDITOR_PADDING)
-                .with_padding_top(FIELD_EDITOR_PADDING / 2.)
-                .with_padding_bottom(FIELD_EDITOR_PADDING / 2.)
-                .with_background(background)
-                .with_border(Border::all(1.).with_border_color(border_color))
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(CORNER_RADIUS)))
-                .finish(),
+        // The editor's text layout includes descender space below the baseline,
+        // which makes text appear top-heavy when padding is symmetric. Bias the
+        // top padding slightly larger to visually center the text.
+        Clipped::new(
+            ConstrainedBox::new(
+                Container::new(editor_element)
+                    .with_padding_left(FIELD_EDITOR_PADDING)
+                    .with_padding_right(FIELD_EDITOR_PADDING)
+                    .with_padding_top(FIELD_EDITOR_PADDING)
+                    .with_padding_bottom(FIELD_EDITOR_PADDING / 3.)
+                    .with_background(background)
+                    .with_border(Border::all(1.).with_border_color(border_color))
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(CORNER_RADIUS)))
+                    .finish(),
+            )
+            .with_min_height(FIELD_EDITOR_MIN_HEIGHT)
+            .finish(),
         )
-        .with_min_height(FIELD_EDITOR_MIN_HEIGHT)
         .finish()
     }
 

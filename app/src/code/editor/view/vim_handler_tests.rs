@@ -1436,3 +1436,94 @@ fn test_vim_visual_linewise_delete_first_line_does_not_panic() {
         assert_eq!(buffer_text(&editor, &app), "bbb\nccc");
     });
 }
+
+#[test]
+fn test_vim_zz_in_normal_mode_preserves_cursor_and_mode() {
+    let _feature_flag_guard = FeatureFlag::VimCodeEditor.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_code_editor_app(&mut app);
+        let editor = add_code_editor(
+            "line 1
+            line 2
+            line 3
+            line 4
+            line 5",
+            &mut app,
+        );
+
+        layout_editor_view(&mut app, &editor).await;
+
+        // Place cursor on line 3, then center it. zz scrolls but should not move
+        // the cursor or change the mode.
+        set_cursor_position(&editor, 3, 0, &mut app);
+        assert_eq!(cursor_position(&editor, &app), (3, 0));
+        assert_eq!(vim_mode(&editor, &app), Some(VimMode::Normal));
+
+        vim_user_insert(&editor, "zz", &mut app);
+
+        assert_eq!(cursor_position(&editor, &app), (3, 0));
+        assert_eq!(vim_mode(&editor, &app), Some(VimMode::Normal));
+    });
+}
+
+#[test]
+fn test_vim_zz_in_visual_mode_preserves_cursor_and_mode() {
+    let _feature_flag_guard = FeatureFlag::VimCodeEditor.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_code_editor_app(&mut app);
+        let editor = add_code_editor(
+            "line 1
+            line 2
+            line 3
+            line 4
+            line 5",
+            &mut app,
+        );
+
+        layout_editor_view(&mut app, &editor).await;
+
+        set_cursor_position(&editor, 3, 0, &mut app);
+        vim_user_insert(&editor, "v", &mut app);
+        assert_eq!(
+            vim_mode(&editor, &app),
+            Some(VimMode::Visual(MotionType::Charwise))
+        );
+
+        vim_user_insert(&editor, "zz", &mut app);
+
+        assert_eq!(cursor_position(&editor, &app), (3, 0));
+        assert_eq!(
+            vim_mode(&editor, &app),
+            Some(VimMode::Visual(MotionType::Charwise))
+        );
+    });
+}
+
+#[test]
+fn test_vim_z_followed_by_non_z_clears_pending() {
+    let _feature_flag_guard = FeatureFlag::VimCodeEditor.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_code_editor_app(&mut app);
+        let editor = add_code_editor(
+            "line 1
+            line 2
+            line 3",
+            &mut app,
+        );
+
+        layout_editor_view(&mut app, &editor).await;
+
+        // `z` followed by an unrecognized char should clear the pending action.
+        // After that, a subsequent `j` should move the cursor down one line as normal.
+        set_cursor_position(&editor, 1, 0, &mut app);
+        vim_user_insert(&editor, "z", &mut app);
+        vim_user_insert(&editor, "x", &mut app);
+        assert_eq!(cursor_position(&editor, &app), (1, 0));
+
+        vim_user_insert(&editor, "j", &mut app);
+        assert_eq!(cursor_position(&editor, &app), (2, 0));
+    });
+}

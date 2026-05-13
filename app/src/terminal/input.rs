@@ -6359,6 +6359,10 @@ impl Input {
             }
             AISettingsChangedEvent::AIAutoDetectionEnabled { .. }
             | AISettingsChangedEvent::NLDInTerminalEnabled { .. } => {
+                // NLD is irrelevant in cloud mode v2 — the input is always AI.
+                if self.is_cloud_mode_input_v2_composing(ctx) {
+                    return;
+                }
                 // The input model handles updating the lock state via its own subscription.
                 // If NLD is now enabled for the current context and the buffer is non-empty,
                 // trigger autodetection on the current buffer contents.
@@ -9413,31 +9417,36 @@ impl Input {
                     .as_ref(ctx)
                     .is_inline_menu_open();
 
-                let should_run_ai_input_detection = match edit_origin {
-                    // Edits made by the local user should trigger autodetection, if
-                    // it is enabled.
-                    EditOrigin::UserInitiated
-                    | EditOrigin::UserTyped
-                    | EditOrigin::SyncedTerminalInput => {
-                        !is_inline_menu_open
-                            && self
-                                .ai_input_model
-                                .as_ref(ctx)
-                                .should_run_input_autodetection(ctx)
+                // NLD autodetection is irrelevant in cloud mode v2 — the input is always AI.
+                let should_run_ai_input_detection = if self.is_cloud_mode_input_v2_composing(ctx) {
+                    false
+                } else {
+                    match edit_origin {
+                        // Edits made by the local user should trigger autodetection, if
+                        // it is enabled.
+                        EditOrigin::UserInitiated
+                        | EditOrigin::UserTyped
+                        | EditOrigin::SyncedTerminalInput => {
+                            !is_inline_menu_open
+                                && self
+                                    .ai_input_model
+                                    .as_ref(ctx)
+                                    .should_run_input_autodetection(ctx)
+                        }
+                        // Remote edits from shared session viewers should trigger autodetection
+                        // on the sharer's side, so that the sharer's input mode adjusts as viewers type.
+                        EditOrigin::RemoteEdit => {
+                            let is_sharer = self.model.lock().shared_session_status().is_sharer();
+                            !is_inline_menu_open
+                                && is_sharer
+                                && self
+                                    .ai_input_model
+                                    .as_ref(ctx)
+                                    .should_run_input_autodetection(ctx)
+                        }
+                        // System edits should never trigger autodetection.
+                        EditOrigin::SystemEdit => false,
                     }
-                    // Remote edits from shared session viewers should trigger autodetection
-                    // on the sharer's side, so that the sharer's input mode adjusts as viewers type.
-                    EditOrigin::RemoteEdit => {
-                        let is_sharer = self.model.lock().shared_session_status().is_sharer();
-                        !is_inline_menu_open
-                            && is_sharer
-                            && self
-                                .ai_input_model
-                                .as_ref(ctx)
-                                .should_run_input_autodetection(ctx)
-                    }
-                    // System edits should never trigger autodetection.
-                    EditOrigin::SystemEdit => false,
                 };
 
                 // Abort any autodetection work on the old buffer state.
@@ -12505,20 +12514,18 @@ impl Input {
                 || self.is_cloud_mode_input_v2_composing(ctx))
         {
             // If we're submitting an AI query, we want to send telemetry for the input type.
-            if FeatureFlag::NldImprovements.is_enabled() {
-                let input_model = self.ai_input_model.as_ref(ctx);
-                let input_type = input_model.input_type();
-                let is_locked = input_model.is_input_type_locked();
-                let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::InputBufferSubmitted {
-                        input_type,
-                        is_locked,
-                        was_lock_set_with_empty_buffer,
-                    },
-                    ctx
-                );
-            }
+            let input_model = self.ai_input_model.as_ref(ctx);
+            let input_type = input_model.input_type();
+            let is_locked = input_model.is_input_type_locked();
+            let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
+            send_telemetry_from_ctx!(
+                TelemetryEvent::InputBufferSubmitted {
+                    input_type,
+                    is_locked,
+                    was_lock_set_with_empty_buffer,
+                },
+                ctx
+            );
 
             // Check if we're configuring an ambient agent and spawn it instead of submitting a regular AI query.
             if self
@@ -12611,20 +12618,18 @@ impl Input {
             self.submit_ai_query(None, ctx);
         } else {
             // If we're submitting a shell command, we want to send telemetry for the input type.
-            if FeatureFlag::NldImprovements.is_enabled() {
-                let input_model = self.ai_input_model.as_ref(ctx);
-                let input_type = input_model.input_type();
-                let is_locked = input_model.is_input_type_locked();
-                let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::InputBufferSubmitted {
-                        input_type,
-                        is_locked,
-                        was_lock_set_with_empty_buffer,
-                    },
-                    ctx
-                );
-            }
+            let input_model = self.ai_input_model.as_ref(ctx);
+            let input_type = input_model.input_type();
+            let is_locked = input_model.is_input_type_locked();
+            let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
+            send_telemetry_from_ctx!(
+                TelemetryEvent::InputBufferSubmitted {
+                    input_type,
+                    is_locked,
+                    was_lock_set_with_empty_buffer,
+                },
+                ctx
+            );
 
             if FeatureFlag::WorkflowAliases.is_enabled() {
                 let mut command_string = self.editor.as_ref(ctx).buffer_text(ctx);

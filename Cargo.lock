@@ -2596,15 +2596,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cfasttext-sys"
-version = "0.7.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "982185af4edba23861639c25e46b36e077d2d60e553c20d1341c9fbf17fdb369"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "cfb"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2983,6 +2974,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "log",
+ "tempfile",
  "thiserror 2.0.17",
  "win32job",
  "windows 0.62.2",
@@ -4652,15 +4644,6 @@ name = "fastrand"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
-
-[[package]]
-name = "fasttext"
-version = "0.7.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd26f3978ff7b22e594af9026912da644237fd7d360889d0c5a6ac8ec4f940c8"
-dependencies = [
- "cfasttext-sys",
-]
 
 [[package]]
 name = "fax"
@@ -6615,7 +6598,6 @@ dependencies = [
  "candle-onnx",
  "cfg-if",
  "clap",
- "fasttext",
  "futures",
  "futures-lite 1.13.0",
  "instant",
@@ -6630,7 +6612,6 @@ dependencies = [
  "rust-embed 8.7.2",
  "serde",
  "smol_str",
- "tempfile",
  "tokenizers",
  "warp_completer",
 ]
@@ -14293,7 +14274,6 @@ dependencies = [
  "enclose",
  "enum-iterator",
  "env_logger",
- "event-listener",
  "field_mask",
  "firebase",
  "flate2",
@@ -14850,7 +14830,7 @@ dependencies = [
 [[package]]
 name = "warp_multi_agent_api"
 version = "0.0.0"
-source = "git+https://github.com/warpdotdev/warp-proto-apis.git?rev=3dd0cd81eae83b4ce09c7805c8ef12599798aa26#3dd0cd81eae83b4ce09c7805c8ef12599798aa26"
+source = "git+https://github.com/warpdotdev/warp-proto-apis.git?rev=63b333d02da4d95a716796331cb5c3049d369a7e#63b333d02da4d95a716796331cb5c3049d369a7e"
 dependencies = [
  "prost 0.14.3",
  "prost-reflect",

@@ -422,6 +422,7 @@ impl AmbientAgentRunner {
             let harness_auth_secrets = args.claude_auth_secret.clone().map(|name| {
                 crate::ai::ambient_agents::task::HarnessAuthSecretsConfig {
                     claude_auth_secret_name: Some(name),
+                    codex_auth_secret_name: None,
                 }
             });
 
@@ -491,7 +492,7 @@ impl AmbientAgentRunner {
                 parent_run_id: None,
                 runtime_skills: vec![],
                 referenced_attachments: vec![],
-                conversation_id: None,
+                conversation_id: args.conversation,
                 initial_snapshot_token: None,
             };
 
@@ -846,6 +847,10 @@ impl AmbientAgentRunner {
                     MAX_LINE_WIDTH,
                 );
                 table.add_row(vec![title_cell]);
+            }
+
+            if let Some(executor) = task.executor_display_name() {
+                table.add_row(vec![format!("Executed as: {executor}")]);
             }
 
             // Agent config snapshot (if available)
