@@ -610,8 +610,8 @@ impl WorkflowView {
     }
 
     fn reset(&mut self, ctx: &mut ViewContext<Self>) {
-        let cloud_workflow = self.get_cloud_workflow(ctx);
-        if let Some(workflow) = cloud_workflow {
+        let workflow = self.get_cloud_workflow(ctx);
+        if let Some(workflow) = workflow {
             self.load(
                 workflow,
                 &OpenWarpDriveObjectSettings::default(),
@@ -1485,8 +1485,8 @@ impl WorkflowView {
         // buffer if they click to execute a command from the workflow in pane.
         if self.is_workflow_dirty(ctx) {
             let new_workflow = self.create_workflow_object_from_input(ctx);
-            if let Some(cloud_workflow) = self.get_cloud_workflow(ctx) {
-                let mut cloned_cloud_workflow = cloud_workflow.clone();
+            if let Some(workflow) = self.get_cloud_workflow(ctx) {
+                let mut cloned_cloud_workflow = workflow.clone();
                 cloned_cloud_workflow.set_model(WorkflowObjectModel::new(new_workflow));
                 if let Some(owner) = self.owner {
                     ctx.emit(WorkflowViewEvent::RunWorkflow {

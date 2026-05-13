@@ -32,7 +32,7 @@ const ICON_SIZE: f32 = 16.;
 /// Struct designed to be the implementation of CommandSearchItem for workflows.
 #[derive(Clone, Debug)]
 pub struct WorkflowSearchItem {
-    pub cloud_workflow: WorkflowObject,
+    pub workflow: WorkflowObject,
     pub fuzzy_matched_workflow: FuzzyMatchEmbeddedObjectResult,
     /// Whether or not this workflow is accessible to all users that have access to the object
     /// being embedded into.
@@ -49,7 +49,7 @@ impl SearchItem for WorkflowSearchItem {
         _highlight_state: ItemHighlightState,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        let (icon, icon_color) = if self.cloud_workflow.model().data.is_agent_mode_workflow() {
+        let (icon, icon_color) = if self.workflow.model().data.is_agent_mode_workflow() {
             (
                 Icon::Prompt,
                 warp_drive_icon_color(appearance, DriveObjectType::AgentModeWorkflow),
@@ -84,7 +84,7 @@ impl SearchItem for WorkflowSearchItem {
         highlight_state: ItemHighlightState,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        let workflow = &self.cloud_workflow.model().data;
+        let workflow = &self.workflow.model().data;
         let appearance = Appearance::as_ref(app);
 
         let mut name_text = Text::new_inline(
@@ -136,7 +136,7 @@ impl SearchItem for WorkflowSearchItem {
         };
 
         let mut breadcrumb_text = Text::new_inline(
-            self.cloud_workflow.breadcrumbs(app),
+            self.workflow.breadcrumbs(app),
             appearance.ui_font_family(),
             appearance.ui_font_size(),
         )
@@ -172,7 +172,7 @@ impl SearchItem for WorkflowSearchItem {
     }
 
     fn accept_result(&self) -> EmbeddingSearchItemAction {
-        EmbeddingSearchItemAction::AcceptWorkflow(self.cloud_workflow.id)
+        EmbeddingSearchItemAction::AcceptWorkflow(self.workflow.id)
     }
 
     fn execute_result(&self) -> EmbeddingSearchItemAction {
@@ -183,7 +183,7 @@ impl SearchItem for WorkflowSearchItem {
     }
 
     fn accessibility_label(&self) -> String {
-        let workflow = &self.cloud_workflow.model().data;
+        let workflow = &self.workflow.model().data;
 
         format!("Workflow: {}", workflow.name())
     }

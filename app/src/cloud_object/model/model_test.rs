@@ -449,11 +449,11 @@ fn test_object_editor_timeout() {
     App::test((), |mut app| async move {
         initialize_app(&mut app, Vec::new());
         let notebook_id: SyncId = SyncId::ServerId(1.into());
-        let cloud_notebook = mock_cloud_notebook(notebook_id, "test1".into(), None);
+        let notebook = mock_cloud_notebook(notebook_id, "test1".into(), None);
 
         ObjectStoreModel::handle(&app).update(&mut app, |model, _ctx| {
             // Add a notebook to ObjectStoreModel
-            model.add_object(notebook_id, cloud_notebook.clone());
+            model.add_object(notebook_id, notebook.clone());
 
             let notebook = model
                 .get_notebook_mut(&notebook_id)

@@ -20,7 +20,7 @@ use warpui::{AppContext, Element, SingletonEntity};
 /// Search item result for a cloud notebook.
 #[derive(Debug)]
 pub struct NotebookSearchItem {
-    pub cloud_notebook: NotebookObject,
+    pub notebook: NotebookObject,
     pub match_result: FuzzyMatchNotebookResult,
 }
 
@@ -60,10 +60,10 @@ impl SearchItem for NotebookSearchItem {
         app: &AppContext,
     ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
-        let title = if self.cloud_notebook.model().title.is_empty() {
+        let title = if self.notebook.model().title.is_empty() {
             "Untitled".to_string()
         } else {
-            self.cloud_notebook.model().title.clone()
+            self.notebook.model().title.clone()
         };
         let mut name_text = Text::new_inline(
             title,
@@ -83,7 +83,7 @@ impl SearchItem for NotebookSearchItem {
         }
 
         let mut breadcrumbs_text: Text = Text::new_inline(
-            self.cloud_notebook.breadcrumbs(app),
+            self.notebook.breadcrumbs(app),
             appearance.ui_font_family(),
             appearance.monospace_font_size() - 2.,
         )
@@ -98,8 +98,8 @@ impl SearchItem for NotebookSearchItem {
         }
 
         let notebook_content = render_notebook_matched_content_with_highlight(
-            self.cloud_notebook.id,
-            &self.cloud_notebook.model().data,
+            self.notebook.id,
+            &self.notebook.model().data,
             &self.match_result.content_match_result,
             highlight_state,
             app,
@@ -130,17 +130,17 @@ impl SearchItem for NotebookSearchItem {
 
     fn accept_result(&self) -> Self::Action {
         CommandPaletteItemAction::OpenNotebook {
-            id: self.cloud_notebook.id,
+            id: self.notebook.id,
         }
     }
 
     fn execute_result(&self) -> Self::Action {
         CommandPaletteItemAction::ViewInWarpDrive {
-            id: ObjectTypeAndId::Notebook(self.cloud_notebook.id),
+            id: ObjectTypeAndId::Notebook(self.notebook.id),
         }
     }
 
     fn accessibility_label(&self) -> String {
-        format!("Notebook: {}", self.cloud_notebook.model().title)
+        format!("Notebook: {}", self.notebook.model().title)
     }
 }

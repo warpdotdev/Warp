@@ -13,13 +13,13 @@ use crate::search::mixer::{DataSourceRunErrorWrapper, SyncDataSource};
 
 use super::workflow_search_item::WorkflowSearchItem;
 
-pub struct CloudWorkflowsDataSource {
+pub struct EmbeddedWorkflowsDataSource {
     /// The space containing the object we are embedding into.
     embedding_space: Space,
     workflows: Vec<WorkflowObject>,
 }
 
-impl CloudWorkflowsDataSource {
+impl EmbeddedWorkflowsDataSource {
     pub fn new(notebook_space: Space, app: &mut AppContext) -> Self {
         let cloud_model = ObjectStoreModel::as_ref(app);
         Self {
@@ -33,7 +33,7 @@ impl CloudWorkflowsDataSource {
     }
 }
 
-impl SyncDataSource for CloudWorkflowsDataSource {
+impl SyncDataSource for EmbeddedWorkflowsDataSource {
     type Action = EmbeddingSearchItemAction;
 
     fn run_query(
@@ -56,7 +56,7 @@ impl SyncDataSource for CloudWorkflowsDataSource {
                     let is_accessible =
                         is_embed_accessible(self.embedding_space, workflow.permissions.owner);
                     WorkflowSearchItem {
-                        cloud_workflow: workflow,
+                        workflow: workflow,
                         fuzzy_matched_workflow: match_result,
                         is_accessible,
                     }

@@ -13,13 +13,13 @@ use crate::search::mixer::{DataSourceRunErrorWrapper, SyncDataSource};
 
 use super::notebook_search_item::NotebookSearchItem;
 
-pub struct CloudNotebooksDataSource {
+pub struct EmbeddedNotebooksDataSource {
     /// The space containing the object we are embedding into.
     embedding_space: Space,
     notebooks: Vec<NotebookObject>,
 }
 
-impl CloudNotebooksDataSource {
+impl EmbeddedNotebooksDataSource {
     pub fn new(notebook_space: Space, app: &mut AppContext) -> Self {
         let cloud_model = ObjectStoreModel::as_ref(app);
         Self {
@@ -33,7 +33,7 @@ impl CloudNotebooksDataSource {
     }
 }
 
-impl SyncDataSource for CloudNotebooksDataSource {
+impl SyncDataSource for EmbeddedNotebooksDataSource {
     type Action = EmbeddingSearchItemAction;
 
     fn run_query(
@@ -56,7 +56,7 @@ impl SyncDataSource for CloudNotebooksDataSource {
                     let is_accessible =
                         is_embed_accessible(self.embedding_space, notebook.permissions.owner);
                     NotebookSearchItem {
-                        cloud_notebook: notebook,
+                        notebook: notebook,
                         fuzzy_matched_notebook: match_result,
                         is_accessible,
                     }

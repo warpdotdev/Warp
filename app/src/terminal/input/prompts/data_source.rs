@@ -98,7 +98,7 @@ impl SyncDataSource for PromptsMenuDataSource {
                         let score = result.score();
                         // Avoid spamming results with extremely weak matches.
                         (score > OrderedFloat(25.0)).then(|| {
-                            let workflow = result.cloud_workflow;
+                            let workflow = result.workflow;
                             if workflow.model().data.is_command_workflow() {
                                 return None;
                             }

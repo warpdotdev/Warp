@@ -18,7 +18,7 @@ pub struct AcceptedHistoryItem {
 ///
 /// Cloud workflows carry only a `SyncId` so the handler can resolve the full
 /// object from `ObjectStoreModel` at accept time (produced by the async
-/// `cloud_workflows_data_source`). Local/AI-generated workflows are produced
+/// `stored_workflows_data_source`). Local/AI-generated workflows are produced
 /// by separate sync data sources and carry owned data since they don't live
 /// in `ObjectStoreModel`.
 #[derive(Clone, Debug)]

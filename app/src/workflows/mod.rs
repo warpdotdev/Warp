@@ -301,14 +301,14 @@ impl PartialEq<WorkflowObject> for WorkflowObject {
 }
 
 impl From<WorkflowObject> for Workflow {
-    fn from(cloud_workflow: WorkflowObject) -> Self {
-        cloud_workflow.model().data.clone()
+    fn from(workflow: WorkflowObject) -> Self {
+        workflow.model().data.clone()
     }
 }
 
 impl From<&WorkflowObject> for Workflow {
-    fn from(cloud_workflow: &WorkflowObject) -> Self {
-        cloud_workflow.model().data.to_owned()
+    fn from(workflow: &WorkflowObject) -> Self {
+        workflow.model().data.to_owned()
     }
 }
 

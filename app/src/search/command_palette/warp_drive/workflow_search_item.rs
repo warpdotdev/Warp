@@ -19,7 +19,7 @@ use warpui::{AppContext, Element, SingletonEntity};
 #[derive(Debug)]
 pub struct WorkflowSearchItem {
     pub match_result: FuzzyMatchWorkflowResult,
-    pub cloud_workflow: WorkflowObject,
+    pub workflow: WorkflowObject,
 }
 
 impl SearchItem for WorkflowSearchItem {
@@ -34,7 +34,7 @@ impl SearchItem for WorkflowSearchItem {
         highlight_state: ItemHighlightState,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        let (icon, icon_color) = if self.cloud_workflow.model().data.is_agent_mode_workflow() {
+        let (icon, icon_color) = if self.workflow.model().data.is_agent_mode_workflow() {
             (
                 Icon::Prompt,
                 warp_drive_icon_color(appearance, DriveObjectType::AgentModeWorkflow),
@@ -64,7 +64,7 @@ impl SearchItem for WorkflowSearchItem {
     ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let mut name_text = Text::new_inline(
-            self.cloud_workflow.model().data.name().to_owned(),
+            self.workflow.model().data.name().to_owned(),
             appearance.ui_font_family(),
             appearance.monospace_font_size(),
         )
@@ -81,7 +81,7 @@ impl SearchItem for WorkflowSearchItem {
         }
 
         let mut breadcrumbs_text: Text = Text::new_inline(
-            self.cloud_workflow.breadcrumbs(app),
+            self.workflow.breadcrumbs(app),
             appearance.ui_font_family(),
             appearance.monospace_font_size() - 2.,
         )
@@ -96,7 +96,7 @@ impl SearchItem for WorkflowSearchItem {
         }
 
         let mut content_text = Text::new_inline(
-            self.cloud_workflow.model().data.content().to_owned(),
+            self.workflow.model().data.content().to_owned(),
             appearance.monospace_font_family(),
             appearance.monospace_font_size() - 2.,
         )
@@ -137,17 +137,17 @@ impl SearchItem for WorkflowSearchItem {
 
     fn accept_result(&self) -> Self::Action {
         CommandPaletteItemAction::ExecuteWorkflow {
-            id: self.cloud_workflow.id,
+            id: self.workflow.id,
         }
     }
 
     fn execute_result(&self) -> Self::Action {
         CommandPaletteItemAction::ViewInWarpDrive {
-            id: ObjectTypeAndId::Workflow(self.cloud_workflow.id),
+            id: ObjectTypeAndId::Workflow(self.workflow.id),
         }
     }
 
     fn accessibility_label(&self) -> String {
-        format!("Workflow: {}", self.cloud_workflow.model().data.name())
+        format!("Workflow: {}", self.workflow.model().data.name())
     }
 }

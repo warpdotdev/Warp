@@ -230,7 +230,7 @@ impl DataSource {
         if let Some(workflow) = workflow {
             return Some(QueryResult::from(WorkflowSearchItem {
                 match_result: FuzzyMatchWorkflowResult::no_match(),
-                cloud_workflow: workflow.clone(),
+                workflow: workflow.clone(),
             }));
         }
 
@@ -238,7 +238,7 @@ impl DataSource {
         if let Some(notebook) = notebook {
             return Some(QueryResult::from(NotebookSearchItem {
                 match_result: FuzzyMatchNotebookResult::no_match(),
-                cloud_notebook: notebook.clone(),
+                notebook: notebook.clone(),
             }));
         }
 
@@ -433,13 +433,13 @@ impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
     ) -> anyhow::Result<Vec<NotebookSearchItem>> {
         let cloud_notebooks = ObjectStoreModel::as_ref(app).get_all_active_notebooks();
         Ok(cloud_notebooks
-            .filter_map(|cloud_notebook| {
-                FuzzyMatchNotebookResult::try_match(query, cloud_notebook, app).map(
-                    |match_result| NotebookSearchItem {
+            .filter_map(|notebook| {
+                FuzzyMatchNotebookResult::try_match(query, notebook, app).map(|match_result| {
+                    NotebookSearchItem {
                         match_result,
-                        cloud_notebook: cloud_notebook.clone(),
-                    },
-                )
+                        notebook: notebook.clone(),
+                    }
+                })
             })
             .collect())
     }
@@ -453,13 +453,13 @@ impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
             .get_all_active_notebooks()
             .filter(|notebook| notebook.model().ai_document_id.is_some());
         Ok(cloud_notebooks
-            .filter_map(|cloud_notebook| {
-                FuzzyMatchNotebookResult::try_match(query, cloud_notebook, app).map(
-                    |match_result| NotebookSearchItem {
+            .filter_map(|notebook| {
+                FuzzyMatchNotebookResult::try_match(query, notebook, app).map(|match_result| {
+                    NotebookSearchItem {
                         match_result,
-                        cloud_notebook: cloud_notebook.clone(),
-                    },
-                )
+                        notebook: notebook.clone(),
+                    }
+                })
             })
             .collect())
     }
@@ -474,22 +474,21 @@ impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
         let cloud_workflows = ObjectStoreModel::as_ref(app).get_all_active_workflows();
 
         Ok(cloud_workflows
-            .filter_map(move |cloud_workflow| {
-                if !should_include_am_prompts
-                    && cloud_workflow.model().data.is_agent_mode_workflow()
+            .filter_map(move |workflow| {
+                if !should_include_am_prompts && workflow.model().data.is_agent_mode_workflow()
                     || !should_include_command_workflow
-                        && cloud_workflow.model().data.is_command_workflow()
+                        && workflow.model().data.is_command_workflow()
                 {
                     return None;
                 };
                 FuzzyMatchWorkflowResult::try_match(
                     query,
-                    &cloud_workflow.model().data,
-                    cloud_workflow.breadcrumbs(app).as_str(),
+                    &workflow.model().data,
+                    workflow.breadcrumbs(app).as_str(),
                 )
                 .map(|match_result| WorkflowSearchItem {
                     match_result,
-                    cloud_workflow: cloud_workflow.clone(),
+                    workflow: workflow.clone(),
                 })
             })
             .collect())
@@ -625,14 +624,14 @@ mod full_text_searcher {
                         let notebook: Option<&NotebookObject> = ObjectStoreModel::as_ref(app)
                             .get_by_uid(&search_match.uid)?
                             .into();
-                        let cloud_notebook = notebook?;
-                        if filter_by_plan && cloud_notebook.model().ai_document_id.is_none() {
+                        let notebook = notebook?;
+                        if filter_by_plan && notebook.model().ai_document_id.is_none() {
                             return None;
                         }
 
                         Some(NotebookSearchItem {
                             match_result: FuzzyMatchNotebookResult::no_match(),
-                            cloud_notebook: cloud_notebook.clone(),
+                            notebook: notebook.clone(),
                         })
                     })
                     .collect());
@@ -672,7 +671,7 @@ mod full_text_searcher {
                             content_match_result,
                             folder_match_result,
                         },
-                        cloud_notebook: notebook.clone(),
+                        notebook: notebook.clone(),
                     })
                 })
                 .collect())
@@ -710,9 +709,9 @@ mod full_text_searcher {
                     }
                 }
                 ObjectType::Workflow => {
-                    let workflow: Option<&WorkflowObject> = object.into();
-                    if let Some(cloud_workflow) = workflow {
-                        let workflow = &cloud_workflow.model().data;
+                    let workflow_object: Option<&WorkflowObject> = object.into();
+                    if let Some(workflow_object) = workflow_object {
+                        let workflow = &workflow_object.model().data;
 
                         let title = workflow.name().to_lowercase();
                         let content = workflow.content().to_lowercase();
@@ -720,14 +719,14 @@ mod full_text_searcher {
                             .description()
                             .unwrap_or(&"".to_owned())
                             .to_lowercase();
-                        let folder = cloud_workflow.breadcrumbs(app).to_lowercase();
+                        let folder = workflow_object.breadcrumbs(app).to_lowercase();
 
                         let document = WorkflowSearchDocument {
                             name: title,
                             content,
                             description,
                             folder,
-                            uid: cloud_workflow.uid(),
+                            uid: workflow_object.uid(),
                         };
                         self.workflow_searcher.insert_document_async(document)
                     } else {
@@ -871,22 +870,22 @@ mod full_text_searcher {
                 .cloud_objects()
                 .filter(|obj| active_uids.contains(&obj.uid()))
                 .filter_map(|obj| {
-                    let cloud_workflow: Option<&WorkflowObject> = obj.as_ref().into();
-                    cloud_workflow.map(|cloud_workflow| {
-                        let workflow = &cloud_workflow.model().data;
+                    let workflow_object: Option<&WorkflowObject> = obj.as_ref().into();
+                    workflow_object.map(|workflow_object| {
+                        let workflow = &workflow_object.model().data;
                         let title = workflow.name().to_lowercase();
                         let content = workflow.content().to_lowercase();
                         let description = workflow
                             .description()
                             .unwrap_or(&"".to_owned())
                             .to_lowercase();
-                        let folder = cloud_workflow.breadcrumbs(app).to_lowercase();
+                        let folder = workflow_object.breadcrumbs(app).to_lowercase();
                         WorkflowSearchDocument {
                             name: title,
                             content,
                             description,
                             folder,
-                            uid: cloud_workflow.uid(),
+                            uid: workflow_object.uid(),
                         }
                     })
                 });
@@ -960,11 +959,12 @@ mod full_text_searcher {
                     .get_all_doc_ids()?
                     .into_iter()
                     .filter_map(|search_match| {
-                        let cloud_workflow: Option<&WorkflowObject> = ObjectStoreModel::as_ref(app)
-                            .get_by_uid(&search_match.uid)?
-                            .into();
-                        let cloud_workflow = cloud_workflow?;
-                        let workflow = &cloud_workflow.model().data;
+                        let workflow_object: Option<&WorkflowObject> =
+                            ObjectStoreModel::as_ref(app)
+                                .get_by_uid(&search_match.uid)?
+                                .into();
+                        let workflow_object = workflow_object?;
+                        let workflow = &workflow_object.model().data;
 
                         if !should_include_am_prompts && workflow.is_agent_mode_workflow()
                             || !should_include_command_workflow && workflow.is_command_workflow()
@@ -974,7 +974,7 @@ mod full_text_searcher {
 
                         Some(WorkflowSearchItem {
                             match_result: FuzzyMatchWorkflowResult::no_match(),
-                            cloud_workflow: cloud_workflow.clone(),
+                            workflow: workflow_object.clone(),
                         })
                     })
                     .collect());
@@ -985,11 +985,11 @@ mod full_text_searcher {
                 .search_id(query)?
                 .into_iter()
                 .filter_map(|search_match| {
-                    let cloud_workflow: Option<&WorkflowObject> = ObjectStoreModel::as_ref(app)
+                    let workflow_object: Option<&WorkflowObject> = ObjectStoreModel::as_ref(app)
                         .get_by_uid(&search_match.values.uid)?
                         .into();
-                    let cloud_workflow = cloud_workflow?;
-                    let workflow = &cloud_workflow.model().data;
+                    let workflow_object = workflow_object?;
+                    let workflow = &workflow_object.model().data;
 
                     if !should_include_am_prompts && workflow.is_agent_mode_workflow()
                         || !should_include_command_workflow && workflow.is_command_workflow()
@@ -1022,7 +1022,7 @@ mod full_text_searcher {
                             description_match_result,
                             folder_match_result,
                         },
-                        cloud_workflow: cloud_workflow.clone(),
+                        workflow: workflow_object.clone(),
                     })
                 })
                 .collect())

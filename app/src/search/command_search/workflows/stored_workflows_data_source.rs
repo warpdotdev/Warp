@@ -23,7 +23,7 @@ pub(crate) struct WorkflowMatchCandidate {
     pub source: WorkflowSource,
 }
 
-pub(crate) struct CloudWorkflowsSnapshot {
+pub(crate) struct StoredWorkflowsSnapshot {
     candidates: Vec<WorkflowMatchCandidate>,
     query_text: String,
     filter_to_agent_mode: bool,
@@ -31,8 +31,8 @@ pub(crate) struct CloudWorkflowsSnapshot {
 }
 
 /// Creates an async data source for cloud workflows (i.e. those that exist in Warp Drive).
-pub fn cloud_workflows_data_source(
-) -> AsyncSnapshotDataSource<CloudWorkflowsSnapshot, CommandSearchItemAction> {
+pub fn stored_workflows_data_source(
+) -> AsyncSnapshotDataSource<StoredWorkflowsSnapshot, CommandSearchItemAction> {
     AsyncSnapshotDataSource::new(
         |query: &Query, app: &AppContext| {
             let is_ai_enabled = AISettings::as_ref(app).is_any_ai_enabled(app);
@@ -50,27 +50,27 @@ pub fn cloud_workflows_data_source(
                     let source: WorkflowSource = space.into();
                     cloud_model
                         .active_workflows_in_space(space, app)
-                        .map(move |cloud_workflow| WorkflowMatchCandidate {
-                            id: cloud_workflow.id,
-                            model: cloud_workflow.shared_model(),
+                        .map(move |workflow| WorkflowMatchCandidate {
+                            id: workflow.id,
+                            model: workflow.shared_model(),
                             source,
                         })
                 })
                 .collect();
 
-            CloudWorkflowsSnapshot {
+            StoredWorkflowsSnapshot {
                 candidates,
                 query_text: query.text.clone(),
                 filter_to_agent_mode,
                 filter_to_command_workflows,
             }
         },
-        fuzzy_match_cloud_workflows,
+        fuzzy_match_stored_workflows,
     )
 }
 
-pub(crate) fn fuzzy_match_cloud_workflows(
-    snapshot: CloudWorkflowsSnapshot,
+pub(crate) fn fuzzy_match_stored_workflows(
+    snapshot: StoredWorkflowsSnapshot,
 ) -> BoxFuture<'static, Result<Vec<QueryResult<CommandSearchItemAction>>, DataSourceRunErrorWrapper>>
 {
     Box::pin(async move {

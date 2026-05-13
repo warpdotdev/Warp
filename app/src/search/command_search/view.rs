@@ -52,7 +52,7 @@ use super::{
     history::history_data_source_for_session,
     notebooks::notebooks_data_source,
     warp_ai::WarpAIDataSource,
-    workflows::{cloud_workflows_data_source, WorkflowsDataSource},
+    workflows::{stored_workflows_data_source, WorkflowsDataSource},
     zero_state::{CommandSearchZeroStateEvent, CommandSearchZeroStateView},
 };
 
@@ -240,7 +240,7 @@ impl CommandSearchView {
                 }
 
                 mixer.add_async_source(
-                    cloud_workflows_data_source(),
+                    stored_workflows_data_source(),
                     workflows_filters,
                     AddAsyncSourceOptions {
                         debounce_interval: Some(Duration::from_millis(50)),

@@ -464,10 +464,10 @@ impl ObjectStoreModel {
         workflow_id: SyncId,
         ctx: &mut ModelContext<Self>,
     ) {
-        if let Some(cloud_workflow) = self.get_workflow_mut(&workflow_id) {
-            cloud_workflow.set_model(WorkflowObjectModel::new(workflow));
+        if let Some(workflow_object) = self.get_workflow_mut(&workflow_id) {
+            workflow_object.set_model(WorkflowObjectModel::new(workflow));
             ctx.emit(ObjectStoreEvent::ObjectUpdated {
-                type_and_id: cloud_workflow.object_type_and_id(),
+                type_and_id: workflow_object.object_type_and_id(),
                 source: UpdateSource::External,
             });
             ctx.notify();

@@ -2245,16 +2245,16 @@ fn upsert_workflows(
     use schema::workflows::dsl::*;
     conn.transaction::<(), Error, _>(|conn| {
         // todo: wrap in an arc to avoid unnecessary cloning.
-        for cloud_workflow in cloud_workflows {
-            let workflow_id = cloud_workflow.id;
-            if let Ok(serialized_workflow) = serde_json::to_string(&cloud_workflow.model().data) {
+        for workflow in cloud_workflows {
+            let workflow_id = workflow.id;
+            if let Ok(serialized_workflow) = serde_json::to_string(&workflow.model().data) {
                 let serialized_workflow_clone = serialized_workflow.clone();
                 upsert_cloud_object(
                     conn,
                     ObjectType::Workflow,
                     workflow_id,
-                    cloud_workflow.metadata,
-                    cloud_workflow.permissions,
+                    workflow.metadata,
+                    workflow.permissions,
                     Box::new(move |conn| {
                         let workflow = model::NewWorkflow {
                             data: serialized_workflow.clone(),
@@ -2289,12 +2289,12 @@ fn upsert_notebooks(
 ) -> Result<(), Error> {
     use schema::notebooks::dsl::*;
     conn.transaction::<(), Error, _>(|conn| {
-        for cloud_notebook in cloud_notebooks {
+        for notebook in cloud_notebooks {
             // todo: wrap in an arc to avoid unnecessary cloning.
-            let notebook_clone = cloud_notebook.clone();
-            let title_clone = cloud_notebook.model().title.clone();
-            let data_clone = cloud_notebook.model().data.clone();
-            let ai_document_id_clone = cloud_notebook
+            let notebook_clone = notebook.clone();
+            let title_clone = notebook.model().title.clone();
+            let data_clone = notebook.model().data.clone();
+            let ai_document_id_clone = notebook
                 .model()
                 .ai_document_id
                 .as_ref()
@@ -2302,9 +2302,9 @@ fn upsert_notebooks(
             upsert_cloud_object(
                 conn,
                 ObjectType::Notebook,
-                cloud_notebook.id,
-                cloud_notebook.metadata,
-                cloud_notebook.permissions,
+                notebook.id,
+                notebook.metadata,
+                notebook.permissions,
                 Box::new(move |conn| {
                     let new_notebook = NewNotebook {
                         title: Some(title_clone),
