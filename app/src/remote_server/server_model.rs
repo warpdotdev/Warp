@@ -1,4 +1,5 @@
 use crate::terminal::shell::ShellType;
+use remote_server::proto::OpenBufferSuccess;
 use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
 use repo_metadata::{RepoMetadataEvent, RepoMetadataModel, RepositoryIdentifier};
 use std::collections::{HashMap, HashSet};
@@ -11,19 +12,33 @@ use warp_core::SessionId;
 use warp_util::standardized_path::StandardizedPath;
 use warpui::platform::TerminationMode;
 use warpui::r#async::{Spawnable, SpawnableOutput, SpawnedFutureHandle};
-use warpui::{Entity, ModelContext, SingletonEntity};
+use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity};
 
+use super::codebase_index_status::{
+    codebase_index_status_to_proto, disabled_codebase_index_status,
+    not_enabled_codebase_index_status, queued_codebase_index_status,
+};
 use crate::code::global_buffer_model::{GlobalBufferModel, GlobalBufferModelEvent};
+use ::ai::index::full_source_code_embedding::manager::{
+    CodebaseIndexManager, CodebaseIndexManagerEvent,
+};
 use warp_files::{FileModel, FileModelEvent};
 use warp_util::content_version::ContentVersion;
 use warp_util::file::FileId;
 
+use super::diff_state_proto;
+use super::diff_state_tracker::{
+    DiffModelKey, DiffStateUpdate, RemoteDiffStateManager, SubscribeOutcome,
+};
 use super::proto::{
-    client_message, delete_file_response, resolve_conflict_response, run_command_response,
-    save_buffer_response, server_message, write_file_response, Abort, Authenticate, BufferEdit,
-    BufferUpdatedPush, ClientMessage, CloseBuffer, CodebaseIndexStatusesSnapshot, DeleteFile,
-    DeleteFileResponse, DeleteFileSuccess, ErrorCode, ErrorResponse, FailedFileRead,
-    FileContextProto, FileOperationError, Initialize, InitializeResponse, NavigatedToDirectory,
+    client_message, delete_file_response, discard_files_response, get_diff_state_response,
+    resolve_conflict_response, run_command_response, save_buffer_response, server_message,
+    write_file_response, Abort, Authenticate, BufferEdit, BufferUpdatedPush, ClientMessage,
+    CloseBuffer, CodebaseIndexStatusState, CodebaseIndexStatusUpdated,
+    CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse, DeleteFileSuccess,
+    DiscardFilesError, DiscardFilesResponse, DiscardFilesSuccess, DropCodebaseIndex, ErrorCode,
+    ErrorResponse, FailedFileRead, FileContextProto, FileOperationError, GetDiffStateResponse,
+    IndexCodebase, Initialize, InitializeResponse, NavigatedToDirectory,
     NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextResponse,
     ResolveConflict, ResolveConflictResponse, ResolveConflictSuccess, RunCommandError,
     RunCommandErrorCode, RunCommandRequest, RunCommandResponse, RunCommandSuccess, SaveBuffer,
@@ -31,6 +46,8 @@ use super::proto::{
     WriteFileResponse, WriteFileSuccess,
 };
 use super::server_buffer_tracker::{PendingBufferRequestKind, ServerBufferTracker};
+
+use crate::code_review::diff_state::{DiffMode, FileStatusInfo};
 
 /// How long the daemon waits with no connections before exiting.
 pub const GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(10 * 60);
@@ -41,6 +58,7 @@ use super::protocol::RequestId;
 use crate::ai::agent::FileLocations;
 use crate::ai::blocklist::{read_local_file_context, ReadFileContextResult};
 use crate::auth::auth_state::{AuthState, AuthStateProvider};
+use crate::features::FeatureFlag;
 use crate::terminal::model::session::command_executor::{
     ExecuteCommandOptions, LocalCommandExecutor,
 };
@@ -50,6 +68,7 @@ use crate::terminal::model::session::command_executor::{
 /// Notifications (fire-and-forget messages like `SessionBootstrapped` and
 /// `Abort`) do not produce a `HandlerOutcome`; they are dispatched inline in
 /// `handle_message` and return early.
+#[allow(clippy::large_enum_variant)]
 enum HandlerOutcome {
     /// The response is ready synchronously — the caller sends it immediately.
     Sync(server_message::Message),
@@ -176,6 +195,8 @@ pub struct ServerModel {
     /// Tracks open buffers, per-buffer connection sets, and pending async
     /// buffer requests (OpenBuffer, SaveBuffer).
     buffers: ServerBufferTracker,
+    /// Manages per-(repo, mode) diff state models and per-connection subscriptions.
+    diff_states: ModelHandle<RemoteDiffStateManager>,
 }
 
 impl Entity for ServerModel {
@@ -202,6 +223,7 @@ impl ServerModel {
             pending_file_ops: PendingFileOps::new(),
             auth_state: AuthStateProvider::as_ref(ctx).get().clone(),
             buffers: ServerBufferTracker::new(),
+            diff_states: ctx.add_model(|_| RemoteDiffStateManager::new()),
         };
         // Subscribe to FileModel and RepoMetadataModel events
         // file operation results and repo metadata pushes are forwarded to all
@@ -304,6 +326,10 @@ impl ServerModel {
                 } => {}
             });
         }
+        let index_manager = CodebaseIndexManager::handle(ctx);
+        ctx.subscribe_to_model(&index_manager, |me, event, ctx| {
+            me.handle_codebase_index_manager_event(event, ctx);
+        });
         // Subscribe to GlobalBufferModel events for server-local buffers.
         {
             let gbm = GlobalBufferModel::handle(ctx);
@@ -322,15 +348,15 @@ impl ServerModel {
                             .sync_clock_for_server_local(*file_id)
                             .map(|c| c.server_version.as_u64());
 
-                        for (request_id, conn_id) in pending {
+                        for req in pending {
                             let message = match (&content, server_version) {
                                 (Some(content), Some(sv)) => {
-                                    server_message::Message::OpenBufferResponse(
-                                        OpenBufferResponse {
-                                            content: content.clone(),
+                                    server_message::Message::OpenBufferResponse(OpenBufferResponse{
+                                        result: Some(remote_server::proto::open_buffer_response::Result::Success(OpenBufferSuccess {
+                                             content: content.clone(),
                                             server_version: sv,
-                                        },
-                                    )
+                                        }))
+                                    })
                                 }
                                 _ => server_message::Message::Error(ErrorResponse {
                                     code: ErrorCode::Internal.into(),
@@ -340,8 +366,8 @@ impl ServerModel {
                                 }),
                             };
                             me.send_server_message(
-                                Some(conn_id),
-                                Some(&request_id),
+                                Some(req.connection_id),
+                                Some(&req.request_id),
                                 message,
                             );
                         }
@@ -353,10 +379,14 @@ impl ServerModel {
                     new_server_version,
                     expected_client_version,
                 } => {
-                    // Push incremental edits to all connections that have this buffer open.
+                    // Push incremental edits to all connections that have this buffer open,
+                    // except connections with a pending OpenBuffer request (they will
+                    // receive the content via OpenBufferResponse instead).
                     let Some(conns) = me.buffers.connections_for_buffer(file_id) else {
                         return;
                     };
+                    let excluded =
+                        me.buffers.pending_connections_for_open_buffer(file_id);
                     // Find the path for this file_id.
                     let path = me.buffers.path_for_file_id(*file_id).unwrap_or_default();
 
@@ -370,6 +400,9 @@ impl ServerModel {
                         .collect();
 
                     for &conn_id in conns {
+                        if excluded.contains(&conn_id) {
+                            continue;
+                        }
                         me.send_server_message(
                             Some(conn_id),
                             None,
@@ -383,13 +416,13 @@ impl ServerModel {
                     }
                 }
                 GlobalBufferModelEvent::FileSaved { file_id } => {
-                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                    for req in me.buffers.take_pending_by_kind(
                         file_id,
                         PendingBufferRequestKind::SaveBuffer,
                     ) {
                         me.send_server_message(
-                            Some(conn_id),
-                            Some(&request_id),
+                            Some(req.connection_id),
+                            Some(&req.request_id),
                             server_message::Message::SaveBufferResponse(SaveBufferResponse {
                                 result: Some(save_buffer_response::Result::Success(
                                     SaveBufferSuccess {},
@@ -397,13 +430,13 @@ impl ServerModel {
                             }),
                         );
                     }
-                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                    for req in me.buffers.take_pending_by_kind(
                         file_id,
                         PendingBufferRequestKind::ResolveConflict,
                     ) {
                         me.send_server_message(
-                            Some(conn_id),
-                            Some(&request_id),
+                            Some(req.connection_id),
+                            Some(&req.request_id),
                             server_message::Message::ResolveConflictResponse(
                                 ResolveConflictResponse {
                                     result: Some(
@@ -417,13 +450,13 @@ impl ServerModel {
                     }
                 }
                 GlobalBufferModelEvent::FailedToSave { file_id, error } => {
-                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                    for req in me.buffers.take_pending_by_kind(
                         file_id,
                         PendingBufferRequestKind::SaveBuffer,
                     ) {
                         me.send_server_message(
-                            Some(conn_id),
-                            Some(&request_id),
+                            Some(req.connection_id),
+                            Some(&req.request_id),
                             server_message::Message::SaveBufferResponse(SaveBufferResponse {
                                 result: Some(save_buffer_response::Result::Error(
                                     FileOperationError {
@@ -433,13 +466,13 @@ impl ServerModel {
                             }),
                         );
                     }
-                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                    for req in me.buffers.take_pending_by_kind(
                         file_id,
                         PendingBufferRequestKind::ResolveConflict,
                     ) {
                         me.send_server_message(
-                            Some(conn_id),
-                            Some(&request_id),
+                            Some(req.connection_id),
+                            Some(&req.request_id),
                             server_message::Message::ResolveConflictResponse(
                                 ResolveConflictResponse {
                                     result: Some(resolve_conflict_response::Result::Error(
@@ -453,24 +486,57 @@ impl ServerModel {
                     }
                 }
                 GlobalBufferModelEvent::FailedToLoad { file_id, error } => {
-                    for (request_id, conn_id) in me.buffers.take_pending_by_kind(
+                    for req in me.buffers.take_pending_by_kind(
                         file_id,
                         PendingBufferRequestKind::OpenBuffer,
                     ) {
                         me.send_server_message(
-                            Some(conn_id),
-                            Some(&request_id),
-                            server_message::Message::Error(ErrorResponse {
-                                code: ErrorCode::Internal.into(),
-                                message: format!("Failed to load buffer: {error}"),
-                            }),
+                            Some(req.connection_id),
+                            Some(&req.request_id),
+                            server_message::Message::OpenBufferResponse(OpenBufferResponse{
+                                        result: Some(remote_server::proto::open_buffer_response::Result::Error(FileOperationError {
+                                             message: format!("Failed to load buffer: {error}"),
+                                        }))
+                                    }),
                         );
                     }
                 }
-                GlobalBufferModelEvent::BufferUpdatedFromFileEvent { .. }
-                | GlobalBufferModelEvent::RemoteBufferConflict { .. } => {
+                GlobalBufferModelEvent::BufferUpdatedFromFileEvent {
+                    file_id,
+                    success,
+                    ..
+                } => {
+                    // When a file-watcher update couldn't be applied because
+                    // the buffer has unsaved client edits, forward the conflict
+                    // to connected clients so they can show a resolution banner.
+                    if !success {
+                        if let Some(conns) = me.buffers.connections_for_buffer(file_id) {
+                            let path = me.buffers.path_for_file_id(*file_id).unwrap_or_default();
+                            for &conn_id in conns {
+                                me.send_server_message(
+                                    Some(conn_id),
+                                    None,
+                                    server_message::Message::BufferConflictDetected(
+                                        super::proto::BufferConflictDetected {
+                                            path: path.clone(),
+                                        },
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                }
+                GlobalBufferModelEvent::RemoteBufferConflict { .. } => {
                     // Not relevant for server-local buffers.
                 }
+            });
+        }
+        // Subscribe to diff state manager events — convert domain dispatches
+        // to proto messages and send them to connected clients.
+        {
+            let diff_states = model.diff_states.clone();
+            ctx.subscribe_to_model(&diff_states, |me, dispatch, _ctx| {
+                me.handle_diff_state_update(dispatch);
             });
         }
         // Start the grace timer immediately so the daemon exits if no proxy
@@ -518,6 +584,11 @@ impl ServerModel {
         // Remove this connection from all buffer connection sets.
         // Orphaned buffers (no connections left) are deallocated automatically.
         self.buffers.remove_connection(conn_id, ctx);
+
+        // Remove this connection from diff state subscriptions.
+        // Orphaned models (no subscribers) are dropped automatically.
+        self.diff_states
+            .update(ctx, |mgr, _| mgr.remove_connection(conn_id));
 
         let remaining = self.connection_senders.len();
         log::info!("Daemon: connection {conn_id} deregistered — {remaining} active remaining");
@@ -581,7 +652,7 @@ impl ServerModel {
                 return;
             }
             Some(client_message::Message::Abort(abort)) => {
-                self.handle_abort(abort, &request_id);
+                self.handle_abort(abort, &request_id, ctx);
                 return;
             }
             Some(client_message::Message::RunCommand(req)) => {
@@ -619,6 +690,22 @@ impl ServerModel {
             Some(client_message::Message::ResolveConflict(msg)) => {
                 self.handle_resolve_conflict(msg, &request_id, conn_id, ctx)
             }
+            Some(client_message::Message::GetDiffState(msg)) => {
+                self.handle_get_diff_state(msg, &request_id, conn_id, ctx)
+            }
+            Some(client_message::Message::UnsubscribeDiffState(msg)) => {
+                self.handle_unsubscribe_diff_state(msg, conn_id, ctx);
+                return; // fire-and-forget notification
+            }
+            Some(client_message::Message::DiscardFiles(msg)) => {
+                self.handle_discard_files(msg, &request_id, ctx)
+            }
+            Some(client_message::Message::IndexCodebase(msg)) => {
+                self.handle_index_codebase(msg, &request_id, conn_id, ctx)
+            }
+            Some(client_message::Message::DropCodebaseIndex(msg)) => {
+                self.handle_drop_codebase_index(msg, &request_id, conn_id, ctx)
+            }
             None => {
                 log::warn!(
                     "Received ClientMessage with no message variant (request_id={request_id})"
@@ -637,7 +724,7 @@ impl ServerModel {
                     Some(&request_id),
                     server_message::Message::InitializeResponse(response),
                 );
-                self.push_codebase_index_statuses_snapshot(conn_id);
+                self.push_codebase_index_statuses_snapshot(conn_id, ctx);
             }
             HandlerOutcome::Sync(message) => {
                 self.send_server_message(Some(conn_id), Some(&request_id), message);
@@ -652,12 +739,75 @@ impl ServerModel {
         }
     }
 
-    fn push_codebase_index_statuses_snapshot(&self, conn_id: ConnectionId) {
-        let snapshot = self.codebase_index_statuses_snapshot();
+    fn handle_codebase_index_manager_event(
+        &mut self,
+        event: &CodebaseIndexManagerEvent,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
+            return;
+        }
+
+        match event {
+            CodebaseIndexManagerEvent::SyncStateUpdated
+            | CodebaseIndexManagerEvent::IndexMetadataUpdated { .. }
+            | CodebaseIndexManagerEvent::NewIndexCreated => {
+                self.push_all_codebase_index_statuses(ctx);
+            }
+            CodebaseIndexManagerEvent::RemoveExpiredIndexMetadata { expired_metadata } => {
+                for repo_path in expired_metadata.iter() {
+                    self.send_server_message(
+                        None,
+                        None,
+                        server_message::Message::CodebaseIndexStatusUpdated(
+                            CodebaseIndexStatusUpdated {
+                                status: Some(disabled_codebase_index_status(
+                                    repo_path.to_string_lossy().to_string(),
+                                )),
+                            },
+                        ),
+                    );
+                }
+            }
+            CodebaseIndexManagerEvent::RetrievalRequestCompleted { .. }
+            | CodebaseIndexManagerEvent::RetrievalRequestFailed { .. } => {}
+        }
+    }
+
+    fn push_all_codebase_index_statuses(&self, ctx: &mut ModelContext<Self>) {
+        let snapshot = self.codebase_index_statuses_snapshot(ctx);
+        for status in snapshot.statuses {
+            log::info!(
+                "[Remote codebase indexing] Daemon pushing codebase index status update: repo_path={} state={:?}",
+                status.repo_path,
+                CodebaseIndexStatusState::try_from(status.state)
+                    .unwrap_or(CodebaseIndexStatusState::Unspecified),
+            );
+            self.send_server_message(
+                None,
+                None,
+                server_message::Message::CodebaseIndexStatusUpdated(CodebaseIndexStatusUpdated {
+                    status: Some(status),
+                }),
+            );
+        }
+    }
+
+    fn push_codebase_index_statuses_snapshot(
+        &self,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
+            log::info!(
+                "[Remote codebase indexing] Daemon skipping bootstrap codebase index statuses snapshot because remote indexing is disabled: conn_id={conn_id}"
+            );
+            return;
+        }
+        let snapshot = self.codebase_index_statuses_snapshot(ctx);
         let status_count = snapshot.statuses.len();
         log::info!(
-            "Pushing codebase index statuses snapshot: conn_id={conn_id} \
-             status_count={status_count}"
+            "[Remote codebase indexing] Daemon pushing bootstrap codebase index statuses snapshot: conn_id={conn_id} bootstrap_status_count={status_count}"
         );
         self.send_server_message(
             Some(conn_id),
@@ -665,15 +815,142 @@ impl ServerModel {
             server_message::Message::CodebaseIndexStatusesSnapshot(snapshot),
         );
     }
+    fn codebase_index_statuses_snapshot(
+        &self,
+        ctx: &mut ModelContext<Self>,
+    ) -> CodebaseIndexStatusesSnapshot {
+        let index_manager = CodebaseIndexManager::handle(ctx);
+        let statuses = index_manager
+            .as_ref(ctx)
+            .get_codebase_index_statuses(ctx)
+            .map(|(repo_path, status)| codebase_index_status_to_proto(repo_path.as_path(), &status))
+            .collect();
+        CodebaseIndexStatusesSnapshot { statuses }
+    }
 
-    fn codebase_index_statuses_snapshot(&self) -> CodebaseIndexStatusesSnapshot {
-        // PR1 has no canonical daemon-side codebase-indexing state yet, so
-        // the bootstrap snapshot is empty. Later PRs will populate this from
-        // the remote indexing manager rather than deriving status from
-        // navigation events.
-        CodebaseIndexStatusesSnapshot {
-            statuses: Vec::new(),
+    fn handle_index_codebase(
+        &mut self,
+        msg: IndexCodebase,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) -> HandlerOutcome {
+        let IndexCodebase {
+            repo_path,
+            auth_token,
+        } = msg;
+        let repo_path_for_log = repo_path.clone();
+        if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
+            log::info!(
+                "[Remote codebase indexing] Daemon rejecting IndexCodebase because remote indexing is disabled: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
+            );
+            return HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
+                CodebaseIndexStatusUpdated {
+                    status: Some(not_enabled_codebase_index_status(repo_path)),
+                },
+            ));
         }
+
+        let repo_path = match canonicalize_index_repo_path(&repo_path) {
+            Ok(repo_path) => repo_path,
+            Err(error) => {
+                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                    code: ErrorCode::InvalidRequest.into(),
+                    message: error,
+                }));
+            }
+        };
+        if let Err(error) =
+            self.validate_remote_codebase_index_auth(&auth_token, "remote codebase indexing")
+        {
+            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                code: ErrorCode::InvalidRequest.into(),
+                message: error,
+            }));
+        }
+        log::info!(
+            "[Remote codebase indexing] Daemon handling IndexCodebase: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
+        );
+        let status = CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
+            if let Some(indexed_repo_path) = manager.root_path_for_codebase(&repo_path) {
+                manager
+                    .get_codebase_index_status_for_path(indexed_repo_path.as_path(), ctx)
+                    .map(|status| {
+                        codebase_index_status_to_proto(indexed_repo_path.as_path(), &status)
+                    })
+                    .unwrap_or_else(|| {
+                        queued_codebase_index_status(
+                            indexed_repo_path.to_string_lossy().to_string(),
+                        )
+                    })
+            } else {
+                manager.index_directory(repo_path.clone(), ctx);
+                queued_codebase_index_status(repo_path.to_string_lossy().to_string())
+            }
+        });
+
+        HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
+            CodebaseIndexStatusUpdated {
+                status: Some(status),
+            },
+        ))
+    }
+
+    fn handle_drop_codebase_index(
+        &mut self,
+        msg: DropCodebaseIndex,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) -> HandlerOutcome {
+        let DropCodebaseIndex {
+            repo_path,
+            auth_token,
+        } = msg;
+        let repo_path_for_log = repo_path.clone();
+        if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
+            log::info!(
+                "[Remote codebase indexing] Daemon rejecting DropCodebaseIndex because remote indexing is disabled: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
+            );
+            return HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
+                CodebaseIndexStatusUpdated {
+                    status: Some(not_enabled_codebase_index_status(repo_path)),
+                },
+            ));
+        }
+
+        let repo_path = match requested_repo_path(&repo_path) {
+            Ok(repo_path) => repo_path,
+            Err(error) => {
+                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                    code: ErrorCode::InvalidRequest.into(),
+                    message: error,
+                }));
+            }
+        };
+        if let Err(error) =
+            self.validate_remote_codebase_index_auth(&auth_token, "remote codebase index removal")
+        {
+            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                code: ErrorCode::InvalidRequest.into(),
+                message: error,
+            }));
+        }
+        log::info!(
+            "[Remote codebase indexing] Daemon handling DropCodebaseIndex: request_id={request_id} conn_id={conn_id} repo_path={}",
+            repo_path.display()
+        );
+        CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
+            manager.drop_index(repo_path.clone(), ctx);
+        });
+
+        HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
+            CodebaseIndexStatusUpdated {
+                status: Some(disabled_codebase_index_status(
+                    repo_path.to_string_lossy().to_string(),
+                )),
+            },
+        ))
     }
 
     /// Routes a server message to its destination.
@@ -831,9 +1108,33 @@ impl ServerModel {
         self.auth_state.get_access_token_ignoring_validity()
     }
 
+    fn validate_remote_codebase_index_auth(
+        &self,
+        auth_token: &str,
+        operation: &str,
+    ) -> Result<(), String> {
+        if auth_token.is_empty() {
+            return Err(format!(
+                "Missing authentication credentials for {operation}"
+            ));
+        }
+
+        match self.auth_token() {
+            Some(cached_auth_token) if cached_auth_token == auth_token => Ok(()),
+            Some(_) => Err(format!(
+                "Authentication credentials for {operation} do not match daemon credentials"
+            )),
+            None => Err(format!(
+                "Missing cached authentication credentials for {operation}"
+            )),
+        }
+    }
+
     /// Handles `Abort` by cancelling the in-progress request it targets.
+    /// Checks `ServerModel`'s own in-progress map first, then delegates to
+    /// the diff state manager for content reload requests.
     /// This is a notification — no response is sent.
-    fn handle_abort(&mut self, abort: Abort, request_id: &RequestId) {
+    fn handle_abort(&mut self, abort: Abort, request_id: &RequestId, ctx: &mut ModelContext<Self>) {
         let target_id = RequestId::from(abort.request_id_to_abort);
         if let Some(handle) = self.in_progress.remove(&target_id) {
             log::info!(
@@ -842,10 +1143,15 @@ impl ServerModel {
             );
             handle.abort();
         } else {
-            log::info!(
-                "Abort for unknown/completed request (request_id={target_id}, \
-                 abort_request_id={request_id})"
-            );
+            let found = self
+                .diff_states
+                .update(ctx, |mgr, _| mgr.abort_request(&target_id));
+            if !found {
+                log::info!(
+                    "Abort for unknown/completed request (request_id={target_id}, \
+                     abort_request_id={request_id})"
+                );
+            }
         }
     }
 
@@ -948,16 +1254,35 @@ impl ServerModel {
             move |me, result, _ctx| {
                 let result_oneof = match result {
                     Ok(output) => {
+                        let mut stdout = output.stdout.clone();
+                        let mut stderr = output.stderr.clone();
+
+                        // Truncate to stay under the wire-level message size
+                        // limit. Leave headroom for protobuf framing overhead.
+                        const MAX_OUTPUT_BYTES: usize =
+                            remote_server::protocol::MAX_MESSAGE_SIZE - 1024;
+                        let total = stdout.len() + stderr.len();
+                        if total > MAX_OUTPUT_BYTES {
+                            log::warn!(
+                                "RunCommand output too large \
+                                 (request_id={request_id_for_response}): \
+                                 {total} bytes, truncating to {MAX_OUTPUT_BYTES}"
+                            );
+                            let ratio = MAX_OUTPUT_BYTES as f64 / total as f64;
+                            stdout.truncate((stdout.len() as f64 * ratio) as usize);
+                            stderr.truncate((stderr.len() as f64 * ratio) as usize);
+                        }
+
                         log::info!(
                             "RunCommand completed (request_id={request_id_for_response}): \
                              exit_code={:?}, stdout_len={}, stderr_len={}",
                             output.exit_code,
-                            output.stdout.len(),
-                            output.stderr.len(),
+                            stdout.len(),
+                            stderr.len(),
                         );
                         run_command_response::Result::Success(RunCommandSuccess {
-                            stdout: output.stdout.clone(),
-                            stderr: output.stderr.clone(),
+                            stdout,
+                            stderr,
                             exit_code: output.exit_code.map(|c| c.value()),
                         })
                     }
@@ -1351,6 +1676,11 @@ impl ServerModel {
 
     /// Handles `OpenBuffer` by opening the file via `GlobalBufferModel`.
     /// The response is sent asynchronously when `BufferLoaded` fires.
+    ///
+    /// When `force_reload` is set, the server re-reads the file from disk
+    /// even if the buffer is already loaded. This broadcasts a
+    /// `BufferUpdatedPush` to other connections and responds with the
+    /// fresh content via `OpenBufferResponse`.
     fn handle_open_buffer(
         &mut self,
         msg: OpenBuffer,
@@ -1359,9 +1689,44 @@ impl ServerModel {
         ctx: &mut ModelContext<Self>,
     ) -> HandlerOutcome {
         log::info!(
-            "Handling OpenBuffer path={} (request_id={request_id})",
-            msg.path
+            "Handling OpenBuffer path={} force_reload={} (request_id={request_id})",
+            msg.path,
+            msg.force_reload,
         );
+
+        // For force_reload on an already-tracked buffer, skip open_server_local
+        // to avoid a spurious BufferLoaded event that would consume the pending
+        // request before ServerLocalBufferUpdated can use it for exclusion.
+        if msg.force_reload {
+            if let Some(file_id) = self.buffers.file_id_for_path(&msg.path) {
+                self.buffers.add_connection(file_id, conn_id);
+                let gbm = GlobalBufferModel::handle(ctx);
+
+                self.buffers.insert_pending(
+                    file_id,
+                    request_id.clone(),
+                    conn_id,
+                    PendingBufferRequestKind::OpenBuffer,
+                );
+                if let Err(e) =
+                    gbm.update(ctx, |gbm, ctx| gbm.force_reload_server_local(file_id, ctx))
+                {
+                    self.buffers
+                        .take_pending_by_kind(&file_id, PendingBufferRequestKind::OpenBuffer);
+                    return HandlerOutcome::Sync(server_message::Message::OpenBufferResponse(
+                        OpenBufferResponse {
+                            result: Some(
+                                remote_server::proto::open_buffer_response::Result::Error(
+                                    FileOperationError { message: e },
+                                ),
+                            ),
+                        },
+                    ));
+                }
+                return HandlerOutcome::Async(None);
+            }
+            // Buffer not yet tracked — fall through to open_server_local below.
+        }
 
         let path = PathBuf::from(&msg.path);
         let gbm = GlobalBufferModel::handle(ctx);
@@ -1369,24 +1734,47 @@ impl ServerModel {
         let file_id = buffer_state.file_id;
 
         // Track path → FileId mapping and connection.
-        self.buffers.track_open_buffer(msg.path.clone(), file_id);
+        // Retain the strong buffer handle so the model stays alive until
+        // all connections close the buffer.
+        self.buffers
+            .track_open_buffer(msg.path.clone(), file_id, buffer_state.buffer);
         self.buffers.add_connection(file_id, conn_id);
 
-        // If already loaded, respond immediately.
         if gbm.as_ref(ctx).buffer_loaded(file_id) {
-            let content = gbm
-                .as_ref(ctx)
-                .content_for_file(file_id, ctx)
-                .unwrap_or_default();
-            let server_version = gbm
+            let Some(content) = gbm.as_ref(ctx).content_for_file(file_id, ctx) else {
+                return HandlerOutcome::Sync(server_message::Message::OpenBufferResponse(
+                    OpenBufferResponse {
+                        result: Some(remote_server::proto::open_buffer_response::Result::Error(
+                            FileOperationError {
+                                message: "Buffer loaded but has no file content".to_string(),
+                            },
+                        )),
+                    },
+                ));
+            };
+            let Some(server_version) = gbm
                 .as_ref(ctx)
                 .sync_clock_for_server_local(file_id)
                 .map(|c| c.server_version.as_u64())
-                .unwrap_or(1);
+            else {
+                return HandlerOutcome::Sync(server_message::Message::OpenBufferResponse(
+                    OpenBufferResponse {
+                        result: Some(remote_server::proto::open_buffer_response::Result::Error(
+                            FileOperationError {
+                                message: "Buffer loaded but has no sync clock".to_string(),
+                            },
+                        )),
+                    },
+                ));
+            };
             return HandlerOutcome::Sync(server_message::Message::OpenBufferResponse(
                 OpenBufferResponse {
-                    content,
-                    server_version,
+                    result: Some(remote_server::proto::open_buffer_response::Result::Success(
+                        OpenBufferSuccess {
+                            content,
+                            server_version,
+                        },
+                    )),
                 },
             ));
         }
@@ -1406,6 +1794,13 @@ impl ServerModel {
     /// Delegates to `GlobalBufferModel::apply_client_edit`. On rejection
     /// (stale server version), the edit is silently dropped.
     fn handle_buffer_edit(&mut self, msg: BufferEdit, ctx: &mut ModelContext<Self>) {
+        log::info!(
+            "Handling BufferEdit path={} expected_sv={} new_cv={} edit_count={}",
+            msg.path,
+            msg.expected_server_version,
+            msg.new_client_version,
+            msg.edits.len()
+        );
         let Some(file_id) = self.buffers.file_id_for_path(&msg.path) else {
             log::warn!("BufferEdit for unknown buffer: {}", msg.path);
             return;
@@ -1416,9 +1811,10 @@ impl ServerModel {
 
         // Per spec: if the edit is rejected (stale server version),
         // the server silently drops it.
-        GlobalBufferModel::handle(ctx).update(ctx, |gbm, ctx| {
-            gbm.apply_client_edit(file_id, &msg.edits, expected_sv, new_cv, ctx);
+        let accepted = GlobalBufferModel::handle(ctx).update(ctx, |gbm, ctx| {
+            gbm.apply_client_edit(file_id, &msg.edits, expected_sv, new_cv, ctx)
         });
+        log::info!("BufferEdit result: path={} accepted={accepted}", msg.path);
     }
 
     /// Handles `SaveBuffer` by persisting the buffer to disk.
@@ -1538,6 +1934,308 @@ impl ServerModel {
         log::info!("Handling CloseBuffer path={} conn={conn_id}", msg.path);
         self.buffers.close_buffer(&msg.path, conn_id, ctx);
     }
+
+    /// Handles `GetDiffState` — subscribe to a (repo, mode) pair.
+    fn handle_get_diff_state(
+        &mut self,
+        msg: super::proto::GetDiffState,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) -> HandlerOutcome {
+        // Proto3 message fields are always optional on the wire, so `mode`
+        // cannot be made required at the schema level — validate at runtime.
+        let Some(mode_proto) = &msg.mode else {
+            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                code: ErrorCode::InvalidRequest.into(),
+                message: "Missing mode in GetDiffState".to_string(),
+            }));
+        };
+
+        let std_path = match StandardizedPath::from_local_canonicalized(Path::new(&msg.repo_path)) {
+            Ok(p) => p,
+            Err(e) => {
+                log::warn!("Invalid repo_path for GetDiffState: {e}");
+                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                    code: ErrorCode::InvalidRequest.into(),
+                    message: format!("Invalid repo_path: {e}"),
+                }));
+            }
+        };
+
+        let mode: DiffMode = mode_proto.into();
+
+        log::info!(
+            "Handling GetDiffState repo={} mode={mode:?} (request_id={request_id})",
+            msg.repo_path,
+        );
+
+        let outcome = self.diff_states.update(ctx, |mgr, ctx| {
+            mgr.subscribe(std_path, mode, request_id, conn_id, ctx)
+        });
+
+        match outcome {
+            SubscribeOutcome::RespondWithSnapshot {
+                key,
+                state,
+                metadata,
+            } => {
+                let snapshot = diff_state_proto::build_diff_state_snapshot(
+                    key.repo_path.as_str(),
+                    &key.mode,
+                    metadata.as_ref(),
+                    &state,
+                    None,
+                );
+                HandlerOutcome::Sync(server_message::Message::GetDiffStateResponse(
+                    GetDiffStateResponse {
+                        result: Some(get_diff_state_response::Result::Snapshot(snapshot)),
+                    },
+                ))
+            }
+            SubscribeOutcome::Async => HandlerOutcome::Async(None),
+        }
+    }
+
+    /// Handles `UnsubscribeDiffState` — notification (fire-and-forget).
+    fn handle_unsubscribe_diff_state(
+        &mut self,
+        msg: super::proto::UnsubscribeDiffState,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(mode_proto) = &msg.mode else {
+            log::warn!("UnsubscribeDiffState from conn={conn_id}: missing mode");
+            return;
+        };
+        let Ok(std_path) = StandardizedPath::from_local_canonicalized(Path::new(&msg.repo_path))
+        else {
+            log::warn!(
+                "UnsubscribeDiffState from conn={conn_id}: invalid repo_path={}",
+                msg.repo_path
+            );
+            return;
+        };
+
+        let key = DiffModelKey {
+            repo_path: std_path,
+            mode: mode_proto.into(),
+        };
+
+        log::info!(
+            "Handling UnsubscribeDiffState repo={} mode={:?} conn={conn_id}",
+            msg.repo_path,
+            key.mode
+        );
+
+        self.diff_states
+            .update(ctx, |mgr, _| mgr.unsubscribe_connection(&key, conn_id));
+    }
+
+    /// Converts a domain-level diff state dispatch to proto messages
+    /// and sends them to the appropriate connections.
+    fn handle_diff_state_update(&self, update: &DiffStateUpdate) {
+        match update {
+            DiffStateUpdate::Snapshot {
+                repo_path,
+                mode,
+                state,
+                metadata,
+                diffs,
+                subscribers,
+            } => {
+                let snapshot = diff_state_proto::build_diff_state_snapshot(
+                    repo_path,
+                    mode,
+                    metadata.as_ref(),
+                    state,
+                    diffs.as_deref(),
+                );
+                for (conn_id, request_id) in subscribers {
+                    if let Some(request_id) = request_id {
+                        self.send_server_message(
+                            Some(*conn_id),
+                            Some(request_id),
+                            server_message::Message::GetDiffStateResponse(GetDiffStateResponse {
+                                result: Some(get_diff_state_response::Result::Snapshot(
+                                    snapshot.clone(),
+                                )),
+                            }),
+                        );
+                    } else {
+                        self.send_server_message(
+                            Some(*conn_id),
+                            None,
+                            server_message::Message::DiffStateSnapshot(snapshot.clone()),
+                        );
+                    }
+                }
+            }
+            DiffStateUpdate::MetadataUpdate {
+                repo_path,
+                mode,
+                metadata,
+                subscribers,
+            } => {
+                let update = diff_state_proto::build_diff_state_metadata_update(
+                    repo_path.as_str(),
+                    mode,
+                    metadata,
+                );
+                for conn_id in subscribers {
+                    self.send_server_message(
+                        Some(*conn_id),
+                        None,
+                        server_message::Message::DiffStateMetadataUpdate(update.clone()),
+                    );
+                }
+            }
+            DiffStateUpdate::FileDelta {
+                repo_path,
+                mode,
+                path,
+                diff,
+                metadata,
+                subscribers,
+            } => {
+                let delta = diff_state_proto::build_diff_state_file_delta(
+                    repo_path.as_str(),
+                    mode,
+                    path,
+                    diff.as_deref(),
+                    metadata.as_ref(),
+                );
+                for conn_id in subscribers {
+                    self.send_server_message(
+                        Some(*conn_id),
+                        None,
+                        server_message::Message::DiffStateFileDelta(delta.clone()),
+                    );
+                }
+            }
+        }
+    }
+
+    /// Handles `DiscardFilesRequest` — request/response.
+    ///
+    /// Runs git restore/stash on the remote filesystem for the specified files.
+    /// The model's `discard_files` spawns async git operations internally.
+    /// On success it reloads diffs, which triggers `NewDiffsComputed` pushes
+    /// to subscribed connections. On failure it logs the error.
+    ///
+    /// We respond with success synchronously after delegating to the model,
+    /// since `discard_files` does not surface completion status to the caller.
+    fn handle_discard_files(
+        &mut self,
+        msg: super::proto::DiscardFilesRequest,
+        request_id: &RequestId,
+        ctx: &mut ModelContext<Self>,
+    ) -> HandlerOutcome {
+        log::info!(
+            "Handling DiscardFiles repo={} files={} (request_id={request_id})",
+            msg.repo_path,
+            msg.files.len()
+        );
+
+        let std_path = match StandardizedPath::from_local_canonicalized(Path::new(&msg.repo_path)) {
+            Ok(p) => p,
+            Err(e) => {
+                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                    code: ErrorCode::InvalidRequest.into(),
+                    message: format!("Invalid repo_path: {e}"),
+                }));
+            }
+        };
+
+        let Some(mode_proto) = &msg.mode else {
+            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                code: ErrorCode::InvalidRequest.into(),
+                message: "Missing mode in DiscardFiles".to_string(),
+            }));
+        };
+
+        let key = DiffModelKey {
+            repo_path: std_path,
+            mode: mode_proto.into(),
+        };
+
+        let model = self
+            .diff_states
+            .update(ctx, |mgr, _| mgr.get_model(&key).cloned());
+        let Some(model) = model else {
+            return HandlerOutcome::Sync(server_message::Message::DiscardFilesResponse(
+                DiscardFilesResponse {
+                    result: Some(discard_files_response::Result::Error(DiscardFilesError {
+                        message: format!(
+                            "No active diff state model for repo={} mode={:?}",
+                            msg.repo_path, key.mode
+                        ),
+                    })),
+                },
+            ));
+        };
+
+        if msg.files.is_empty() {
+            return HandlerOutcome::Sync(server_message::Message::DiscardFilesResponse(
+                DiscardFilesResponse {
+                    result: Some(discard_files_response::Result::Error(DiscardFilesError {
+                        message: "No files specified in DiscardFilesRequest".to_string(),
+                    })),
+                },
+            ));
+        }
+
+        let file_infos: Vec<_> = msg
+            .files
+            .iter()
+            .filter_map(|f| match FileStatusInfo::try_from(f) {
+                Ok(info) => Some(info),
+                Err(e) => {
+                    log::warn!("DiscardFiles: {e}");
+                    None
+                }
+            })
+            .collect();
+
+        if file_infos.is_empty() {
+            return HandlerOutcome::Sync(server_message::Message::DiscardFilesResponse(
+                DiscardFilesResponse {
+                    result: Some(discard_files_response::Result::Error(DiscardFilesError {
+                        message: "No valid files after path validation".to_string(),
+                    })),
+                },
+            ));
+        }
+
+        model.update(ctx, |m, ctx| {
+            m.discard_files(file_infos, msg.should_stash, msg.branch_name, ctx);
+        });
+
+        HandlerOutcome::Sync(server_message::Message::DiscardFilesResponse(
+            DiscardFilesResponse {
+                result: Some(discard_files_response::Result::Success(
+                    DiscardFilesSuccess {},
+                )),
+            },
+        ))
+    }
+}
+
+fn requested_repo_path(repo_path: &str) -> Result<PathBuf, String> {
+    if repo_path.is_empty() {
+        return Err("repo_path is required".to_string());
+    }
+
+    Ok(PathBuf::from(repo_path))
+}
+
+fn canonicalize_index_repo_path(repo_path: &str) -> Result<PathBuf, String> {
+    requested_repo_path(repo_path)?;
+    let standardized_path = StandardizedPath::from_local_canonicalized(Path::new(repo_path))
+        .map_err(|error| format!("Invalid repo_path {repo_path}: {error}"))?;
+    Ok(standardized_path
+        .to_local_path()
+        .unwrap_or_else(|| standardized_path.to_local_path_lossy()))
 }
 
 /// Converts a [`ReadFileContextResult`] into its protobuf equivalent.

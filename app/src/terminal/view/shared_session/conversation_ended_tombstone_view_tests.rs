@@ -2,7 +2,7 @@ use chrono::{Duration, Utc};
 use warp_cli::agent::Harness;
 
 use crate::ai::ambient_agents::task::{
-    AgentConfigSnapshot, HarnessConfig, RequestUsage, TaskCreatorInfo,
+    AgentConfigSnapshot, HarnessConfig, RequestUsage, TaskPrincipalInfo,
 };
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::ai::artifacts::Artifact;
@@ -14,6 +14,7 @@ use super::TombstoneDisplayData;
 const RUN_DURATION_SECONDS: i64 = 90;
 const INFERENCE_COST: f64 = 1.5;
 const COMPUTE_COST: f64 = 3.0;
+const PLATFORM_COST: f64 = 2.5;
 
 fn task_with_run_time_and_credits() -> AmbientAgentTask {
     let started_at = Utc::now();
@@ -31,15 +32,17 @@ fn task_with_run_time_and_credits() -> AmbientAgentTask {
         source: None,
         session_id: None,
         session_link: None,
-        creator: Some(TaskCreatorInfo {
+        creator: Some(TaskPrincipalInfo {
             creator_type: "USER".to_string(),
             uid: "user-1".to_string(),
             display_name: Some("User 1".to_string()),
         }),
+        executor: None,
         conversation_id: None,
         request_usage: Some(RequestUsage {
             inference_cost: Some(INFERENCE_COST),
             compute_cost: Some(COMPUTE_COST),
+            platform_cost: Some(PLATFORM_COST),
         }),
         agent_config_snapshot: None,
         artifacts: vec![],
@@ -82,7 +85,7 @@ fn task_overrides_run_time_and_credits_when_present() {
 
     let expected_run_time =
         human_readable_precise_duration(Duration::seconds(RUN_DURATION_SECONDS));
-    let expected_credits = format_credits((INFERENCE_COST + COMPUTE_COST) as f32);
+    let expected_credits = format_credits((INFERENCE_COST + COMPUTE_COST + PLATFORM_COST) as f32);
     assert_eq!(data.run_time, Some(expected_run_time));
     assert_eq!(data.credits, Some(expected_credits));
 }
@@ -107,7 +110,7 @@ fn empty_defaults_populated_from_task_for_non_oz() {
 
     let expected_run_time =
         human_readable_precise_duration(Duration::seconds(RUN_DURATION_SECONDS));
-    let expected_credits = format_credits((INFERENCE_COST + COMPUTE_COST) as f32);
+    let expected_credits = format_credits((INFERENCE_COST + COMPUTE_COST + PLATFORM_COST) as f32);
     assert_eq!(data.run_time, Some(expected_run_time));
     assert_eq!(data.credits, Some(expected_credits));
 }

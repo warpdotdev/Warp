@@ -104,7 +104,9 @@ pub fn create_cloud_mode_view(
                     let append_followup_scrollback = view_model_for_subscription
                         .as_ref(ctx)
                         .is_local_to_cloud_handoff();
-                    manager.connect_to_session(*session_id, append_followup_scrollback, ctx);
+                    if manager.connect_to_session(*session_id, append_followup_scrollback, ctx) {
+                        manager.start_cloud_mode_setup_command_tracking();
+                    }
                 }
                 AmbientAgentViewModelEvent::FollowupSessionReady { session_id } => {
                     manager.attach_followup_session(*session_id, ctx);

@@ -252,6 +252,9 @@ pub enum FeatureFlag {
     /// Enables full source code embedding of repos when using codebase context.
     FullSourceCodeEmbedding,
 
+    /// Enables codebase indexing inside remote server daemon processes.
+    RemoteCodebaseIndexing,
+
     /// If enabled, command palette searches will use Tantivy search instead of the default fuzzy search.
     UseTantivySearch,
 
@@ -307,9 +310,6 @@ pub enum FeatureFlag {
 
     /// Enables inline review comments on specific lines of code.
     ContextLineReviewComments,
-
-    /// Enables the natural language classification model.
-    NLDClassifierModelEnabled,
 
     /// Enables the fast-forward autoexecute button
     FastForwardAutoexecuteButton,
@@ -404,9 +404,6 @@ pub enum FeatureFlag {
 
     /// Allows opening file links using the $EDITOR environment variable.
     AllowOpeningFileLinksUsingEditorEnv,
-
-    /// Enables improvements to our natural language detection functionality.
-    NldImprovements,
 
     /// Enables the ability to undo closed panes.
     UndoClosedPanes,
@@ -662,6 +659,9 @@ pub enum FeatureFlag {
     /// When enabled, the HOA onboarding flow is suppressed.
     OpenWarpLaunchModal,
 
+    /// Enables the orchestration launch modal announcing multi-agent orchestration features.
+    OrchestrationLaunchModal,
+
     /// Updated tab styling (background colors, border, close button positioning, margins).
     NewTabStyling,
 
@@ -853,6 +853,9 @@ pub enum FeatureFlag {
     /// background refresh loop that keeps them fresh during a task run.
     GitCredentialRefresh,
 
+    /// Gates the v2 billing and usage page redesign.
+    BillingAndUsagePageV2,
+
     /// Replaces the raw harness CLI command with a styled header showing CLI name + status icon.
     HarnessSessionHeader,
 }
@@ -894,7 +897,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::RetryTruncatedCodeResponses,
     FeatureFlag::ContextLineReviewComments,
     FeatureFlag::RunGeneratorsWithCmdExe,
-    FeatureFlag::NLDClassifierModelEnabled,
     FeatureFlag::Projects,
     FeatureFlag::ProviderCommand,
     FeatureFlag::ArtifactCommand,
@@ -928,17 +930,16 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::RunAgentsTool,
     FeatureFlag::GeminiNotifications,
     FeatureFlag::LocalDockerSandbox,
-    FeatureFlag::VerticalTabsSummaryMode,
     FeatureFlag::CloudModeSetupV2,
     #[cfg(not(windows))]
     FeatureFlag::SshRemoteServer,
     FeatureFlag::CloudModeInputV2,
     FeatureFlag::HandoffLocalCloud,
     FeatureFlag::DragTabsToWindows,
+    FeatureFlag::OrchestrationLaunchModal,
     FeatureFlag::NamedAgents,
-    FeatureFlag::GitCredentialRefresh,
     FeatureFlag::HandoffCloudCloud,
-    FeatureFlag::HarnessSessionHeader,
+    FeatureFlag::SoloUserByok,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
@@ -948,6 +949,7 @@ pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::BlocklistMarkdownTableRendering,
     FeatureFlag::MarkdownTables,
     FeatureFlag::GitOperationsInCodeReview,
+    FeatureFlag::GitCredentialRefresh,
 ];
 
 /// Features enabled for all release builds (i.e.: everything but WarpLocal).

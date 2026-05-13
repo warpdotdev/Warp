@@ -272,11 +272,6 @@ where
         ctx.notify();
     }
 
-    pub fn set_border_color(&mut self, border_color: Fill, ctx: &mut ViewContext<Self>) {
-        self.border_color = Some(border_color);
-        ctx.notify();
-    }
-
     pub fn set_border_width(&mut self, border_width: f32, ctx: &mut ViewContext<Self>) {
         self.border_width = Some(border_width);
         ctx.notify();

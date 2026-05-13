@@ -18,7 +18,7 @@ use crate::ai::agent::conversation::{
     AIAgentHarness, AIConversation, AIConversationId, ConversationStatus,
     ServerAIConversationMetadata,
 };
-use crate::ai::ambient_agents::task::{TaskCreatorInfo, TaskStatusMessage};
+use crate::ai::ambient_agents::task::{TaskPrincipalInfo, TaskStatusMessage};
 use crate::ai::ambient_agents::AgentConfigSnapshot;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
@@ -64,11 +64,12 @@ fn create_test_task(
         source: None,
         session_id: None,
         session_link: None,
-        creator: Some(TaskCreatorInfo {
+        creator: Some(TaskPrincipalInfo {
             creator_type: "USER".to_string(),
             uid: creator_uid.to_string(),
             display_name: Some(format!("User {creator_uid}")),
         }),
+        executor: None,
         conversation_id: None,
         request_usage: None,
         agent_config_snapshot: None,
@@ -1376,6 +1377,70 @@ fn test_server_token_assignment_updates_copy_link_resolution() {
                 link,
                 Some(ServerConversationToken::new(token.to_string()).conversation_link())
             );
+        });
+    });
+}
+
+#[test]
+fn test_resolve_open_action_reopens_ambient_session_after_terminal_unregister() {
+    App::test((), |mut app| async move {
+        add_entry_projection_test_models(&mut app);
+
+        let now = Utc::now();
+        let session_id = make_uuid(8205);
+        let mut task = create_test_task(&make_uuid(8206), "user-a", now);
+        task.state = AmbientAgentTaskState::InProgress;
+        task.session_id = Some(session_id.clone());
+        task.session_link = Some("https://example.com/session".to_string());
+        task.is_sandbox_running = true;
+        let task_id = task.task_id;
+        let terminal_view_id = EntityId::new();
+
+        app.add_singleton_model(|_| {
+            let mut model = create_test_model();
+            model.tasks.insert(task_id, task);
+            model
+        });
+        ActiveAgentViewsModel::handle(&app).update(&mut app, |model, ctx| {
+            model.register_ambient_session(terminal_view_id, task_id, ctx);
+        });
+
+        app.update(|ctx| {
+            let action = AgentConversationsModel::resolve_open_action(
+                AgentConversationNavigationSubject::Entry(AgentConversationEntryId::AmbientRun(
+                    task_id,
+                )),
+                None,
+                ctx,
+            );
+
+            assert!(matches!(
+                action,
+                Some(WorkspaceAction::FocusTerminalViewInWorkspace { terminal_view_id: id })
+                    if id == terminal_view_id
+            ));
+        });
+
+        ActiveAgentViewsModel::handle(&app).update(&mut app, |model, ctx| {
+            model.unregister_ambient_session(terminal_view_id, ctx);
+        });
+
+        app.update(|ctx| {
+            let action = AgentConversationsModel::resolve_open_action(
+                AgentConversationNavigationSubject::Entry(AgentConversationEntryId::AmbientRun(
+                    task_id,
+                )),
+                None,
+                ctx,
+            );
+
+            assert!(matches!(
+                action,
+                Some(WorkspaceAction::OpenAmbientAgentSession {
+                    session_id: resolved_session_id,
+                    task_id: resolved_task_id,
+                }) if resolved_session_id.to_string() == session_id && resolved_task_id == task_id
+            ));
         });
     });
 }

@@ -270,7 +270,7 @@ pub fn parse_uname_output(
     };
 
     let arch = match arch_str {
-        "x86_64" => RemoteArch::X86_64,
+        "x86_64" | "amd64" => RemoteArch::X86_64,
         "aarch64" | "arm64" | "armv8l" => RemoteArch::Aarch64,
         other => {
             return Err(Error::UnsupportedArch {
@@ -378,10 +378,15 @@ pub fn remote_server_binary() -> String {
     }
 }
 
-/// Returns the shell command to check if the remote server binary exists and
-/// is executable.
+/// Returns the shell command to verify the remote server binary is
+/// installed and functional by running it with `--version`.
+///
+/// Exits 0 when the binary is present, executable, and can parse its
+/// own arguments. A missing binary produces exit 127 (command not
+/// found) or 126 (not executable), and a corrupted binary will fail
+/// with a non-zero exit of its own.
 pub fn binary_check_command() -> String {
-    format!("test -x {}", remote_server_binary())
+    format!("{} --version", remote_server_binary())
 }
 
 /// Returns the version string used to pin remote-server installs on
@@ -497,13 +502,13 @@ pub const NO_HTTP_CLIENT_EXIT_CODE: i32 = 3;
 pub const CHECK_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Timeout for the install script (curl/wget path).
-pub const INSTALL_TIMEOUT: Duration = Duration::from_secs(60);
+pub const INSTALL_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Timeout for the SCP upload fallback path (local download + SCP +
-/// extraction). Longer than [`INSTALL_TIMEOUT`] because SCP transfers
+/// extraction). Higher than [`INSTALL_TIMEOUT`] because SCP transfers
 /// the tarball over the user's SSH link, which is typically slower than
 /// the remote host's direct internet connection.
-pub const SCP_INSTALL_TIMEOUT: Duration = Duration::from_secs(120);
+pub const SCP_INSTALL_TIMEOUT: Duration = Duration::from_secs(240);
 
 #[cfg(test)]
 #[path = "setup_tests.rs"]
