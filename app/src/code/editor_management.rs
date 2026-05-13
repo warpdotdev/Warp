@@ -301,6 +301,22 @@ impl CodeManager {
             .map(|(_, data)| data.locator)
     }
 
+    /// Returns the locator for a code pane that already has the given `FileLocation`
+    /// open in the given pane group. Works for both local and remote files.
+    pub fn get_locator_for_location_in_tab(
+        &self,
+        pane_group_id: EntityId,
+        location: &FileLocation,
+    ) -> Option<PaneViewLocator> {
+        self.source_to_pane_data
+            .iter()
+            .find(|(source, data)| {
+                data.locator.pane_group_id == pane_group_id
+                    && source.location().as_ref() == Some(location)
+            })
+            .map(|(_, data)| data.locator)
+    }
+
     // Allow dead_code here for wasm compilation
     #[allow(dead_code)]
     pub fn complete_pending_diffs(&mut self, source: CodeSource, ctx: &mut ModelContext<Self>) {
