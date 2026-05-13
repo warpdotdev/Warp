@@ -1,5 +1,19 @@
 use crate::terminal::model::{blocks::BlockList, index::Point, terminal_model::WithinBlock};
-use session_sharing_protocol::common::BlockPoint;
+use session_sharing_protocol::common::{BlockPoint, Point as SessionSharingPoint};
+
+fn point_from_session_sharing(point: SessionSharingPoint) -> Point {
+    Point {
+        row: point.row,
+        col: point.col,
+    }
+}
+
+pub(crate) fn point_to_session_sharing(point: Point) -> SessionSharingPoint {
+    SessionSharingPoint {
+        row: point.row,
+        col: point.col,
+    }
+}
 
 impl WithinBlock<Point> {
     /// Converts an un-transformed block point
@@ -19,7 +33,7 @@ impl WithinBlock<Point> {
             .grid_of_type(grid_type)?
             .grid_handler();
 
-        let inner = grid.compatible_point(point.point.into());
+        let inner = grid.compatible_point(point_from_session_sharing(point.point));
         let inner = if !grid.is_displayed_row(inner.row) {
             return None;
         } else {
@@ -46,7 +60,7 @@ impl WithinBlock<Point> {
 
         Some(BlockPoint {
             block_id: block_id.to_string().into(),
-            point: point.into(),
+            point: point_to_session_sharing(point),
             grid_type: self.grid.into(),
         })
     }

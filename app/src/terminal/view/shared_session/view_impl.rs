@@ -9,7 +9,8 @@ use crate::terminal::model::index::Point;
 use crate::terminal::model::terminal_model::WithinBlock;
 use crate::terminal::shared_session::settings::SharedSessionSettings;
 use crate::terminal::shared_session::{
-    SharedSessionActionSource, SharedSessionScrollbackType, SharedSessionStatus,
+    selections::point_to_session_sharing, SharedSessionActionSource, SharedSessionScrollbackType,
+    SharedSessionStatus,
 };
 use crate::terminal::view::{
     ContextMenuAction, Event, InlineBannerItem, InlineBannerType, RichContentInsertionPosition,
@@ -575,8 +576,8 @@ impl TerminalView {
                 model_lock.alt_screen().selection_range(semantic_selection)
             {
                 return session_sharing_protocol::common::Selection::AltScreenText {
-                    start: (*selection_range.start()).into(),
-                    end: (*selection_range.end()).into(),
+                    start: point_to_session_sharing(*selection_range.start()),
+                    end: point_to_session_sharing(*selection_range.end()),
                     is_reversed: selection_range.is_reversed(),
                 };
             }

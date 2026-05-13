@@ -12527,7 +12527,7 @@ impl Input {
             .into_iter()
             .filter_map(|context| match context {
                 AIAgentContext::Block(block) => Some(AgentAttachment::BlockReference {
-                    block_id: block.id.into(),
+                    block_id: block.id.to_string().into(),
                 }),
                 AIAgentContext::SelectedText(text) => {
                     Some(AgentAttachment::PlainText { content: text })

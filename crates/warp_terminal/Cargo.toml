@@ -20,7 +20,6 @@ log.workspace = true
 pathfinder_color.workspace = true
 regex.workspace = true
 serde.workspace = true
-session-sharing-protocol.workspace = true
 smol_str.workspace = true
 string-offset.workspace = true
 static_assertions.workspace = true

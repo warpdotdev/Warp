@@ -45,29 +45,3 @@ impl Default for BlockId {
         Self::new()
     }
 }
-
-impl From<BlockId> for session_sharing_protocol::common::BlockId {
-    fn from(value: BlockId) -> Self {
-        value.to_string().into()
-    }
-}
-
-impl From<session_sharing_protocol::common::BlockId> for BlockId {
-    fn from(value: session_sharing_protocol::common::BlockId) -> Self {
-        value.to_string().into()
-    }
-}
-
-impl From<session_sharing_protocol::common::BufferId> for BlockId {
-    fn from(value: session_sharing_protocol::common::BufferId) -> Self {
-        let block_id = session_sharing_protocol::common::BlockId::from(value);
-        block_id.into()
-    }
-}
-
-impl From<BlockId> for session_sharing_protocol::common::BufferId {
-    fn from(value: BlockId) -> Self {
-        let block_id = session_sharing_protocol::common::BlockId::from(value);
-        block_id.into()
-    }
-}
