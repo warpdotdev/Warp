@@ -253,8 +253,8 @@ fn dormant_local_claude_child_skips_generic_sse_but_allows_wake_listener() {
 
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
-        let parent_id = AIConversation::new(false).id();
-        let mut conversation = AIConversation::new(false);
+        let parent_id = AIConversation::new(false, false).id();
+        let mut conversation = AIConversation::new(false, false);
         let run_id = "550e8400-e29b-41d4-a716-446655440610".to_string();
         conversation.set_run_id(run_id.clone());
         conversation.set_parent_conversation_id(parent_id);
@@ -314,8 +314,8 @@ fn dormant_local_claude_child_uses_task_harness_when_server_metadata_missing() {
 
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
-        let parent_id = AIConversation::new(false).id();
-        let mut conversation = AIConversation::new(false);
+        let parent_id = AIConversation::new(false, false).id();
+        let mut conversation = AIConversation::new(false, false);
         let run_id = "550e8400-e29b-41d4-a716-446655440611".to_string();
         conversation.set_run_id(run_id.clone());
         conversation.set_parent_conversation_id(parent_id);
@@ -425,7 +425,7 @@ fn restored_conversations_skip_v2_streaming_when_orchestration_v2_disabled() {
 
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
-        let mut conversation = AIConversation::new(false);
+        let mut conversation = AIConversation::new(false, false);
         conversation.set_run_id("550e8400-e29b-41d4-a716-446655440500".to_string());
         let conversation_id = conversation.id();
         let terminal_view_id = warpui::EntityId::new();
@@ -531,7 +531,7 @@ fn finish_restore_fetch_uses_server_cursor_when_sqlite_is_absent() {
         // Restore a conversation with no SQLite cursor (`last_event_sequence:
         // None`). After the server fetch completes with `Some(42)` we expect
         // the in-memory cursor to be 42 (max(0, 42)).
-        let conversation = AIConversation::new(false);
+        let conversation = AIConversation::new(false, false);
         let conversation_id = conversation.id();
         let terminal_view_id = warpui::EntityId::new();
         history_model.update(&mut app, |model, ctx| {
@@ -599,7 +599,7 @@ fn handle_event_batch_persists_max_seq_to_history_model() {
 
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
-        let mut conversation = AIConversation::new(false);
+        let mut conversation = AIConversation::new(false, false);
         conversation.set_run_id("550e8400-e29b-41d4-a716-446655440200".to_string());
         let conversation_id: AIConversationId = conversation.id();
         let terminal_view_id = warpui::EntityId::new();
@@ -686,7 +686,7 @@ fn handle_event_batch_drops_events_for_killed_run_ids_after_persisting_cursor() 
 
         let parent_run_id = "550e8400-e29b-41d4-a716-446655440700".to_string();
         let killed_run_id = "550e8400-e29b-41d4-a716-446655440701".to_string();
-        let mut parent_conversation = AIConversation::new(false);
+        let mut parent_conversation = AIConversation::new(false, false);
         parent_conversation.set_run_id(parent_run_id.clone());
         let parent_conversation_id = parent_conversation.id();
         let terminal_view_id = warpui::EntityId::new();
@@ -821,7 +821,7 @@ fn finish_restore_fetch_no_ops_when_conversation_deleted_mid_flight() {
 
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
-        let mut conversation = AIConversation::new(false);
+        let mut conversation = AIConversation::new(false, false);
         conversation.set_run_id("550e8400-e29b-41d4-a716-446655440300".to_string());
         let conversation_id = conversation.id();
         let terminal_view_id = warpui::EntityId::new();
@@ -890,7 +890,7 @@ fn finish_restore_fetch_err_does_not_resurrect_deleted_conversation() {
 
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
-        let mut conversation = AIConversation::new(false);
+        let mut conversation = AIConversation::new(false, false);
         conversation.set_run_id("550e8400-e29b-41d4-a716-446655440500".to_string());
         let conversation_id = conversation.id();
         let terminal_view_id = warpui::EntityId::new();
@@ -955,8 +955,8 @@ fn on_conversation_removed_prunes_stale_child_run_id_from_parent() {
 
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
-        let parent_id = AIConversation::new(false).id();
-        let mut child_conversation = AIConversation::new(false);
+        let parent_id = AIConversation::new(false, false).id();
+        let mut child_conversation = AIConversation::new(false, false);
         let child_run_id = "550e8400-e29b-41d4-a716-446655440600".to_string();
         child_conversation.set_run_id(child_run_id.clone());
         let child_id = child_conversation.id();
@@ -1014,8 +1014,8 @@ fn on_conversation_removed_prunes_killed_child_run_id_from_parent_but_keeps_tomb
 
         app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
-        let parent_id = AIConversation::new(false).id();
-        let child_id = AIConversation::new(false).id();
+        let parent_id = AIConversation::new(false, false).id();
+        let child_id = AIConversation::new(false, false).id();
         let child_run_id = "550e8400-e29b-41d4-a716-446655440601".to_string();
 
         let mock = MockAIClient::new();
@@ -1066,7 +1066,7 @@ fn finish_restore_fetch_reconnects_sse_when_children_added_to_open_connection() 
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
         let own_run_id = "550e8400-e29b-41d4-a716-446655440400";
-        let mut conversation = AIConversation::new(false);
+        let mut conversation = AIConversation::new(false, false);
         conversation.set_run_id(own_run_id.to_string());
         let conversation_id = conversation.id();
         let terminal_view_id = warpui::EntityId::new();

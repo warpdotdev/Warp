@@ -140,6 +140,15 @@ impl SessionContext {
             current_working_directory: None,
         }
     }
+
+    #[cfg(test)]
+    pub fn new_with_session_type_for_test(session_type: Option<SessionType>) -> Self {
+        SessionContext {
+            session_type,
+            shell: None,
+            current_working_directory: None,
+        }
+    }
 }
 
 pub enum BlocklistAIControllerEvent {
@@ -2106,6 +2115,7 @@ impl BlocklistAIController {
             history_model.start_new_conversation(
                 self.terminal_view_id,
                 is_autoexecute_override,
+                false,
                 false,
                 ctx,
             )

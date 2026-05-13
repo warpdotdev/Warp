@@ -342,7 +342,7 @@ fn test_server_conversation_metadata(
 }
 
 fn cloud_conversation_with_ambient_task(task_id: AmbientAgentTaskId) -> CloudConversationData {
-    let mut conversation = AIConversation::new(false);
+    let mut conversation = AIConversation::new(false, false);
     conversation.set_task_id(task_id);
     conversation.set_server_metadata(test_server_conversation_metadata(Some(task_id)));
     CloudConversationData::Oz(Box::new(conversation))
@@ -365,7 +365,7 @@ fn start_parent_conversation_for_terminal_view(
     ctx: &mut ViewContext<PaneGroup>,
 ) -> AIConversationId {
     BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-        history_model.start_new_conversation(terminal_view_id, false, false, ctx)
+        history_model.start_new_conversation(terminal_view_id, false, false, false, ctx)
     })
 }
 
@@ -374,7 +374,7 @@ fn restore_child_conversation_for_terminal_view(
     parent_conversation_id: AIConversationId,
     ctx: &mut ViewContext<PaneGroup>,
 ) -> AIConversationId {
-    let mut child_conversation = AIConversation::new(false);
+    let mut child_conversation = AIConversation::new(false, false);
     child_conversation.set_parent_conversation_id(parent_conversation_id);
     let child_conversation_id = child_conversation.id();
 
@@ -709,7 +709,7 @@ fn test_restored_hidden_child_pane_reapplies_ambient_task_id_to_controller() {
             let parent_conversation_id = start_parent_conversation(panes, parent_pane_id, ctx);
             let task_id = new_ambient_agent_task_id();
 
-            let mut child_conversation = AIConversation::new(false);
+            let mut child_conversation = AIConversation::new(false, false);
             child_conversation.set_parent_conversation_id(parent_conversation_id);
             child_conversation.set_task_id(task_id);
             let child_conversation_id = child_conversation.id();
@@ -748,7 +748,7 @@ fn test_restored_remote_hidden_child_pane_enters_existing_ambient_session() {
             let parent_conversation_id = start_parent_conversation(panes, parent_pane_id, ctx);
             let task_id = new_ambient_agent_task_id();
 
-            let mut child_conversation = AIConversation::new(false);
+            let mut child_conversation = AIConversation::new(false, false);
             child_conversation.set_parent_conversation_id(parent_conversation_id);
             child_conversation.set_task_id(task_id);
             child_conversation.mark_as_remote_child();

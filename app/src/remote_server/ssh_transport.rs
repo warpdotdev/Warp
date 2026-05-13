@@ -55,15 +55,17 @@ impl SshTransport {
 
     pub fn remote_daemon_socket_path(&self) -> String {
         format!(
-            "{}/server.sock",
-            remote_server_daemon_dir(&self.auth_context.remote_server_identity_key())
+            "{}/{}",
+            remote_server_daemon_dir(&self.auth_context.remote_server_identity_key()),
+            remote_server::setup::daemon_socket_name(),
         )
     }
 
     pub fn remote_daemon_pid_path(&self) -> String {
         format!(
-            "{}/server.pid",
-            remote_server_daemon_dir(&self.auth_context.remote_server_identity_key())
+            "{}/{}",
+            remote_server_daemon_dir(&self.auth_context.remote_server_identity_key()),
+            remote_server::setup::daemon_pid_name(),
         )
     }
 

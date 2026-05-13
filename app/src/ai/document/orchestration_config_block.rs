@@ -118,6 +118,10 @@ pub struct OrchestrationConfigBlockView {
     /// UI-only per-harness model memory so switching harnesses preserves
     /// the user's previous model selection for each harness.
     saved_model_per_harness: HashMap<String, String>,
+    /// Suppresses self-triggered refresh when `apply_field_change`
+    /// saves the config and the resulting event re-enters
+    /// `refresh_from_model`.
+    suppress_refresh: bool,
 }
 
 impl OrchestrationConfigBlockView {
@@ -206,6 +210,7 @@ impl OrchestrationConfigBlockView {
             toggle_mouse_state: MouseStateHandle::default(),
             details_mouse_state: MouseStateHandle::default(),
             saved_model_per_harness: HashMap::new(),
+            suppress_refresh: false,
         };
         if view.is_approved {
             view.ensure_pickers(ctx);
@@ -214,6 +219,10 @@ impl OrchestrationConfigBlockView {
     }
 
     fn refresh_from_model(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.suppress_refresh {
+            self.suppress_refresh = false;
+            return;
+        }
         let history = BlocklistAIHistoryModel::as_ref(ctx);
         if let Some(conv) = history.conversation(&self.conversation_id) {
             if let Some((config, status)) = conv.orchestration_config_for_plan(&self.plan_id) {
@@ -263,6 +272,33 @@ impl OrchestrationConfigBlockView {
         oc::populate_harness_picker(&harness_handle, &self.edit_state.harness_type, ctx);
         self.pickers.harness_picker = Some(harness_handle);
 
+        // When restoring a Remote config with empty host or
+        // environment, fill defaults so the pickers aren't blank.
+        // If the config is approved, persist the defaults so the
+        // stored config used by auto-launch has concrete values.
+        let (needs_host, needs_env) = match &self.edit_state.execution_mode {
+            RunAgentsExecutionMode::Remote {
+                worker_host,
+                environment_id,
+                ..
+            } => (worker_host.is_empty(), environment_id.is_empty()),
+            RunAgentsExecutionMode::Local => (false, false),
+        };
+        let mut filled_defaults = false;
+        if needs_host {
+            self.edit_state
+                .set_worker_host(oc::ORCHESTRATION_WARP_WORKER_HOST.to_string());
+            filled_defaults = true;
+        }
+        if needs_env {
+            if let Some(default_env) = oc::resolve_default_environment_id(ctx) {
+                self.edit_state.set_environment_id(default_env);
+                filled_defaults = true;
+            }
+        }
+        if filled_defaults && self.is_approved {
+            self.apply_field_change(ctx);
+        }
         let initial_env = match &self.edit_state.execution_mode {
             RunAgentsExecutionMode::Remote { environment_id, .. } => environment_id.as_str(),
             RunAgentsExecutionMode::Local => "",
@@ -285,6 +321,7 @@ impl OrchestrationConfigBlockView {
     }
 
     fn apply_field_change(&mut self, ctx: &mut ViewContext<Self>) {
+        self.suppress_refresh = true;
         let config = self.edit_state.to_orchestration_config();
         let status = if self.is_approved {
             OrchestrationConfigStatus::Approved
@@ -531,6 +568,7 @@ impl TypedActionView for OrchestrationConfigBlockView {
             }
             OrchestrationConfigBlockAction::EnvironmentChanged { environment_id } => {
                 self.edit_state.set_environment_id(environment_id.clone());
+                oc::persist_environment_selection(environment_id, ctx);
                 self.apply_field_change(ctx);
                 ctx.notify();
             }
