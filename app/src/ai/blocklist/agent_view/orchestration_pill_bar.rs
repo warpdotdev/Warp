@@ -52,11 +52,19 @@ use crate::workspace::{WorkspaceAction, WorkspaceRegistry};
 use warp_core::ui::theme::color::internal_colors;
 use warpui::EntityId;
 
-const PILL_HEIGHT: f32 = 22.;
+/// Pill height is sized for the full avatar-with-status bounding box, not just
+/// the 16px disc. The status badge overhangs the BR of the disc and pushes the
+/// effective leading-slot size out to `AVATAR_WITH_STATUS_TOTAL_SIZE` (~21px).
+/// Sizing the pill purely against `AVATAR_SIZE` left the disc 1.5px from the
+/// top edge and the status badge 1.5px from the bottom edge — visibly cramped
+/// once the pill flips to the high-contrast selected background. 28px gives
+/// the full 21px component ~3.5px of breathing room top and bottom.
+const PILL_HEIGHT: f32 = 28.;
 const PILL_RADIUS: f32 = PILL_HEIGHT / 2.;
 const AVATAR_SIZE: f32 = 16.;
 /// `total_size` for the shared icon-with-status helper, chosen so the helper's
-/// brand-circle slot lands at `AVATAR_SIZE`.
+/// brand-circle slot lands at `AVATAR_SIZE`. The full bounding box is larger
+/// than `AVATAR_SIZE` because of the status-badge overhang — see `PILL_HEIGHT`.
 const AVATAR_WITH_STATUS_TOTAL_SIZE: f32 = AVATAR_SIZE / icon_with_status::CIRCLE_RATIO;
 const PILL_LABEL_MAX_WIDTH: f32 = 110.;
 const PILL_GAP: f32 = 6.;

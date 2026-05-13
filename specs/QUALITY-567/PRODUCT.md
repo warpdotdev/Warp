@@ -36,7 +36,7 @@ Figma: https://www.figma.com/design/AsF5uAM6L5tUmc11vm9YSi (nodes `4073-19833`, 
    - A circular avatar (16×16) on the left.
    - A label on the right (truncated with an ellipsis past ~110px).
    - Internal padding: 4px left of the avatar, 10px right of the label, 6px between avatar and label.
-   - Pills are 22px tall with a half-stadium corner radius (radius = height/2). Adjacent pills are spaced 6px apart.
+   - Pills are 28px tall with a half-stadium corner radius (radius = height/2). Height is sized for the full avatar-with-status bounding box (~21px due to the status badge overhanging the disc), not just the 16px disc; this gives ~3.5px of breathing room top and bottom so neither the disc nor the badge crowds the pill border. Adjacent pills are spaced 6px apart.
 
 6. The orchestrator pill uses the Warp `Oz` glyph on a cyan disc and is labelled with the orchestrator conversation's agent name, falling back to `"Orchestrator"` if no name is set.
 
