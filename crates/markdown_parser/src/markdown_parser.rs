@@ -1851,7 +1851,7 @@ fn parse_url_prefix<'a, E: ContextError<&'a str> + ParseError<&'a str>>(
 // - starts with "https://" or "http://" or "www."
 // - has at least one alphanumeric char after the prefix
 // - does not include trailing formatting characters (*, _, ~)
-// - backslash escapes are processed (e.g., `\.` → `.`) 
+// - backslash escapes are processed (e.g., `\.` → `.`)
 fn parse_url<'a, E: ContextError<&'a str> + ParseError<&'a str>>(
     i: &'a str,
 ) -> IResult<&'a str, String, E> {
@@ -1880,7 +1880,7 @@ fn parse_url<'a, E: ContextError<&'a str> + ParseError<&'a str>>(
     let trimmed_raw_url = &i[..trimmed_len];
     let new_remaining = &i[trimmed_len..];
 
-    // Process backslash escapes within the URL using parse_escape (e.g., `\.` → `.`). 
+    // Process backslash escapes within the URL using parse_escape (e.g., `\.` → `.`).
     let mut trimmed_url = String::with_capacity(trimmed_len);
     let mut remaining = trimmed_raw_url;
     while !remaining.is_empty() {

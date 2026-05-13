@@ -361,7 +361,6 @@ fn test_table_markdown_export_escapes_pipe_characters() {
     });
 }
 
-
 #[test]
 fn test_url_link_display_text_round_trip_is_stable() {
     App::test((), |mut app| async move {
@@ -369,8 +368,7 @@ fn test_url_link_display_text_round_trip_is_stable() {
             "[https://example.com/index.html#section](https://example.com/index.html#section)";
         // After the first save, `.` and `#` in the display text are escaped.
         // The URL in `(...)` is written verbatim — no escaping.
-        let expected_escaped =
-            "[https://example\\.com/index\\.html\\#section](https://example.com/index.html#section)";
+        let expected_escaped = "[https://example\\.com/index\\.html\\#section](https://example.com/index.html#section)";
 
         let (buffer, _) = Buffer::mock_from_markdown(
             original,
@@ -379,7 +377,10 @@ fn test_url_link_display_text_round_trip_is_stable() {
             &mut app,
         );
         let after_first = app.read_model(&buffer, |buffer, _| buffer.markdown());
-        assert_eq!(after_first, expected_escaped, "first save should escape special chars in display text");
+        assert_eq!(
+            after_first, expected_escaped,
+            "first save should escape special chars in display text"
+        );
 
         let (buffer2, _) = Buffer::mock_from_markdown(
             &after_first,
@@ -388,7 +389,10 @@ fn test_url_link_display_text_round_trip_is_stable() {
             &mut app,
         );
         let after_second = app.read_model(&buffer2, |buffer, _| buffer.markdown());
-        assert_eq!(after_second, expected_escaped, "second round-trip should be stable");
+        assert_eq!(
+            after_second, expected_escaped,
+            "second round-trip should be stable"
+        );
 
         let (buffer3, _) = Buffer::mock_from_markdown(
             &after_second,
@@ -397,7 +401,10 @@ fn test_url_link_display_text_round_trip_is_stable() {
             &mut app,
         );
         let after_third = app.read_model(&buffer3, |buffer, _| buffer.markdown());
-        assert_eq!(after_third, expected_escaped, "third round-trip should be stable");
+        assert_eq!(
+            after_third, expected_escaped,
+            "third round-trip should be stable"
+        );
     });
 }
 
