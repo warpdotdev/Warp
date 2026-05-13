@@ -3759,7 +3759,7 @@ impl Input {
         self.is_editor_empty_on_last_edit = is_input_buffer_empty;
 
         #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-        self.start_pwd_environment_overlap(ctx);
+        self.auto_select_environment_from_pwd(ctx);
 
         ctx.notify();
     }
@@ -3767,7 +3767,7 @@ impl Input {
     /// Spawns an async task to resolve the pwd's git repo and pick the best
     /// environment overlap, updating the handoff compose state when done.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-    fn start_pwd_environment_overlap(&mut self, ctx: &mut ViewContext<Self>) {
+    fn auto_select_environment_from_pwd(&mut self, ctx: &mut ViewContext<Self>) {
         let Some(pwd) = self
             .active_session_path_if_local(ctx)
             .map(Path::to_path_buf)
@@ -3894,7 +3894,7 @@ impl Input {
         self.is_editor_empty_on_last_edit = is_input_buffer_empty;
 
         #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-        self.start_pwd_environment_overlap(ctx);
+        self.auto_select_environment_from_pwd(ctx);
 
         ctx.notify();
         true

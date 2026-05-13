@@ -50,6 +50,14 @@ impl HandoffComposeState {
         is_explicit: bool,
         ctx: &mut ModelContext<Self>,
     ) {
+        // Async/implicit updates (e.g. pwd-based overlap resolution) must not
+        // overwrite an environment the user already picked explicitly.
+        if !is_explicit && self.has_explicit_environment_selection {
+            return;
+        }
+
+        // No-op when the value is unchanged, unless this is the first explicit
+        // selection (which needs to promote `has_explicit_environment_selection`).
         if self.selected_environment_id == environment_id
             && (!is_explicit || self.has_explicit_environment_selection)
         {

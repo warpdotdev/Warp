@@ -547,9 +547,6 @@ impl AmbientAgentViewModel {
     }
 
     /// Records the outcome of the async snapshot upload.
-    /// case is `Uploaded(token)`; `SkippedEmptyWorkspace` when the workspace
-    /// had nothing to upload; `Failed` is set by `record_handoff_snapshot_upload_failed`.
-    /// No-op when no handoff context is set.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pub(crate) fn set_pending_handoff_snapshot_upload(
         &mut self,
