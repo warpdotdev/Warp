@@ -150,6 +150,8 @@ bash script/setup-merge-drivers.sh
 | `cloud_conversations` 全家桶 | openWarp BYOP 不接 Warp 云 | 上游若新增此目录文件,直接 `git rm` |
 | `app/src/server/cloud_objects/**` | OpenWarp 不接云对象 RTC/初始加载/服务端 fan-in;本地写入入口迁到 `app/src/cloud_object/update_manager.rs` | 上游若恢复此目录,直接 `git rm`;保留 `server/mod.rs` 内兼容转发模块 |
 | `app/src/server/server_api/object.rs` | `ObjectClient` 云对象 RPC 已物理删除,本地对象 create/update 只走 CloudModel/SQLite | 上游若恢复此文件或 `get_cloud_objects_client()`,直接删除并保留本地路径 |
+| `app/src/workspaces/update_manager.rs` | `TeamUpdateManager` 云端 workspace metadata/team polling 壳已物理删除;OpenWarp 的 agent SDK metadata refresh 是本地立即成功,Drive workspace 切换直接写 `UserWorkspaces` | 上游若恢复该文件或 `TeamUpdateManager` singleton,直接删除并改调用点走本地 `UserWorkspaces` / no-op |
+| `app/src/workspaces/team_tester.rs` | 该 singleton 只负责触发旧 cloud object / workspace metadata pollers,在 OpenWarp 本地化后无本地语义 | 上游若恢复 `TeamTesterStatus` 或 `InitiateDataPollers` 事件,直接删除 |
 | `crates/graphql/src/api/queries/get_updated_cloud_objects.rs` / `get_oauth_connect_tx_status.rs` | 云对象更新轮询与 OAuth cloud poll 已删除 | 上游若恢复,直接 `git rm`;BYOP OAuth 只保留本地禁用语义 |
 | AI 回复 footer 点赞/点踩(`render_response_footer` 中的 thumbs up/down) | 移除 telemetry 反馈链路 | 上游若改 output.rs 这段,保留 openWarp 版 |
 | 智能体署名 `AgentAttributionWidget` + `AISettings.agent_attribution_enabled` | 不需要 | 上游若修改,丢弃 |

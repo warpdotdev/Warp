@@ -104,9 +104,6 @@ app/  (主二进制:装配、入口、平台粘合、持久化迁移、UI 视图
 | `http_client` | 工作区统一 HTTP 客户端封装 |
 | `http_server` | 内嵌 HTTP server(本地 RPC、登录回调等) |
 | `websocket` | 原生与 WASM 共用的 WebSocket 抽象,适配 `graphql_ws_client` |
-| `graphql` (`warp_graphql`) | GraphQL 客户端、查询/订阅生成,从 `graphql/api/schema.graphql` 出 |
-| `warp_graphql_schema` | GraphQL 服务端 schema 定义 / 共享类型 |
-| `warp_server_client` | 与 warp 服务端的高层 RPC 客户端 |
 | `ipc` | 通用类型化 IPC 请求/响应协议(进程间) |
 | `jsonrpc` | JSON-RPC 实现 |
 | `lsp` | Language Server Protocol 客户端实现 |
@@ -172,7 +169,7 @@ app/  (主二进制:装配、入口、平台粘合、持久化迁移、UI 视图
 | `handlebars` | Handlebars 模板引擎封装 |
 | `integration` | 集成测试框架,只用于测试 |
 
-> 命名小坑:`crates/editor` 的 package 名是 `warp_editor`;`crates/graphql` 是 `warp_graphql`;`crates/isolation_platform` 是 `warp_isolation_platform`;`crates/managed_secrets` 是 `warp_managed_secrets`;`crates/virtual_fs` 是 `virtual-fs`(短横线);`crates/string-offset` 是 `string-offset`(短横线)。
+> 命名小坑:`crates/editor` 的 package 名是 `warp_editor`;`crates/isolation_platform` 是 `warp_isolation_platform`;`crates/managed_secrets` 是 `warp_managed_secrets`;`crates/virtual_fs` 是 `virtual-fs`(短横线);`crates/string-offset` 是 `string-offset`(短横线)。
 
 ---
 
@@ -262,12 +259,12 @@ app/  (主二进制:装配、入口、平台粘合、持久化迁移、UI 视图
 
 ## 5. 工程纪律(给 Agent 的强约束)
 
-> 这些来自 `WARP.md` 与项目自定义规则,违反会导致 PR 被打回或引入运行期 bug。
+> 这些基于 `WARP.md` 与项目自定义规则整理;本文件对 agent 的验证要求以 `cargo check` 为准。
 
 ### 5.1 必读约定
 - **注释/回复一律使用简体中文**(用户规则)。
 - 在 git 索引内的搜索/grep 使用 `fff` 工具或 `rg -n "<关键词>" <路径>`;`read_file` 仅用于图片/二进制。
-- 提 PR / 推新 commit 之前,**必须**通过:`cargo fmt` + `cargo clippy --workspace --all-targets --all-features --tests -- -D warnings` + `./script/presubmit`。
+- 提 PR / 推新 commit 之前,**只需**通过:`cargo check`。
 - 改动需精准:**每一行修改都能溯源到用户请求**,不要顺手"改进"无关代码、注释、格式。
 - 简洁优先:不要为单点使用引入抽象、配置、错误处理、多余特性。
 - 多解释方案、暴露不确定性,而不是默默替用户做选择。
@@ -328,7 +325,6 @@ app/  (主二进制:装配、入口、平台粘合、持久化迁移、UI 视图
 | 加新设置项 | `crates/settings_value*`、`crates/settings`,UI 在 `app/src/settings_view/` |
 | 加 Feature Flag | `crates/warp_core/src/features.rs` + 使用点 |
 | 改云端同步对象 | `crates/warp_files` + `app/src/drive/` + `app/src/cloud_object/` |
-| 加 GraphQL 操作 | 写到 `crates/graphql/`,schema 在 `graphql/api/schema.graphql` |
 | 改持久化结构 | `migrations/` 加迁移 + `crates/persistence` |
 | 加新二进制工具 | `app/src/bin/` |
 | 平台特定代码 | 用 `#[cfg(target_os = "...")]`,UI 平台胶水在 `app/src/platform/` |
@@ -350,7 +346,7 @@ app/  (主二进制:装配、入口、平台粘合、持久化迁移、UI 视图
 5. 涉及子进程?是否走了 `crates/command`?
 6. 涉及持久化?是否需要 migration?
 7. 已经写了对应的 `${file}_tests.rs`?
-8. `cargo fmt` / `cargo clippy -D warnings` / 相关 `cargo nextest` 是否绿?
+8. `cargo check` 是否绿?
 9. 改动的每一行能否一一对应到用户请求?顺手做的"小重构"是否应该回滚?
 
 把上面 9 条都过一遍,再交付。

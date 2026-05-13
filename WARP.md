@@ -69,7 +69,6 @@ This is a Rust-based terminal emulator with a custom UI framework called **WarpU
 - `crates/editor/` - Text editing functionality
 - `crates/warpui/` and `crates/warpui_core/` - Custom UI framework
 - `crates/ipc/` - Inter-process communication
-- `crates/graphql/` - GraphQL client and schema
 
 ### Key Architectural Patterns
 
@@ -136,10 +135,6 @@ This is a Rust-based terminal emulator with a custom UI framework called **WarpU
 - Uses Diesel ORM with SQLite
 - Migrations in `crates/persistence/migrations/`
 - Schema defined in `crates/persistence/src/schema.rs`
-
-**GraphQL**:
-- Schema and client code generation from `crates/warp_graphql_schema/api/schema.graphql`
-- TypeScript types generated for frontend integration
 
 ### Feature Flags
 
