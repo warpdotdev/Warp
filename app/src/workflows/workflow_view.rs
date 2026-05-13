@@ -22,6 +22,10 @@ use crate::{
             persistence::{CloudModel, CloudModelEvent},
             view::CloudViewModel,
         },
+        update_manager::{
+            FetchSingleObjectOption, ObjectOperation, OperationSuccessType, UpdateManager,
+            UpdateManagerEvent,
+        },
         CloudObject, CloudObjectEventEntrypoint, ObjectType, Owner, Revision, Space,
     },
     drive::{
@@ -50,10 +54,6 @@ use crate::{
     },
     send_telemetry_from_ctx,
     server::{
-        cloud_objects::update_manager::{
-            FetchSingleObjectOption, ObjectOperation, OperationSuccessType, UpdateManager,
-            UpdateManagerEvent,
-        },
         ids::{ClientId, ServerId, SyncId},
         telemetry::{CloudObjectTelemetryMetadata, TelemetryCloudObjectType, TelemetryEvent},
     },

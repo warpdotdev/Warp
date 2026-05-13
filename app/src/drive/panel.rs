@@ -11,14 +11,12 @@ use crate::{
     ai::{document::ai_document_model::AIDocumentId, facts::CloudAIFactModel},
     cloud_object::{
         model::{persistence::CloudModel, view::CloudViewModel},
+        update_manager::{InitiatedBy, UpdateManager},
         CloudObjectEventEntrypoint, GenericStringObjectFormat, JsonObjectType, Owner, Space,
     },
     env_vars::{manager::EnvVarCollectionSource, CloudEnvVarCollection},
     notebooks::{manager::NotebookSource, CloudNotebook},
-    server::{
-        cloud_objects::update_manager::{InitiatedBy, UpdateManager},
-        ids::{ClientId, ServerId, SyncId},
-    },
+    server::ids::{ClientId, ServerId, SyncId},
     workflows::{manager::WorkflowOpenSource, CloudWorkflow, WorkflowViewMode},
     workspaces::user_workspaces::UserWorkspaces,
 };

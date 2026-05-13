@@ -1,7 +1,8 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, str::FromStr};
 
 use chrono::{DateTime, Local};
-use session_sharing_protocol::common::SessionId;
+use serde::{Deserialize, Serialize};
+use session_sharing_protocol::common::{ProfileData as SessionSharingProfileData, Role, SessionId};
 use warp_core::ui::appearance::Appearance;
 use warpui::{
     color::ColorU,
@@ -10,9 +11,10 @@ use warpui::{
 };
 
 use crate::{
-    cloud_object::model::persistence::CloudModel,
+    auth::UserUid,
+    cloud_object::{model::persistence::CloudModel, Owner},
     server::ids::ServerId,
-    terminal::{shared_session::join_link, TerminalView},
+    terminal::TerminalView,
     ui_components::{
         avatar::{Avatar, AvatarContent},
         icons::Icon,
@@ -22,13 +24,179 @@ use crate::{
 
 // OpenWarp Phase 2a: `dialog/` (cloud sharing modal UI) deleted along with
 // all consumer triggers. `style.rs` is retained because the Subject /
-// UserKind avatar helpers in this module still depend on it. Phase 6 deletes
-// the rest along with `warp_server_client::drive::sharing` re-exports.
+// UserKind avatar helpers in this module still depend on it.
 mod style;
 
-pub use warp_server_client::drive::sharing::{
-    LinkSharingSubjectType, SharingAccessLevel, Subject, TeamKind, UserKind,
-};
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum SharingAccessLevel {
+    View,
+    Edit,
+    Full,
+}
+
+impl SharingAccessLevel {
+    pub fn label(&self) -> &'static str {
+        match self {
+            SharingAccessLevel::View => "Can view",
+            SharingAccessLevel::Edit => "Can edit",
+            SharingAccessLevel::Full => "Full access",
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            SharingAccessLevel::View => "view",
+            SharingAccessLevel::Edit => "edit",
+            SharingAccessLevel::Full => "access",
+        }
+    }
+
+    pub fn can_trash(self) -> bool {
+        self >= SharingAccessLevel::Edit
+    }
+
+    pub fn can_delete(self) -> bool {
+        self >= SharingAccessLevel::Full
+    }
+
+    pub fn can_move_drive(self) -> bool {
+        self >= SharingAccessLevel::Full
+    }
+
+    pub fn can_edit_access(self) -> bool {
+        self >= SharingAccessLevel::Full
+    }
+
+    pub fn to_serializable_value(self) -> &'static str {
+        match self {
+            SharingAccessLevel::View => "VIEW",
+            SharingAccessLevel::Edit => "EDIT",
+            SharingAccessLevel::Full => "FULL",
+        }
+    }
+}
+
+impl FromStr for SharingAccessLevel {
+    type Err = anyhow::Error;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "VIEW" => Ok(Self::View),
+            "EDIT" => Ok(Self::Edit),
+            "FULL" => Ok(Self::Full),
+            _ => Err(anyhow::anyhow!("unknown access level {value}")),
+        }
+    }
+}
+
+impl From<Role> for SharingAccessLevel {
+    fn from(role: Role) -> Self {
+        match role {
+            Role::Reader => Self::View,
+            Role::Executor => Self::Edit,
+            Role::Full => Self::Full,
+        }
+    }
+}
+
+impl From<SharingAccessLevel> for Role {
+    fn from(access_level: SharingAccessLevel) -> Self {
+        match access_level {
+            SharingAccessLevel::View => Self::Reader,
+            SharingAccessLevel::Edit | SharingAccessLevel::Full => Self::Executor,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum LinkSharingSubjectType {
+    None,
+    Anyone,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Subject {
+    User(UserKind),
+    #[allow(dead_code)]
+    PendingUser {
+        email: Option<String>,
+    },
+    Team(TeamKind),
+    AnyoneWithLink(LinkSharingSubjectType),
+}
+
+#[derive(Debug, Clone)]
+pub enum UserKind {
+    Account(UserUid),
+    SharedSessionParticipant(SessionSharingProfileData),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TeamKind {
+    Team { team_uid: ServerId },
+    SharedSessionTeam { team_uid: ServerId, name: String },
+}
+
+impl TeamKind {
+    pub fn team_uid(&self) -> ServerId {
+        match self {
+            TeamKind::Team { team_uid } => *team_uid,
+            TeamKind::SharedSessionTeam { team_uid, .. } => *team_uid,
+        }
+    }
+}
+
+impl Subject {
+    pub fn from_owner(owner: Owner) -> Self {
+        match owner {
+            Owner::User { user_uid } => Subject::User(UserKind::Account(user_uid)),
+            Owner::Team { team_uid } => Subject::Team(TeamKind::Team { team_uid }),
+        }
+    }
+
+    pub fn user_uid(&self) -> Option<UserUid> {
+        match self {
+            Subject::User(user_kind) => match user_kind {
+                UserKind::Account(user_uid) => Some(*user_uid),
+                UserKind::SharedSessionParticipant(profile_data) => {
+                    Some(UserUid::new(profile_data.firebase_uid.as_str()))
+                }
+            },
+            Subject::PendingUser { .. } | Subject::Team(_) | Subject::AnyoneWithLink(_) => None,
+        }
+    }
+
+    pub fn is_user(&self, other_uid: UserUid) -> bool {
+        match self {
+            Subject::User(UserKind::Account(user_uid)) => *user_uid == other_uid,
+            Subject::User(UserKind::SharedSessionParticipant(profile_data)) => {
+                profile_data.firebase_uid.as_str() == other_uid.as_str()
+            }
+            Subject::PendingUser { .. } | Subject::Team(_) | Subject::AnyoneWithLink(_) => false,
+        }
+    }
+
+    pub fn team_uid(&self) -> Option<ServerId> {
+        match self {
+            Subject::Team(team_kind) => Some(team_kind.team_uid()),
+            Subject::User(_) | Subject::PendingUser { .. } | Subject::AnyoneWithLink(_) => None,
+        }
+    }
+}
+
+impl PartialEq for UserKind {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Account(self_uid), Self::Account(other_uid)) => self_uid == other_uid,
+            (
+                Self::SharedSessionParticipant(self_profile),
+                Self::SharedSessionParticipant(other_profile),
+            ) => self_profile.firebase_uid == other_profile.firebase_uid,
+            (Self::Account(_), Self::SharedSessionParticipant(_))
+            | (Self::SharedSessionParticipant(_), Self::Account(_)) => false,
+        }
+    }
+}
 
 /// Identifier for an object that's shareable via the Warp Drive ACL model. Not all sharing in Warp
 /// is _currently_ tied into this model (e.g. block sharing).
@@ -52,7 +220,7 @@ impl ShareableObject {
             ShareableObject::WarpDriveObject(id) => CloudModel::as_ref(app)
                 .get_by_uid(&id.uid())
                 .and_then(|object| object.object_link()),
-            ShareableObject::Session { session_id, .. } => Some(join_link(session_id)),
+            ShareableObject::Session { .. } => None,
         }
     }
 }

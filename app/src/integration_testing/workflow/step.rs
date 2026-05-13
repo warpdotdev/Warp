@@ -7,7 +7,7 @@ use crate::{
     drive::OpenWarpDriveObjectSettings,
     integration_testing::view_getters::workspace_view,
     server::{
-        cloud_objects::update_manager::UpdateManager,
+        cloud_object::update_manager::UpdateManager,
         ids::{ClientId, SyncId},
     },
     workflows::{manager::WorkflowOpenSource, workflow::Workflow, WorkflowViewMode},

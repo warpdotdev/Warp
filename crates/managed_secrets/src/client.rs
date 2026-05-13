@@ -7,9 +7,29 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use vec1::Vec1;
 
-use warp_graphql::managed_secrets::{ManagedSecret, ManagedSecretConfig, ManagedSecretType};
+use crate::{ManagedSecretType, ManagedSecretValue};
 
-pub use warp_graphql::queries::task_secrets::ManagedSecretValue;
+#[derive(Debug)]
+pub struct ManagedSecretConfig {
+    /// The base64-encoded public key.
+    pub public_key: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ManagedSecretOwner {
+    User { uid: String },
+    Team { uid: String },
+}
+
+#[derive(Debug, Clone)]
+pub struct ManagedSecret {
+    pub name: String,
+    pub description: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub owner: ManagedSecretOwner,
+    pub type_: ManagedSecretType,
+}
 
 /// An OIDC identity token issued for a task workload.
 #[derive(Debug, Clone)]

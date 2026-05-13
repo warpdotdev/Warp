@@ -2,12 +2,16 @@ use crate::ai::execution_profiles::{
     ActionPermission, ComputerUsePermission, WriteToPtyPermission,
 };
 use crate::ai::llms::LLMModelHost;
-use crate::{auth::UserUid, server::ids::ServerId, settings::AgentModeCommandExecutionPredicate};
+use crate::{
+    auth::UserUid,
+    pricing::{AddonCreditsOption, StripeSubscriptionPlan},
+    server::ids::ServerId,
+    settings::AgentModeCommandExecutionPredicate,
+};
 use chrono::Utc;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, path::PathBuf};
-use warp_graphql::billing::{AddonCreditAutoReloadStatus, ServiceAgreement, ServiceAgreementType};
 
 use super::team::{MembershipRole, Team};
 
@@ -156,7 +160,7 @@ impl Workspace {
     /// Returns None if auto-reload is not configured or if the denomination can't be found in pricing options.
     pub fn get_auto_reload_price_cents(
         &self,
-        addon_credits_options: &[warp_graphql::billing::AddonCreditsOption],
+        addon_credits_options: &[AddonCreditsOption],
     ) -> Option<i32> {
         let selected_credits = self
             .settings
@@ -419,6 +423,72 @@ pub struct BillingMetadata {
     pub ai_overages: Option<AiOverages>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum AddonCreditAutoReloadStatus {
+    Failed,
+    Succeeded,
+}
+
+#[derive(Clone, Debug)]
+pub struct ServiceAgreement {
+    pub addon_credit_auto_reload_status: Option<AddonCreditAutoReloadStatus>,
+    pub current_period_end: chrono::DateTime<chrono::Utc>,
+    pub status: ServiceAgreementStatus,
+    pub stripe_subscription_id: Option<String>,
+    pub type_: ServiceAgreementType,
+    pub sunsetted_to_build_ts: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Clone, Debug)]
+pub enum ServiceAgreementStatus {
+    Active,
+    Canceled,
+    PastDue,
+    Unpaid,
+    Other(String),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ServiceAgreementType {
+    Enterprise,
+    Legacy,
+    ProTrial,
+    Prosumer,
+    SelfServe,
+    TeamTrial,
+    Turbo,
+    Business,
+    Lightspeed,
+    Other(String),
+}
+
+impl TryFrom<&BillingMetadata> for StripeSubscriptionPlan {
+    type Error = ();
+
+    fn try_from(billing_metadata: &BillingMetadata) -> Result<Self, Self::Error> {
+        match billing_metadata.customer_type {
+            CustomerType::Turbo => Ok(StripeSubscriptionPlan::Turbo),
+            CustomerType::SelfServe => Ok(StripeSubscriptionPlan::Team),
+            CustomerType::Prosumer => Ok(StripeSubscriptionPlan::Pro),
+            CustomerType::Business => match billing_metadata
+                .service_agreements
+                .first()
+                .map(|sa| sa.type_.clone())
+            {
+                Some(ServiceAgreementType::SelfServe) => Ok(StripeSubscriptionPlan::BuildBusiness),
+                _ => Ok(StripeSubscriptionPlan::Business),
+            },
+            CustomerType::Lightspeed => Ok(StripeSubscriptionPlan::Lightspeed),
+            CustomerType::Build => Ok(StripeSubscriptionPlan::Build),
+            CustomerType::BuildMax => Ok(StripeSubscriptionPlan::BuildMax),
+            CustomerType::Free
+            | CustomerType::Legacy
+            | CustomerType::Enterprise
+            | CustomerType::Unknown => Err(()),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct BonusGrantsPurchased {
     pub total_credits_purchased: i32,
@@ -557,7 +627,7 @@ impl BillingMetadata {
 
     pub fn has_active_subscription(&self) -> bool {
         if let Some(newest_service_agreement) = self.service_agreements.first() {
-            let not_expired = Utc::now() < newest_service_agreement.current_period_end.utc();
+            let not_expired = Utc::now() < newest_service_agreement.current_period_end;
             let not_delinquent = !self.is_delinquent_due_to_payment_issue();
             not_expired && not_delinquent
         } else {

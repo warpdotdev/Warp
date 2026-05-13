@@ -23,13 +23,11 @@ use warpui::SingletonEntity;
 mod convert;
 mod model;
 
-pub use model::{Event as ServerExperimentsEvent, ServerExperiments};
+pub use model::ServerExperiments;
 
 /// The known server-side experiments.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum ServerExperiment {
-    SessionSharingExperiment,
-    SessionSharingControl,
     DisableAgentModeExperiment,
     EnvVarsEarlyAccessExperiment,
     AgentModeAnalyticsExperiment,
@@ -69,12 +67,6 @@ impl ServerExperiment {
     //    have been initialized and can thus be referenced.
     fn on_added_to(&self, _ctx: &mut AppContext) {
         match self {
-            Self::SessionSharingExperiment => {
-                FeatureFlag::CreatingSharedSessions.set_enabled(true);
-            }
-            Self::SessionSharingControl => {
-                FeatureFlag::CreatingSharedSessions.set_enabled(false);
-            }
             Self::DisableAgentModeExperiment => {
                 FeatureFlag::AgentMode.set_enabled(false);
             }

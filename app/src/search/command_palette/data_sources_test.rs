@@ -4,74 +4,65 @@ use warpui::{App, SingletonEntity};
 
 use super::*;
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::Owner;
+use crate::cloud_object::{CloudObjectMetadata, CloudObjectPermissions, Owner};
 use crate::notebooks::manager::NotebookManager;
-use crate::notebooks::CloudNotebookModel;
-use crate::server::ids::ServerId;
+use crate::notebooks::{CloudNotebook, CloudNotebookModel};
 use crate::server::ids::SyncId::{self};
 use crate::settings::AISettings;
 use crate::workflows::workflow::Workflow;
-use crate::workflows::CloudWorkflowModel;
+use crate::workflows::{CloudWorkflow, CloudWorkflowModel};
 use crate::{
+    cloud_object::update_manager::UpdateManager,
     cloud_object::{
         model::{persistence::CloudModel, view::CloudViewModel},
-        Revision, ServerMetadata, ServerNotebook, ServerPermissions, ServerWorkflow,
+        Revision,
     },
     network::NetworkStatus,
     notebooks::NotebookId,
     search::data_source::Query,
-    server::{cloud_objects::update_manager::UpdateManager, server_api::ServerApiProvider},
     system::SystemStats,
     workflows::WorkflowId,
-    workspaces::{
-        team_tester::TeamTesterStatus, user_profiles::UserProfiles, user_workspaces::UserWorkspaces,
-    },
+    workspaces::{user_profiles::UserProfiles, user_workspaces::UserWorkspaces},
 };
 
-fn mock_server_metadata() -> ServerMetadata {
-    ServerMetadata {
-        uid: ServerId::default(),
-        revision: Revision::now(),
-        metadata_last_updated_ts: Utc::now().into(),
-        trashed_ts: None,
-        folder_id: None,
-        is_welcome_object: false,
-        creator_uid: None,
-        last_editor_uid: None,
-        current_editor_uid: None,
-    }
+fn mock_metadata() -> CloudObjectMetadata {
+    let mut metadata = CloudObjectMetadata::mock();
+    metadata.revision = Some(Revision::now());
+    metadata
 }
 
-fn mock_server_permissions(owner: Owner) -> ServerPermissions {
-    ServerPermissions {
-        space: owner,
+fn mock_permissions(owner: Owner) -> CloudObjectPermissions {
+    CloudObjectPermissions {
+        owner,
         guests: Vec::new(),
-        anyone_link_sharing: None,
-        permissions_last_updated_ts: Utc::now().into(),
+        permissions_last_updated_ts: Some(Utc::now().into()),
+        anyone_with_link: None,
     }
 }
 
-fn mock_server_workflow(id: WorkflowId, owner: Owner) -> ServerWorkflow {
-    ServerWorkflow {
-        id: SyncId::ServerId(id.into()),
-        metadata: mock_server_metadata(),
-        permissions: mock_server_permissions(owner),
-        model: CloudWorkflowModel::new(Workflow::new(format!("foo{id}"), format!("bar{id}"))),
-    }
+fn mock_workflow(id: WorkflowId, owner: Owner) -> CloudWorkflow {
+    let sync_id = SyncId::ServerId(id.into());
+    CloudWorkflow::new(
+        sync_id,
+        CloudWorkflowModel::new(Workflow::new(format!("foo{id}"), format!("bar{id}"))),
+        mock_metadata(),
+        mock_permissions(owner),
+    )
 }
 
-fn mock_server_notebook(id: NotebookId, owner: Owner) -> ServerNotebook {
-    ServerNotebook {
-        id: SyncId::ServerId(id.into()),
-        metadata: mock_server_metadata(),
-        permissions: mock_server_permissions(owner),
-        model: CloudNotebookModel {
+fn mock_notebook(id: NotebookId, owner: Owner) -> CloudNotebook {
+    let sync_id = SyncId::ServerId(id.into());
+    CloudNotebook::new(
+        sync_id,
+        CloudNotebookModel {
             title: format!("foo{id}"),
             data: format!("bar{id}"),
             ai_document_id: None,
             conversation_id: None,
         },
-    }
+        mock_metadata(),
+        mock_permissions(owner),
+    )
 }
 
 fn initialize_app(app: &mut App) {
@@ -79,13 +70,11 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
-    app.add_singleton_model(TeamTesterStatus::new);
     app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|ctx| UpdateManager::new(None, ctx));
     app.add_singleton_model(|_| UserProfiles::new(Vec::new()));
     app.add_singleton_model(CloudViewModel::new);
     app.add_singleton_model(NotebookManager::mock);
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| SettingsManager::default());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.update(crate::settings::init_and_register_user_preferences);
@@ -97,15 +86,11 @@ fn test_drive_data_source_correctly_filters_drive_filter() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
         // Initialize CloudModel
-        CloudModel::handle(&app).update(&mut app, |model, ctx| {
-            model.upsert_from_server_notebook(
-                mock_server_notebook(1.into(), Owner::mock_current_user()),
-                ctx,
-            );
-            model.upsert_from_server_workflow(
-                mock_server_workflow(2.into(), Owner::mock_current_user()),
-                ctx,
-            )
+        CloudModel::handle(&app).update(&mut app, |model, _| {
+            let notebook = mock_notebook(1.into(), Owner::mock_current_user());
+            model.add_object(notebook.id, notebook);
+            let workflow = mock_workflow(2.into(), Owner::mock_current_user());
+            model.add_object(workflow.id, workflow);
         });
 
         let mixer = app.add_model(|_| CommandPaletteMixer::new());
@@ -145,15 +130,11 @@ fn test_drive_data_source_correctly_filters_no_filter() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
         // Initialize CloudModel
-        CloudModel::handle(&app).update(&mut app, |model, ctx| {
-            model.upsert_from_server_notebook(
-                mock_server_notebook(1.into(), Owner::mock_current_user()),
-                ctx,
-            );
-            model.upsert_from_server_workflow(
-                mock_server_workflow(2.into(), Owner::mock_current_user()),
-                ctx,
-            )
+        CloudModel::handle(&app).update(&mut app, |model, _| {
+            let notebook = mock_notebook(1.into(), Owner::mock_current_user());
+            model.add_object(notebook.id, notebook);
+            let workflow = mock_workflow(2.into(), Owner::mock_current_user());
+            model.add_object(workflow.id, workflow);
         });
         let mixer = app.add_model(|_| CommandPaletteMixer::new());
         let data_source_handle = app.add_model(warp_drive::DataSource::new);
@@ -192,15 +173,11 @@ fn test_drive_data_source_correctly_filters_workflow_filter() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
         // Initialize CloudModel
-        CloudModel::handle(&app).update(&mut app, |model, ctx| {
-            model.upsert_from_server_notebook(
-                mock_server_notebook(1.into(), Owner::mock_current_user()),
-                ctx,
-            );
-            model.upsert_from_server_workflow(
-                mock_server_workflow(2.into(), Owner::mock_current_user()),
-                ctx,
-            )
+        CloudModel::handle(&app).update(&mut app, |model, _| {
+            let notebook = mock_notebook(1.into(), Owner::mock_current_user());
+            model.add_object(notebook.id, notebook);
+            let workflow = mock_workflow(2.into(), Owner::mock_current_user());
+            model.add_object(workflow.id, workflow);
         });
         let mixer = app.add_model(|_| CommandPaletteMixer::new());
         let data_source_handle = app.add_model(warp_drive::DataSource::new);
@@ -241,15 +218,11 @@ fn test_drive_data_source_correctly_filters_notebook_filter() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
         // Initialize CloudModel
-        CloudModel::handle(&app).update(&mut app, |model, ctx| {
-            model.upsert_from_server_notebook(
-                mock_server_notebook(1.into(), Owner::mock_current_user()),
-                ctx,
-            );
-            model.upsert_from_server_workflow(
-                mock_server_workflow(2.into(), Owner::mock_current_user()),
-                ctx,
-            )
+        CloudModel::handle(&app).update(&mut app, |model, _| {
+            let notebook = mock_notebook(1.into(), Owner::mock_current_user());
+            model.add_object(notebook.id, notebook);
+            let workflow = mock_workflow(2.into(), Owner::mock_current_user());
+            model.add_object(workflow.id, workflow);
         });
         let mixer = app.add_model(|_| CommandPaletteMixer::new());
         let data_source_handle = app.add_model(warp_drive::DataSource::new);

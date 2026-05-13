@@ -1,4 +1,4 @@
-﻿use std::{path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 use pathfinder_geometry::vector::vec2f;
 
@@ -10,14 +10,12 @@ use warp_core::ui::appearance::Appearance;
 use warp_files::FileModel;
 use warpui::{platform::WindowStyle, App, SingletonEntity, View};
 
-use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::terminal::keys::TerminalKeybindings;
 use crate::{
     auth::{AuthManager, AuthStateProvider},
     cloud_object::model::persistence::CloudModel,
     notebooks::{editor::keys::NotebookKeybindings, file::is_markdown_file},
     search::files::model::FileSearchModel,
-    server::server_api::ServerApiProvider,
     settings_view::keybindings::KeybindingChangedNotifier,
     terminal::model::session::Session,
     test_util::settings::initialize_settings_for_tests,
@@ -47,9 +45,7 @@ fn init_app(app: &mut App) {
     app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(TerminalKeybindings::new);
     app.add_singleton_model(CloudModel::mock);
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
     #[cfg(feature = "voice_input")]

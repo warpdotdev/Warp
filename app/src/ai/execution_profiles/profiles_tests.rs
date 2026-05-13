@@ -1,36 +1,20 @@
-use chrono::{DateTime, Utc};
 use warpui::{App, SingletonEntity};
 
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::execution_profiles::{
-    AIExecutionProfile, ActionPermission, CloudAIExecutionProfileModel,
+    AIExecutionProfile, ActionPermission, CloudAIExecutionProfile, CloudAIExecutionProfileModel,
 };
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
-use crate::cloud_object::{Revision, ServerAIExecutionProfile, ServerMetadata, ServerPermissions};
+use crate::cloud_object::update_manager::UpdateManager;
+use crate::cloud_object::{CloudObjectMetadata, CloudObjectPermissions};
 use crate::network::NetworkStatus;
-use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ServerId, SyncId};
 use crate::settings::PrivacySettings;
 use crate::test_util::settings::initialize_settings_for_tests;
-use crate::workspaces::team_tester::TeamTesterStatus;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::LaunchMode;
-
-fn mock_server_metadata(uid: ServerId) -> ServerMetadata {
-    ServerMetadata {
-        uid,
-        revision: Revision::now(),
-        metadata_last_updated_ts: DateTime::<Utc>::default().into(),
-        trashed_ts: None,
-        folder_id: None,
-        is_welcome_object: false,
-        creator_uid: None,
-        last_editor_uid: None,
-        current_editor_uid: None,
-    }
-}
 
 /// Install the minimal singleton graph needed to construct an
 /// `AIExecutionProfilesModel` and exercise its CloudModel interactions.
@@ -38,7 +22,6 @@ fn install_singletons(app: &mut App, auth_state: AuthStateProvider) {
     initialize_settings_for_tests(app);
     app.add_singleton_model(|_| auth_state);
     app.add_singleton_model(|_| NetworkStatus::new());
-    app.add_singleton_model(TeamTesterStatus::mock);
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|_| TemplatableMCPServerManager::default());
@@ -96,10 +79,9 @@ fn edits_persist_on_unsynced_default_profile_when_logged_out() {
 }
 
 /// Regression test for the "log in to an existing user after onboarding"
-/// bug. Cloud objects arriving via the initial bulk load are inserted into
-/// `CloudModel` *without* firing per-object `ObjectCreated` events —
-/// `update_objects_from_initial_load` passes `emit_events: false` and emits
-/// a single `CloudModelEvent::InitialLoadCompleted` afterward instead.
+/// bug. Objects restored from local storage can already exist in `CloudModel`
+/// before `AIExecutionProfilesModel` observes per-object `ObjectCreated` events.
+/// The model reconciles when it receives `CloudModelEvent::InitialLoadCompleted`.
 /// Without the reconciliation handler for `InitialLoadCompleted`, the
 /// existing user's default profile sits in `CloudModel` but
 /// `AIExecutionProfilesModel` stays in `Unsynced`, so a subsequent
@@ -135,19 +117,17 @@ fn reconciles_unsynced_default_profile_with_cloud_after_initial_load() {
             apply_code_diffs: ActionPermission::AlwaysAllow,
             ..Default::default()
         };
-        let server_object = ServerAIExecutionProfile {
-            id: cloud_sync_id,
-            model: CloudAIExecutionProfileModel::new(cloud_profile),
-            metadata: mock_server_metadata(cloud_uid),
-            permissions: ServerPermissions::mock_personal(),
-        };
+        let cloud_object = CloudAIExecutionProfile::new(
+            cloud_sync_id,
+            CloudAIExecutionProfileModel::new(cloud_profile),
+            CloudObjectMetadata::mock(),
+            CloudObjectPermissions::mock_personal(),
+        );
 
-        // Insert the object into CloudModel via the initial-load path
-        // (`emit_events=false`) and then emit `InitialLoadCompleted` so the
-        // reconciliation handler fires.
+        // Insert the object into CloudModel without per-object events and then
+        // emit `InitialLoadCompleted` so the reconciliation handler fires.
         CloudModel::handle(&app).update(&mut app, move |cloud_model, ctx| {
-            let server_objects: Vec<ServerAIExecutionProfile> = vec![server_object];
-            cloud_model.update_objects_from_initial_load(server_objects, false, false, ctx);
+            cloud_model.add_object(cloud_sync_id, cloud_object);
             ctx.emit(CloudModelEvent::InitialLoadCompleted);
         });
 

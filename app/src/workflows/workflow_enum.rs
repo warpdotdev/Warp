@@ -6,7 +6,6 @@ use crate::cloud_object::{
         json_model::{JsonModel, JsonSerializer},
     },
     GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey, JsonObjectType,
-    ServerCloudObject,
 };
 
 /// Data model for a workflow enum, one type of argument that can be inserted into a workflow
@@ -58,13 +57,6 @@ impl StringModel for WorkflowEnum {
 
     fn display_name(&self) -> String {
         self.model_type_name().to_owned()
-    }
-
-    fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
-        if let ServerCloudObject::WorkflowEnum(server_workflow_enum) = server_cloud_object {
-            return Some(server_workflow_enum.model.clone().string_model);
-        }
-        None
     }
 
     fn uniqueness_key(&self) -> Option<GenericStringObjectUniqueKey> {

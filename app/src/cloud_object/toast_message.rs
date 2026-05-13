@@ -1,8 +1,6 @@
 use warpui::AppContext;
 
-use crate::server::cloud_objects::update_manager::{
-    InitiatedBy, ObjectOperation, OperationSuccessType,
-};
+use crate::cloud_object::update_manager::{InitiatedBy, ObjectOperation, OperationSuccessType};
 
 use super::{CloudObject, GenericStringObjectFormat, JsonObjectType, ObjectType};
 

@@ -63,9 +63,6 @@ impl FileBasedMCPManager {
             } => {
                 self.remove_servers_for_root_provider(root_path, *provider, ctx);
             }
-            FileMCPWatcherEvent::CloudEnvMcpScanComplete { repo_path } => {
-                self.handle_cloud_environment_scan_complete(repo_path, ctx);
-            }
         }
     }
 
@@ -311,32 +308,6 @@ impl FileBasedMCPManager {
         }
     }
 
-    fn handle_cloud_environment_scan_complete(
-        &mut self,
-        repo_path: &PathBuf,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        // Retrieve UUIDs of all file-based MCP servers in the repository.
-        let server_uuids: Vec<Uuid> = self
-            .file_based_servers_by_root
-            .get(repo_path)
-            .map(|provider_map| {
-                provider_map
-                    .values()
-                    .flat_map(|hash_set| hash_set.iter())
-                    .filter_map(|hash| self.file_based_servers.get(hash))
-                    .map(|installation| installation.uuid())
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        // Pass the UUIDs of all detected file-based MCP servers to the AgentDriver.
-        ctx.emit(FileBasedMCPManagerEvent::CloudEnvMcpScanComplete {
-            repo_path: repo_path.clone(),
-            server_uuids,
-        });
-    }
-
     fn handle_file_based_mcp_enabled_change(&mut self, ctx: &mut ModelContext<Self>) {
         // Only global third-party servers are affected by the toggle:
         // - Global Warp servers always spawn regardless of the toggle.
@@ -455,10 +426,6 @@ pub enum FileBasedMCPManagerEvent {
     },
     PurgeCredentials {
         installation_hashes: Vec<u64>,
-    },
-    CloudEnvMcpScanComplete {
-        repo_path: PathBuf,
-        server_uuids: Vec<Uuid>,
     },
 }
 

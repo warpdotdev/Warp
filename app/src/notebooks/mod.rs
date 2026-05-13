@@ -15,7 +15,7 @@ use warpui::AppContext;
 use crate::{
     ai::document::ai_document_model::AIDocumentId,
     appearance::Appearance,
-    cloud_object::{CloudModelType, GenericCloudObject, ObjectType, Owner, ServerCloudObject},
+    cloud_object::{CloudModelType, GenericCloudObject, ObjectType, Owner},
     drive::{
         items::{notebook::WarpDriveNotebook, WarpDriveItem},
         CloudObjectTypeAndId,
@@ -87,18 +87,6 @@ impl CloudModelType for CloudNotebookModel {
 
     fn should_update_after_server_conflict(&self) -> bool {
         true
-    }
-
-    fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
-        if let ServerCloudObject::Notebook(server_notebook) = server_cloud_object {
-            return Some(CloudNotebookModel {
-                title: server_notebook.model.title.clone(),
-                data: server_notebook.model.data.clone(),
-                ai_document_id: server_notebook.model.ai_document_id,
-                conversation_id: None, // conversation_id is not returned from server, just used for initial plan artifact creation
-            });
-        }
-        None
     }
 
     fn serialized(&self) -> SerializedModel {

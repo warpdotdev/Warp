@@ -27,7 +27,6 @@ tokio = { workspace = true, features = ["macros", "rt", "time"] }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 ws_stream_wasm = "0.7"
-graphql-ws-client = {workspace = true, features = ["ws_stream_wasm"]}
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 async-io.workspace = true
@@ -38,6 +37,5 @@ hyper = { workspace = true, features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 tokio = { workspace = true, features = ["io-util", "net", "time"] }
 tokio-rustls = "0.26.4"
-graphql-ws-client = {workspace = true, features = ["tungstenite"]}
 rustls = "0.23.29"
 rustls-platform-verifier = "0.6.1"

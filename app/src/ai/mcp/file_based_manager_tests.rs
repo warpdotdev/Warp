@@ -63,8 +63,7 @@ fn subscribe_events(
                 me.despawned_uuids
                     .extend(installation_uuids.iter().copied());
             }
-            FileBasedMCPManagerEvent::PurgeCredentials { .. }
-            | FileBasedMCPManagerEvent::CloudEnvMcpScanComplete { .. } => {}
+            FileBasedMCPManagerEvent::PurgeCredentials { .. } => {}
         });
     });
     events

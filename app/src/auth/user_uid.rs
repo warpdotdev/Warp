@@ -2,10 +2,7 @@ use std::{fmt, sync::LazyLock};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-pub const TEST_USER_EMAIL: &str = "test_user@warp.dev";
-pub const TEST_USER_UID: &str = "test_user_uid";
-
-/// UserUid represents the unique identifier for a user. Currently, this is a Firebase UID.
+/// 本地用户唯一标识。
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct UserUid(lasso::Spur);
 
@@ -14,8 +11,6 @@ static USER_UID_INTERNER: LazyLock<lasso::ThreadedRodeo<lasso::Spur>> =
 
 impl Default for UserUid {
     fn default() -> Self {
-        // Intern an empty string so that `as_str()` on a default UserUid
-        // returns "" instead of panicking with "Key out of bounds".
         Self::new("")
     }
 }
@@ -34,12 +29,6 @@ impl UserUid {
     }
 }
 
-impl From<UserUid> for cynic::Id {
-    fn from(user_uid: UserUid) -> Self {
-        cynic::Id::new(user_uid.as_str())
-    }
-}
-
 impl fmt::Display for UserUid {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
@@ -47,7 +36,7 @@ impl fmt::Display for UserUid {
 }
 
 impl fmt::Debug for UserUid {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("UserUid(")?;
         f.write_str(self.as_str())?;
         f.write_str(")")
@@ -69,9 +58,11 @@ impl<'de> Deserialize<'de> for UserUid {
         D: Deserializer<'de>,
     {
         struct UidVisitor;
+
         impl serde::de::Visitor<'_> for UidVisitor {
             type Value = UserUid;
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a user UID")
             }
 
@@ -82,6 +73,7 @@ impl<'de> Deserialize<'de> for UserUid {
                 Ok(UserUid::new(v))
             }
         }
+
         deserializer.deserialize_str(UidVisitor)
     }
 }

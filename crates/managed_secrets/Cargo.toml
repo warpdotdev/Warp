@@ -14,7 +14,6 @@ chrono.workspace = true
 log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tempfile.workspace = true
 thiserror.workspace = true
 tink-core = "0.3"
 tink-proto = "0.3"
@@ -22,7 +21,6 @@ tink-hybrid = "0.3"
 zeroize = "1.8"
 warpui.workspace = true
 warp_core.workspace = true
-warp_graphql.workspace = true
 vec1.workspace = true
 warp_isolation_platform.workspace = true
 

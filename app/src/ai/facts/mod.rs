@@ -8,7 +8,7 @@ use crate::{
             json_model::{JsonModel, JsonSerializer},
         },
         GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
-        JsonObjectType, ServerCloudObject,
+        JsonObjectType,
     },
     drive::CloudObjectTypeAndId,
 };
@@ -76,13 +76,6 @@ impl StringModel for AIFact {
         match self {
             AIFact::Memory(memory) => memory.content.clone(),
         }
-    }
-
-    fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
-        if let ServerCloudObject::AIFact(server_ai_fact) = server_cloud_object {
-            return Some(server_ai_fact.model.clone().string_model);
-        }
-        None
     }
 
     fn uniqueness_key(&self) -> Option<GenericStringObjectUniqueKey> {

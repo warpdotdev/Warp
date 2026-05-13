@@ -1,11 +1,4 @@
 //! A common websocket API that works for native and `wasm` targets.
-//! The returned [`WebSocket`] implements [graphql_ws_client::websockets::WebsocketMessage],
-//! allowing the returned socket to be used as the backing socket for a graphql websocket client.
-//! Unfortunately, this means that this crate depends on [`graphql_ws_client`] as a dependency even
-//! though it doesn't assume anything about the underlying protocol of the websocket. To remove this
-//! dependency, we would need to move the [`WebsocketMessage`] trait and
-//! `graphql_ws_client::wasm_websocket_combined_split` into a common location that both this crate
-//! and[`graphql_ws_client`] depend on.
 
 #[cfg_attr(not(target_family = "wasm"), path = "native.rs")]
 #[cfg_attr(target_family = "wasm", path = "wasm.rs")]
@@ -126,10 +119,6 @@ impl WebSocket {
     ) -> anyhow::Result<Self> {
         let socket = imp::connect(url, protocols).await?;
         Ok(Self(socket))
-    }
-
-    pub async fn into_graphql_client_builder(self) -> graphql_ws_client::ClientBuilder {
-        self.0.into_graphql_client_builder().await
     }
 }
 

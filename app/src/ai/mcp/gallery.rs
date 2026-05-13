@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ai::mcp::templatable::{
-    GalleryData, JsonTemplate, TemplatableMCPServer, TemplateVariable,
-};
+use crate::ai::mcp::templatable::{GalleryData, JsonTemplate, TemplatableMCPServer};
 use crate::server::datetime_ext::DateTimeExt;
 use chrono::DateTime;
 use uuid::Uuid;
@@ -99,8 +97,8 @@ pub struct MCPGalleryManager {
 impl MCPGalleryManager {
     pub fn new(_ctx: &mut ModelContext<Self>) -> Self {
         // OpenWarp(本地化,Phase 2d-2):原订阅 `UpdateManager` 的 `MCPGalleryUpdated` 事件
-        // 于云端 fetch 后畑发 gallery items。本地化后事件源 `on_changed_objects_fetched` 仅被
-        // RTC/轮询/团队切换跳转触发(Phase 5 范围),本 Phase 不动事件源仅解除订阅 ——
+        // 于云端 fetch 后分发 gallery items。本地化后云端对象 fetch/fan-in 已删除，
+        // 本 Phase 保持 gallery 为空并解除订阅 ——
         // gallery 在本地永远为空,由 `MCPServersListPageView` 渲染为空画布,本地 MCP 走 `file_based_manager`
         // 读 `~/.warp/mcp.json` 与 `~/.claude/...`,不受影响。
         Self {
@@ -119,63 +117,6 @@ impl MCPGalleryManager {
 
     pub fn get_templatable_mcp_server(&self, gallery_uuid: Uuid) -> Option<&TemplatableMCPServer> {
         self.templatable_mcp_servers.get(&gallery_uuid)
-    }
-
-    /// Update gallery items from the server response
-    pub fn update_gallery_items(
-        &mut self,
-        templates: Vec<warp_graphql::mcp_gallery_template::MCPGalleryTemplate>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let mut gallery_items = HashMap::new();
-        let mut templatable_mcp_servers = HashMap::new();
-
-        for gallery_template in templates {
-            let Ok(uuid) = Uuid::parse_str(&gallery_template.gallery_item_id) else {
-                log::debug!(
-                    "Failed to parse uuid for gallery item {}",
-                    gallery_template.gallery_item_id
-                );
-                continue;
-            };
-
-            let json_template = JsonTemplate {
-                json: gallery_template.json_template.json,
-                variables: gallery_template
-                    .json_template
-                    .variables
-                    .into_iter()
-                    .map(|v| TemplateVariable {
-                        key: v.key,
-                        allowed_values: v.allowed_values,
-                    })
-                    .collect(),
-            };
-
-            let gallery_item = GalleryMCPServer::new(
-                uuid,
-                gallery_template.title,
-                gallery_template.description,
-                gallery_template.version,
-                gallery_template.instructions_in_markdown,
-                json_template,
-            );
-
-            let Ok(templatable_mcp_server): Result<TemplatableMCPServer, _> =
-                gallery_item.clone().try_into()
-            else {
-                log::debug!("Failed to parse template for gallery item {}", uuid);
-                continue;
-            };
-
-            gallery_items.insert(uuid, gallery_item);
-            templatable_mcp_servers.insert(uuid, templatable_mcp_server);
-        }
-
-        self.gallery_items = gallery_items;
-        self.templatable_mcp_servers = templatable_mcp_servers;
-
-        ctx.emit(MCPGalleryManagerEvent::ItemsRefreshed);
     }
 }
 

@@ -1,5 +1,4 @@
-﻿use warp_core::ui::appearance::Appearance;
-use warp_server_client::cloud_object::ServerPermissions;
+use warp_core::ui::appearance::Appearance;
 use warpui::{
     platform::WindowStyle, AddSingletonModel, App, SingletonEntity, TypedActionView, ViewHandle,
 };
@@ -9,25 +8,18 @@ use crate::{
     auth::{AuthManager, AuthStateProvider},
     cloud_object::{
         model::{actions::ObjectActions, persistence::CloudModel, view::CloudViewModel},
-        CloudObjectSyncStatus, ObjectIdType, ObjectType, Owner, ServerCreationInfo, Space,
+        update_manager::UpdateManager,
+        CloudObjectSyncStatus, ObjectType, Owner, Space,
     },
     drive::{items::WarpDriveItemId, CloudObjectTypeAndId},
     menu::MenuItem,
     network::NetworkStatus,
     notebooks::{CloudNotebook, CloudNotebookModel},
-    server::{
-        cloud_objects::update_manager::UpdateManager,
-        ids::{ClientId, ServerIdAndType, SyncId},
-        server_api::ServerApiProvider,
-        telemetry::context_provider::AppTelemetryContextProvider,
-    },
+    server::ids::{ClientId, SyncId},
     settings_view::keybindings::KeybindingChangedNotifier,
-    terminal::shared_session::permissions_manager::SessionPermissionsManager,
     test_util::settings::initialize_settings_for_tests,
     workflows::{workflow::Workflow, CloudWorkflow, CloudWorkflowModel},
-    workspaces::{
-        team_tester::TeamTesterStatus, user_profiles::UserProfiles, user_workspaces::UserWorkspaces,
-    },
+    workspaces::{user_profiles::UserProfiles, user_workspaces::UserWorkspaces},
     Assets,
 };
 
@@ -40,16 +32,12 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(UserWorkspaces::default_mock);
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| Appearance::mock());
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
-    app.add_singleton_model(TeamTesterStatus::mock);
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(CloudViewModel::mock);
     app.add_singleton_model(|_| ObjectActions::new(Vec::new()));
     app.add_singleton_model(|_| UserProfiles::new(Vec::new()));
-    app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
     #[cfg(feature = "voice_input")]
@@ -191,37 +179,6 @@ fn test_retry_menu_item_logic() {
         });
 
         // OpenWarp(Wave 4):原验证 SyncQueue 队头是 CreateWorkflow,SyncQueue 整删后不适用。
-
-        let new_sync_id: SyncId = SyncId::ServerId(1.into());
-
-        // make the object known to the server (by giving it a server id instead)
-        CloudModel::handle(&app).update(&mut app, |cloud_model, ctx| {
-            if let CloudObjectTypeAndId::Workflow(SyncId::ClientId(client_id)) =
-                cloud_object_type_and_id
-            {
-                if let SyncId::ServerId(server_id) = new_sync_id {
-                    let server_creation_info = ServerCreationInfo {
-                        server_id_and_type: ServerIdAndType {
-                            id: server_id,
-                            id_type: ObjectIdType::Workflow,
-                        },
-                        creator_uid: None,
-                        permissions: ServerPermissions::mock_personal(),
-                    };
-                    cloud_model.update_object_after_server_creation(
-                        client_id,
-                        server_creation_info,
-                        ctx,
-                    );
-                }
-            }
-        });
-
-        index.update(&mut app, |index, ctx| {
-            let new_cloud_object_type_and_id: CloudObjectTypeAndId =
-                CloudObjectTypeAndId::from_id_and_type(new_sync_id, ObjectType::Workflow);
-            index.retry_failed_object(&new_cloud_object_type_and_id, ctx);
-        });
 
         // OpenWarp(Wave 4):原验证 SyncQueue 队列长度 + UpdateWorkflow tag,SyncQueue 整删后不适用。
     })

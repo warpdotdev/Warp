@@ -46,6 +46,7 @@ use crate::{
             persistence::{CloudModel, CloudModelEvent, UpdateSource},
             view::{Editor, EditorState},
         },
+        update_manager::{FetchSingleObjectOption, UpdateManager},
         CloudObject, CloudObjectEventEntrypoint, ObjectType, Owner, Space,
     },
     cmd_or_ctrl_shift,
@@ -72,7 +73,6 @@ use crate::{
     },
     report_if_error, safe_info, send_telemetry_from_ctx,
     server::{
-        cloud_objects::update_manager::{FetchSingleObjectOption, UpdateManager},
         ids::{ClientId, ServerId, SyncId},
         telemetry::{
             CloudObjectTelemetryMetadata, NotebookActionEvent, NotebookTelemetryMetadata,

@@ -1,7 +1,7 @@
 [package]
 authors = ["Warp Team <dev@warp.dev>"]
 default-run = "warp-oss"
-description = "The cloud-backed terminal for individuals and teams"
+description = "The local-first terminal for individuals and teams"
 edition = "2021"
 autobins = false
 name = "warp"
@@ -84,7 +84,6 @@ crc.workspace = true
 content_inspector = "0.2.4"
 concat-idents.workspace = true
 csv = "1.3.1"
-cynic.workspace = true
 dashmap.workspace = true
 deltae = "0.3.1"
 derivative.workspace = true
@@ -175,7 +174,7 @@ unic-langid.workspace = true
 sys-locale.workspace = true
 sentry-log = { workspace = true, optional = true }
 inventory = "0.3"
-schemars = "1"
+schemars = { version = "1", features = ["uuid1"] }
 serde.workspace = true
 serde_bytes.workspace = true
 serde-bytes-repr.workspace = true
@@ -227,9 +226,7 @@ warp-workflows.workspace = true
 warp_completer.workspace = true
 warp_core.workspace = true
 warp_editor.workspace = true
-warp_graphql.workspace = true
 warp_js = { workspace = true, optional = true }
-warp_server_client.workspace = true
 warp_ssh_manager.workspace = true
 warp_util.workspace = true
 warpui = { workspace = true, features = ["schema_gen", "settings_value"] }
@@ -406,7 +403,6 @@ virtual-fs.workspace = true
 warp_completer = { workspace = true, features = ["test-util"] }
 warp_core = { workspace = true, features = ["test-util"] }
 warp_editor = { workspace = true, features = ["test-util"] }
-warp_server_client = { workspace = true, features = ["test-util"] }
 warp_terminal = { workspace = true, features = ["test-util"] }
 warpui = { workspace = true, features = ["test-util"] }
 warpui_extras = { workspace = true, features = ["test-util"] }
@@ -441,7 +437,6 @@ agent_mode_debug = []
 agent_mode_primary_xml = []
 agent_mode_pre_plan_xml = []
 agent_onboarding = []
-agent_shared_sessions = []
 ask_user_question = []
 changelog = []
 clear_autosuggestion_on_escape = []
@@ -462,17 +457,14 @@ crash_reporting = [
     "warp_logging/crash_reporting",
     "ai/crash_reporting",
 ]
-creating_shared_sessions = []
 default = [
     "agent_mode",
-    "viewing_shared_sessions",
     "render_continuous_block_selections_with_single_border",
     "settings_import",
     "shared_with_me",
     "block_toolbelt_save_as_workflow",
     "remove_alt_screen_padding",
     "less_horizontal_terminal_padding",
-    "session_sharing_acls",
     "external_agent_mode_context",
     "shell_selector",
     "minimalist_ui",
@@ -504,13 +496,11 @@ default = [
     "fast_forward_autoexecute_button",
     "image_as_context",
     "command_palette_file_search",
-    "usage_based_pricing",
     "ai_context_menu",
     "at_menu_outside_of_ai_mode",
     "agent_management_view",
     "agent_management_details_view",
     "interactive_conversation_management_view",
-    "shared_block_title_generation",
     "tab_close_button_on_left",
     "ai_resume_button",
     "code_find_replace",
@@ -547,20 +537,15 @@ default = [
     "summarize_conversation_command",
     "inline_code_review",
     "web_search_ui",
-    "agent_shared_sessions",
     "integration_command",
     "artifact_command",
-    # OpenWarp Wave 7-2:`cloud_environments` feature 随 cloud ambient agent 主体物理删。
-    "create_environment_slash_command",
     "code_review_find",
-    "shared_session_long_running_commands",
     "mcp_grouped_server_context",
     "fork_from_command",
     "context_window_usage_v2",
     "ambient_agents_command_line",
     "ambient_agents_image_upload",
     "scheduled_ambient_agents",
-    "warp_managed_secrets",
     "v4a_file_diffs",
     "classic_completions",
     "force_classic_completions",
@@ -583,13 +568,11 @@ default = [
     "inline_slash_commands",
     "inline_history_menu",
     "inline_model_selector",
-    "oz_launch_modal",
     "open_warp_launch_modal",
     "new_tab_styling",
     "richtext_multiselect",
     "inline_profile_selector",
     "web_fetch_ui",
-    "oz_changelog_updates",
     "skill_arguments",
     "incremental_auto_reload",
     "active_conversation_requires_interaction",
@@ -623,7 +606,6 @@ default = [
     "codex_notifications",
     "trim_trailing_blank_lines",
     "open_warp_new_settings_modes",
-    "skip_firebase_anonymous_user",
     "settings_file",
     "ssh_tmux_wrapper",
 ]
@@ -716,7 +698,6 @@ mcp_server = []
 mcp_oauth = []
 mcp_debugging_ids = []
 notebook_parameter = []
-oz_changelog_updates = []
 personal_cloud_objects = []
 # Remote-backed tty that connects to a PTY-like interface via a server.
 remote_tty = []
@@ -751,7 +732,6 @@ settings_file = []
 settings_import = []
 sequential_storage = []
 session_sharing = []
-session_sharing_acls = []
 skip_login = []
 # This feature should only be enabled when building a self-contained binary with the bundle script.
 standalone = []
@@ -770,7 +750,6 @@ integration_tests = [
     "warp_core/integration_tests",
 ]
 traces = []
-viewing_shared_sessions = []
 workflow_aliases = []
 rect_selection = []
 alacritty_settings_import = []
@@ -779,7 +758,6 @@ ai_rules = []
 am_workflows = []
 less_horizontal_terminal_padding = []
 shell_selector = []
-shared_session_long_running_commands = []
 block_toolbelt_save_as_workflow = []
 blocklist_markdown_table_rendering = []
 blocklist_markdown_images = []
@@ -807,9 +785,7 @@ simulate_github_unauthed = []
 reload_stale_conversation_files = []
 nld_fasttext_model = ["input_classifier/fasttext"]
 nld_onnx_model = ["input_classifier/onnx_candle"]
-shared_block_title_generation = []
 retry_truncated_code_responses = []
-usage_based_pricing = []
 ai_context_menu = []
 at_menu_outside_of_ai_mode = []
 agent_decides_command_execution = []
@@ -827,7 +803,6 @@ changed_lines_only_apply_diff_result = []
 linked_code_blocks = []
 tabbed_editor_view = []
 selection_as_context = []
-send_telemetry_to_file = []
 multi_profile = []
 pr_comments_slash_command = []
 pr_comments_v2 = []
@@ -855,8 +830,6 @@ auto_open_code_review_pane = []
 inline_code_review = []
 integration_command = []
 artifact_command = []
-# OpenWarp Wave 7-2:`cloud_environments` feature 随 cloud ambient agent 主体物理删。
-create_environment_slash_command = []
 summarize_conversation_command = []
 mcp_grouped_server_context = []
 web_search_ui = []
@@ -869,7 +842,6 @@ revert_to_checkpoints = []
 rewind_slash_command = []
 agent_view = []
 agent_view_block_context = ["agent_view"]
-warp_managed_secrets = []
 v4a_file_diffs = []
 agent_tips = []
 agent_toolbar_editor = ["agent_view"]
@@ -877,8 +849,6 @@ agent_view_prompt_chip = ["agent_view"]
 ambient_agents_rtc = []
 team_api_keys = []
 classic_completions = []
-# OpenWarp Wave 7-2:`cloud_mode` / `cloud_mode_from_local_session` / `cloud_mode_image_context`
-# features 随 cloud ambient agent 主体子系统物理删。
 force_classic_completions = []
 agent_view_conversation_list_view = ["agent_view"]
 inline_history_menu = ["agent_view"]
@@ -887,8 +857,6 @@ summarization_via_message_replacement = []
 inline_model_selector = ["agent_view"]
 inline_profile_selector = ["agent_view"]
 oz_platform_skills = []
-oz_identity_federation = []
-oz_launch_modal = []
 open_warp_launch_modal = []
 new_tab_styling = []
 file_based_mcp = []
@@ -907,11 +875,9 @@ vertical_tabs = []
 vertical_tabs_summary_mode = []
 tab_configs = []
 agent_harness = []
-oz_handoff = []
 hoa_notifications = []
 open_code_notifications = []
 transfer_control_tool = []
-skip_firebase_anonymous_user = []
 solo_user_byok = []
 configurable_toolbar = []
 warpify_footer = []
@@ -919,8 +885,6 @@ hoa_onboarding_flow = []
 git_operations_in_code_review = []
 hoa_remote_control = []
 codex_notifications = []
-# OpenWarp Wave 7-2:`cloud_mode_setup_v2` / `cloud_mode_input_v2` features 随 cloud ambient agent
-# 主体物理删。
 configurable_context_window = []
 
 [package.metadata.bundle.bin.warp-oss]
@@ -930,7 +894,7 @@ identifier = "dev.openwarp.OpenWarp"
 name = "OpenWarp"
 resources = ["assets/onboarding"]
 icon = ["channels/oss/icon/no-padding/512x512.png", "channels/oss/icon/no-padding/icon.ico"]
-short_description = "The open-source, cloud-backed terminal for individuals and teams."
+short_description = "The open-source, local-first terminal for individuals and teams."
 
 [package.metadata.bundle.bin.stable]
 category = "public.app-category.developer-tools"
@@ -941,7 +905,7 @@ osx_frameworks = [
     "frameworks/default/Sentry-Dynamic-WithARM64e.xcframework/macos-arm64_arm64e_x86_64/Sentry.framework",
 ]
 resources = ["assets/onboarding"]
-short_description = "The cloud-backed terminal for individuals and teams, stable build."
+short_description = "The local-first terminal for individuals and teams, stable build."
 
 [package.metadata.bundle.bin.preview]
 category = "public.app-category.developer-tools"
@@ -952,7 +916,7 @@ osx_frameworks = [
     "frameworks/default/Sentry-Dynamic-WithARM64e.xcframework/macos-arm64_arm64e_x86_64/Sentry.framework",
 ]
 resources = ["assets/onboarding"]
-short_description = "The cloud-backed terminal for individuals and teams, feature preview build."
+short_description = "The local-first terminal for individuals and teams, feature preview build."
 
 [package.metadata.bundle.bin.dev]
 category = "public.app-category.developer-tools"
@@ -963,7 +927,7 @@ osx_frameworks = [
     "frameworks/dev/Sentry-Dynamic-WithARM64e.xcframework/macos-arm64_arm64e_x86_64/Sentry.framework",
 ]
 resources = ["assets/onboarding"]
-short_description = "The cloud-backed terminal for individuals and teams, developer build."
+short_description = "The local-first terminal for individuals and teams, developer build."
 
 [package.metadata.bundle.bin.warp]
 category = "public.app-category.developer-tools"
@@ -971,7 +935,7 @@ copyright = "© 2025, Denver Technologies, Inc"
 identifier = "dev.warp.Warp-Local"
 name = "WarpLocal"
 resources = ["assets/onboarding"]
-short_description = "The cloud-backed terminal for individuals and teams, developer build."
+short_description = "The local-first terminal for individuals and teams, developer build."
 
 [package.metadata.cargo-udeps.ignore]
 normal = ["embed_plist"]

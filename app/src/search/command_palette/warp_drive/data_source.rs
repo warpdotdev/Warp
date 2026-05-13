@@ -101,30 +101,6 @@ impl DataSource {
                 .unwrap_or_else(|err| {
                     log::error!("Error deleting object from search index: {err:?}");
                 }),
-            CloudModelEvent::ObjectSynced {
-                type_and_id,
-                client_id,
-                server_id,
-            } => {
-                let Some(cloud_object) = CloudModel::as_ref(ctx).get_by_uid(&server_id.uid())
-                else {
-                    return;
-                };
-
-                // Ensure the index is updated with the new server ID (any operations using old client ID will fail
-                // when reading from the CloudModel once the object is synced).
-                self.searcher
-                    .delete_searchable_object(client_id.to_string(), type_and_id.object_type(), ctx)
-                    .unwrap_or_else(|err| {
-                        log::warn!("Error deleting object from search index: {err:?}");
-                    });
-
-                self.searcher
-                    .insert_searchable_object(cloud_object, type_and_id.object_type(), ctx)
-                    .unwrap_or_else(|err| {
-                        log::warn!("Error inserting object into search index: {err:?}");
-                    });
-            }
             _ => {}
         }
     }

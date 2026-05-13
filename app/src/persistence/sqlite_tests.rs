@@ -3,7 +3,6 @@ use std::fs;
 use std::{path::PathBuf, sync::Arc};
 
 use warp_core::features::FeatureFlag;
-use warp_graphql::scalars::time::ServerTimestamp;
 
 use crate::{
     app_state::{
@@ -15,6 +14,7 @@ use crate::{
     notebooks::{CloudNotebook, CloudNotebookModel},
     persistence::{model::ObjectPermissions, BlockCompleted, ModelEvent},
     server::ids::ClientId,
+    server_time::ServerTimestamp,
     tab::SelectedTabColor,
     terminal::model::block::SerializedBlock,
     terminal::ShellLaunchData,

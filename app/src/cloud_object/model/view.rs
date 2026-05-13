@@ -1,23 +1,23 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use chrono::{Duration, Utc};
-use warp_graphql::scalars::time::ServerTimestamp;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use crate::{
     auth::{AuthStateProvider, UserUid},
-    cloud_object::{CloudObject, CloudObjectLocation, Space},
+    cloud_object::{
+        update_manager::{
+            ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent,
+        },
+        CloudObject, CloudObjectLocation, Space,
+    },
     drive::{
         folders::CloudFolder,
         sharing::{ContentEditability, SharingAccessLevel},
     },
     safe_info,
-    server::{
-        cloud_objects::update_manager::{
-            ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent,
-        },
-        ids::{ObjectUid, SyncId},
-    },
+    server::ids::{ObjectUid, SyncId},
+    server_time::ServerTimestamp,
     workspaces::user_profiles::UserProfiles,
 };
 
@@ -363,7 +363,6 @@ impl CloudViewModel {
             }
             CloudModelEvent::NotebookEditorChangedFromServer { .. }
             | CloudModelEvent::ObjectForceExpanded { .. }
-            | CloudModelEvent::ObjectSynced { .. }
             | CloudModelEvent::InitialLoadCompleted => (),
         }
     }

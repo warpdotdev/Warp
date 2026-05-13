@@ -1,9 +1,8 @@
 use std::{io, sync::Once};
 
 use base64::Engine;
-use warp_graphql::managed_secrets::ManagedSecretType;
 
-use crate::secret_value::ManagedSecretValue;
+use crate::secret_value::{ManagedSecretType, ManagedSecretValue};
 
 mod hpke_impl;
 

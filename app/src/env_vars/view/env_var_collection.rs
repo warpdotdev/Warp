@@ -24,6 +24,7 @@ use crate::{
     cloud_object::{
         breadcrumbs::ContainingObject,
         model::persistence::{CloudModel, CloudModelEvent},
+        update_manager::{FetchSingleObjectOption, UpdateManager},
         CloudObjectEventEntrypoint, Owner,
     },
     drive::{items::WarpDriveItemId, sharing::ContentEditability},
@@ -44,10 +45,7 @@ use crate::{
     },
     search::external_secrets::view::ExternalSecretsMenu,
     send_telemetry_from_ctx,
-    server::{
-        cloud_objects::update_manager::{FetchSingleObjectOption, UpdateManager},
-        ids::{ServerId, SyncId},
-    },
+    server::ids::{ServerId, SyncId},
     terminal::{model::secrets::SecretLevel, safe_mode_settings::get_secret_obfuscation_mode},
     ui_components::{
         breadcrumb::{render_breadcrumbs, BreadcrumbState},

@@ -3,6 +3,7 @@ use warp_core::context_flag::ContextFlag;
 use warpui::{keymap::Trigger, SingletonEntity, ViewContext, ViewHandle};
 
 use crate::{
+    cloud_object::update_manager::UpdateManager,
     cloud_object::{CloudObject, GenericStringObjectFormat, Space},
     drive::{
         drive_helpers::has_feature_gated_anonymous_user_reached_env_var_limit,
@@ -12,7 +13,6 @@ use crate::{
     external_secrets::SecretManager,
     menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields},
     pane_group::PaneEvent,
-    server::cloud_objects::update_manager::UpdateManager,
     ui_components::icons::Icon,
     util::bindings::{keybinding_name_to_display_string, trigger_to_keystroke, CustomAction},
     AppContext, CloudModel, FeatureFlag,

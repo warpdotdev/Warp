@@ -9,7 +9,7 @@ use crate::{
     cloud_object::{model::persistence::CloudModel, Space},
     integration_testing::view_getters::workspace_view,
     server::{
-        cloud_objects::update_manager::UpdateManager,
+        cloud_object::update_manager::UpdateManager,
         ids::{ClientId, SyncId},
     },
     workspaces::user_workspaces::UserWorkspaces,

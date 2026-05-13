@@ -15,9 +15,9 @@ use crate::cloud_object::model::persistence::{CloudModelEvent, UpdateSource};
 use crate::{send_telemetry_from_ctx, LaunchMode, TelemetryEvent};
 
 use crate::ai::mcp::TemplatableMCPServerManager;
+use crate::cloud_object::update_manager::UpdateManager;
 use crate::cloud_object::{GenericStringObjectFormat, JsonObjectType};
 use crate::drive::CloudObjectTypeAndId;
-use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::SyncId;
 use crate::settings::AgentModeCommandExecutionPredicate;
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -1423,17 +1423,13 @@ impl AIExecutionProfilesModel {
         }
     }
 
-    /// Reconcile model state with `CloudModel` once an initial bulk load
-    /// completes.
+    /// Reconcile model state with `CloudModel` once local object restore completes.
     ///
-    /// The initial load path (`update_objects_from_initial_load`) inserts
-    /// cloud objects into `CloudModel` *without* emitting per-object
-    /// `ObjectCreated` events — it emits a single
-    /// `CloudModelEvent::InitialLoadCompleted` afterward instead. That means
-    /// our normal `handle_ai_execution_profile_created` handler never fires
-    /// for execution profiles that arrived via initial load, and the model
-    /// stays in `Unsynced` even though the user already has a cloud default
-    /// profile.
+    /// Stored objects can be present in `CloudModel` before this model observes
+    /// per-object `ObjectCreated` events. That means the normal
+    /// `handle_ai_execution_profile_created` handler may never fire for the
+    /// restored default profile, and the model stays in `Unsynced` even though
+    /// the user already has a saved default profile.
     ///
     /// Without this reconciliation, a subsequent edit from `apply_agent_settings`
     /// (onboarding) would hit the `Unsynced` branch of `edit_profile_internal`

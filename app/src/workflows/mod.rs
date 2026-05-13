@@ -18,7 +18,7 @@ pub mod workflow_view;
 
 use crate::appearance::Appearance;
 use crate::cloud_object::model::view::CloudViewModel;
-use crate::cloud_object::{CloudModelType, GenericCloudObject, ObjectType, ServerCloudObject};
+use crate::cloud_object::{CloudModelType, GenericCloudObject, ObjectType};
 
 use crate::cloud_object::SerializedModel;
 use crate::drive::items::workflow::WarpDriveWorkflow;
@@ -265,15 +265,6 @@ impl CloudModelType for CloudWorkflowModel {
         SerializedModel::new(
             serde_json::to_string(&self.data).expect("failed to serialize workflow"),
         )
-    }
-
-    fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
-        if let ServerCloudObject::Workflow(server_workflow) = server_cloud_object {
-            return Some(CloudWorkflowModel {
-                data: server_workflow.model.data.clone(),
-            });
-        }
-        None
     }
 
     fn renders_in_warp_drive(&self) -> bool {

@@ -13,7 +13,7 @@ use crate::{
     integration_testing::view_getters::{notebook_view, workspace_view},
     notebooks::manager::NotebookSource,
     server::{
-        cloud_objects::update_manager::UpdateManager,
+        cloud_object::update_manager::UpdateManager,
         ids::{ClientId, SyncId},
     },
     workspaces::user_workspaces::UserWorkspaces,

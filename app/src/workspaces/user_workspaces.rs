@@ -12,12 +12,9 @@ use crate::{
     cloud_object::{
         model::persistence::CloudModel, CloudObjectEventEntrypoint, ObjectType, Owner, Space,
     },
-    pricing::PricingInfoModel,
+    pricing::{PricingInfo, PricingInfoModel},
     report_error,
-    server::{
-        experiments::{ServerExperiment, ServerExperiments, ServerExperimentsEvent},
-        ids::ServerId,
-    },
+    server::{experiments::ServerExperiment, ids::ServerId},
     settings::{AISettings, PrivacySettings},
     workspaces::workspace::{
         AiAutonomySettings, AiOverages, SandboxedAgentSettings, UsageBasedPricingSettings,
@@ -29,7 +26,6 @@ use warp_core::{
     features::FeatureFlag,
     settings::{ChangeEventReason, Setting},
 };
-use warp_graphql::workspace::FeatureModelChoice;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity, Tracked};
 
 #[cfg(test)]
@@ -39,8 +35,6 @@ use crate::workspaces::workspace::{
 
 #[cfg(test)]
 use super::workspace::WorkspaceMemberUsageInfo;
-
-const STRIPE_SUBSCRIPTION_INTERVAL_PAGE_PREFIX: &str = "/upgrade";
 
 #[derive(Debug)]
 pub enum UserWorkspacesEvent {
@@ -56,10 +50,6 @@ pub enum UserWorkspacesEvent {
     ResetInviteLinksRejected(anyhow::Error),
     DeleteTeamInvite,
     DeleteTeamInviteRejected(anyhow::Error),
-    GenerateUpgradeLink(String),
-    GenerateUpgradeLinkRejected(anyhow::Error),
-    GenerateStripeBillingPortalLink(String),
-    GenerateStripeBillingPortalLinkRejected(anyhow::Error),
     ToggleTeamDiscoverabilitySuccess,
     ToggleTeamDiscoverabilityRejected(anyhow::Error),
     JoinTeamWithTeamDiscoverySuccess,
@@ -104,7 +94,7 @@ pub struct WorkspacesMetadataResponse {
     /// Feature model choices may change from user to user and while the app is open, so we need to periodically update this list.
     /// It makes most sense to fetch this in workspaces which is queried every 10 minutes.
     /// This is list of available LLM models for the user.
-    pub feature_model_choices: Option<FeatureModelChoice>,
+    pub feature_model_choices: Option<()>,
 }
 
 // A representation of all data we fetch at a single time via our 10 minute poll.
@@ -112,7 +102,7 @@ pub struct WorkspacesMetadataResponse {
 // independent queries.
 pub struct WorkspacesMetadataWithPricing {
     pub metadata: WorkspacesMetadataResponse,
-    pub pricing_info: Option<warp_graphql::billing::PricingInfo>,
+    pub pricing_info: Option<PricingInfo>,
 }
 
 pub struct CreateTeamResponse {
@@ -123,9 +113,6 @@ pub struct CreateTeamResponse {
 impl UserWorkspaces {
     #[cfg(test)]
     pub fn mock(cached_workspaces: Vec<Workspace>, _ctx: &mut ModelContext<Self>) -> Self {
-        // In tests, avoid subscribing to [`ServerExperiments`] because it
-        // requires us to register that singleton along with _its_ dependencies
-        // for all tests that use [`UserWorkspaces`] (a lot of them do).
         Self {
             current_workspace_uid: cached_workspaces.first().map(|w| w.uid).into(),
             workspaces: cached_workspaces.into(),
@@ -141,37 +128,12 @@ impl UserWorkspaces {
     pub fn new(
         cached_workspaces: Vec<Workspace>,
         current_workspace_uid: Option<WorkspaceUid>,
-        ctx: &mut ModelContext<Self>,
     ) -> Self {
-        ctx.subscribe_to_model(&ServerExperiments::handle(ctx), |me, event, ctx| {
-            let ServerExperimentsEvent::ExperimentsUpdated = event;
-            me.update_session_sharing_enablement(ctx);
-        });
-
         Self {
             current_workspace_uid: current_workspace_uid.into(),
             workspaces: cached_workspaces.into(),
             joinable_teams: Default::default(),
         }
-    }
-
-    pub fn upgrade_link(user_id: UserUid) -> String {
-        format!(
-            "{}{}/{}/{}",
-            ChannelState::server_root_url(),
-            STRIPE_SUBSCRIPTION_INTERVAL_PAGE_PREFIX,
-            "user",
-            user_id.as_str()
-        )
-    }
-
-    pub fn upgrade_link_for_team(team_uid: ServerId) -> String {
-        format!(
-            "{}{}/{}",
-            ChannelState::server_root_url(),
-            STRIPE_SUBSCRIPTION_INTERVAL_PAGE_PREFIX,
-            team_uid
-        )
     }
 
     pub fn team_from_uid(&self, team_uid: ServerId) -> Option<&Team> {
@@ -683,10 +645,6 @@ impl UserWorkspaces {
     }
 
     fn notify_and_emit_teams_changed(&self, ctx: &mut ModelContext<Self>) {
-        // Update session-sharing enablement since it depends on what teams the user
-        // is part of.
-        self.update_session_sharing_enablement(ctx);
-
         // PrivacySettings can't observe UserWorkspaces for updates, as it's initialized too early in
         // the app initialization flow. So, we update it manually whenever teams data changes.
         PrivacySettings::handle(ctx).update(ctx, |settings, ctx| {
@@ -715,7 +673,6 @@ impl UserWorkspaces {
         ctx.notify();
     }
 
-    // TODO follow up with moving other modifying calls out of UserWorkspaces to TeamUpdateManager
     fn on_workspaces_updated(
         &mut self,
         result: Result<WorkspacesMetadataWithPricing>,
@@ -1052,58 +1009,6 @@ impl UserWorkspaces {
         ctx.notify();
     }
 
-    pub fn on_generate_upgrade_link(
-        &mut self,
-        result: Result<String>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::GenerateUpgradeLinkRejected(err)),
-            Ok(upgrade_link) => {
-                ctx.emit(UserWorkspacesEvent::GenerateUpgradeLink(upgrade_link));
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn generate_upgrade_link(&mut self, team_uid: ServerId, ctx: &mut ModelContext<Self>) {
-        let _ = team_uid;
-        ctx.emit(UserWorkspacesEvent::GenerateUpgradeLinkRejected(
-            anyhow::anyhow!("OpenWarp 本地版不支持团队升级链接"),
-        ));
-        ctx.notify();
-    }
-
-    pub fn on_generate_stripe_billing_portal_link(
-        &mut self,
-        result: Result<String>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::GenerateStripeBillingPortalLinkRejected(err)),
-            Ok(billing_session_link) => {
-                ctx.emit(UserWorkspacesEvent::GenerateStripeBillingPortalLink(
-                    billing_session_link,
-                ));
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn generate_stripe_billing_portal_link(
-        &mut self,
-        team_uid: ServerId,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let _ = team_uid;
-        ctx.emit(
-            UserWorkspacesEvent::GenerateStripeBillingPortalLinkRejected(anyhow::anyhow!(
-                "OpenWarp 本地版不支持账单门户链接"
-            )),
-        );
-        ctx.notify();
-    }
-
     pub fn update_usage_based_pricing_settings(
         &mut self,
         team_uid: ServerId,
@@ -1322,29 +1227,6 @@ impl UserWorkspaces {
         self.current_team()
             .map(|team| team.organization_settings.enable_warp_attribution.clone())
             .unwrap_or_default()
-    }
-
-    /// Updates whether or not session sharing is enabled based on the current team's tier policy.
-    fn update_session_sharing_enablement(&self, ctx: &AppContext) {
-        if cfg!(any(test, feature = "integration_tests")) {
-            return;
-        }
-
-        // If we have experiment state to unconditionally enable / disable the feature,
-        // then we defer to that.
-        let server_experiments = ServerExperiments::as_ref(ctx);
-        if server_experiments.is_experiment_enabled(&ServerExperiment::SessionSharingControl)
-            || server_experiments.is_experiment_enabled(&ServerExperiment::SessionSharingExperiment)
-        {
-            return;
-        }
-
-        let is_session_sharing_enabled_via_tier_policy = self
-            .current_team()
-            .and_then(|t| t.billing_metadata.tier.session_sharing_policy)
-            .map(|policy| policy.is_enabled)
-            .unwrap_or(true);
-        FeatureFlag::CreatingSharedSessions.set_enabled(is_session_sharing_enabled_via_tier_policy);
     }
 }
 

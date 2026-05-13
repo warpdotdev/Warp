@@ -14,6 +14,7 @@ use crate::{
             persistence::{CloudModel, CloudModelEvent},
             view::{CloudViewModel, CloudViewModelEvent, UpdateTimestamp},
         },
+        update_manager::{FetchSingleObjectOption, UpdateManager},
         CloudObject, CloudObjectLocation, GenericCloudObject, GenericStringObjectFormat,
         JsonObjectType, ObjectType, Space,
     },
@@ -25,7 +26,6 @@ use crate::{
     notebooks::CloudNotebookModel,
     report_if_error, send_telemetry_from_ctx,
     server::{
-        cloud_objects::update_manager::{FetchSingleObjectOption, UpdateManager},
         ids::{ClientId, ObjectUid, ServerId, SyncId},
         telemetry::TelemetryEvent,
     },
@@ -40,9 +40,7 @@ use crate::{
     view_components::{Dropdown, DropdownItem},
     workflows::{CloudWorkflow, WorkflowViewMode},
     workspace::active_terminal_in_window,
-    workspaces::{
-        update_manager::TeamUpdateManager, user_workspaces::UserWorkspaces, workspace::WorkspaceUid,
-    },
+    workspaces::{user_workspaces::UserWorkspaces, workspace::WorkspaceUid},
     ObjectActions,
 };
 
@@ -301,12 +299,6 @@ pub enum DriveIndexAction {
     EscapeKey,
     /// Hitting cmd+enter on a WD item toggles the context menu.
     ToggleDriveItemContextMenu,
-    ViewPlans {
-        team_uid: ServerId,
-    },
-    ManageBilling {
-        team_uid: ServerId,
-    },
     SignupAnonymousUser,
     DismissPersonalObjectLimits,
     SetCurrentWorkspace(WorkspaceUid),
@@ -347,10 +339,7 @@ impl DriveIndexAction {
 
     pub fn blocked_for_anonymous_user(&self) -> bool {
         use DriveIndexAction::*;
-        matches!(
-            self,
-            OpenTeamSettingsPage | ViewPlans { .. } | ManageBilling { .. }
-        )
+        matches!(self, OpenTeamSettingsPage)
     }
 }
 
@@ -359,8 +348,6 @@ impl From<&DriveIndexAction> for LoginGatedFeature {
         use DriveIndexAction::*;
         match val {
             OpenTeamSettingsPage => "Open Team Settings",
-            ViewPlans { .. } => "View Plans",
-            ManageBilling { .. } => "Manage Billing",
             _ => "Unknown reason",
         }
     }
@@ -429,8 +416,6 @@ struct MouseStateHandles {
     exit_trash_button_mouse_state: MouseStateHandle,
     join_team_button_mouse_state: MouseStateHandle,
     create_team_button_mouse_state: MouseStateHandle,
-    shared_object_limit_hit_banner_button_mouse_state: MouseStateHandle,
-    payment_issue_banner_button_mouse_state: MouseStateHandle,
     anonymous_sign_up_button_mouse_state: MouseStateHandle,
     anonymous_object_limit_close_button_mouse_state: MouseStateHandle,
     search_button_mouse_state: MouseStateHandle,
@@ -1136,7 +1121,6 @@ impl DriveIndex {
             | CloudModelEvent::ObjectDeleted { .. }
             | CloudModelEvent::ObjectPermissionsUpdated { .. }
             | CloudModelEvent::NotebookEditorChangedFromServer { .. }
-            | CloudModelEvent::ObjectSynced { .. }
             | CloudModelEvent::InitialLoadCompleted => {}
         }
     }
@@ -4003,7 +3987,6 @@ impl DriveIndex {
     fn render_shared_object_limit_hit_banner(
         &self,
         appearance: &Appearance,
-        team_uid: ServerId,
         object_type: ObjectType,
     ) -> Box<dyn Element> {
         let theme = appearance.theme();
@@ -4045,40 +4028,12 @@ impl DriveIndex {
         .with_margin_bottom(16.)
         .finish();
 
-        let button = appearance
-            .ui_builder()
-            .button(
-                ButtonVariant::Accent,
-                self.mouse_state_handles
-                    .shared_object_limit_hit_banner_button_mouse_state
-                    .clone(),
-            )
-            .with_centered_text_label(crate::t!("drive-compare-plans"))
-            .with_style(UiComponentStyles {
-                font_size: Some(14.),
-                font_weight: Some(Weight::Light),
-                padding: Some(Coords {
-                    top: 8.,
-                    bottom: 8.,
-                    left: 12.,
-                    right: 12.,
-                }),
-                ..Default::default()
-            })
-            .build()
-            .with_cursor(Cursor::PointingHand)
-            .on_click(move |ctx, _, _| {
-                ctx.dispatch_typed_action(DriveIndexAction::ViewPlans { team_uid })
-            })
-            .finish();
-
         Container::new(
             Container::new(
                 Flex::column()
                     .with_main_axis_alignment(MainAxisAlignment::Center)
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_child(body)
-                    .with_child(button)
                     .finish(),
             )
             .with_background(background_color)
@@ -4094,7 +4049,6 @@ impl DriveIndex {
     fn render_payment_issue_banner(
         &self,
         appearance: &Appearance,
-        team_uid: ServerId,
         has_admin_permissions: bool,
         is_on_stripe_paid_plan: bool,
     ) -> Box<dyn Element> {
@@ -4135,37 +4089,6 @@ impl DriveIndex {
             )
             .finish(),
         );
-
-        // Only show a manage billing button if they are an admin and on a paid stripe plan
-        if has_admin_permissions && is_on_stripe_paid_plan {
-            let button = appearance
-                .ui_builder()
-                .button(
-                    ButtonVariant::Accent,
-                    self.mouse_state_handles
-                        .payment_issue_banner_button_mouse_state
-                        .clone(),
-                )
-                .with_centered_text_label(crate::t!("drive-manage-billing"))
-                .with_style(UiComponentStyles {
-                    font_size: Some(14.),
-                    font_weight: Some(Weight::Light),
-                    padding: Some(Coords {
-                        top: 8.,
-                        bottom: 8.,
-                        left: 12.,
-                        right: 12.,
-                    }),
-                    ..Default::default()
-                })
-                .build()
-                .with_cursor(Cursor::PointingHand)
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(DriveIndexAction::ManageBilling { team_uid })
-                })
-                .finish();
-            body.add_child(Container::new(button).with_margin_top(16.).finish());
-        }
 
         Container::new(
             Container::new(body.finish())
@@ -4954,7 +4877,6 @@ impl View for DriveIndex {
                 let is_on_stripe_paid_plan = team.billing_metadata.is_on_stripe_paid_plan();
                 drive.add_child(self.render_payment_issue_banner(
                     appearance,
-                    team.uid,
                     has_admin_permissions,
                     is_on_stripe_paid_plan,
                 ));
@@ -4963,21 +4885,17 @@ impl View for DriveIndex {
                 ObjectType::Workflow,
                 app,
             ) {
-                drive.add_child(self.render_shared_object_limit_hit_banner(
-                    appearance,
-                    team.uid,
-                    ObjectType::Workflow,
-                ));
+                drive.add_child(
+                    self.render_shared_object_limit_hit_banner(appearance, ObjectType::Workflow),
+                );
             } else if UserWorkspaces::is_at_tier_limit_for_object_type(
                 team.uid,
                 ObjectType::Notebook,
                 app,
             ) {
-                drive.add_child(self.render_shared_object_limit_hit_banner(
-                    appearance,
-                    team.uid,
-                    ObjectType::Notebook,
-                ));
+                drive.add_child(
+                    self.render_shared_object_limit_hit_banner(appearance, ObjectType::Notebook),
+                );
             }
         }
 
@@ -5382,26 +5300,14 @@ impl TypedActionView for DriveIndex {
             DriveIndexAction::InvokeEnvVarCollectionInSubshell(id) => {
                 ctx.emit(DriveIndexEvent::InvokeEnvVarCollectionInSubshell(*id))
             }
-            DriveIndexAction::ViewPlans { team_uid } => {
-                ctx.open_url(UserWorkspaces::upgrade_link_for_team(*team_uid).as_str());
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::SharedObjectLimitHitBannerViewPlansButtonClicked,
-                    ctx
-                );
-            }
-            DriveIndexAction::ManageBilling { team_uid } => {
-                UserWorkspaces::handle(ctx).update(ctx, move |user_workspaces, ctx| {
-                    user_workspaces.generate_stripe_billing_portal_link(*team_uid, ctx);
-                });
-            }
             // 去中心化分支:`DriveIndexAction::SignupAnonymousUser` 已 noop。
             DriveIndexAction::SignupAnonymousUser => {}
             DriveIndexAction::DismissPersonalObjectLimits => {
                 self.dismiss_personal_object_limit_status(ctx);
             }
             DriveIndexAction::SetCurrentWorkspace(workspace_uid) => {
-                TeamUpdateManager::handle(ctx).update(ctx, |manager, ctx| {
-                    manager.set_current_workspace_uid(*workspace_uid, ctx)
+                UserWorkspaces::handle(ctx).update(ctx, |user_workspaces, ctx| {
+                    user_workspaces.set_current_workspace_uid(*workspace_uid, ctx)
                 });
             }
             DriveIndexAction::AttachPlanAsContext(id) => {

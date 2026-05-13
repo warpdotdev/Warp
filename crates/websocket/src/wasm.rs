@@ -11,15 +11,15 @@ pub async fn connect(
     protocols: impl IntoIterator<Item = &str>,
 ) -> anyhow::Result<WebSocket> {
     let protocols = protocols.into_iter().collect_vec();
-    let (meta, stream) = WsMeta::connect(url, (!protocols.is_empty()).then_some(protocols)).await?;
-    Ok(WebSocket { stream, meta })
+    let (_meta, stream) =
+        WsMeta::connect(url, (!protocols.is_empty()).then_some(protocols)).await?;
+    Ok(WebSocket { stream })
 }
 
 pub type Error = WsErr;
 
 pub struct WebSocket {
     stream: ws_stream_wasm::WsStream,
-    meta: WsMeta,
 }
 
 impl WebSocket {
@@ -31,12 +31,6 @@ impl WebSocket {
     ) {
         let (sink, stream) = self.stream.split();
         (sink, stream.map(Ok::<_, ws_stream_wasm::WsErr>))
-    }
-
-    pub async fn into_graphql_client_builder(self) -> graphql_ws_client::ClientBuilder {
-        graphql_ws_client::Client::build(
-            graphql_ws_client::ws_stream_wasm::Connection::new((self.meta, self.stream)).await,
-        )
     }
 }
 

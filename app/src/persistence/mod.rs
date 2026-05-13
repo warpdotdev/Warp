@@ -28,7 +28,6 @@ use ai::project_context::model::ProjectRulePath;
 use chrono::{DateTime, Local, Utc};
 use uuid::Uuid;
 use warp_core::command::ExitCode;
-use warp_graphql::scalars::time::ServerTimestamp;
 use warp_multi_agent_api as api;
 use warpui::{AppContext, Entity, SingletonEntity};
 
@@ -39,9 +38,7 @@ use crate::auth::PersistedCurrentUserInformation;
 use crate::cloud_object::model::actions::ObjectAction;
 use crate::cloud_object::model::generic_string_model::CloudStringObject;
 
-use crate::cloud_object::{
-    CloudObject, CloudObjectMetadata, ObjectIdType, RevisionAndLastEditor, ServerCreationInfo,
-};
+use crate::cloud_object::{CloudObject, CloudObjectMetadata, ObjectIdType};
 use crate::drive::folders::CloudFolder;
 use crate::notebooks::CloudNotebook;
 use crate::server::experiments::ServerExperiment;
@@ -246,11 +243,6 @@ pub enum ModelEvent {
     UpsertWorkflows(Vec<CloudWorkflow>),
     UpsertNotebooks(Vec<CloudNotebook>),
     UpsertFolders(Vec<CloudFolder>),
-    MarkObjectAsSynced {
-        hashed_sqlite_id: String,
-        revision_and_editor: RevisionAndLastEditor,
-        metadata_ts: Option<ServerTimestamp>,
-    },
     IncrementRetryCount(String),
     UpsertGenericStringObject {
         object: Box<dyn CloudStringObject>,
@@ -264,10 +256,6 @@ pub enum ModelEvent {
     },
     UpsertFolder {
         folder: CloudFolder,
-    },
-    UpdateObjectAfterServerCreation {
-        client_id: String,
-        server_creation_info: ServerCreationInfo,
     },
     DeleteObjects {
         ids: Vec<(SyncId, ObjectIdType)>,

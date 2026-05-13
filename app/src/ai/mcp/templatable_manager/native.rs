@@ -22,8 +22,8 @@ use crate::ai::mcp::parsing::resolve_json;
 use crate::ai::mcp::TemplatableMCPServer;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
+use crate::cloud_object::update_manager::{InitiatedBy, UpdateManager};
 use crate::cloud_object::{CloudObject, CloudObjectLocation, CloudObjectMetadataExt, Space};
-use crate::server::cloud_objects::update_manager::InitiatedBy;
 use crate::server::ids::{ClientId, ServerId};
 use crate::server::telemetry::{
     MCPServerModel, MCPServerTelemetryTransportType, MCPTemplateCreationSource,
@@ -38,9 +38,7 @@ use crate::{
     drive::CloudObjectTypeAndId,
     persistence::ModelEvent,
     send_telemetry_from_ctx,
-    server::{
-        cloud_objects::update_manager::UpdateManager, ids::SyncId, telemetry::TelemetryEvent,
-    },
+    server::{ids::SyncId, telemetry::TelemetryEvent},
     settings::AISettings,
     view_components::DismissibleToast,
     workspace::ToastStack,
@@ -195,8 +193,6 @@ impl TemplatableMCPServerManager {
             } => {
                 me.purge_file_based_server_credentials(installation_hashes, ctx);
             }
-            // Notification for cloud-environment readiness; handled by the AgentDriver.
-            FileBasedMCPManagerEvent::CloudEnvMcpScanComplete { .. } => {}
         });
 
         // TemplatableMCPServerManager is the source of truth for templatable MCP servers stored on the cloud
@@ -237,16 +233,6 @@ impl TemplatableMCPServerManager {
                         id: _,
                     },
                 folder_id: _,
-            }
-            | CloudModelEvent::ObjectSynced {
-                type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
-                        object_type:
-                            GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer),
-                        id: _,
-                    },
-                client_id: _,
-                server_id: _,
             }
             | CloudModelEvent::ObjectMoved {
                 type_and_id:

@@ -1,26 +1,20 @@
-﻿use warp_core::ui::appearance::Appearance;
+use warp_core::ui::appearance::Appearance;
 use warpui::{platform::WindowStyle, App};
 
 use crate::{
     ai::blocklist::BlocklistAIHistoryModel,
     auth::{AuthManager, AuthStateProvider},
+    cloud_object::update_manager::UpdateManager,
     cloud_object::{
         model::{persistence::CloudModel, view::CloudViewModel},
         Space,
     },
     drive::index::DriveIndexSection,
     network::NetworkStatus,
-    server::{
-        cloud_objects::update_manager::UpdateManager, server_api::ServerApiProvider,
-        telemetry::context_provider::AppTelemetryContextProvider,
-    },
     settings_view::keybindings::KeybindingChangedNotifier,
-    terminal::{
-        resizable_data::ResizableData,
-        shared_session::permissions_manager::SessionPermissionsManager,
-    },
+    terminal::resizable_data::ResizableData,
     test_util::settings::initialize_settings_for_tests,
-    workspaces::{team_tester::TeamTesterStatus, user_workspaces::UserWorkspaces},
+    workspaces::user_workspaces::UserWorkspaces,
     Assets, ObjectActions,
 };
 
@@ -34,15 +28,11 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(|_| ResizableData::default());
-    app.add_singleton_model(TeamTesterStatus::mock);
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(CloudViewModel::mock);
     app.add_singleton_model(|_| ObjectActions::new(Vec::new()));
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
-    app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
     #[cfg(feature = "voice_input")]

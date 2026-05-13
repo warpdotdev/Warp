@@ -1,4 +1,4 @@
-﻿use std::sync::mpsc;
+use std::sync::mpsc;
 
 use warp_core::ui::appearance::Appearance;
 use warpui::{
@@ -8,6 +8,7 @@ use warpui::{
 use crate::{
     ai::blocklist::BlocklistAIHistoryModel,
     auth::{AuthManager, AuthStateProvider},
+    cloud_object::update_manager::UpdateManager,
     cloud_object::{
         model::{actions::ObjectActions, persistence::CloudModel, view::CloudViewModel},
         Owner,
@@ -17,20 +18,12 @@ use crate::{
     pane_group::NotebookPane,
     persistence::ModelEvent,
     search::files::model::FileSearchModel,
-    server::{
-        cloud_objects::update_manager::UpdateManager, server_api::ServerApiProvider,
-        telemetry::context_provider::AppTelemetryContextProvider,
-    },
     settings::PrivacySettings,
     settings_view::keybindings::KeybindingChangedNotifier,
-    terminal::{
-        keys::TerminalKeybindings, shared_session::permissions_manager::SessionPermissionsManager,
-    },
+    terminal::keys::TerminalKeybindings,
     test_util::settings::initialize_settings_for_tests,
     workspace::ActiveSession,
-    workspaces::{
-        team_tester::TeamTesterStatus, user_profiles::UserProfiles, user_workspaces::UserWorkspaces,
-    },
+    workspaces::{user_profiles::UserProfiles, user_workspaces::UserWorkspaces},
     GlobalResourceHandles, GlobalResourceHandlesProvider,
 };
 
@@ -81,9 +74,7 @@ fn initialize_app(app: &mut App) -> TestState {
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(TeamTesterStatus::mock);
     app.add_singleton_model(|_| UserProfiles::new(vec![]));
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(|_| ObjectActions::new(Vec::new()));
     app.add_singleton_model(|_| KeybindingChangedNotifier::new());
@@ -93,9 +84,7 @@ fn initialize_app(app: &mut App) -> TestState {
     app.add_singleton_model(FileSearchModel::new);
     app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(TerminalKeybindings::new);
-    app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
     #[cfg(feature = "voice_input")]

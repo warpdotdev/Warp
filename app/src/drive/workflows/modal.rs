@@ -34,6 +34,7 @@ use crate::{
     cloud_object::{
         breadcrumbs::{ContainingObject, ContainingObjectKind},
         model::persistence::{CloudModel, CloudModelEvent},
+        update_manager::UpdateManager,
         CloudObject, CloudObjectEventEntrypoint, ObjectType, Owner, Revision,
     },
     drive::{
@@ -47,10 +48,7 @@ use crate::{
     },
     menu::{Event, Menu, MenuItem, MenuItemFields},
     network::NetworkStatus,
-    server::{
-        cloud_objects::update_manager::UpdateManager,
-        ids::{ClientId, ServerId, SyncId},
-    },
+    server::ids::{ClientId, ServerId, SyncId},
     themes::theme::AnsiColorIdentifier,
     ui_components::{
         blended_colors,
@@ -919,7 +917,6 @@ impl WorkflowModal {
             | CloudModelEvent::ObjectCreated { .. }
             | CloudModelEvent::ObjectDeleted { .. }
             | CloudModelEvent::ObjectForceExpanded { .. }
-            | CloudModelEvent::ObjectSynced { .. }
             | CloudModelEvent::InitialLoadCompleted => {}
         }
     }

@@ -4,7 +4,7 @@ use crate::{
     appearance::Appearance,
     cloud_object::{
         CloudModelType, CloudObject, GenericCloudObject, GenericStringObjectFormat,
-        GenericStringObjectUniqueKey, ObjectType, SerializedModel, ServerCloudObject,
+        GenericStringObjectUniqueKey, ObjectType, SerializedModel,
     },
     drive::{items::WarpDriveItem, CloudObjectTypeAndId},
     persistence::ModelEvent,
@@ -90,9 +90,6 @@ pub trait StringModel: Clone + Debug + PartialEq + Send + Sync + 'static {
     ) -> Option<Box<dyn WarpDriveItem>> {
         None
     }
-
-    /// Returns a new instance from a server update, or None if the update should be ignored.
-    fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self>;
 
     /// Returns whether this model type should clear on a unique key conflict.
     fn should_clear_on_unique_key_conflict(&self) -> bool {
@@ -225,12 +222,6 @@ where
 
     fn should_update_after_server_conflict(&self) -> bool {
         true
-    }
-
-    fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
-        self.string_model
-            .new_from_server_update(server_cloud_object)
-            .map(Self::new)
     }
 
     fn serialized(&self) -> SerializedModel {
