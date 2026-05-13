@@ -17,9 +17,11 @@ use warp_core::features::FeatureFlag;
 
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::agent::SearchCodebaseFailureReason;
 use crate::{
     ai::{
-        agent::{AIAgentActionId, SearchCodebaseFailureReason, SearchCodebaseResult},
+        agent::{AIAgentActionId, SearchCodebaseResult},
         blocklist::SessionContext,
         get_relevant_files::api::{FileContext as FileContextRequest, GetRelevantFiles},
         outline::{OutlineStatus, RepoOutlines},
