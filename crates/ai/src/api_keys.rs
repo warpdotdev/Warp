@@ -22,6 +22,8 @@ pub struct ApiKeys {
     pub anthropic: Option<String>,
     pub openai: Option<String>,
     pub open_router: Option<String>,
+    /// Ollama URL (e.g., "http://localhost:11434"). No API key needed.
+    pub ollama_url: Option<String>,
 }
 
 impl ApiKeys {
@@ -30,6 +32,7 @@ impl ApiKeys {
             || self.anthropic.is_some()
             || self.google.is_some()
             || self.open_router.is_some()
+            || self.ollama_url.is_some()
     }
 }
 
@@ -93,6 +96,12 @@ impl ApiKeyManager {
         self.write_keys_to_secure_storage(ctx);
     }
 
+    pub fn set_ollama_url(&mut self, url: Option<String>, ctx: &mut ModelContext<Self>) {
+        self.keys.ollama_url = url;
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
     pub fn set_aws_credentials_state(
         &mut self,
         state: AwsCredentialsState,
@@ -138,6 +147,8 @@ impl ApiKeyManager {
             .then(|| self.keys.open_router.clone())
             .flatten()
             .unwrap_or_default();
+        // NOTE: ollama_url is NOT included here because it's a local endpoint
+        // and should never be sent through remote request settings.
         // Also include credentials when running with OIDC-managed Bedrock inference, regardless
         // of the per-user setting flag (which only applies to the local credential chain path).
         let include_aws = include_aws_bedrock_credentials
