@@ -201,14 +201,14 @@ impl TemplatableMCPServer {
     }
 }
 
-pub type CloudTemplatableMCPServer =
-    GenericCloudObject<GenericStringObjectId, CloudTemplatableMCPServerModel>;
-pub type CloudTemplatableMCPServerModel = GenericStringModel<TemplatableMCPServer, JsonSerializer>;
+pub type TemplatableMCPServerObject =
+    GenericCloudObject<GenericStringObjectId, TemplatableMCPServerObjectModel>;
+pub type TemplatableMCPServerObjectModel = GenericStringModel<TemplatableMCPServer, JsonSerializer>;
 
-impl CloudTemplatableMCPServer {
-    pub fn get_all(app: &AppContext) -> Vec<CloudTemplatableMCPServer> {
+impl TemplatableMCPServerObject {
+    pub fn get_all(app: &AppContext) -> Vec<TemplatableMCPServerObject> {
         CloudModel::as_ref(app)
-            .get_all_objects_of_type::<GenericStringObjectId, CloudTemplatableMCPServerModel>()
+            .get_all_objects_of_type::<GenericStringObjectId, TemplatableMCPServerObjectModel>()
             .cloned()
             .collect()
     }
@@ -216,23 +216,23 @@ impl CloudTemplatableMCPServer {
     pub fn get_by_id<'a>(
         sync_id: &'a SyncId,
         app: &'a AppContext,
-    ) -> Option<&'a CloudTemplatableMCPServer> {
+    ) -> Option<&'a TemplatableMCPServerObject> {
         CloudModel::as_ref(app)
-            .get_object_of_type::<GenericStringObjectId, CloudTemplatableMCPServerModel>(sync_id)
+            .get_object_of_type::<GenericStringObjectId, TemplatableMCPServerObjectModel>(sync_id)
     }
 
     pub fn get_by_uuid<'a>(
         uuid: &'a uuid::Uuid,
         app: &'a AppContext,
-    ) -> Option<&'a CloudTemplatableMCPServer> {
+    ) -> Option<&'a TemplatableMCPServerObject> {
         CloudModel::as_ref(app)
-            .get_all_objects_of_type::<GenericStringObjectId, CloudTemplatableMCPServerModel>()
+            .get_all_objects_of_type::<GenericStringObjectId, TemplatableMCPServerObjectModel>()
             .find(|server| server.model().string_model.uuid == *uuid)
     }
 }
 
 impl StringModel for TemplatableMCPServer {
-    type CloudObjectType = CloudTemplatableMCPServer;
+    type CloudObjectType = TemplatableMCPServerObject;
 
     fn model_type_name(&self) -> &'static str {
         "MCP server"
@@ -273,7 +273,7 @@ impl StringModel for TemplatableMCPServer {
         &self,
         _id: SyncId,
         _appearance: &Appearance,
-        _templatable_mcp_server: &CloudTemplatableMCPServer,
+        _templatable_mcp_server: &TemplatableMCPServerObject,
     ) -> Option<Box<dyn WarpDriveItem>> {
         None
     }

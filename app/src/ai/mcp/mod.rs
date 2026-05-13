@@ -678,7 +678,7 @@ pub enum Author {
 
 #[derive(Debug, Clone)]
 pub enum MCPServerUpdate {
-    CloudTemplate {
+    TemplateObject {
         publisher: Author,
         new_version_ts: i64,
         json_template: JsonTemplate,

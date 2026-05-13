@@ -31,7 +31,7 @@ use crate::server::telemetry::{
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{
     ai::mcp::{
-        logs, templatable::CloudTemplatableMCPServer, templatable_installation::VariableValue,
+        logs, templatable::TemplatableMCPServerObject, templatable_installation::VariableValue,
         MCPServer, StaticEnvVar, TemplatableMCPServerInstallation, TransportType,
     },
     cloud_object::{GenericStringObjectFormat, JsonObjectType},
@@ -245,7 +245,7 @@ impl TemplatableMCPServerManager {
                 from_folder: _,
                 to_folder: _,
             } => {
-                me.fetch_cloud_servers(ctx);
+                me.refresh_server_objects(ctx);
             },
             CloudModelEvent::ObjectCreated {
                 type_and_id:
@@ -256,7 +256,7 @@ impl TemplatableMCPServerManager {
                     },
             } => {
                 log::debug!("A new MCP server template was found with sync id {new_sync_id}");
-                if let Some(new_server) = CloudTemplatableMCPServer::get_by_id(new_sync_id, ctx) {
+                if let Some(new_server) = TemplatableMCPServerObject::get_by_id(new_sync_id, ctx) {
                     let uuid = new_server.model().string_model.uuid;
                     if let Some(legacy_server) = MCPServerObject::get_by_uuid(&uuid, ctx) {
                         let old_sync_id = legacy_server.sync_id();
@@ -265,7 +265,7 @@ impl TemplatableMCPServerManager {
                         ctx.emit(TemplatableMCPServerManagerEvent::LegacyServerConverted);
                     }
                 }
-                me.fetch_cloud_servers(ctx);
+                me.refresh_server_objects(ctx);
             },
             _ => {}
         });
@@ -280,7 +280,7 @@ impl TemplatableMCPServerManager {
                 });
 
         let mut me = Self {
-            cloud_templatable_mcp_servers: Default::default(),
+            templatable_mcp_server_objects: Default::default(),
             server_states: Default::default(),
             active_servers: Default::default(),
             spawned_servers: Default::default(),
@@ -295,7 +295,7 @@ impl TemplatableMCPServerManager {
             cli_spawned_server_uuids: Default::default(),
         };
 
-        me.fetch_cloud_servers(ctx);
+        me.refresh_server_objects(ctx);
 
         // If we're not in a test, try to load credentials from secure storage.
         if !cfg!(test) {
@@ -331,13 +331,13 @@ impl TemplatableMCPServerManager {
         let orphaned_installations: Vec<Uuid> = self.locally_installed_servers
             .iter()
             .filter(|(_, installation)| {
-                // Gallery-sourced installations don't have a corresponding cloud template
+                // Gallery-sourced installations don't have a corresponding template object
                 // and should never be treated as orphans.
                 installation.gallery_uuid().is_none()
-                    && !self.cloud_templatable_mcp_servers.contains_key(&installation.template_uuid())
+                    && !self.templatable_mcp_server_objects.contains_key(&installation.template_uuid())
             })
             .map(|(installation_uuid, installation)| {
-                log::info!("Deleting orphaned MCP server installation {installation_uuid} named {} with no corresponding cloud template {}", installation.templatable_mcp_server().name, installation.template_uuid());
+                log::info!("Deleting orphaned MCP server installation {installation_uuid} named {} with no corresponding template object {}", installation.templatable_mcp_server().name, installation.template_uuid());
                 *installation_uuid
             })
             .collect();
@@ -345,27 +345,29 @@ impl TemplatableMCPServerManager {
         self.delete_templatable_mcp_server_installations(orphaned_installations, ctx);
     }
 
-    fn fetch_cloud_servers(&mut self, ctx: &mut ModelContext<Self>) {
-        self.cloud_templatable_mcp_servers = Self::get_cloud_servers(ctx);
+    fn refresh_server_objects(&mut self, ctx: &mut ModelContext<Self>) {
+        self.templatable_mcp_server_objects = Self::load_server_objects(ctx);
         self.delete_orphaned_installations(ctx);
         ctx.emit(TemplatableMCPServerManagerEvent::TemplatableMCPServersUpdated);
     }
 
-    fn get_cloud_servers(ctx: &mut ModelContext<Self>) -> HashMap<Uuid, CloudTemplatableMCPServer> {
-        let cloud_templatable_mcp_servers: Vec<CloudTemplatableMCPServer> =
-            CloudTemplatableMCPServer::get_all(ctx);
-        cloud_templatable_mcp_servers
+    fn load_server_objects(
+        ctx: &mut ModelContext<Self>,
+    ) -> HashMap<Uuid, TemplatableMCPServerObject> {
+        let templatable_mcp_server_objects: Vec<TemplatableMCPServerObject> =
+            TemplatableMCPServerObject::get_all(ctx);
+        templatable_mcp_server_objects
             .into_iter()
             .map(|server| (server.model().string_model.uuid, server))
             .collect()
     }
 
-    pub fn get_cloud_server(
+    pub fn get_server_object(
         &self,
         template_uuid: Uuid,
         _ctx: &mut ModelContext<Self>,
-    ) -> Option<&CloudTemplatableMCPServer> {
-        self.cloud_templatable_mcp_servers.get(&template_uuid)
+    ) -> Option<&TemplatableMCPServerObject> {
+        self.templatable_mcp_server_objects.get(&template_uuid)
     }
 
     pub fn is_server_installation_shared(&self, installation_uuid: Uuid, app: &AppContext) -> bool {
@@ -406,29 +408,29 @@ impl TemplatableMCPServerManager {
     }
 
     fn get_space(&self, template_uuid: Uuid, app: &AppContext) -> Option<Space> {
-        self.cloud_templatable_mcp_servers
+        self.templatable_mcp_server_objects
             .get(&template_uuid)
             .map(|template| template.space(app))
     }
 
-    /// Gets a CloudTemplatableMCPServer by its UUID.
-    /// Returns the CloudTemplatableMCPServer model if found, otherwise None.
-    pub fn get_cloud_templatable_mcp_server(
+    /// Gets a TemplatableMCPServerObject by its UUID.
+    /// Returns the TemplatableMCPServerObject model if found, otherwise None.
+    pub fn get_templatable_mcp_server_object(
         &self,
         uuid: Uuid,
-    ) -> Option<&CloudTemplatableMCPServer> {
-        self.cloud_templatable_mcp_servers.get(&uuid)
+    ) -> Option<&TemplatableMCPServerObject> {
+        self.templatable_mcp_server_objects.get(&uuid)
     }
 
     pub fn get_creator(&self, template_uuid: Uuid, app: &AppContext) -> Option<String> {
-        let server = self.get_cloud_templatable_mcp_server(template_uuid);
+        let server = self.get_templatable_mcp_server_object(template_uuid);
         server.map(|server| server.metadata().semantic_creator(app))?
     }
 
     /// Gets a TemplatableMCPServer by its UUID.
     /// Returns the TemplatableMCPServer model if found, otherwise None.
     pub fn get_templatable_mcp_server(&self, uuid: Uuid) -> Option<&TemplatableMCPServer> {
-        self.get_cloud_templatable_mcp_server(uuid)
+        self.get_templatable_mcp_server_object(uuid)
             .map(|server| &server.model().string_model)
     }
 
@@ -457,7 +459,7 @@ impl TemplatableMCPServerManager {
     }
 
     pub fn get_all_templatable_mcp_servers(&self) -> Vec<&TemplatableMCPServer> {
-        self.cloud_templatable_mcp_servers
+        self.templatable_mcp_server_objects
             .values()
             .map(|server| &server.model().string_model)
             .collect()
@@ -468,15 +470,15 @@ impl TemplatableMCPServerManager {
         template_server: TemplatableMCPServer,
         ctx: &mut ModelContext<Self>,
     ) {
-        let cloud_templatable_mcp_server =
-            self.get_cloud_templatable_mcp_server(template_server.uuid);
-        if let Some(cloud_templatable_mcp_server) = cloud_templatable_mcp_server {
+        let templatable_mcp_server_object =
+            self.get_templatable_mcp_server_object(template_server.uuid);
+        if let Some(templatable_mcp_server_object) = templatable_mcp_server_object {
             let update_manager = UpdateManager::handle(ctx);
             update_manager.update(ctx, |update_manager, ctx| {
                 update_manager.update_templatable_mcp_server(
                     template_server,
-                    cloud_templatable_mcp_server.id,
-                    cloud_templatable_mcp_server.metadata.revision.clone(),
+                    templatable_mcp_server_object.id,
+                    templatable_mcp_server_object.metadata.revision.clone(),
                     ctx,
                 );
             });
@@ -492,11 +494,11 @@ impl TemplatableMCPServerManager {
             self.delete_templatable_mcp_server_installation(installation_uuid, ctx);
         }
 
-        let cloud_templatable_mcp_server = self.get_cloud_templatable_mcp_server(uuid);
-        if let Some(cloud_templatable_mcp_server) = cloud_templatable_mcp_server {
+        let templatable_mcp_server_object = self.get_templatable_mcp_server_object(uuid);
+        if let Some(templatable_mcp_server_object) = templatable_mcp_server_object {
             let cloud_object_type_and_id = CloudObjectTypeAndId::GenericStringObject {
                 object_type: GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer),
-                id: cloud_templatable_mcp_server.id,
+                id: templatable_mcp_server_object.id,
             };
 
             let update_manager = UpdateManager::handle(ctx);
@@ -539,8 +541,8 @@ impl TemplatableMCPServerManager {
             .collect()
     }
 
-    /// Get all cloud synced MCP servers (templatable templates).
-    pub fn get_all_cloud_synced_mcp_servers(ctx: &AppContext) -> HashMap<Uuid, String> {
+    /// Get all templatable MCP server names.
+    pub fn get_all_templatable_mcp_server_names(ctx: &AppContext) -> HashMap<Uuid, String> {
         TemplatableMCPServerManager::as_ref(ctx)
             .get_all_templatable_mcp_servers()
             .iter()
@@ -1105,7 +1107,7 @@ impl TemplatableMCPServerManager {
         ctx.notify();
     }
 
-    fn get_update_from_cloud_server(
+    fn get_update_from_server_object(
         &self,
         installation_uuid: Uuid,
         app: &AppContext,
@@ -1129,7 +1131,7 @@ impl TemplatableMCPServerManager {
             }
         };
 
-        Some(MCPServerUpdate::CloudTemplate {
+        Some(MCPServerUpdate::TemplateObject {
             publisher: author,
             new_version_ts: templatable_mcp_server.version,
             json_template: templatable_mcp_server.template.clone(),
@@ -1182,7 +1184,7 @@ impl TemplatableMCPServerManager {
 
         for (index, update) in updates.iter().enumerate() {
             let json_template = match update {
-                MCPServerUpdate::CloudTemplate { json_template, .. } => json_template,
+                MCPServerUpdate::TemplateObject { json_template, .. } => json_template,
                 MCPServerUpdate::Gallery { json_template, .. } => json_template,
             };
 
@@ -1202,16 +1204,16 @@ impl TemplatableMCPServerManager {
                 let other_update = &updates[other_template_index];
                 let should_replace = match (update, other_update) {
                     (
-                        MCPServerUpdate::CloudTemplate { new_version_ts, .. },
-                        MCPServerUpdate::CloudTemplate {
+                        MCPServerUpdate::TemplateObject { new_version_ts, .. },
+                        MCPServerUpdate::TemplateObject {
                             new_version_ts: other_new_version_ts,
                             ..
                         },
                     ) => new_version_ts > other_new_version_ts,
-                    (MCPServerUpdate::CloudTemplate { .. }, MCPServerUpdate::Gallery { .. }) => {
+                    (MCPServerUpdate::TemplateObject { .. }, MCPServerUpdate::Gallery { .. }) => {
                         false
                     }
-                    (MCPServerUpdate::Gallery { .. }, MCPServerUpdate::CloudTemplate { .. }) => {
+                    (MCPServerUpdate::Gallery { .. }, MCPServerUpdate::TemplateObject { .. }) => {
                         true
                     }
                     (
@@ -1254,7 +1256,7 @@ impl TemplatableMCPServerManager {
         app: &AppContext,
     ) -> Vec<MCPServerUpdate> {
         let options: Vec<MCPServerUpdate> = [
-            self.get_update_from_cloud_server(installation_uuid, app),
+            self.get_update_from_server_object(installation_uuid, app),
             self.get_update_from_gallery(installation_uuid, app),
         ]
         .iter()
@@ -1292,16 +1294,16 @@ impl TemplatableMCPServerManager {
     }
 
     pub fn is_authorized_editor(&self, template_uuid: Uuid, ctx: &AppContext) -> bool {
-        let cloud_templatable_mcp_server = self.get_cloud_templatable_mcp_server(template_uuid);
+        let templatable_mcp_server_object = self.get_templatable_mcp_server_object(template_uuid);
 
-        if let Some(cloud_templatable_mcp_server) = cloud_templatable_mcp_server {
+        if let Some(templatable_mcp_server_object) = templatable_mcp_server_object {
             let auth_state = AuthStateProvider::as_ref(ctx).get();
             let current_team = UserWorkspaces::as_ref(ctx).current_team();
 
             let has_admin_permissions = current_team.is_some_and(|team| {
                 team.has_admin_permissions(&auth_state.user_email().unwrap_or_default())
             });
-            let is_author = cloud_templatable_mcp_server.metadata().creator_uid
+            let is_author = templatable_mcp_server_object.metadata().creator_uid
                 == auth_state.user_id().map(|user_id| user_id.as_string());
 
             has_admin_permissions || is_author
@@ -1311,10 +1313,10 @@ impl TemplatableMCPServerManager {
     }
 
     pub fn is_author(&self, template_uuid: Uuid, ctx: &AppContext) -> bool {
-        let cloud_templatable_mcp_server = self.get_cloud_templatable_mcp_server(template_uuid);
-        if let Some(cloud_templatable_mcp_server) = cloud_templatable_mcp_server {
+        let templatable_mcp_server_object = self.get_templatable_mcp_server_object(template_uuid);
+        if let Some(templatable_mcp_server_object) = templatable_mcp_server_object {
             let auth_state = AuthStateProvider::as_ref(ctx).get();
-            cloud_templatable_mcp_server.metadata().creator_uid
+            templatable_mcp_server_object.metadata().creator_uid
                 == auth_state.user_id().map(|user_id| user_id.as_string())
         } else {
             false
@@ -1444,7 +1446,7 @@ impl TemplatableMCPServerManager {
         ctx: &mut ModelContext<Self>,
     ) {
         let sync_id = self
-            .get_cloud_templatable_mcp_server(template_uuid)
+            .get_templatable_mcp_server_object(template_uuid)
             .map(|server| server.sync_id());
         let team_uid = TemplatableMCPServerManager::get_first_team_space_id(ctx);
 
@@ -1484,10 +1486,10 @@ impl TemplatableMCPServerManager {
         template_uuid: Uuid,
         ctx: &mut ModelContext<Self>,
     ) {
-        let cloud_templatable_mcp_server = self.get_cloud_templatable_mcp_server(template_uuid);
+        let templatable_mcp_server_object = self.get_templatable_mcp_server_object(template_uuid);
 
-        if let Some(cloud_templatable_mcp_server) = cloud_templatable_mcp_server {
-            let sync_id = cloud_templatable_mcp_server.sync_id();
+        if let Some(templatable_mcp_server_object) = templatable_mcp_server_object {
+            let sync_id = templatable_mcp_server_object.sync_id();
 
             let object_type_and_id = CloudObjectTypeAndId::GenericStringObject {
                 object_type: GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer),

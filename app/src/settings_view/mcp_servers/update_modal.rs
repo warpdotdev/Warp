@@ -212,7 +212,7 @@ impl UpdateModalBody {
             .finish();
 
         let (title, description) = match option {
-            MCPServerUpdate::CloudTemplate {
+            MCPServerUpdate::TemplateObject {
                 publisher,
                 new_version_ts,
                 ..

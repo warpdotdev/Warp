@@ -56,7 +56,7 @@ use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::document::ai_document_model::AIDocumentId;
 use crate::ai::execution_profiles::{AIExecutionProfileObject, AIExecutionProfileObjectModel};
 use crate::ai::facts::{AIFactObject, AIFactObjectModel};
-use crate::ai::mcp::templatable::{CloudTemplatableMCPServer, CloudTemplatableMCPServerModel};
+use crate::ai::mcp::templatable::{TemplatableMCPServerObject, TemplatableMCPServerObjectModel};
 use crate::ai::mcp::templatable_installation::VariableValue;
 use crate::ai::mcp::{
     MCPServerObject, MCPServerObjectModel, TemplatableMCPServer, TemplatableMCPServerInstallation,
@@ -3062,11 +3062,12 @@ fn read_sqlite_data(
                                 })
                             }
                             JsonObjectType::TemplatableMCPServer => {
-                                let model =
-                                    CloudTemplatableMCPServerModel::deserialize_owned(&object.data);
+                                let model = TemplatableMCPServerObjectModel::deserialize_owned(
+                                    &object.data,
+                                );
                                 model.ok().map(|model| {
                                     let boxed: Box<dyn CloudObject> =
-                                        Box::new(CloudTemplatableMCPServer::new(
+                                        Box::new(TemplatableMCPServerObject::new(
                                             server_id,
                                             model,
                                             to_cloud_object_metadata(metadata),

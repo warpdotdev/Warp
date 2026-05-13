@@ -1,5 +1,5 @@
 #[cfg(not(target_family = "wasm"))]
-use crate::ai::mcp::templatable::{CloudTemplatableMCPServerModel, TemplatableMCPServer};
+use crate::ai::mcp::templatable::{TemplatableMCPServer, TemplatableMCPServerObjectModel};
 use crate::{
     ai::{
         execution_profiles::{AIExecutionProfile, AIExecutionProfileObjectModel},
@@ -310,7 +310,7 @@ impl UpdateManager {
         ctx: &mut ModelContext<Self>,
     ) {
         self.update_object(
-            CloudTemplatableMCPServerModel::new(templatable_mcp_server),
+            TemplatableMCPServerObjectModel::new(templatable_mcp_server),
             templatable_mcp_server_id,
             revision_ts,
             ctx,
@@ -796,7 +796,7 @@ impl UpdateManager {
         ctx: &mut ModelContext<Self>,
     ) {
         self.create_object(
-            CloudTemplatableMCPServerModel::new(templatable_mcp_server),
+            TemplatableMCPServerObjectModel::new(templatable_mcp_server),
             owner,
             client_id,
             Default::default(),

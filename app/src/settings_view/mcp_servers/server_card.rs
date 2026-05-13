@@ -28,7 +28,7 @@ use warpui::{
 
 use crate::{
     ai::mcp::{
-        templatable::CloudTemplatableMCPServer, MCPServerState, TemplatableMCPServerManager,
+        templatable::TemplatableMCPServerObject, MCPServerState, TemplatableMCPServerManager,
     },
     appearance::Appearance,
     cloud_object::CloudObject,
@@ -620,9 +620,9 @@ impl ServerCardView {
 
         match self.item_id {
             ServerCardItemId::TemplatableMCP(template_uuid) => {
-                let cloud_server = CloudTemplatableMCPServer::get_by_uuid(&template_uuid, app);
-                if let Some(cloud_server) = cloud_server {
-                    lines.push(format!("Template sync id: {}", cloud_server.sync_id()));
+                let server_object = TemplatableMCPServerObject::get_by_uuid(&template_uuid, app);
+                if let Some(server_object) = server_object {
+                    lines.push(format!("Template sync id: {}", server_object.sync_id()));
                 }
             }
             ServerCardItemId::TemplatableMCPInstallation(installation_uuid) => {
@@ -635,12 +635,13 @@ impl ServerCardView {
                         Some(uuid) => format!("Gallery Id: {uuid}"),
                         None => "Gallery Id: None".to_string(),
                     };
-                    let cloud_server = CloudTemplatableMCPServer::get_by_uuid(&template_uuid, app);
-                    let template_sync_id_text = match cloud_server {
-                        Some(cloud_server) => {
-                            format!("Template sync id: {}", cloud_server.sync_id())
+                    let server_object =
+                        TemplatableMCPServerObject::get_by_uuid(&template_uuid, app);
+                    let template_sync_id_text = match server_object {
+                        Some(server_object) => {
+                            format!("Template sync id: {}", server_object.sync_id())
                         }
-                        None => "Could not find cloud template".to_string(),
+                        None => "Could not find template object".to_string(),
                     };
                     lines.push(format!(
                         "{}",

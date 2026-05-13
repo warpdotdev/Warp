@@ -790,7 +790,7 @@ impl MCPServersListPageView {
         let local_templatable_mcp_server = installation.templatable_mcp_server();
 
         match update {
-            MCPServerUpdate::CloudTemplate { .. } => {
+            MCPServerUpdate::TemplateObject { .. } => {
                 let latest_templatable_mcp_server = TemplatableMCPServerManager::as_ref(ctx)
                     .get_templatable_mcp_server(installation.template_uuid())
                     .cloned();
@@ -817,12 +817,12 @@ impl MCPServersListPageView {
                     latest_templatable_mcp_server,
                     ctx,
                 );
-                // We do not have to update the cloud template, because this update came from a cloud template
+                // We do not have to update the template object, because this update came from a template object
                 log::info!(
-                    "Successfully updated server {installation_uuid} with the newest cloud template."
+                    "Successfully updated server {installation_uuid} with the newest template object."
                 );
 
-                // Show the toast that the server updated, even though we don't update the cloud template in this case
+                // Show the toast that the server updated, even though we don't update the template object in this case
                 let window_id = ctx.window_id();
                 ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     let toast = DismissibleToast::success(crate::t!(
@@ -873,7 +873,7 @@ impl MCPServersListPageView {
                     return;
                 };
 
-                // We need to update both the cloud template and the installation
+                // We need to update both the template object and the installation
                 let new_template = TemplatableMCPServer {
                     uuid: installation.template_uuid(),
                     ..gallery_templatable_mcp_server.clone()
@@ -889,7 +889,7 @@ impl MCPServersListPageView {
                 log::info!(
                     "Successfully updated server {installation_uuid} with the newest gallery template."
                 );
-                // We don't need to manually show a toast, because it will appear once the cloud template update goes through
+                // We don't need to manually show a toast, because it will appear once the template object update goes through
             }
         };
     }

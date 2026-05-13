@@ -2,7 +2,7 @@ use warpui::AppContext;
 use warpui::ModelContext;
 
 use super::TemplatableMCPServerManager;
-use crate::ai::mcp::templatable::{CloudTemplatableMCPServer, TemplatableMCPServer};
+use crate::ai::mcp::templatable::{TemplatableMCPServer, TemplatableMCPServerObject};
 use crate::ai::mcp::templatable_installation::{TemplatableMCPServerInstallation, VariableValue};
 use crate::ai::mcp::MCPServerUpdate;
 use crate::cloud_object::update_manager::InitiatedBy;
@@ -22,15 +22,15 @@ impl TemplatableMCPServerManager {
         Default::default()
     }
 
-    /// Gets a CloudTemplatableMCPServer by its UUID.
-    /// Returns the CloudTemplatableMCPServer model if found, otherwise None.
+    /// Gets a TemplatableMCPServerObject by its UUID.
+    /// Returns the TemplatableMCPServerObject model if found, otherwise None.
     ///
     /// This is a no-op in WASM, as MCP servers are not supported in WASM.
-    pub fn get_cloud_templatable_mcp_server(
+    pub fn get_templatable_mcp_server_object(
         &self,
         _uuid: Uuid,
-    ) -> Option<&CloudTemplatableMCPServer> {
-        log::warn!("Getting a CloudTemplatableMCPServer by UUID is not supported in WASM");
+    ) -> Option<&TemplatableMCPServerObject> {
+        log::warn!("Getting a TemplatableMCPServerObject by UUID is not supported in WASM");
         None
     }
 
@@ -176,11 +176,11 @@ impl TemplatableMCPServerManager {
         false
     }
 
-    pub fn get_cloud_server(
+    pub fn get_server_object(
         &self,
         _template_uuid: Uuid,
         _ctx: &mut ModelContext<Self>,
-    ) -> Option<&CloudTemplatableMCPServer> {
+    ) -> Option<&TemplatableMCPServerObject> {
         None
     }
 
@@ -268,7 +268,7 @@ impl TemplatableMCPServerManager {
         None
     }
 
-    pub fn get_all_cloud_synced_mcp_servers(_ctx: &AppContext) -> HashMap<Uuid, String> {
+    pub fn get_all_templatable_mcp_server_names(_ctx: &AppContext) -> HashMap<Uuid, String> {
         Default::default()
     }
 

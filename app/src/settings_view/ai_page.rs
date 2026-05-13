@@ -1975,7 +1975,8 @@ impl AISettingsPageView {
     fn get_non_allowlisted_or_denylisted_mcp_servers(
         ctx: &mut ViewContext<Self>,
     ) -> Vec<(uuid::Uuid, String)> {
-        let all_mcp_servers = TemplatableMCPServerManager::get_all_cloud_synced_mcp_servers(ctx);
+        let all_mcp_servers =
+            TemplatableMCPServerManager::get_all_templatable_mcp_server_names(ctx);
         let already_allowlisted_mcp_servers =
             BlocklistAIPermissions::as_ref(ctx).get_mcp_allowlist(ctx, None);
         let already_denylisted_mcp_servers =
@@ -5083,7 +5084,7 @@ impl AgentsWidget {
         app: &AppContext,
     ) -> Box<dyn Element> {
         let all_runnable_mcp_servers =
-            TemplatableMCPServerManager::get_all_cloud_synced_mcp_servers(app);
+            TemplatableMCPServerManager::get_all_templatable_mcp_server_names(app);
         if all_runnable_mcp_servers.is_empty() {
             self.render_mcp_permissions_zero_state(ai_settings, appearance, app)
         } else {

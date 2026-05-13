@@ -31,7 +31,7 @@ use crate::{
         blocklist::secret_redaction::find_secrets_in_text,
         mcp::{
             parsing::{prettify_json, resolve_json, ParsedTemplatableMCPServerResult},
-            templatable::CloudTemplatableMCPServer,
+            templatable::TemplatableMCPServerObject,
             MCPServer, TemplatableMCPServer, TemplatableMCPServerInstallation,
             TemplatableMCPServerManager, TransportType,
         },
@@ -84,7 +84,7 @@ pub enum MCPServersEditPageViewAction {
 
 #[allow(clippy::large_enum_variant)]
 pub enum ServerModel {
-    CloudTemplatableMCPServer(CloudTemplatableMCPServer),
+    TemplatableMCPServerObject(TemplatableMCPServerObject),
     LocalTemplatableMCPInstallation(TemplatableMCPServerInstallation),
     None,
 }
@@ -92,8 +92,8 @@ pub enum ServerModel {
 impl ServerModel {
     pub fn name(&self) -> Option<String> {
         match self {
-            ServerModel::CloudTemplatableMCPServer(cloud_templatable_server) => {
-                Some(cloud_templatable_server.display_name())
+            ServerModel::TemplatableMCPServerObject(templatable_server_object) => {
+                Some(templatable_server_object.display_name())
             }
             ServerModel::LocalTemplatableMCPInstallation(templatable_mcp_server_installation) => {
                 Some(
@@ -230,14 +230,15 @@ impl MCPServersEditPageView {
         self.server_card_item_id = item_id;
         match item_id {
             Some(ServerCardItemId::TemplatableMCP(template_uuid)) => {
-                let cloud_templatable_mcp_server = TemplatableMCPServerManager::as_ref(ctx)
-                    .get_cloud_templatable_mcp_server(template_uuid);
+                let templatable_mcp_server_object = TemplatableMCPServerManager::as_ref(ctx)
+                    .get_templatable_mcp_server_object(template_uuid);
 
-                if let Some(cloud_templatable_mcp_server) = cloud_templatable_mcp_server {
-                    self.server_model = ServerModel::CloudTemplatableMCPServer(
-                        cloud_templatable_mcp_server.clone(),
+                if let Some(templatable_mcp_server_object) = templatable_mcp_server_object {
+                    self.server_model = ServerModel::TemplatableMCPServerObject(
+                        templatable_mcp_server_object.clone(),
                     );
-                    let templatable_mcp_server = &cloud_templatable_mcp_server.model().string_model;
+                    let templatable_mcp_server =
+                        &templatable_mcp_server_object.model().string_model;
                     let json = templatable_mcp_server.to_user_json();
 
                     self.json_editor.update(ctx, |view, ctx| {

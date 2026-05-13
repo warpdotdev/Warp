@@ -1196,7 +1196,8 @@ impl ExecutionProfileEditorView {
     ) where
         F: Fn(uuid::Uuid) -> ExecutionProfileEditorViewAction,
     {
-        let all_mcp_servers = TemplatableMCPServerManager::get_all_cloud_synced_mcp_servers(ctx);
+        let all_mcp_servers =
+            TemplatableMCPServerManager::get_all_templatable_mcp_server_names(ctx);
         dropdown.update(ctx, |dropdown, ctx| {
             let mcps_in_dropdown: Vec<(uuid::Uuid, String)> = all_mcp_servers
                 .into_iter()

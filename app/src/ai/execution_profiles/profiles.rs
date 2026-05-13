@@ -1608,7 +1608,8 @@ impl AIExecutionProfilesModel {
 
     /// Handle deleted MCP servers by deleting its uuid from all profiles.
     fn remove_deleted_mcp_servers(&mut self, ctx: &mut ModelContext<Self>) {
-        let all_valid_uuids = TemplatableMCPServerManager::get_all_cloud_synced_mcp_servers(ctx);
+        let all_valid_uuids =
+            TemplatableMCPServerManager::get_all_templatable_mcp_server_names(ctx);
         for profile_id in self.get_all_profile_ids() {
             self.edit_profile_internal(
                 profile_id,
