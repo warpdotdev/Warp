@@ -259,14 +259,6 @@ pub(super) fn relaunch() -> Result<()> {
         ])
         .spawn()?;
 
-    // DEV ONLY: Sleep after spawning the installer so this process is still alive
-    // when Inno Setup tries to overwrite files. This reliably reproduces the
-    // auto-update race condition (APP-3702) for testing.
-    if matches!(ChannelState::channel(), Channel::Dev) {
-        log::info!("DEV: Sleeping 10s after spawning installer to reproduce update race");
-        std::thread::sleep(Duration::from_secs(10));
-    }
-
     Ok(())
 }
 
