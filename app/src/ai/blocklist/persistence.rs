@@ -87,6 +87,11 @@ impl TryFrom<&AIAgentInput> for PersistedAIInputType {
             } => Err(anyhow!(
                 "PassiveSuggestionResult::CodeDiff is not persisted as a query."
             )),
+            AIAgentInput::InvokeSkill { context, .. } => Ok(Self::Query {
+                text: input.user_query().unwrap_or_else(|| input.to_string()),
+                context: context.clone(),
+                referenced_attachments: Default::default(),
+            }),
             AIAgentInput::ActionResult { .. }
             | AIAgentInput::ResumeConversation { .. }
             | AIAgentInput::InitProjectRules { .. }
@@ -96,7 +101,6 @@ impl TryFrom<&AIAgentInput> for PersistedAIInputType {
             | AIAgentInput::CodeReview { .. }
             | AIAgentInput::FetchReviewComments { .. }
             | AIAgentInput::SummarizeConversation { .. }
-            | AIAgentInput::InvokeSkill { .. }
             | AIAgentInput::StartFromAmbientRunPrompt { .. }
             | AIAgentInput::MessagesReceivedFromAgents { .. }
             | AIAgentInput::EventsFromAgents { .. } => Err(anyhow::anyhow!(
@@ -483,3 +487,7 @@ impl From<SerializedBlock> for SerializedBlockListItem {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "persistence_tests.rs"]
+mod tests;
