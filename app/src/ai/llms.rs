@@ -127,6 +127,7 @@ impl LLMProvider {
 pub enum LLMModelHost {
     DirectApi,
     AwsBedrock,
+    CustomEndpoint,
     #[serde(other)]
     Unknown,
 }
