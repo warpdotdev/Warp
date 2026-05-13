@@ -1712,9 +1712,8 @@ impl AgentInputFooter {
         shared_status: &SharedSessionStatus,
         app: &AppContext,
     ) -> Option<Box<dyn Element>> {
-        let is_cloud_mode = false && self.ambient_agent_view_model.as_ref(app).is_ambient_agent();
         if !item.available_in().is_available_for_agent_view()
-            || !item.available_to_session_viewer(shared_status, is_cloud_mode)
+            || !item.available_to_session_viewer(shared_status, false)
         {
             return None;
         }

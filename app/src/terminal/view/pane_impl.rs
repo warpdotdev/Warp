@@ -525,11 +525,7 @@ impl BackingView for TerminalView {
 
         // Shared-session related items.
         let shared_session_status = model.shared_session_status();
-        let is_ambient_agent =
-            false && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
         if shared_session_status.is_sharer_or_viewer() {
-            let _ = is_ambient_agent;
-
             if shared_session_status.is_sharer() {
                 items.push(
                     MenuItemFields::new(crate::t!("menu-pane-stop-sharing-session"))
@@ -643,10 +639,6 @@ impl TerminalView {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
 
-        // Check if we're configuring or waiting on an ambient agent
-        let is_ambient_agent =
-            false && self.ambient_agent_view_model.as_ref(app).is_ambient_agent();
-
         // When a long-running command is active, show InProgress
         // instead of the conversation's actual status.
         let status = if is_long_running {
@@ -660,13 +652,9 @@ impl TerminalView {
             && !is_long_running
         {
             ConstrainedBox::new(
-                if is_ambient_agent {
-                    WarpIcon::OzCloud
-                } else {
-                    WarpIcon::Oz
-                }
-                .to_warpui_icon(blended_colors::text_sub(theme, theme.background()).into())
-                .finish(),
+                WarpIcon::Oz
+                    .to_warpui_icon(blended_colors::text_sub(theme, theme.background()).into())
+                    .finish(),
             )
             .with_height(appearance.ui_font_size())
             .with_width(appearance.ui_font_size())

@@ -9610,11 +9610,9 @@ impl Input {
             return;
         }
 
-        // Shared session viewers cannot attach images unless in cloud mode
+        // Shared session viewers cannot attach images.
         let is_viewer = self.model.lock().shared_session_status().is_viewer();
-        let is_cloud_mode_with_images =
-            false && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
-        if is_viewer && !is_cloud_mode_with_images {
+        if is_viewer {
             self.insert_clipboard_text_content(ctx, content);
             return;
         }
@@ -9671,9 +9669,7 @@ impl Input {
     fn can_attach_on_filepaths_paste_or_dragdrop(&self, ctx: &mut ViewContext<Self>) -> bool {
         // Shared session viewers cannot attach images in OpenWarp.
         let is_viewer = self.model.lock().shared_session_status().is_viewer();
-        let is_cloud_mode_with_images =
-            false && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
-        if is_viewer && !is_cloud_mode_with_images {
+        if is_viewer {
             return false;
         }
 
@@ -13978,12 +13974,8 @@ impl View for Input {
             return self.render_cli_agent_input(app);
         }
         let is_universal_input = self.should_show_universal_developer_input(app);
-        let ambient_agent_model = self.ambient_agent_view_model.as_ref(app);
 
-        if false && ambient_agent_model.should_show_status_footer() {
-            self.render_ambient_agent_status_footer(app)
-        } else if FeatureFlag::AgentView.is_enabled()
-            && self.agent_view_controller.as_ref(app).is_active()
+        if FeatureFlag::AgentView.is_enabled() && self.agent_view_controller.as_ref(app).is_active()
         {
             self.render_agent_input(app)
         } else if FeatureFlag::AgentView.is_enabled()

@@ -369,10 +369,6 @@ impl TerminalView {
         self.update_pane_configuration(ctx);
 
         self.update_shared_session_pane_header(ctx);
-        // Shared ambient agent sessions should auto-open the details panel once (same behavior as local cloud mode).
-        if false && matches!(source_type, SessionSourceType::AmbientAgent { .. }) {
-            self.maybe_auto_open_cloud_mode_details_panel(ctx);
-        }
     }
 
     /// Clear the presence manager and handle any UI necessary on shared session end.

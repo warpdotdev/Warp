@@ -253,37 +253,6 @@ impl Input {
 
         SavePosition::new(outer_stack.finish(), &self.save_position_id()).finish()
     }
-
-    pub(super) fn render_ambient_agent_status_footer(&self, app: &AppContext) -> Box<dyn Element> {
-        let ambient_agent_model = self.ambient_agent_view_model.as_ref(app);
-        let stack = Stack::new().with_constrain_absolute_children();
-
-        // Don't render status bar when agent has failed or is waiting for session
-        let show_status_bar = ambient_agent_model.error_message().is_none()
-            && !ambient_agent_model.is_waiting_for_session();
-
-        let _model = self.model.lock();
-
-        let save_position =
-            SavePosition::new(stack.finish(), &self.status_free_input_save_position_id()).finish();
-
-        let input = Hoverable::new(self.hoverable_handle.clone(), |_| save_position)
-            .on_hover(|is_hovered, ctx, _app, _position| {
-                ctx.dispatch_typed_action(InputAction::SetUDIHovered(is_hovered));
-            })
-            .on_middle_click(|ctx, _app, _position| {
-                ctx.dispatch_typed_action(TerminalAction::MiddleClickOnInput);
-            })
-            .finish();
-
-        let mut column = Flex::column();
-        if show_status_bar {
-            column.add_child(ChildView::new(&self.agent_status_view).finish());
-        }
-        column.add_child(input);
-
-        SavePosition::new(column.finish(), &self.save_position_id()).finish()
-    }
 }
 
 pub mod styles {
