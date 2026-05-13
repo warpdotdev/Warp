@@ -72,7 +72,7 @@ use self::execute::{
 };
 
 use super::BlocklistAIHistoryModel;
-use crate::ai::ai_document_view::DEFAULT_PLANNING_DOCUMENT_TITLE;
+use crate::ai::ai_document_view::default_planning_document_title;
 use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::{send_telemetry_from_ctx, TelemetryEvent};
 
@@ -1363,7 +1363,7 @@ impl BlocklistAIActionModel {
                             .as_ref()
                             .and_then(|t| t.get(index))
                             .cloned()
-                            .unwrap_or_else(|| DEFAULT_PLANNING_DOCUMENT_TITLE.to_string());
+                            .unwrap_or_else(default_planning_document_title);
 
                         doc_model.restore_document(
                             doc_context.document_id,

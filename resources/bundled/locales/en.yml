@@ -1024,6 +1024,21 @@ en:
     edit_config: "Edit config"
     remove: "Remove"
 
+  # ── AI Document ──
+  ai_document:
+    default_planning_document_title: "Planning document"
+    click: "Click"
+    update_plan_tooltip: "This plan has changes the agent isn't aware of. {save_action} to stop the agent's current task and send the updated plan"
+    save_sync_tooltip: "Save and auto-sync this plan to your Warp Drive"
+    synced_tooltip: "This plan is synced to your Warp Drive and will auto save any edits you make."
+    untitled: "Untitled"
+    untitled_markdown_filename: "Untitled.md"
+    copy_link: "Copy link"
+    show_in_warp_drive: "Show in Warp Drive"
+    save_as_markdown_file: "Save as markdown file"
+    attach_to_active_session: "Attach to active session"
+    copy_plan_id: "Copy plan ID"
+
   # ── Terminal Context Menu ──
   terminal_context_menu:
     copy_prompt: "Copy prompt"

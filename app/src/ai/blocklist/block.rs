@@ -24,7 +24,7 @@ use crate::ai::agent::PassiveSuggestionTrigger;
 use crate::ai::agent::SuggestPromptRequest;
 use crate::ai::agent::SuggestPromptResult;
 use crate::ai::agent::TodoOperation;
-use crate::ai::ai_document_view::DEFAULT_PLANNING_DOCUMENT_TITLE;
+use crate::ai::ai_document_view::default_planning_document_title;
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewEntryOrigin};
 use crate::ai::blocklist::context_model::AttachmentType;
 use crate::ai::blocklist::inline_action::code_diff_view::convert_file_edits_to_file_diffs;
@@ -3539,7 +3539,7 @@ impl AIBlock {
 
         for (index, document) in documents.iter().enumerate() {
             let title = if document.title.is_empty() {
-                DEFAULT_PLANNING_DOCUMENT_TITLE.to_string()
+                default_planning_document_title()
             } else {
                 document.title.clone()
             };

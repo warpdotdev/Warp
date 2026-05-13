@@ -1024,6 +1024,21 @@ zh-CN:
     edit_config: "编辑配置"
     remove: "移除"
 
+  # ── AI 文档 ──
+  ai_document:
+    default_planning_document_title: "计划文档"
+    click: "点击"
+    update_plan_tooltip: "此计划有 Agent 尚未感知的更改。{save_action} 可停止 Agent 当前任务并发送更新后的计划"
+    save_sync_tooltip: "保存此计划并自动同步到你的 Warp Drive"
+    synced_tooltip: "此计划已同步到你的 Warp Drive，之后的编辑会自动保存。"
+    untitled: "未命名"
+    untitled_markdown_filename: "未命名.md"
+    copy_link: "复制链接"
+    show_in_warp_drive: "在 Warp Drive 中显示"
+    save_as_markdown_file: "另存为 Markdown 文件"
+    attach_to_active_session: "附加到当前会话"
+    copy_plan_id: "复制计划 ID"
+
   # ── 终端上下文菜单 ──
   terminal_context_menu:
     copy_prompt: "复制提示词"
