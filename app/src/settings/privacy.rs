@@ -601,12 +601,8 @@ impl PrivacySettings {
         }
     }
 
-    /// openWarp 闭源遥测剥离 P3:原会调 `auth_client.update_user_settings(snapshot)`
-    /// 把 telemetry_enabled / crash_reporting_enabled 等隐私设置同步到 Warp 官方
-    /// GraphQL `UpdateUserSettings` mutation(指向 app.warp.dev)。这是云端 settings
-    /// 同步链路:本地关掉遥测后,如果云端拉到旧值会再被覆盖回 true。剥离后纯本地落盘
-    /// (调用方仍会写 settings.toml + warp_drive 本地缓存),无外发。
-    /// `update_user_settings` mutation + `auth_client` 字段暂留死代码,P4 物理清理。
+    /// openWarp 闭源遥测剥离 P3:隐私设置不再同步到上游云端 settings。
+    /// 剥离后纯本地落盘(调用方仍会写 settings.toml + warp_drive 本地缓存),无外发。
     fn update_server_with_local_settings(&self, _ctx: &mut ModelContext<Self>) {}
 
     /// We wait until warp drive prefs have loaded and then either

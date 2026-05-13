@@ -1480,7 +1480,7 @@ impl UpdateManager {
     }
 
     pub fn empty_trash(&mut self, space: Space, ctx: &mut ModelContext<Self>) {
-        // OpenWarp:Empty Trash 走纯本地路径。原实现调用 GraphQL `empty_trash` mutation,
+        // OpenWarp:Empty Trash 走纯本地路径。原实现调用上游云端 empty_trash 接口,
         // 无 auth/无服务端时直接 `Failed to get access token` 重试 3 次后失败,Trash UI 不动。
         // 本地分支:直接遍历 ObjectStoreModel 找出 owner 匹配 + is_trashed 的对象,
         // 收集 SyncId 后复用 `on_object_delete_success`(它已经做了内存 + sqlite 双删 + actions 清理)。

@@ -1,6 +1,6 @@
 //! OpenWarp 本地 managed-secrets client。
 //!
-//! Warp 上游这里原本通过 server_api 调 warp.dev GraphQL 维护团队/用户托管密钥。
+//! Warp 上游这里原本通过 server_api 调云端接口维护团队/用户托管密钥。
 //! OpenWarp 保留 `warp_managed_secrets` crate 供本地功能复用,但所有云端托管密钥
 //! 动作都不可达:查询返回空集合,写动作和 OIDC token 颁发返回 disabled 错误。
 

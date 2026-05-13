@@ -134,7 +134,7 @@ pub enum Harness {
     #[value(name = "gemini")]
     Gemini,
     /// A harness produced by a newer client/server that this client doesn't
-    /// recognize. Surfaced via deserialization fallbacks (e.g. unknown GraphQL
+    /// recognize. Surfaced via deserialization fallbacks (e.g. unknown serialized
     /// enum values, unknown `harness_type` strings); never selectable from the
     /// CLI or harness dropdown.
     #[value(skip)]

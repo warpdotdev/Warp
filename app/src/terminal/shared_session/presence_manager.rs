@@ -733,7 +733,7 @@ impl PresenceManager {
         self.absent_viewers.values()
     }
 
-    /// Returns a viewer's firebase uid, if the viewer is known to us.
+    /// Returns a viewer's legacy user uid, if the viewer is known to us.
     pub fn viewer_user_uid(&self, viewer_id: &ParticipantId) -> Option<UserUid> {
         if *viewer_id == self.id {
             return Some(self.user_uid);
@@ -750,8 +750,8 @@ impl PresenceManager {
             .map(UserUid::new)
     }
 
-    /// Returns all of the present viewer IDs associated with the given Firebase
-    /// UID, including ourselves if applicable.
+    /// Returns all present viewer IDs associated with the given legacy user UID,
+    /// including ourselves if applicable.
     pub fn present_viewer_ids_for_uid(
         &self,
         viewer_uid: UserUid,

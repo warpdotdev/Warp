@@ -19,7 +19,7 @@
 //! 是为了把重命名的 200+ 处级联改动留到上游同步策略稳定后再统一做,本阶段**只
 //! 标注语义已本地化**,不动符号名。
 //!
-//! 真正的 "服务端往返" 类型正在分批物理删除；服务端对象 enum、GraphQL 字段转换、
+//! 真正的 "服务端往返" 类型正在分批物理删除；服务端对象 enum、字段转换、
 //! 初始加载 fan-in 与旧服务端泛型对象承载结构已删除。
 
 use self::{breadcrumbs::ContainingObject, model::persistence::ObjectStoreModel};

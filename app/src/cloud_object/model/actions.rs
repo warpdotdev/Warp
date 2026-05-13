@@ -17,8 +17,7 @@ pub enum ObjectActionType {
     Execute,
 }
 
-// In order to convert from a graphql type and from a SQLite read, the action type
-// implements to_string().
+// 为了复用历史序列化值和 SQLite 读取路径,action type 实现 to_string()。
 //
 // Temporarily suppress clippy warnings about the `ToString` impl until we
 // move `ObjectType` away from using `std::fmt::Display` for serialization.
@@ -141,10 +140,8 @@ impl TryFrom<PersistedObjectAction> for ObjectAction {
     }
 }
 
-/// The server communicates the action history of an object via an "ObjectActionHistory" type that
-/// contains the uid, a list of actions (single or bundled), and the timestamp of the most recent action
-/// (which is redundant from the list of actions). We use this type to convert from the graphql layer into
-/// an identical type the sync_queue and update_manager can pass around.
+/// ObjectActionHistory 保留历史对象 action 序列化形状:uid、actions(single 或 bundled)
+/// 以及最近 action 的 timestamp。当前仅作为本地 update_manager 可传递的兼容类型。
 #[derive(Clone, Debug, PartialEq)]
 pub struct ObjectActionHistory {
     pub uid: ObjectUid,
