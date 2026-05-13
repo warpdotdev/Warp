@@ -3,7 +3,7 @@
 use chrono::Local;
 use warp_util::path::user_friendly_path;
 
-use crate::terminal::shell::ShellType;
+use crate::terminal::{shell::ShellType, ShellLaunchData};
 
 use super::{
     context_chip::{GeneratorContext, ShellCommand, ShellCommandGenerator},
@@ -102,6 +102,16 @@ pub fn ssh_session(ctx: &GeneratorContext) -> Option<ChipValue> {
     } else {
         None
     }
+}
+
+/// Generator function for Dev Container sessions.
+pub fn dev_container(ctx: &GeneratorContext) -> Option<ChipValue> {
+    let session = ctx.active_session?;
+    matches!(
+        session.launch_data(),
+        Some(ShellLaunchData::DevContainer { .. })
+    )
+    .then(|| ChipValue::Text("Dev Container".to_string()))
 }
 
 /// Generator function for Subshell session chip.

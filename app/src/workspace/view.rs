@@ -318,6 +318,11 @@ use crate::terminal::alt_screen_reporting::AltScreenReporting;
 use crate::terminal::general_settings::GeneralSettings;
 use crate::terminal::input::{Input, MenuPositioning};
 #[cfg(feature = "local_tty")]
+use crate::terminal::local_tty::dev_container::{
+    find_nearest_devcontainer_configs, resolve_devcontainer_cli_path_from_user_shell,
+    DevContainerConfig,
+};
+#[cfg(feature = "local_tty")]
 use crate::terminal::local_tty::docker_sandbox::resolve_sbx_path_from_user_shell;
 use crate::terminal::model::blockgrid::BlockGrid;
 #[cfg(feature = "local_fs")]
@@ -669,6 +674,9 @@ const MOBILE_OVERLAY_SCRIM_ALPHA: u8 = 128;
 pub const NEW_TAB_BUTTON_POSITION_ID: &str = "new_tab_button";
 pub const NEW_SESSION_MENU_BUTTON_POSITION_ID: &str = "new_session_menu_button";
 
+#[cfg(feature = "local_tty")]
+const DEV_CONTAINER_OPEN_PROMPT_TOAST_PREFIX: &str = "dev_container_open_prompt:";
+
 // The max length of the title of a fork toast (after which we truncate it).
 const MAX_FORK_TOAST_TITLE_LENGTH: usize = 100;
 
@@ -801,7 +809,13 @@ type WorkspaceMenuHandles = (
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum NewSessionSidecarSelection {
-    OpenWorktreeRepo { repo_path: String },
+    OpenWorktreeRepo {
+        repo_path: String,
+    },
+    #[cfg(feature = "local_tty")]
+    OpenDevContainer {
+        config: DevContainerConfig,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -1075,6 +1089,7 @@ pub struct Workspace {
     new_session_sidecar_menu: ViewHandle<Menu<NewSessionSidecarSelection>>,
     show_new_session_sidecar: bool,
     worktree_sidecar_active: bool,
+    dev_container_sidecar_active: bool,
     worktree_sidecar_search_editor: ViewHandle<EditorView>,
     worktree_sidecar_search_query: String,
     new_session_sidecar_add_repo_mouse_state: MouseStateHandle,
@@ -1113,6 +1128,7 @@ impl Workspace {
     fn clear_worktree_sidecar_state(&mut self, ctx: &mut ViewContext<Self>) {
         self.show_new_session_sidecar = false;
         self.worktree_sidecar_active = false;
+        self.dev_container_sidecar_active = false;
         self.worktree_sidecar_search_query.clear();
         self.worktree_sidecar_search_editor
             .update(ctx, |editor, ctx| {
@@ -3218,6 +3234,7 @@ impl Workspace {
             new_session_sidecar_menu,
             show_new_session_sidecar: false,
             worktree_sidecar_active: false,
+            dev_container_sidecar_active: false,
             worktree_sidecar_search_editor: Self::build_worktree_sidecar_search_input(ctx),
             worktree_sidecar_search_query: String::new(),
             new_session_sidecar_add_repo_mouse_state: Default::default(),
@@ -6148,7 +6165,7 @@ impl Workspace {
     /// Builds the unified new-session menu items
     /// tab bar chevron and the vertical tab bar `+` button.
     ///
-    /// Order: Agent → Terminal (sidecar) → Cloud Oz → [tab configs] → separator → New worktree config (sidecar) → New tab config → separator → Reopen closed session.
+    /// Order: Agent → Terminal (sidecar) → Cloud Oz → Local Docker Sandbox → Dev Container (sidecar) → [tab configs] → separator → New worktree config (sidecar) → New tab config → separator → Reopen closed session.
     fn unified_new_session_menu_items(
         &self,
         ctx: &mut ViewContext<Self>,
@@ -6253,6 +6270,18 @@ impl Workspace {
                 docker_item = docker_item.with_key_shortcut_label(shortcut_label.clone());
             }
             menu_items.push(docker_item.into_item());
+        }
+
+        // 3c. Dev Container configs for the current local workspace
+        #[cfg(feature = "local_tty")]
+        if FeatureFlag::DevContainers.is_enabled()
+            && !self.active_dev_container_configs(ctx).is_empty()
+        {
+            menu_items.push(
+                MenuItemFields::new_submenu("Dev Container")
+                    .with_icon(icons::Icon::Docker)
+                    .into_item(),
+            );
         }
 
         // 4. User tab configs
@@ -8560,6 +8589,10 @@ impl Workspace {
             NewSessionSidecarSelection::OpenWorktreeRepo { repo_path } => {
                 self.open_worktree_in_repo(repo_path, ctx);
             }
+            #[cfg(feature = "local_tty")]
+            NewSessionSidecarSelection::OpenDevContainer { config } => {
+                self.add_dev_container_tab_with_config(config, ctx);
+            }
         }
     }
 
@@ -8656,8 +8689,9 @@ impl Workspace {
                     None
                 };
                 log::info!(
-                    "New-session sidecar closed: worktree_active={}, via_select_item={via_select_item}",
-                    self.worktree_sidecar_active
+                    "New-session sidecar closed: worktree_active={}, dev_container_active={}, via_select_item={via_select_item}",
+                    self.worktree_sidecar_active,
+                    self.dev_container_sidecar_active
                 );
                 if let Some(selection) = selection {
                     self.execute_new_session_sidecar_selection(selection, ctx);
@@ -8771,6 +8805,74 @@ impl Workspace {
         items
     }
 
+    #[cfg(feature = "local_tty")]
+    fn active_session_path_if_local(&self, ctx: &AppContext) -> Option<PathBuf> {
+        self.get_pane_group_view(self.active_tab_index)
+            .and_then(|view| {
+                view.read(ctx, |pane_group, ctx| {
+                    pane_group
+                        .active_session_view(ctx)
+                        .and_then(|terminal_view_handle| {
+                            terminal_view_handle.read(ctx, |terminal, ctx| {
+                                terminal.active_session_path_if_local(ctx)
+                            })
+                        })
+                })
+            })
+    }
+
+    #[cfg(feature = "local_tty")]
+    fn active_dev_container_configs(&self, ctx: &AppContext) -> Vec<DevContainerConfig> {
+        self.active_session_path_if_local(ctx)
+            .map(|path| find_nearest_devcontainer_configs(&path))
+            .unwrap_or_default()
+    }
+
+    #[cfg(feature = "local_tty")]
+    fn dev_container_config_menu_label(
+        config: &DevContainerConfig,
+        duplicate_display_name: bool,
+    ) -> String {
+        let display_name = config.display_name();
+        if !duplicate_display_name {
+            return display_name;
+        }
+
+        let config_path = config
+            .config_path
+            .strip_prefix(&config.workspace_folder)
+            .unwrap_or(&config.config_path);
+        format!("{display_name} ({})", config_path.display())
+    }
+
+    #[cfg(feature = "local_tty")]
+    fn build_dev_container_sidecar_items(
+        &self,
+        ctx: &AppContext,
+    ) -> Vec<MenuItem<NewSessionSidecarSelection>> {
+        let configs = self.active_dev_container_configs(ctx);
+        let mut display_name_counts = HashMap::<String, usize>::new();
+        for config in &configs {
+            *display_name_counts
+                .entry(config.display_name())
+                .or_default() += 1;
+        }
+
+        configs
+            .into_iter()
+            .map(|config| {
+                let duplicate_display_name = display_name_counts
+                    .get(&config.display_name())
+                    .is_some_and(|count| *count > 1);
+                let label = Self::dev_container_config_menu_label(&config, duplicate_display_name);
+                MenuItemFields::new(label)
+                    .with_on_select_action(NewSessionSidecarSelection::OpenDevContainer { config })
+                    .with_icon(icons::Icon::Docker)
+                    .into_item()
+            })
+            .collect()
+    }
+
     fn configure_worktree_new_session_sidecar(
         &mut self,
         hovered_index: usize,
@@ -8854,6 +8956,45 @@ impl Workspace {
             menu.set_submenu_being_shown_for_item_index(Some(hovered_index));
         });
         ctx.focus(&self.worktree_sidecar_search_editor);
+    }
+
+    #[cfg(feature = "local_tty")]
+    fn configure_dev_container_new_session_sidecar(
+        &mut self,
+        hovered_index: usize,
+        auto_select_first_config: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let items = self.build_dev_container_sidecar_items(ctx);
+
+        self.new_session_sidecar_menu.update(ctx, |menu, view_ctx| {
+            menu.set_items(items, view_ctx);
+            menu.clear_pinned_header_builder();
+            menu.clear_pinned_footer_builder();
+            menu.set_content_padding_overrides(None, None);
+        });
+
+        if auto_select_first_config {
+            self.new_session_sidecar_menu.update(ctx, |menu, view_ctx| {
+                if menu.items_len() > 0 {
+                    menu.set_selected_by_index(0, view_ctx);
+                } else {
+                    menu.reset_selection(view_ctx);
+                }
+            });
+        } else {
+            self.reset_worktree_sidecar_repo_selection(ctx);
+        }
+
+        self.worktree_sidecar_active = false;
+        self.dev_container_sidecar_active = true;
+        self.show_new_session_sidecar = true;
+        let sidecar_rect = ctx
+            .element_position_by_id_at_last_frame(self.window_id, NEW_SESSION_SIDECAR_POSITION_ID);
+        self.new_session_dropdown_menu.update(ctx, |menu, _| {
+            menu.set_safe_zone_target(sidecar_rect);
+            menu.set_submenu_being_shown_for_item_index(Some(hovered_index));
+        });
     }
 
     fn configure_action_sidecar_for_hovered_item(
@@ -8996,6 +9137,8 @@ impl Workspace {
         let Some(label) = hovered_label else {
             if self.show_new_session_sidecar {
                 self.show_new_session_sidecar = false;
+                self.worktree_sidecar_active = false;
+                self.dev_container_sidecar_active = false;
                 self.new_session_dropdown_menu.update(ctx, |menu, _| {
                     menu.set_safe_zone_target(None);
                     menu.set_submenu_being_shown_for_item_index(None);
@@ -9008,6 +9151,7 @@ impl Workspace {
         match label.as_str() {
             "New worktree config" => {
                 self.tab_config_action_sidecar_item = None;
+                self.dev_container_sidecar_active = false;
                 let auto_select_first_repo = self.new_session_dropdown_menu.read(ctx, |menu, _| {
                     menu.last_selection_source() != Some(MenuSelectionSource::Pointer)
                 });
@@ -9017,12 +9161,27 @@ impl Workspace {
                     ctx,
                 );
             }
+            #[cfg(feature = "local_tty")]
+            "Dev Container" => {
+                self.tab_config_action_sidecar_item = None;
+                self.worktree_sidecar_active = false;
+                let auto_select_first_config =
+                    self.new_session_dropdown_menu.read(ctx, |menu, _| {
+                        menu.last_selection_source() != Some(MenuSelectionSource::Pointer)
+                    });
+                self.configure_dev_container_new_session_sidecar(
+                    hovered_index,
+                    auto_select_first_config,
+                    ctx,
+                );
+            }
             // Items that don't get any sidecar.
             "New tab config" => {
                 self.tab_config_action_sidecar_item = None;
                 if self.show_new_session_sidecar {
                     self.show_new_session_sidecar = false;
                     self.worktree_sidecar_active = false;
+                    self.dev_container_sidecar_active = false;
                     self.new_session_dropdown_menu.update(ctx, |menu, _| {
                         menu.set_safe_zone_target(None);
                         menu.set_submenu_being_shown_for_item_index(None);
@@ -9033,6 +9192,7 @@ impl Workspace {
             _ => {
                 self.show_new_session_sidecar = false;
                 self.worktree_sidecar_active = false;
+                self.dev_container_sidecar_active = false;
                 self.configure_action_sidecar_for_hovered_item(&label, hovered_index, ctx);
             }
         }
@@ -10804,6 +10964,50 @@ impl Workspace {
         }
     }
 
+    #[cfg(feature = "local_tty")]
+    fn add_dev_container_tab_with_config(
+        &mut self,
+        config: DevContainerConfig,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if !FeatureFlag::DevContainers.is_enabled() {
+            log::warn!("Dev Containers feature flag is disabled");
+            return;
+        }
+
+        let window_id = ctx.window_id();
+        let devcontainer_cli_future = resolve_devcontainer_cli_path_from_user_shell(ctx);
+        ctx.spawn(
+            devcontainer_cli_future,
+            move |me, devcontainer_cli_path, ctx| {
+                let Some(devcontainer_cli_path) = devcontainer_cli_path else {
+                    let message =
+                        "Could not find the devcontainer CLI in your shell PATH.".to_owned();
+                    log::error!("{message}");
+                    me.toast_stack.update(ctx, |toast_stack, ctx| {
+                        toast_stack.add_ephemeral_toast(DismissibleToast::error(message), ctx);
+                    });
+                    return;
+                };
+                let shell = AvailableShell::new_dev_container_shell(
+                    devcontainer_cli_path,
+                    config.workspace_folder,
+                    config.config_path,
+                );
+                me.add_new_session_tab_internal_with_default_session_mode_behavior(
+                    NewSessionSource::Tab,
+                    Some(window_id),
+                    Some(shell),
+                    None,
+                    true, /* hide_homepage */
+                    DefaultSessionModeBehavior::Ignore,
+                    ctx,
+                );
+                ctx.notify();
+            },
+        );
+    }
+
     fn add_ambient_agent_tab(&mut self, ctx: &mut ViewContext<Self>) {
         if !FeatureFlag::AgentView.is_enabled() || !FeatureFlag::CloudMode.is_enabled() {
             return;
@@ -11343,11 +11547,63 @@ impl Workspace {
         self.active_tab_pane_group().update(ctx, |tab, ctx| {
             if let Some(active_terminal) = tab.active_session_view(ctx) {
                 active_terminal.update(ctx, |terminal, _| {
-                    terminal.maybe_set_pending_repo_init_path(path_buf);
+                    terminal.maybe_set_pending_repo_init_path(path_buf.clone());
                 });
             }
         });
+        self.maybe_show_dev_container_open_prompt(&path_buf, ctx);
     }
+
+    #[cfg(feature = "local_tty")]
+    fn dev_container_open_prompt_toast_id(config: &DevContainerConfig) -> String {
+        format!(
+            "{DEV_CONTAINER_OPEN_PROMPT_TOAST_PREFIX}{}:{}",
+            config.workspace_folder.display(),
+            config.config_path.display()
+        )
+    }
+
+    #[cfg(feature = "local_tty")]
+    fn dev_container_open_prompt_message(_config: &DevContainerConfig) -> String {
+        "This repository has a Dev Container config.".to_owned()
+    }
+
+    #[cfg(feature = "local_tty")]
+    fn maybe_show_dev_container_open_prompt(
+        &mut self,
+        repository_path: &Path,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if !FeatureFlag::DevContainers.is_enabled() {
+            return;
+        }
+
+        let Some(config) = find_nearest_devcontainer_configs(repository_path)
+            .into_iter()
+            .next()
+        else {
+            return;
+        };
+
+        let toast_object_id = Self::dev_container_open_prompt_toast_id(&config);
+        let message = Self::dev_container_open_prompt_message(&config);
+        let toast = DismissibleToast::default(message)
+            .with_object_id(toast_object_id.clone())
+            .with_link(
+                ToastLink::new("Open in Dev Container".to_owned()).with_onclick_action(
+                    WorkspaceAction::OpenDevContainer {
+                        config,
+                        toast_object_id,
+                    },
+                ),
+            );
+        self.toast_stack.update(ctx, |toast_stack, ctx| {
+            toast_stack.add_persistent_toast(toast, ctx);
+        });
+    }
+
+    #[cfg(not(feature = "local_tty"))]
+    fn maybe_show_dev_container_open_prompt(&mut self, _: &Path, _: &mut ViewContext<Self>) {}
 
     /// Navigate to an existing AI conversation, focusing on its terminal view, if it's open anywhere.
     /// If the conversation is not in an open pane, restore it based on the provided layout override
@@ -20594,6 +20850,14 @@ impl TypedActionView for Workspace {
             AddAmbientAgentTab => self.add_ambient_agent_tab(ctx),
             AddAgentTab => self.add_terminal_tab_with_new_agent_view(ctx),
             AddDockerSandboxTab => self.add_docker_sandbox_tab(ctx),
+            #[cfg(feature = "local_tty")]
+            OpenDevContainer {
+                config,
+                toast_object_id,
+            } => {
+                self.dismiss_older_toasts(toast_object_id, ctx);
+                self.add_dev_container_tab_with_config(config.clone(), ctx);
+            }
             StartAgentOnboardingTutorial(tutorial) => {
                 self.start_agent_onboarding_tutorial(tutorial.clone(), ctx)
             }

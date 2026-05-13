@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use crate::{
     context_chips::context_chip::GeneratorContext,
@@ -9,7 +9,7 @@ use crate::{
             SessionInfo,
         },
     },
-    terminal::shell::ShellType,
+    terminal::{shell::ShellType, ShellLaunchData},
 };
 
 #[test]
@@ -101,6 +101,37 @@ fn test_remote_sessions() {
             .as_ref()
             .and_then(|v| v.as_text()),
         Some("remote-user@remote-host")
+    );
+}
+
+#[test]
+fn test_dev_container_chip_only_shows_for_dev_container_sessions() {
+    let local_session = Session::test();
+    let dev_container_session =
+        Session::test().with_shell_launch_data(ShellLaunchData::DevContainer {
+            devcontainer_cli_path: PathBuf::from("/usr/local/bin/devcontainer"),
+            workspace_folder: PathBuf::from("/workspace/project"),
+            config_path: PathBuf::from("/workspace/project/.devcontainer/devcontainer.json"),
+        });
+
+    let local_ctx = GeneratorContext {
+        active_block_metadata: &BlockMetadata::new(Some(local_session.id()), None),
+        active_session: Some(&local_session),
+        current_environment: &Default::default(),
+    };
+
+    let dev_container_ctx = GeneratorContext {
+        active_block_metadata: &BlockMetadata::new(Some(dev_container_session.id()), None),
+        active_session: Some(&dev_container_session),
+        current_environment: &Default::default(),
+    };
+
+    assert_eq!(super::dev_container(&local_ctx), None);
+    assert_eq!(
+        super::dev_container(&dev_container_ctx)
+            .as_ref()
+            .and_then(|v| v.as_text()),
+        Some("Dev Container")
     );
 }
 
