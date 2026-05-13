@@ -1192,6 +1192,9 @@ pub enum InputAction {
 
     /// Fired when the "Enable Figma MCP" contextual button is clicked.
     FigmaEnableButtonClicked,
+
+    /// Activates `&` cloud handoff compose mode from the message bar hint.
+    ActivateCloudHandoff,
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
@@ -14916,6 +14919,9 @@ impl TypedActionView for Input {
             }
             InputAction::ClearAttachedContext => {
                 self.clear_attached_context(ctx);
+            }
+            InputAction::ActivateCloudHandoff => {
+                self.activate_cloud_handoff_compose(ctx);
             }
         }
     }

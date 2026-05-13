@@ -29,8 +29,11 @@ use crate::ai::mcp::{
     templatable_manager::{FigmaMcpStatus, TemplatableMCPServerManagerEvent},
     TemplatableMCPServerManager,
 };
-use crate::ai::request_usage_model::{AIRequestUsageModel, AIRequestUsageModelEvent};
+use crate::ai::request_usage_model::{
+    AIRequestUsageModel, AIRequestUsageModelEvent, AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD,
+};
 use crate::search::slash_command_menu::static_commands::commands;
+use crate::settings::AISettings;
 use crate::terminal::input::buffer_model::{InputBufferModel, InputBufferUpdateEvent};
 use crate::terminal::input::message_bar::attached_context::{
     AttachedBlocksMessageProducer, AttachedContextArgs, AttachedTextSelectionMessageProducer,
@@ -51,8 +54,6 @@ use crate::terminal::view::TerminalAction;
 use crate::ui_components::blended_colors;
 use crate::util::bindings::keybinding_name_to_keystroke;
 use crate::workspace::tab_settings::{TabSettings, TabSettingsChangedEvent};
-#[cfg(not(target_family = "wasm"))]
-use crate::workspace::WorkspaceAction;
 use crate::BlocklistAIHistoryModel;
 
 const FIGMA_ICON_SIZE: f32 = 14.;
@@ -66,6 +67,7 @@ pub struct AgentMessageBarMouseStates {
     pub toggle_plan: MouseStateHandle,
     pub toggle_conversation_menu: MouseStateHandle,
     pub toggle_code_review: MouseStateHandle,
+    pub handoff_to_cloud: MouseStateHandle,
     pub clear_attached_context: MouseStateHandle,
     /// Mouse state handle for the "Get Figma MCP" contextual button.
     pub figma_install_button: MouseStateHandle,
@@ -349,7 +351,6 @@ impl View for AgentMessageBar {
         };
 
         // Show credits banner when user has ambient credits remaining.
-        use crate::ai::request_usage_model::AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD;
         let right_element = if cfg!(target_family = "wasm") {
             None
         } else if let Some(credits) =
@@ -580,6 +581,33 @@ impl MessageProvider<AgentMessageArgs<'_>> for ZeroStateMessageProducer {
             AgentViewState::Active { origin, .. } if origin.is_cloud_agent()
         );
 
+        // Handoff to cloud only available for local agents.
+        if !is_cloud_agent && AISettings::as_ref(app).is_cloud_handoff_enabled(app) {
+            items.push(
+                MessageItem::clickable(
+                    vec![
+                        MessageItem::Keystroke {
+                            keystroke: Keystroke {
+                                key: "&".to_owned(),
+                                ..Default::default()
+                            },
+                            color: color_override_for_shortcuts_and_commands,
+                            background_color: bg_color_override_for_shortcuts_and_commands,
+                        },
+                        MessageItem::Text {
+                            content: "send task to the cloud".into(),
+                            color: color_override_for_shortcuts_and_commands,
+                        },
+                    ],
+                    |ctx| {
+                        ctx.dispatch_typed_action(InputAction::ActivateCloudHandoff);
+                    },
+                    mouse_states.handoff_to_cloud.clone(),
+                )
+                .with_is_disabled(!is_buffer_empty),
+            );
+        }
+
         let plan_count = AIDocumentModel::as_ref(app)
             .get_all_documents_for_conversation(active_conversation.id())
             .len();
@@ -602,26 +630,6 @@ impl MessageProvider<AgentMessageArgs<'_>> for ZeroStateMessageProducer {
                     mouse_states.toggle_conversation_menu.clone(),
                 ));
             }
-        }
-
-        // Code review only works locally.
-        #[cfg(not(target_family = "wasm"))]
-        if !is_cloud_agent && *TabSettings::as_ref(app).show_code_review_button {
-            let code_review_keystroke = if OperatingSystem::get().is_mac() {
-                Keystroke::parse("cmd-shift-+").expect("keystroke should parse")
-            } else {
-                Keystroke::parse("ctrl-shift-+").expect("keystroke should parse")
-            };
-            items.push(MessageItem::clickable(
-                vec![
-                    MessageItem::keystroke(code_review_keystroke),
-                    MessageItem::text("for code review"),
-                ],
-                |ctx| {
-                    ctx.dispatch_typed_action(WorkspaceAction::ToggleRightPanel);
-                },
-                mouse_states.toggle_code_review.clone(),
-            ));
         }
 
         if has_plan {
