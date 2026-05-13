@@ -5,7 +5,7 @@ use clap::Parser;
 use integration::test::*;
 use integration::Builder;
 use warp_cli::WorkerCommand;
-use warp_core::channel::{Channel, ChannelConfig, ChannelState, OzConfig, WarpServerConfig};
+use warp_core::channel::{Channel, ChannelConfig, ChannelState};
 use warp_core::AppId;
 
 /// The Warp integration test runner.
@@ -36,14 +36,6 @@ pub fn main() -> Result<()> {
                 },
             ),
             logfile_name: "warp_integration.log".into(),
-            server_config: WarpServerConfig::disabled(),
-            oz_config: OzConfig {
-                // Use an IP in the IANA testing range, with the TCP discard port, to
-                // black-hole server traffic.
-                oz_root_url: "http://192.0.2.0:9".into(),
-                workload_audience_url: None,
-            },
-            telemetry_config: None,
             crash_reporting_config: None,
             autoupdate_config: None,
             mcp_static_config: None,

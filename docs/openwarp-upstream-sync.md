@@ -153,6 +153,7 @@ bash script/setup-merge-drivers.sh
 | `app/src/workspaces/update_manager.rs` | `TeamUpdateManager` 云端 workspace metadata/team polling 壳已物理删除;OpenWarp 的 agent SDK metadata refresh 是本地立即成功,Drive workspace 切换直接写 `UserWorkspaces` | 上游若恢复该文件或 `TeamUpdateManager` singleton,直接删除并改调用点走本地 `UserWorkspaces` / no-op |
 | `app/src/workspaces/team_tester.rs` | 该 singleton 只负责触发旧 cloud object / workspace metadata pollers,在 OpenWarp 本地化后无本地语义 | 上游若恢复 `TeamTesterStatus` 或 `InitiateDataPollers` 事件,直接删除 |
 | `app/src/terminal/shared_session/sharer/**` + `app/src/terminal/shared_session/viewer/{network,event_loop,terminal_manager}.rs` | shared-session RTC/WebSocket 协议层已删除;OpenWarp 不创建、恢复或观看云端 shared session | 上游若恢复这些协议模块、`Network` 模型或 session-sharing endpoint 连接,直接删除;仅保留本地兼容展示/历史壳直到后续 shared-session 命名收尾 |
+| `crates/warp_core/src/channel/{config,state}.rs` 中的 `WarpServerConfig` / `OzConfig` / `TelemetryConfig` | OpenWarp 不接 Warp server / Oz workload identity / telemetry 发送配置,channel state 直接返回本地禁云语义 | 上游若恢复这些配置字段或 real endpoint 读取路径,删除并保留 `ChannelState` 的 disabled 常量返回 |
 | `crates/graphql/src/api/queries/get_updated_cloud_objects.rs` / `get_oauth_connect_tx_status.rs` | 云对象更新轮询与 OAuth cloud poll 已删除 | 上游若恢复,直接 `git rm`;BYOP OAuth 只保留本地禁用语义 |
 | AI 回复 footer 点赞/点踩(`render_response_footer` 中的 thumbs up/down) | 移除 telemetry 反馈链路 | 上游若改 output.rs 这段,保留 openWarp 版 |
 | 智能体署名 `AgentAttributionWidget` + `AISettings.agent_attribution_enabled` | 不需要 | 上游若修改,丢弃 |

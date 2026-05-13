@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use warp_core::{
-    channel::{Channel, ChannelConfig, ChannelState, OzConfig, WarpServerConfig},
+    channel::{Channel, ChannelConfig, ChannelState},
     features::{FeatureFlag, DEBUG_FLAGS},
     AppId,
 };
@@ -16,9 +16,6 @@ fn main() -> Result<()> {
         ChannelConfig {
             app_id: AppId::new("dev", "openwarp", "OpenWarp"),
             logfile_name: "openwarp.log".into(),
-            server_config: WarpServerConfig::disabled(),
-            oz_config: OzConfig::disabled(),
-            telemetry_config: None,
             crash_reporting_config: None,
             autoupdate_config: None,
             mcp_static_config: None,

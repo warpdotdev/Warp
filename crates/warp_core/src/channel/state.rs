@@ -5,7 +5,7 @@ use url::{Origin, Url};
 
 use crate::AppId;
 use crate::{
-    channel::config::{ChannelConfig, McpOAuthProviderConfig, OzConfig, WarpServerConfig},
+    channel::config::{ChannelConfig, McpOAuthProviderConfig, DISABLED_HTTP_SENTINEL},
     features::FeatureFlag,
 };
 
@@ -42,9 +42,6 @@ impl ChannelState {
             config: ChannelConfig {
                 app_id,
                 logfile_name: "".into(),
-                server_config: WarpServerConfig::disabled(),
-                oz_config: OzConfig::disabled(),
-                telemetry_config: None,
                 autoupdate_config: None,
                 crash_reporting_config: None,
                 mcp_static_config: None,
@@ -130,11 +127,10 @@ impl ChannelState {
     pub fn debug_str() -> String {
         let state = CHANNEL_STATE.lock();
         format!(
-            "ChannelState {{ channel: {:?}, additional_features: {:?}, app_id: {:?}, telemetry_configured: {}, autoupdate_configured: {}, crash_reporting_configured: {}, mcp_static_configured: {} }}",
+            "ChannelState {{ channel: {:?}, additional_features: {:?}, app_id: {:?}, autoupdate_configured: {}, crash_reporting_configured: {}, mcp_static_configured: {} }}",
             state.channel,
             state.additional_features,
             state.config.app_id,
-            state.config.telemetry_config.is_some(),
             state.config.autoupdate_config.is_some(),
             state.config.crash_reporting_config.is_some(),
             state.config.mcp_static_config.is_some()
@@ -146,21 +142,11 @@ impl ChannelState {
     }
 
     pub fn telemetry_file_name() -> Cow<'static, str> {
-        CHANNEL_STATE
-            .lock()
-            .config
-            .telemetry_config
-            .as_ref()
-            .map(|tc| tc.telemetry_file_name.clone())
-            .unwrap_or_default()
+        Cow::default()
     }
 
-    /// Returns whether this build has a telemetry config and can therefore ship
-    /// telemetry events. Builds like OpenWarp intentionally ship with
-    /// `telemetry_config: None`, in which case UI that controls telemetry
-    /// should be hidden since the toggle has no effect.
     pub fn is_telemetry_available() -> bool {
-        CHANNEL_STATE.lock().config.telemetry_config.is_some()
+        false
     }
 
     /// Returns whether this build has a crash reporting config and can therefore
@@ -186,20 +172,13 @@ impl ChannelState {
             if #[cfg(feature = "test-util")] {
                 Cow::Owned(MOCK_SERVER_URL.clone())
             } else {
-                CHANNEL_STATE.lock().config.server_config.server_root_url.clone()
+                Cow::Borrowed(DISABLED_HTTP_SENTINEL)
             }
         }
     }
 
     pub fn workload_audience_url() -> Cow<'static, str> {
-        let state = CHANNEL_STATE.lock();
-        match &state.config.oz_config.workload_audience_url {
-            Some(url) => url.clone(),
-            None => {
-                drop(state);
-                Self::server_root_url()
-            }
-        }
+        Cow::Borrowed(DISABLED_HTTP_SENTINEL)
     }
 
     // Returns the origin url, with scheme, domain, and ports (if any)
@@ -213,23 +192,8 @@ impl ChannelState {
         CHANNEL_STATE.lock().channel
     }
 
-    /// Returns true when this build runs against the disabled openWarp cloud
-    /// stub (TEST-NET-1 sentinel URLs). The startup path in `app/src/lib.rs`
-    /// and any new short-circuits introduced by the cloud-removal plan should
-    /// gate cloud-only initialisation on this predicate rather than parsing
-    /// `server_root_url` ad-hoc.
-    ///
-    /// Invariant: `WarpServerConfig::disabled()` and `OzConfig::disabled()` are
-    /// always installed together by `ChannelState::init()` and the OSS bin
-    /// entry point, so requiring both via AND is equivalent to "either side is
-    /// disabled" for any in-tree call site. The AND form intentionally returns
-    /// `false` if a future caller swaps in a real `server_root_url` while
-    /// leaving `oz_root_url` as the sentinel (or vice versa) — that mixed
-    /// state is not a "cloud disabled" build and Phase 5 short-circuits must
-    /// not skip cloud init in that case.
     pub fn is_cloud_disabled() -> bool {
-        let state = CHANNEL_STATE.lock();
-        state.config.server_config.is_disabled() && state.config.oz_config.is_disabled()
+        true
     }
 
     #[cfg(feature = "test-util")]
