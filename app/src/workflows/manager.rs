@@ -1,4 +1,4 @@
-use super::{workflow::Workflow, CloudWorkflowModel};
+use super::{workflow::Workflow, WorkflowObjectModel};
 use crate::{
     cloud_object::{model::persistence::CloudModel, GenericCloudObject, Owner},
     drive::OpenWarpDriveObjectSettings,
@@ -109,7 +109,7 @@ impl WorkflowManager {
                 view.update(ctx, |view, ctx| {
                     view.load(
                         GenericCloudObject::new_local(
-                            CloudWorkflowModel::new(*workflow.clone()),
+                            WorkflowObjectModel::new(*workflow.clone()),
                             *owner,
                             *initial_folder_id,
                             ClientId::default(),

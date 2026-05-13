@@ -24,7 +24,7 @@ use crate::{
     themes::theme::Fill,
     ui_components::icons::Icon,
 };
-use crate::{search::item::SearchItem, workflows::CloudWorkflow};
+use crate::{search::item::SearchItem, workflows::WorkflowObject};
 
 /// The size of the object type icons, in pixels.
 const ICON_SIZE: f32 = 16.;
@@ -32,7 +32,7 @@ const ICON_SIZE: f32 = 16.;
 /// Struct designed to be the implementation of CommandSearchItem for workflows.
 #[derive(Clone, Debug)]
 pub struct WorkflowSearchItem {
-    pub cloud_workflow: CloudWorkflow,
+    pub cloud_workflow: WorkflowObject,
     pub fuzzy_matched_workflow: FuzzyMatchEmbeddedObjectResult,
     /// Whether or not this workflow is accessible to all users that have access to the object
     /// being embedded into.

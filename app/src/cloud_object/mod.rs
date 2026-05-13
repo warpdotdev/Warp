@@ -35,7 +35,7 @@ use crate::{
     server::ids::{ClientId, HashableId, HashedSqliteId, ObjectUid, ServerId, SyncId, ToServerId},
     server_time::ServerTimestamp,
     util::time_format::format_approx_duration_from_now_utc,
-    workflows::{CloudWorkflow, WorkflowSource},
+    workflows::{WorkflowObject, WorkflowSource},
     workspaces::{user_profiles::UserProfiles, user_workspaces::UserWorkspaces},
 };
 use chrono::{Duration, Utc};
@@ -448,7 +448,7 @@ pub trait CloudObject: Debug {
 /// When building new model types (e.g. for settings or launch configs) we should just
 /// have to implement this trait, and not the entire CloudObject trait.
 pub trait CloudModelType: Debug + Clone + Send + Sync {
-    /// The associated CloudObject type for this model (e.g. CloudNotebook, CloudWorkflow, etc)
+    /// The associated CloudObject type for this model (e.g. CloudNotebook, WorkflowObject, etc)
     type CloudObjectType: CloudObject + 'static;
     // TODO: @ianhodge - remove for sync ID refactor.
     type IdType: HashableId + ToServerId + Debug + Into<String> + Clone + 'static;
@@ -680,7 +680,7 @@ where
                 let object_type = self.object_type();
                 let object_type_for_link = if self
                     .as_any()
-                    .downcast_ref::<CloudWorkflow>()
+                    .downcast_ref::<WorkflowObject>()
                     .is_some_and(|w| w.model().data.is_agent_mode_workflow())
                 {
                     "prompt".to_string()

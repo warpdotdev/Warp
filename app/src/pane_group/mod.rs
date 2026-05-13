@@ -1668,7 +1668,7 @@ impl PaneGroup {
             }
             LeafContents::Workflow(snapshot) => {
                 let pane: Box<dyn AnyPaneContent + 'static> = match snapshot {
-                    WorkflowPaneSnapshot::CloudWorkflow {
+                    WorkflowPaneSnapshot::WorkflowObject {
                         workflow_id,
                         settings,
                     } => Box::new(WorkflowPane::restore(workflow_id, settings, ctx)?),

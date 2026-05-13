@@ -29,11 +29,11 @@ pub enum EnumVariants {
     Dynamic(String),     // contains the value of the shell command associated with the dynamic enum
 }
 
-pub type CloudWorkflowEnum = GenericCloudObject<GenericStringObjectId, CloudWorkflowEnumModel>;
-pub type CloudWorkflowEnumModel = GenericStringModel<WorkflowEnum, JsonSerializer>;
+pub type WorkflowEnumObject = GenericCloudObject<GenericStringObjectId, WorkflowEnumObjectModel>;
+pub type WorkflowEnumObjectModel = GenericStringModel<WorkflowEnum, JsonSerializer>;
 
 impl StringModel for WorkflowEnum {
-    type CloudObjectType = CloudWorkflowEnum;
+    type CloudObjectType = WorkflowEnumObject;
 
     fn model_type_name(&self) -> &'static str {
         "WorkflowEnum"

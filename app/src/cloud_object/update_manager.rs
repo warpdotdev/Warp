@@ -31,8 +31,8 @@ use crate::{
     settings::cloud_preferences::Preference,
     workflows::{
         workflow::Workflow,
-        workflow_enum::{CloudWorkflowEnum, CloudWorkflowEnumModel, WorkflowEnum},
-        CloudWorkflowModel, WorkflowId,
+        workflow_enum::{WorkflowEnum, WorkflowEnumObject, WorkflowEnumObjectModel},
+        WorkflowId, WorkflowObjectModel,
     },
     workspaces::user_workspaces::UserWorkspaces,
 };
@@ -325,7 +325,7 @@ impl UpdateManager {
         ctx: &mut ModelContext<Self>,
     ) {
         self.update_object(
-            CloudWorkflowModel::new(workflow),
+            WorkflowObjectModel::new(workflow),
             workflow_id,
             revision_ts,
             ctx,
@@ -340,7 +340,7 @@ impl UpdateManager {
         ctx: &mut ModelContext<Self>,
     ) {
         self.update_object(
-            CloudWorkflowEnumModel::new(workflow_enum),
+            WorkflowEnumObjectModel::new(workflow_enum),
             workflow_enum_id,
             revision_ts,
             ctx,
@@ -504,7 +504,7 @@ impl UpdateManager {
             let enums = workflow_model.get_enum_ids();
             for enum_id in enums.iter() {
                 let cloud_model = CloudModel::as_ref(ctx);
-                let object: Option<&CloudWorkflowEnum> = cloud_model.get_object_of_type(enum_id);
+                let object: Option<&WorkflowEnumObject> = cloud_model.get_object_of_type(enum_id);
                 let Some(object) = object else {
                     log::error!("Could not find referenced workflow enum to copy over to the new space, skipping");
                     continue;
@@ -694,7 +694,7 @@ impl UpdateManager {
                 self.duplicate_object_internal::<NotebookId, CloudNotebookModel>(notebook_id, ctx);
             }
             CloudObjectTypeAndId::Workflow(workflow_id) => {
-                self.duplicate_object_internal::<WorkflowId, CloudWorkflowModel>(workflow_id, ctx);
+                self.duplicate_object_internal::<WorkflowId, WorkflowObjectModel>(workflow_id, ctx);
             }
             CloudObjectTypeAndId::GenericStringObject { object_type, id } => {
                 if let GenericStringObjectFormat::Json(JsonObjectType::EnvVarCollection) =
@@ -925,7 +925,7 @@ impl UpdateManager {
         ctx: &mut ModelContext<Self>,
     ) {
         self.create_object(
-            CloudWorkflowModel::new(workflow),
+            WorkflowObjectModel::new(workflow),
             owner,
             client_id,
             entrypoint,
@@ -949,7 +949,7 @@ impl UpdateManager {
         ctx: &mut ModelContext<Self>,
     ) {
         self.create_object(
-            CloudWorkflowEnumModel::new(workflow_enum),
+            WorkflowEnumObjectModel::new(workflow_enum),
             owner,
             client_id,
             entrypoint,

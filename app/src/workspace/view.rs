@@ -329,7 +329,7 @@ use crate::view_components::callout_bubble::{
 use crate::view_components::{AgentToastStack, DismissibleToast, DismissibleToastStack, ToastLink};
 use crate::window_settings::{WindowSettings, WindowSettingsChangedEvent, ZoomLevel};
 use crate::workflows::{
-    manager::WorkflowOpenSource, AIWorkflowOrigin, CloudWorkflow, WorkflowSelectionSource,
+    manager::WorkflowOpenSource, AIWorkflowOrigin, WorkflowObject, WorkflowSelectionSource,
     WorkflowSource, WorkflowType, WorkflowViewMode,
 };
 use crate::workspace::action::CommandSearchOptions;
@@ -10186,7 +10186,7 @@ impl Workspace {
         let panes_layout = PanesLayout::Snapshot(Box::new(PaneNodeSnapshot::Leaf(LeafSnapshot {
             is_focused: true,
             custom_vertical_tabs_title: None,
-            contents: LeafContents::Workflow(WorkflowPaneSnapshot::CloudWorkflow {
+            contents: LeafContents::Workflow(WorkflowPaneSnapshot::WorkflowObject {
                 workflow_id: Some(workflow_id),
                 settings: settings.clone(),
             }),
@@ -13442,7 +13442,7 @@ impl Workspace {
             } => {
                 self.open_workflow_modal(*space, *initial_folder_id, ctx);
             }
-            DrivePanelEvent::OpenWorkflowModalWithCloudWorkflow(workflow_id) => {
+            DrivePanelEvent::OpenWorkflowModalWithWorkflowObject(workflow_id) => {
                 self.open_workflow_with_existing(
                     *workflow_id,
                     &OpenWarpDriveObjectSettings::default(),
@@ -13541,7 +13541,7 @@ impl Workspace {
     /// Runs a cloud workflow in whichever input is currently active.
     fn run_cloud_workflow_in_active_input(
         &mut self,
-        workflow: CloudWorkflow,
+        workflow: WorkflowObject,
         workflow_selection_source: WorkflowSelectionSource,
         fallback_behavior: TerminalSessionFallbackBehavior,
         ctx: &mut ViewContext<Self>,
@@ -14004,7 +14004,7 @@ impl Workspace {
                     &result.success_type,
                     ctx,
                 ) {
-                    let workflow: Option<&CloudWorkflow> = object.into();
+                    let workflow: Option<&WorkflowObject> = object.into();
                     let cloned_workflow = workflow.cloned();
                     let env_var_collection: Option<&EnvVarCollectionObject> = object.into();
                     let cloned_env_var_collection = env_var_collection.cloned();
@@ -15214,7 +15214,7 @@ impl Workspace {
         ctx.notify();
     }
 
-    /// Opens the workflow from a given [`CloudWorkflow`]'s server ID.
+    /// Opens the workflow from a given [`WorkflowObject`]'s server ID.
     fn open_workflow_with_existing(
         &mut self,
         workflow_id: SyncId,

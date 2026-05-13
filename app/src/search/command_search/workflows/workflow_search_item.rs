@@ -19,7 +19,7 @@ use crate::search::workflows::fuzzy_match::FuzzyMatchWorkflowResult;
 use crate::server::ids::SyncId;
 use crate::ui_components::icons::Icon;
 use crate::workflows::workflow::Workflow;
-use crate::workflows::{CloudWorkflowModel, WorkflowSource, WorkflowType};
+use crate::workflows::{WorkflowObjectModel, WorkflowSource, WorkflowType};
 
 /// Holds workflow data for a `WorkflowSearchItem`, used to read workflow fields
 /// during rendering and to produce an `AcceptedWorkflow` payload on selection.
@@ -31,7 +31,7 @@ use crate::workflows::{CloudWorkflowModel, WorkflowSource, WorkflowType};
 pub enum WorkflowIdentity {
     Cloud {
         id: SyncId,
-        model: Arc<CloudWorkflowModel>,
+        model: Arc<WorkflowObjectModel>,
     },
     Local(Box<WorkflowType>),
 }

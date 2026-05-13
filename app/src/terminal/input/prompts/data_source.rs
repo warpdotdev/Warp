@@ -19,7 +19,7 @@ use crate::terminal::input::inline_menu::{
     default_navigation_message_items, InlineMenuAction, InlineMenuMessageArgs, InlineMenuType,
 };
 use crate::terminal::input::message_bar::Message;
-use crate::workflows::CloudWorkflow;
+use crate::workflows::WorkflowObject;
 
 #[derive(Clone, Debug)]
 pub struct AcceptPrompt {
@@ -133,7 +133,7 @@ struct PromptSearchItem {
 }
 
 impl PromptSearchItem {
-    fn from_workflow(workflow: &CloudWorkflow) -> Self {
+    fn from_workflow(workflow: &WorkflowObject) -> Self {
         Self {
             id: workflow.id,
             name: workflow.model().data.name().to_owned(),

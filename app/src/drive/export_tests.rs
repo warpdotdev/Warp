@@ -19,7 +19,7 @@ use crate::{
     drive::CloudObjectTypeAndId,
     notebooks::{CloudNotebook, CloudNotebookModel, NotebookId},
     server::ids::SyncId,
-    workflows::{workflow::Workflow, CloudWorkflow, CloudWorkflowModel, WorkflowId},
+    workflows::{workflow::Workflow, WorkflowId, WorkflowObject, WorkflowObjectModel},
     workspace::ToastStack,
     workspaces::user_workspaces::UserWorkspaces,
 };
@@ -113,9 +113,9 @@ fn add_workflow(id: SyncId, workflow: Workflow, app: &mut App) {
     CloudModel::handle(app).update(app, |cloud_model, _ctx| {
         cloud_model.add_object(
             id,
-            CloudWorkflow::new(
+            WorkflowObject::new(
                 id,
-                CloudWorkflowModel::new(workflow),
+                WorkflowObjectModel::new(workflow),
                 CloudObjectMetadata::mock(),
                 CloudObjectPermissions::mock_personal(),
             ),

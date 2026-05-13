@@ -38,7 +38,7 @@ use crate::{
     drive::{cloud_object_styling::warp_drive_icon_color, DriveObjectType},
     server::ids::{HashableId, ToServerId},
     ui_components::icons::Icon,
-    workflows::{workflow::Workflow, CloudWorkflow, WorkflowId},
+    workflows::{workflow::Workflow, WorkflowId, WorkflowObject},
 };
 
 // Spacing for the embedded workflow card.
@@ -210,8 +210,8 @@ impl EmbeddedWorkflow {
         text_frames
     }
 
-    /// Get the backing [`CloudWorkflow`] for this embed.
-    fn get_workflow<'a>(&self, app: &'a AppContext) -> Option<&'a CloudWorkflow> {
+    /// Get the backing [`WorkflowObject`] for this embed.
+    fn get_workflow<'a>(&self, app: &'a AppContext) -> Option<&'a WorkflowObject> {
         // TODO: @ianhodge - replace the `from_hash` when we create a new API for going from
         // sqlite hash id -> uid
         let uid = WorkflowId::from_hash(&self.hashed_id).map(|id| id.to_server_id().uid())?;

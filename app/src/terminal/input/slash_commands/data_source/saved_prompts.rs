@@ -14,13 +14,13 @@ use crate::search::mixer::{BoxFuture, DataSourceRunErrorWrapper};
 use crate::search::FuzzyMatchWorkflowResult;
 use crate::server::ids::SyncId;
 use crate::settings::AISettings;
-use crate::workflows::CloudWorkflowModel;
+use crate::workflows::WorkflowObjectModel;
 
 use super::{AcceptSlashCommandOrSavedPrompt, InlineItem};
 
 pub(super) struct SavedPromptCandidate {
     pub(super) id: SyncId,
-    pub(super) model: Arc<CloudWorkflowModel>,
+    pub(super) model: Arc<WorkflowObjectModel>,
     pub(super) breadcrumbs: String,
 }
 

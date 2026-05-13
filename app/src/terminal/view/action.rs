@@ -282,7 +282,7 @@ pub enum TerminalAction {
     OpenWorkflowModal,
     OpenWorkflowModalForAIWorkflow(Workflow),
     OpenWorkflowModalForBlock(BlockIndex),
-    OpenWorkflowModalWithCloudWorkflow(SyncId),
+    OpenWorkflowModalWithWorkflowObject(SyncId),
     AskAIAssistant {
         block_index: BlockIndex,
     },
@@ -538,8 +538,8 @@ impl fmt::Debug for TerminalAction {
             OpenWorkflowModalForBlock(block_index) => {
                 write!(f, "OpenWorkflowModalForBlock({block_index:?})")
             }
-            OpenWorkflowModalWithCloudWorkflow(_) => {
-                f.write_str("OpenWorkflowModalWithCloudWorkflow")
+            OpenWorkflowModalWithWorkflowObject(_) => {
+                f.write_str("OpenWorkflowModalWithWorkflowObject")
             }
             OpenBlockListContextMenu => f.write_str("OpenBlockListContextMenu"),
             AskAIAssistant { block_index } => write!(f, "AskAIAssistant({block_index:?})"),

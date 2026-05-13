@@ -14,7 +14,7 @@ use crate::{
     },
     drive::{index::DriveIndexAction, CloudObjectTypeAndId, DriveObjectType},
     themes::theme::Fill,
-    workflows::{CloudWorkflow, WorkflowViewMode},
+    workflows::{WorkflowObject, WorkflowViewMode},
 };
 
 use super::{WarpDriveItem, WarpDriveItemId};
@@ -22,11 +22,11 @@ use super::{WarpDriveItem, WarpDriveItemId};
 #[derive(Clone)]
 pub struct WarpDriveWorkflow {
     id: CloudObjectTypeAndId,
-    workflow: CloudWorkflow,
+    workflow: WorkflowObject,
 }
 
 impl WarpDriveWorkflow {
-    pub fn new(id: CloudObjectTypeAndId, workflow: CloudWorkflow) -> Self {
+    pub fn new(id: CloudObjectTypeAndId, workflow: WorkflowObject) -> Self {
         Self { id, workflow }
     }
 }

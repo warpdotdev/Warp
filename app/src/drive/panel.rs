@@ -17,7 +17,7 @@ use crate::{
     env_vars::{manager::EnvVarCollectionSource, EnvVarCollectionObject},
     notebooks::{manager::NotebookSource, CloudNotebook},
     server::ids::{ClientId, ServerId, SyncId},
-    workflows::{manager::WorkflowOpenSource, CloudWorkflow, WorkflowViewMode},
+    workflows::{manager::WorkflowOpenSource, WorkflowObject, WorkflowViewMode},
     workspaces::user_workspaces::UserWorkspaces,
 };
 
@@ -61,7 +61,7 @@ pub enum DrivePanelAction {
 
 #[derive(Clone, Debug)]
 pub enum DrivePanelEvent {
-    RunWorkflow(Box<CloudWorkflow>),
+    RunWorkflow(Box<WorkflowObject>),
     InvokeEnvironmentVariables {
         env_var_collection: Box<EnvVarCollectionObject>,
         in_subshell: bool,
@@ -79,7 +79,7 @@ pub enum DrivePanelEvent {
         space: Space,
         initial_folder_id: Option<SyncId>,
     },
-    OpenWorkflowModalWithCloudWorkflow(SyncId),
+    OpenWorkflowModalWithWorkflowObject(SyncId),
     OpenNotebook(NotebookSource),
     OpenEnvVarCollection(EnvVarCollectionSource),
     OpenWorkflowInPane(WorkflowOpenSource, WorkflowViewMode),
@@ -235,7 +235,7 @@ impl DrivePanel {
                 let cloud_model = CloudModel::as_ref(ctx);
                 let object = cloud_model.get_by_uid(&cloud_object_type_and_id.uid());
 
-                let workflow: Option<&CloudWorkflow> = object.and_then(|object| object.into());
+                let workflow: Option<&WorkflowObject> = object.and_then(|object| object.into());
                 if let Some(workflow) = workflow {
                     self.open_existing_workflow_in_pane(workflow.id, *open_mode, ctx);
                 }
@@ -249,7 +249,7 @@ impl DrivePanel {
                     notebook.map(|notebook| notebook.id)
                 });
 
-                let workflow: Option<&CloudWorkflow> = object.and_then(|object| object.into());
+                let workflow: Option<&WorkflowObject> = object.and_then(|object| object.into());
 
                 let env_var_collection_id = object.and_then(|object| {
                     let env_var_collection: Option<&EnvVarCollectionObject> = object.into();
@@ -285,7 +285,7 @@ impl DrivePanel {
                 let cloud_model = CloudModel::as_ref(ctx);
                 let object = cloud_model.get_by_uid(&id.uid());
                 if let Some(cloud_object) = object {
-                    let workflow: Option<&CloudWorkflow> = cloud_object.into();
+                    let workflow: Option<&WorkflowObject> = cloud_object.into();
                     let env_var_collection: Option<&EnvVarCollectionObject> = cloud_object.into();
                     if let Some(workflow) = workflow {
                         self.run_workflow(workflow.clone(), ctx);
@@ -298,7 +298,7 @@ impl DrivePanel {
                 space,
                 initial_folder_id,
             } => self.open_workflow_modal_with_new(ctx, *space, *initial_folder_id),
-            DriveIndexEvent::OpenWorkflowModalWithCloudWorkflow(workflow_id) => {
+            DriveIndexEvent::OpenWorkflowModalWithWorkflowObject(workflow_id) => {
                 self.open_workflow_modal_with_existing(*workflow_id, ctx)
             }
             DriveIndexEvent::FocusWarpDrive => ctx.emit(DrivePanelEvent::FocusWarpDrive),
@@ -460,7 +460,7 @@ impl DrivePanel {
         });
     }
 
-    pub fn run_workflow(&mut self, workflow: CloudWorkflow, ctx: &mut ViewContext<Self>) {
+    pub fn run_workflow(&mut self, workflow: WorkflowObject, ctx: &mut ViewContext<Self>) {
         ctx.emit(DrivePanelEvent::RunWorkflow(Box::new(workflow)));
         ctx.notify();
     }
@@ -515,7 +515,7 @@ impl DrivePanel {
         workflow_id: SyncId,
         ctx: &mut ViewContext<Self>,
     ) {
-        ctx.emit(DrivePanelEvent::OpenWorkflowModalWithCloudWorkflow(
+        ctx.emit(DrivePanelEvent::OpenWorkflowModalWithWorkflowObject(
             workflow_id,
         ));
         ctx.notify();

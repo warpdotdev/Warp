@@ -98,8 +98,8 @@ use crate::tab::SelectedTabColor;
 use crate::terminal::history::PersistedCommand;
 use crate::terminal::ShellLaunchData;
 use crate::themes::theme::AnsiColorIdentifier;
-use crate::workflows::workflow_enum::{CloudWorkflowEnum, CloudWorkflowEnumModel};
-use crate::workflows::{CloudWorkflow, WorkflowId};
+use crate::workflows::workflow_enum::{WorkflowEnumObject, WorkflowEnumObjectModel};
+use crate::workflows::{WorkflowId, WorkflowObject};
 use crate::workspaces::team::Team as TeamMetadata;
 use crate::workspaces::workspace::Workspace as WorkspaceMetadata;
 use crate::workspaces::workspace::WorkspaceUid;
@@ -117,7 +117,7 @@ use crate::{
 };
 use crate::{
     cloud_object::{CloudObjectPermissions, CloudObjectStatuses, CloudObjectSyncStatus},
-    workflows::CloudWorkflowModel,
+    workflows::WorkflowObjectModel,
 };
 use crate::{report_error, report_if_error, safe_info, send_telemetry_from_app_ctx};
 
@@ -1421,7 +1421,7 @@ fn save_pane_state(
         }
         LeafContents::Workflow(workflow_pane_snapshot) => {
             let workflow_id = match workflow_pane_snapshot {
-                WorkflowPaneSnapshot::CloudWorkflow {
+                WorkflowPaneSnapshot::WorkflowObject {
                     workflow_id,
                     settings: _,
                 } => workflow_id.map(|id| id.sqlite_uid_hash(ObjectIdType::Workflow)),
@@ -2240,7 +2240,7 @@ fn upsert_generic_string_objects(
 
 fn upsert_workflows(
     conn: &mut SqliteConnection,
-    cloud_workflows: Vec<CloudWorkflow>,
+    cloud_workflows: Vec<WorkflowObject>,
 ) -> Result<(), Error> {
     use schema::workflows::dsl::*;
     conn.transaction::<(), Error, _>(|conn| {
@@ -2504,7 +2504,7 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
                         })
                     });
 
-                    LeafContents::Workflow(WorkflowPaneSnapshot::CloudWorkflow {
+                    LeafContents::Workflow(WorkflowPaneSnapshot::WorkflowObject {
                         workflow_id,
                         settings: OpenWarpDriveObjectSettings::default(),
                     })
@@ -2892,9 +2892,9 @@ fn read_sqlite_data(
                         workflow_content
                             .zip(workflow_id)
                             .map(|(content, workflow_id)| {
-                                let boxed: Box<dyn CloudObject> = Box::new(CloudWorkflow::new(
+                                let boxed: Box<dyn CloudObject> = Box::new(WorkflowObject::new(
                                     workflow_id,
-                                    CloudWorkflowModel::new(content),
+                                    WorkflowObjectModel::new(content),
                                     to_cloud_object_metadata(metadata),
                                     cloud_object_permissions,
                                 ));
@@ -3024,10 +3024,11 @@ fn read_sqlite_data(
                                 })
                             }
                             JsonObjectType::WorkflowEnum => {
-                                let model = CloudWorkflowEnumModel::deserialize_owned(&object.data);
+                                let model =
+                                    WorkflowEnumObjectModel::deserialize_owned(&object.data);
                                 model.ok().map(|model| {
                                     let boxed: Box<dyn CloudObject> =
-                                        Box::new(CloudWorkflowEnum::new(
+                                        Box::new(WorkflowEnumObject::new(
                                             server_id,
                                             model,
                                             to_cloud_object_metadata(metadata),

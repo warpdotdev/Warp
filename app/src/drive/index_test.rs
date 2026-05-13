@@ -18,7 +18,7 @@ use crate::{
     server::ids::{ClientId, SyncId},
     settings_view::keybindings::KeybindingChangedNotifier,
     test_util::settings::initialize_settings_for_tests,
-    workflows::{workflow::Workflow, CloudWorkflow, CloudWorkflowModel},
+    workflows::{workflow::Workflow, WorkflowObject, WorkflowObjectModel},
     workspaces::{user_profiles::UserProfiles, user_workspaces::UserWorkspaces},
     Assets,
 };
@@ -56,8 +56,8 @@ fn create_workflow(app: &mut App) -> SyncId {
         let workflow = Workflow::new("my workflow", "my command");
         cloud_model.create_object(
             sync_id,
-            CloudWorkflow::new_local(
-                CloudWorkflowModel::new(workflow),
+            WorkflowObject::new_local(
+                WorkflowObjectModel::new(workflow),
                 Owner::mock_current_user(),
                 None,
                 client_id,

@@ -28,7 +28,7 @@ use crate::{
     },
     server::ids::{HashedSqliteId, ObjectUid, ServerId, SyncId},
     ui_components::icons::Icon,
-    workflows::CloudWorkflow,
+    workflows::WorkflowObject,
 };
 
 type SortByComparator<'a> = dyn FnMut(&&dyn CloudObject, &&dyn CloudObject) -> Ordering + 'a;
@@ -323,7 +323,7 @@ impl DriveSortOrder {
                         ObjectType::GenericStringObject(_) => 1,
                         ObjectType::Notebook => 2,
                         ObjectType::Workflow => {
-                            let Some(workflow) = obj.as_any().downcast_ref::<CloudWorkflow>()
+                            let Some(workflow) = obj.as_any().downcast_ref::<WorkflowObject>()
                             else {
                                 return 3;
                             };

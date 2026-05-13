@@ -9,7 +9,7 @@ use crate::search::item::{IconLocation, SearchItem};
 use crate::search::result_renderer::ItemHighlightState;
 use crate::search::workflows::fuzzy_match::FuzzyMatchWorkflowResult;
 use crate::ui_components::icons::Icon;
-use crate::workflows::CloudWorkflow;
+use crate::workflows::WorkflowObject;
 use ordered_float::OrderedFloat;
 use warpui::elements::{Clipped, Container, Flex, Highlight, ParentElement, Shrinkable, Text};
 use warpui::fonts::{Properties, Weight};
@@ -19,7 +19,7 @@ use warpui::{AppContext, Element, SingletonEntity};
 #[derive(Debug)]
 pub struct WorkflowSearchItem {
     pub match_result: FuzzyMatchWorkflowResult,
-    pub cloud_workflow: CloudWorkflow,
+    pub cloud_workflow: WorkflowObject,
 }
 
 impl SearchItem for WorkflowSearchItem {

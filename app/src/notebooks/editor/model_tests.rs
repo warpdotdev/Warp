@@ -20,7 +20,7 @@ use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::terminal::keys::TerminalKeybindings;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::workflows::workflow::Workflow;
-use crate::workflows::{CloudWorkflow, CloudWorkflowModel, WorkflowId};
+use crate::workflows::{WorkflowId, WorkflowObject, WorkflowObjectModel};
 use crate::workspace::ActiveSession;
 use crate::UserWorkspaces;
 use crate::{GlobalResourceHandles, GlobalResourceHandlesProvider};
@@ -1648,9 +1648,9 @@ fn mock_server_workflow(id: i64, app: &mut App) {
     let sync_id = SyncId::ServerId(workflow_id.into());
     let mut metadata = CloudObjectMetadata::mock();
     metadata.revision = Some(Revision::now());
-    let workflow = CloudWorkflow::new(
+    let workflow = WorkflowObject::new(
         sync_id,
-        CloudWorkflowModel::new(Workflow::new(format!("w{id}"), format!("c{id}"))),
+        WorkflowObjectModel::new(Workflow::new(format!("w{id}"), format!("c{id}"))),
         metadata,
         CloudObjectPermissions::mock_personal(),
     );

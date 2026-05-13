@@ -1568,9 +1568,9 @@ pub struct ExecuteCommandEvent {
     pub command: String,
     pub session_id: SessionId,
 
-    /// If the command was executed from a [`CloudWorkflow`], pass its ID here.
+    /// If the command was executed from a [`WorkflowObject`], pass its ID here.
     pub workflow_id: Option<SyncId>,
-    /// If the command was executed from a [`CloudWorkflow`] or WorkflowType::Local, store the
+    /// If the command was executed from a [`WorkflowObject`] or WorkflowType::Local, store the
     /// templated command here.
     pub workflow_command: Option<String>,
 
@@ -1612,7 +1612,7 @@ pub enum Event {
     // Tell the pane group to open the workflow modal.
     OpenWorkflowModalWithCommand(String),
     // Tell the pane group to open the workflow modal with an existing cloud workflow.
-    OpenWorkflowModalWithCloudWorkflow(SyncId),
+    OpenWorkflowModalWithWorkflowObject(SyncId),
     // Tell the pane group to open the workflow modal with an unsaved workflow.
     OpenWorkflowModalWithTemporary(Box<Workflow>),
     OpenWarpDriveObjectInPane(ObjectUid),
@@ -15020,7 +15020,7 @@ impl TerminalView {
         workflow_id: SyncId,
         ctx: &mut ViewContext<Self>,
     ) {
-        ctx.emit(Event::OpenWorkflowModalWithCloudWorkflow(workflow_id));
+        ctx.emit(Event::OpenWorkflowModalWithWorkflowObject(workflow_id));
         ctx.notify();
     }
 
@@ -23080,7 +23080,7 @@ impl TypedActionView for TerminalView {
             | OpenWorkflowModal
             | OpenWorkflowModalForAIWorkflow(_)
             | OpenWorkflowModalForBlock(_)
-            | OpenWorkflowModalWithCloudWorkflow(_)
+            | OpenWorkflowModalWithWorkflowObject(_)
             | AskAIAssistant { .. }
             | ToggleSnackbarInActivePane
             | SetInputModeAgent
@@ -23457,7 +23457,7 @@ impl TypedActionView for TerminalView {
             OpenWorkflowModalForBlock(block_index) => {
                 self.open_workflow_modal_from_block(*block_index, ctx)
             }
-            OpenWorkflowModalWithCloudWorkflow(workflow_id) => {
+            OpenWorkflowModalWithWorkflowObject(workflow_id) => {
                 self.open_workflow_modal_with_existing(*workflow_id, ctx)
             }
             OpenBlockListContextMenu => self.open_block_list_context_menu_via_keybinding(ctx),

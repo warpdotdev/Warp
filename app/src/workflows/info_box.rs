@@ -43,7 +43,7 @@ use super::{
     command_parser::{compute_workflow_display_data, WorkflowArgumentIndex, WorkflowDisplayData},
     workflow::Argument,
     workflow_view::env_var_selector::{EnvVarSelector, EnvVarSelectorEvent},
-    AIWorkflowOrigin, CloudWorkflow,
+    AIWorkflowOrigin, WorkflowObject,
 };
 
 const INFO_BOX_PADDING: f32 = 20.;
@@ -247,7 +247,7 @@ impl WorkflowsMoreInfoView {
 
     fn render_edit_button(
         &self,
-        cloud_workflow: &CloudWorkflow,
+        cloud_workflow: &WorkflowObject,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         let label = if cloud_workflow.model().data.is_agent_mode_workflow() {
@@ -261,7 +261,7 @@ impl WorkflowsMoreInfoView {
             Some(label.to_owned()),
             self.button_mouse_states.edit_cloud_workflow.clone(),
             move |ctx: &mut warpui::EventContext<'_>, _, _| {
-                ctx.dispatch_typed_action(TerminalAction::OpenWorkflowModalWithCloudWorkflow(
+                ctx.dispatch_typed_action(TerminalAction::OpenWorkflowModalWithWorkflowObject(
                     workflow.id,
                 ))
             },

@@ -16,8 +16,8 @@ use crate::server::ids::{HashableId, ObjectUid, SyncId, ToServerId};
 use crate::server_time::ServerTimestamp;
 use crate::settings::cloud_preferences::{CloudPreference, CloudPreferenceModel};
 use crate::workflows::workflow::Workflow;
-use crate::workflows::workflow_enum::{CloudWorkflowEnum, CloudWorkflowEnumModel, WorkflowEnum};
-use crate::workflows::{CloudWorkflow, CloudWorkflowModel};
+use crate::workflows::workflow_enum::{WorkflowEnum, WorkflowEnumObject, WorkflowEnumObjectModel};
+use crate::workflows::{WorkflowObject, WorkflowObjectModel};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
 use itertools::Itertools;
@@ -467,7 +467,7 @@ impl CloudModel {
         ctx: &mut ModelContext<Self>,
     ) {
         if let Some(cloud_workflow) = self.get_workflow_mut(&workflow_id) {
-            cloud_workflow.set_model(CloudWorkflowModel::new(workflow));
+            cloud_workflow.set_model(WorkflowObjectModel::new(workflow));
             ctx.emit(CloudModelEvent::ObjectUpdated {
                 type_and_id: cloud_workflow.cloud_object_type_and_id(),
                 source: UpdateSource::Server,
@@ -504,11 +504,11 @@ impl CloudModel {
         ctx: &mut ModelContext<Self>,
     ) {
         if let Some(cloud_workflow_enum) = self
-            .get_object_of_type_mut::<GenericStringObjectId, CloudWorkflowEnumModel>(
+            .get_object_of_type_mut::<GenericStringObjectId, WorkflowEnumObjectModel>(
                 &workflow_enum_id,
             )
         {
-            cloud_workflow_enum.set_model(CloudWorkflowEnumModel::new(workflow_enum));
+            cloud_workflow_enum.set_model(WorkflowEnumObjectModel::new(workflow_enum));
             ctx.emit(CloudModelEvent::ObjectUpdated {
                 type_and_id: cloud_workflow_enum.cloud_object_type_and_id(),
                 source: UpdateSource::Server,
@@ -806,17 +806,17 @@ impl CloudModel {
             .filter_map(|object| object.into())
     }
 
-    pub fn get_workflow(&self, workflow_id: &SyncId) -> Option<&CloudWorkflow> {
+    pub fn get_workflow(&self, workflow_id: &SyncId) -> Option<&WorkflowObject> {
         self.objects_by_id
             .get(&workflow_id.uid())
             .and_then(|object| object.into())
     }
 
-    pub fn get_workflow_by_uid(&self, uid: &str) -> Option<&CloudWorkflow> {
+    pub fn get_workflow_by_uid(&self, uid: &str) -> Option<&WorkflowObject> {
         self.objects_by_id.get(uid).and_then(|object| object.into())
     }
 
-    pub fn get_workflow_enum(&self, enum_id: &SyncId) -> Option<&CloudWorkflowEnum> {
+    pub fn get_workflow_enum(&self, enum_id: &SyncId) -> Option<&WorkflowEnumObject> {
         self.objects_by_id
             .get(&enum_id.uid())
             .and_then(|object| object.into())
@@ -831,20 +831,20 @@ impl CloudModel {
             .and_then(|object| object.into())
     }
 
-    pub fn get_workflow_enum_mut(&mut self, enum_id: &SyncId) -> Option<&mut CloudWorkflowEnum> {
+    pub fn get_workflow_enum_mut(&mut self, enum_id: &SyncId) -> Option<&mut WorkflowEnumObject> {
         self.objects_by_id
             .get_mut(&enum_id.uid())
             .and_then(|object| object.into())
     }
 
-    pub fn get_workflow_mut(&mut self, workflow_id: &SyncId) -> Option<&mut CloudWorkflow> {
+    pub fn get_workflow_mut(&mut self, workflow_id: &SyncId) -> Option<&mut WorkflowObject> {
         self.objects_by_id
             .get_mut(&workflow_id.uid())
             .and_then(|object| object.into())
     }
 
     /// Returns only active (not trashed) workflows in cloud model.
-    pub fn get_all_active_workflows(&self) -> impl Iterator<Item = &CloudWorkflow> {
+    pub fn get_all_active_workflows(&self) -> impl Iterator<Item = &WorkflowObject> {
         self.objects_by_id
             .values()
             .filter(|object| !object.is_trashed(self))
@@ -852,7 +852,7 @@ impl CloudModel {
     }
 
     /// Returns all workflows (trashed or not) in cloud model.
-    pub fn get_all_active_and_inactive_workflows(&self) -> impl Iterator<Item = &CloudWorkflow> {
+    pub fn get_all_active_and_inactive_workflows(&self) -> impl Iterator<Item = &WorkflowObject> {
         self.objects_by_id
             .values()
             .filter_map(|object| object.into())
@@ -861,7 +861,7 @@ impl CloudModel {
     /// Returns all workflows (trashed or not) in cloud model.
     pub fn get_all_active_and_inactive_workflows_mut(
         &mut self,
-    ) -> impl Iterator<Item = &mut CloudWorkflow> {
+    ) -> impl Iterator<Item = &mut WorkflowObject> {
         self.objects_by_id
             .values_mut()
             .filter_map(|object| object.into())
@@ -872,7 +872,7 @@ impl CloudModel {
         &'a self,
         space: Space,
         app: &'a AppContext,
-    ) -> impl Iterator<Item = &'a CloudWorkflow> + 'a {
+    ) -> impl Iterator<Item = &'a WorkflowObject> + 'a {
         self.active_cloud_objects_in_space(space, app)
             .filter_map(|object| object.into())
     }
@@ -882,7 +882,7 @@ impl CloudModel {
         &'a self,
         space: Space,
         app: &'a AppContext,
-    ) -> impl Iterator<Item = &'a CloudWorkflow> + 'a {
+    ) -> impl Iterator<Item = &'a WorkflowObject> + 'a {
         self.active_non_welcome_cloud_objects_in_space(space, app)
             .filter_map(|object| object.into())
     }
@@ -922,7 +922,7 @@ impl CloudModel {
         &'a self,
         owner: Owner,
         _: &'a AppContext,
-    ) -> impl Iterator<Item = &'a CloudWorkflowEnum> + 'a {
+    ) -> impl Iterator<Item = &'a WorkflowEnumObject> + 'a {
         self.objects_by_id
             .values()
             .filter(move |object| !object.is_trashed(self) && object.permissions().owner == owner)

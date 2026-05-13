@@ -38,7 +38,7 @@ use crate::{
     },
     util::{color::coloru_with_opacity, sync::Condition},
     view_components::{Dropdown, DropdownItem},
-    workflows::{CloudWorkflow, WorkflowViewMode},
+    workflows::{WorkflowObject, WorkflowViewMode},
     workspace::active_terminal_in_window,
     workspaces::{user_workspaces::UserWorkspaces, workspace::WorkspaceUid},
     ObjectActions,
@@ -255,7 +255,7 @@ pub enum DriveIndexAction {
         space: Space,
         initial_folder_id: Option<SyncId>,
     },
-    OpenWorkflowModalWithCloudWorkflow(SyncId),
+    OpenWorkflowModalWithWorkflowObject(SyncId),
     ToggleFolderOpen(SyncId),
     CollapseAllInLocation(CloudObjectLocation),
     InvokeEnvVarCollectionInSubshell(CloudObjectTypeAndId),
@@ -402,7 +402,7 @@ pub enum DriveIndexEvent {
         space: Space,
         initial_folder_id: Option<SyncId>,
     },
-    OpenWorkflowModalWithCloudWorkflow(SyncId),
+    OpenWorkflowModalWithWorkflowObject(SyncId),
     FocusWarpDrive,
     OpenSharedObjectsCreationDeniedModal(DriveObjectType, ServerId),
     AttachPlanAsContext(AIDocumentId),
@@ -4284,7 +4284,7 @@ impl DriveIndex {
                     }
                 }
 
-                let workflow: Option<&CloudWorkflow> = object.into();
+                let workflow: Option<&WorkflowObject> = object.into();
                 let env_var_collection: Option<&EnvVarCollectionObject> = object.into();
 
                 if self.edit_object_enabled(cloud_object_type_and_id, app) {
@@ -4341,7 +4341,7 @@ impl DriveIndex {
             if let Some(object) = object {
                 match object.object_type() {
                     ObjectType::Workflow => {
-                        let workflow: Option<&CloudWorkflow> = object.into();
+                        let workflow: Option<&WorkflowObject> = object.into();
                         let workflow = workflow.expect("Object is workflow");
                         let label = if workflow.model().data.is_agent_mode_workflow() {
                             crate::t!("drive-copy-prompt")
@@ -5007,7 +5007,7 @@ impl TypedActionView for DriveIndex {
                 if let Some(object) = object {
                     match object.object_type() {
                         ObjectType::Workflow => {
-                            let workflow: Option<&CloudWorkflow> = object.into();
+                            let workflow: Option<&WorkflowObject> = object.into();
                             if let Some(workflow) = workflow {
                                 let content = workflow.model().data.content().to_owned();
                                 ctx.clipboard().write(ClipboardContent::plain_text(content));
@@ -5161,8 +5161,8 @@ impl TypedActionView for DriveIndex {
                 space: *space,
                 initial_folder_id: *initial_folder_id,
             }),
-            DriveIndexAction::OpenWorkflowModalWithCloudWorkflow(workflow_id) => {
-                ctx.emit(DriveIndexEvent::OpenWorkflowModalWithCloudWorkflow(
+            DriveIndexAction::OpenWorkflowModalWithWorkflowObject(workflow_id) => {
+                ctx.emit(DriveIndexEvent::OpenWorkflowModalWithWorkflowObject(
                     *workflow_id,
                 ));
             }

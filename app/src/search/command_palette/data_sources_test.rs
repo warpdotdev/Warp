@@ -10,7 +10,7 @@ use crate::notebooks::{CloudNotebook, CloudNotebookModel};
 use crate::server::ids::SyncId::{self};
 use crate::settings::AISettings;
 use crate::workflows::workflow::Workflow;
-use crate::workflows::{CloudWorkflow, CloudWorkflowModel};
+use crate::workflows::{WorkflowObject, WorkflowObjectModel};
 use crate::{
     cloud_object::update_manager::UpdateManager,
     cloud_object::{
@@ -40,11 +40,11 @@ fn mock_permissions(owner: Owner) -> CloudObjectPermissions {
     }
 }
 
-fn mock_workflow(id: WorkflowId, owner: Owner) -> CloudWorkflow {
+fn mock_workflow(id: WorkflowId, owner: Owner) -> WorkflowObject {
     let sync_id = SyncId::ServerId(id.into());
-    CloudWorkflow::new(
+    WorkflowObject::new(
         sync_id,
-        CloudWorkflowModel::new(Workflow::new(format!("foo{id}"), format!("bar{id}"))),
+        WorkflowObjectModel::new(Workflow::new(format!("foo{id}"), format!("bar{id}"))),
         mock_metadata(),
         mock_permissions(owner),
     )

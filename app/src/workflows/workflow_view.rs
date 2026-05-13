@@ -72,7 +72,7 @@ use crate::{
     view_components::{DismissibleToast, ToastType},
     workflows::{
         workflow::{Argument, Workflow},
-        CloudWorkflow,
+        WorkflowObject,
     },
     workspace::ToastStack,
     FeatureFlag,
@@ -102,7 +102,7 @@ use warpui::{
 };
 
 use super::{
-    aliases::WorkflowAliases, command_parser::WorkflowCommandDisplayData, CloudWorkflowModel,
+    aliases::WorkflowAliases, command_parser::WorkflowCommandDisplayData, WorkflowObjectModel,
     WorkflowSource, WorkflowType, WorkflowViewMode,
 };
 
@@ -703,7 +703,7 @@ impl WorkflowView {
 
     pub fn load(
         &mut self,
-        workflow: CloudWorkflow,
+        workflow: WorkflowObject,
         settings: &OpenWarpDriveObjectSettings,
         mode: WorkflowViewMode,
         ctx: &mut ViewContext<Self>,
@@ -1480,7 +1480,7 @@ impl WorkflowView {
             let new_workflow = self.create_workflow_object_from_input(ctx);
             if let Some(cloud_workflow) = self.get_cloud_workflow(ctx) {
                 let mut cloned_cloud_workflow = cloud_workflow.clone();
-                cloned_cloud_workflow.set_model(CloudWorkflowModel::new(new_workflow));
+                cloned_cloud_workflow.set_model(WorkflowObjectModel::new(new_workflow));
                 if let Some(owner) = self.owner {
                     ctx.emit(WorkflowViewEvent::RunWorkflow {
                         workflow: Arc::new(WorkflowType::Cloud(Box::new(cloned_cloud_workflow))),
@@ -2034,7 +2034,7 @@ impl WorkflowView {
         });
     }
 
-    fn get_cloud_workflow(&mut self, ctx: &mut ViewContext<Self>) -> Option<CloudWorkflow> {
+    fn get_cloud_workflow(&mut self, ctx: &mut ViewContext<Self>) -> Option<WorkflowObject> {
         if let Some(workflow) = CloudModel::as_ref(ctx).get_workflow(&self.workflow_id.clone()) {
             return Some(workflow.clone());
         } else {

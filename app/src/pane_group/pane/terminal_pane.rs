@@ -643,7 +643,7 @@ fn handle_terminal_view_event(
                     command.clone(),
                 ));
             }
-            Event::OpenWorkflowModalWithCloudWorkflow(workflow_id) => {
+            Event::OpenWorkflowModalWithWorkflowObject(workflow_id) => {
                 ctx.emit(pane_group::Event::OpenCloudWorkflowForEdit(*workflow_id));
             }
             Event::OpenWorkflowModalWithTemporary(workflow) => {

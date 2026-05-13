@@ -215,7 +215,7 @@ pub struct History {
 
 #[derive(Clone, Debug)]
 pub enum LinkedWorkflowData {
-    /// The history entry is linked to a `CloudWorkflow` by its ID.
+    /// The history entry is linked to a `WorkflowObject` by its ID.
     Id(SyncId),
 
     /// The history entry is linked to a local `Workflow` by its command.
@@ -269,7 +269,7 @@ pub struct HistoryEntry {
     pub git_head: Option<String>,
     pub shell_host: Option<ShellHost>,
 
-    /// The ID of the `CloudWorkflow` used to construct this command.
+    /// The ID of the `WorkflowObject` used to construct this command.
     workflow_id: Option<SyncId>,
 
     /// The templated command contained in the `Workflow` used to construct the executed

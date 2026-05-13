@@ -253,7 +253,7 @@ pub enum CodePaneSnapShot {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum WorkflowPaneSnapshot {
-    CloudWorkflow {
+    WorkflowObject {
         workflow_id: Option<SyncId>,
         // Settings for the workflow pane when it's opened (such as a folder to focus upon opening)
         settings: OpenWarpDriveObjectSettings,

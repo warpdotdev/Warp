@@ -7,7 +7,7 @@ use warpui::{
 use crate::{
     integration_testing::{cloud_object::assert_metadata_revision, view_getters::workflow_view},
     server::ids::SyncId,
-    workflows::{workflow_view::WorkflowView, CloudWorkflowModel, WorkflowId},
+    workflows::{workflow_view::WorkflowView, WorkflowId, WorkflowObjectModel},
 };
 
 /// Asserts metadata exists for the workflow with the given key and that the revision in that
@@ -16,7 +16,7 @@ pub fn assert_workflow_metadata_revision(
     id: impl AsRef<str>,
     expected_revision: i64,
 ) -> AssertionCallback {
-    assert_metadata_revision::<WorkflowId, CloudWorkflowModel>(id.as_ref(), expected_revision)
+    assert_metadata_revision::<WorkflowId, WorkflowObjectModel>(id.as_ref(), expected_revision)
 }
 
 /// Asserts that a pane has the given workflow open.

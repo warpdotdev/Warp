@@ -12,14 +12,14 @@ use crate::search::workflows::fuzzy_match::FuzzyMatchWorkflowResult;
 use crate::search::QueryFilter;
 use crate::server::ids::SyncId;
 use crate::settings::AISettings;
-use crate::workflows::{CloudWorkflowModel, WorkflowSource};
+use crate::workflows::{WorkflowObjectModel, WorkflowSource};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
 use super::WorkflowSearchItem;
 
 pub(crate) struct WorkflowMatchCandidate {
     pub id: SyncId,
-    pub model: Arc<CloudWorkflowModel>,
+    pub model: Arc<WorkflowObjectModel>,
     pub source: WorkflowSource,
 }
 

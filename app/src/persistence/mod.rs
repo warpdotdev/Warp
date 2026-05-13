@@ -1,4 +1,4 @@
-﻿#![cfg_attr(not(feature = "local_fs"), allow(dead_code))]
+#![cfg_attr(not(feature = "local_fs"), allow(dead_code))]
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
@@ -47,7 +47,7 @@ use crate::suggestions::ignored_suggestions_model::SuggestionType;
 use crate::terminal::history::PersistedCommand;
 use crate::terminal::model::block::{SerializedAgentViewVisibility, SerializedBlock};
 use crate::terminal::model::session::SessionId;
-use crate::workflows::CloudWorkflow;
+use crate::workflows::WorkflowObject;
 use crate::workspaces::user_profiles::UserProfileWithUID;
 use crate::workspaces::workspace::{Workspace as WorkspaceMetadata, WorkspaceUid};
 
@@ -240,7 +240,7 @@ pub enum ModelEvent {
     SaveBlock(BlockCompleted),
     DeleteBlocks(Vec<u8>),
     Snapshot(AppState),
-    UpsertWorkflows(Vec<CloudWorkflow>),
+    UpsertWorkflows(Vec<WorkflowObject>),
     UpsertNotebooks(Vec<CloudNotebook>),
     UpsertFolders(Vec<CloudFolder>),
     IncrementRetryCount(String),
@@ -252,7 +252,7 @@ pub enum ModelEvent {
         notebook: CloudNotebook,
     },
     UpsertWorkflow {
-        workflow: CloudWorkflow,
+        workflow: WorkflowObject,
     },
     UpsertFolder {
         folder: CloudFolder,

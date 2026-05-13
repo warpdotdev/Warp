@@ -60,7 +60,7 @@ use crate::{
     },
     workflows::{
         workflow::{Argument, Workflow},
-        CloudWorkflow,
+        WorkflowObject,
     },
 };
 
@@ -638,7 +638,7 @@ impl WorkflowModal {
             if let Some(object) = object {
                 match object.object_type() {
                     ObjectType::Workflow => {
-                        let workflow: Option<&CloudWorkflow> = object.into();
+                        let workflow: Option<&WorkflowObject> = object.into();
                         if let Some(workflow) = workflow {
                             let content = workflow.model().data.content().to_owned();
                             ctx.clipboard().write(ClipboardContent::plain_text(content));

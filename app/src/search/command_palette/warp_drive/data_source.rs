@@ -17,7 +17,7 @@ use crate::search::workflows::fuzzy_match::FuzzyMatchWorkflowResult;
 use crate::search::QueryFilter;
 use crate::server::ids::{ObjectUid, SyncId};
 use crate::settings::AISettings;
-use crate::workflows::CloudWorkflow;
+use crate::workflows::WorkflowObject;
 use std::collections::HashMap;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
@@ -220,7 +220,7 @@ impl DataSource {
         app: &AppContext,
     ) -> Option<QueryResult<CommandPaletteItemAction>> {
         let object = CloudModel::as_ref(app).get_by_uid(&sync_id.uid())?;
-        let workflow: Option<&CloudWorkflow> = object.into();
+        let workflow: Option<&WorkflowObject> = object.into();
         if let Some(workflow) = workflow {
             return Some(QueryResult::from(WorkflowSearchItem {
                 match_result: FuzzyMatchWorkflowResult::no_match(),
@@ -300,7 +300,7 @@ trait WarpDriveSearcher {
 #[derive(Default)]
 struct FuzzyWarpDriveSearcher {
     notebooks: HashMap<ObjectUid, CloudNotebook>,
-    workflows: HashMap<ObjectUid, CloudWorkflow>,
+    workflows: HashMap<ObjectUid, WorkflowObject>,
     env_vars: HashMap<ObjectUid, EnvVarCollectionObject>,
 }
 
@@ -321,11 +321,11 @@ impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
                 }
             }
             ObjectType::Workflow => {
-                let workflow: Option<&CloudWorkflow> = object.into();
+                let workflow: Option<&WorkflowObject> = object.into();
                 if let Some(workflow) = workflow {
                     self.workflows.insert(workflow.uid(), workflow.clone());
                 } else {
-                    anyhow::bail!("Expected CloudWorkflow, got {:?}", object);
+                    anyhow::bail!("Expected WorkflowObject, got {:?}", object);
                 }
             }
             ObjectType::GenericStringObject(GenericStringObjectFormat::Json(
@@ -409,7 +409,7 @@ impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
             if !active_uids.contains(&object.uid()) {
                 continue;
             }
-            if let Some(workflow) = <Option<&CloudWorkflow>>::from(object.as_ref()) {
+            if let Some(workflow) = <Option<&WorkflowObject>>::from(object.as_ref()) {
                 self.workflows.insert(workflow.uid(), workflow.clone());
             } else if let Some(notebook) = <Option<&CloudNotebook>>::from(object.as_ref()) {
                 self.notebooks.insert(notebook.uid(), notebook.clone());
@@ -537,7 +537,7 @@ mod full_text_searcher {
     use crate::search::searcher::{AsyncSearcher, DEFAULT_MEMORY_BUDGET, SCORE_CONVERSION_FACTOR};
     use crate::search::workflows::fuzzy_match::FuzzyMatchWorkflowResult;
     use crate::server::ids::ObjectUid;
-    use crate::workflows::CloudWorkflow;
+    use crate::workflows::WorkflowObject;
     use fuzzy_match::FuzzyMatchResult;
     use itertools::Itertools;
     use warpui::r#async::executor::Background;
@@ -704,7 +704,7 @@ mod full_text_searcher {
                     }
                 }
                 ObjectType::Workflow => {
-                    let workflow: Option<&CloudWorkflow> = object.into();
+                    let workflow: Option<&WorkflowObject> = object.into();
                     if let Some(cloud_workflow) = workflow {
                         let workflow = &cloud_workflow.model().data;
 
@@ -725,7 +725,7 @@ mod full_text_searcher {
                         };
                         self.workflow_searcher.insert_document_async(document)
                     } else {
-                        anyhow::bail!("Expected CloudWorkflow, got {:?}", object);
+                        anyhow::bail!("Expected WorkflowObject, got {:?}", object);
                     }
                 }
                 ObjectType::GenericStringObject(GenericStringObjectFormat::Json(
@@ -865,7 +865,7 @@ mod full_text_searcher {
                 .cloud_objects()
                 .filter(|obj| active_uids.contains(&obj.uid()))
                 .filter_map(|obj| {
-                    let cloud_workflow: Option<&CloudWorkflow> = obj.as_ref().into();
+                    let cloud_workflow: Option<&WorkflowObject> = obj.as_ref().into();
                     cloud_workflow.map(|cloud_workflow| {
                         let workflow = &cloud_workflow.model().data;
                         let title = workflow.name().to_lowercase();
@@ -954,7 +954,7 @@ mod full_text_searcher {
                     .get_all_doc_ids()?
                     .into_iter()
                     .filter_map(|search_match| {
-                        let cloud_workflow: Option<&CloudWorkflow> = CloudModel::as_ref(app)
+                        let cloud_workflow: Option<&WorkflowObject> = CloudModel::as_ref(app)
                             .get_by_uid(&search_match.uid)?
                             .into();
                         let cloud_workflow = cloud_workflow?;
@@ -979,7 +979,7 @@ mod full_text_searcher {
                 .search_id(query)?
                 .into_iter()
                 .filter_map(|search_match| {
-                    let cloud_workflow: Option<&CloudWorkflow> = CloudModel::as_ref(app)
+                    let cloud_workflow: Option<&WorkflowObject> = CloudModel::as_ref(app)
                         .get_by_uid(&search_match.values.uid)?
                         .into();
                     let cloud_workflow = cloud_workflow?;

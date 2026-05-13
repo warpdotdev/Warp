@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::server::ids::{ClientId, SyncId};
 use crate::workflows::workflow::Workflow;
-use crate::workflows::CloudWorkflowModel;
+use crate::workflows::WorkflowObjectModel;
 use ordered_float::OrderedFloat;
 
 use super::{fuzzy_match_saved_prompts, SavedPromptCandidate, SavedPromptsSnapshot};
@@ -12,7 +12,7 @@ const TEST_FONT_FAMILY: warpui::fonts::FamilyId = warpui::fonts::FamilyId(0);
 fn test_candidate(name: &str, query: &str) -> SavedPromptCandidate {
     SavedPromptCandidate {
         id: SyncId::ClientId(ClientId::new()),
-        model: Arc::new(CloudWorkflowModel {
+        model: Arc::new(WorkflowObjectModel {
             data: Workflow::AgentMode {
                 name: name.to_owned(),
                 query: query.to_owned(),
