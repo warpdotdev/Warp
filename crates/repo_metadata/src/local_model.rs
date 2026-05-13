@@ -6,6 +6,7 @@
 
 use std::{
     collections::HashMap,
+    io::ErrorKind,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -656,8 +657,11 @@ impl LocalRepoMetadataModel {
 
     /// Phase 2: Applies pre-computed mutations to the file tree on the main thread.
     ///
-    /// No filesystem I/O — only tree-structure operations. When `lazy_load` is
-    /// true, additions are skipped if the parent directory has not been expanded.
+    /// Most filesystem I/O is handled during phase 1. When additions arrive,
+    /// this also prunes missing entries from already-loaded directories to cover
+    /// watcher backends that report a move as target-only creates. When
+    /// `lazy_load` is true, additions are skipped if the parent directory has
+    /// not been expanded.
     ///
     /// When `emit_updates` is true,
     /// from the mutations that were actually applied (filtering out any skipped
@@ -672,6 +676,7 @@ impl LocalRepoMetadataModel {
         let emit = emit_updates;
         let mut remove_entries: Vec<StandardizedPath> = Vec::new();
         let mut update_entries: Vec<FileTreeEntryUpdate> = Vec::new();
+        let mut should_prune_missing_entries = false;
 
         for mutation in mutations {
             match mutation {
@@ -689,6 +694,7 @@ impl LocalRepoMetadataModel {
                     is_ignored,
                     ref extension,
                 } => {
+                    should_prune_missing_entries = true;
                     let Some(std_path) = StandardizedPath::try_from_local(path).ok() else {
                         continue;
                     };
@@ -732,6 +738,7 @@ impl LocalRepoMetadataModel {
                     ref dir_path,
                     ref subtree,
                 } => {
+                    should_prune_missing_entries = true;
                     let Some(std_dir) = StandardizedPath::try_from_local(dir_path).ok() else {
                         continue;
                     };
@@ -766,6 +773,7 @@ impl LocalRepoMetadataModel {
                     ref path,
                     is_ignored,
                 } => {
+                    should_prune_missing_entries = true;
                     let Some(std_path) = StandardizedPath::try_from_local(path).ok() else {
                         continue;
                     };
@@ -803,6 +811,13 @@ impl LocalRepoMetadataModel {
             }
         }
 
+        if should_prune_missing_entries {
+            let pruned_entries = Self::prune_missing_loaded_entries(root_entry);
+            if emit {
+                remove_entries.extend(pruned_entries);
+            }
+        }
+
         if !emit {
             return None;
         }
@@ -820,6 +835,47 @@ impl LocalRepoMetadataModel {
         target_parent: &StandardizedPath,
     ) {
         root_entry.ensure_parent_directories_exist(target_parent);
+    }
+
+    fn prune_missing_loaded_entries(root_entry: &mut FileTreeEntry) -> Vec<StandardizedPath> {
+        let mut dirs_to_visit = vec![root_entry.root_directory().as_ref().clone()];
+        let mut missing_paths = Vec::new();
+
+        while let Some(dir_path) = dirs_to_visit.pop() {
+            let child_paths: Vec<StandardizedPath> = root_entry
+                .child_paths(&dir_path)
+                .map(|path| path.as_ref().clone())
+                .collect();
+
+            for child_path in child_paths {
+                let Some(local_path) = child_path.to_local_path() else {
+                    continue;
+                };
+
+                match std::fs::symlink_metadata(&local_path) {
+                    Ok(_) => {
+                        if root_entry.get(&child_path).is_some_and(|entry| {
+                            matches!(
+                                entry,
+                                FileTreeEntryState::Directory(directory) if directory.loaded
+                            )
+                        }) {
+                            dirs_to_visit.push(child_path);
+                        }
+                    }
+                    Err(err) if err.kind() == ErrorKind::NotFound => {
+                        missing_paths.push(child_path);
+                    }
+                    Err(_) => {}
+                }
+            }
+        }
+
+        for missing_path in &missing_paths {
+            root_entry.remove(missing_path);
+        }
+
+        missing_paths
     }
 
     /// Checks if a path matches any of the gitignore patterns

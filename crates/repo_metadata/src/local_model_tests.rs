@@ -775,6 +775,73 @@ mod tests {
     }
 
     #[test]
+    fn test_added_only_move_prunes_stale_loaded_entries() {
+        VirtualFS::test(
+            "added_only_move_prunes_stale_loaded_entries",
+            |dirs, mut fs| {
+                fs.mkdir("subdir").with_files(vec![
+                    Stub::FileWithContent("file1.txt", "one"),
+                    Stub::FileWithContent("file2.txt", "two"),
+                ]);
+
+                let repo_path = dirs.tests();
+                let file1 = repo_path.join("file1.txt");
+                let file2 = repo_path.join("file2.txt");
+                let subdir = repo_path.join("subdir");
+                let moved_file1 = subdir.join("file1.txt");
+                let moved_file2 = subdir.join("file2.txt");
+
+                let root_entry = Entry::Directory(DirectoryEntry {
+                    path: StandardizedPath::try_from_local(repo_path).unwrap(),
+                    children: vec![
+                        Entry::Directory(DirectoryEntry {
+                            path: StandardizedPath::try_from_local(&subdir).unwrap(),
+                            children: vec![],
+                            ignored: false,
+                            loaded: false,
+                        }),
+                        Entry::File(FileMetadata::new(file1.clone(), false)),
+                        Entry::File(FileMetadata::new(file2.clone(), false)),
+                    ],
+                    ignored: false,
+                    loaded: true,
+                });
+                let mut root = FileTreeEntry::from(root_entry);
+
+                std::fs::rename(&file1, &moved_file1).unwrap();
+                std::fs::rename(&file2, &moved_file2).unwrap();
+
+                let update = RepoUpdate {
+                    added: vec![moved_file1.clone(), moved_file2.clone()],
+                    deleted: vec![],
+                    moved: HashMap::new(),
+                };
+
+                let mutations = block_on(LocalRepoMetadataModel::compute_file_tree_mutations(
+                    &update,
+                    &[],
+                ));
+                LocalRepoMetadataModel::apply_file_tree_mutations(
+                    &mut root, mutations, false, false,
+                );
+
+                assert!(root
+                    .get(&StandardizedPath::try_from_local(&file1).unwrap())
+                    .is_none());
+                assert!(root
+                    .get(&StandardizedPath::try_from_local(&file2).unwrap())
+                    .is_none());
+                assert!(root
+                    .get(&StandardizedPath::try_from_local(&moved_file1).unwrap())
+                    .is_some());
+                assert!(root
+                    .get(&StandardizedPath::try_from_local(&moved_file2).unwrap())
+                    .is_some());
+            },
+        );
+    }
+
+    #[test]
     fn test_gitignore_patterns_comprehensive() {
         VirtualFS::test("comprehensive_test", |dirs, mut fs| {
             let repo_path = dirs.tests();
