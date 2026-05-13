@@ -10,7 +10,6 @@ use crate::ai::{
 use crate::ai::get_relevant_files::controller::GetRelevantFilesController;
 
 pub(super) enum RemoteSearchRequest {
-    Pending(futures_util::stream::AbortHandle),
     Ready(SearchCodebaseResult),
 }
 

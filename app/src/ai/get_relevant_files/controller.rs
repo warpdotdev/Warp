@@ -366,6 +366,7 @@ impl GetRelevantFilesController {
             action_id.clone(),
             ctx,
         ) {
+            #[cfg(not(target_family = "wasm"))]
             remote_search::RemoteSearchRequest::Pending(abort_handle) => {
                 self.pending_requests
                     .insert(action_id, RequestHandle::AbortHandle(abort_handle));
@@ -403,6 +404,7 @@ impl GetRelevantFilesController {
         };
     }
 
+    #[cfg(not(target_family = "wasm"))]
     fn handle_remote_search_result(
         &mut self,
         search_result: anyhow::Result<SearchCodebaseResult>,
