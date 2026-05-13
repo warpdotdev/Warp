@@ -218,6 +218,12 @@ pub struct AIConversation {
     /// Fallback title used when no task description or initial query exists.
     fallback_display_title: Option<String>,
 
+    /// User-supplied custom title for this conversation. When set, takes precedence over the
+    /// auto-generated `task.description()` / `initial_query()` / `fallback_display_title` chain in
+    /// `title()`. Set via [`Self::set_user_title`] (or cleared by passing `None`).
+    /// Local-only in this iteration; not synced to the server. See `specs/GH8642/`.
+    user_set_title: Option<String>,
+
     /// Artifacts created during this conversation (plans, PRs, etc.).
     artifacts: Vec<Artifact>,
 
@@ -296,6 +302,7 @@ impl AIConversation {
             total_request_cost: RequestCost::new(0.),
             total_token_usage_by_model: Default::default(),
             fallback_display_title: None,
+            user_set_title: None,
             artifacts: Vec::new(),
             parent_agent_id: None,
             agent_name: None,
@@ -386,6 +393,7 @@ impl AIConversation {
             run_id,
             autoexecute_override,
             last_event_sequence,
+            user_set_title,
         ) = if let Some(data) = conversation_data {
             let server_conversation_token = data
                 .server_conversation_token
@@ -419,6 +427,7 @@ impl AIConversation {
                 AIConversationAutoexecuteMode::default()
             };
             let last_event_sequence = data.last_event_sequence;
+            let user_set_title = data.user_set_title;
 
             (
                 server_conversation_token,
@@ -434,6 +443,7 @@ impl AIConversation {
                 run_id,
                 autoexecute_override,
                 last_event_sequence,
+                user_set_title,
             )
         } else {
             (
@@ -449,6 +459,7 @@ impl AIConversation {
                 false,
                 None,
                 AIConversationAutoexecuteMode::default(),
+                None,
                 None,
             )
         };
@@ -488,6 +499,7 @@ impl AIConversation {
             total_token_usage_by_model: Default::default(),
             optimistic_cli_subagent_subtask_id: None,
             fallback_display_title: None,
+            user_set_title,
             artifacts,
             parent_agent_id,
             agent_name,
@@ -1261,11 +1273,20 @@ impl AIConversation {
         self.task_store.latest_skills()
     }
 
-    /// Get the auto-generated title of the given conversation
-    /// (falling back to the first query if the title is empty).
     /// Get the title of the given conversation.
-    /// Priority: auto-generated task description > initial query > fallback_display_title.
+    /// Priority: user-set title > auto-generated task description > initial query > fallback_display_title.
     pub fn title(&self) -> Option<String> {
+        if let Some(title) = self.user_set_title.as_deref() {
+            return Some(title.to_owned());
+        }
+        self.auto_generated_title_for_display()
+    }
+
+    /// Returns the title that would be displayed if the user had not set a custom title.
+    /// Used by the rename UI to seed the editor with the auto-generated title when the user
+    /// clears their custom override, and to compute the placeholder shown when the editor input
+    /// is empty.
+    pub fn auto_generated_title_for_display(&self) -> Option<String> {
         self.task_store
             .root_task()
             .and_then(|task| {
@@ -1276,6 +1297,50 @@ impl AIConversation {
                 }
             })
             .or_else(|| self.fallback_display_title.clone())
+    }
+
+    /// Returns the user-supplied title for this conversation, if any.
+    pub fn user_set_title(&self) -> Option<&str> {
+        self.user_set_title.as_deref()
+    }
+
+    /// Normalizes a candidate user-set title: trims surrounding whitespace, treats empty /
+    /// whitespace-only input as `None`, and caps length at [`Self::USER_SET_TITLE_MAX_CHARS`]
+    /// characters.
+    pub fn normalize_user_title(title: Option<String>) -> Option<String> {
+        title
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .map(|t| t.chars().take(Self::USER_SET_TITLE_MAX_CHARS).collect())
+    }
+
+    /// Maximum length for a user-supplied conversation title (in chars). See `specs/GH8642/`
+    /// product spec invariant 5.
+    pub const USER_SET_TITLE_MAX_CHARS: usize = 200;
+
+    /// Sets a user-supplied custom title for this conversation. Passing `None` (or a string that
+    /// normalizes to empty) clears the override and reverts to the auto-generated chain.
+    ///
+    /// Returns `true` if the persisted value changed (so the caller can decide whether to
+    /// announce success), `false` if the call was a no-op.
+    pub fn set_user_title(
+        &mut self,
+        title: Option<String>,
+        terminal_view_id: EntityId,
+        ctx: &mut ModelContext<BlocklistAIHistoryModel>,
+    ) -> bool {
+        let normalized = Self::normalize_user_title(title);
+        if normalized == self.user_set_title {
+            return false;
+        }
+        self.user_set_title = normalized.clone();
+        self.write_updated_conversation_state(ctx);
+        ctx.emit(BlocklistAIHistoryEvent::UpdatedConversationTitle {
+            terminal_view_id,
+            conversation_id: self.id,
+            title: normalized,
+        });
+        true
     }
 
     /// Set a fallback title used when no task description or initial query exists.
@@ -3031,6 +3096,7 @@ impl AIConversation {
                 run_id: self.task_id.map(|id| id.to_string()),
                 autoexecute_override: Some(self.autoexecute_override.into()),
                 last_event_sequence: self.last_event_sequence,
+                user_set_title: self.user_set_title.clone(),
             },
         };
         ctx.spawn(

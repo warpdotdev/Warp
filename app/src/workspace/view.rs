@@ -488,8 +488,9 @@ use crate::palette::PaletteMode;
 use crate::search::command_palette::view::{Event as CommandPaletteEvent, View as CommandPalette};
 use crate::server::telemetry::{NotificationsTurnedOnSource, PaletteSource, TabRenameEvent};
 use crate::tab::{
-    tab_position_id, uses_vertical_tabs, NewSessionMenuItem, PaneNameMenuTarget, SelectedTabColor,
-    TabBarState, TabComponent, TabData, TabTelemetryAction, TAB_BAR_BORDER_HEIGHT,
+    tab_position_id, uses_vertical_tabs, NewSessionMenuItem, PaneConversationMenuTarget,
+    PaneNameMenuTarget, SelectedTabColor, TabBarState, TabComponent, TabData, TabTelemetryAction,
+    TAB_BAR_BORDER_HEIGHT,
 };
 use crate::terminal::view::ssh_file_upload::FileUploadId;
 use crate::ui_components::icons;
@@ -933,6 +934,13 @@ pub struct Workspace {
     traffic_light_mouse_states: TrafficLightMouseStates,
     tab_rename_editor: ViewHandle<EditorView>,
     pane_rename_editor: ViewHandle<EditorView>,
+    /// GH8642: shared single-line editor used to rename the conversation whose
+    /// id is currently in [`WorkspaceState::conversation_being_renamed`]. Lives
+    /// at the workspace level so any pane in any tab can drive the rename, and
+    /// so the rename survives tab/pane focus changes the same way `tab_rename_editor`
+    /// does. Mirrors the tab/pane pattern — built once in `Workspace::new` and
+    /// re-seeded each time rename starts.
+    pub(crate) conversation_rename_editor: ViewHandle<EditorView>,
     vertical_tabs_search_input: ViewHandle<EditorView>,
     tips_completed: ModelHandle<TipsCompleted>,
     user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
@@ -1312,6 +1320,25 @@ impl Workspace {
         editor
     }
 
+    /// GH8642: builder for the workspace-level conversation rename editor used
+    /// by the vertical-tabs surface. Mirrors [`Self::pane_rename_editor`] — a
+    /// single-line editor at 12pt, subscribed to events that route
+    /// Enter/Blurred -> commit and Escape -> cancel.
+    fn conversation_rename_editor(ctx: &mut ViewContext<Self>) -> ViewHandle<EditorView> {
+        let editor = ctx.add_typed_action_view(|ctx| {
+            let appearance = Appearance::as_ref(ctx);
+            let options = SingleLineEditorOptions {
+                text: TextOptions::ui_text(Some(12.), appearance),
+                ..Default::default()
+            };
+            EditorView::single_line(options, ctx)
+        });
+        ctx.subscribe_to_view(&editor, move |me, _, event, ctx| {
+            me.handle_conversation_rename_editor_event(event, ctx);
+        });
+        editor
+    }
+
     pub fn handle_tab_rename_editor_event(
         &mut self,
         event: &EditorEvent,
@@ -1342,6 +1369,29 @@ impl Workspace {
                 }
                 EditorEvent::Escape => {
                     self.cancel_pane_rename(ctx);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// GH8642: handle commit/cancel for the workspace-level conversation rename
+    /// editor. Mirrors [`Self::handle_pane_rename_editor_event`].
+    pub fn handle_conversation_rename_editor_event(
+        &mut self,
+        event: &EditorEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self
+            .current_workspace_state
+            .is_any_conversation_being_renamed()
+        {
+            match event {
+                EditorEvent::Blurred | EditorEvent::Enter => {
+                    self.finish_conversation_rename(ctx);
+                }
+                EditorEvent::Escape => {
+                    self.cancel_conversation_rename(ctx);
                 }
                 _ => {}
             }
@@ -1400,6 +1450,61 @@ impl Workspace {
             self.focus_pane(locator, ctx);
             ctx.notify();
         }
+    }
+
+    fn clear_conversation_rename_editor(&mut self, ctx: &mut ViewContext<Self>) {
+        self.conversation_rename_editor.update(ctx, |editor, ctx| {
+            editor.clear_buffer_and_reset_undo_stack(ctx);
+        });
+    }
+
+    /// GH8642: commit the in-progress conversation rename (Enter / blur path).
+    /// Reads the editor buffer, dispatches
+    /// [`WorkspaceAction::SetConversationUserTitle`] (whitespace-only input is
+    /// treated as `None`, clearing the override), clears editor + state, and
+    /// returns focus to the active tab.
+    fn finish_conversation_rename(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(conversation_id) = self.current_workspace_state.conversation_being_renamed()
+        else {
+            return;
+        };
+
+        self.current_workspace_state
+            .clear_conversation_being_renamed();
+
+        let raw = self.conversation_rename_editor.as_ref(ctx).buffer_text(ctx);
+        let trimmed = raw.trim();
+        let title = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        };
+
+        ctx.dispatch_typed_action(&WorkspaceAction::SetConversationUserTitle {
+            conversation_id,
+            title,
+        });
+
+        self.clear_conversation_rename_editor(ctx);
+        self.focus_active_tab(ctx);
+        ctx.notify();
+    }
+
+    /// GH8642: cancel the in-progress conversation rename (Escape path) without
+    /// dispatching. Clears editor + state and refocuses the active tab.
+    fn cancel_conversation_rename(&mut self, ctx: &mut ViewContext<Self>) {
+        if self
+            .current_workspace_state
+            .conversation_being_renamed()
+            .is_none()
+        {
+            return;
+        }
+        self.current_workspace_state
+            .clear_conversation_being_renamed();
+        self.clear_conversation_rename_editor(ctx);
+        self.focus_active_tab(ctx);
+        ctx.notify();
     }
 
     fn build_import_modal(ctx: &mut ViewContext<Self>) -> ViewHandle<ImportModal> {
@@ -3099,6 +3204,7 @@ impl Workspace {
             traffic_light_mouse_states: Default::default(),
             tab_rename_editor: Self::tab_rename_editor(ctx),
             pane_rename_editor: Self::pane_rename_editor(ctx),
+            conversation_rename_editor: Self::conversation_rename_editor(ctx),
             vertical_tabs_search_input: Self::vertical_tabs_search_input(ctx),
             tips_completed,
             user_default_shell_unsupported_banner_model_handle,
@@ -5289,6 +5395,104 @@ impl Workspace {
         ctx.notify();
     }
 
+    /// GH8642: begin renaming the given conversation by opening the
+    /// workspace-level inline editor. Mirrors [`Self::rename_tab_internal`] —
+    /// records the renaming conversation id on `WorkspaceState`, seeds the
+    /// editor with the conversation's effective title (live `title()` →
+    /// historical metadata `title` → "Untitled conversation" placeholder), and
+    /// focuses the editor so the next render replaces the vertical-tab title
+    /// text with the inline editor.
+    ///
+    /// Shared-session viewers do not own the conversation, so the rename API
+    /// would reject the commit anyway — short-circuit before touching state
+    /// to avoid a no-op editor session.
+    pub fn rename_conversation(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let history_model = BlocklistAIHistoryModel::as_ref(ctx);
+        if history_model
+            .conversation(&conversation_id)
+            .is_some_and(|c| c.is_viewing_shared_session())
+        {
+            log::debug!(
+                "rename_conversation: refusing to rename {conversation_id} \
+                 (shared-session viewer)"
+            );
+            return;
+        }
+
+        let seed_title = history_model
+            .conversation(&conversation_id)
+            .and_then(|c| c.title())
+            .or_else(|| {
+                history_model
+                    .get_conversation_metadata(&conversation_id)
+                    .map(|m| m.title.clone())
+            })
+            .unwrap_or_else(|| "Untitled conversation".to_string());
+
+        self.current_workspace_state
+            .set_conversation_being_renamed(conversation_id);
+
+        // Reset and re-seed the editor every time so a previous rename's text
+        // (committed or cancelled) doesn't leak into the new session.
+        self.conversation_rename_editor.update(ctx, |editor, ctx| {
+            editor.clear_buffer_and_reset_undo_stack(ctx);
+            editor.insert_selected_text(&seed_title, ctx);
+        });
+        ctx.focus(&self.conversation_rename_editor);
+        ctx.notify();
+    }
+
+    /// Clears the user-set title override for the given conversation, reverting to the
+    /// auto-generated title chain. Wraps the history-model API and translates errors into
+    /// log warnings (no toast yet — phase 2c will add UI surfaces for these errors).
+    pub fn reset_conversation_name(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let history_model = BlocklistAIHistoryModel::handle(ctx);
+        let result = history_model.update(ctx, |model, ctx| {
+            model.set_conversation_user_title(conversation_id, None, ctx)
+        });
+        match result {
+            Ok(true) => {}
+            Ok(false) => {
+                log::debug!(
+                    "reset_conversation_name: {conversation_id} had no user-set title; no-op"
+                );
+            }
+            Err(err) => {
+                log::warn!("reset_conversation_name failed for {conversation_id}: {err}");
+            }
+        }
+    }
+
+    /// Persists a user-set title for the given conversation. `title = None` (or a string
+    /// that normalizes to empty) clears the override, identical to
+    /// [`Self::reset_conversation_name`]. This is the single commit entry point both
+    /// rename surfaces (vertical tabs and the conversation list) converge on.
+    pub fn set_conversation_user_title(
+        &mut self,
+        conversation_id: AIConversationId,
+        title: Option<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let history_model = BlocklistAIHistoryModel::handle(ctx);
+        let result = history_model.update(ctx, |model, ctx| {
+            model.set_conversation_user_title(conversation_id, title, ctx)
+        });
+        match result {
+            Ok(_) => {}
+            Err(err) => {
+                log::warn!("set_conversation_user_title failed for {conversation_id}: {err}");
+            }
+        }
+    }
+
     fn set_custom_pane_name(
         &mut self,
         locator: PaneViewLocator,
@@ -6660,10 +6864,38 @@ impl Workspace {
                 reset_label: "Reset active pane name",
             },
         };
-        let menu_items = tab.menu_items_with_pane_name_target(
+        // GH8642: resolve the conversation rename target by looking up the
+        // chrome conversation behind the right-clicked pane. Skip the menu
+        // entries entirely when the pane is a shared-session viewer (since
+        // the rename API would reject the commit anyway).
+        let pane_conversation_target = tab
+            .pane_group
+            .as_ref(ctx)
+            .terminal_view_from_pane_id(pane.pane_id, ctx)
+            .and_then(|terminal_view| {
+                terminal_view
+                    .as_ref(ctx)
+                    .selected_conversation_id_for_chrome(ctx)
+            })
+            .filter(|conversation_id| {
+                !BlocklistAIHistoryModel::as_ref(ctx)
+                    .conversation(conversation_id)
+                    .is_some_and(|c| c.is_viewing_shared_session())
+            })
+            .map(|conversation_id| {
+                let has_user_set_title = BlocklistAIHistoryModel::as_ref(ctx)
+                    .conversation(&conversation_id)
+                    .is_some_and(|c| c.user_set_title().is_some());
+                PaneConversationMenuTarget {
+                    conversation_id,
+                    has_user_set_title,
+                }
+            });
+        let menu_items = tab.menu_items_with_pane_targets(
             tab_index,
             self.tabs.len(),
             Some(pane_name_target),
+            pane_conversation_target,
             ctx,
         );
 
@@ -20519,6 +20751,16 @@ impl TypedActionView for Workspace {
                 );
             }
             SetActiveTabName(name) => self.set_active_tab_name(name, ctx),
+            RenameConversation { conversation_id } => {
+                self.rename_conversation(*conversation_id, ctx)
+            }
+            ResetConversationName { conversation_id } => {
+                self.reset_conversation_name(*conversation_id, ctx)
+            }
+            SetConversationUserTitle {
+                conversation_id,
+                title,
+            } => self.set_conversation_user_title(*conversation_id, title.clone(), ctx),
             SetActiveTabColor(color) => self.set_tab_color(self.active_tab_index, *color, ctx),
             ToggleTabRightClickMenu { tab_index, anchor } => {
                 self.toggle_tab_right_click_menu(*tab_index, *anchor, ctx)

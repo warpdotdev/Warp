@@ -574,11 +574,18 @@ impl BlocklistAIHistoryModel {
                 }
 
                 // We derive the title from the description of the root task,
-                // falling back to initial_query if the description is empty
-                let title = root_task
+                // falling back to initial_query if the description is empty.
+                // A user-set title (from `specs/GH8642/`) overrides both — it's local-only
+                // metadata stored in `AgentConversationData.user_set_title` and is read here so
+                // historical rows render the override before the full conversation is loaded.
+                let user_set_title = conversation_data
+                    .as_ref()
+                    .and_then(|data| data.user_set_title.clone());
+                let derived_title = root_task
                     .map(|task| task.description.clone())
                     .filter(|desc| !desc.is_empty())
                     .unwrap_or_else(|| initial_query.clone());
+                let title = user_set_title.clone().unwrap_or(derived_title);
 
                 // Extract working directory from the first UserQuery message in the tasks
                 // TODO: search tasks in correct order once we've implemented task ordering.
@@ -610,6 +617,7 @@ impl BlocklistAIHistoryModel {
                     artifacts,
                     // Only populated when loading from server, not from local DB
                     server_conversation_metadata: None,
+                    user_set_title,
                 }))
             })
             .collect();

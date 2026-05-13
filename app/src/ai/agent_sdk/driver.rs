@@ -2335,7 +2335,10 @@ impl AgentDriver {
                 | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
                 | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. }
                 | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
-                | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => (),
+                | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. }
+                // SDK output streams don't include the title; renames are display-only and
+                // don't gate run-exit / idle-timeout decisions.
+                | BlocklistAIHistoryEvent::UpdatedConversationTitle { .. } => (),
             }
         });
 

@@ -96,6 +96,12 @@ pub struct AIConversationMetadata {
     /// Full server metadata for cloud conversations, including permissions.
     /// Used by the sharing dialog to display permissions when the full conversation isn't loaded.
     pub server_conversation_metadata: Option<ServerAIConversationMetadata>,
+
+    /// User-set title override for this conversation, if any. Local-only — not synced to the
+    /// server. When `Some`, this is the effective title for `AIConversationMetadata.title` and
+    /// the source of truth for whether `Reset conversation name` should be shown in menus.
+    /// See `specs/GH8642/`.
+    pub user_set_title: Option<String>,
 }
 
 impl From<&AIConversation> for AIConversationMetadata {
@@ -120,6 +126,7 @@ impl From<&AIConversation> for AIConversationMetadata {
             has_cloud_data: conversation.server_metadata().is_some(),
             artifacts: conversation.artifacts().to_vec(),
             server_conversation_metadata: conversation.server_metadata().cloned(),
+            user_set_title: conversation.user_set_title().map(|s| s.to_string()),
         }
     }
 }
@@ -160,6 +167,8 @@ impl AIConversationMetadata {
             has_cloud_data: true, // Server metadata implies cloud data exists
             artifacts,
             server_conversation_metadata: Some(server_conversation_metadata),
+            // User-set titles are local-only; server metadata never carries one.
+            user_set_title: None,
         }
     }
 
@@ -178,6 +187,34 @@ pub enum UpdateHistoryError {
     Conversation(#[from] UpdateConversationError),
     #[error("Failed to find conversation with ID {0:?}")]
     ConversationNotFound(AIConversationId),
+}
+
+/// Reasons a conversation rename request can fail. Returned from
+/// [`BlocklistAIHistoryModel::set_conversation_user_title`] so the UI can disable / ignore
+/// rename actions for non-renamable rows up front instead of failing silently after dispatch.
+/// See `specs/GH8642/` (PR #9746) tech spec, History-model API.
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
+pub enum RenameConversationError {
+    /// No metadata or loaded conversation exists for this ID. Treat as a transient
+    /// inconsistency: the row was rendered but is gone by the time the rename action ran.
+    #[error("Conversation {0:?} not found")]
+    NotFound(AIConversationId),
+    /// Cloud-only or task-only row with no local conversation data; cannot be renamed locally
+    /// in this iteration. Surfaced to the UI as a disabled menu item with a tooltip.
+    #[error("Conversation {0:?} has no local data and cannot be renamed")]
+    NoLocalData(AIConversationId),
+    /// Shared-session viewer mode does not own the conversation; rename is hidden in the UI
+    /// and rejected here as a defense in depth.
+    #[error("Cannot rename conversation {0:?} from shared-session viewer mode")]
+    SharedSessionViewer(AIConversationId),
+    /// The conversation has local data on disk but could not be materialized into memory.
+    /// In practice this happens when the on-disk SQLite record is missing/corrupted or the
+    /// read-only DB connection is unavailable (notably on WASM where `local_fs` is off).
+    /// Successful renames against metadata-only rows go through a synchronous load via
+    /// [`BlocklistAIHistoryModel::load_conversation_from_db`]; this error is the fallback
+    /// path when that load returns `None`.
+    #[error("Conversation {0:?} is not loaded in memory and could not be loaded from disk")]
+    NotLoaded(AIConversationId),
 }
 
 /// Responsible for managing the history of user and AI exchanges.
@@ -1169,6 +1206,9 @@ impl BlocklistAIHistoryModel {
             run_id: None,
             autoexecute_override: Some(source_conversation.autoexecute_override().into()),
             last_event_sequence: None,
+            // Forked conversations start with no user-set title; the user can rename the fork
+            // independently. See `specs/GH8642/` product spec invariant 9.
+            user_set_title: None,
         };
         let forked_conversation_id = AIConversationId::new();
         if let Err(e) = sqlite_sender.send(ModelEvent::UpdateMultiAgentConversation {
@@ -1326,6 +1366,8 @@ impl BlocklistAIHistoryModel {
             run_id: None,
             autoexecute_override: Some(conversation.autoexecute_override().into()),
             last_event_sequence: None,
+            // Forked conversations start with no user-set title. See `specs/GH8642/`.
+            user_set_title: None,
         };
 
         let forked_conversation_id = AIConversationId::new();
@@ -1921,6 +1963,120 @@ impl BlocklistAIHistoryModel {
         ctx.emit(BlocklistAIHistoryEvent::UpdatedAutoexecuteOverride { terminal_view_id });
     }
 
+    /// Sets (or clears) the user-supplied display title for the given conversation. Passing
+    /// `Some("")` or `Some("   ")` is treated as a reset and clears the override (same effect
+    /// as passing `None`).
+    ///
+    /// Returns `Ok(true)` if the persisted value changed, `Ok(false)` if the call was a no-op
+    /// (idempotent re-set with the same normalized value), or one of the
+    /// [`RenameConversationError`] variants for non-renamable rows. See `specs/GH8642/` for
+    /// behavior.
+    ///
+    /// Mirrors any successful change onto `all_conversations_metadata` so historical and
+    /// not-currently-active rows reflect the rename without needing a reload.
+    pub fn set_conversation_user_title(
+        &mut self,
+        conversation_id: AIConversationId,
+        title: Option<String>,
+        ctx: &mut ModelContext<Self>,
+    ) -> Result<bool, RenameConversationError> {
+        // Locate the loaded conversation, or distinguish between historical-but-unloaded
+        // (which has metadata + local data on disk: load it synchronously and proceed),
+        // cloud-only / task-only (which we can't rename locally in this iteration), and
+        // truly missing.
+        //
+        // The two-step `contains_key` then `get_mut` dance below is to satisfy the borrow
+        // checker: `load_conversation_from_db` and the `all_conversations_metadata` peek
+        // both need `&self` in the same scope as the eventual `&mut self.conversations_by_id`.
+        let conversation = if self.conversations_by_id.contains_key(&conversation_id) {
+            self.conversations_by_id
+                .get_mut(&conversation_id)
+                .expect("just contains_key'd")
+        } else {
+            let has_local_data = match self.all_conversations_metadata.get(&conversation_id) {
+                Some(metadata) => metadata.has_local_data,
+                None => return Err(RenameConversationError::NotFound(conversation_id)),
+            };
+            if !has_local_data {
+                return Err(RenameConversationError::NoLocalData(conversation_id));
+            }
+            // Conversation row was rendered from history metadata without the full payload
+            // loaded into memory; pull it from SQLite and insert before mutating. On WASM
+            // (`local_fs` disabled) or if the row is missing/corrupted in the DB this returns
+            // `None`, in which case the caller sees `NotLoaded` and can decide how to retry.
+            let Some(loaded) = self.load_conversation_from_db(&conversation_id) else {
+                return Err(RenameConversationError::NotLoaded(conversation_id));
+            };
+            self.conversations_by_id.insert(conversation_id, loaded);
+            self.conversations_by_id
+                .get_mut(&conversation_id)
+                .expect("just inserted")
+        };
+
+        // Defense in depth: shared-session viewer mode never owns the conversation. The UI
+        // hides the rename affordance, but a stray dispatch from a stale menu state must not
+        // mutate or persist anything.
+        if conversation.is_viewing_shared_session() {
+            return Err(RenameConversationError::SharedSessionViewer(
+                conversation_id,
+            ));
+        }
+
+        // Find the terminal view that owns this conversation so the emitted event has a
+        // meaningful `terminal_view_id`. Conversations that were closed but kept around for
+        // up-arrow history are tracked in `cleared_conversation_ids_for_terminal_view`.
+        // Historical-but-loaded conversations may not be tracked under any terminal view; in
+        // that case fall back to a synthetic sentinel id (`from_usize(0)`). Per-view event
+        // consumers correctly no-op when the id doesn't match a real terminal view; global
+        // listeners (e.g. agent_conversations_model) still receive the rename and refresh.
+        let terminal_view_id = self
+            .live_conversation_ids_for_terminal_view
+            .iter()
+            .find_map(|(view_id, ids)| ids.contains(&conversation_id).then_some(*view_id))
+            .or_else(|| {
+                self.cleared_conversation_ids_for_terminal_view
+                    .iter()
+                    .find_map(|(view_id, ids)| ids.contains(&conversation_id).then_some(*view_id))
+            })
+            .unwrap_or_else(|| EntityId::from_usize(0));
+
+        let changed = conversation.set_user_title(title, terminal_view_id, ctx);
+        if changed {
+            // Mirror onto cached metadata so historical / not-currently-active rows reflect
+            // the rename for the conversation list, command palette, etc. The conversation's
+            // own `set_user_title` already updated its in-memory field.
+            let conversation_ref = self.conversations_by_id.get(&conversation_id);
+            let new_user_title =
+                conversation_ref.and_then(|c| c.user_set_title().map(|s| s.to_string()));
+            // On reset we recompute `metadata.title` from the derived chain (root task
+            // description -> initial query -> fallback) so cached historical surfaces revert
+            // immediately. Computing this up front keeps the mutable borrow below scoped to a
+            // single `get_mut` call.
+            let derived_title_on_reset = if new_user_title.is_none() {
+                conversation_ref.and_then(|c| c.auto_generated_title_for_display())
+            } else {
+                None
+            };
+            if let Some(metadata) = self.all_conversations_metadata.get_mut(&conversation_id) {
+                metadata.user_set_title = new_user_title.clone();
+                match new_user_title {
+                    Some(t) => metadata.title = t,
+                    None => {
+                        // Reset path: prefer the derived title if we could compute one. When
+                        // no derived title is available (no exchanges yet, no initial query,
+                        // no fallback), we leave `metadata.title` at its last value rather
+                        // than blanking it -- a blank row in the conversation list would be
+                        // a worse UX than a stale label until next reload.
+                        if let Some(derived) = derived_title_on_reset {
+                            metadata.title = derived;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(changed)
+    }
+
     /// Truncates a conversation from the given exchange ID, removing all exchanges
     /// from that exchange onwards (inclusive). This is a lossy operation.
     ///
@@ -2355,6 +2511,16 @@ pub enum BlocklistAIHistoryEvent {
     OrchestrationConfigUpdated {
         conversation_id: AIConversationId,
     },
+
+    /// Emitted when a conversation's user-set title changes (set, updated, or cleared).
+    /// Subscribers should re-render any surface that displays the conversation title.
+    /// `title` carries the new value; `None` means the override was cleared and the
+    /// auto-generated title is now in effect. See `specs/GH8642/`.
+    UpdatedConversationTitle {
+        terminal_view_id: EntityId,
+        conversation_id: AIConversationId,
+        title: Option<String>,
+    },
 }
 
 impl BlocklistAIHistoryEvent {
@@ -2419,6 +2585,9 @@ impl BlocklistAIHistoryEvent {
                 terminal_view_id, ..
             }
             | BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
+                terminal_view_id, ..
+            }
+            | BlocklistAIHistoryEvent::UpdatedConversationTitle {
                 terminal_view_id, ..
             } => Some(*terminal_view_id),
             // UpdatedConversationMetadata can have None when updating historical-only conversations

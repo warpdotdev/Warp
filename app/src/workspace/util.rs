@@ -4,7 +4,12 @@ use warpui::{
     WindowId,
 };
 
+#[cfg(test)]
+#[path = "util_tests.rs"]
+mod tests;
+
 use super::OneTimeModalModel;
+use crate::ai::agent::conversation::AIConversationId;
 use crate::window_settings::WindowSettings;
 use crate::{
     appearance::Appearance, pane_group::PaneId, terminal::TerminalView, workspace::Workspace,
@@ -129,6 +134,12 @@ pub struct WorkspaceState {
     pub is_transcript_details_panel_open: bool,
     tab_being_renamed: Option<usize>, // The index of the tab being renamed
     pane_being_renamed: Option<PaneViewLocator>,
+    /// GH8642: id of the conversation currently being renamed via the
+    /// workspace-level inline editor (`Workspace::conversation_rename_editor`),
+    /// or `None` when no conversation rename is in progress. Mutually
+    /// exclusive with `tab_being_renamed` and `pane_being_renamed` — entering
+    /// any rename mode clears the others (see `set_*` setters below).
+    conversation_being_renamed: Option<AIConversationId>,
 }
 
 impl WorkspaceState {
@@ -146,6 +157,7 @@ impl WorkspaceState {
             || self.is_changelog_modal_open
             || self.tab_being_renamed.is_some()
             || self.pane_being_renamed.is_some()
+            || self.conversation_being_renamed.is_some()
             || self.is_reward_modal_open
             || self.is_launch_config_save_modal_open
             || self.is_command_search_open
@@ -187,6 +199,7 @@ impl WorkspaceState {
         self.is_changelog_modal_open = false;
         self.tab_being_renamed = None;
         self.pane_being_renamed = None;
+        self.conversation_being_renamed = None;
         self.is_reward_modal_open = false;
         self.is_launch_config_save_modal_open = false;
         self.is_command_search_open = false;
@@ -230,6 +243,7 @@ impl WorkspaceState {
     pub fn set_tab_being_renamed(&mut self, index: usize) {
         self.tab_being_renamed = Some(index);
         self.pane_being_renamed = None;
+        self.conversation_being_renamed = None;
     }
 
     pub fn clear_tab_being_renamed(&mut self) {
@@ -251,6 +265,7 @@ impl WorkspaceState {
     pub fn set_pane_being_renamed(&mut self, pane: PaneViewLocator) {
         self.pane_being_renamed = Some(pane);
         self.tab_being_renamed = None;
+        self.conversation_being_renamed = None;
     }
 
     pub fn clear_pane_being_renamed(&mut self) {
@@ -259,6 +274,36 @@ impl WorkspaceState {
 
     pub fn pane_being_renamed(&self) -> Option<PaneViewLocator> {
         self.pane_being_renamed
+    }
+
+    /// GH8642: returns `true` when the given conversation id is currently in
+    /// inline-rename mode at the workspace level (vertical-tabs surface).
+    pub fn is_conversation_being_renamed(&self, conversation_id: AIConversationId) -> bool {
+        self.conversation_being_renamed == Some(conversation_id)
+    }
+
+    /// GH8642: returns `true` when any conversation is in inline-rename mode.
+    /// Used by render code that suppresses chrome (kebab/tooltip overlays)
+    /// regardless of which row owns the rename.
+    pub fn is_any_conversation_being_renamed(&self) -> bool {
+        self.conversation_being_renamed.is_some()
+    }
+
+    /// GH8642: enter conversation-rename mode for the given id. Mutually
+    /// exclusive with tab/pane rename — those are cleared so the workspace
+    /// rename editor is always owned by exactly one rename surface.
+    pub fn set_conversation_being_renamed(&mut self, conversation_id: AIConversationId) {
+        self.conversation_being_renamed = Some(conversation_id);
+        self.tab_being_renamed = None;
+        self.pane_being_renamed = None;
+    }
+
+    pub fn clear_conversation_being_renamed(&mut self) {
+        self.conversation_being_renamed = None;
+    }
+
+    pub fn conversation_being_renamed(&self) -> Option<AIConversationId> {
+        self.conversation_being_renamed
     }
 }
 

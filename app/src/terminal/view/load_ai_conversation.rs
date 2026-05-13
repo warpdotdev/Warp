@@ -946,6 +946,9 @@ impl TerminalView {
             run_id: None,
             autoexecute_override: None,
             last_event_sequence: None,
+            // user_set_title is local-only and never synced to the server. Fresh ad-hoc loads
+            // (e.g. from cloud task data) start with no override. See `specs/GH8642/`.
+            user_set_title: None,
         };
 
         match AIConversation::new_restored(conversation_id, tasks, Some(conversation_data)) {

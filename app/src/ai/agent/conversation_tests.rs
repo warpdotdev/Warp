@@ -239,3 +239,102 @@ fn fork_artifacts_adds_file_artifacts_to_conversation() {
         })
     );
 }
+
+// ---------------------------------------------------------------------------
+// User-set conversation title (specs/GH8642/)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn restored_conversation_picks_up_persisted_user_set_title() {
+    let conversation_data: AgentConversationData = serde_json::from_str(
+        r#"{"server_conversation_token":null,"user_set_title":"My custom title"}"#,
+    )
+    .unwrap();
+
+    let conversation = restored_conversation(Some(conversation_data));
+
+    assert_eq!(conversation.user_set_title(), Some("My custom title"));
+}
+
+#[test]
+fn title_prefers_user_set_title_over_auto_description() {
+    // Build a conversation with a non-empty initial query that title() would
+    // normally surface, then layer a user-set title on top via persisted data.
+    // The user-set title must win.
+    let conversation_data: AgentConversationData = serde_json::from_str(
+        r#"{"server_conversation_token":null,"user_set_title":"Pinned name"}"#,
+    )
+    .unwrap();
+
+    let mut conversation = restored_conversation(Some(conversation_data));
+
+    assert_eq!(
+        conversation.title().as_deref(),
+        Some("Pinned name"),
+        "user-set title should take precedence over the auto chain"
+    );
+
+    // The auto-only accessor should still return what `title()` would have
+    // returned without the override (here: None, since this fixture has no
+    // task description, no initial query, and no fallback display title).
+    assert_eq!(conversation.auto_generated_title_for_display(), None);
+
+    // Direct field manipulation models the post-set state without needing
+    // a ModelContext. Clearing the override must fall through to the auto
+    // chain.
+    conversation.user_set_title = None;
+    assert_eq!(conversation.title(), None);
+}
+
+#[test]
+fn normalize_user_title_trims_and_treats_empty_as_none() {
+    use crate::ai::agent::conversation::AIConversation;
+
+    assert_eq!(AIConversation::normalize_user_title(None), None);
+    assert_eq!(
+        AIConversation::normalize_user_title(Some(String::new())),
+        None
+    );
+    assert_eq!(
+        AIConversation::normalize_user_title(Some("   ".to_string())),
+        None
+    );
+    assert_eq!(
+        AIConversation::normalize_user_title(Some("  hello  ".to_string())),
+        Some("hello".to_string())
+    );
+}
+
+#[test]
+fn normalize_user_title_caps_length_at_max_chars() {
+    use crate::ai::agent::conversation::AIConversation;
+
+    let max = AIConversation::USER_SET_TITLE_MAX_CHARS;
+    let too_long: String = "a".repeat(max + 50);
+
+    let normalized = AIConversation::normalize_user_title(Some(too_long))
+        .expect("non-empty input should normalize to Some");
+    assert_eq!(
+        normalized.chars().count(),
+        max,
+        "normalize_user_title must cap output to USER_SET_TITLE_MAX_CHARS chars"
+    );
+}
+
+#[test]
+fn normalize_user_title_counts_chars_not_bytes() {
+    use crate::ai::agent::conversation::AIConversation;
+
+    // Build a string of exactly max+1 multi-byte chars and verify the cap is
+    // applied in chars, not bytes.
+    let max = AIConversation::USER_SET_TITLE_MAX_CHARS;
+    let multibyte: String = "🦀".repeat(max + 1);
+
+    let normalized = AIConversation::normalize_user_title(Some(multibyte))
+        .expect("non-empty input should normalize to Some");
+    assert_eq!(
+        normalized.chars().count(),
+        max,
+        "cap must apply to char count rather than byte count"
+    );
+}

@@ -2093,6 +2093,9 @@ fn handle_ai_history_event(
         | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
         | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. }
         | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
-        | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => (),
+        | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. }
+        // Title renames persist via `AIConversation::set_user_title` writing through
+        // `write_updated_conversation_state`; no separate SQL persistence needed here.
+        | BlocklistAIHistoryEvent::UpdatedConversationTitle { .. } => (),
     }
 }

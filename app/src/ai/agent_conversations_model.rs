@@ -1339,6 +1339,15 @@ impl AgentConversationsModel {
                 ctx.emit(AgentConversationsModelEvent::ConversationUpdated { kind });
             }
 
+            // User-set title changes — re-render so the conversation row reflects the new title.
+            // The conversation list reads `conversation.title()` on every render, which already
+            // picks up the override; we just need to nudge the view to redraw.
+            BlocklistAIHistoryEvent::UpdatedConversationTitle { .. } => {
+                ctx.emit(AgentConversationsModelEvent::ConversationUpdated {
+                    kind: ConversationUpdateKind::MetadataChanged,
+                });
+            }
+
             // Artifact changes - sync live artifacts into the cached task and notify.
             BlocklistAIHistoryEvent::UpdatedConversationArtifacts {
                 conversation_id, ..

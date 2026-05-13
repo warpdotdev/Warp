@@ -20,6 +20,7 @@ use crate::{
     },
     cloud_object::{Owner, Revision, ServerMetadata, ServerPermissions},
     input_suggestions::HistoryInputSuggestion,
+    pane_group::PaneConfiguration,
     persistence::{model::PersistedAutoexecuteMode, ModelEvent},
     server::ids::ServerId,
     terminal::model::session::SessionId,
@@ -29,7 +30,7 @@ use crate::{
 
 use super::{
     AIConversationMetadata, AIQueryHistoryOutputStatus, BlocklistAIHistoryModel, PersistedAIInput,
-    PersistedAIInputType,
+    PersistedAIInputType, RenameConversationError,
 };
 
 /// Helper function to create a PersistedAIInput for testing
@@ -1405,6 +1406,7 @@ fn test_find_by_token_after_insert_forked_conversation_from_tasks() {
             run_id: None,
             autoexecute_override: None,
             last_event_sequence: None,
+            user_set_title: None,
         };
         let tasks = vec![warp_multi_agent_api::Task {
             id: "root-task".to_string(),
@@ -1598,6 +1600,7 @@ fn test_fork_then_bind_handoff_token_resolves_to_forked_conversation() {
                 run_id: None,
                 autoexecute_override: None,
                 last_event_sequence: None,
+                user_set_title: None,
             }),
         )
         .expect("restored source conversation should build");
@@ -1695,6 +1698,7 @@ fn test_fork_conversation_preserves_task_ids_when_requested() {
                 run_id: None,
                 autoexecute_override: None,
                 last_event_sequence: None,
+                user_set_title: None,
             }),
         )
         .expect("restored source conversation should build");
@@ -1781,6 +1785,7 @@ fn test_fork_conversation_title_override_replaces_prefix() {
                 run_id: None,
                 autoexecute_override: None,
                 last_event_sequence: None,
+                user_set_title: None,
             }),
         )
         .expect("restored source conversation should build");
@@ -1804,6 +1809,490 @@ fn test_fork_conversation_title_override_replaces_prefix() {
             assert_eq!(
                 forked_root.description, "Custom title",
                 "title_override must replace the prefix+description",
+            );
+        });
+    });
+}
+
+// ---------------------------------------------------------------------------
+// GH8642: set_conversation_user_title tests
+// See `specs/GH8642/` (PR #9746) for behavior. Tests cover:
+//   - loaded conversation rename + reset
+//   - idempotency (no-op on identical re-set)
+//   - metadata mirror after rename
+//   - error variants for non-renamable rows (NotFound, NoLocalData,
+//     SharedSessionViewer, NotLoaded)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_set_conversation_user_title_renames_loaded_conversation_and_mirrors_metadata() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        // set_user_title calls write_updated_conversation_state, which needs a model_event_sender.
+        let (sender, _receiver) = std::sync::mpsc::sync_channel(1);
+        let mut handles = GlobalResourceHandles::mock(&mut app);
+        handles.model_event_sender = Some(sender);
+        app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(handles));
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let terminal_view_id = EntityId::new();
+
+        let conversation_id = history_model.update(&mut app, |model, ctx| {
+            model.start_new_conversation(terminal_view_id, false, false, ctx)
+        });
+
+        // Seed metadata so we can verify the mirror onto `all_conversations_metadata`.
+        history_model.update(&mut app, |model, _| {
+            let metadata =
+                AIConversationMetadata::from(model.conversation(&conversation_id).unwrap());
+            model
+                .all_conversations_metadata
+                .insert(conversation_id, metadata);
+        });
+
+        // Initial rename succeeds and reports a change.
+        let result = history_model.update(&mut app, |model, ctx| {
+            model.set_conversation_user_title(
+                conversation_id,
+                Some("My Custom Title".to_string()),
+                ctx,
+            )
+        });
+        assert_eq!(result, Ok(true));
+
+        history_model.read(&app, |model, _| {
+            assert_eq!(
+                model
+                    .conversation(&conversation_id)
+                    .unwrap()
+                    .user_set_title(),
+                Some("My Custom Title"),
+            );
+            let metadata = model.get_conversation_metadata(&conversation_id).unwrap();
+            assert_eq!(metadata.user_set_title.as_deref(), Some("My Custom Title"));
+            assert_eq!(metadata.title, "My Custom Title");
+        });
+    });
+}
+
+#[test]
+fn test_set_conversation_user_title_is_idempotent_on_repeat_set() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        let (sender, _receiver) = std::sync::mpsc::sync_channel(2);
+        let mut handles = GlobalResourceHandles::mock(&mut app);
+        handles.model_event_sender = Some(sender);
+        app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(handles));
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let terminal_view_id = EntityId::new();
+
+        let conversation_id = history_model.update(&mut app, |model, ctx| {
+            model.start_new_conversation(terminal_view_id, false, false, ctx)
+        });
+
+        // First set: changes and returns Ok(true).
+        let first = history_model.update(&mut app, |model, ctx| {
+            model.set_conversation_user_title(conversation_id, Some("Hello".to_string()), ctx)
+        });
+        assert_eq!(first, Ok(true));
+
+        // Re-setting the normalized-equivalent value is a no-op.
+        let same = history_model.update(&mut app, |model, ctx| {
+            model.set_conversation_user_title(
+                conversation_id,
+                Some("  Hello  ".to_string()), // whitespace trim normalizes to same value
+                ctx,
+            )
+        });
+        assert_eq!(same, Ok(false));
+    });
+}
+
+#[test]
+fn test_set_conversation_user_title_reset_clears_override() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        let (sender, _receiver) = std::sync::mpsc::sync_channel(4);
+        let mut handles = GlobalResourceHandles::mock(&mut app);
+        handles.model_event_sender = Some(sender);
+        app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(handles));
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let terminal_view_id = EntityId::new();
+
+        let conversation_id = history_model.update(&mut app, |model, ctx| {
+            model.start_new_conversation(terminal_view_id, false, false, ctx)
+        });
+        history_model.update(&mut app, |model, _| {
+            let metadata =
+                AIConversationMetadata::from(model.conversation(&conversation_id).unwrap());
+            model
+                .all_conversations_metadata
+                .insert(conversation_id, metadata);
+        });
+
+        // Set, then reset (Some("") and None both clear).
+        history_model
+            .update(&mut app, |model, ctx| {
+                model.set_conversation_user_title(conversation_id, Some("Custom".into()), ctx)
+            })
+            .unwrap();
+
+        let reset = history_model.update(&mut app, |model, ctx| {
+            model.set_conversation_user_title(conversation_id, None, ctx)
+        });
+        assert_eq!(reset, Ok(true));
+
+        history_model.read(&app, |model, _| {
+            assert_eq!(
+                model
+                    .conversation(&conversation_id)
+                    .unwrap()
+                    .user_set_title(),
+                None,
+            );
+            let metadata = model.get_conversation_metadata(&conversation_id).unwrap();
+            assert_eq!(metadata.user_set_title, None);
+        });
+
+        // Whitespace-only also clears.
+        history_model
+            .update(&mut app, |model, ctx| {
+                model.set_conversation_user_title(conversation_id, Some("x".into()), ctx)
+            })
+            .unwrap();
+        let reset_via_whitespace = history_model.update(&mut app, |model, ctx| {
+            model.set_conversation_user_title(conversation_id, Some("   ".into()), ctx)
+        });
+        assert_eq!(reset_via_whitespace, Ok(true));
+        history_model.read(&app, |model, _| {
+            assert_eq!(
+                model
+                    .conversation(&conversation_id)
+                    .unwrap()
+                    .user_set_title(),
+                None,
+            );
+        });
+    });
+}
+
+#[test]
+fn test_set_conversation_user_title_returns_not_found_for_unknown_id() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let unknown_id = AIConversationId::new();
+
+        let result = history_model.update(&mut app, |model, ctx| {
+            model.set_conversation_user_title(unknown_id, Some("X".into()), ctx)
+        });
+        assert_eq!(result, Err(RenameConversationError::NotFound(unknown_id)));
+    });
+}
+
+#[test]
+fn test_set_conversation_user_title_returns_no_local_data_for_cloud_only_metadata() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let cloud_only_id = AIConversationId::new();
+
+        // Insert metadata that has no local data (`from_server_metadata` sets has_local_data=false).
+        history_model.update(&mut app, |model, _| {
+            let metadata = AIConversationMetadata::from_server_metadata(
+                cloud_only_id,
+                create_server_metadata("Cloud-only", "token-cloud-only", 1.0, None),
+            );
+            model
+                .all_conversations_metadata
+                .insert(cloud_only_id, metadata);
+        });
+
+        let result = history_model.update(&mut app, |model, ctx| {
+            model.set_conversation_user_title(cloud_only_id, Some("X".into()), ctx)
+        });
+        assert_eq!(
+            result,
+            Err(RenameConversationError::NoLocalData(cloud_only_id)),
+        );
+    });
+}
+
+// GH8642 review fix #1 (Oz review on PR #10553): metadata-only rows with
+// has_local_data=true previously returned `NotLoaded` and dropped the user's
+// rename on the floor. The new behavior is to attempt a synchronous SQLite
+// load via `load_conversation_from_db` and proceed on success. In the unit-test
+// harness the model has no `db_connection` (it's set up only when a real DB
+// file exists at `database_file_path()`), so the load returns `None` and we
+// fall through to `NotLoaded` -- but now `NotLoaded` exclusively means "we
+// tried to load and couldn't", not "this code path is a stub". A real DB-backed
+// integration test is required to cover the success path end-to-end.
+#[test]
+fn test_set_conversation_user_title_returns_not_loaded_only_when_db_load_fails() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let metadata_only_id = AIConversationId::new();
+
+        // Seed a metadata-only entry that claims has_local_data=true. There's no
+        // matching AIConversation in conversations_by_id and no DB record to load,
+        // so the new code path will attempt the load and fall back to NotLoaded.
+        history_model.update(&mut app, |model, _| {
+            let mut metadata = AIConversationMetadata::from_server_metadata(
+                metadata_only_id,
+                create_server_metadata("Has local data", "token-historical", 1.0, None),
+            );
+            metadata.has_local_data = true;
+            model
+                .all_conversations_metadata
+                .insert(metadata_only_id, metadata);
+        });
+
+        let result = history_model.update(&mut app, |model, ctx| {
+            model.set_conversation_user_title(metadata_only_id, Some("X".into()), ctx)
+        });
+        assert_eq!(
+            result,
+            Err(RenameConversationError::NotLoaded(metadata_only_id)),
+        );
+
+        // Sanity check: the conversation was NOT silently inserted into memory
+        // by a partial load. The model is in the same shape it was before.
+        history_model.read(&app, |model, _| {
+            assert!(model.conversation(&metadata_only_id).is_none());
+        });
+    });
+}
+
+// GH8642 review fix #2 (Oz review on PR #10553): after a user resets a custom
+// title, `metadata.title` previously stayed at the old custom value until the
+// next reload, so cached historical surfaces (conversation list, command
+// palette) kept showing the cleared name. The fix recomputes `metadata.title`
+// from `AIConversation::auto_generated_title_for_display` on reset.
+#[test]
+fn test_set_conversation_user_title_reset_recomputes_metadata_title_from_derived_chain() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        let (sender, _receiver) = std::sync::mpsc::sync_channel(4);
+        let mut handles = GlobalResourceHandles::mock(&mut app);
+        handles.model_event_sender = Some(sender);
+        app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(handles));
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let terminal_view_id = EntityId::new();
+
+        // Build a conversation with a stable derived title via the fallback chain
+        // (no exchanges yet -> root task description empty -> no initial query ->
+        // fallback_display_title wins).
+        let conversation_id = history_model.update(&mut app, |model, ctx| {
+            let id = model.start_new_conversation(terminal_view_id, false, false, ctx);
+            model
+                .conversation_mut(&id)
+                .expect("just created")
+                .set_fallback_display_title("Derived Title".to_string());
+            id
+        });
+        history_model.update(&mut app, |model, _| {
+            let metadata =
+                AIConversationMetadata::from(model.conversation(&conversation_id).unwrap());
+            model
+                .all_conversations_metadata
+                .insert(conversation_id, metadata);
+        });
+
+        // Sanity check: AIConversationMetadata::from picks up the derived title.
+        history_model.read(&app, |model, _| {
+            let m = model.get_conversation_metadata(&conversation_id).unwrap();
+            assert_eq!(m.title, "Derived Title");
+            assert_eq!(m.user_set_title, None);
+        });
+
+        // Set a custom override -- both fields mirror the custom value.
+        history_model
+            .update(&mut app, |model, ctx| {
+                model.set_conversation_user_title(
+                    conversation_id,
+                    Some("Custom Override".to_string()),
+                    ctx,
+                )
+            })
+            .unwrap();
+        history_model.read(&app, |model, _| {
+            let m = model.get_conversation_metadata(&conversation_id).unwrap();
+            assert_eq!(m.title, "Custom Override");
+            assert_eq!(m.user_set_title.as_deref(), Some("Custom Override"));
+        });
+
+        // Reset -- regression assertion: metadata.title must revert to the derived
+        // value immediately, not linger as "Custom Override" until next restart.
+        history_model
+            .update(&mut app, |model, ctx| {
+                model.set_conversation_user_title(conversation_id, None, ctx)
+            })
+            .unwrap();
+        history_model.read(&app, |model, _| {
+            let m = model.get_conversation_metadata(&conversation_id).unwrap();
+            assert_eq!(m.user_set_title, None, "reset must clear the override flag",);
+            assert_eq!(
+                m.title, "Derived Title",
+                "reset must recompute metadata.title from the derived chain so the \
+                 conversation list and command palette refresh immediately",
+            );
+        });
+    });
+}
+
+#[test]
+fn test_set_conversation_user_title_rejects_shared_session_viewer() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let terminal_view_id = EntityId::new();
+
+        // Conversation starts in viewer mode — the start_new_conversation third arg is
+        // `is_viewing_shared_session`.
+        let conversation_id = history_model.update(&mut app, |model, ctx| {
+            model.start_new_conversation(terminal_view_id, false, true, ctx)
+        });
+
+        let result = history_model.update(&mut app, |model, ctx| {
+            model.set_conversation_user_title(conversation_id, Some("X".into()), ctx)
+        });
+        assert_eq!(
+            result,
+            Err(RenameConversationError::SharedSessionViewer(
+                conversation_id
+            )),
+        );
+    });
+}
+
+// ---------------------------------------------------------------------------
+// GH8642: persistence-layer comparison test
+//
+// Demonstrates the divergence between the pre-existing "Rename pane"
+// (`PaneConfiguration::set_custom_vertical_tabs_title`) and the new "Rename
+// conversation" (`BlocklistAIHistoryModel::set_conversation_user_title`):
+//
+//   - Pane title is keyed on the `PaneConfiguration` *entity* — i.e. on the
+//     pane (`pane_group_id`, `pane_id`) the workspace happens to be hosting
+//     the conversation in. A different pane hosting the same conversation
+//     does NOT inherit a previously-set pane title.
+//   - Conversation title is keyed on the *conversation id* and lives on the
+//     `AIConversation` itself plus the cached `AIConversationMetadata` mirror,
+//     so it is reachable regardless of which pane is currently rendering the
+//     conversation.
+//
+// This test is the ground-truth answer to "do Rename pane and Rename
+// conversation actually do the same thing?" — they don't; they write to
+// different layers with different lifetimes. The pane label is a workspace
+// layout decoration that dies with the pane; the conversation title is
+// metadata of the conversation itself and survives pane lifecycle, the
+// conversation list, the command palette, and (after persistence) restart.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_pane_title_is_pane_scoped_while_conversation_title_is_conversation_scoped() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        // set_user_title -> write_updated_conversation_state needs a model_event_sender.
+        let (sender, _receiver) = std::sync::mpsc::sync_channel(2);
+        let mut handles = GlobalResourceHandles::mock(&mut app);
+        handles.model_event_sender = Some(sender);
+        app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(handles));
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let terminal_view_id = EntityId::new();
+
+        // One conversation, two distinct PaneConfiguration entities. Models the
+        // user flow: rename pane in pane A; close pane A; reopen the same
+        // conversation in a brand-new pane B. The conversation id is stable
+        // across that flow; the pane ids are not.
+        let conversation_id = history_model.update(&mut app, |model, ctx| {
+            model.start_new_conversation(terminal_view_id, false, false, ctx)
+        });
+        history_model.update(&mut app, |model, _| {
+            let metadata =
+                AIConversationMetadata::from(model.conversation(&conversation_id).unwrap());
+            model
+                .all_conversations_metadata
+                .insert(conversation_id, metadata);
+        });
+
+        let pane_a = app.add_model(|_| PaneConfiguration::new("auto-derived A"));
+        let pane_b = app.add_model(|_| PaneConfiguration::new("auto-derived B"));
+
+        // ---- Rename pane (pre-existing path) -------------------------------
+        // Same call site as `Workspace::set_custom_pane_name` uses inside
+        // `finish_pane_rename`: write the title onto pane A's PaneConfiguration.
+        pane_a.update(&mut app, |config, ctx| {
+            config.set_custom_vertical_tabs_title("Foo", ctx);
+        });
+        pane_a.read(&app, |config, _| {
+            assert_eq!(
+                config.custom_vertical_tabs_title(),
+                Some("Foo"),
+                "rename pane writes the title onto the PaneConfiguration entity",
+            );
+        });
+        pane_b.read(&app, |config, _| {
+            assert_eq!(
+                config.custom_vertical_tabs_title(),
+                None,
+                "pane title is pane-scoped: a different pane hosting the same \
+                 conversation must NOT inherit pane A's custom title",
+            );
+        });
+
+        // ---- Rename conversation (this PR) ---------------------------------
+        // Same call site `Workspace::finish_conversation_rename` uses:
+        // BlocklistAIHistoryModel::set_conversation_user_title.
+        let result = history_model.update(&mut app, |model, ctx| {
+            model.set_conversation_user_title(conversation_id, Some("Bar".to_string()), ctx)
+        });
+        assert_eq!(result, Ok(true));
+
+        history_model.read(&app, |model, _| {
+            assert_eq!(
+                model
+                    .conversation(&conversation_id)
+                    .unwrap()
+                    .user_set_title(),
+                Some("Bar"),
+                "rename conversation writes user_set_title onto the AIConversation \
+                 itself, recoverable by conversation_id without going through any pane",
+            );
+            let metadata = model.get_conversation_metadata(&conversation_id).unwrap();
+            assert_eq!(
+                metadata.user_set_title.as_deref(),
+                Some("Bar"),
+                "rename conversation also mirrors onto AIConversationMetadata, \
+                 which is what the conversation list / command palette reads",
+            );
+            assert_eq!(metadata.title, "Bar");
+        });
+
+        // ---- The decisive divergence ---------------------------------------
+        // After both renames, pane B (the "new pane same conversation" case)
+        // still has no pane title, and the conversation's user-set title is
+        // still recoverable from its id without consulting any pane. The two
+        // features write to different layers — they are not interchangeable.
+        pane_b.read(&app, |config, _| {
+            assert_eq!(
+                config.custom_vertical_tabs_title(),
+                None,
+                "pane B is unaffected by either rename: it never had a pane \
+                 title and the conversation rename does not propagate into \
+                 PaneConfiguration",
+            );
+        });
+        history_model.read(&app, |model, _| {
+            assert_eq!(
+                model
+                    .conversation(&conversation_id)
+                    .unwrap()
+                    .user_set_title(),
+                Some("Bar"),
+                "conversation-scoped title persists in the history model — \
+                 this is what makes it survive pane lifecycle, conversation \
+                 list rendering, and (after persistence) restart",
             );
         });
     });
