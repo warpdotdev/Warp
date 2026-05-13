@@ -176,7 +176,7 @@ PRs marked with `CHANGELOG-NONE` are explicitly opted out and must never appear 
 
 ### Step 8 — Write output files
 
-Write three files to `output_dir`:
+Write two files to `output_dir`:
 
 **`changelog-draft.md`** — Human-reviewable markdown, ready for Slack/Notion:
 
@@ -237,33 +237,17 @@ The markdown draft must **not** include "Needs Review" or "Skipped PRs" sections
 
 The JSON artifact retains `skipped`, `needs_review`, and `issue_reporters` for audit purposes — every PR in the range must appear in either `entries`, `skipped`, or `needs_review`.
 
-**`changelog-release.json`** — Release-pipeline-compatible JSON consumed by the `create_release` workflow for Slack (#release channel) and the in-app "What's New" dialog:
+### Step 9 — Generate release-pipeline JSON
 
-```json
-{
-  "newFeatures": [
-    "Added dark mode ([#1234](https://github.com/warpdotdev/warp/pull/1234))"
-  ],
-  "improvements": [
-    "Faster tab switching ([#1235](https://github.com/warpdotdev/warp/pull/1235))"
-  ],
-  "bugFixes": [
-    "Fixed crash on startup ([#1236](https://github.com/warpdotdev/warp/pull/1236))"
-  ],
-  "images": [],
-  "oz_updates": [
-    "Improved agent memory ([#1237](https://github.com/warpdotdev/warp/pull/1237))"
-  ]
-}
+Run the conversion script to deterministically produce `changelog-release.json` from the audit artifact:
+
+```bash
+python3 .agents/skills/changelog-draft/scripts/convert_to_release_json.py \
+  --input <output_dir>/changelog-draft.json \
+  --output <output_dir>/changelog-release.json
 ```
 
-**Key rules for `changelog-release.json`:**
-- Each value is a flat array of plain-text changelog lines (with inline markdown links).
-- Map categories: `NEW-FEATURE` → `newFeatures`, `IMPROVEMENT` → `improvements`, `BUG-FIX` → `bugFixes`, `OZ` → `oz_updates`.
-- `images` should contain any `CHANGELOG-IMAGE` URLs extracted from PRs, or an empty array if none.
-- Include only entries from the `entries` list in `changelog-draft.json` (not `skipped` or `needs_review`).
-- External contributor attribution (e.g. `— @user ✨`) should be included in the text, same as in the markdown draft.
-- This file must be valid JSON and parseable by `jq`.
+This produces the flat JSON structure consumed by the `create_release` workflow for Slack and the in-app "What's New" dialog. Do **not** generate this file manually — always use the script so the output is deterministic and consistent.
 
 ## Constraints
 

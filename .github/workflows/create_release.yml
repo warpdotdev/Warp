@@ -1619,7 +1619,7 @@ jobs:
 
   generate_changelogs:
     name: Generate Changelogs
-    if: ${{ needs.prepare_release.outputs.should_publish == 'true' }}
+    if: ${{ needs.prepare_release.outputs.should_publish == 'true' && inputs.channel == 'stable' }}
     runs-on: ubuntu-latest
     needs:
       - prepare_release
@@ -1655,7 +1655,7 @@ jobs:
             Output directory: ${{ runner.temp }}/changelog-draft
 
             Follow the workflow in .agents/skills/changelog-draft/SKILL.md exactly.
-            Make sure to produce all three output files: changelog-draft.md, changelog-draft.json, and changelog-release.json.
+            Make sure to produce both output files: changelog-draft.md and changelog-draft.json.
 
             After writing the output files, print the full contents of changelog-draft.md to stdout so it appears in the workflow log.
 
@@ -1663,13 +1663,20 @@ jobs:
           warp_api_key: ${{ secrets.WARP_API_KEY }}
           share: team
 
+      - name: Convert draft JSON to release format
+        shell: bash
+        run: |
+          python3 .agents/skills/changelog-draft/scripts/convert_to_release_json.py \
+            --input "${{ runner.temp }}/changelog-draft/changelog-draft.json" \
+            --output "${{ runner.temp }}/changelog-draft/changelog-release.json"
+
       - name: Load release changelog into step output
         id: generate_changelog
         shell: bash
         run: |
-          # Read the release-pipeline-compatible JSON produced by the Oz skill
-          # and expose it as a step output so downstream steps can consume it
-          # with the same interface as the old generate-changelog action.
+          # Read the release-pipeline-compatible JSON produced by the conversion
+          # script and expose it as a step output so downstream steps can consume
+          # it with the same interface as the old generate-changelog action.
           CHANGELOG_FILE="${{ runner.temp }}/changelog-draft/changelog-release.json"
           if [ ! -f "$CHANGELOG_FILE" ]; then
             echo "::error::changelog-release.json not found at $CHANGELOG_FILE"
