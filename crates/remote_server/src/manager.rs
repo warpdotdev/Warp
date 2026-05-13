@@ -113,27 +113,6 @@ pub enum RemoteServerOperation {
     RunCommand,
 }
 
-impl RemoteServerOperation {
-    /// Converts a static operation tag (as used by
-    /// [`ClientEvent::RequestFailed`]) into the corresponding enum variant.
-    /// Returns `None` for unrecognised tags.
-    pub fn from_tag(tag: &str) -> Option<Self> {
-        match tag {
-            "navigate_to_directory" => Some(Self::NavigateToDirectory),
-            "load_repo_metadata_directory" => Some(Self::LoadRepoMetadataDirectory),
-            "index_codebase" => Some(Self::IndexCodebase),
-            "drop_codebase_index" => Some(Self::DropCodebaseIndex),
-            "open_buffer" => Some(Self::OpenBuffer),
-            "save_buffer" => Some(Self::SaveBuffer),
-            "write_file" => Some(Self::WriteFile),
-            "read_file_context" => Some(Self::ReadFileContext),
-            "delete_file" => Some(Self::DeleteFile),
-            "run_command" => Some(Self::RunCommand),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 enum RemoteCodebaseIndexMutation {
     Index,
@@ -243,7 +222,7 @@ fn client_event_kind(event: &ClientEvent) -> &'static str {
         ClientEvent::DiffStateMetadataUpdateReceived { .. } => "diff_state_metadata_update",
         ClientEvent::DiffStateFileDeltaReceived { .. } => "diff_state_file_delta",
         ClientEvent::MessageDecodingError => "message_decoding_error",
-        ClientEvent::RequestFailed { operation, .. } => operation,
+        ClientEvent::RequestFailed { .. } => "request_failed",
     }
 }
 
@@ -1691,15 +1670,11 @@ impl RemoteServerManager {
                 operation,
                 error_kind,
             } => {
-                if let Some(operation) = RemoteServerOperation::from_tag(operation) {
-                    ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
-                        session_id,
-                        operation,
-                        error_kind,
-                    });
-                } else {
-                    log::warn!("Unknown remote server operation tag in RequestFailed: {operation}");
-                }
+                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
+                    session_id,
+                    operation,
+                    error_kind,
+                });
             }
             ClientEvent::Disconnected => {
                 // Handled by the drain loop's completion callback.

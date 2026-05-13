@@ -87,11 +87,9 @@ impl CommandExecutor for RemoteServerCommandExecutor {
             }
             Some(run_command_response::Result::Error(err)) => {
                 if err.code() == RunCommandErrorCode::SessionNotFound {
-                    log::error!(
-                        "Remote command SESSION_NOT_FOUND (session={:?}): {} — \
-                         the SessionBootstrapped notification was likely lost",
-                        self.session_id,
-                        err.message,
+                    warp_core::safe_error!(
+                        safe: ("Remote command SESSION_NOT_FOUND — SessionBootstrapped notification likely lost"),
+                        full: ("Remote command SESSION_NOT_FOUND (session={:?}): {} — the SessionBootstrapped notification was likely lost", self.session_id, err.message)
                     );
                 }
                 Err(anyhow!(
@@ -102,9 +100,9 @@ impl CommandExecutor for RemoteServerCommandExecutor {
                 ))
             }
             None => {
-                log::error!(
-                    "Remote command returned empty response (session={:?}) — proto-level bug",
-                    self.session_id,
+                warp_core::safe_error!(
+                    safe: ("Remote command returned empty response — proto-level bug"),
+                    full: ("Remote command returned empty response (session={:?}) — proto-level bug", self.session_id)
                 );
                 Err(anyhow!(
                     "Remote command returned empty response (session={:?})",

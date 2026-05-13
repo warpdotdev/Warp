@@ -90,10 +90,10 @@ pub enum ClientEvent {
     MessageDecodingError,
     /// A client request to the remote server failed at the transport level
     /// (timeout, disconnect, protocol error, etc.). Emitted automatically by
-    /// `send_tracked_request` so upstream callers get telemetry for free.
+    /// `send_request` so upstream callers get telemetry for free.
     RequestFailed {
-        /// Static tag identifying which RPC failed (e.g. `"open_buffer"`).
-        operation: &'static str,
+        /// Which RPC failed.
+        operation: crate::manager::RemoteServerOperation,
         /// Classified error kind for telemetry aggregation.
         error_kind: crate::manager::RemoteServerErrorKind,
     },
@@ -157,7 +157,7 @@ pub struct RemoteServerClient {
     disconnected: Arc<AtomicBool>,
 
     /// Clone of the event channel used by the reader task. Stored here so
-    /// `send_tracked_request` can fire `ClientEvent::RequestFailed` events
+    /// `send_request` can fire `ClientEvent::RequestFailed` events
     /// without requiring callers to thread the channel through.
     event_tx: async_channel::Sender<ClientEvent>,
 }
@@ -261,7 +261,7 @@ impl RemoteServerClient {
             })),
         };
 
-        let response = self.send_request(request_id, msg).await?;
+        let response = self.send_request_internal(request_id, msg).await?;
 
         match response.message {
             Some(server_message::Message::InitializeResponse(resp)) => Ok(resp),
@@ -296,7 +296,11 @@ impl RemoteServerClient {
         );
 
         let response = self
-            .send_tracked_request(request_id, msg, "index_codebase")
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::IndexCodebase,
+            )
             .await?;
 
         match response.message {
@@ -342,7 +346,11 @@ impl RemoteServerClient {
         );
 
         let response = self
-            .send_tracked_request(request_id, msg, "drop_codebase_index")
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::DropCodebaseIndex,
+            )
             .await?;
 
         match response.message {
@@ -473,7 +481,11 @@ impl RemoteServerClient {
         };
 
         let response = self
-            .send_tracked_request(request_id, msg, "navigate_to_directory")
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::NavigateToDirectory,
+            )
             .await?;
 
         match response.message {
@@ -506,7 +518,11 @@ impl RemoteServerClient {
         };
 
         let response = self
-            .send_tracked_request(request_id, msg, "load_repo_metadata_directory")
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::LoadRepoMetadataDirectory,
+            )
             .await?;
 
         match response.message {
@@ -533,7 +549,11 @@ impl RemoteServerClient {
             })),
         };
         let response = self
-            .send_tracked_request(request_id, msg, "write_file")
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::WriteFile,
+            )
             .await?;
         match response.message {
             Some(server_message::Message::WriteFileResponse(resp)) => match resp.result {
@@ -568,7 +588,11 @@ impl RemoteServerClient {
             message: Some(client_message::Message::ReadFileContext(request)),
         };
         let response = self
-            .send_tracked_request(request_id, msg, "read_file_context")
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::ReadFileContext,
+            )
             .await?;
         match response.message {
             Some(server_message::Message::ReadFileContextResponse(resp)) => Ok(resp),
@@ -600,7 +624,11 @@ impl RemoteServerClient {
             })),
         };
         let response = self
-            .send_tracked_request(request_id, msg, "open_buffer")
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::OpenBuffer,
+            )
             .await?;
         match response.message {
             Some(server_message::Message::OpenBufferResponse(resp)) => Ok(resp),
@@ -639,7 +667,11 @@ impl RemoteServerClient {
             message: Some(client_message::Message::SaveBuffer(SaveBuffer { path })),
         };
         let response = self
-            .send_tracked_request(request_id, msg, "save_buffer")
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::SaveBuffer,
+            )
             .await?;
         match response.message {
             Some(server_message::Message::SaveBufferResponse(resp)) => match resp.result {
@@ -672,7 +704,11 @@ impl RemoteServerClient {
             message: Some(client_message::Message::DeleteFile(DeleteFile { path })),
         };
         let response = self
-            .send_tracked_request(request_id, msg, "delete_file")
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::DeleteFile,
+            )
             .await?;
         match response.message {
             Some(server_message::Message::DeleteFileResponse(resp)) => match resp.result {
@@ -783,7 +819,11 @@ impl RemoteServerClient {
         };
 
         let response = self
-            .send_tracked_request(request_id, msg, "run_command")
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::RunCommand,
+            )
             .await?;
 
         match response.message {
@@ -798,17 +838,17 @@ impl RemoteServerClient {
         }
     }
 
-    /// Wrapper around [`send_request`] that automatically fires a
+    /// Wrapper around [`send_request_internal`] that automatically fires a
     /// [`ClientEvent::RequestFailed`] event on error, so transport-level
     /// failures are tracked for telemetry without requiring each caller
     /// to instrument its own error path.
-    async fn send_tracked_request(
+    async fn send_request(
         &self,
         request_id: RequestId,
         msg: ClientMessage,
-        operation: &'static str,
+        operation: crate::manager::RemoteServerOperation,
     ) -> Result<ServerMessage, ClientError> {
-        let result = self.send_request(request_id, msg).await;
+        let result = self.send_request_internal(request_id, msg).await;
         if let Err(ref e) = result {
             let error_kind = crate::manager::RemoteServerErrorKind::from_client_error(e);
             // Best-effort: if the channel is closed the disconnect event
@@ -826,7 +866,7 @@ impl RemoteServerClient {
     /// Registers a oneshot channel keyed by `request_id`, sends the message
     /// through the outbound channel, and awaits the correlated response.
     /// Times out after `REQUEST_TIMEOUT` and sends an `Abort` to the server.
-    async fn send_request(
+    async fn send_request_internal(
         &self,
         request_id: RequestId,
         msg: ClientMessage,
