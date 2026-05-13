@@ -205,9 +205,13 @@ impl FreeTierLimitHitModal {
                             Container::new({
                                 let credits_text = if let Some(plan) = Self::get_build_plan_details(app) {
                                     let limit = plan.request_limit.unwrap_or(1500);
-                                    format!("{} Credits per month", limit.separate_with_commas())
+                                    t!(
+                                        "free_tier_limit.credits_per_month",
+                                        credits = limit.separate_with_commas()
+                                    )
+                                    .to_string()
                                 } else {
-                                    "Extended Credits per month".to_string()
+                                    t!("free_tier_limit.extended_credits_per_month").to_string()
                                 };
                                 Self::render_checklist_item_dynamic(credits_text, appearance, theme)
                             })
@@ -217,7 +221,7 @@ impl FreeTierLimitHitModal {
                         .with_child(
                             Container::new(
                                 Self::render_checklist_item_dynamic(
-                                    "Access to frontier OpenAI, Anthropic, and Google models".to_string(),
+                                    t!("free_tier_limit.frontier_models_access").to_string(),
                                     appearance,
                                     theme,
                                 )
@@ -228,9 +232,11 @@ impl FreeTierLimitHitModal {
                         .with_child(
                             Container::new({
                                 let formatted_text = FormattedText::new([FormattedTextLine::Line(vec![
-                                    FormattedTextFragment::plain_text("Access to "),
+                                    FormattedTextFragment::plain_text(
+                                        t!("free_tier_limit.access_to_prefix"),
+                                    ),
                                     FormattedTextFragment::hyperlink(
-                                        "Reload Credits".to_string(),
+                                        t!("free_tier_limit.reload_credits").to_string(),
                                         "https://docs.warp.dev/support-and-community/plans-and-billing/add-on-credits".to_string(),
                                     ),
                                 ])]);

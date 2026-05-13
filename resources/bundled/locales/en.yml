@@ -117,7 +117,9 @@ en:
     no_conversations_yet: "No conversations yet"
     conversations_empty_description: "Your active and past conversations with local and ambient agents will appear here."
     new_conversation: "New conversation"
+    conversation: "Conversation"
     conversations_delete_in_progress: "Conversations cannot be deleted while in progress."
+    conversation_cannot_be_deleted: "This conversation cannot be deleted"
     share_conversation: "Share conversation"
     fork_in_new_pane: "Fork in new pane"
     fork_in_new_tab: "Fork in new tab"
@@ -182,6 +184,21 @@ en:
   openwarp_launch:
     title: "Warp is now open-source"
     description: "You, our community, can participate in building Warp using an agent-first workflow."
+    visit_repo: "Visit the repo"
+
+  codex_modal:
+    new_badge: "New"
+    title: "Use Codex models in Warp"
+    description_1: "Codex is OpenAI's most advanced agentic coding model for real-world engineering."
+    description_2: "Use Codex directly in Oz and leverage features like in-app code review, agent session sharing and file editing."
+    use_latest_codex_model: "Use latest codex model"
+
+  free_tier_limit:
+    credits_per_month: "{credits} Credits per month"
+    extended_credits_per_month: "Extended Credits per month"
+    frontier_models_access: "Access to frontier OpenAI, Anthropic, and Google models"
+    access_to_prefix: "Access to "
+    reload_credits: "Reload Credits"
 
   orchestration_launch:
     new_badge: "New"
@@ -804,6 +821,7 @@ en:
     discard_changes: "Discard changes"
     generate_workflow_fields_tooltip: "Generate a title, descriptions, or parameters with Warp AI"
     aliases_help: "Aliases allow you to create short strings to execute workflows. Each alias can have different argument values and environment variables, and aliases are personal to you."
+    alias_name_placeholder: "alias name"
     run_in_warp: "Run in Warp"
     sign_in_to_edit: "Sign in to edit"
     restore_workflow_from_trash: "Restore workflow from trash"
@@ -1338,6 +1356,7 @@ en:
     good_response: "Good response"
     bad_response: "Bad response"
     continue_conversation: "Continue conversation"
+    fork_current_conversation: "Fork current conversation"
     fork_conversation: "Fork conversation"
     show_credit_usage_details: "Show credit usage details"
     debug_output: "Debug output"
@@ -1547,7 +1566,9 @@ en:
     close: "Close"
     cancel: "Cancel"
     update: "Update"
+    delete: "Delete"
     continue: "Continue"
+    new_badge: "New"
     period: "."
     search: "Search"
     custom_ellipsis: "Custom..."

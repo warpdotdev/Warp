@@ -142,7 +142,7 @@ impl OpenWarpLaunchModal {
         });
 
         let cta_button = ctx.add_view(|_ctx| {
-            ActionButton::new("Visit the repo", CtaButtonTheme)
+            ActionButton::new(t!("openwarp_launch.visit_repo").to_string(), CtaButtonTheme)
                 .with_full_width(true)
                 .on_click(|ctx| ctx.dispatch_typed_action(OpenWarpLaunchModalAction::VisitRepo))
         });
@@ -190,9 +190,13 @@ impl OpenWarpLaunchModal {
     }
 
     fn render_badge(appearance: &Appearance) -> Box<dyn Element> {
-        let text = Text::new_inline("New".to_string(), appearance.ui_font_family(), 14.)
-            .with_color(PhenomenonStyle::modal_badge_text())
-            .finish();
+        let text = Text::new_inline(
+            t!("common.new_badge").to_string(),
+            appearance.ui_font_family(),
+            14.,
+        )
+        .with_color(PhenomenonStyle::modal_badge_text())
+        .finish();
         ConstrainedBox::new(
             Container::new(
                 Flex::row()

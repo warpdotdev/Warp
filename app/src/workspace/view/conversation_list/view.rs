@@ -902,7 +902,7 @@ impl TypedActionView for ConversationListView {
                     .as_ref(ctx)
                     .get_item_by_id(&id, ctx)
                     .map(|entry| entry.display.title)
-                    .unwrap_or_else(|| "Conversation".to_string());
+                    .unwrap_or_else(|| t!("workspace.conversation").to_string());
                 ctx.emit(Event::ShowDeleteConfirmationDialog {
                     conversation_id: *conversation_id,
                     conversation_title,
@@ -933,15 +933,15 @@ impl TypedActionView for ConversationListView {
                         return;
                     };
 
-                    let mut delete_item = MenuItemFields::new("Delete")
+                    let mut delete_item = MenuItemFields::new(t!("common.delete").to_string())
                         .with_override_text_color(Appearance::as_ref(ctx).theme().ansi_fg_red())
                         .with_on_select_action(ConversationListViewAction::DeleteFromOverflowMenu {
                             conversation_id,
                         })
                         .with_disabled(!entry.capabilities.can_delete);
                     if !entry.capabilities.can_delete {
-                        delete_item =
-                            delete_item.with_tooltip("This conversation cannot be deleted");
+                        delete_item = delete_item
+                            .with_tooltip(t!("workspace.conversation_cannot_be_deleted"));
                     }
 
                     // Only show share item if the conversation is shareable

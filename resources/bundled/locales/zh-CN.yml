@@ -117,7 +117,9 @@ zh-CN:
     no_conversations_yet: "还没有会话"
     conversations_empty_description: "你与本地和 Ambient Agent 的当前及历史会话会显示在这里。"
     new_conversation: "新建会话"
+    conversation: "会话"
     conversations_delete_in_progress: "会话进行中时无法删除。"
+    conversation_cannot_be_deleted: "此会话无法删除"
     share_conversation: "共享会话"
     fork_in_new_pane: "在新面板中派生"
     fork_in_new_tab: "在新标签页中派生"
@@ -182,6 +184,21 @@ zh-CN:
   openwarp_launch:
     title: "Warp 现已开源"
     description: "你和我们的社区可以通过 agent-first 工作流参与构建 Warp。"
+    visit_repo: "访问仓库"
+
+  codex_modal:
+    new_badge: "新功能"
+    title: "在 Warp 中使用 Codex 模型"
+    description_1: "Codex 是 OpenAI 面向真实工程任务的最先进 agentic coding 模型。"
+    description_2: "直接在 Oz 中使用 Codex，并利用应用内代码审查、Agent 会话共享和文件编辑等功能。"
+    use_latest_codex_model: "使用最新 Codex 模型"
+
+  free_tier_limit:
+    credits_per_month: "每月 {credits} Credits"
+    extended_credits_per_month: "每月扩展 Credits"
+    frontier_models_access: "访问前沿 OpenAI、Anthropic 和 Google 模型"
+    access_to_prefix: "访问 "
+    reload_credits: "Reload Credits"
 
   orchestration_launch:
     new_badge: "新功能"
@@ -804,6 +821,7 @@ zh-CN:
     discard_changes: "丢弃更改"
     generate_workflow_fields_tooltip: "使用 Warp AI 生成标题、描述或参数"
     aliases_help: "别名可用于创建执行工作流的短字符串。每个别名都可以有不同的参数值和环境变量，且别名仅对你个人可见。"
+    alias_name_placeholder: "别名名称"
     run_in_warp: "在 Warp 中运行"
     sign_in_to_edit: "登录后编辑"
     restore_workflow_from_trash: "从废纸篓恢复工作流"
@@ -1338,6 +1356,7 @@ zh-CN:
     good_response: "好的响应"
     bad_response: "差的响应"
     continue_conversation: "继续会话"
+    fork_current_conversation: "Fork 当前会话"
     fork_conversation: "Fork 会话"
     show_credit_usage_details: "显示 credit 用量详情"
     debug_output: "调试输出"
@@ -1547,7 +1566,9 @@ zh-CN:
     close: "关闭"
     cancel: "取消"
     update: "更新"
+    delete: "删除"
     continue: "继续"
+    new_badge: "新功能"
     period: "。"
     search: "搜索"
     custom_ellipsis: "自定义..."
