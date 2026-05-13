@@ -14,7 +14,7 @@ use crate::notebooks::NotebookObject;
 use crate::persistence::ModelEvent;
 use crate::server::ids::{HashableId, ObjectUid, SyncId, ToServerId};
 use crate::server_time::ServerTimestamp;
-use crate::settings::cloud_preferences::{CloudPreference, CloudPreferenceModel};
+use crate::settings::cloud_preferences::{PreferenceObject, PreferenceObjectModel};
 use crate::workflows::workflow::Workflow;
 use crate::workflows::workflow_enum::{WorkflowEnum, WorkflowEnumObject, WorkflowEnumObjectModel};
 use crate::workflows::{WorkflowObject, WorkflowObjectModel};
@@ -927,10 +927,10 @@ impl ObjectStoreModel {
             .filter_map(|object| object.into())
     }
 
-    /// Returns a map of CloudPreference models keyed by their storage key.
-    pub fn get_all_cloud_preferences_by_storage_key(&self) -> HashMap<String, &CloudPreference> {
+    /// Returns a map of PreferenceObject models keyed by their storage key.
+    pub fn get_all_preferences_by_storage_key(&self) -> HashMap<String, &PreferenceObject> {
         let mut keys: HashSet<String> = HashSet::new();
-        self.get_all_objects_of_type::<GenericStringObjectId, CloudPreferenceModel>()
+        self.get_all_objects_of_type::<GenericStringObjectId, PreferenceObjectModel>()
             .map(|cloud_prefs| {
                 if keys.contains(&cloud_prefs.model().string_model.storage_key) {
                     log::warn!(

@@ -178,7 +178,7 @@ fn folder_from_cloud_model(model: &ObjectStoreModel, id: SyncId) -> &FolderObjec
 fn test_create_json_object() {
     let client_id = ClientId::default();
     let id = SyncId::ClientId(client_id);
-    let json_object: Box<dyn StoredObject> = Box::new(CloudPreference::new(
+    let json_object: Box<dyn StoredObject> = Box::new(PreferenceObject::new(
         id,
         GenericStringModel::new(
             Preference::new(
@@ -212,7 +212,7 @@ fn test_create_json_object() {
     App::test((), |mut app| async move {
         let cloud_model = create_cloud_model(&mut app, vec![json_object]);
         cloud_model.read(&app, |model, _| {
-            let json_object: &CloudPreference =
+            let json_object: &PreferenceObject =
                 model.get_object_of_type(&id).expect("model should exist");
             assert_eq!(
                 json_object.model().string_model.storage_key,

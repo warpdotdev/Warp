@@ -196,7 +196,7 @@ use crate::env_vars::{
     manager::{EnvVarCollectionManager, EnvVarCollectionSource},
     EnvVarCollectionObject,
 };
-use crate::settings::cloud_preferences::CloudPreferencesSettings;
+use crate::settings::cloud_preferences::PreferencesSettings;
 
 use crate::appearance::{Appearance, AppearanceManager};
 use crate::auth::AuthStateProvider;
@@ -18007,7 +18007,7 @@ impl Workspace {
             context.set.insert(flags::TELEMETRY_FLAG);
         }
 
-        let cloud_preferences_settings = CloudPreferencesSettings::as_ref(app);
+        let cloud_preferences_settings = PreferencesSettings::as_ref(app);
         if *cloud_preferences_settings.settings_sync_enabled.value() {
             context.set.insert(flags::SETTINGS_SYNC_FLAG);
         }

@@ -32,7 +32,7 @@ use crate::LaunchMode;
 ///   3. The reconciliation handler promotes the local state to `Synced`
 ///      with the cloud profile's `sync_id`.
 ///   4. `apply_onboarding_settings` runs (as it would from
-///      `handle_cloud_preferences_syncer_event`) with onboarding-selected
+///      `handle_preferences_syncer_event`) with onboarding-selected
 ///      values that differ from what's on the stored profile object.
 ///   5. The stored profile object's values must be preserved.
 #[test]

@@ -14,7 +14,7 @@ use crate::cloud_object::{
 use settings::{
     macros::define_settings_group, RespectUserSyncSetting, SupportedPlatforms, SyncToCloud,
 };
-define_settings_group!(CloudPreferencesSettings, settings: [
+define_settings_group!(PreferencesSettings, settings: [
    settings_sync_enabled: IsSettingsSyncEnabled {
        type: bool,
        default: false,
@@ -26,8 +26,8 @@ define_settings_group!(CloudPreferencesSettings, settings: [
    },
 ]);
 
-pub type CloudPreference = GenericStoredObject<GenericStringObjectId, CloudPreferenceModel>;
-pub type CloudPreferenceModel = GenericStringModel<Preference, JsonSerializer>;
+pub type PreferenceObject = GenericStoredObject<GenericStringObjectId, PreferenceObjectModel>;
+pub type PreferenceObjectModel = GenericStringModel<Preference, JsonSerializer>;
 
 /// Defines the platform that a preference was set on.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -131,7 +131,7 @@ impl Preference {
 
 /// Defines a based model for syncing cloud preferences.
 impl StringModel for Preference {
-    type StoredObjectType = CloudPreference;
+    type StoredObjectType = PreferenceObject;
 
     fn model_type_name(&self) -> &'static str {
         "Preference"

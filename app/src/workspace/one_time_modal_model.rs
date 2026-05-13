@@ -2,7 +2,7 @@ use super::hoa_onboarding;
 use crate::auth::AuthManager;
 use crate::auth::AuthManagerEvent;
 use crate::channel::{Channel, ChannelState};
-// OpenWarp(本地化,Phase 5):`CloudPreferencesSyncer` 已物理删除。
+// OpenWarp(本地化,Phase 5):`PreferencesSyncer` 已物理删除。
 use crate::settings::CodeSettings;
 use crate::terminal::general_settings::GeneralSettings;
 use settings::Setting as _;
@@ -49,7 +49,7 @@ impl OneTimeModalModel {
             let auth_state = crate::auth::AuthStateProvider::as_ref(ctx).get().clone();
             let is_existing_user = auth_state.is_onboarded().unwrap_or_default();
             if is_existing_user {
-                // OpenWarp(本地化,Phase 5):原订阅 `CloudPreferencesSyncer::InitialLoadCompleted`
+                // OpenWarp(本地化,Phase 5):原订阅 `PreferencesSyncer::InitialLoadCompleted`
                 // 在云端设置同步完成后触发模态;本地化下直接触发。
                 me.check_and_trigger_all_modals(ctx);
             } else {

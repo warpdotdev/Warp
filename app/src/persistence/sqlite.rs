@@ -91,7 +91,7 @@ use crate::server::experiments::ServerExperiment;
 use crate::server::ids::{ClientId, HashableId, ServerId, SyncId, ToServerId};
 use crate::server::telemetry::TelemetryEvent;
 use crate::server_time::ServerTimestamp;
-use crate::settings::cloud_preferences::{CloudPreference, CloudPreferenceModel};
+use crate::settings::cloud_preferences::{PreferenceObject, PreferenceObjectModel};
 use crate::settings_view::SettingsSection;
 use crate::suggestions::ignored_suggestions_model::SuggestionType;
 use crate::tab::SelectedTabColor;
@@ -2997,10 +2997,10 @@ fn read_sqlite_data(
                             .ok()?;
                         object_id.and_then(|server_id| match json_object_type {
                             JsonObjectType::Preference => {
-                                let model = CloudPreferenceModel::deserialize_owned(&object.data);
+                                let model = PreferenceObjectModel::deserialize_owned(&object.data);
                                 model.ok().map(|model| {
                                     let boxed: Box<dyn StoredObject> =
-                                        Box::new(CloudPreference::new(
+                                        Box::new(PreferenceObject::new(
                                             server_id,
                                             model,
                                             to_cloud_object_metadata(metadata),

@@ -1105,7 +1105,7 @@ fn initialize_app(
         ctx.add_model(|_| user_defaults_on_startup.user_default_shell_unsupported_banner_state);
     // Extract the full-file parse error (if any) before the settings_file_error
     // value is moved below. Only FileParseFailed gates the broken-file guard
-    // in `initialize_cloud_preferences_syncer`; InvalidSettings means TOML
+    // in `initialize_preferences_syncer`; InvalidSettings means TOML
     // parsed but individual values were wrong, which doesn't mean local
     // state is unusable.
     let startup_toml_parse_error_for_syncer = user_defaults_on_startup
@@ -1617,7 +1617,7 @@ fn initialize_app(
     ctx.add_singleton_model(|ctx| UpdateManager::new(persistence_writer.sender(), ctx));
 
     let toml_file_path = settings::user_preferences_toml_file_path();
-    // OpenWarp(本地化,Phase 5):`CloudPreferencesSyncer` 已物理删除。原同步器负责本地
+    // OpenWarp(本地化,Phase 5):`PreferencesSyncer` 已物理删除。原同步器负责本地
     // settings.toml 与云端 preferences 双向同步,本地化场景下只保留本地 toml 加载。
     let _ = toml_file_path;
     let _ = startup_toml_parse_error_for_syncer;

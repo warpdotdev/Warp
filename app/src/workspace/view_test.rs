@@ -65,7 +65,7 @@ use crate::workflows::local_workflows::LocalWorkflows;
 use crate::ObjectActions;
 use crate::{experiments, workspace, GlobalResourceHandlesProvider};
 
-// OpenWarp(本地化,Phase 5):`CloudPreferencesSyncer` 已物理删除。
+// OpenWarp(本地化,Phase 5):`PreferencesSyncer` 已物理删除。
 
 use crate::terminal::shared_session::protocol::SessionId;
 use ai::project_context::model::ProjectContextModel;
@@ -110,7 +110,7 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(TerminalKeybindings::new);
     app.add_singleton_model(NotebookManager::mock);
-    // OpenWarp(本地化,Phase 5):`CloudPreferencesSyncer` 已物理删除,test singleton 不再需要。
+    // OpenWarp(本地化,Phase 5):`PreferencesSyncer` 已物理删除,test singleton 不再需要。
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
     app.add_singleton_model(AgentConversationsModel::new);

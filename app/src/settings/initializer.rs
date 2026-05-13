@@ -1,4 +1,4 @@
-﻿use std::sync::Arc;
+use std::sync::Arc;
 
 use warp_core::{features::FeatureFlag, settings::Setting};
 use warpui::{Entity, ModelContext, SingletonEntity};
@@ -176,5 +176,5 @@ impl Entity for SettingsInitializer {
     type Event = ();
 }
 
-/// Mark CloudPreferencesSyncer as global application state.
+/// Mark PreferencesSyncer as global application state.
 impl SingletonEntity for SettingsInitializer {}

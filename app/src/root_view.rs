@@ -1507,7 +1507,7 @@ impl RootView {
             me.handle_auth_manager_event(event, ctx);
         });
 
-        // OpenWarp(本地化,Phase 5):`CloudPreferencesSyncer` 已物理删除。
+        // OpenWarp(本地化,Phase 5):`PreferencesSyncer` 已物理删除。
         // 原 `InitialLoadCompleted` 事件用于在云端 preferences 同步完成后调用
         // `apply_onboarding_settings`,本地化场景下 onboarding 设置直接本地应用。
 
@@ -2909,7 +2909,7 @@ impl RootView {
         true
     }
 
-    /// OpenWarp(本地化,Phase 5):原 `handle_cloud_preferences_syncer_event` 在云端
+    /// OpenWarp(本地化,Phase 5):原 `handle_preferences_syncer_event` 在云端
     /// preferences 同步初始加载完成后应用 onboarding settings,随同步器物理删除。
     /// onboarding settings 现在在 onboarding 完成时直接应用,不需要延迟到 cloud sync 后。
 

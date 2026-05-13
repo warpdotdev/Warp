@@ -17,7 +17,7 @@ use crate::{
     appearance::Appearance,
     auth::{AuthState, AuthViewVariant},
     report_if_error,
-    settings::cloud_preferences::CloudPreferencesSettings,
+    settings::cloud_preferences::PreferencesSettings,
     TelemetryEvent,
 };
 use crate::{auth::LoginGatedFeature, workspaces::workspace::CustomerType};
@@ -94,7 +94,7 @@ fn maybe_add_settings_sync_toggle_binding<T: Action + Clone>(
                 flags::SETTINGS_SYNC_FLAG,
             )
             .is_supported_on_current_platform(
-                CloudPreferencesSettings::as_ref(app)
+                PreferencesSettings::as_ref(app)
                     .settings_sync_enabled
                     .is_supported_on_current_platform(),
             ),
@@ -190,7 +190,7 @@ impl TypedActionView for MainSettingsPageView {
             }
             MainPageAction::ToggleSettingsSync => {
                 let new_value =
-                    CloudPreferencesSettings::handle(ctx).update(ctx, |prefs_settings, ctx| {
+                    PreferencesSettings::handle(ctx).update(ctx, |prefs_settings, ctx| {
                         report_if_error!(prefs_settings
                             .settings_sync_enabled
                             .toggle_and_save_value(ctx));
@@ -234,7 +234,7 @@ impl MainSettingsPageView {
             Self::handle_autoupdate_state_change,
         );
 
-        ctx.subscribe_to_model(&CloudPreferencesSettings::handle(ctx), |_, _, _, ctx| {
+        ctx.subscribe_to_model(&PreferencesSettings::handle(ctx), |_, _, _, ctx| {
             ctx.notify();
         });
 
@@ -535,7 +535,7 @@ impl SettingsWidget for SettingsSyncWidget {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        let preferences_settings = CloudPreferencesSettings::as_ref(app);
+        let preferences_settings = PreferencesSettings::as_ref(app);
 
         let label_info = AdditionalInfo {
             mouse_state: self.tooltip_state.clone(),

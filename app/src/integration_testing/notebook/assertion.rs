@@ -19,7 +19,7 @@ use crate::{
     notebooks::{notebook::NotebookView, NotebookId, NotebookObjectModel},
     pane_group::PaneGroup,
     server::ids::SyncId,
-    settings::{CloudPreferenceModel, Preference},
+    settings::{Preference, PreferenceObjectModel},
 };
 
 /// Asserts that the notebook in the given pane has the expected Markdown content.
@@ -46,7 +46,7 @@ pub fn assert_cloud_preference_exists(expected_preference: Preference) -> Assert
             app.get_singleton_model_handle::<ObjectStoreModel>()
                 .read(app, |cloud_model, _| {
                     let object = cloud_model
-                        .get_all_objects_of_type::<GenericStringObjectId, CloudPreferenceModel>()
+                        .get_all_objects_of_type::<GenericStringObjectId, PreferenceObjectModel>()
                         .find(|p| p.model().string_model == expected_preference)
                         .expect("Expected to find a matching preference object");
                     object.model().string_model.clone()

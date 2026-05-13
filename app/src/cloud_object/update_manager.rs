@@ -88,7 +88,7 @@ pub struct ObjectOperationResult {
 #[derive(Debug)]
 pub enum UpdateManagerEvent {
     ObjectOperationComplete { result: ObjectOperationResult },
-    CloudPreferencesUpdated { updated: Vec<Preference> },
+    PreferencesUpdated { updated: Vec<Preference> },
     AmbientTaskUpdated { timestamp: DateTime<Utc> },
 }
 

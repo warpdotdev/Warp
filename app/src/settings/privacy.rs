@@ -28,7 +28,7 @@ use settings::{
 
 use serde::{Deserialize, Serialize};
 
-// OpenWarp(本地化,Phase 5):`CloudPreferencesSyncer` 已物理删除。
+// OpenWarp(本地化,Phase 5):`PreferencesSyncer` 已物理删除。
 use crate::workspaces::workspace::EnterpriseSecretRegex;
 
 pub trait RegexDisplayInfo {
@@ -629,7 +629,7 @@ impl PrivacySettings {
         // are set as warp drive prefs, then use those.  Otherwise, update the warp drive prefs to match
         // the values from the legacy user_settings endpoint so that we can use warp drive prefs going forward.
         let cloud_model = ObjectStoreModel::as_ref(ctx);
-        let cloud_prefs = cloud_model.get_all_cloud_preferences_by_storage_key();
+        let cloud_prefs = cloud_model.get_all_preferences_by_storage_key();
         let cloud_telemetry_value =
             cloud_prefs
                 .get(IsTelemetryEnabled::storage_key())
@@ -674,7 +674,7 @@ impl PrivacySettings {
                         .is_crash_reporting_enabled
                         .set_value(self.is_crash_reporting_enabled, ctx));
                 });
-                // OpenWarp(本地化,Phase 5):原 `CloudPreferencesSyncer::maybe_sync_local_prefs_to_cloud`
+                // OpenWarp(本地化,Phase 5):原 `PreferencesSyncer::maybe_sync_local_prefs_to_cloud`
                 // 同步本地隐私设置到云端,随同步器物理删除。本地设置仅写入 sqlite。
             }
         }
