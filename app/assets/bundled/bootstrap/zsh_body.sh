@@ -1,4 +1,4 @@
-# Note that WARP_SESSION_ID is expected to have been set when executing commands to
+# Note that _WARP_BOOT_ID is expected to have been set when executing commands to
 # emit the InitShell payload, which includes the session ID.
 #
 # Throughout, command -p is used to call external binaries. command -p resolves the
@@ -108,9 +108,9 @@ if [[ -z $WARP_BOOTSTRAPPED ]]; then
   # callable the moment the hook is registered.
   if [[ "$WARP_IS_SSH" == "1" ]]; then
       __warp_emit_exit_shell() {
-          if [[ -n "$WARP_SESSION_ID" ]]; then
+          if [[ -n "$_WARP_BOOT_ID" ]]; then
               warp_send_json_message \
-                  "{\"hook\": \"ExitShell\", \"value\": {\"session_id\": $WARP_SESSION_ID}}"
+                  "{\"hook\": \"ExitShell\", \"value\": {\"session_id\": $_WARP_BOOT_ID}}"
           fi
       }
       # zshexit_functions is zsh's idiomatic exit-hook mechanism. We prefer
@@ -307,7 +307,7 @@ if [[ -z $WARP_BOOTSTRAPPED ]]; then
       # in this function below).
       local exit_code=$?
 
-      warp_send_json_message "{\"hook\": \"CommandFinished\", \"value\": {\"exit_code\": $exit_code, \"next_block_id\": \"precmd-$WARP_SESSION_ID-$((block_id++))\"}}"
+      warp_send_json_message "{\"hook\": \"CommandFinished\", \"value\": {\"exit_code\": $exit_code, \"next_block_id\": \"precmd-$_WARP_BOOT_ID-$((block_id++))\"}}"
       warp_maybe_send_reset_grid_osc
 
       # If this is being called for a generator command, short circuit and send an unpopulated
@@ -327,7 +327,7 @@ if [[ -z $WARP_BOOTSTRAPPED ]]; then
         \"virtual_env\": \"\",
         \"conda_env\": \"\",
         \"node_version\": \"\",
-        \"session_id\": $WARP_SESSION_ID,
+        \"session_id\": $_WARP_BOOT_ID,
         \"is_after_in_band_command\": true
         }}"
         return 0
@@ -471,7 +471,7 @@ if [[ -z $WARP_BOOTSTRAPPED ]]; then
       \"conda_env\": \"$escaped_conda_env\",
       \"node_version\": \"$escaped_node_version\",
       \"kube_config\": \"$escaped_kube_config\",
-      \"session_id\": $WARP_SESSION_ID
+      \"session_id\": $_WARP_BOOT_ID
       }}"
       warp_send_json_message "$escaped_json"
   }
@@ -867,7 +867,7 @@ if [[ -z $WARP_BOOTSTRAPPED ]]; then
           # Hex-encode the ZSH environment script we use to bootstrap remote zsh b/c it contains control characters
           # We decode on the SSH server using xxd if its available, otherwise fall back to a for-loop over each byte
           # and use printf to convert back to plaintext
-          local zsh_env_script=$(printf '%s' 'unsetopt ZLE; unset RCS; unset GLOBAL_RCS; WARP_SESSION_ID="$(command -p date +%s)$RANDOM"; WARP_USING_WINDOWS_CON_PTY=@@USING_CON_PTY_BOOLEAN@@; _hostname=$(command -pv hostname >/dev/null 2>&1 && command -p hostname 2>/dev/null || command -p uname -n); _user=$(command -pv whoami >/dev/null 2>&1 && command -p whoami 2>/dev/null || echo $USER); _msg=$(printf "{\"hook\": \"InitShell\", \"value\": {\"session_id\": $WARP_SESSION_ID, \"shell\": \"zsh\", \"user\": \"%s\", \"hostname\": \"%s\"}}" "$_user" "$_hostname" | command -p od -An -v -tx1 | command -p tr -d '"'"' \n'"'"'); printf '"'"'\e]9278;d;%s\x07'"'"' $_msg; unset _hostname _user _msg' | command -p od -An -v -tx1 | command -p tr -d ' \n')
+          local zsh_env_script=$(printf '%s' 'unsetopt ZLE; unset RCS; unset GLOBAL_RCS; _WARP_BOOT_ID="$(command -p date +%s)$RANDOM"; WARP_USING_WINDOWS_CON_PTY=@@USING_CON_PTY_BOOLEAN@@; _hostname=$(command -pv hostname >/dev/null 2>&1 && command -p hostname 2>/dev/null || command -p uname -n); _user=$(command -pv whoami >/dev/null 2>&1 && command -p whoami 2>/dev/null || echo $USER); _msg=$(printf "{\"hook\": \"InitShell\", \"value\": {\"session_id\": $_WARP_BOOT_ID, \"shell\": \"zsh\", \"user\": \"%s\", \"hostname\": \"%s\"}}" "$_user" "$_hostname" | command -p od -An -v -tx1 | command -p tr -d '"'"' \n'"'"'); printf '"'"'\e]9278;d;%s\x07'"'"' $_msg; unset _hostname _user _msg' | command -p od -An -v -tx1 | command -p tr -d ' \n')
 
           # Keep remote commands up-to-date with shell.rs & bash.sh.
           # Note that in this command, we're passing a string to the remote shell. Any variable expansions need to be
@@ -876,7 +876,7 @@ if [[ -z $WARP_BOOTSTRAPPED ]]; then
           # determine what shell is the login shell on the remote machine.  We perform a preliminary check to see if
           # the remote shell is the Bourne shell to avoid asking it to parse later lines that use syntax it doesn't
           # support.
-          command ssh -o ControlMaster=yes -o ControlPath=$SSH_SOCKET_DIR/$WARP_SESSION_ID \
+          command ssh -o ControlMaster=yes -o ControlPath=$SSH_SOCKET_DIR/$_WARP_BOOT_ID \
           -t "${@:1}" \
 "
 export TERM_PROGRAM='WarpTerminal'
@@ -887,7 +887,7 @@ export WARP_IS_SSH='1'
 test -n '$WARP_CLIENT_VERSION' && export WARP_CLIENT_VERSION='$WARP_CLIENT_VERSION'
 # Only forward the protocol version if it was set locally (i.e. the HOANotifications feature flag is on).
 test -n '$WARP_CLI_AGENT_PROTOCOL_VERSION' && export WARP_CLI_AGENT_PROTOCOL_VERSION='$WARP_CLI_AGENT_PROTOCOL_VERSION'
-hook="'$(printf "{\"hook\": \"SSH\", \"value\": {\"socket_path\": \"'$SSH_SOCKET_DIR/$WARP_SESSION_ID'\", \"remote_shell\": \"%s\"}}" "${SHELL##*/}" | command -p od -An -v -tx1 | command -p tr -d " \n")'"
+hook="'$(printf "{\"hook\": \"SSH\", \"value\": {\"socket_path\": \"'$SSH_SOCKET_DIR/$_WARP_BOOT_ID'\", \"remote_shell\": \"%s\"}}" "${SHELL##*/}" | command -p od -An -v -tx1 | command -p tr -d " \n")'"
 printf '$OSC_START$DCS_JSON_MARKER$OSC_PARAM_SEPARATOR%s$OSC_END' "'$hook'"
 
 if test "'"${SHELL##*/}" != "bash" -a "${SHELL##*/}" != "zsh"'"; then
@@ -922,11 +922,11 @@ case "'${SHELL##*/}'" in
       command -p stty raw
       HISTCONTROL=ignorespace
       HISTIGNORE=" *"
-      WARP_SESSION_ID="$(command -p date +%s)$RANDOM"
+      _WARP_BOOT_ID="$(command -p date +%s)$RANDOM"
       WARP_HONOR_PS1="'$WARP_HONOR_PS1'"
       _hostname=$(command -pv hostname >/dev/null 2>&1 && command -p hostname 2>/dev/null || command -p uname -n)
       _user=$(command -pv whoami >/dev/null 2>&1 && command -p whoami 2>/dev/null || echo $USER)
-      _msg=$(printf "{\"hook\": \"InitShell\", \"value\": {\"session_id\": $WARP_SESSION_ID, \"shell\": \"bash\", \"user\": \"%s\", \"hostname\": \"%s\"}}" "$_user" "$_hostname" | command -p od -An -v -tx1 | command -p tr -d " \n")'"
+      _msg=$(printf "{\"hook\": \"InitShell\", \"value\": {\"session_id\": $_WARP_BOOT_ID, \"shell\": \"bash\", \"user\": \"%s\", \"hostname\": \"%s\"}}" "$_user" "$_hostname" | command -p od -An -v -tx1 | command -p tr -d " \n")'"
       WARP_USING_WINDOWS_CON_PTY=@@USING_CON_PTY_BOOLEAN@@
       if [[ "'$OS'" == Windows_NT ]]; then WARP_IN_MSYS2=true; else WARP_IN_MSYS2=false; fi
       printf '\''"'\e]9278;d;%s\x07'"'\'' \""'$_msg'"\"'

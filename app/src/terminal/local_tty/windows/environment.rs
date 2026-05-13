@@ -27,6 +27,7 @@ const SSH_SOCKET_DIR: &str = "SSH_SOCKET_DIR";
 const PATH_APPEND_NAME: &str = "WARP_PATH_APPEND";
 const CLIENT_VERSION_NAME: &str = "WARP_CLIENT_VERSION";
 const CLI_AGENT_PROTOCOL_VERSION_NAME: &str = "WARP_CLI_AGENT_PROTOCOL_VERSION";
+const SESSION_ID_NAME: &str = "WARP_SESSION_ID";
 const WSLENV: &str = "WSLENV";
 const HISTIGNORE: &str = "HISTIGNORE";
 
@@ -199,6 +200,7 @@ fn wsl_env_allowlist(include_initial_working_dir: bool) -> OsString {
         format!("{IS_LOCAL_SESSION_NAME}/u"),
         format!("{SSH_SOCKET_DIR}/u"),
         format!("{CLIENT_VERSION_NAME}/u"),
+        format!("{SESSION_ID_NAME}/u"),
     ];
 
     if FeatureFlag::HOANotifications.is_enabled() {
@@ -383,6 +385,7 @@ mod tests {
                 format!("{IS_LOCAL_SESSION_NAME}/u"),
                 format!("{SSH_SOCKET_DIR}/u"),
                 format!("{CLIENT_VERSION_NAME}/u"),
+                format!("{SESSION_ID_NAME}/u"),
             ],
         );
     }
@@ -403,6 +406,7 @@ mod tests {
                 format!("{IS_LOCAL_SESSION_NAME}/u"),
                 format!("{SSH_SOCKET_DIR}/u"),
                 format!("{CLIENT_VERSION_NAME}/u"),
+                format!("{SESSION_ID_NAME}/u"),
                 format!("{CLI_AGENT_PROTOCOL_VERSION_NAME}/u"),
                 format!("{INITIAL_WORKING_DIR_NAME}/pu"),
             ],

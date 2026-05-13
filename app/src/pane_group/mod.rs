@@ -1333,6 +1333,7 @@ impl PaneGroup {
                         Self::create_ambient_agent_terminal(resources, view_size, ctx)
                     }
                     PaneMode::Terminal | PaneMode::Agent => PaneGroup::create_session(
+                        uuid,
                         // Use cwd from the template iff such path exists, otherwise None
                         // TODO(CORE-3187): On Windows, support WSL directory restoration.
                         Some(cwd).filter(|p| p.exists()),
@@ -1633,6 +1634,7 @@ impl PaneGroup {
                         )
                 };
                 let (terminal_view, terminal_manager) = PaneGroup::create_session(
+                    Uuid::from_slice(&uuid.0).unwrap_or_else(|_| Uuid::new_v4()),
                     startup_directory,
                     HashMap::new(),
                     IsSharedSessionCreator::No,
@@ -3631,7 +3633,9 @@ impl PaneGroup {
         pane_history: &mut Vec<PaneId>,
         ctx: &mut ViewContext<Self>,
     ) -> (PaneData, InitialFocus) {
+        let uuid = Uuid::new_v4();
         let (view, terminal_manager) = PaneGroup::create_session(
+            uuid,
             options.initial_directory,
             options.env_vars,
             options.is_shared_session_creator,
@@ -3645,7 +3649,6 @@ impl PaneGroup {
             None,
             ctx,
         );
-        let uuid = Uuid::new_v4();
 
         let pane_data = TerminalPane::new(
             uuid.as_bytes().to_vec(),
@@ -6040,8 +6043,9 @@ impl PaneGroup {
     // and do not completely replace it.
     #[allow(clippy::too_many_arguments, unused_variables)]
     fn create_session(
+        pane_uuid: Uuid,
         startup_directory: Option<PathBuf>,
-        env_vars: HashMap<OsString, OsString>,
+        mut env_vars: HashMap<OsString, OsString>,
         is_shared_session: IsSharedSessionCreator,
         resources: TerminalViewResources,
         restored_blocks: Option<&Vec<SerializedBlockListItem>>,
@@ -6056,6 +6060,12 @@ impl PaneGroup {
         ViewHandle<TerminalView>,
         ModelHandle<Box<dyn TerminalManager>>,
     ) {
+        // Expose the persistent pane UUID to the spawned shell so external tools can
+        // identify (and deep-link to) this pane via `warp://session/<uuid>`.
+        // See warpdotdev/Warp#8611. Caller-supplied overrides win (`entry().or_insert_with`).
+        env_vars
+            .entry(OsString::from("WARP_SESSION_ID"))
+            .or_insert_with(|| OsString::from(pane_uuid.as_hyphenated().to_string()));
         cfg_if::cfg_if! {
             if #[cfg(feature = "remote_tty")] {
                 let terminal_manager: ModelHandle<Box<dyn TerminalManager>> = crate::terminal::remote_tty::TerminalManager::create_model(
@@ -6350,6 +6360,7 @@ impl PaneGroup {
 
         let view_bounds = Self::estimated_view_bounds(ctx);
         let (view, terminal_manager) = PaneGroup::create_session(
+            uuid,
             startup_directory,
             HashMap::new(),
             IsSharedSessionCreator::No,
@@ -6464,6 +6475,7 @@ impl PaneGroup {
 
         let view_bounds = Self::estimated_view_bounds(ctx);
         let (view, terminal_manager) = PaneGroup::create_session(
+            uuid,
             startup_directory,
             env_vars,
             IsSharedSessionCreator::No,

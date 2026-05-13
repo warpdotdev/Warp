@@ -36,6 +36,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use url::Url;
+use uuid::Uuid;
 use warpui::notification::UserNotification;
 use warpui::{platform::TerminationMode, SingletonEntity as _, TypedActionView};
 
@@ -457,17 +458,17 @@ impl UriHost {
                 }
             },
             UriHost::Session => {
-                let uuid_hex = url
+                let raw_uuid = url
                     .path_segments()
                     .into_iter()
                     .flatten()
                     .last()
                     .unwrap_or("");
 
-                let Some(uuid_bytes) = decode_uuid_hex(uuid_hex) else {
+                let Some(uuid_bytes) = decode_session_uuid(raw_uuid) else {
                     log::warn!(
-                        "session deep link received invalid UUID hex (safe: len={})",
-                        uuid_hex.len()
+                        "session deep link received invalid UUID (safe: len={})",
+                        raw_uuid.len()
                     );
                     return;
                 };
@@ -1431,19 +1432,15 @@ fn safe_url_log_fields(url: &Url) -> String {
     )
 }
 
-fn decode_uuid_hex(hex: &str) -> Option<Vec<u8>> {
-    let hex = hex.as_bytes();
-    if hex.len() != 32 {
-        return None;
-    }
-
-    hex.chunks_exact(2)
-        .map(|pair| {
-            let high = (pair[0] as char).to_digit(16)?;
-            let low = (pair[1] as char).to_digit(16)?;
-            Some(((high << 4) | low) as u8)
-        })
-        .collect()
+/// Decode the `<id>` portion of a `warp://session/<id>` URL into raw UUID bytes.
+///
+/// Accepts both forms:
+/// - 36-character hyphenated UUIDs (`550e8400-e29b-41d4-a716-446655440000`) —
+///   the value `WARP_SESSION_ID` exposes to shells (matches the `Uuid` Display impl).
+/// - 32-character unhyphenated hex (`550e8400e29b41d4a716446655440000`) — preserved
+///   so links written before this format was settled keep working.
+fn decode_session_uuid(raw: &str) -> Option<Vec<u8>> {
+    Uuid::parse_str(raw).ok().map(|u| u.as_bytes().to_vec())
 }
 
 #[cfg(test)]

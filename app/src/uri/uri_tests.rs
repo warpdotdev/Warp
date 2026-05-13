@@ -699,20 +699,35 @@ fn test_session_uri_invalid_hex_does_not_panic() {
 fn test_session_uri_case_insensitive_hex() {
     let upper = "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4";
     let lower = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4";
-    let upper_bytes = super::decode_uuid_hex(upper).expect("upper hex should decode");
-    let lower_bytes = super::decode_uuid_hex(lower).expect("lower hex should decode");
+    let upper_bytes = super::decode_session_uuid(upper).expect("upper hex should decode");
+    let lower_bytes = super::decode_session_uuid(lower).expect("lower hex should decode");
     assert_eq!(upper_bytes, lower_bytes);
     assert_eq!(upper_bytes.len(), 16);
 }
 
 #[test]
-fn test_decode_uuid_hex_rejects_wrong_length() {
-    assert!(super::decode_uuid_hex("ABCD").is_none());
-    assert!(super::decode_uuid_hex("").is_none());
-    assert!(super::decode_uuid_hex("A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4FF").is_none());
+fn test_decode_session_uuid_accepts_hyphenated_form() {
+    // Hyphenated form is what the Uuid Display impl produces and what
+    // `WARP_SESSION_ID` exposes to shells, so external tools can pass the
+    // value verbatim into `warp://session/<id>`.
+    let hyphenated = "a1b2c3d4-e5f6-a1b2-c3d4-e5f6a1b2c3d4";
+    let unhyphenated = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4";
+    let hyphenated_bytes =
+        super::decode_session_uuid(hyphenated).expect("hyphenated should decode");
+    let unhyphenated_bytes =
+        super::decode_session_uuid(unhyphenated).expect("unhyphenated should decode");
+    assert_eq!(hyphenated_bytes, unhyphenated_bytes);
+    assert_eq!(hyphenated_bytes.len(), 16);
 }
 
 #[test]
-fn test_decode_uuid_hex_rejects_invalid_chars() {
-    assert!(super::decode_uuid_hex("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ").is_none());
+fn test_decode_session_uuid_rejects_wrong_length() {
+    assert!(super::decode_session_uuid("ABCD").is_none());
+    assert!(super::decode_session_uuid("").is_none());
+    assert!(super::decode_session_uuid("A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4FF").is_none());
+}
+
+#[test]
+fn test_decode_session_uuid_rejects_invalid_chars() {
+    assert!(super::decode_session_uuid("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ").is_none());
 }
