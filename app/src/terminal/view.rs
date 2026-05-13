@@ -9043,7 +9043,11 @@ impl TerminalView {
                     InlineBannerItem::new(banner_id, InlineBannerType::ShellProcessTerminated),
                 );
         } else {
-            let (termination_reason, termination_details, exit_reason) = match &termination_type {
+            let (termination_reason, termination_details, exit_reason): (
+                Option<String>,
+                Option<String>,
+                Option<&crate::terminal::model::terminal_model::ExitReason>,
+            ) = match &termination_type {
                 shell_terminated_banner::TerminationType::PtySpawnFailure { .. } => {
                     (Some("PtySpawnFailure".to_string()), None, None)
                 }

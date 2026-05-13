@@ -167,7 +167,7 @@ impl PassiveSuggestionsModel {
         };
 
         log::debug!(
-            "[passive-suggestions] skipped MAA request because cloud multi-agent endpoint is disabled in OpenWarp"
+            "[passive-suggestions] skipped MAA request because the multi-agent endpoint is disabled in OpenWarp"
         );
         let (cancellation_tx, cancellation_rx) = futures::channel::oneshot::channel();
 

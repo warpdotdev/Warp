@@ -55,7 +55,6 @@ mod model;
 pub mod output;
 mod profiles;
 mod provider;
-pub(crate) mod retry;
 #[cfg(test)]
 mod test_support;
 mod text_layout;
@@ -502,14 +501,8 @@ impl AgentDriverRunner {
 
     /// Creates local driver task state for a new agent run.
     ///
-    /// OpenWarp(本地化,Phase 3b-2):原实现调 `server_api.create_agent_task` 在云端创建
-    /// ambient agent task,获取服务端 task_id 后在后续请求中携带。本地化后:
-    ///   - 不发 GraphQL `create_agent_task` mutation
-    ///   - `driver_options.task_id` 保持 `None`
-    ///   - 不再写入 ServerApiProvider ambient header 上下文(云端请求路径已删除)
-    /// 下游所有 `if let Some(task_id) = driver_options.task_id` 分支自动跳过。
-    /// BYOP 本地 harness 运行不依赖该 task_id,根据 `harness/` 代码路径仅在服务端
-    /// 汇报状态时使用。
+    /// OpenWarp 本地运行不会创建远端 ambient-agent task 记录。
+    /// driver 保持 `task_id` 为 `None`,下游会自然跳过远端任务分支。
     async fn initialize_new_task(
         driver_options: &mut AgentDriverOptions,
     ) -> Result<(), AgentDriverError> {

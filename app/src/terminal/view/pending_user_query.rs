@@ -73,13 +73,9 @@ impl TerminalView {
         self.pending_user_query_view_id = Some(view_id);
     }
 
-    /// Inserts a pending user query block for a non-oz Cloud Mode run whose harness CLI
-    /// has not yet started.
-    /// The block shows the user's prompt with a "Queued" badge and no buttons: the
-    /// queued state is owned by the run's lifecycle (harness start, failure, cancel,
-    /// or auth required), not by a local `/queue`-style callback, so the prompt is not
-    /// re-submitted when the block is removed.
-    pub(in crate::terminal::view) fn insert_cloud_mode_queued_user_query_block(
+    /// 为本地 ambient agent run 插入一个 pending user query block,直到 harness CLI 启动。
+    /// 这个 block 只展示用户 prompt 和 queued 状态,不提供本地队列回调按钮。
+    pub(in crate::terminal::view) fn insert_ambient_agent_queued_user_query_block(
         &mut self,
         prompt: String,
         ctx: &mut ViewContext<Self>,

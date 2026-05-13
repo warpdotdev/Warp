@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use warp_completer::completer::MatchType;
 use warp_core::command::ExitCode;
 use warpui::keymap::Keystroke;

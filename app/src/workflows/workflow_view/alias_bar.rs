@@ -210,7 +210,7 @@ impl AliasBar {
                 alias.env_vars = sync_id;
                 self.mark_dirty(true, ctx);
 
-                let env_vars_space = sync_id
+                let env_vars_space: Option<TelemetrySpace> = sync_id
                     .and_then(|id| ObjectStoreModel::as_ref(ctx).get_env_var_collection(&id))
                     .map(|env_vars| env_vars.space(ctx))
                     .map(Into::into);

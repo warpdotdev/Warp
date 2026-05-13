@@ -857,7 +857,7 @@ impl View for AIBlock {
         let has_inserted_ambient_user_query_block = self
             .ambient_agent_view_model
             .as_ref(app)
-            .has_inserted_cloud_mode_user_query_block();
+            .has_inserted_ambient_agent_user_query_block();
         let should_hide_first_block_query_and_header = should_hide_first_ai_block_query_and_header(
             has_inserted_ambient_user_query_block,
             is_shared_ambient_agent_session,

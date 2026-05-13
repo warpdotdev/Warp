@@ -585,7 +585,7 @@ impl BlocklistAIController {
 
         if !ignored_file_attachments.is_empty() {
             log::warn!(
-                "Ignoring {} shared-session file attachment(s) because remote attachment downloads are disabled in OpenWarp: {}",
+                "Ignoring {} shared-session file attachment(s) because attachment downloads are disabled in OpenWarp: {}",
                 ignored_file_attachments.len(),
                 ignored_file_attachments.join(", ")
             );

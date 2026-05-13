@@ -174,7 +174,7 @@ use crate::{
         telemetry::{
             AICommandSearchEntrypoint, AgentModeAutoDetectionFalsePositivePayload,
             AgentModeAutoDetectionSettingOrigin, AnonymousUserSignupEntrypoint, CommandXRayTrigger,
-            EnvVarTelemetryMetadata, TelemetryEvent, WorkflowTelemetryMetadata,
+            EnvVarTelemetryMetadata, TelemetryEvent, TelemetrySpace, WorkflowTelemetryMetadata,
         },
     },
     session_management::SessionNavigationPromptElements,
@@ -6285,7 +6285,7 @@ impl Input {
             } => {
                 let workflow_id = workflow.server_id();
                 let workflow_source = *workflow_source;
-                let space = workflow_id.and_then(|id| {
+                let space: Option<TelemetrySpace> = workflow_id.and_then(|id| {
                     ObjectStoreViewModel::as_ref(ctx)
                         .object_space(&id.to_string(), ctx)
                         .map(Into::into)
