@@ -28,8 +28,7 @@ pub(super) struct RepoSearchItem {
 }
 
 impl RepoSearchItem {
-    pub fn new(path: PathBuf, git_summary: Option<RepoGitSummary>) -> Self {
-        let display_name = repo_display_name(&path);
+    pub fn new(path: PathBuf, display_name: String, git_summary: Option<RepoGitSummary>) -> Self {
         Self {
             path,
             display_name,
@@ -44,7 +43,7 @@ impl RepoSearchItem {
     }
 }
 
-fn repo_display_name(repo_path: &Path) -> String {
+pub(super) fn repo_display_name(repo_path: &Path) -> String {
     dirs::home_dir()
         .and_then(|home| repo_path.strip_prefix(&home).ok().map(|p| p.to_path_buf()))
         .map(|relative_path| format!("~/{}", relative_path.display()))
