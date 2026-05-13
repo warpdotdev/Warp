@@ -43,11 +43,11 @@ pub enum CodeViewAction {
 pub enum CodeViewEvent {
     Pane(PaneEvent),
     TabChanged {
-        file_path: Option<PathBuf>,
+        location: Option<FileLocation>,
         tab_index: usize,
     },
     FileOpened {
-        file_path: PathBuf,
+        location: FileLocation,
         tab_index: usize,
     },
     RunTabConfigSkill {
@@ -85,15 +85,19 @@ struct TabDataMouseStateHandles {
 #[allow(unused)]
 #[derive(Clone)]
 pub struct TabData {
-    path: Option<PathBuf>,
+    location: Option<FileLocation>,
     editor_view: ViewHandle<LocalCodeEditorView>,
     mouse_state_handles: TabDataMouseStateHandles,
     drag_position: Option<TabBarDragPosition>,
 }
 
 impl TabData {
-    pub fn path(&self) -> Option<PathBuf> {
-        self.path.clone()
+    /// Returns the local filesystem path, if this tab is backed by a local file.
+    /// Returns `None` for remote files and untitled tabs.
+    pub fn local_path(&self) -> Option<PathBuf> {
+        self.location
+            .as_ref()
+            .and_then(|loc| loc.to_local_path().map(|p| p.to_path_buf()))
     }
 }
 
