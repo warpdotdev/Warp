@@ -774,13 +774,13 @@ pub struct UserProfile {
 
 #[derive(Insertable)]
 #[diesel(table_name = cloud_objects_refreshes)]
-pub struct NewCloudObjectsRefresh {
+pub struct NewObjectStoreRefresh {
     pub time_of_next_refresh: NaiveDateTime,
 }
 
 #[derive(Identifiable, Queryable)]
 #[diesel(table_name = cloud_objects_refreshes)]
-pub struct CloudObjectsRefresh {
+pub struct ObjectStoreRefresh {
     pub id: i32,
     pub time_of_next_refresh: NaiveDateTime,
 }

@@ -84,7 +84,7 @@ use crate::notebooks::{NotebookId, NotebookObject};
 use crate::persistence::agent::read_agent_conversations;
 use crate::persistence::block_list::{get_all_restored_blocks, read_ai_queries};
 use crate::persistence::model::{
-    NewCloudObjectsRefresh, NewGenericStringObject, NewPersistedObjectAction, NewTeamSettings,
+    NewGenericStringObject, NewObjectStoreRefresh, NewPersistedObjectAction, NewTeamSettings,
     ProjectRules, UserProfile, CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND,
 };
 use crate::server::experiments::ServerExperiment;
@@ -130,7 +130,7 @@ diesel::define_sql_function! {
 const CHANNEL_SIZE: usize = 1024;
 const COMMANDS_COUNT_LIMIT: i64 = 10000;
 
-use crate::persistence::cloud_objects::{upsert_cloud_object, CloudObjectId};
+use crate::persistence::cloud_objects::{upsert_stored_object, StoredObjectId};
 
 const WARP_SQLITE_FILE_NAME: &str = "warp.sqlite";
 const OPENWARP_APP_GROUP_SQLITE_MIGRATION_MARKER: &str = ".openwarp-app-group-sqlite-migrated";
@@ -141,7 +141,7 @@ const WARP_APP_GROUP_ID: &str = "2BBY89MBSN.dev.warp";
 /// object. It takes the id of the cloud object to delete as a parameter.
 /// The supplied conn has already started a transaction.
 type DeleteCloudObjectFn =
-    Box<dyn FnOnce(&mut SqliteConnection, CloudObjectId) -> Result<(), Error>>;
+    Box<dyn FnOnce(&mut SqliteConnection, StoredObjectId) -> Result<(), Error>>;
 
 /// Runs any migrations and creates the Sqlite database if it doesn't exist.
 /// Reads from the sqlite database to get the app state for session restoration.
@@ -2201,7 +2201,7 @@ fn upsert_generic_string_objects(
         for object in cloud_generic_string_objects {
             let serialized_data = Arc::new(object.serialized().take());
             let serialized_data_clone = serialized_data.clone();
-            upsert_cloud_object(
+            upsert_stored_object(
                 conn,
                 ObjectType::GenericStringObject(object.generic_string_object_format()),
                 object.id(),
@@ -2249,7 +2249,7 @@ fn upsert_workflows(
             let workflow_id = workflow.id;
             if let Ok(serialized_workflow) = serde_json::to_string(&workflow.model().data) {
                 let serialized_workflow_clone = serialized_workflow.clone();
-                upsert_cloud_object(
+                upsert_stored_object(
                     conn,
                     ObjectType::Workflow,
                     workflow_id,
@@ -2299,7 +2299,7 @@ fn upsert_notebooks(
                 .ai_document_id
                 .as_ref()
                 .map(|doc_id| doc_id.to_string());
-            upsert_cloud_object(
+            upsert_stored_object(
                 conn,
                 ObjectType::Notebook,
                 notebook.id,
@@ -2351,7 +2351,7 @@ fn upsert_folders(
             let folder_name = cloud_folder.model().name.clone();
             let folder_is_open = cloud_folder.model().is_open;
             let folder_is_warp_pack = cloud_folder.model().is_warp_pack;
-            upsert_cloud_object(
+            upsert_stored_object(
                 conn,
                 ObjectType::Folder,
                 cloud_folder.id,
@@ -3228,7 +3228,7 @@ fn read_sqlite_data(
     // Find the smallest refresh timestamp to pass into ObjectStoreModel.
     let time_of_next_force_object_refresh: Option<DateTime<Utc>> =
         schema::cloud_objects_refreshes::dsl::cloud_objects_refreshes
-            .load_iter::<model::CloudObjectsRefresh, DefaultLoadingMode>(conn)?
+            .load_iter::<model::ObjectStoreRefresh, DefaultLoadingMode>(conn)?
             .filter_map(|refresh| refresh.ok())
             .map(|refresh| refresh.time_of_next_refresh.and_utc())
             .min();
@@ -3519,7 +3519,7 @@ fn record_time_of_next_refresh(
     timestamp: DateTime<Utc>,
 ) -> Result<(), Error> {
     use schema::cloud_objects_refreshes::dsl::*;
-    let refresh = NewCloudObjectsRefresh {
+    let refresh = NewObjectStoreRefresh {
         time_of_next_refresh: timestamp.naive_utc(),
     };
     conn.transaction::<(), Error, _>(|conn| {

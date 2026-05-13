@@ -1281,7 +1281,7 @@ impl UpdateManager {
             let hashed_id = id.uid();
             self.mark_object_trashed_and_return_timestamps(&hashed_id, ctx);
             // OpenWarp:本地对象永远没有服务端 ack 来清 has_pending_metadata_change。
-            // 必须在落 sqlite 前手动清掉,否则 upsert_cloud_object 中
+            // 必须在落 sqlite 前手动清掉,否则 upsert_stored_object 中
             // `if !has_pending_metadata_change` 分支会跳过 trashed_ts 字段写入,
             // 导致重启后从 sqlite 加载到的 trashed_ts 为 NULL,对象重新出现在 PERSONAL。
             ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, _| {
@@ -1349,7 +1349,7 @@ impl UpdateManager {
             let hashed_id = id.uid();
             // OpenWarp:本地对象 untrash —— 清 trashed_ts 同时把
             // has_pending_metadata_change 清掉(本地分支无服务端 ack),
-            // 否则 upsert_cloud_object 跳过 trashed_ts 写入,sqlite 仍为旧值。
+            // 否则 upsert_stored_object 跳过 trashed_ts 写入,sqlite 仍为旧值。
             ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
                 if let Some(object) = cloud_model.get_mut_by_uid(&hashed_id) {
                     object.metadata_mut().trashed_ts = None;

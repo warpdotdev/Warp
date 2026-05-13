@@ -269,7 +269,7 @@ const SYNC_STATUS_TOOLTIP_ERROR: &str = "Failed to save";
 pub struct StoredObjectPermissions {
     pub owner: Owner,
     pub permissions_last_updated_ts: Option<ServerTimestamp>,
-    pub anyone_with_link: Option<CloudLinkSharing>,
+    pub anyone_with_link: Option<LinkSharing>,
     pub guests: Vec<StoredObjectGuest>,
 }
 
@@ -290,7 +290,7 @@ impl StoredObjectPermissions {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct CloudLinkSharing {
+pub struct LinkSharing {
     pub access_level: SharingAccessLevel,
     pub source: Option<ServerObjectContainer>,
 }

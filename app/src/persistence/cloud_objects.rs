@@ -8,8 +8,8 @@ use warp_core::features::FeatureFlag;
 use crate::{
     auth::UserUid,
     cloud_object::{
-        CloudLinkSharing, ObjectIdType, ObjectType, Owner, ServerObjectContainer,
-        StoredObjectGuest, StoredObjectMetadata, StoredObjectPermissions,
+        LinkSharing, ObjectIdType, ObjectType, Owner, ServerObjectContainer, StoredObjectGuest,
+        StoredObjectMetadata, StoredObjectPermissions,
     },
     drive::sharing::{SharingAccessLevel, Subject, TeamKind, UserKind},
     persistence::{model::ObjectMetadata, schema},
@@ -17,20 +17,20 @@ use crate::{
 };
 use persistence::model::{NewObjectMetadata, NewObjectPermissions};
 
-pub type CloudObjectId = i32;
-pub type CreateCloudObjectFn =
-    Box<dyn FnOnce(&mut SqliteConnection) -> Result<CloudObjectId, Error>>;
-pub type UpdateCloudObjectFn =
-    Box<dyn FnOnce(&mut SqliteConnection, CloudObjectId) -> Result<(), Error>>;
+pub type StoredObjectId = i32;
+pub type CreateStoredObjectFn =
+    Box<dyn FnOnce(&mut SqliteConnection) -> Result<StoredObjectId, Error>>;
+pub type UpdateStoredObjectFn =
+    Box<dyn FnOnce(&mut SqliteConnection, StoredObjectId) -> Result<(), Error>>;
 
-pub fn upsert_cloud_object(
+pub fn upsert_stored_object(
     conn: &mut SqliteConnection,
     cloud_object_type: ObjectType,
     sync_id: crate::server::ids::SyncId,
     cloud_object_metadata: StoredObjectMetadata,
     cloud_object_permissions: StoredObjectPermissions,
-    create_object_fn: CreateCloudObjectFn,
-    update_object_fn: UpdateCloudObjectFn,
+    create_object_fn: CreateStoredObjectFn,
+    update_object_fn: UpdateStoredObjectFn,
 ) -> Result<(), Error> {
     use schema::object_metadata::dsl::{
         client_id, current_editor, folder_id, is_pending, last_editor_uid,
@@ -211,17 +211,17 @@ pub fn upsert_cloud_object(
 pub fn decode_link_sharing(
     encoded_access_level: &str,
     encoded_source: Option<&[u8]>,
-) -> anyhow::Result<CloudLinkSharing> {
+) -> anyhow::Result<LinkSharing> {
     let access_level = encoded_access_level.parse()?;
     let source = encoded_source.map(bincode::deserialize).transpose()?;
-    Ok(CloudLinkSharing {
+    Ok(LinkSharing {
         access_level,
         source,
     })
 }
 
 pub fn encode_link_sharing(
-    link_sharing: &CloudLinkSharing,
+    link_sharing: &LinkSharing,
 ) -> anyhow::Result<(&'static str, Option<Vec<u8>>)> {
     let source = link_sharing
         .source
@@ -235,14 +235,14 @@ pub fn decode_guests(encoded_guests: &[u8]) -> anyhow::Result<Vec<StoredObjectGu
     let persisted_guests = bincode::deserialize::<Vec<PersistedGuest>>(encoded_guests)?;
     Ok(persisted_guests
         .into_iter()
-        .map(PersistedGuest::into_cloud_object_guest)
+        .map(PersistedGuest::into_stored_object_guest)
         .collect())
 }
 
 pub fn encode_guests(guests: &[StoredObjectGuest]) -> anyhow::Result<Vec<u8>> {
     let persisted_guests = guests
         .iter()
-        .map(PersistedGuest::try_from_cloud_object_guest)
+        .map(PersistedGuest::try_from_stored_object_guest)
         .collect::<anyhow::Result<Vec<PersistedGuest>>>()?;
     Ok(bincode::serialize(&persisted_guests)?)
 }
@@ -262,7 +262,7 @@ enum PersistedSubject {
 }
 
 impl PersistedGuest {
-    pub fn into_cloud_object_guest(self) -> StoredObjectGuest {
+    pub fn into_stored_object_guest(self) -> StoredObjectGuest {
         StoredObjectGuest {
             subject: self.subject.into_subject(),
             access_level: self.access_level,
@@ -270,7 +270,7 @@ impl PersistedGuest {
         }
     }
 
-    pub fn try_from_cloud_object_guest(guest: &StoredObjectGuest) -> anyhow::Result<Self> {
+    pub fn try_from_stored_object_guest(guest: &StoredObjectGuest) -> anyhow::Result<Self> {
         Ok(PersistedGuest {
             subject: PersistedSubject::try_from_subject(&guest.subject)?,
             access_level: guest.access_level,
