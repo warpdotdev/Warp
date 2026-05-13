@@ -1871,6 +1871,15 @@ impl GlobalBufferModel {
     /// the edits are applied to the in-memory buffer (no disk write) and the
     /// client version is updated. Returns `true` if accepted, `false` if rejected
     /// (stale edit — silently discarded).
+    ///
+    /// **Coordinate convention:** Each `TextEdit` in `edits` uses sequential
+    /// coordinates — its offsets reference the buffer state *after* all
+    /// preceding edits in the slice have been applied. This matches how the
+    /// client constructs edits from `PreciseDelta.replaced_range`, which is
+    /// resolved via anchors in intermediate buffer states. Edits are therefore
+    /// applied one at a time rather than in a single batch call to
+    /// `insert_at_char_offset_ranges` (which expects all offsets in the
+    /// original-buffer coordinate space).
     #[cfg(feature = "local_fs")]
     pub fn apply_client_edit(
         &mut self,
@@ -1903,22 +1912,23 @@ impl GlobalBufferModel {
             return false;
         };
 
-        // Wire offsets are 1-indexed (matching CharOffset), so no conversion needed.
-        let new_version = ContentVersion::new();
+        // Apply each edit sequentially: offsets are in sequential coordinates
+        // (each relative to the buffer after all preceding edits), so we must
+        // apply one at a time and recompute max_offset for each.
+        let final_version = ContentVersion::new();
         buffer.update(ctx, |buffer, ctx| {
-            let max_offset = buffer.max_charoffset();
-            let char_edits: Vec<(std::ops::Range<CharOffset>, String)> = edits
-                .iter()
-                .map(|edit| {
-                    let start =
-                        CharOffset::from((edit.start_offset as usize).min(max_offset.as_usize()));
-                    let end =
-                        CharOffset::from((edit.end_offset as usize).min(max_offset.as_usize()));
-                    (start..end, edit.text.clone())
-                })
-                .collect();
-
-            buffer.insert_at_char_offset_ranges(char_edits, new_version, ctx);
+            for edit in edits {
+                let max_offset = buffer.max_charoffset();
+                let start =
+                    CharOffset::from((edit.start_offset as usize).min(max_offset.as_usize()));
+                let end = CharOffset::from((edit.end_offset as usize).min(max_offset.as_usize()));
+                buffer.insert_at_char_offset_ranges(
+                    vec![(start..end, edit.text.clone())],
+                    ContentVersion::new(),
+                    ctx,
+                );
+            }
+            buffer.set_version(final_version);
         });
 
         true
