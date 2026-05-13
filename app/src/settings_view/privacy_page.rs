@@ -34,7 +34,7 @@ use crate::settings_view::privacy::AddRegexModalViewState;
 use crate::settings_view::render_body_item_label;
 use crate::settings_view::settings_page::CONTENT_FONT_SIZE;
 use crate::terminal::safe_mode_settings::{
-    SecretDisplayMode, SecretDisplayModeSetting, get_effective_secret_display_mode,
+    get_effective_secret_display_mode, SecretDisplayMode, SecretDisplayModeSetting,
 };
 use crate::ui_components::buttons::icon_button;
 use crate::view_components::{Dropdown, DropdownItem};
@@ -54,13 +54,14 @@ use crate::{
 };
 
 use super::{
-    SettingsAction, SettingsSection, ToggleSettingActionPair, flags,
+    flags,
     privacy::{AddRegexModal, AddRegexModalEvent},
     settings_page::{
-        HEADER_PADDING, SettingsPageMeta, SettingsPageViewHandle, TOGGLE_BUTTON_RIGHT_PADDING,
-        ToggleState, render_body_item, render_sub_header,
+        render_body_item, render_sub_header, SettingsPageMeta, SettingsPageViewHandle, ToggleState,
+        HEADER_PADDING, TOGGLE_BUTTON_RIGHT_PADDING,
     },
-    settings_page::{LocalOnlyIconState, MatchData, PAGE_PADDING, PageType, SettingsWidget},
+    settings_page::{LocalOnlyIconState, MatchData, PageType, SettingsWidget, PAGE_PADDING},
+    SettingsAction, SettingsSection, ToggleSettingActionPair,
 };
 
 use crate::modal::{Modal, ModalEvent, ModalViewState};
@@ -230,11 +231,9 @@ impl PrivacyPageView {
         );
 
         ctx.update_model(&safe_mode_settings, move |safe_mode_settings, ctx| {
-            report_if_error!(
-                safe_mode_settings
-                    .safe_mode_enabled
-                    .set_value(new_value, ctx)
-            );
+            report_if_error!(safe_mode_settings
+                .safe_mode_enabled
+                .set_value(new_value, ctx));
         });
         ctx.notify();
     }
@@ -249,11 +248,9 @@ impl PrivacyPageView {
         };
 
         ctx.update_model(&safe_mode_settings, move |safe_mode_settings, ctx| {
-            report_if_error!(
-                safe_mode_settings
-                    .hide_secrets_in_block_list
-                    .set_value(new_value, ctx)
-            );
+            report_if_error!(safe_mode_settings
+                .hide_secrets_in_block_list
+                .set_value(new_value, ctx));
         });
         ctx.notify();
     }

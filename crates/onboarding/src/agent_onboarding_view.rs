@@ -1,9 +1,8 @@
 use crate::localization::localized;
 use crate::model::{OnboardingStateEvent, OnboardingStateModel, OnboardingStep, SelectedSettings};
 use crate::slides::{
-    AgentSlide, CustomizeUISlide, IntentionSlide, IntroSlide, IntroSlideEvent,
-    OnboardingModelInfo, OnboardingSlide, ProjectSlide, ThemePickerSlide, ThemePickerSlideEvent,
-    ThirdPartySlide,
+    AgentSlide, CustomizeUISlide, IntentionSlide, IntroSlide, IntroSlideEvent, OnboardingModelInfo,
+    OnboardingSlide, ProjectSlide, ThemePickerSlide, ThemePickerSlideEvent, ThirdPartySlide,
 };
 use crate::telemetry::OnboardingEvent;
 use ai::LLMId;

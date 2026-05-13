@@ -2786,7 +2786,9 @@ impl PaneGroup {
             } else if let Some(pane_id) =
                 group.find_pane_id_for_terminal_view(target_view.id(), ctx)
             {
-                log::error!("Failed to restore ambient agent pane, replacing with a new agent pane");
+                log::error!(
+                    "Failed to restore ambient agent pane, replacing with a new agent pane"
+                );
                 group.replace_pane_with_new_agent_conversation(pane_id, ctx);
             }
         });

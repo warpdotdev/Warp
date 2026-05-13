@@ -30,8 +30,7 @@ use warpui::ModelSpawner;
 use warpui::{platform::TerminationMode, AppContext, SingletonEntity};
 
 use crate::{
-    ai::ambient_agents::task::HarnessConfig,
-    ai::ambient_agents::AgentConfigSnapshot,
+    ai::ambient_agents::task::HarnessConfig, ai::ambient_agents::AgentConfigSnapshot,
     auth::AuthStateProvider,
 };
 use driver::AgentDriverError;

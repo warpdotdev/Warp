@@ -1,9 +1,9 @@
 use super::{
-    SettingsSection,
     settings_page::{
-        HEADER_PADDING, MatchData, PageType, SettingsPageMeta, SettingsPageViewHandle,
-        SettingsWidget, render_customer_type_badge,
+        render_customer_type_badge, MatchData, PageType, SettingsPageMeta, SettingsPageViewHandle,
+        SettingsWidget, HEADER_PADDING,
     },
+    SettingsSection,
 };
 use crate::auth::AuthStateProvider;
 use crate::autoupdate::{self, AutoupdateStage, AutoupdateState};
@@ -16,19 +16,16 @@ use std::sync::Arc;
 use warp_core::{channel::ChannelState, context_flag::ContextFlag};
 use warpui::fonts::Weight;
 use warpui::{
-    AppContext,
+    assets::asset_cache::AssetSource,
+    elements::{Border, Empty, MainAxisAlignment, MainAxisSize},
+    platform::Cursor,
+};
+use warpui::{
     elements::{
         Align, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Flex,
         MouseStateHandle, ParentElement, Radius, Shrinkable, Text,
     },
-};
-use warpui::{
-    Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
-};
-use warpui::{
-    assets::asset_cache::AssetSource,
-    elements::{Border, Empty, MainAxisAlignment, MainAxisSize},
-    platform::Cursor,
+    AppContext,
 };
 use warpui::{
     elements::{CacheOption, Image},
@@ -36,6 +33,9 @@ use warpui::{
         button::ButtonVariant,
         components::{Coords, UiComponent, UiComponentStyles},
     },
+};
+use warpui::{
+    Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
 const PHOTO_SIZE: f32 = 40.;

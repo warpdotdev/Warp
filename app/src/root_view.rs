@@ -1778,23 +1778,21 @@ impl RootView {
         let onboarding_view_for_workspaces = onboarding_view.clone();
         ctx.subscribe_to_model(
             &UserWorkspaces::handle(ctx),
-            move |_, user_workspaces, event, ctx| {
-                match event {
-                    UserWorkspacesEvent::UpdateWorkspaceSettingsSuccess => {
-                        let workspace_enforces_autonomy = user_workspaces
-                            .as_ref(ctx)
-                            .ai_autonomy_settings()
-                            .has_any_overrides();
-                        onboarding_view_for_workspaces.update(ctx, |onboarding_view, ctx| {
-                            onboarding_view
-                                .set_workspace_enforces_autonomy(workspace_enforces_autonomy, ctx);
-                        });
-                    }
-                    UserWorkspacesEvent::TeamsChanged => {
-                        ctx.notify();
-                    }
-                    _ => {}
+            move |_, user_workspaces, event, ctx| match event {
+                UserWorkspacesEvent::UpdateWorkspaceSettingsSuccess => {
+                    let workspace_enforces_autonomy = user_workspaces
+                        .as_ref(ctx)
+                        .ai_autonomy_settings()
+                        .has_any_overrides();
+                    onboarding_view_for_workspaces.update(ctx, |onboarding_view, ctx| {
+                        onboarding_view
+                            .set_workspace_enforces_autonomy(workspace_enforces_autonomy, ctx);
+                    });
                 }
+                UserWorkspacesEvent::TeamsChanged => {
+                    ctx.notify();
+                }
+                _ => {}
             },
         );
 

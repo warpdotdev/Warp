@@ -336,7 +336,6 @@ pub enum CliCommand {
     /// Manage providers.
     #[command(subcommand)]
     Provider(crate::provider::ProviderCommand),
-
 }
 
 /// A subcommand of the main Warp application. This includes all [`WorkerCommand`]s as well as app-specific debugging tools.
@@ -375,7 +374,6 @@ pub enum Command {
     /// Print debugging information and exit.
     #[clap(long_flag = "dump-debug-info")]
     DumpDebugInfo,
-
 }
 
 impl Command {

@@ -4680,6 +4680,5 @@ impl TelemetryEvent {
             | TelemetryEvent::AutoupdateForcekillFailed => false,
         }
     }
-
 }
 

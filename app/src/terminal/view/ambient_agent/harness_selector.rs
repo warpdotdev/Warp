@@ -1,5 +1,5 @@
 //! Harness selector: an "options menu" (`ActionButton` + generic `Menu<A>`) shown
-//! in a row above the cloud mode input that lets the user switch between the Oz
+//! in a row above the ambient-agent input that lets the user switch between the Oz
 //! and Claude Code harnesses.
 
 use std::sync::Arc;

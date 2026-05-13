@@ -869,9 +869,7 @@ impl TerminalView {
 
     pub fn selected_conversation_display_title(&self, ctx: &AppContext) -> Option<String> {
         self.selected_conversation_for_user_facing_chrome(ctx)
-            .map(|conversation| {
-                self.selected_conversation_display_title_for_chrome(conversation)
-            })
+            .map(|conversation| self.selected_conversation_display_title_for_chrome(conversation))
     }
 
     pub fn selected_conversation_latest_user_prompt_for_tab_name(

@@ -1,8 +1,8 @@
 use super::two_line_button::{render_two_line_button, TwoLineButtonSpec};
+use super::OnboardingSlide;
 use crate::localization::localized;
 use crate::model::{OnboardingStateEvent, OnboardingStateModel};
 use crate::slides::{bottom_nav, layout, slide_content};
-use super::OnboardingSlide;
 use crate::visuals::agent_visual;
 use ui_components::{button, Component as _, Options as _};
 use warp_core::features::FeatureFlag;
@@ -1014,12 +1014,7 @@ impl AgentSlide {
 
     /// Finds the next model index in the given direction, wrapping around.
     /// Indices are into the slide's sorted view of the model list.
-    fn next_model_index(
-        &self,
-        start: usize,
-        forward: bool,
-        ctx: &AppContext,
-    ) -> Option<usize> {
+    fn next_model_index(&self, start: usize, forward: bool, ctx: &AppContext) -> Option<usize> {
         let models = sorted_models(self.onboarding_state.as_ref(ctx).models());
         let count = models.len();
         if count == 0 {
