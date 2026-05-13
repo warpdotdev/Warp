@@ -107,6 +107,9 @@ pub(super) fn send_request(
     }
 }
 
+// The controller owns request lifecycle concerns like cancellation, pending request tracking, and
+// result emission. This function only contains the remote-specific pipeline: store content hashes
+// -> daemon fragment metadata -> remote file reads -> fragment reranking.
 async fn execute_remote_codebase_search(
     query: String,
     partial_paths: Option<Vec<String>>,
@@ -330,6 +333,9 @@ fn remote_fragments_and_file_contexts(
     Ok((fragments, file_contexts_by_identity))
 }
 
+// Keep this conversion at the AI boundary: `FileContext` lives in the `ai` crate, so the
+// `remote_server` protocol/client crate should not depend on it just to return typed agent
+// file contexts.
 fn proto_file_context_to_file_context(
     file_context: remote_server::proto::FileContextProto,
 ) -> Option<FileContext> {

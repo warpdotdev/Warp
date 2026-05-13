@@ -214,6 +214,8 @@ impl GetRelevantFilesController {
         action_id: AIAgentActionId,
         ctx: &mut ModelContext<Self>,
     ) -> Result<(), GetRelevantFilesError> {
+        // Cancel any previous request for this action before dispatching to either the local or
+        // remote implementation.
         self.cancel_request_for_action(&action_id, ctx);
         match target {
             GetRelevantFilesRequestTarget::Local { directory } => {

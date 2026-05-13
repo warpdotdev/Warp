@@ -251,7 +251,7 @@ impl SearchCodebaseExecutor {
             let (result_tx, result_rx) = oneshot::channel();
             self.active_searches.insert(id.clone(), result_tx);
 
-            return match self
+            match self
                 .get_relevant_files_controller
                 .update(ctx, |controller, ctx| {
                     controller.send_request(
@@ -287,112 +287,113 @@ impl SearchCodebaseExecutor {
                         },
                     ))
                 }
-            };
-        }
-        let codebase_path = codebase_path.as_ref().map(PathBuf::from);
-
-        let Some(current_working_directory) = self
-            .active_session
-            .as_ref(ctx)
-            .current_working_directory()
-            .map(PathBuf::from)
-        else {
-            // This should really never happen; it implies that we don't know what the
-            // current working directory is, which is never the case.
-            return ActionExecution::Sync(AIAgentActionResultType::SearchCodebase(
-                SearchCodebaseResult::Failed {
-                    reason: SearchCodebaseFailureReason::MissingCurrentWorkingDirectory,
-                    message: "The search failed. Try another way to locate the relevant files."
-                        .to_string(),
-                },
-            ));
-        };
-
-        let search_dir;
-        let is_cross_repo;
-        if FeatureFlag::CrossRepoContext.is_enabled() {
-            is_cross_repo = codebase_path
-                .as_ref()
-                .is_some_and(|path| !current_working_directory.starts_with(path));
-            search_dir = codebase_path.unwrap_or(current_working_directory);
+            }
         } else {
-            is_cross_repo = false;
-            search_dir = current_working_directory;
-        }
-        let server_output_id = get_server_output_id(conversation_id, ctx);
-        send_telemetry_from_ctx!(
-            TelemetryEvent::SearchCodebaseRequested {
-                action_id: id.clone(),
-                server_output_id,
-                is_cross_repo,
-            },
-            ctx
-        );
+            let codebase_path = codebase_path.as_ref().map(PathBuf::from);
 
-        let Some(root_dir_for_search) = self.root_repo_paths.get(id) else {
-            let action_id = id.clone();
+            let Some(current_working_directory) = self
+                .active_session
+                .as_ref(ctx)
+                .current_working_directory()
+                .map(PathBuf::from)
+            else {
+                // This should really never happen; it implies that we don't know what the
+                // current working directory is, which is never the case.
+                return ActionExecution::Sync(AIAgentActionResultType::SearchCodebase(
+                    SearchCodebaseResult::Failed {
+                        reason: SearchCodebaseFailureReason::MissingCurrentWorkingDirectory,
+                        message: "The search failed. Try another way to locate the relevant files."
+                            .to_string(),
+                    },
+                ));
+            };
 
-            // Check if directory exists on background thread since its a sys call; no need to block
-            // main thread since its just for telemetry.
-            let _ = ctx.spawn(async move { search_dir.exists() }, |_, exists, ctx| {
-                let error = if exists {
-                    "The codebase isn't indexed".to_string()
-                } else {
-                    "The codebase doesn't exist".to_string()
-                };
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::SearchCodebaseRepoUnavailable { action_id, error },
-                    ctx
+            let search_dir;
+            let is_cross_repo;
+            if FeatureFlag::CrossRepoContext.is_enabled() {
+                is_cross_repo = codebase_path
+                    .as_ref()
+                    .is_some_and(|path| !current_working_directory.starts_with(path));
+                search_dir = codebase_path.unwrap_or(current_working_directory);
+            } else {
+                is_cross_repo = false;
+                search_dir = current_working_directory;
+            }
+            let server_output_id = get_server_output_id(conversation_id, ctx);
+            send_telemetry_from_ctx!(
+                TelemetryEvent::SearchCodebaseRequested {
+                    action_id: id.clone(),
+                    server_output_id,
+                    is_cross_repo,
+                },
+                ctx
+            );
+
+            let Some(root_dir_for_search) = self.root_repo_paths.get(id) else {
+                let action_id = id.clone();
+
+                // Check if directory exists on background thread since its a sys call; no need to block
+                // main thread since its just for telemetry.
+                let _ = ctx.spawn(async move { search_dir.exists() }, |_, exists, ctx| {
+                    let error = if exists {
+                        "The codebase isn't indexed".to_string()
+                    } else {
+                        "The codebase doesn't exist".to_string()
+                    };
+                    send_telemetry_from_ctx!(
+                        TelemetryEvent::SearchCodebaseRepoUnavailable { action_id, error },
+                        ctx
+                    );
+                });
+                return ActionExecution::Sync(AIAgentActionResultType::SearchCodebase(SearchCodebaseResult::Failed {
+                    message: "The search failed because the codebase is not available. Try another way to locate the relevant files.".to_owned(),
+                    reason: SearchCodebaseFailureReason::CodebaseNotIndexed
+                }));
+            };
+
+            // Add the repo root as a temporary permission; if the user gave us permission to
+            // search the repo, we can certainly search files within it for the rest of the convo.
+            BlocklistAIPermissions::handle(ctx).update(ctx, |model, _ctx| {
+                model.add_temporary_file_read_permissions(
+                    conversation_id,
+                    vec![root_dir_for_search.to_owned()],
                 );
             });
-            return ActionExecution::Sync(AIAgentActionResultType::SearchCodebase(SearchCodebaseResult::Failed {
-                message: "The search failed because the codebase is not available. Try another way to locate the relevant files.".to_owned(),
-                reason: SearchCodebaseFailureReason::CodebaseNotIndexed
-            }));
-        };
 
-        // Add the repo root as a temporary permission; if the user gave us permission to
-        // search the repo, we can certainly search files within it for the rest of the convo.
-        BlocklistAIPermissions::handle(ctx).update(ctx, |model, _ctx| {
-            model.add_temporary_file_read_permissions(
-                conversation_id,
-                vec![root_dir_for_search.to_owned()],
-            );
-        });
+            let (result_tx, result_rx) = oneshot::channel();
+            self.active_searches.insert(id.clone(), result_tx);
 
-        let (result_tx, result_rx) = oneshot::channel();
-        self.active_searches.insert(id.clone(), result_tx);
+            // Start the actual search.
+            match self
+                .get_relevant_files_controller
+                .update(ctx, |controller, ctx| {
+                    controller.send_request(
+                        GetRelevantFilesRequestTarget::Local {
+                            directory: root_dir_for_search.clone(),
+                        },
+                        query.clone(),
+                        partial_paths.as_ref(),
+                        id.clone(),
+                        ctx,
+                    )
+                }) {
+                Ok(_) => ActionExecution::Async {
+                    execute_future: Box::pin(result_rx),
+                    on_complete: Box::new(
+                        |res: Result<SearchCodebaseResult, oneshot::Canceled>, _ctx| {
+                            let action_result =
+                                res.unwrap_or_else(|e| SearchCodebaseResult::Failed {
+                                    message: e.to_string(),
+                                    reason: SearchCodebaseFailureReason::ClientError,
+                                });
+                            AIAgentActionResultType::SearchCodebase(action_result)
+                        },
+                    ),
+                },
+                Err(e) => {
+                    log::warn!("Failed to send get_relevant_files request for directory: {e:?}");
 
-        // Start the actual search.
-        match self
-            .get_relevant_files_controller
-            .update(ctx, |controller, ctx| {
-                controller.send_request(
-                    GetRelevantFilesRequestTarget::Local {
-                        directory: root_dir_for_search.clone(),
-                    },
-                    query.clone(),
-                    partial_paths.as_ref(),
-                    id.clone(),
-                    ctx,
-                )
-            }) {
-            Ok(_) => ActionExecution::Async {
-                execute_future: Box::pin(result_rx),
-                on_complete: Box::new(
-                    |res: Result<SearchCodebaseResult, oneshot::Canceled>, _ctx| {
-                        let action_result = res.unwrap_or_else(|e| SearchCodebaseResult::Failed {
-                            message: e.to_string(),
-                            reason: SearchCodebaseFailureReason::ClientError,
-                        });
-                        AIAgentActionResultType::SearchCodebase(action_result)
-                    },
-                ),
-            },
-            Err(e) => {
-                log::warn!("Failed to send get_relevant_files request for directory: {e:?}");
-
-                let error_message = match e {
+                    let error_message = match e {
                             GetRelevantFilesError::Pending => {
                                 "The current git repository is still being indexed, so search is unavailable right now. You can try again later".to_owned()
                             }
@@ -403,12 +404,13 @@ impl SearchCodebaseExecutor {
                                 "The current directory isn't within a git repository, which is necessary to search for relevant files.".to_owned()
                             }
                         };
-                ActionExecution::Sync(AIAgentActionResultType::SearchCodebase(
-                    SearchCodebaseResult::Failed {
-                        reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
-                        message: error_message,
-                    },
-                ))
+                    ActionExecution::Sync(AIAgentActionResultType::SearchCodebase(
+                        SearchCodebaseResult::Failed {
+                            reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
+                            message: error_message,
+                        },
+                    ))
+                }
             }
         }
     }
