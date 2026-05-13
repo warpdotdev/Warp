@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 
 use lazy_static::lazy_static;
-use natural_language_detection::check_if_token_has_shell_syntax;
 use warp_completer::ParsedTokensSnapshot;
 
 /// The percentage of input tokens that can be described by our completion engine before
@@ -56,6 +55,16 @@ pub fn is_prefix_of_natural_language_word(input: &str) -> bool {
         .any(|word| word.starts_with(input))
 }
 
+/// Returns whether the input is likely a shell command based on a token-level
+/// scoring heuristic.
+///
+/// A token counts toward the "likely shell" score only when the completer attached
+/// a description to it (i.e. it recognized the token as a known command / flag /
+/// path). Shell-syntax characters in tokens (e.g. `--flag`, `path/to/file`,
+/// `KEY=val`) are intentionally NOT counted here — that heuristic is too noisy
+/// for natural-language prompts that happen to contain URLs, file paths, or
+/// dashed words. Routing those cases to the downstream NLD classifier yields
+/// better accuracy.
 pub async fn is_likely_shell_command(
     input: &ParsedTokensSnapshot,
     word_tokens_count: usize,
@@ -77,9 +86,7 @@ pub async fn is_likely_shell_command(
             return true;
         }
 
-        if token.token_description.is_some()
-            || check_if_token_has_shell_syntax(token.token.as_str())
-        {
+        if token.token_description.is_some() {
             likely_command_token_count += 1;
         }
 
@@ -118,3 +125,7 @@ pub fn is_installed_binary(input: &ParsedTokensSnapshot) -> bool {
         .map(|token| token.token_description.is_some())
         .unwrap_or(false)
 }
+
+#[cfg(test)]
+#[path = "util_tests.rs"]
+mod tests;
