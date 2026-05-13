@@ -242,11 +242,10 @@ pub struct AIConversation {
     /// re-delivering already-processed events.
     last_event_sequence: Option<i64>,
 
-    /// Per-conversation orchestration config hydrated from
+    /// Per-plan orchestration configs hydrated from
     /// `OrchestrationConfigSnapshot` messages in the conversation's task list.
-    orchestration_config: Option<OrchestrationConfig>,
-    orchestration_status: OrchestrationConfigStatus,
-    orchestration_plan_id: Option<String>,
+    /// Keyed by `plan_id`; snapshots with empty `plan_id` are ignored.
+    orchestration_configs: HashMap<String, (OrchestrationConfig, OrchestrationConfigStatus)>,
 }
 
 pub(crate) fn artifact_from_fork_proto(
@@ -298,9 +297,7 @@ impl AIConversation {
             parent_conversation_id: None,
             is_remote_child: false,
             last_event_sequence: None,
-            orchestration_config: None,
-            orchestration_status: OrchestrationConfigStatus::default(),
-            orchestration_plan_id: None,
+            orchestration_configs: HashMap::new(),
         }
     }
 
@@ -491,9 +488,7 @@ impl AIConversation {
             parent_conversation_id,
             is_remote_child,
             last_event_sequence,
-            orchestration_config: None,
-            orchestration_status: OrchestrationConfigStatus::default(),
-            orchestration_plan_id: None,
+            orchestration_configs: HashMap::new(),
         })
     }
 
@@ -889,33 +884,67 @@ impl AIConversation {
         self.is_remote_child = true;
     }
 
-    pub fn orchestration_config(&self) -> Option<&OrchestrationConfig> {
-        self.orchestration_config.as_ref()
+    /// Returns the orchestration config and status for a specific plan,
+    /// or `None` if no config has been hydrated for that plan.
+    pub fn orchestration_config_for_plan(
+        &self,
+        plan_id: &str,
+    ) -> Option<(&OrchestrationConfig, OrchestrationConfigStatus)> {
+        self.orchestration_configs
+            .get(plan_id)
+            .map(|(config, status)| (config, *status))
     }
 
-    pub fn orchestration_status(&self) -> OrchestrationConfigStatus {
-        self.orchestration_status
+    /// Returns `true` if at least one plan has an orchestration config.
+    pub fn has_any_orchestration_config(&self) -> bool {
+        !self.orchestration_configs.is_empty()
     }
 
-    pub fn orchestration_plan_id(&self) -> Option<&str> {
-        self.orchestration_plan_id.as_deref()
-    }
-
-    /// Replaces the orchestration config, status, and plan_id for this
-    /// conversation. Returns `true` if any value actually changed.
-    pub fn set_orchestration_config(
+    /// Inserts or replaces the orchestration config for a specific plan.
+    /// Returns `true` if the value actually changed.
+    pub fn set_orchestration_config_for_plan(
         &mut self,
-        config: Option<OrchestrationConfig>,
+        plan_id: String,
+        config: OrchestrationConfig,
         status: OrchestrationConfigStatus,
-        plan_id: Option<String>,
     ) -> bool {
-        let changed = self.orchestration_config != config
-            || self.orchestration_status != status
-            || self.orchestration_plan_id != plan_id;
-        self.orchestration_config = config;
-        self.orchestration_status = status;
-        self.orchestration_plan_id = plan_id;
-        changed
+        use std::collections::hash_map::Entry;
+        match self.orchestration_configs.entry(plan_id) {
+            Entry::Occupied(mut entry) => {
+                let existing = entry.get();
+                if existing.0 != config || existing.1 != status {
+                    entry.insert((config, status));
+                    true
+                } else {
+                    false
+                }
+            }
+            Entry::Vacant(entry) => {
+                entry.insert((config, status));
+                true
+            }
+        }
+    }
+
+    /// Returns a reference to the full per-plan config map.
+    pub fn orchestration_configs(
+        &self,
+    ) -> &HashMap<String, (OrchestrationConfig, OrchestrationConfigStatus)> {
+        &self.orchestration_configs
+    }
+
+    /// Bulk-replaces all orchestration configs (used during hydration).
+    /// Returns `true` if the map actually changed.
+    pub fn set_orchestration_configs(
+        &mut self,
+        configs: HashMap<String, (OrchestrationConfig, OrchestrationConfigStatus)>,
+    ) -> bool {
+        if self.orchestration_configs != configs {
+            self.orchestration_configs = configs;
+            true
+        } else {
+            false
+        }
     }
 
     /// Returns a flat list of linearized messages across all tasks, interpolating subtask messages
@@ -2396,24 +2425,27 @@ impl AIConversation {
                         Some(api::message::Message::OrchestrationConfigSnapshot(
                             snapshot,
                         )) => {
-                            let config = snapshot
-                                .config
-                                .as_ref()
-                                .map(OrchestrationConfig::from_proto);
-                            let status = OrchestrationConfigStatus::from_proto(
-                                snapshot.status.as_ref(),
-                            );
-                            let plan_id = if snapshot.plan_id.is_empty() {
-                                None
-                            } else {
-                                Some(snapshot.plan_id.clone())
-                            };
-                            if self.set_orchestration_config(config, status, plan_id) {
-                                ctx.emit(
-                                    BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
-                                        conversation_id: self.id,
-                                    },
-                                );
+                            if !snapshot.plan_id.is_empty() {
+                                if let Some(config) = snapshot
+                                    .config
+                                    .as_ref()
+                                    .map(OrchestrationConfig::from_proto)
+                                {
+                                    let status = OrchestrationConfigStatus::from_proto(
+                                        snapshot.status.as_ref(),
+                                    );
+                                    if self.set_orchestration_config_for_plan(
+                                        snapshot.plan_id.clone(),
+                                        config,
+                                        status,
+                                    ) {
+                                        ctx.emit(
+                                            BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
+                                                conversation_id: self.id,
+                                            },
+                                        );
+                                    }
+                                }
                             }
                         }
                         Some(api::message::Message::ToolCallResult(tcr)) => {
@@ -2555,20 +2587,24 @@ impl AIConversation {
                 if let Some(api::message::Message::OrchestrationConfigSnapshot(snapshot)) =
                     &message.message
                 {
-                    let config = snapshot
-                        .config
-                        .as_ref()
-                        .map(OrchestrationConfig::from_proto);
-                    let status = OrchestrationConfigStatus::from_proto(snapshot.status.as_ref());
-                    let plan_id = if snapshot.plan_id.is_empty() {
-                        None
-                    } else {
-                        Some(snapshot.plan_id.clone())
-                    };
-                    if self.set_orchestration_config(config, status, plan_id) {
-                        ctx.emit(BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
-                            conversation_id: self.id,
-                        });
+                    if !snapshot.plan_id.is_empty() {
+                        if let Some(config) = snapshot
+                            .config
+                            .as_ref()
+                            .map(OrchestrationConfig::from_proto)
+                        {
+                            let status =
+                                OrchestrationConfigStatus::from_proto(snapshot.status.as_ref());
+                            if self.set_orchestration_config_for_plan(
+                                snapshot.plan_id.clone(),
+                                config,
+                                status,
+                            ) {
+                                ctx.emit(BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
+                                    conversation_id: self.id,
+                                });
+                            }
+                        }
                     }
                 }
 

@@ -10,6 +10,9 @@ use ai::agent::action_result::{RunAgentsAgentOutcomeKind, RunAgentsResult};
 use ai::agent::orchestration_config::{
     matches_active_config, OrchestrationConfig, OrchestrationConfigStatus,
 };
+
+use crate::ai::agent::conversation::AIConversationId;
+use crate::BlocklistAIHistoryModel;
 use ai::skills::SkillReference;
 use pathfinder_geometry::vector::vec2f;
 use std::rc::Rc;
@@ -90,6 +93,8 @@ pub struct RunAgentsEditState {
     pub summary: String,
     /// Run-wide skills propagated to each child at dispatch.
     pub skills: Vec<SkillReference>,
+    /// The plan that this RunAgents call is executing for.
+    pub plan_id: String,
 }
 
 impl RunAgentsEditState {
@@ -104,6 +109,7 @@ impl RunAgentsEditState {
             base_prompt: req.base_prompt.clone(),
             summary: req.summary.clone(),
             skills: req.skills.clone(),
+            plan_id: req.plan_id.clone(),
         }
     }
 
@@ -116,6 +122,7 @@ impl RunAgentsEditState {
             harness_type: self.orch.harness_type.clone(),
             execution_mode: self.orch.execution_mode.clone(),
             agent_run_configs: self.agent_run_configs.clone(),
+            plan_id: self.plan_id.clone(),
         }
     }
 }
@@ -497,7 +504,41 @@ impl RunAgentsCardView {
     /// the request is fully populated.  Called from
     /// `AIBlock::handle_complete_output` so we don't act on partial
     /// streaming chunks that arrive with an empty `agent_run_configs`.
-    pub fn try_auto_launch_on_stream_complete(&mut self, ctx: &mut ViewContext<Self>) {
+    pub fn try_auto_launch_on_stream_complete(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        // Always refresh active_config from the conversation on stream
+        // complete. At card construction time plan_id may have been empty
+        // (not yet streamed), and even if it was present the user may have
+        // toggled approval mid-stream. Re-reading ensures we have the
+        // latest snapshot.
+        if !self.state.plan_id.is_empty() {
+            self.active_config = BlocklistAIHistoryModel::as_ref(ctx)
+                .conversation(&conversation_id)
+                .and_then(|conv| {
+                    conv.orchestration_config_for_plan(&self.state.plan_id)
+                        .map(|(c, s)| (c.clone(), s))
+                });
+            // Resolve empty/default state fields from the config so the
+            // dispatched request carries concrete values rather than
+            // relying on server-side inheritance.
+            if let Some((config, _)) = &self.active_config {
+                if self.state.orch.model_id.is_empty() {
+                    self.state.orch.model_id = config.model_id.clone();
+                }
+                if self.state.orch.harness_type.is_empty() {
+                    self.state.orch.harness_type = config.harness_type.clone();
+                }
+                self.state
+                    .orch
+                    .resolve_execution_mode_from_config(&config.execution_mode);
+            }
+            // Re-evaluate denied status with the refreshed config.
+            self.is_denied = compute_is_denied(self.is_denied, &self.active_config);
+        }
+
         if should_auto_launch(
             self.auto_launched,
             self.is_denied,

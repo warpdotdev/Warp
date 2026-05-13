@@ -12514,20 +12514,18 @@ impl Input {
                 || self.is_cloud_mode_input_v2_composing(ctx))
         {
             // If we're submitting an AI query, we want to send telemetry for the input type.
-            if FeatureFlag::NldImprovements.is_enabled() {
-                let input_model = self.ai_input_model.as_ref(ctx);
-                let input_type = input_model.input_type();
-                let is_locked = input_model.is_input_type_locked();
-                let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::InputBufferSubmitted {
-                        input_type,
-                        is_locked,
-                        was_lock_set_with_empty_buffer,
-                    },
-                    ctx
-                );
-            }
+            let input_model = self.ai_input_model.as_ref(ctx);
+            let input_type = input_model.input_type();
+            let is_locked = input_model.is_input_type_locked();
+            let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
+            send_telemetry_from_ctx!(
+                TelemetryEvent::InputBufferSubmitted {
+                    input_type,
+                    is_locked,
+                    was_lock_set_with_empty_buffer,
+                },
+                ctx
+            );
 
             // Check if we're configuring an ambient agent and spawn it instead of submitting a regular AI query.
             if self
@@ -12620,20 +12618,18 @@ impl Input {
             self.submit_ai_query(None, ctx);
         } else {
             // If we're submitting a shell command, we want to send telemetry for the input type.
-            if FeatureFlag::NldImprovements.is_enabled() {
-                let input_model = self.ai_input_model.as_ref(ctx);
-                let input_type = input_model.input_type();
-                let is_locked = input_model.is_input_type_locked();
-                let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::InputBufferSubmitted {
-                        input_type,
-                        is_locked,
-                        was_lock_set_with_empty_buffer,
-                    },
-                    ctx
-                );
-            }
+            let input_model = self.ai_input_model.as_ref(ctx);
+            let input_type = input_model.input_type();
+            let is_locked = input_model.is_input_type_locked();
+            let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
+            send_telemetry_from_ctx!(
+                TelemetryEvent::InputBufferSubmitted {
+                    input_type,
+                    is_locked,
+                    was_lock_set_with_empty_buffer,
+                },
+                ctx
+            );
 
             if FeatureFlag::WorkflowAliases.is_enabled() {
                 let mut command_string = self.editor.as_ref(ctx).buffer_text(ctx);

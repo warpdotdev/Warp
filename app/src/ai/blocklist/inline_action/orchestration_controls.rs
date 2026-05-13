@@ -28,7 +28,6 @@ use warpui::{
 
 use warp_cli::agent::Harness;
 use warp_core::channel::{Channel, ChannelState};
-use warp_core::ui::color::blend::Blend;
 use warp_core::ui::theme::Fill;
 
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
@@ -150,6 +149,33 @@ impl OrchestrationEditState {
         }
     }
 
+    /// Fills empty execution-mode fields from the given config.
+    /// If both sides are `Remote`, inherits empty `environment_id` and
+    /// `worker_host` from the config. If the state is `Local` while the
+    /// config is `Remote` (or vice-versa), does nothing — variant
+    /// mismatches are intentional.
+    pub fn resolve_execution_mode_from_config(&mut self, config_mode: &OrchestrationExecutionMode) {
+        if let (
+            RunAgentsExecutionMode::Remote {
+                environment_id,
+                worker_host,
+                ..
+            },
+            OrchestrationExecutionMode::Remote {
+                environment_id: cfg_env,
+                worker_host: cfg_host,
+            },
+        ) = (&mut self.execution_mode, config_mode)
+        {
+            if environment_id.is_empty() {
+                *environment_id = cfg_env.clone();
+            }
+            if worker_host.is_empty() {
+                *worker_host = cfg_host.clone();
+            }
+        }
+    }
+
     /// Returns `Some(reason)` if Accept / Apply must be disabled.
     /// Only hard block: OpenCode + Cloud.
     pub fn accept_disabled_reason(&self) -> Option<&'static str> {
@@ -243,22 +269,22 @@ pub fn picker_styles(appearance: &Appearance) -> (UiComponentStyles, PickerColor
     };
     let corner_radius = CornerRadius::with_all(Radius::Pixels(ORCHESTRATION_PICKER_RADIUS));
     // The picker bg is a translucent overlay (surface_overlay_1 =
-    // fg at 5%). Composite it against the card background to derive
-    // opaque text color that works on any theme.
+    // fg at 5%). It must stay translucent so that the accent-tinted
+    // card background in the config block shows through, and so that
+    // gradient-background themes render correctly.
     let background_fill: Fill = theme.surface_overlay_1();
-    let composited_bg = theme.background().blend(&background_fill).into_solid();
-    let border_color: warpui::elements::Fill = theme.surface_2().into();
-    let font_color = blended_colors::text_main(theme, composited_bg);
     let background: warpui::elements::Fill = background_fill.into();
+    // Border and font colors are intentionally left to the dropdown's
+    // default ButtonVariant::Secondary styling, which uses
+    // theme.outline() and theme.main_text_color() — both are
+    // contrast-aware and adapt correctly to all themes.
 
     let styles = UiComponentStyles {
         height: Some(ORCHESTRATION_PICKER_HEIGHT),
         background: Some(background),
-        border_color: Some(border_color),
         border_width: Some(ORCHESTRATION_PICKER_BORDER_WIDTH),
         border_radius: Some(corner_radius),
         font_size: Some(ORCHESTRATION_PICKER_FONT_SIZE),
-        font_color: Some(font_color),
         padding: Some(padding),
         ..Default::default()
     };
@@ -266,8 +292,6 @@ pub fn picker_styles(appearance: &Appearance) -> (UiComponentStyles, PickerColor
         padding,
         corner_radius,
         background,
-        border_color,
-        font_color,
     };
     (styles, colors)
 }
@@ -277,8 +301,6 @@ pub struct PickerColors {
     pub padding: Coords,
     pub corner_radius: CornerRadius,
     pub background: warpui::elements::Fill,
-    pub border_color: warpui::elements::Fill,
-    pub font_color: ColorU,
 }
 
 // ── Picker creation (generic over action type) ──────────────────────
@@ -292,8 +314,6 @@ pub fn new_standard_picker_dropdown<A: OrchestrationControlAction, V: View>(
     let padding = colors.padding;
     let corner_radius = colors.corner_radius;
     let background = colors.background;
-    let border_color = colors.border_color;
-    let font_color = colors.font_color;
     ctx.add_typed_action_view(move |ctx_dropdown| {
         let mut dropdown = Dropdown::<A>::new(ctx_dropdown);
         dropdown.set_use_overlay_layer(false, ctx_dropdown);
@@ -304,10 +324,8 @@ pub fn new_standard_picker_dropdown<A: OrchestrationControlAction, V: View>(
         dropdown.set_padding(padding, ctx_dropdown);
         dropdown.set_border_radius(corner_radius, ctx_dropdown);
         dropdown.set_background(background, ctx_dropdown);
-        dropdown.set_border_color(border_color, ctx_dropdown);
         dropdown.set_border_width(ORCHESTRATION_PICKER_BORDER_WIDTH, ctx_dropdown);
         dropdown.set_font_size(ORCHESTRATION_PICKER_FONT_SIZE, ctx_dropdown);
-        dropdown.set_font_color(font_color, ctx_dropdown);
         dropdown
     })
 }

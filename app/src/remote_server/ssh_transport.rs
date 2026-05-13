@@ -133,19 +133,25 @@ impl RemoteTransport for SshTransport {
     fn check_binary(&self) -> Pin<Box<dyn Future<Output = Result<bool, Error>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
-            let cmd = format!("test -x {}", remote_server::setup::remote_server_binary());
+            let cmd = remote_server::setup::binary_check_command();
+            log::info!("Running binary check: {cmd}");
             let output = remote_server::ssh::run_ssh_command(
                 &socket_path,
                 &cmd,
                 remote_server::setup::CHECK_TIMEOUT,
             )
             .await?;
-            // `test -x` exits 0 when present+executable, 1 when missing.
-            // Anything else (e.g. SSH exit 255 for a dead connection, or
-            // signal termination) is a transport-level failure.
-            match output.status.code() {
+            // `<binary> --version` exits 0 when present, executable, and
+            // functional. Exit 127 means the binary was not found, and 126
+            // means it exists but is not executable. Any other non-zero
+            // exit (e.g. SSH exit 255 for a dead connection, or signal
+            // termination) is treated as a transport-level failure.
+            let code = output.status.code();
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            log::info!("Binary check result: exit={code:?} stdout={stdout}");
+            match code {
                 Some(0) => Ok(true),
-                Some(1) => Ok(false),
+                Some(126) | Some(127) => Ok(false),
                 Some(code) => {
                     let stderr = String::from_utf8_lossy(&output.stderr);
                     Err(Error::Other(anyhow::anyhow!(
@@ -195,11 +201,9 @@ impl RemoteTransport for SshTransport {
     fn install_binary(&self) -> Pin<Box<dyn Future<Output = InstallOutcome> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
-            log::info!(
-                "Installing remote server binary to {}",
-                remote_server::setup::remote_server_binary()
-            );
-            match install_on_server(&socket_path).await {
+            let binary_path = remote_server::setup::remote_server_binary();
+            log::info!("Installing remote server binary to {binary_path}");
+            let mut outcome = match install_on_server(&socket_path).await {
                 Ok(()) => InstallOutcome {
                     source: Some(InstallSource::Server),
                     result: Ok(()),
@@ -226,7 +230,41 @@ impl RemoteTransport for SshTransport {
                         }
                     }
                 }
+            };
+
+            // Post-install verification: confirm the binary actually
+            // landed at the expected path and is functional. This catches
+            // silent install failures (e.g. tilde-expansion bugs) that
+            // would otherwise surface as a cryptic "Response channel
+            // closed" error during the IPC handshake.
+            if outcome.result.is_ok() {
+                log::info!("Running post-install verification for {binary_path}");
+                let check_cmd = remote_server::setup::binary_check_command();
+                let verify = remote_server::ssh::run_ssh_command(
+                    &socket_path,
+                    &check_cmd,
+                    remote_server::setup::CHECK_TIMEOUT,
+                )
+                .await;
+                match verify {
+                    Ok(output) if output.status.success() => {}
+                    Ok(output) => {
+                        let code = output.status.code().unwrap_or(-1);
+                        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                        outcome.result = Err(Error::Other(anyhow::anyhow!(
+                            "Post-install verification failed: binary not found or not \
+                             executable at {binary_path} (exit {code}): {stderr}"
+                        )));
+                    }
+                    Err(e) => {
+                        outcome.result = Err(Error::Other(anyhow::anyhow!(
+                            "Post-install verification failed: {e}"
+                        )));
+                    }
+                }
             }
+
+            outcome
         })
     }
 
@@ -316,7 +354,8 @@ impl RemoteTransport for SshTransport {
 /// Exit codes where SCP fallback would not help because the failure
 /// is on the remote host itself (not a network/download issue).
 fn should_skip_scp_fallback(error: &Error) -> bool {
-    matches!(error, Error::ScriptFailed { exit_code , .. }     if *exit_code == remote_server::setup::NO_HTTP_CLIENT_EXIT_CODE)
+    // Unsupported arch/OS — SCP won't change the architecture
+    matches!(error, Error::ScriptFailed { exit_code , .. } if *exit_code == 2)
 }
 
 /// Runs the install script on the remote host to download and install

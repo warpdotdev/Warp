@@ -747,7 +747,7 @@ impl TerminalView {
             }
         }
         #[cfg(not(target_arch = "wasm32"))]
-        if self.active_viewer_driven_size.is_some() {
+        if self.active_viewer_driven_size.is_some() && !self.is_shared_session_for_ambient_agent() {
             self.restore_pty_to_sharer_size(ctx);
         }
 
@@ -1821,18 +1821,18 @@ impl TerminalView {
             .map(|manager| {
                 let manager = manager.as_ref(ctx);
                 if is_sharer {
-                    let one_viewer = manager.present_viewer_count() == 1;
-                    one_viewer
-                        && (skip_uid_check
-                            || manager.get_present_viewers().all(|v| {
-                                v.info.profile_data.firebase_uid
-                                    == manager.firebase_uid().as_string()
-                            }))
+                    manager
+                        .single_distinct_present_viewer_uid()
+                        .is_some_and(|viewer_uid| {
+                            skip_uid_check || viewer_uid == manager.firebase_uid().as_str()
+                        })
                 } else {
-                    // We are a viewer — we must be the only viewer and the sharer must be us.
-                    // (present_viewer_count() excludes ourselves)
-                    let only_viewer = manager.present_viewer_count() == 0;
-                    only_viewer
+                    // No other distinct user should be viewing.
+                    // Stale copies of our own connection share our UID.
+                    let no_other_user = manager.get_present_viewers().all(|v| {
+                        v.info.profile_data.firebase_uid == manager.firebase_uid().as_string()
+                    });
+                    no_other_user
                         && (skip_uid_check
                             || manager.get_sharer().is_some_and(|s| {
                                 s.info.profile_data.firebase_uid

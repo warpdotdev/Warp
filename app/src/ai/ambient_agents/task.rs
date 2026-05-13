@@ -107,6 +107,9 @@ pub struct HarnessAuthSecretsConfig {
     /// Name of a managed secret for Claude Code harness authentication.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude_auth_secret_name: Option<String>,
+    /// Name of a managed secret for Codex harness authentication.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_auth_secret_name: Option<String>,
 }
 
 impl AgentConfigSnapshot {
@@ -353,11 +356,13 @@ impl AmbientAgentTask {
         self.is_terminal_run_state() && !self.has_active_execution()
     }
 
-    /// Total credits used (inference + compute).
+    /// Total credits used (inference + compute + platform).
     pub fn credits_used(&self) -> Option<f32> {
-        self.active_run_execution()
-            .request_usage
-            .map(|u| (u.inference_cost.unwrap_or(0.0) + u.compute_cost.unwrap_or(0.0)) as f32)
+        self.active_run_execution().request_usage.map(|u| {
+            (u.inference_cost.unwrap_or(0.0)
+                + u.compute_cost.unwrap_or(0.0)
+                + u.platform_cost.unwrap_or(0.0)) as f32
+        })
     }
 
     /// Duration from started_at to updated_at.
@@ -521,6 +526,7 @@ pub struct TaskStatusMessage {
 pub struct RequestUsage {
     pub inference_cost: Option<f64>,
     pub compute_cost: Option<f64>,
+    pub platform_cost: Option<f64>,
 }
 
 /// Cancel an ambient agent task and show a toast with the result.
