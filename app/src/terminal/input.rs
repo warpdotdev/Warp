@@ -1105,6 +1105,7 @@ pub enum Event {
     OpenShareSessionModal,
     StartRemoteControl,
     OpenHandoffEnvironmentCreationModal,
+    OpenCloudModeV2EnvironmentCreationModal,
 }
 
 pub enum InputState {
@@ -5758,6 +5759,10 @@ impl Input {
 
     pub fn editor(&self) -> &ViewHandle<EditorView> {
         &self.editor
+    }
+
+    pub(crate) fn ai_context_model(&self) -> &ModelHandle<BlocklistAIContextModel> {
+        &self.ai_context_model
     }
 
     pub fn buffer_text(&self, ctx: &AppContext) -> String {
@@ -12661,6 +12666,18 @@ impl Input {
                                 ctx,
                             );
                         });
+                        return;
+                    }
+                }
+
+                if let Some(ambient_agent_view_model) = self.ambient_agent_view_model() {
+                    let needs_env_modal = {
+                        let model = ambient_agent_view_model.as_ref(ctx);
+                        !model.is_local_to_cloud_handoff()
+                            && model.selected_environment_id().is_none()
+                    };
+                    if needs_env_modal {
+                        ctx.emit(Event::OpenCloudModeV2EnvironmentCreationModal);
                         return;
                     }
                 }

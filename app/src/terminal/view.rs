@@ -20497,6 +20497,11 @@ impl TerminalView {
             InputEvent::OpenHandoffEnvironmentCreationModal => {
                 ctx.dispatch_typed_action(&WorkspaceAction::ShowHandoffEnvironmentCreationModal);
             }
+            InputEvent::OpenCloudModeV2EnvironmentCreationModal => {
+                ctx.dispatch_typed_action(
+                    &WorkspaceAction::ShowCloudModeV2EnvironmentCreationModal,
+                );
+            }
         }
     }
 

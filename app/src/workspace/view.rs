@@ -332,9 +332,10 @@ use crate::terminal::session_settings::{
 };
 use crate::terminal::settings::{SpacingMode, TerminalSettings};
 use crate::terminal::shell::ShellType;
+use crate::terminal::view::ambient_agent::AmbientAgentViewModel;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::terminal::view::ambient_agent::{
-    AmbientAgentViewModel, HandoffSubmissionState, PendingHandoff, SnapshotUploadStatus,
+    HandoffSubmissionState, PendingHandoff, SnapshotUploadStatus,
 };
 #[cfg(feature = "local_tty")]
 use crate::terminal::view::docker_sandbox::DEFAULT_DOCKER_SANDBOX_BASE_IMAGE;
@@ -13189,6 +13190,79 @@ impl Workspace {
         ctx.notify();
     }
 
+    fn show_cloud_mode_v2_environment_creation_modal(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(source_view) = self
+            .active_tab_pane_group()
+            .as_ref(ctx)
+            .active_session_view(ctx)
+        else {
+            return;
+        };
+        let Some(model_handle) = source_view.as_ref(ctx).ambient_agent_view_model().cloned() else {
+            return;
+        };
+        let modal = ctx.add_typed_action_view(HandoffEnvironmentCreationModal::new);
+        ctx.subscribe_to_view(&modal, move |me, _, event, ctx| match event {
+            HandoffEnvironmentCreationModalEvent::Created { env_id } => {
+                let env_id = *env_id;
+                me.handoff_environment_creation_modal = None;
+                let pending = source_view.update(ctx, |view, ctx| {
+                    let input = view.input().clone();
+                    input.update(ctx, |input, ctx| {
+                        let prompt = input
+                            .editor()
+                            .as_ref(ctx)
+                            .buffer_text(ctx)
+                            .trim()
+                            .to_owned();
+                        if prompt.is_empty() {
+                            return None;
+                        }
+                        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+                        let attachments = input
+                            .collect_cloud_launch_attachments(ctx)
+                            .request_attachments;
+                        #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+                        let attachments = Vec::new();
+                        input.editor().update(ctx, |editor, ctx| {
+                            editor.clear_buffer(ctx);
+                        });
+                        input.ai_context_model().update(ctx, |model, ctx| {
+                            model.clear_pending_attachments(ctx);
+                        });
+                        Some((prompt, attachments))
+                    })
+                });
+                model_handle.update(ctx, |model, ctx| {
+                    model.set_environment_id(Some(env_id), ctx);
+                    if let Some((prompt, attachments)) = pending {
+                        model.spawn_agent(prompt, attachments, ctx);
+                    }
+                });
+            }
+            HandoffEnvironmentCreationModalEvent::Cancelled => {
+                me.handoff_environment_creation_modal = None;
+                me.focus_active_tab(ctx);
+            }
+            HandoffEnvironmentCreationModalEvent::CreationFailed { error_message } => {
+                me.handoff_environment_creation_modal = None;
+                me.toast_stack.update(ctx, |toast_stack, ctx| {
+                    toast_stack.add_ephemeral_toast(
+                        DismissibleToast::error(format!(
+                            "Failed to create environment: {error_message}"
+                        )),
+                        ctx,
+                    );
+                });
+                me.focus_active_tab(ctx);
+            }
+        });
+        modal.update(ctx, |modal, ctx| modal.show(ctx));
+        ctx.focus(&modal);
+        self.handoff_environment_creation_modal = Some(modal);
+        ctx.notify();
+    }
+
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn show_handoff_prepare_failed_toast(window_id: WindowId, ctx: &mut ViewContext<Self>) {
         WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
@@ -20802,6 +20876,9 @@ impl TypedActionView for Workspace {
             }
             ShowHandoffEnvironmentCreationModal => {
                 self.show_handoff_environment_creation_modal(ctx);
+            }
+            ShowCloudModeV2EnvironmentCreationModal => {
+                self.show_cloud_mode_v2_environment_creation_modal(ctx);
             }
             OpenNetworkLogPane => {
                 self.open_network_log_pane(ctx);

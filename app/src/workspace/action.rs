@@ -500,6 +500,7 @@ pub enum WorkspaceAction {
     /// Show the environment creation modal during `&` handoff compose when no
     /// environments exist.
     ShowHandoffEnvironmentCreationModal,
+    ShowCloudModeV2EnvironmentCreationModal,
     /// Summarize the active AI conversation in the focused pane.
     SummarizeAIConversation {
         prompt: Option<String>,
@@ -959,6 +960,7 @@ impl WorkspaceAction {
             | FixSettingsWithOz { .. }
             | OpenLocalToCloudHandoffPane { .. }
             | ShowHandoffEnvironmentCreationModal
+            | ShowCloudModeV2EnvironmentCreationModal
             | OpenNetworkLogPane => false,
             #[cfg(debug_assertions)]
             ShowHoaOnboardingFlow => false,
