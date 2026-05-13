@@ -11,7 +11,7 @@
 use std::{
     collections::HashMap,
     fs::File,
-    io::{self, Read as _, Seek as _, Write},
+    io,
     path::{Path, PathBuf},
     process,
     sync::{
@@ -26,10 +26,7 @@ use command::blocking::Command;
 use crash_handler::{CrashContext, CrashHandler};
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
-use sentry::{
-    protocol::{Attachment, AttachmentType},
-    Breadcrumb, Level,
-};
+use sentry::Breadcrumb;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use warp_core::report_error;
@@ -136,8 +133,6 @@ pub fn run_server(socket_path: &Path) -> anyhow::Result<()> {
         .parse_default_env()
         .target(log_target)
         .init();
-
-    let _guard = sentry::init(super::sentry_client_options());
 
     struct Handler {
         shutdown: Arc<AtomicBool>,

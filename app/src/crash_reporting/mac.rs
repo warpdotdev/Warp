@@ -1,7 +1,7 @@
 #![allow(deprecated)]
 
 use cocoa::{
-    base::{id, nil, BOOL},
+    base::{id, nil},
     foundation::NSAutoreleasePool,
 };
 use warpui::platform::mac::make_nsstring;
@@ -10,8 +10,6 @@ use super::*;
 
 // Functions implemented in objC files.
 extern "C" {
-    fn startSentry(sentryUrl: id, environment: id, version: id, isDogfood: BOOL);
-    fn stopSentry();
     #[allow(dead_code)] // Only gets called when built in debug mode.
     fn crashSentry();
     fn setUser(userId: id);
@@ -20,30 +18,11 @@ extern "C" {
 }
 
 pub fn init_cocoa_sentry() {
-    let endpoint = ChannelState::sentry_url();
-    let environment = super::get_environment();
-
-    log::info!("Initializing Sentry for cocoa app with endpoint {endpoint}");
-    unsafe {
-        let pool = NSAutoreleasePool::new(nil);
-        let dsn = make_nsstring(endpoint);
-        let environment_name: &str = environment.as_ref();
-        let environment = make_nsstring(environment_name);
-        let release = make_nsstring(release_version());
-        startSentry(
-            dsn,
-            environment,
-            release,
-            ChannelState::channel().is_dogfood() as BOOL,
-        );
-        pool.drain();
-    }
+    log::info!("openWarp: cocoa Sentry 已剥离,跳过 native crash reporter 初始化");
 }
 
 pub fn uninit_cocoa_sentry() {
-    unsafe {
-        stopSentry();
-    }
+    log::info!("openWarp: cocoa Sentry 已剥离,跳过 native crash reporter 关闭");
 }
 
 pub fn crash() {

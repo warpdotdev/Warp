@@ -10,7 +10,7 @@ use std::borrow::Cow;
 use std::ops::DerefMut;
 
 use lazy_static::lazy_static;
-use sentry::{ClientInitGuard, IntoDsn, SessionMode};
+use sentry::ClientInitGuard;
 use warp_core::channel::Channel;
 use warpui::{r#async::block_on, AppContext, SingletonEntity};
 
@@ -21,8 +21,7 @@ use crate::features::FeatureFlag;
 use crate::settings::{PrivacySettings, PrivacySettingsChangedEvent};
 use parking_lot::{Mutex, RwLock};
 use regex::Regex;
-use std::collections::{BTreeMap, HashMap};
-use std::sync::Arc;
+use std::collections::HashMap;
 use warpui::rendering::GPUDeviceInfo;
 use warpui::windowing::state::ApplicationStage;
 use warpui::windowing::{self, StateEvent, WindowManager};
@@ -290,8 +289,7 @@ fn get_environment() -> Cow<'static, str> {
 /// openWarp 闭源遥测剥离 P2:
 ///
 /// 原 `init_sentry` 会调 `sentry::init` + `sentry_minidump::init` + `init_cocoa_sentry`,
-/// 把 panic / crash / native exception 全部上报到 Warp 官方 Sentry 实例(DSN 来自
-/// `ChannelState::sentry_url()`)。剥离后:
+/// 把 panic / crash / native exception 全部上报到 Warp 官方 Sentry 实例。剥离后:
 /// - 不再调用 `sentry::init`,无 ClientInitGuard 持有 → 无 HTTP 外发链路
 /// - 不再调用 native minidump / cocoa 初始化 → 无原生 crash 上传
 /// - 安装本地 panic hook,把 PanicInfo(thread / payload / location / backtrace)
@@ -339,21 +337,6 @@ fn init_sentry(_user_id: Option<UserUid>, _email: Option<String>, _ctx: &mut App
     });
 }
 
-/// Baseline Sentry client options.
-fn sentry_client_options() -> sentry::ClientOptions {
-    sentry::ClientOptions {
-        dsn: ChannelState::sentry_url()
-            .into_dsn()
-            .expect("Invalid Sentry DSN"),
-
-        release: Some(release_version().into()),
-        environment: Some(get_environment()),
-        auto_session_tracking: true,
-        session_mode: SessionMode::Application,
-        ..Default::default()
-    }
-}
-
 /// Uninitializes sentry, effectively ending reporting on crashes and errors.
 pub fn uninit_sentry() {
     // Take the client guard out of the mutex, replacing it with
@@ -377,19 +360,11 @@ pub fn uninit_sentry() {
 /// Initializes sentry hooking into the uncaught exception handler of the mac runtime
 /// which allows us to catch errors within obj-c.
 pub fn init_cocoa_sentry() {
-    #[cfg(all(target_os = "macos", feature = "cocoa_sentry"))]
-    {
-        mac::init_cocoa_sentry();
-
-        for (k, v) in TAGS.read().iter() {
-            mac::set_tag(k, v);
-        }
-    }
+    log::info!("openWarp: cocoa Sentry 已剥离,跳过 native crash reporter 初始化");
 }
 
 pub fn uninit_cocoa_sentry() {
-    #[cfg(all(target_os = "macos", feature = "cocoa_sentry"))]
-    mac::uninit_cocoa_sentry();
+    log::info!("openWarp: cocoa Sentry 已剥离,跳过 native crash reporter 关闭");
 }
 
 pub fn crash() {

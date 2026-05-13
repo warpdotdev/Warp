@@ -36,7 +36,6 @@ pub fn main() -> Result<()> {
                 },
             ),
             logfile_name: "warp_integration.log".into(),
-            crash_reporting_config: None,
             autoupdate_config: None,
             mcp_static_config: None,
         },

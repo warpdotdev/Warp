@@ -16,7 +16,6 @@ fn main() -> Result<()> {
         ChannelConfig {
             app_id: AppId::new("dev", "openwarp", "OpenWarp"),
             logfile_name: "openwarp.log".into(),
-            crash_reporting_config: None,
             autoupdate_config: None,
             mcp_static_config: None,
         },

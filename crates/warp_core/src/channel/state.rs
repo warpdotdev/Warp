@@ -43,7 +43,6 @@ impl ChannelState {
                 app_id,
                 logfile_name: "".into(),
                 autoupdate_config: None,
-                crash_reporting_config: None,
                 mcp_static_config: None,
             },
         }
@@ -127,12 +126,11 @@ impl ChannelState {
     pub fn debug_str() -> String {
         let state = CHANNEL_STATE.lock();
         format!(
-            "ChannelState {{ channel: {:?}, additional_features: {:?}, app_id: {:?}, autoupdate_configured: {}, crash_reporting_configured: {}, mcp_static_configured: {} }}",
+            "ChannelState {{ channel: {:?}, additional_features: {:?}, app_id: {:?}, autoupdate_configured: {}, mcp_static_configured: {} }}",
             state.channel,
             state.additional_features,
             state.config.app_id,
             state.config.autoupdate_config.is_some(),
-            state.config.crash_reporting_config.is_some(),
             state.config.mcp_static_config.is_some()
         )
     }
@@ -149,12 +147,8 @@ impl ChannelState {
         false
     }
 
-    /// Returns whether this build has a crash reporting config and can therefore
-    /// ship crash reports. Builds like OpenWarp intentionally ship with
-    /// `crash_reporting_config: None`, in which case UI that controls crash
-    /// reporting should be hidden since the toggle has no effect.
     pub fn is_crash_reporting_available() -> bool {
-        CHANNEL_STATE.lock().config.crash_reporting_config.is_some()
+        false
     }
 
     pub fn releases_base_url() -> Cow<'static, str> {
@@ -207,16 +201,6 @@ impl ChannelState {
     #[cfg(not(feature = "test-util"))]
     pub fn app_version() -> Option<&'static str> {
         option_env!("GIT_RELEASE_TAG")
-    }
-
-    pub fn sentry_url() -> Cow<'static, str> {
-        CHANNEL_STATE
-            .lock()
-            .config
-            .crash_reporting_config
-            .as_ref()
-            .map(|crc| crc.sentry_url.clone())
-            .unwrap_or_default()
     }
 
     pub fn show_autoupdate_menu_items() -> bool {

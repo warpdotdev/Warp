@@ -14,8 +14,6 @@ pub struct ChannelConfig {
 
     /// Configuration for autoupdate functionality.
     pub autoupdate_config: Option<AutoupdateConfig>,
-    /// Configuration for crash reporting.
-    pub crash_reporting_config: Option<CrashReportingConfig>,
     /// Configuration for statically-bundled MCP OAuth credentials.
     pub mcp_static_config: Option<McpStaticConfig>,
 }
@@ -28,12 +26,6 @@ pub struct AutoupdateConfig {
     pub releases_base_url: Cow<'static, str>,
     /// Whether or not to display menu items relating to autoupdate.
     pub show_autoupdate_menu_items: bool,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct CrashReportingConfig {
-    /// The URL/DSN for sending error logs and crash reports to Sentry.
-    pub sentry_url: Cow<'static, str>,
 }
 
 /// Configuration for statically-bundled MCP OAuth credentials.
