@@ -273,7 +273,7 @@ async fn prepare_local_claude_child_no_anthropic_model_when_empty() {
 #[tokio::test]
 async fn prepare_local_harness_child_launch_rejects_disabled_claude_before_shell_validation() {
     let ai_client = Arc::new(MockAIClient::new());
-    let err = prepare_local_harness_child_launch(
+    let result = prepare_local_harness_child_launch(
         "hello world".to_string(),
         "claude".to_string(),
         None,
@@ -282,11 +282,13 @@ async fn prepare_local_harness_child_launch_rejects_disabled_claude_before_shell
         None,
         ai_client,
     )
-    .await
-    .expect_err("disabled local claude should be rejected");
+    .await;
 
-    assert_eq!(
-        err,
-        "Local Claude Code child agents are temporarily disabled."
-    );
+    match result {
+        Ok(_) => panic!("disabled local claude should be rejected"),
+        Err(err) => assert_eq!(
+            err,
+            "Local Claude Code child agents are temporarily disabled."
+        ),
+    }
 }
