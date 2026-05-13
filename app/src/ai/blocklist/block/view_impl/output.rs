@@ -133,8 +133,6 @@ use warpui::{
     Action, AppContext, Element, ModelHandle, SingletonEntity, View, ViewHandle,
 };
 
-const BLOCKED_ACTION_MESSAGE_FOR_UPLOADING_ARTIFACT: &str = "Grant access to upload this artifact?";
-
 /// Data required to render the AI block output component.
 #[derive(Copy, Clone)]
 pub(crate) struct Props<'a> {
@@ -2316,8 +2314,6 @@ fn render_read_mcp_resource(
 
     renderable_action.render(app).finish()
 }
-
-// 云端工具已物理切除:render_upload_artifact / render_use_computer / render_request_computer_use 已删
 
 /// Renders the collapsible references footer
 /// if there are any citations.

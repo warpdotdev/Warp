@@ -585,7 +585,7 @@ impl BlocklistAIController {
 
         if !ignored_file_attachments.is_empty() {
             log::warn!(
-                "Ignoring {} shared-session file attachment(s) because cloud attachment downloads are disabled in OpenWarp: {}",
+                "Ignoring {} shared-session file attachment(s) because remote attachment downloads are disabled in OpenWarp: {}",
                 ignored_file_attachments.len(),
                 ignored_file_attachments.join(", ")
             );
@@ -601,7 +601,7 @@ impl BlocklistAIController {
     }
 
     /// Helper to send a shared-session query, used both for immediate sends
-    /// (no file attachments) and deferred sends (after file downloads complete).
+    /// (no file attachments) and deferred sends (after local file handling completes).
     fn send_shared_session_query(
         &mut self,
         prompt: String,

@@ -37,9 +37,9 @@ pub struct AgentConfigSnapshot {
     /// with the specified execution profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
-    /// Self-hosted worker ID that should execute this task.
-    /// If None or Some("warp"), the task will be dispatched to Warp-hosted (Namespace) workers.
-    /// Otherwise, the task will only be assigned to a connected self-hosted worker with matching ID.
+    /// Local worker ID that should execute this task.
+    /// If None or Some("warp"), the default local runtime is used.
+    /// Otherwise, the task will only be assigned to a connected local worker with matching ID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worker_host: Option<String>,
     /// Skill spec to use as the base prompt for the agent.
@@ -265,7 +265,7 @@ pub struct AmbientAgentTask {
     pub children: Vec<String>,
 }
 
-/// Represents a single attachment input from the client (e.g., file upload)
+/// Represents a single attachment input from the client.
 #[derive(Clone, Debug, Serialize)]
 pub struct AttachmentInput {
     pub file_name: String,
