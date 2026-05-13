@@ -19,6 +19,12 @@ use crate::terminal::cli_agent_sessions::{
 use crate::terminal::CLIAgent;
 use crate::terminal::TerminalView;
 
+fn to_protocol_server_conversation_token(
+    token: &crate::ai::agent::api::ServerConversationToken,
+) -> Option<ServerConversationToken> {
+    token.as_str().parse().ok()
+}
+
 /// Handles updating the local LLM preferences when a selected agent model update is received.
 /// This function is shared between the viewer and sharer to ensure consistent behavior.
 pub(crate) fn apply_selected_agent_model_update(
@@ -296,7 +302,7 @@ fn build_selected_conversation_update_agent_view_disabled(
                 .as_ref(ctx)
                 .conversation(&conversation_id)
                 .and_then(|conversation| conversation.server_conversation_token().cloned())
-                .and_then(|token| token.try_into().ok())
+                .and_then(|token| to_protocol_server_conversation_token(&token))
         });
 
     // Only send update if starting new (None) or token is present
@@ -324,7 +330,7 @@ fn build_selected_conversation_update_agent_view_enabled(
         let conversation = history_model.as_ref(ctx).conversation(&conversation_id);
         let server_token_opt = conversation
             .and_then(|c| c.server_conversation_token().cloned())
-            .and_then(|token| token.try_into().ok());
+            .and_then(|token| to_protocol_server_conversation_token(&token));
 
         if let Some(server_token) = server_token_opt {
             SelectedConversation::ExistingConversation(server_token)
