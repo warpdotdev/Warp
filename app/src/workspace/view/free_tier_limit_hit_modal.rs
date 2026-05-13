@@ -1,9 +1,9 @@
 use crate::ai::{AIRequestUsageModel, AIRequestUsageModelEvent};
-use crate::auth::AuthStateProvider;
-use crate::pricing::{PricingInfoModel, PricingInfoModelEvent};
+use crate::pricing::{
+    PlanPricing, PricingInfoModel, PricingInfoModelEvent, StripeSubscriptionPlan,
+};
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon;
-use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::TelemetryEvent;
 use asset_macro::bundled_or_fetched_asset;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
@@ -13,7 +13,6 @@ use thousands::Separable;
 use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::{Fill, WarpTheme};
-use warp_graphql::billing::{PlanPricing, StripeSubscriptionPlan};
 use warpui::elements::{
     Align, Border, CacheOption, ChildAnchor, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, DropShadow, Flex, FormattedTextElement, HighlightedHyperlink, Image,
@@ -22,9 +21,7 @@ use warpui::elements::{
 };
 use warpui::fonts::Weight;
 use warpui::keymap::FixedBinding;
-use warpui::platform::Cursor;
-use warpui::ui_components::button::ButtonVariant;
-use warpui::ui_components::components::{UiComponent, UiComponentStyles};
+use warpui::ui_components::components::UiComponent;
 use warpui::{AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext};
 
 const BUTTON_DIAMETER: f32 = 20.;
@@ -45,7 +42,6 @@ pub fn init(app: &mut AppContext) {
 #[derive(Default)]
 struct StateHandles {
     close_button: MouseStateHandle,
-    upgrade_button: MouseStateHandle,
 }
 
 pub struct FreeTierLimitHitModal {
@@ -76,16 +72,6 @@ impl FreeTierLimitHitModal {
 
         FreeTierLimitHitModal {
             state_handles: Default::default(),
-        }
-    }
-
-    fn get_upgrade_url(ctx: &ViewContext<Self>) -> String {
-        let auth_state = AuthStateProvider::handle(ctx).as_ref(ctx).get();
-        if let Some(team) = UserWorkspaces::handle(ctx).as_ref(ctx).current_team() {
-            UserWorkspaces::upgrade_link_for_team(team.uid)
-        } else {
-            let user_id = auth_state.user_id().unwrap_or_default();
-            UserWorkspaces::upgrade_link(user_id)
         }
     }
 
@@ -313,31 +299,6 @@ impl FreeTierLimitHitModal {
                         )
                         .finish(),
                 )
-                .with_child(
-                    Align::new(
-                        appearance
-                            .ui_builder()
-                            .button(
-                                ButtonVariant::Accent,
-                                self.state_handles.upgrade_button.clone(),
-                            )
-                            .with_style(UiComponentStyles {
-                                font_size: Some(14.),
-                                height: Some(32.),
-                                width: Some(296.),
-                                ..Default::default()
-                            })
-                            .with_centered_text_label("Upgrade plan".to_string())
-                            .build()
-                            .with_cursor(Cursor::PointingHand)
-                            .on_click(move |ctx, _, _| {
-                                ctx.dispatch_typed_action(FreeTierLimitHitModalAction::OpenUpgrade)
-                            })
-                            .finish(),
-                    )
-                    .bottom_left()
-                    .finish(),
-                )
                 .finish(),
         )
         .with_background_color(blended_colors::neutral_1(theme))
@@ -441,16 +402,6 @@ impl TypedActionView for FreeTierLimitHitModal {
 
                 send_telemetry_from_ctx!(TelemetryEvent::FreeTierLimitHitInterstitialClosed, ctx);
             }
-            FreeTierLimitHitModalAction::OpenUpgrade => {
-                let upgrade_url = Self::get_upgrade_url(ctx);
-                ctx.open_url(&upgrade_url);
-                ctx.emit(FreeTierLimitHitModalEvent::Close);
-
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::FreeTierLimitHitInterstitialUpgradeButtonClicked,
-                    ctx
-                );
-            }
             FreeTierLimitHitModalAction::OpenUrl(url) => {
                 ctx.open_url(url);
             }
@@ -467,6 +418,5 @@ pub enum FreeTierLimitHitModalEvent {
 #[derive(Clone, Debug)]
 pub enum FreeTierLimitHitModalAction {
     Close,
-    OpenUpgrade,
     OpenUrl(String),
 }

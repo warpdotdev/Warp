@@ -4,7 +4,6 @@ use warpui::{App, ModelHandle, UpdateModel};
 
 use crate::{
     auth::{AuthManager, AuthStateProvider},
-    server::telemetry::context_provider::AppTelemetryContextProvider,
     settings::AutoupdateSettings,
 };
 
@@ -18,7 +17,6 @@ fn initialize_app(app: &mut App) -> ModelHandle<AutoupdateState> {
     app.update(crate::settings::init_and_register_user_preferences);
     AutoupdateSettings::register(app);
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
 
     app.add_model(|_| AutoupdateState::new(Arc::new(http_client::Client::new())))

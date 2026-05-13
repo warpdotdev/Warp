@@ -2,7 +2,6 @@ use std::{fmt, marker::PhantomData};
 
 use serde_json::Value;
 use strum::IntoEnumIterator;
-use warpui::{AppContext, Entity, SingletonEntity};
 
 // Re-export for macro use.
 #[doc(hidden)]
@@ -161,6 +160,31 @@ macro_rules! send_telemetry_from_app_ctx {
     }};
 }
 
+#[macro_export]
+macro_rules! send_telemetry_sync_from_ctx {
+    ($event:expr, $ctx:expr) => {{
+        let _ = $crate::telemetry::TelemetryEvent::name(&$event);
+        let _ = &$ctx;
+    }};
+}
+
+#[macro_export]
+macro_rules! send_telemetry_sync_from_app_ctx {
+    ($event:expr, $app_ctx:expr) => {{
+        let _ = $crate::telemetry::TelemetryEvent::name(&$event);
+        let _ = &$app_ctx;
+    }};
+}
+
+#[macro_export]
+macro_rules! send_telemetry_on_executor {
+    ($auth_state:expr, $event:expr, $executor:expr) => {{
+        let _ = $crate::telemetry::TelemetryEvent::name(&$event);
+        let _ = &$auth_state;
+        let _ = &$executor;
+    }};
+}
+
 /// Gives information about when a telemetry event is enabled.
 #[derive(Debug)]
 pub enum EnablementState {
@@ -185,18 +209,3 @@ impl EnablementState {
         }
     }
 }
-
-/// Trait for the context provider that allows us to send telemetry payloads.
-pub trait TelemetryContextProvider {
-    fn user_id(&self, ctx: &AppContext) -> Option<String>;
-
-    fn anonymous_id(&self, ctx: &AppContext) -> String;
-}
-
-pub type TelemetryContextModel = Box<dyn TelemetryContextProvider>;
-
-impl Entity for TelemetryContextModel {
-    type Event = ();
-}
-
-impl SingletonEntity for TelemetryContextModel {}

@@ -1,12 +1,11 @@
-use std::{env, fs::read_to_string};
+use std::{env, fs::read_to_string, time::Duration};
 
 use anyhow::{Context as _, Result};
 use channel_versions::{ChannelChangelogs, ChannelVersion, ChannelVersions, VersionInfo};
 
-use crate::{
-    channel::{Channel, ChannelState},
-    server::server_api::FETCH_CHANNEL_VERSIONS_TIMEOUT,
-};
+use crate::channel::{Channel, ChannelState};
+
+const FETCH_CHANNEL_VERSIONS_TIMEOUT: Duration = Duration::from_secs(60);
 
 // Fetches channel versions asynchronously from the Warp server. If the Warp server request fails,
 // then fetches from GCP JSON storage as a fallback.

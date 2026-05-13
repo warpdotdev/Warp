@@ -24,7 +24,6 @@ pub mod prelude;
 pub mod presenter;
 pub mod rendering;
 pub mod scene;
-pub mod telemetry;
 #[cfg(test)]
 mod test;
 pub mod text;

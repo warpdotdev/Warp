@@ -147,16 +147,14 @@ fn version_is_compatible(client: Option<&str>, server: &str) -> bool {
 
 /// 是否应当对远端 `server_version` 强制做 tag 严格匹配。
 ///
-/// 对于 [`Channel::Oss`](OpenWarp),客户端目前是从源码 build 的
+/// 对于 [`Channel::Oss`](OpenWarp),客户端目前可能是从源码 build 的
 /// (无 `GIT_RELEASE_TAG` → `ChannelState::app_version()` 永远是
-/// `None`),而 SSH Extension 临时复用官方 `app.warp.dev/download/cli`
-/// 上的 release 产物(带有非空 release tag)。这种组合在
+/// `None`),而 SSH Extension 安装的 release 产物可能带有非空 release tag。这样的组合在
 /// [`version_is_compatible`] 下永远落到 `(None, false) => false`,
 /// 触发 `remove_remote_server_binary()` → 下一次 reconnect 重新
-/// install → 又版本不匹配 → 死循环。详见 `setup.rs::download_url`
-/// 上的 `TODO(openwarp)`:等 OpenWarp 自己发布 remote-server 二进制、
-/// 把下载源切到 GitHub Release 后,客户端与服务端再次是同源构建,
-/// 这里的特例就可以删掉,版本校验回到所有 channel 一致的行为。
+/// install → 又版本不匹配 → 死循环。等 OpenWarp 客户端与远端服务端都
+/// 稳定来自同一 release tag 后,这里的特例就可以删掉,版本校验回到
+/// 所有 channel 一致的行为。
 #[cfg(not(target_family = "wasm"))]
 fn should_enforce_remote_version_check(channel: Channel) -> bool {
     !matches!(channel, Channel::Oss)

@@ -1,5 +1,44 @@
-use warp_graphql::billing::{AddonCreditsOption, PlanPricing, PricingInfo, StripeSubscriptionPlan};
 use warpui::{Entity, ModelContext, SingletonEntity};
+
+#[derive(Debug, Clone)]
+pub struct AddonCreditsOption {
+    pub credits: i32,
+    pub price_usd_cents: i32,
+}
+
+impl AddonCreditsOption {
+    pub fn rate(&self) -> f32 {
+        self.price_usd_cents as f32 / self.credits as f32
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PricingInfo {
+    pub plans: Vec<PlanPricing>,
+    pub addon_credits_options: Vec<AddonCreditsOption>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlanPricing {
+    pub plan: StripeSubscriptionPlan,
+    pub monthly_plan_price_per_month_usd_cents: i32,
+    pub yearly_plan_price_per_month_usd_cents: i32,
+    pub request_limit: Option<i32>,
+    pub max_team_size: Option<i32>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum StripeSubscriptionPlan {
+    Business,
+    Lightspeed,
+    Pro,
+    Team,
+    Turbo,
+    Build,
+    BuildBusiness,
+    BuildMax,
+    Other(String),
+}
 
 /// A global model for pricing information from the server.
 ///

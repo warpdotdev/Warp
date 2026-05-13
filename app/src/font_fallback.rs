@@ -7,8 +7,8 @@ use lazy_static::lazy_static;
 
 fn url_for_font(family_name: &str, font_file: &str) -> String {
     format!(
-        "{}/assets/client/static/fallback-fonts/{}/{}",
-        ChannelState::server_root_url(),
+        "{}://assets/fallback-fonts/{}/{}",
+        ChannelState::url_scheme(),
         family_name,
         font_file
     )

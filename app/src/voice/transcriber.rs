@@ -3,7 +3,27 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use warpui::{Entity, SingletonEntity};
 
-use crate::server::server_api::TranscribeError;
+#[derive(thiserror::Error, Debug)]
+pub enum TranscribeError {
+    #[error("Request failed due to lack of Voice quota.")]
+    QuotaLimit,
+
+    #[error("Warp is currently overloaded. Please try again later.")]
+    ServerOverloaded,
+
+    #[error("Internal error occurred at transport layer.")]
+    Transport,
+
+    #[error("Failed to deserialize JSON.")]
+    Deserialization,
+
+    /// OpenWarp 已禁用语音转写(BYOP genai 协议无法承载音频)。
+    #[error("Voice transcription is unavailable in OpenWarp.")]
+    Disabled,
+
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
 
 /// Interface for transcribing voice input.
 #[cfg_attr(not(target_family = "wasm"), async_trait)]

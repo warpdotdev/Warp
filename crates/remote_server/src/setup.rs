@@ -279,20 +279,14 @@ pub fn parse_uname_output(output: &str) -> Result<RemotePlatform> {
 /// - integration: `~/.warp-dev/remote-server`
 /// - warp-oss:    `~/.warp-dev/remote-server`(临时复用官方 dev 通道)
 //
-// TODO(openwarp): OpenWarp 暂未发布自己的 remote-server 二进制,远端
-// 安装链路临时复用官方 `https://app.warp.dev/download/cli?channel=dev`
-// 的 latest dev 产物。等 OpenWarp 自己 release 后,这里改回 `.warp-oss`,
-// 并把下载源切到 OpenWarp 的 GitHub Release 资产。
+// OpenWarp remote-server 安装链路走 GitHub Release 资产。
 pub fn remote_server_dir() -> String {
     let warp_dir = match ChannelState::channel() {
         Channel::Stable => ".warp",
         Channel::Preview => ".warp-preview",
         Channel::Dev | Channel::Integration => ".warp-dev",
         Channel::Local => ".warp-local",
-        Channel::Oss => {
-            // TODO(openwarp): 临时复用官方 dev 通道路径,见上方 TODO。
-            ".warp-dev"
-        }
+        Channel::Oss => ".warp-dev",
     };
     format!("~/{warp_dir}/remote-server")
 }
@@ -437,29 +431,9 @@ pub fn install_script() -> String {
         .replace("{version_suffix}", &version_suffix)
 }
 
-/// Construct the download URL from the server root URL.
-///
-/// For example, given `https://app.warp.dev`, returns
-/// `https://app.warp.dev/download/cli`.
-///
-/// OpenWarp 临时例外:[`Channel::Oss`] 下 `ChannelState::server_root_url()`
-/// 是 cloud-removal sentinel `http://192.0.2.0:9`(见
-/// `WarpServerConfig::disabled`),不能拿去拼下载 URL,否则远端
-/// curl 会一路 timeout(RFC 5737 TEST-NET-1)。这里硬编码官方
-/// `https://app.warp.dev`,让 SSH Extension 下载临时走官方 dev
-/// channel。
+/// Construct the OpenWarp remote-server download URL.
 fn download_url() -> String {
-    // TODO(openwarp): 等 OpenWarp 发布自己的 remote-server 二进制
-    // 后,这里改为指向 OpenWarp 的 GitHub Release 下载源
-    // (如 `https://github.com/zerx-lab/warp/releases/download/{tag}/`),
-    // 同时不再依赖官方 `?package=tar&channel=...&version=...` 的
-    // query 参数格式,改成 GitHub Release 的路径式资产 URL。
-    if matches!(ChannelState::channel(), Channel::Oss) {
-        return "https://app.warp.dev/download/cli".to_string();
-    }
-    let base = ChannelState::server_root_url();
-    let base = base.trim_end_matches('/');
-    format!("{base}/download/cli")
+    "https://github.com/zerx-lab/warp/releases/latest/download/cli".to_string()
 }
 
 /// Maps the client's [`Channel`] to the server's download channel parameter.
@@ -471,10 +445,6 @@ fn download_channel() -> &'static str {
         Channel::Stable => "stable",
         Channel::Preview => "preview",
         Channel::Dev | Channel::Local | Channel::Integration => "dev",
-        // TODO(openwarp): OpenWarp 暂未发布自己的 remote-server 二进制,
-        // 临时复用官方 dev channel 产物。等 OpenWarp 自己 release 后,
-        // 把这条整体替换成走 GitHub Release 的下载源(届时
-        // `download_url` / `install_remote_server.sh` 也要一起调整)。
         Channel::Oss => "dev",
     }
 }

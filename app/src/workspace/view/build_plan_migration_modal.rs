@@ -1,4 +1,6 @@
-use crate::pricing::{PricingInfoModel, PricingInfoModelEvent};
+use crate::pricing::{
+    AddonCreditsOption, PricingInfoModel, PricingInfoModelEvent, StripeSubscriptionPlan,
+};
 use crate::terminal::general_settings::GeneralSettings;
 use crate::ui_components::blended_colors;
 use crate::view_components::{Dropdown, DropdownEvent, DropdownItem, ToastFlavor};
@@ -13,7 +15,6 @@ use settings::Setting as _;
 use thousands::Separable;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::Fill;
-use warp_graphql::billing::{AddonCreditsOption, StripeSubscriptionPlan};
 use warpui::elements::{
     Align, Border, CacheOption, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, DropShadow, Flex, FormattedTextElement, HighlightedHyperlink, Image,

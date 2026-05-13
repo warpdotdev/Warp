@@ -44,13 +44,6 @@ pub const AI_FEATURES: &[&str] = &[
 /// surfaces that need it.
 pub const WARP_DRIVE_FEATURES: &[&str] = &["Warp Drive", "Session Sharing"];
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "bin")] {
-        mod telemetry_provider;
-        pub use telemetry_provider::MockTelemetryContextProvider;
-    }
-}
-
 pub mod components;
 mod visuals;
 

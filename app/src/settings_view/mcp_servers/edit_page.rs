@@ -37,13 +37,10 @@ use crate::{
         },
     },
     banner::{Banner, BannerTextContent},
-    cloud_object::{CloudObject, Space},
+    cloud_object::{update_manager::InitiatedBy, CloudObject, Space},
     code::editor::view::{CodeEditorRenderOptions, CodeEditorView},
     persistence::ModelEvent,
-    server::{
-        cloud_objects::update_manager::InitiatedBy,
-        telemetry::{MCPTemplateCreationSource, TelemetryEvent},
-    },
+    server::telemetry::{MCPTemplateCreationSource, TelemetryEvent},
     settings_view::mcp_servers::{
         destructive_mcp_confirmation_dialog::{
             DestructiveMCPConfirmationDialog, DestructiveMCPConfirmationDialogEvent,

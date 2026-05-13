@@ -1,9 +1,10 @@
 use crate::{
     cloud_object::{
-        model::persistence::CloudModel, CloudObjectEventEntrypoint, CloudObjectLocation, Space,
+        model::persistence::CloudModel, update_manager::UpdateManager, CloudObjectEventEntrypoint,
+        CloudObjectLocation, Space,
     },
     network::{NetworkStatus, NetworkStatusKind},
-    server::{cloud_objects::update_manager::UpdateManager, ids::ClientId},
+    server::ids::ClientId,
     util::bindings::keybinding_name_to_display_string,
     workflows::workflow::Workflow,
     workspaces::{team::Team, user_workspaces::UserWorkspaces, workspace::Workspace},

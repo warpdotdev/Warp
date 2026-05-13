@@ -138,7 +138,6 @@ impl MCPServersListPageView {
                         // Refresh cards when servers are spawned or removed.
                         me.refresh_file_based_server_cards(ctx);
                     }
-                    _ => {}
                 });
 
                 // Refresh cards when MCP config files are parsed or removed.
@@ -148,7 +147,6 @@ impl MCPServersListPageView {
                     | FileMCPWatcherEvent::ConfigRemoved { .. } => {
                         me.refresh_file_based_server_cards(ctx);
                     }
-                    _ => {}
                 });
             }
         );
@@ -289,15 +287,6 @@ impl MCPServersListPageView {
                         id: _,
                     },
                 folder_id: _,
-            }
-            | CloudModelEvent::ObjectSynced {
-                type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
-                        object_type: GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
-                        id: _,
-                    },
-                client_id: _,
-                server_id: _,
             } => {
                 me.refresh_server_cards(ctx);
             }

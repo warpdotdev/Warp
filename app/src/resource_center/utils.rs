@@ -18,7 +18,6 @@ pub const BLOCKS_KEYBINDINGS: &[&str] = &[
     "terminal:open_block_list_context_menu_via_keybinding",
     "terminal:copy_commands",
     "terminal:reinput_commands_with_sudo",
-    "terminal:open_share_block_modal",
     "terminal:expand_block_selection_below",
     "terminal:expand_block_selection_above",
     "terminal:clear_blocks",

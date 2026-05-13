@@ -1,13 +1,12 @@
-﻿use std::collections::HashSet;
+// OpenWarp:telemetry 发送层、context provider 与 Rudderstack 实现已删除。
+// 这里仅保留 `TelemetryEvent` 枚举及其辅助类型,作为大量 UI/模型调用点的类型壳。
+
+use std::collections::HashSet;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serde_json::Value;
-use session_sharing_protocol::common::ParticipantId;
-use session_sharing_protocol::common::Role;
-use session_sharing_protocol::common::SessionId as SharedSessionId;
-use session_sharing_protocol::sharer::SessionEndedReason;
 use strum_macros::EnumDiscriminants;
 use strum_macros::EnumIter;
 use warp_completer::completer::MatchType;
@@ -57,7 +56,6 @@ use crate::pane_group::PaneDragDropLocation;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::search::command_search::searcher::CommandSearchItemAction;
 use crate::search::QueryFilter;
-use crate::server::block::DisplaySetting;
 use crate::server::ids::ObjectUid;
 use crate::server::ids::ServerId;
 use crate::settings::import::config::ParsedTerminalSetting;
@@ -76,7 +74,6 @@ use crate::terminal::model::session::SessionId;
 use crate::terminal::model::terminal_model::BlockSelectionCardinality;
 use crate::terminal::model::terminal_model::TmuxInstallationState;
 use crate::terminal::settings::AltScreenPaddingMode;
-use crate::terminal::shared_session::SharedSessionActionSource;
 use crate::terminal::shell::ShellType;
 use crate::terminal::ssh::ssh_detection::SshInteractiveSessionDetected;
 use crate::terminal::view::block_onboarding::onboarding_agentic_suggestions_block::OnboardingChipType;
@@ -90,12 +87,6 @@ use crate::terminal::view::PromptPart;
 use crate::terminal::view::{
     NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction, NotificationsTrigger,
 };
-// OpenWarp:share_block_modal 已删,本地 stub 仅为保持 telemetry 枚举可编译,运行时永不触发
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
-pub enum ShareBlockType {
-    Single,
-    All,
-}
 use crate::tips::WelcomeTipFeature;
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::settings::EditorLayout;
@@ -107,7 +98,6 @@ use crate::workflows::WorkflowSource;
 use crate::workspace::tab_settings::TabCloseButtonPosition;
 use crate::workspace::tab_settings::WorkspaceDecorationVisibility;
 use crate::workspace::TabMovement;
-use session_sharing_protocol::sharer::SessionSourceType;
 use warp_core::interval_timer::TimingDataPoint;
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -865,14 +855,6 @@ pub enum AgentModeSetupProjectScopedRulesActionType {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum AgentModeSetupCreateEnvironmentActionType {
-    #[serde(rename = "create_environment")]
-    CreateEnvironment,
-    #[serde(rename = "skip_environment")]
-    SkipEnvironment,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CpuUsageStats {
     /// The number of logical CPUs on the system.
     pub num_cpus: usize,
@@ -996,7 +978,6 @@ pub enum AIAgentInput {
     AutoCodeDiffQuery { query: String },
     ResumeConversation,
     InitProjectRules { display_query: Option<String> },
-    CreateEnvironment { display_query: Option<String> },
     TriggerSuggestPrompt { trigger: PassiveSuggestionTrigger },
     ActionResult { action_id: AIAgentActionId },
     CreateNewProject { query: String },
@@ -1019,9 +1000,6 @@ impl From<FullAIAgentInput> for AIAgentInput {
             FullAIAgentInput::ResumeConversation { .. } => Self::ResumeConversation,
             FullAIAgentInput::InitProjectRules { display_query, .. } => {
                 Self::InitProjectRules { display_query }
-            }
-            FullAIAgentInput::CreateEnvironment { display_query, .. } => {
-                Self::CreateEnvironment { display_query }
             }
             FullAIAgentInput::TriggerPassiveSuggestion { trigger, .. } => {
                 Self::TriggerSuggestPrompt { trigger }
@@ -1088,7 +1066,6 @@ pub enum TelemetryAgentViewEntryOrigin {
     Onboarding,
     Keybinding,
     SlashInit,
-    CreateEnvironment,
     ProjectEntry,
     ClearBuffer,
     DefaultSessionMode,
@@ -1138,7 +1115,6 @@ impl From<AgentViewEntryOrigin> for TelemetryAgentViewEntryOrigin {
             AgentViewEntryOrigin::Onboarding => Self::Onboarding,
             AgentViewEntryOrigin::Keybinding => Self::Keybinding,
             AgentViewEntryOrigin::SlashInit => Self::SlashInit,
-            AgentViewEntryOrigin::CreateEnvironment => Self::CreateEnvironment,
             AgentViewEntryOrigin::ProjectEntry => Self::ProjectEntry,
             AgentViewEntryOrigin::ClearBuffer => Self::ClearBuffer,
             AgentViewEntryOrigin::DefaultSessionMode => Self::DefaultSessionMode,
@@ -1253,7 +1229,6 @@ pub enum TelemetryEvent {
     },
     /// Copy command, output or both for some number of blocks.
     ContextMenuCopy(BlockEntity, BlockSelectionCardinality),
-    ContextMenuOpenShareModal(BlockSelectionCardinality),
     ContextMenuFindWithinBlocks(BlockSelectionCardinality),
     ContextMenuCopyPrompt {
         part: PromptPart,
@@ -1274,13 +1249,6 @@ pub enum TelemetryEvent {
     },
     ReinputCommands(BlockSelectionCardinality),
     JumpToPreviousCommand,
-    CopyBlockSharingLink(ShareBlockType),
-    GenerateBlockSharingLink {
-        share_type: ShareBlockType,
-        display_setting: DisplaySetting,
-        show_prompt: bool,
-        redact_secrets: bool,
-    },
     BlockSelection(BlockSelectionDetails),
     BootstrappingSlow(BootstrappingInfo),
     BootstrappingSlowContents(SlowBootstrapInfo),
@@ -1742,37 +1710,6 @@ pub enum TelemetryEvent {
         // Is PageDown. Otherwise is PageUp
         is_down: bool,
     },
-    /// Emitted on start share attempt, not on success.
-    StartedSharingCurrentSession {
-        includes_scrollback: bool,
-        source: SharedSessionActionSource,
-    },
-    StoppedSharingCurrentSession {
-        source: SharedSessionActionSource,
-        reason: SessionEndedReason,
-    },
-    JoinedSharedSession {
-        session_id: SharedSessionId,
-        source_type: SessionSourceType,
-    },
-    SharedSessionModalUpgradePressed,
-    /// Emitted when a shared session sharer cancels granting a role
-    /// (currently only applies when granting executor mode).
-    SharerCancelledGrantRole {
-        role: Role,
-    },
-    /// Emitted when a shared session sharer checks "dont show again"
-    /// in confirmation modal when granting a role.
-    SharerGrantModalDontShowAgain,
-    JumpToSharedSessionParticipant {
-        jumped_to: ParticipantId,
-    },
-    CopiedSharedSessionLink {
-        source: SharedSessionActionSource,
-    },
-    WebSessionOpenedOnDesktop {
-        source: SharedSessionActionSource,
-    },
     WebCloudObjectOpenedOnDesktop {
         object_metadata: CloudObjectTelemetryMetadata,
     },
@@ -2092,11 +2029,6 @@ pub enum TelemetryEvent {
         is_natural_language_autosuggestions_enabled: bool,
     },
 
-    /// Emitted when the user toggles the "Shared Block Title Auto Generation" setting in the AI settings page.
-    ToggleSharedBlockTitleGenerationSetting {
-        is_shared_block_title_generation_enabled: bool,
-    },
-
     /// Emitted when the user toggles the "Git Operations Autogen" setting in the AI settings page.
     ToggleGitOperationsAutogenSetting {
         is_git_operations_autogen_enabled: bool,
@@ -2113,7 +2045,6 @@ pub enum TelemetryEvent {
     },
 
     TierLimitHit(TierLimitHitEvent),
-    SharedObjectLimitHitBannerViewPlansButtonClicked,
     ResourceUsageStats {
         cpu: CpuUsageStats,
         mem: MemoryUsageStats,
@@ -2444,9 +2375,6 @@ pub enum TelemetryEvent {
         action: AgentModeSetupProjectScopedRulesActionType,
     },
 
-    AgentModeSetupCreateEnvironmentAction {
-        action: AgentModeSetupCreateEnvironmentActionType,
-    },
     InputBufferSubmitted {
         input_type: input_classifier::InputType,
         is_locked: bool,
@@ -2907,9 +2835,6 @@ impl TelemetryEvent {
             TelemetryEvent::ContextMenuFindWithinBlocks(cardinality) => {
                 Some(json!({ "cardinality": cardinality }))
             }
-            TelemetryEvent::ContextMenuOpenShareModal(cardinality) => {
-                Some(json!({ "cardinality": cardinality }))
-            }
             TelemetryEvent::ContextMenuCopyPrompt { part } => Some(json!({ "part": part })),
             TelemetryEvent::ReinputCommands(cardinality) => {
                 Some(json!({ "cardinality": cardinality }))
@@ -3262,28 +3187,10 @@ impl TelemetryEvent {
             TelemetryEvent::ExportObject(object_type) => {
                 Some(json!({ "object_type": object_type }))
             }
-            TelemetryEvent::GenerateBlockSharingLink {
-                share_type,
-                display_setting,
-                show_prompt,
-                redact_secrets,
-            } => Some(
-                json!({"share_type": share_type, "display_setting": display_setting, "show_prompt": show_prompt, "redact_secrets": redact_secrets}),
-            ),
-            TelemetryEvent::CopyBlockSharingLink(share_type) => {
-                Some(json!({ "share_type": share_type }))
-            }
             TelemetryEvent::PageUpDownInEditorPressed {
                 is_empty_editor,
                 is_down,
             } => Some(json!({"is_empty_editor": is_empty_editor, "is_down": is_down})),
-            TelemetryEvent::StartedSharingCurrentSession {
-                includes_scrollback,
-                source,
-            } => Some(json!({ "includes_scrollback": includes_scrollback, "source": source })),
-            TelemetryEvent::StoppedSharingCurrentSession { source, reason } => {
-                Some(json!({ "source": source, "reason": reason }))
-            }
             TelemetryEvent::UnsupportedShell { shell } => Some(json!({ "shell": shell })),
             TelemetryEvent::CopyObjectToClipboard(object_type) => {
                 Some(json!({ "object_type": object_type }))
@@ -3335,21 +3242,6 @@ impl TelemetryEvent {
                 "error": error,
                 "tmux_installation": *tmux_installation,
             })),
-            TelemetryEvent::JoinedSharedSession {
-                session_id,
-                source_type,
-            } => Some(json!({
-                "session_id": session_id,
-                "source_type": source_type,
-            })),
-            TelemetryEvent::SharerCancelledGrantRole { role } => Some(json!({ "role": role })),
-            TelemetryEvent::JumpToSharedSessionParticipant { jumped_to } => {
-                Some(json!({ "jumped_to": jumped_to }))
-            }
-            TelemetryEvent::CopiedSharedSessionLink { source } => Some(json!({ "source": source })),
-            TelemetryEvent::WebSessionOpenedOnDesktop { source } => {
-                Some(json!({ "source": source}))
-            }
             TelemetryEvent::WebCloudObjectOpenedOnDesktop { object_metadata } => Some(json!({
                 "object": object_metadata,
             })),
@@ -3421,11 +3313,6 @@ impl TelemetryEvent {
                 is_natural_language_autosuggestions_enabled,
             } => Some(
                 json!({"is_natural_language_autosuggestions_enabled": is_natural_language_autosuggestions_enabled}),
-            ),
-            TelemetryEvent::ToggleSharedBlockTitleGenerationSetting {
-                is_shared_block_title_generation_enabled,
-            } => Some(
-                json!({"is_shared_block_title_generation_enabled": is_shared_block_title_generation_enabled}),
             ),
             TelemetryEvent::ToggleGitOperationsAutogenSetting {
                 is_git_operations_autogen_enabled,
@@ -3975,13 +3862,10 @@ impl TelemetryEvent {
             | TelemetryEvent::CopySecret
             | TelemetryEvent::AutoGenerateMetadataSuccess
             | TelemetryEvent::CommandFileRun
-            | TelemetryEvent::SharerGrantModalDontShowAgain
             | TelemetryEvent::LogOut
             | TelemetryEvent::UpdateBlockFilterQuery
             | TelemetryEvent::BlockFilterToolbeltButtonClicked
             | TelemetryEvent::PaneDragInitiated
-            | TelemetryEvent::SharedObjectLimitHitBannerViewPlansButtonClicked
-            | TelemetryEvent::SharedSessionModalUpgradePressed
             | TelemetryEvent::AgentModePotentialAutoDetectionFalsePositive(
                 AgentModeAutoDetectionFalsePositivePayload::ExternalUsers,
             )
@@ -4156,9 +4040,6 @@ impl TelemetryEvent {
             TelemetryEvent::AgentModeSetupBannerAccepted => None,
             TelemetryEvent::AgentModeSetupBannerDismissed => None,
             TelemetryEvent::AgentModeSetupProjectScopedRulesAction { action } => Some(json!({
-                "action": action,
-            })),
-            TelemetryEvent::AgentModeSetupCreateEnvironmentAction { action } => Some(json!({
                 "action": action,
             })),
             #[cfg(windows)]
@@ -4425,8 +4306,7 @@ impl TelemetryEvent {
         }
     }
 
-    /// Returns whether the event contains user generated content, indicating it should
-    /// be sent to a dedicated rudderstack source.
+    /// Returns whether the event contains user generated content.
     pub fn contains_ugc(&self) -> bool {
         match self {
             TelemetryEvent::GrepToolFailed { .. } => true,
@@ -4474,7 +4354,6 @@ impl TelemetryEvent {
             | TelemetryEvent::ConfirmSuggestion { .. }
             | TelemetryEvent::OpenContextMenu { .. }
             | TelemetryEvent::ContextMenuCopy(_, _)
-            | TelemetryEvent::ContextMenuOpenShareModal(_)
             | TelemetryEvent::ContextMenuFindWithinBlocks(_)
             | TelemetryEvent::ContextMenuCopyPrompt { .. }
             | TelemetryEvent::ContextMenuToggleGitPromptDirtyIndicator { .. }
@@ -4484,8 +4363,6 @@ impl TelemetryEvent {
             | TelemetryEvent::PromptEdited { .. }
             | TelemetryEvent::ReinputCommands(_)
             | TelemetryEvent::JumpToPreviousCommand
-            | TelemetryEvent::CopyBlockSharingLink(_)
-            | TelemetryEvent::GenerateBlockSharingLink { .. }
             | TelemetryEvent::BlockSelection(_)
             | TelemetryEvent::BootstrappingSlow(_)
             | TelemetryEvent::SessionAbandonedBeforeBootstrap { .. }
@@ -4687,15 +4564,6 @@ impl TelemetryEvent {
             | TelemetryEvent::DriveSharingOnboardingBlockShown
             | TelemetryEvent::CommandFileRun
             | TelemetryEvent::PageUpDownInEditorPressed { .. }
-            | TelemetryEvent::StartedSharingCurrentSession { .. }
-            | TelemetryEvent::StoppedSharingCurrentSession { .. }
-            | TelemetryEvent::JoinedSharedSession { .. }
-            | TelemetryEvent::SharedSessionModalUpgradePressed
-            | TelemetryEvent::SharerCancelledGrantRole { .. }
-            | TelemetryEvent::SharerGrantModalDontShowAgain
-            | TelemetryEvent::JumpToSharedSessionParticipant { .. }
-            | TelemetryEvent::CopiedSharedSessionLink { .. }
-            | TelemetryEvent::WebSessionOpenedOnDesktop { .. }
             | TelemetryEvent::WebCloudObjectOpenedOnDesktop { .. }
             | TelemetryEvent::UnsupportedShell { .. }
             | TelemetryEvent::LogOut
@@ -4735,7 +4603,6 @@ impl TelemetryEvent {
             | TelemetryEvent::ToggleCodeSuggestionsSetting { .. }
             | TelemetryEvent::ToggleVoiceInputSetting { .. }
             | TelemetryEvent::TierLimitHit(_)
-            | TelemetryEvent::SharedObjectLimitHitBannerViewPlansButtonClicked
             | TelemetryEvent::ResourceUsageStats { .. }
             | TelemetryEvent::MemoryUsageStats { .. }
             | TelemetryEvent::MemoryUsageHigh { .. }
@@ -4787,7 +4654,6 @@ impl TelemetryEvent {
             | TelemetryEvent::AgentModeError { .. }
             | TelemetryEvent::AgentModeRequestRetrySucceeded { .. }
             | TelemetryEvent::ToggleNaturalLanguageAutosuggestionsSetting { .. }
-            | TelemetryEvent::ToggleSharedBlockTitleGenerationSetting { .. }
             | TelemetryEvent::ToggleGitOperationsAutogenSetting { .. }
             | TelemetryEvent::GrepToolSucceeded
             | TelemetryEvent::FileGlobToolSucceeded
@@ -4814,7 +4680,6 @@ impl TelemetryEvent {
             | TelemetryEvent::AgentModeSetupBannerAccepted
             | TelemetryEvent::AgentModeSetupBannerDismissed
             | TelemetryEvent::AgentModeSetupProjectScopedRulesAction { .. }
-            | TelemetryEvent::AgentModeSetupCreateEnvironmentAction { .. }
             | TelemetryEvent::CloneRepoPromptSubmitted { .. }
             | TelemetryEvent::GetStartedSkipToTerminal
             | TelemetryEvent::FileTreeItemAttachedAsContext { .. }
@@ -4992,12 +4857,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::AnonymousUserHitCloudObjectLimit => EnablementState::Always,
 
             Self::AgentModeChangedInputType => EnablementState::Always,
-            Self::StartedSharingCurrentSession
-            | Self::StoppedSharingCurrentSession
-            | Self::SharedSessionModalUpgradePressed => {
-                EnablementState::Flag(FeatureFlag::CreatingSharedSessions)
-            }
-            Self::JoinedSharedSession => EnablementState::Flag(FeatureFlag::ViewingSharedSessions),
             Self::OpenNotebook | Self::EditNotebook | Self::NotebookAction => {
                 EnablementState::Always
             }
@@ -5015,7 +4874,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ConfirmSuggestion => EnablementState::Always,
             Self::OpenContextMenu => EnablementState::Always,
             Self::ContextMenuCopy => EnablementState::Always,
-            Self::ContextMenuOpenShareModal => EnablementState::Always,
             Self::ContextMenuFindWithinBlocks => EnablementState::Always,
             Self::ContextMenuCopyPrompt => EnablementState::Always,
             Self::ContextMenuToggleGitPromptDirtyIndicator => EnablementState::Always,
@@ -5025,8 +4883,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::PromptEdited => EnablementState::Always,
             Self::ReinputCommands => EnablementState::Always,
             Self::JumpToPreviousCommand => EnablementState::Always,
-            Self::CopyBlockSharingLink => EnablementState::Always,
-            Self::GenerateBlockSharingLink => EnablementState::Always,
             Self::BlockSelection => EnablementState::Always,
             Self::BootstrappingSlow => EnablementState::Always,
             Self::BootstrappingSlowContents => EnablementState::Always,
@@ -5235,15 +5091,9 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::PaneDragInitiated => EnablementState::Always,
             Self::PaneDropped => EnablementState::Always,
             Self::TierLimitHit => EnablementState::Always,
-            Self::SharerCancelledGrantRole => EnablementState::Always,
-            Self::SharerGrantModalDontShowAgain => EnablementState::Always,
-            Self::JumpToSharedSessionParticipant => EnablementState::Always,
-            Self::CopiedSharedSessionLink => EnablementState::Always,
-            Self::WebSessionOpenedOnDesktop => EnablementState::Always,
             Self::WebCloudObjectOpenedOnDesktop => EnablementState::Always,
             Self::ToggleShowBlockDividers => EnablementState::Flag(FeatureFlag::MinimalistUI),
             Self::DriveSharingOnboardingBlockShown => EnablementState::Always,
-            Self::SharedObjectLimitHitBannerViewPlansButtonClicked => EnablementState::Always,
             Self::ResourceUsageStats => EnablementState::Always,
             Self::ToggleGlobalAI => EnablementState::Always,
             Self::ToggleActiveAI => EnablementState::Always,
@@ -5286,9 +5136,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::UnitTestSuggestionCancelled { .. } => EnablementState::Always,
             Self::ToggleNaturalLanguageAutosuggestionsSetting => {
                 EnablementState::Flag(FeatureFlag::PredictAMQueries)
-            }
-            Self::ToggleSharedBlockTitleGenerationSetting => {
-                EnablementState::Flag(FeatureFlag::SharedBlockTitleGeneration)
             }
             Self::ToggleGitOperationsAutogenSetting => {
                 EnablementState::Flag(FeatureFlag::GitOperationsInCodeReview)
@@ -5362,7 +5209,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::AgentModeSetupBannerAccepted { .. } => EnablementState::Always,
             Self::AgentModeSetupBannerDismissed => EnablementState::Always,
             Self::AgentModeSetupProjectScopedRulesAction { .. } => EnablementState::Always,
-            Self::AgentModeSetupCreateEnvironmentAction { .. } => EnablementState::Always,
             Self::InputBufferSubmitted => EnablementState::Flag(FeatureFlag::NldImprovements),
             Self::AgentModeContinueConversationButtonClicked { .. } => EnablementState::Always,
             Self::AgentModeRewindDialogOpened { .. } => {
@@ -5412,9 +5258,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::LinearIssueLinkOpened => EnablementState::Always,
             Self::CloudAgentCapacityModalOpened
             | Self::CloudAgentCapacityModalDismissed
-            | Self::CloudAgentCapacityModalUpgradeClicked => {
-                EnablementState::Flag(FeatureFlag::CloudMode)
-            }
+            | Self::CloudAgentCapacityModalUpgradeClicked => EnablementState::Always,
             Self::ComputerUseApproved | Self::ComputerUseCancelled => {
                 EnablementState::Flag(FeatureFlag::AgentModeComputerUse)
             }
@@ -5462,10 +5306,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::JumpToPreviousCommand => "Jumped to Previous Command",
             Self::OpenContextMenu => "Open Context Menu",
             Self::ContextMenuFindWithinBlocks => "Context Menu: Find Within Blocks",
-            Self::ContextMenuOpenShareModal => "Context Menu: Initiate Block Sharing",
             Self::ContextMenuCopy => "Context Menu Copy",
-            Self::CopyBlockSharingLink => "Copy Block Sharing Link",
-            Self::GenerateBlockSharingLink => "Generate Block Sharing Link",
             Self::BlockSelection => "Block Selection",
             Self::BootstrappingSlow => "Bootstrapping Slow",
             Self::BootstrappingSlowContents => "Bootstrap Slow Contents",
@@ -5710,15 +5551,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ExportObject => "Export Object",
             Self::CommandFileRun => "Command File Run",
             Self::PageUpDownInEditorPressed => "Page Up/Down In Editor Pressed",
-            Self::StartedSharingCurrentSession => "Started Sharing Current Session",
-            Self::StoppedSharingCurrentSession => "Stopped Sharing Current Session",
-            Self::JoinedSharedSession => "Joined Shared Session",
-            Self::SharedSessionModalUpgradePressed => "Shared Session Modal Upgrade Pressed",
-            Self::SharerCancelledGrantRole => "Sharer Cancelled Grant Role",
-            Self::SharerGrantModalDontShowAgain => "Don't Show Sharer Grant Modal Again",
-            Self::JumpToSharedSessionParticipant { .. } => "Jumped to Shared Session Participant",
-            Self::CopiedSharedSessionLink { .. } => "Copied Shared Session Link",
-            Self::WebSessionOpenedOnDesktop { .. } => "Web session opened on desktop",
             Self::WebCloudObjectOpenedOnDesktop { .. } => "Warp Drive object opened on desktop",
             Self::DriveSharingOnboardingBlockShown => "Warp Drive Sharing onboarding block shown",
             Self::UnsupportedShell => "Unsupported Shell",
@@ -5753,9 +5585,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ChangedInviteViewOption => "Changed invite view option",
             Self::SendEmailInvites => "Sent email invites",
             Self::TierLimitHit => "Tier Limit Hit",
-            Self::SharedObjectLimitHitBannerViewPlansButtonClicked => {
-                "Shared Object Limit Hit Banner View Plans Button Clicked"
-            }
             Self::AgentModeUserAttemptedQueryAtRequestLimit => "AgentMode.QueryAttemptAtLImit",
             Self::AgentModeClickedEntrypoint => "AgentMode.ClickedEntrypoint",
             Self::AgentModeAttachedBlockContext => "AgentMode.AttachedContext",
@@ -5785,7 +5614,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ToggleNaturalLanguageAutosuggestionsSetting => {
                 "Toggle Natural Language Autosuggestions Setting"
             }
-            Self::ToggleSharedBlockTitleGenerationSetting => "Toggle SharedBlock Title Generation",
             Self::ToggleGitOperationsAutogenSetting => "Toggle Git Operations Autogen Setting",
             Self::AgentModeCodeSuggestionEditedByUser => "AgentMode.Code.SuggestedCodeEditedByUser",
             Self::AgentModeCodeFilesNavigated => "AgentMode.Code.FilesNavigated",
@@ -5901,9 +5729,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::AgentModeSetupBannerDismissed => "Agent Mode Setup Banner Dismissed",
             Self::AgentModeSetupProjectScopedRulesAction { .. } => {
                 "Agent Mode Setup Project Scoped Rules Action"
-            }
-            Self::AgentModeSetupCreateEnvironmentAction { .. } => {
-                "AgentMode.SetupCreateEnvironmentAction"
             }
             Self::InputBufferSubmitted => "AgentMode.NaturalLanguageDetection.InputBufferSubmitted",
             Self::RecentMenuItemSelected { .. } => "Recent Menu Item Selected",
@@ -6048,7 +5873,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 "Opened context menu (such as right clicking, clicking on ellipses in the top right of a Block, etc.)"
             }
             Self::ContextMenuCopy => "Clicked \"Copy\" in context menu",
-            Self::ContextMenuOpenShareModal => "Opened \"Share\" modal via context menu",
             Self::ContextMenuFindWithinBlocks => "Clicked \"find within blocks\" in context menu",
             Self::ContextMenuCopyPrompt => "Clicked  \"Copy Prompt\" in context menu",
             Self::ContextMenuToggleGitPromptDirtyIndicator => {
@@ -6060,8 +5884,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::PromptEdited => "Edited the prompt using the built-in prompt editor",
             Self::ReinputCommands => "Clicked \"reinput commands\" in context menu",
             Self::JumpToPreviousCommand => "Jumped to a previous command",
-            Self::CopyBlockSharingLink => "Clicked \"Share block...\" in context menu",
-            Self::GenerateBlockSharingLink => "Generated Block sharing link",
             Self::BlockSelection => "Selected Block",
             Self::BootstrappingSlow => "Slow bootstrap on session startup",
             Self::BootstrappingSlowContents => {
@@ -6425,27 +6247,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::PageUpDownInEditorPressed => {
                 "Pressed `PAGE-UP` or `PAGE-DOWN` within the Input Editor"
             }
-            Self::StartedSharingCurrentSession => "Started sharing the current session",
-            Self::StoppedSharingCurrentSession => "Halted sharing the current session",
-            Self::JoinedSharedSession => {
-                "When you join another instance of Warp using shared sessions"
-            }
-            Self::SharedSessionModalUpgradePressed => {
-                "Pressed upgrade after reaching max session sharing limit"
-            }
-            Self::SharerCancelledGrantRole => {
-                "When you cancel granting a role to a shared session participant"
-            }
-            Self::SharerGrantModalDontShowAgain => {
-                "When you check don't show again on the confirmation modal for granting a role"
-            }
-            Self::JumpToSharedSessionParticipant => {
-                "Clicked on a shared session participant avatar to jump to their location in the session"
-            }
-            Self::CopiedSharedSessionLink => "Copied a shared session link",
-            Self::WebSessionOpenedOnDesktop => {
-                "Shared session viewed on the web was opened on the desktop"
-            }
             Self::WebCloudObjectOpenedOnDesktop => {
                 "Warp Drive object on the web was opened on the desktop"
             }
@@ -6480,9 +6281,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::PaneDropped => "Ended dragging a pane via the pane header",
             Self::AgentModeCreatedAIBlock => "Created an AI block in agent mode",
             Self::TierLimitHit => "User hit the tier limit for a feature",
-            Self::SharedObjectLimitHitBannerViewPlansButtonClicked => {
-                "Clicked the 'View Plans' button on the persistent drive banner"
-            }
             Self::AgentModeUserAttemptedQueryAtRequestLimit => {
                 "Tried to send an Agent Mode query but they already reached the query limit"
             }
@@ -6512,9 +6310,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ToggleCodeSuggestionsSetting => "Toggled on/off the code suggestions setting",
             Self::ToggleNaturalLanguageAutosuggestionsSetting => {
                 "Toggled on/off the natural language autosuggestions setting"
-            }
-            Self::ToggleSharedBlockTitleGenerationSetting => {
-                "Toggled on/off the shared block title generation setting"
             }
             Self::ToggleGitOperationsAutogenSetting => {
                 "Toggled on/off the git operations autogen setting"
@@ -6696,9 +6491,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::AgentModeSetupBannerDismissed => "Agent Mode setup banner dismissed",
             Self::AgentModeSetupProjectScopedRulesAction { .. } => {
                 "User clicked a button in the Agent Mode setup project scoped rules step"
-            }
-            Self::AgentModeSetupCreateEnvironmentAction { .. } => {
-                "User clicked a button in the Agent Mode setup create environment step"
             }
             Self::InputBufferSubmitted => "Input buffer submitted",
             Self::RecentMenuItemSelected { .. } => {

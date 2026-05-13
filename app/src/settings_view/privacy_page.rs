@@ -75,11 +75,11 @@ const TELEMETRY_DOCS_URL: &str = "https://docs.warp.dev/support-and-community/pr
 pub fn data_management_url(custom_token: Option<&str>) -> String {
     match custom_token {
         Some(token) => format!(
-            "{}/data_management?customToken={}",
-            ChannelState::server_root_url(),
+            "{}://data_management?customToken={}",
+            ChannelState::url_scheme(),
             token
         ),
-        None => format!("{}/data_management", ChannelState::server_root_url(),),
+        None => format!("{}://data_management", ChannelState::url_scheme(),),
     }
 }
 

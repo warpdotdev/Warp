@@ -22,8 +22,6 @@ pub enum RepoDetectionSource {
     ProjectRulesIndexing,
     /// Repo was detected for code review/diff state initialization.
     CodeReviewInitialization,
-    /// Repo was cloned or discovered during cloud agent environment preparation.
-    CloudEnvironmentPrep,
 }
 
 pub enum DetectedRepositoriesEvent {

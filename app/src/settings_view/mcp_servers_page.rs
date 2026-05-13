@@ -12,9 +12,9 @@ use crate::{
         TemplatableMCPServer, TemplatableMCPServerInstallation, TemplatableMCPServerManager,
     },
     appearance::Appearance,
+    cloud_object::update_manager::InitiatedBy,
     cloud_object::Space,
     modal::{Modal, ModalViewState},
-    server::cloud_objects::update_manager::InitiatedBy,
     settings_view::{
         mcp_servers::{
             edit_page::{MCPServersEditPageView, MCPServersEditPageViewEvent},
