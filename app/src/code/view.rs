@@ -2040,7 +2040,7 @@ impl CodeView {
                     to_extend.push(new_data);
                     // If the newly added tab is the active tab in the source CodeView, update the active tab index to point to it.
                     if i == source_code_view.active_tab_index() {
-                        active_tab_index = existing_locations_to_idx.len() + to_extend.len() - 1;
+                        active_tab_index = self.tab_group.len() + to_extend.len() - 1;
                     }
                 }
             }
