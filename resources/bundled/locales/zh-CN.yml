@@ -1233,6 +1233,33 @@ zh-CN:
     learn_more: "了解更多"
     loading_session: "正在加载会话..."
 
+  # ── 终端面板 ──
+  terminal_pane:
+    copy_link: "复制链接"
+    stop_sharing_session: "停止共享会话"
+    open_on_desktop: "在桌面端打开"
+    share_session: "共享会话"
+
+  # ── SSH 错误 ──
+  ssh_error:
+    report_issue_start: "我们正在积极改进 Warp 中 SSH 的稳定性。请考虑"
+    filing_an_issue: "提交 issue"
+    report_issue_end: "到 GitHub，方便我们更好地定位问题。"
+    warpify_without_tmux: "不使用 TMUX 进行 Warpify"
+    continue_without_warpification: "不进行 Warpification 并继续"
+
+  # ── 共享会话 ──
+  shared_session:
+    view: "查看"
+    edit: "编辑"
+
+  # ── Auth Secret FTUX ──
+  auth_secret_ftux:
+    search_placeholder: "搜索密钥或创建新密钥"
+    no_secrets_found: "未找到密钥"
+    loading: "加载中…"
+    unable_to_load_secrets: "无法加载密钥"
+
   onboarding_prompt:
     line_one: "接下来，设置你的提示符。Warp 提供自定义提示符构建器，你也可以选择 PS1 来沿用已有的提示符配置。"
     line_two: "Warp 支持许多自定义提示符，例如 oh-my-zsh、Starship、Powerlevel10K。"

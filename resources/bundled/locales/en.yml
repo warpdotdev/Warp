@@ -1233,6 +1233,33 @@ en:
     learn_more: "Learn more"
     loading_session: "Loading session..."
 
+  # ── Terminal Pane ──
+  terminal_pane:
+    copy_link: "Copy link"
+    stop_sharing_session: "Stop sharing session"
+    open_on_desktop: "Open on Desktop"
+    share_session: "Share session"
+
+  # ── SSH Error ──
+  ssh_error:
+    report_issue_start: "We are actively working on improving the stability of SSH in Warp. Please consider "
+    filing_an_issue: "filing an issue"
+    report_issue_end: " on GitHub so we can better identify the problem."
+    warpify_without_tmux: "Warpify without TMUX"
+    continue_without_warpification: "Continue without Warpification"
+
+  # ── Shared Session ──
+  shared_session:
+    view: "View"
+    edit: "Edit"
+
+  # ── Auth Secret FTUX ──
+  auth_secret_ftux:
+    search_placeholder: "Search secrets or create a new one"
+    no_secrets_found: "No secrets found"
+    loading: "Loading…"
+    unable_to_load_secrets: "Unable to load secrets"
+
   onboarding_prompt:
     line_one: "Next, let’s set up your prompt. Warp has a custom prompt builder or you can select PS1 to honor your pre-existing prompt configuration."
     line_two: "Warp works with many custom prompts like oh-my-zsh, Starship, Powerlevel10K. "
