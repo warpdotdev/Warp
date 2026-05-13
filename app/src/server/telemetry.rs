@@ -164,14 +164,14 @@ pub struct BlockLatencyInfo {
 
 // For use when recording what type of cloud object a particular telemetry is for.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum TelemetryCloudObjectType {
+pub enum TelemetryObjectType {
     Workflow,
     Notebook,
     Folder,
     GenericStringObject(GenericStringObjectFormat),
 }
 
-impl From<&ObjectTypeAndId> for TelemetryCloudObjectType {
+impl From<&ObjectTypeAndId> for TelemetryObjectType {
     fn from(object_type_and_id: &ObjectTypeAndId) -> Self {
         match object_type_and_id {
             ObjectTypeAndId::Notebook(_) => Self::Notebook,
@@ -209,8 +209,8 @@ impl From<Space> for TelemetrySpace {
 /// Events that only apply to a single object type may use specific metadata like [`WorkflowTelemetryMetadata`],
 /// [`NotebookTelemetryMetadata`], or [`EnvVarTelemetryMetadata`] instead.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CloudObjectTelemetryMetadata {
-    pub object_type: TelemetryCloudObjectType,
+pub struct ObjectTelemetryMetadata {
+    pub object_type: TelemetryObjectType,
     /// The server UID of the object. This only exists for objects that have been synced to the
     /// server.
     pub object_uid: Option<ServerId>,
@@ -1666,7 +1666,7 @@ pub enum TelemetryEvent {
     AnonymousUserAttemptLoginGatedFeature {
         feature: LoginGatedFeature,
     },
-    AnonymousUserHitCloudObjectLimit,
+    AnonymousUserHitObjectLimit,
     NeedsReauth,
     WarpDriveOpened {
         source: WarpDriveSource,
@@ -1700,8 +1700,8 @@ pub enum TelemetryEvent {
         /// The maximum PTY throughput in bytes/sec, aggregated over a 10 minute period.
         max_bytes_per_second: usize,
     },
-    DuplicateObject(TelemetryCloudObjectType),
-    ExportObject(TelemetryCloudObjectType),
+    DuplicateObject(TelemetryObjectType),
+    ExportObject(TelemetryObjectType),
     DriveSharingOnboardingBlockShown,
     CommandFileRun,
     PageUpDownInEditorPressed {
@@ -1710,8 +1710,8 @@ pub enum TelemetryEvent {
         // Is PageDown. Otherwise is PageUp
         is_down: bool,
     },
-    WebCloudObjectOpenedOnDesktop {
-        object_metadata: CloudObjectTelemetryMetadata,
+    WebObjectOpenedOnDesktop {
+        object_metadata: ObjectTelemetryMetadata,
     },
     UnsupportedShell {
         shell: String,
@@ -1722,7 +1722,7 @@ pub enum TelemetryEvent {
         num_teammates: usize,
         team_uid: ServerId,
     },
-    CopyObjectToClipboard(TelemetryCloudObjectType),
+    CopyObjectToClipboard(TelemetryObjectType),
     OpenAndWarpifyDockerSubshell {
         /// Some variant if we support this shell type, and None otherwise.
         shell_type: Option<ShellType>,
@@ -3242,7 +3242,7 @@ impl TelemetryEvent {
                 "error": error,
                 "tmux_installation": *tmux_installation,
             })),
-            TelemetryEvent::WebCloudObjectOpenedOnDesktop { object_metadata } => Some(json!({
+            TelemetryEvent::WebObjectOpenedOnDesktop { object_metadata } => Some(json!({
                 "object": object_metadata,
             })),
             TelemetryEvent::ToggleSnackbarInActivePane { show_snackbar } => {
@@ -3857,7 +3857,7 @@ impl TelemetryEvent {
             | TelemetryEvent::NeedsReauth
             | TelemetryEvent::AnonymousUserExpirationLockout
             | TelemetryEvent::AnonymousUserLinkedFromBrowser
-            | TelemetryEvent::AnonymousUserHitCloudObjectLimit
+            | TelemetryEvent::AnonymousUserHitObjectLimit
             | TelemetryEvent::CustomSecretRegexAdded
             | TelemetryEvent::CopySecret
             | TelemetryEvent::AutoGenerateMetadataSuccess
@@ -4546,7 +4546,7 @@ impl TelemetryEvent {
             | TelemetryEvent::AnonymousUserExpirationLockout
             | TelemetryEvent::AnonymousUserLinkedFromBrowser
             | TelemetryEvent::AnonymousUserAttemptLoginGatedFeature { .. }
-            | TelemetryEvent::AnonymousUserHitCloudObjectLimit
+            | TelemetryEvent::AnonymousUserHitObjectLimit
             | TelemetryEvent::NeedsReauth
             | TelemetryEvent::WarpDriveOpened { .. }
             | TelemetryEvent::ToggleWarpAI { .. }
@@ -4564,7 +4564,7 @@ impl TelemetryEvent {
             | TelemetryEvent::DriveSharingOnboardingBlockShown
             | TelemetryEvent::CommandFileRun
             | TelemetryEvent::PageUpDownInEditorPressed { .. }
-            | TelemetryEvent::WebCloudObjectOpenedOnDesktop { .. }
+            | TelemetryEvent::WebObjectOpenedOnDesktop { .. }
             | TelemetryEvent::UnsupportedShell { .. }
             | TelemetryEvent::LogOut
             | TelemetryEvent::InviteTeammates { .. }
@@ -4854,7 +4854,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::AnonymousUserExpirationLockout
             | Self::AnonymousUserLinkedFromBrowser
             | Self::AnonymousUserAttemptLoginGatedFeature
-            | Self::AnonymousUserHitCloudObjectLimit => EnablementState::Always,
+            | Self::AnonymousUserHitObjectLimit => EnablementState::Always,
 
             Self::AgentModeChangedInputType => EnablementState::Always,
             Self::OpenNotebook | Self::EditNotebook | Self::NotebookAction => {
@@ -5091,7 +5091,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::PaneDragInitiated => EnablementState::Always,
             Self::PaneDropped => EnablementState::Always,
             Self::TierLimitHit => EnablementState::Always,
-            Self::WebCloudObjectOpenedOnDesktop => EnablementState::Always,
+            Self::WebObjectOpenedOnDesktop => EnablementState::Always,
             Self::ToggleShowBlockDividers => EnablementState::Flag(FeatureFlag::MinimalistUI),
             Self::DriveSharingOnboardingBlockShown => EnablementState::Always,
             Self::ResourceUsageStats => EnablementState::Always,
@@ -5353,7 +5353,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::AISuggestedRuleAdded { .. } => "AI Suggested Rule Added",
             Self::AISuggestedRuleEdited { .. } => "AI Suggested Rule Edited",
             Self::AISuggestedRuleContentChanged { .. } => "AI Suggested Rule Content Changed",
-            Self::AnonymousUserHitCloudObjectLimit => "Anonymous User Hit Cloud Object Limit",
+            Self::AnonymousUserHitObjectLimit => "Anonymous User Hit Object Limit",
             Self::BootstrappingSucceeded => "Bootstrapping Succeeded",
             Self::SessionAbandonedBeforeBootstrap => "Session Abandoned Before Bootstrap",
             Self::TabSingleResultAutocompletion => "Tab Single Result Autocompletion",
@@ -5551,7 +5551,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ExportObject => "Export Object",
             Self::CommandFileRun => "Command File Run",
             Self::PageUpDownInEditorPressed => "Page Up/Down In Editor Pressed",
-            Self::WebCloudObjectOpenedOnDesktop { .. } => "Warp Drive object opened on desktop",
+            Self::WebObjectOpenedOnDesktop { .. } => "Warp Drive object opened on desktop",
             Self::DriveSharingOnboardingBlockShown => "Warp Drive Sharing onboarding block shown",
             Self::UnsupportedShell => "Unsupported Shell",
             Self::SettingsImportInitiated => "Settings Import Initiated",
@@ -5828,7 +5828,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::AnonymousUserAttemptLoginGatedFeature => {
                 "Anonymous user attempted to access a login-gated feature"
             }
-            Self::AnonymousUserHitCloudObjectLimit => {
+            Self::AnonymousUserHitObjectLimit => {
                 "Anonymous user attempted to create a cloud object past their personal object limit"
             }
             Self::BackgroundBlockStarted => {
@@ -6247,7 +6247,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::PageUpDownInEditorPressed => {
                 "Pressed `PAGE-UP` or `PAGE-DOWN` within the Input Editor"
             }
-            Self::WebCloudObjectOpenedOnDesktop => {
+            Self::WebObjectOpenedOnDesktop => {
                 "Warp Drive object on the web was opened on the desktop"
             }
             Self::DriveSharingOnboardingBlockShown => {

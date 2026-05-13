@@ -55,7 +55,7 @@ use crate::{
     send_telemetry_from_ctx,
     server::{
         ids::{ClientId, ServerId, SyncId},
-        telemetry::{CloudObjectTelemetryMetadata, TelemetryCloudObjectType, TelemetryEvent},
+        telemetry::{ObjectTelemetryMetadata, TelemetryEvent, TelemetryObjectType},
     },
     settings::{
         app_installation_detection::{UserAppInstallDetectionSettings, UserAppInstallStatus},
@@ -890,13 +890,13 @@ impl WorkflowView {
 
     /// Generic object telemetry metadata for the currently-open object.
     #[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
-    fn telemetry_metadata(&self, ctx: &mut ViewContext<Self>) -> CloudObjectTelemetryMetadata {
+    fn telemetry_metadata(&self, ctx: &mut ViewContext<Self>) -> ObjectTelemetryMetadata {
         let space = ObjectStoreModel::as_ref(ctx)
             .get_workflow(&self.workflow_id)
             .map(|workflow| workflow.space(ctx));
 
-        CloudObjectTelemetryMetadata {
-            object_type: TelemetryCloudObjectType::Workflow,
+        ObjectTelemetryMetadata {
+            object_type: TelemetryObjectType::Workflow,
             object_uid: self.workflow_id.into_server(),
             space: space.map(Into::into),
             team_uid: match self.owner {
@@ -3114,7 +3114,7 @@ impl TypedActionView for WorkflowView {
             #[cfg(target_family = "wasm")]
             WorkflowAction::OpenLinkOnDesktop(url) => {
                 send_telemetry_from_ctx!(
-                    TelemetryEvent::WebCloudObjectOpenedOnDesktop {
+                    TelemetryEvent::WebObjectOpenedOnDesktop {
                         object_metadata: self.telemetry_metadata(ctx)
                     },
                     ctx

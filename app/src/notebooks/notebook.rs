@@ -75,8 +75,8 @@ use crate::{
     server::{
         ids::{ClientId, ServerId, SyncId},
         telemetry::{
-            CloudObjectTelemetryMetadata, NotebookActionEvent, NotebookTelemetryMetadata,
-            TelemetryCloudObjectType, TelemetryEvent,
+            NotebookActionEvent, NotebookTelemetryMetadata, ObjectTelemetryMetadata,
+            TelemetryEvent, TelemetryObjectType,
         },
     },
     settings::{
@@ -1076,10 +1076,10 @@ impl NotebookView {
     }
 
     #[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
-    fn generic_telemetry_metadata(&self, ctx: &ViewContext<Self>) -> CloudObjectTelemetryMetadata {
+    fn generic_telemetry_metadata(&self, ctx: &ViewContext<Self>) -> ObjectTelemetryMetadata {
         let notebook_data = self.active_notebook_data.as_ref(ctx);
-        CloudObjectTelemetryMetadata {
-            object_type: TelemetryCloudObjectType::Notebook,
+        ObjectTelemetryMetadata {
+            object_type: TelemetryObjectType::Notebook,
             object_uid: notebook_data.id().and_then(SyncId::into_server),
             space: notebook_data.space(ctx).map(Into::into),
             team_uid: notebook_data.owner(ctx).and_then(Into::into),
@@ -2334,7 +2334,7 @@ impl TypedActionView for NotebookView {
             #[cfg(target_family = "wasm")]
             NotebookAction::OpenLinkOnDesktop(url) => {
                 send_telemetry_from_ctx!(
-                    TelemetryEvent::WebCloudObjectOpenedOnDesktop {
+                    TelemetryEvent::WebObjectOpenedOnDesktop {
                         object_metadata: self.generic_telemetry_metadata(ctx)
                     },
                     ctx
