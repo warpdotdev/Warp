@@ -1534,7 +1534,7 @@ impl RemoteServerManager {
     pub fn get_diff_state(
         &mut self,
         session_id: SessionId,
-        repo_path: StandardizedPath,
+        remote_path: RemotePath,
         mode: DiffMode,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -1542,11 +1542,11 @@ impl RemoteServerManager {
             log::warn!("Remote server get_diff_state: no connected client session={session_id:?}");
             return;
         };
-        let Some(host_id) = self.host_id_for_session(session_id).cloned() else {
-            log::warn!("Remote server get_diff_state: no host_id session={session_id:?}");
-            return;
-        };
 
+        let RemotePath {
+            host_id,
+            path: repo_path,
+        } = remote_path;
         let mode_for_event = mode.clone();
         let repo_path_for_event = repo_path.clone();
         let spawner = self.spawner.clone();
@@ -1629,11 +1629,11 @@ impl RemoteServerManager {
     pub fn unsubscribe_diff_state(
         &self,
         session_id: SessionId,
-        repo_path: &StandardizedPath,
+        remote_path: &RemotePath,
         mode: DiffMode,
     ) {
         if let Some(client) = self.client_for_session(session_id) {
-            client.unsubscribe_diff_state(repo_path, mode);
+            client.unsubscribe_diff_state(&remote_path.path, mode);
         } else {
             log::debug!(
                 "Remote server unsubscribe_diff_state: no client for session={session_id:?}"
@@ -1647,7 +1647,7 @@ impl RemoteServerManager {
     pub fn discard_files(
         &mut self,
         session_id: SessionId,
-        repo_path: StandardizedPath,
+        remote_path: RemotePath,
         files: Vec<FileStatusInfo>,
         should_stash: bool,
         branch_name: Option<String>,
@@ -1658,6 +1658,9 @@ impl RemoteServerManager {
             log::warn!("Remote server discard_files: no connected client session={session_id:?}");
             return;
         };
+
+        let repo_path = remote_path.path;
+        let spawner = self.spawner.clone();
         ctx.background_executor()
             .spawn(async move {
                 match client

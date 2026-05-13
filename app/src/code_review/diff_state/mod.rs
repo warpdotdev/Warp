@@ -316,6 +316,27 @@ pub enum DiffStateModelEvent {
     ConnectionLost,
 }
 
+/// App-level representation of a remote diff state snapshot.
+///
+/// Proto messages are converted into this type at the remote-server boundary
+/// before being applied to [`RemoteDiffStateModel`].
+pub struct DiffStateSnapshot {
+    pub metadata: Option<DiffMetadata>,
+    pub state: DiffState,
+    pub diffs: Option<GitDiffWithBaseContent>,
+}
+
+/// App-level representation of a remote diff state metadata update.
+pub struct DiffStateMetadataUpdate {
+    pub metadata: Option<DiffMetadata>,
+}
+
+/// App-level representation of a remote single-file diff delta.
+pub struct DiffStateFileDelta {
+    pub file_path: StandardizedPath,
+    pub diff: Option<FileDiffAndContent>,
+    pub metadata: Option<DiffMetadata>,
+}
 // ── Unified model ────────────────────────────────────────────────────────
 
 /// Unified diff state model that dispatches to a local or remote backend.
@@ -344,10 +365,8 @@ impl DiffStateModel {
                 Self::Local(local)
             }
             FileLocation::Remote(remote_path) => {
-                let host_id = remote_path.host_id.clone();
-                let repo_path = remote_path.path.clone();
                 let remote = ctx.add_model(|ctx| {
-                    RemoteDiffStateModel::new(host_id, repo_path, DiffMode::default(), ctx)
+                    RemoteDiffStateModel::new(remote_path, DiffMode::default(), ctx)
                 });
                 ctx.subscribe_to_model(&remote, Self::forward_event);
                 Self::Remote(remote)
