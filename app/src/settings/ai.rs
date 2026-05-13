@@ -2096,11 +2096,11 @@ impl AISettings {
         if !FeatureFlag::FileBasedMcp.is_enabled() || !self.is_any_ai_enabled(app) {
             return false;
         }
-        // NOTE: we intentionally do not force-enable this in Cloud Mode. Previously
+        // NOTE: we intentionally do not force-enable this in autonomous agent runs. Previously
         // we auto-spawned file-based MCPs in autonomous execution, but that bypassed
         // the user's explicit opt-in and let any MCP config checked into a repo run
-        // arbitrary commands as part of a cloud agent run. Respecting the toggle
-        // closes that attack surface; cloud agents that need project-scoped MCP
+        // arbitrary commands as part of an agent run. Respecting the toggle
+        // closes that attack surface; agents that need project-scoped MCP
         // servers should surface an explicit, auditable opt-in. A more robust
         // solution (e.g. per-environment allowlisting, signed configs) should be
         // explored in the future.

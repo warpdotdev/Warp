@@ -662,7 +662,7 @@ impl CLISubagentController {
             }
             BlocklistAIHistoryEvent::UpgradedTask {
                 optimistic_id: old_id,
-                server_id: new_id,
+                confirmed_task_id: new_id,
                 ..
             } => {
                 let block_id =

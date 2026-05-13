@@ -1,12 +1,9 @@
 use crate::server::telemetry::CLIAgentType;
 use crate::view_components::find::FindDirection;
-use crate::{code_review::diff_state::DiffMode, features::FeatureFlag};
+use crate::code_review::diff_state::DiffMode;
 use serde::Serialize;
-use serde_json::json;
 use serde_with::SerializeDisplay;
 use std::fmt::Display;
-use strum_macros::{EnumDiscriminants, EnumIter};
-use warp_core::telemetry::{EnablementState, TelemetryEvent, TelemetryEventDesc};
 
 /// Entry points for opening the code review pane.
 #[derive(Clone, Copy, Debug, SerializeDisplay, Default)]
@@ -116,8 +113,7 @@ pub enum PaneStateChange {
 }
 
 /// Telemetry events associated with the code review pane.
-#[derive(Serialize, Debug, EnumDiscriminants)]
-#[strum_discriminants(derive(EnumIter))]
+#[derive(Serialize, Debug)]
 #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
 pub enum CodeReviewTelemetryEvent {
     /// Emitted when the code review pane is opened.
@@ -216,187 +212,3 @@ pub enum CodeReviewTelemetryEvent {
         outdated_count: usize,
     },
 }
-
-impl TelemetryEvent for CodeReviewTelemetryEvent {
-    fn name(&self) -> &'static str {
-        CodeReviewTelemetryEventDiscriminants::from(self).name()
-    }
-
-    fn payload(&self) -> Option<serde_json::Value> {
-        match self {
-            CodeReviewTelemetryEvent::PaneOpened {
-                entrypoint,
-                is_code_mode_v2,
-                cli_agent,
-            } => Some(
-                json!({ "entrypoint": entrypoint, "is_code_mode_v2": is_code_mode_v2, "agent_name": cli_agent}),
-            ),
-            CodeReviewTelemetryEvent::AddToContext {
-                origin,
-                destination,
-                diff_set_scope,
-            } => Some(json!({
-                "origin": origin,
-                "destination": destination,
-                "diff_set_scope": diff_set_scope,
-            })),
-            CodeReviewTelemetryEvent::RevertHunkClicked => None,
-            CodeReviewTelemetryEvent::FileSaved => None,
-            CodeReviewTelemetryEvent::PaneStateChanged { state_change } => {
-                Some(json!({ "state_change": state_change }))
-            }
-            CodeReviewTelemetryEvent::BaseChanged { mode } => Some(json!({ "mode": mode })),
-            CodeReviewTelemetryEvent::CalculateDiffMetadataFailed { error } => {
-                Some(json!({ "error": error }))
-            }
-            CodeReviewTelemetryEvent::LoadDiffFailed { error } => Some(json!({ "error": error })),
-            CodeReviewTelemetryEvent::FindBarToggled { is_open } => {
-                Some(json!({ "is_open": is_open }))
-            }
-            CodeReviewTelemetryEvent::FindBarModeChanged {
-                case_sensitive,
-                regex,
-            } => Some(json!({
-                "case_sensitive": case_sensitive,
-                "regex": regex,
-            })),
-            CodeReviewTelemetryEvent::FindNavigated { direction } => {
-                Some(json!({ "direction": direction }))
-            }
-            CodeReviewTelemetryEvent::CommentEditorOpened => None,
-            CodeReviewTelemetryEvent::CommentAdded => None,
-            CodeReviewTelemetryEvent::CommentEdited => None,
-            CodeReviewTelemetryEvent::CommentDeleted { is_imported } => {
-                Some(json!({ "is_imported": is_imported }))
-            }
-            CodeReviewTelemetryEvent::CommentListExpanded { comment_count } => {
-                Some(json!({ "comment_count": comment_count }))
-            }
-            CodeReviewTelemetryEvent::ReviewSubmitted {
-                comment_count,
-                file_count,
-                destination,
-            } => Some(json!({
-                "comment_count": comment_count,
-                "file_count": file_count,
-                "destination": destination,
-            })),
-            CodeReviewTelemetryEvent::CommentListItemClicked => None,
-            CodeReviewTelemetryEvent::CommentRelocationFailed { fallback_count } => {
-                Some(json!({ "fallback_count": fallback_count }))
-            }
-            CodeReviewTelemetryEvent::CommentResolved { resolved_count } => {
-                Some(json!({ "resolved_count": resolved_count }))
-            }
-            CodeReviewTelemetryEvent::CommentsReceived {
-                raw_count,
-                converted_count,
-                thread_count,
-            } => Some(json!({
-                "raw_count": raw_count,
-                "converted_count": converted_count,
-                "thread_count": thread_count,
-            })),
-            CodeReviewTelemetryEvent::CommentsAttached {
-                active_count,
-                outdated_count,
-            } => Some(json!({
-                "active_count": active_count,
-                "outdated_count": outdated_count,
-            })),
-        }
-    }
-
-    fn description(&self) -> &'static str {
-        CodeReviewTelemetryEventDiscriminants::from(self).description()
-    }
-
-    fn enablement_state(&self) -> EnablementState {
-        CodeReviewTelemetryEventDiscriminants::from(self).enablement_state()
-    }
-
-    fn contains_ugc(&self) -> bool {
-        CodeReviewTelemetryEventDiscriminants::from(self).contains_ugc()
-    }
-
-    fn event_descs() -> impl Iterator<Item = Box<dyn TelemetryEventDesc>> {
-        warp_core::telemetry::enum_events::<Self>()
-    }
-}
-
-impl CodeReviewTelemetryEventDiscriminants {
-    pub fn contains_ugc(&self) -> bool {
-        false
-    }
-}
-
-impl TelemetryEventDesc for CodeReviewTelemetryEventDiscriminants {
-    fn name(&self) -> &'static str {
-        match self {
-            Self::PaneOpened => "CodeReview.PaneOpened",
-            Self::AddToContext => "CodeReview.AddToContext",
-            Self::RevertHunkClicked => "CodeReview.RevertHunkClicked",
-            Self::FileSaved => "CodeReview.FileSaved",
-            Self::PaneStateChanged => "CodeReview.PaneStateChanged",
-            Self::BaseChanged => "CodeReview.BaseChanged",
-            Self::CalculateDiffMetadataFailed => "CodeReview.CalculateDiffMetadataFailed",
-            Self::LoadDiffFailed => "CodeReview.LoadDiffFailed",
-            Self::FindBarToggled => "CodeReview.FindBarToggled",
-            Self::FindBarModeChanged => "CodeReview.FindBarModeChanged",
-            Self::FindNavigated => "CodeReview.FindNavigated",
-            Self::CommentEditorOpened => "CodeReview.CommentEditorOpened",
-            Self::CommentAdded => "CodeReview.CommentAdded",
-            Self::CommentEdited => "CodeReview.CommentEdited",
-            Self::CommentDeleted => "CodeReview.CommentDeleted",
-            Self::CommentListExpanded => "CodeReview.CommentListExpanded",
-            Self::ReviewSubmitted => "CodeReview.ReviewSubmitted",
-            Self::CommentListItemClicked => "CodeReview.CommentListItemClicked",
-            Self::CommentRelocationFailed => "CodeReview.CommentRelocationFailed",
-            Self::CommentResolved => "CodeReview.CommentResolved",
-            Self::CommentsReceived => "CodeReview.CommentsReceived",
-            Self::CommentsAttached => "CodeReview.CommentsAttached",
-        }
-    }
-
-    fn description(&self) -> &'static str {
-        match self {
-            Self::PaneOpened => "Code review pane opened",
-            Self::AddToContext => "Content added to AI context from code review",
-            Self::RevertHunkClicked => "Revert hunk button clicked",
-            Self::FileSaved => "File saved in code review pane",
-            Self::PaneStateChanged => "Code review pane minimized or maximized",
-            Self::BaseChanged => "Diff base changed in code review",
-            Self::CalculateDiffMetadataFailed => "Failure when calculating diff metadata",
-            Self::LoadDiffFailed => "Failure when loading diff content",
-            Self::FindBarToggled => "Code review find bar opened or closed",
-            Self::FindBarModeChanged => "Search mode changed in code review find bar",
-            Self::FindNavigated => "Navigated to next or previous match in code review find bar",
-            Self::CommentEditorOpened => "Inline code review comment editor opened",
-            Self::CommentAdded => "Inline code review comment added",
-            Self::CommentEdited => "Inline code review comment edited",
-            Self::CommentDeleted => "Inline code review comment deleted",
-            Self::CommentListExpanded => "Inline code review comment list expanded",
-            Self::ReviewSubmitted => "Inline code review submitted to agent",
-            Self::CommentListItemClicked => "Inline code review comment list item clicked",
-            Self::CommentRelocationFailed => {
-                "Inline code review comment relocation fell back to approximate line"
-            }
-            Self::CommentResolved => "Inline code review comment resolved",
-            Self::CommentsReceived => {
-                "Agent insert_code_review_comments tool call received and processed"
-            }
-            Self::CommentsAttached => "Newly-imported comments relocated against editor lines",
-        }
-    }
-
-    fn enablement_state(&self) -> EnablementState {
-        match self {
-            Self::CommentsReceived | Self::CommentsAttached => {
-                EnablementState::Flag(FeatureFlag::PRCommentsV2)
-            }
-            _ => EnablementState::Always,
-        }
-    }
-}
-
-warp_core::register_telemetry_event!(CodeReviewTelemetryEvent);

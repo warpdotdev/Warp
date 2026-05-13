@@ -4261,11 +4261,6 @@ impl AppContext {
         });
     }
 
-    // openWarp 闭源遥测剥离 P4d:`record_app_focus` / `record_app_blur` /
-    // `try_record_daily_app_focus_duration` 三个 AppContext 方法 + `AppFocusInfo`
-    // 字段已删,原仅用于 Daily App Focus Duration 事件上报到 Rudder。调用站点
-    // 在 app/src/lib.rs::app_callbacks 同步删除。
-
     pub fn is_screen_reader_enabled(&self) -> Option<bool> {
         self.platform_delegate.is_screen_reader_enabled()
     }

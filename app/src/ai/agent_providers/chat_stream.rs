@@ -2924,7 +2924,7 @@ pub async fn generate_byop_output(
 /// 用独立 BYOP 配置发一个短的非工具请求,让模型对首条 user query 生成会话标题。
 /// 所有错误吞掉(返回 Err 让上游打 warn log,不影响主流程)。
 ///
-/// 实现委托给 `oneshot::byop_oneshot_completion`,这里只负责拼 prompt 和清洗输出。
+/// 实现委托给 `oneshot::byop_oneshot_streaming_completion`,这里只负责拼 prompt 和清洗输出。
 ///
 /// ## prompt 设计
 ///
@@ -2952,7 +2952,7 @@ pub(crate) async fn generate_title_via_byop(
     );
     let opts = super::oneshot::OneshotOptions {
         max_chars: Some(1000),
-        temperature: Some(0.3),
+        temperature: Some(0.5),
         ..Default::default()
     };
     let raw = super::oneshot::byop_oneshot_completion(&cfg, system, &user_prompt, &opts).await?;

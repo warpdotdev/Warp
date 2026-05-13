@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     cell::RefCell,
     collections::{HashMap, HashSet},
     ffi::OsString,
@@ -17,11 +16,8 @@ use std::{
 use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::ai::mcp::MCPServerState;
 
-use crate::ai::{
-    agent::conversation::AIConversationId,
-    agent_sdk::driver::harness::{
-        task_env_vars, HarnessKind, HarnessRunner, ResumePayload, SavePoint, ThirdPartyHarness,
-    },
+use crate::ai::agent_sdk::driver::harness::{
+    task_env_vars, HarnessKind, HarnessRunner, SavePoint, ThirdPartyHarness,
 };
 use crate::terminal::cli_agent_sessions::plugin_manager::{
     plugin_manager_for, CliAgentPluginManager,
@@ -35,10 +31,6 @@ use crate::{
             AIAgentExchange, AIAgentInput, AIAgentOutput, CancellationReason, RenderableAIError,
         },
         agent_events::DisabledAgentEventStreamClient,
-        agent_sdk::harness_support_client::{
-            DisabledHarnessSupportClient, HarnessSupportClient, ResolvePromptAttachedSkill,
-            ResolvePromptRequest,
-        },
         ambient_agents::{
             conversation_output_status_from_conversation, AmbientAgentTaskId,
             AmbientConversationStatus,
@@ -56,9 +48,7 @@ use crate::{
     },
     auth::AuthStateProvider,
     server::ids::{ServerId, SyncId},
-    terminal::view::ConversationRestorationInNewPaneType,
 };
-use ai::skills::ParsedSkill;
 use anyhow::Context as _;
 use futures::{
     channel::oneshot,
@@ -76,7 +66,6 @@ use warpui::{
     Entity, ModelContext, ModelHandle, ModelSpawner, SingletonEntity,
 };
 
-pub(crate) mod attachments;
 pub(crate) mod harness;
 pub(super) mod output;
 pub(crate) mod terminal;
@@ -180,16 +169,6 @@ impl<T: Send + 'static> IdleTimeoutSender<T> {
     }
 }
 
-/// How to resume an existing conversation when starting an agent run.
-///
-/// The Oz harness restores the full conversation transcript into the terminal pane and treats
-/// any new prompt as a follow-up; third-party harnesses round-trip a harness-specific payload
-/// (see [`ResumePayload`]) instead.
-pub enum ResumeOptions {
-    Oz(Box<ConversationRestorationInNewPaneType>),
-    ThirdParty(Box<ResumePayload>),
-}
-
 /// Options for initializing the agent driver.
 pub struct AgentDriverOptions {
     /// Initial working directory for the agent's terminal session.
@@ -204,10 +183,6 @@ pub struct AgentDriverOptions {
     pub should_share: bool,
     /// How long to keep the session alive after the agent run completes, if at all.
     pub idle_on_complete: Option<Duration>,
-    /// If set, resume an existing conversation instead of starting fresh. The variant
-    /// determines which harness-specific path is taken (Oz transcript restore vs.
-    /// third-party-harness payload rehydration).
-    pub resume: Option<ResumeOptions>,
     /// Selected execution harness for this run.
     pub selected_harness: Harness,
 }
@@ -238,14 +213,6 @@ pub struct AgentDriver {
     // Optional idle timeout after completion. If set, the process will stay alive for follow-ups
     // and exit after this period of inactivity.
     idle_on_complete: Option<Duration>,
-
-    // The conversation ID to continue (if provided).
-    restored_conversation_id: Option<AIConversationId>,
-
-    /// If set, a third-party-harness conversation to resume. Consumed by `prepare_harness`
-    /// when building the runner and taken back to `None` after use so subsequent runs start
-    /// fresh.
-    resume_payload: Option<ResumePayload>,
 }
 
 pub(crate) enum SDKConversationOutputStatus {
@@ -287,20 +254,11 @@ pub struct Task {
     pub harness: HarnessKind,
 }
 
-/// Prompt that we initialize an agent driver with. Can represent either a local prompt or
-/// a prompt that we resolve server-side.
+/// Prompt that we initialize an agent driver with.
 #[derive(Debug, Clone)]
 pub enum AgentRunPrompt {
     /// Prompt is provided locally (already resolved to a plain string).
     Local(String),
-    /// Server resolves prompt from the task's stored prompt.
-    /// Used when task_id is provided without an explicit prompt.
-    ServerSide {
-        /// Optional skill whose instructions are sent to the agent.
-        skill: Option<ParsedSkill>,
-        /// Directory where task attachments were downloaded.
-        attachments_dir: Option<String>,
-    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -352,40 +310,8 @@ pub enum AgentDriverError {
     SkillResolutionFailed(String),
     #[error("Failed to build agent configuration")]
     ConfigBuildFailed(#[source] anyhow::Error),
-    #[error("Failed to resolve server-side prompt")]
-    PromptResolutionFailed(#[source] anyhow::Error),
-    #[error("Failed to fetch task secrets")]
-    SecretsFetchFailed(#[source] anyhow::Error),
-    #[error("Failed to load conversation: {0}")]
-    ConversationLoadFailed(String),
     #[error("Failed to initialize AWS Bedrock credentials: {0}")]
     AwsBedrockCredentialsFailed(String),
-    #[error(
-        "Conversation {conversation_id} was produced by the {expected} harness, but --harness {got} was requested. \
-         Re-run with --harness {expected} (or omit --harness to match) to continue this conversation."
-    )]
-    ConversationHarnessMismatch {
-        conversation_id: String,
-        expected: String,
-        got: String,
-    },
-    #[error(
-        "Task {task_id} was created with the {expected} harness, but --harness {got} was requested. \
-         Re-run with --harness {expected} (or omit --harness to match) to continue this task."
-    )]
-    TaskHarnessMismatch {
-        task_id: String,
-        expected: String,
-        got: String,
-    },
-    #[error(
-        "Conversation {conversation_id} has no stored transcript for the {harness} harness. \
-         The prior run may have crashed before saving any state."
-    )]
-    ConversationResumeStateMissing {
-        harness: String,
-        conversation_id: String,
-    },
     #[error("Harness command exited with code {exit_code}")]
     HarnessCommandFailed { exit_code: i32 },
     #[error("Harness '{harness}' setup failed: {reason}")]
@@ -416,18 +342,8 @@ impl AgentDriver {
             should_share,
             idle_on_complete,
             secrets,
-            resume,
             selected_harness,
         } = options;
-
-        // Split the unified resume option into the two internal slots that the rest of
-        // the driver consumes: terminal-driven Oz transcript restoration vs. third-party
-        // harness payload rehydration.
-        let (conversation_restoration, resume_payload) = match resume {
-            Some(ResumeOptions::Oz(restoration)) => (Some(*restoration), None),
-            Some(ResumeOptions::ThirdParty(payload)) => (None, Some(*payload)),
-            None => (None, None),
-        };
 
         safe_info!(
             safe: ("Initializing agent driver: share={should_share}, idle_on_complete={idle_on_complete:?}"),
@@ -442,18 +358,6 @@ impl AgentDriver {
         if !AuthStateProvider::as_ref(ctx).get().is_logged_in() {
             return Err(AgentDriverError::NotLoggedIn);
         }
-
-        // Extract the conversation ID if we're restoring a conversation.
-        // This will be used when submitting the initial query to continue the conversation.
-        let restored_conversation_id =
-            conversation_restoration
-                .as_ref()
-                .and_then(|restoration| match restoration {
-                    ConversationRestorationInNewPaneType::Historical { conversation, .. } => {
-                        Some(conversation.id())
-                    }
-                    _ => None,
-                });
 
         // Build environment variables from secrets for the terminal session.
         // Do not override env vars that are already set to a non-empty value in the current
@@ -546,7 +450,6 @@ impl AgentDriver {
                 env_vars,
                 should_share,
                 task_id,
-                conversation_restoration,
             },
             ctx,
         )?;
@@ -564,8 +467,6 @@ impl AgentDriver {
             task_id,
             harness: None,
             idle_on_complete,
-            restored_conversation_id,
-            resume_payload,
         })
     }
 
@@ -1134,9 +1035,6 @@ impl AgentDriver {
             if let Err(e) = manager.install().await {
                 log::warn!("Plugin installation failed (continuing): {e}");
             }
-            if let Err(e) = manager.install_platform_plugin().await {
-                log::warn!("Platform plugin installation failed (continuing): {e}");
-            }
         }
 
         Ok(exit_rx)
@@ -1149,13 +1047,7 @@ impl AgentDriver {
         harness: &dyn ThirdPartyHarness,
         foreground: &ModelSpawner<Self>,
     ) -> Result<Arc<dyn harness::HarnessRunner>, AgentDriverError> {
-        let (
-            working_dir,
-            task_id,
-            harness_support_client,
-            agent_event_stream_client,
-            terminal_driver,
-        ) = foreground
+        let (working_dir, task_id, agent_event_stream_client, terminal_driver) = foreground
             .spawn(|me, _| {
                 if me.harness.is_some() {
                     log::error!(
@@ -1167,7 +1059,6 @@ impl AgentDriver {
                 Ok((
                     me.working_dir.clone(),
                     me.task_id,
-                    Arc::new(DisabledHarnessSupportClient::new()) as Arc<dyn HarnessSupportClient>,
                     Arc::new(DisabledAgentEventStreamClient),
                     me.terminal_driver.clone(),
                 ))
@@ -1176,38 +1067,9 @@ impl AgentDriver {
             .map_err(|_| AgentDriverError::InvalidRuntimeState)
             .flatten()?;
 
-        let (prompt_text, system_prompt, resumption_prompt): (
-            Cow<'_, str>,
-            Option<String>,
-            Option<String>,
-        ) = match prompt {
-            AgentRunPrompt::Local(text) => (Cow::Borrowed(text), None, None),
-            AgentRunPrompt::ServerSide {
-                skill,
-                attachments_dir,
-            } => {
-                let skill = skill
-                    .as_ref()
-                    .map(|parsed_skill| ResolvePromptAttachedSkill {
-                        name: parsed_skill.name.clone(),
-                        content: parsed_skill.content.clone(),
-                        path: Some(parsed_skill.path.to_string_lossy().to_string()),
-                    });
-                let request = ResolvePromptRequest {
-                    skill,
-                    attachments_dir: attachments_dir.clone(),
-                };
-                let resolved = harness_support_client
-                    .resolve_prompt(request)
-                    .await
-                    .map_err(AgentDriverError::PromptResolutionFailed)?;
-                (
-                    Cow::Owned(resolved.prompt),
-                    resolved.system_prompt,
-                    resolved.resumption_prompt,
-                )
-            }
-        };
+        let AgentRunPrompt::Local(prompt_text) = prompt;
+        let system_prompt: Option<String> = None;
+        let resumption_prompt: Option<String> = None;
 
         // Prepare harness config files (onboarding, trust dialog, API-key approval, etc.).
         let secrets = foreground
@@ -1216,26 +1078,15 @@ impl AgentDriver {
             .map_err(|_| AgentDriverError::InvalidRuntimeState)?;
         harness.prepare_environment_config(&working_dir, system_prompt.as_deref(), &secrets)?;
 
-        // Pull the resume payload off the driver so the harness runner can rehydrate any
-        // existing session/conversation state before launching its CLI. The payload variant
-        // is harness-specific; harnesses match on their own [`ResumePayload`] variant and
-        // ignore others.
-        let resume = foreground
-            .spawn(|me, _| me.resume_payload.take())
-            .await
-            .map_err(|_| AgentDriverError::InvalidRuntimeState)?;
-
         let runner: Arc<dyn HarnessRunner> = harness
             .build_runner(
-                prompt_text.as_ref(),
+                prompt_text,
                 system_prompt.as_deref(),
                 resumption_prompt.as_deref(),
                 &working_dir,
                 task_id,
-                harness_support_client,
                 agent_event_stream_client,
                 terminal_driver,
-                resume,
             )?
             .into();
 
@@ -1524,7 +1375,7 @@ impl AgentDriver {
                 | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
                 | BlocklistAIHistoryEvent::ClearedActiveConversation { .. }
                 | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
-                | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. } => (),
+                | BlocklistAIHistoryEvent::ConversationAgentIdAssigned { .. } => (),
             }
         });
 
@@ -1532,56 +1383,21 @@ impl AgentDriver {
         // 这里不再订阅 AIDocumentModel 的 SaveStatusUpdated 事件。
 
         // Submit the AI query.
-        // If we restored a conversation from --conversation, use that conversation ID
-        // so the prompt is sent as a follow-up to the restored conversation.
-        let restored_conversation_id = self.restored_conversation_id;
         self.terminal_driver.update(ctx, |td, ctx| {
-            td.with_terminal_view(ctx, |terminal, ctx| match task_prompt {
-                AgentRunPrompt::Local(prompt_str) => {
-                    if FeatureFlag::AgentView.is_enabled() {
-                        terminal.enter_agent_view(
-                            Some(prompt_str),
-                            restored_conversation_id,
-                            AgentViewEntryOrigin::Cli,
-                            ctx,
-                        );
-                    } else {
-                        terminal.set_ai_input_mode_with_query(Some(&prompt_str), ctx);
-                        terminal
-                            .input()
-                            .update(ctx, |input, ctx| input.input_enter(ctx));
-                    }
-                }
-                AgentRunPrompt::ServerSide {
-                    skill,
-                    attachments_dir,
-                } => {
-                    let Some(task_id) = self.task_id else {
-                        log::error!("ServerSide prompt without task_id");
-                        return;
-                    };
-                    let ambient_run_id = task_id.to_string();
-
-                    if FeatureFlag::AgentView.is_enabled() {
-                        terminal.enter_agent_view(
-                            None,
-                            restored_conversation_id,
-                            AgentViewEntryOrigin::Cli,
-                            ctx,
-                        );
-                    }
-
-                    terminal.ai_controller().update(ctx, |controller, ctx| {
-                        controller.send_ai_input_with_context(
-                            |context| AIAgentInput::StartFromAmbientRunPrompt {
-                                ambient_run_id: ambient_run_id.clone(),
-                                context,
-                                runtime_skill: skill.clone(),
-                                attachments_dir: attachments_dir.clone(),
-                            },
-                            ctx,
-                        );
-                    });
+            td.with_terminal_view(ctx, |terminal, ctx| {
+                let AgentRunPrompt::Local(prompt_str) = task_prompt;
+                if FeatureFlag::AgentView.is_enabled() {
+                    terminal.enter_agent_view(
+                        Some(prompt_str),
+                        None,
+                        AgentViewEntryOrigin::Cli,
+                        ctx,
+                    );
+                } else {
+                    terminal.set_ai_input_mode_with_query(Some(&prompt_str), ctx);
+                    terminal
+                        .input()
+                        .update(ctx, |input, ctx| input.input_enter(ctx));
                 }
             })
         });

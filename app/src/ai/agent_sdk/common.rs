@@ -4,13 +4,10 @@ use std::future::Future;
 
 use futures::TryFutureExt;
 
-use warp_cli::agent::Harness;
 use warpui::r#async::FutureExt;
 use warpui::{AppContext, SingletonEntity as _};
 
-use crate::ai::agent::conversation::ServerAIConversationMetadata;
-use crate::ai::agent_sdk::driver::{AgentDriverError, WARP_DRIVE_SYNC_TIMEOUT};
-use crate::ai::ambient_agents::AmbientAgentTaskId;
+use crate::ai::agent_sdk::driver::WARP_DRIVE_SYNC_TIMEOUT;
 
 use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::auth::AuthStateProvider;
@@ -42,22 +39,6 @@ pub fn validate_agent_mode_base_model_id(
             "Unknown model id '{model_id}'. Try one of: {suggestions}"
         ))
     }
-}
-
-pub(super) fn parse_ambient_task_id(
-    run_id: &str,
-    error_prefix: &str,
-) -> anyhow::Result<AmbientAgentTaskId> {
-    run_id
-        .parse()
-        .map_err(|err| anyhow::anyhow!("{error_prefix} '{run_id}': {err}"))
-}
-
-pub(super) fn set_ambient_task_context_from_run_id(
-    run_id: &str,
-) -> anyhow::Result<AmbientAgentTaskId> {
-    let task_id = parse_ambient_task_id(run_id, "Invalid run ID")?;
-    Ok(task_id)
 }
 
 /// Resolve the owner of a new cloud object. This resolution is based on the CLI `--team` and `--personal` flags.
@@ -114,26 +95,6 @@ pub fn refresh_warp_drive(
         .map_err(|_| anyhow::anyhow!("Timed out waiting for Warp Drive to sync"))
 }
 
-/// Fetch the conversation's server metadata and validate that its harness matches the caller's
-/// `--harness` choice. Returns the metadata on success so the caller can reuse it (e.g. for the
-/// server conversation token).
-///
-/// Called up-front before any task/config-build logic consumes `args.harness`, so a mismatch
-/// error surfaces before side effects like task creation. We deliberately do NOT auto-upgrade
-/// the harness: `Harness::Oz` default with a Claude conversation id is treated as a mismatch
-/// and errors out.
-pub(super) async fn fetch_and_validate_conversation_harness(
-    conversation_id: &str,
-    _args_harness: Harness,
-) -> Result<ServerAIConversationMetadata, AgentDriverError> {
-    // Conversation metadata fetching from the cloud was removed alongside the
-    // `CloudConversations` feature. The `--conversation` CLI argument therefore
-    // can no longer resolve any cloud-stored conversation in OpenWarp.
-    Err(AgentDriverError::ConversationLoadFailed(format!(
-        "conversation {conversation_id} not found: cloud conversations are disabled in OpenWarp"
-    )))
-}
-
 /// Format an object owner for display in the CLI.
 pub fn format_owner(owner: &Owner) -> &'static str {
     // TODO: For potentially-shared objects, consider looking up the particular user/team name.
@@ -155,25 +116,4 @@ pub enum ResolveConfigurationError {
     ObjectNotFound { id: String, kind: &'static str },
     #[error(transparent)]
     Other(anyhow::Error),
-}
-
-#[cfg(test)]
-mod tests {
-    use super::parse_ambient_task_id;
-
-    #[test]
-    fn parse_ambient_task_id_accepts_valid_ids() {
-        let task_id =
-            parse_ambient_task_id("550e8400-e29b-41d4-a716-446655440000", "Invalid run ID")
-                .unwrap();
-
-        assert_eq!(task_id.to_string(), "550e8400-e29b-41d4-a716-446655440000");
-    }
-
-    #[test]
-    fn parse_ambient_task_id_preserves_error_prefix() {
-        let err = parse_ambient_task_id("not-a-run-id", "Invalid run ID").unwrap_err();
-
-        assert!(err.to_string().contains("Invalid run ID 'not-a-run-id'"));
-    }
 }

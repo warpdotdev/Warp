@@ -712,7 +712,7 @@ impl ObjectStoreModel {
         ctx.notify();
     }
 
-    /// Number of cloud objects that have not synced to the cloud
+    /// Number of local objects with pending content changes.
     pub fn num_unsaved_objects(&self) -> usize {
         self.objects_by_id
             .values()
@@ -720,7 +720,7 @@ impl ObjectStoreModel {
             .count()
     }
 
-    /// Number of cloud objects that have not synced to the cloud and require a user warning before quitting
+    /// Number of local objects with pending content changes that require a user warning before quitting.
     pub fn num_unsaved_objects_to_warn_about_before_quitting(&self) -> usize {
         self.objects_by_id
             .values()

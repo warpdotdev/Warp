@@ -8,7 +8,6 @@ use warpui::{AppContext, Entity, TypedActionView, View, ViewContext, ViewHandle}
 
 use crate::terminal::input::MenuPositioning;
 
-use super::file_button_label;
 use super::Artifact;
 use crate::view_components::action_button::{
     ActionButton, ActionButtonTheme, ButtonSize, SecondaryTheme, TooltipAlignment,
@@ -64,12 +63,6 @@ pub enum ArtifactButtonsRowEvent {
     OpenPullRequest {
         url: String,
     },
-    ViewScreenshots {
-        artifact_uids: Vec<String>,
-    },
-    DownloadFile {
-        artifact_uid: String,
-    },
 }
 
 #[derive(Debug, Clone)]
@@ -77,8 +70,6 @@ pub enum ArtifactButtonAction {
     OpenPlan { document_uid: AIDocumentId },
     CopyBranch { branch: String },
     OpenPullRequest { url: String },
-    ViewScreenshots { artifact_uids: Vec<String> },
-    DownloadFile { artifact_uid: String },
 }
 
 impl Entity for ArtifactButtonsRow {
@@ -121,16 +112,6 @@ impl TypedActionView for ArtifactButtonsRow {
             ArtifactButtonAction::OpenPullRequest { url } => {
                 ArtifactButtonsRowEvent::OpenPullRequest { url: url.clone() }
             }
-            ArtifactButtonAction::ViewScreenshots { artifact_uids } => {
-                ArtifactButtonsRowEvent::ViewScreenshots {
-                    artifact_uids: artifact_uids.clone(),
-                }
-            }
-            ArtifactButtonAction::DownloadFile { artifact_uid } => {
-                ArtifactButtonsRowEvent::DownloadFile {
-                    artifact_uid: artifact_uid.clone(),
-                }
-            }
         };
 
         ctx.emit(event);
@@ -143,7 +124,6 @@ fn collect_buttons(
     ctx: &mut ViewContext<ArtifactButtonsRow>,
 ) -> Vec<ViewHandle<ActionButton>> {
     let mut buttons = Vec::new();
-    let mut screenshot_uids = Vec::new();
 
     for artifact in artifacts {
         match artifact {
@@ -185,32 +165,23 @@ fn collect_buttons(
                 }
             }
             Artifact::Screenshot {
-                artifact_uid,
                 mime_type: _,
                 description: _,
-            } => {
-                screenshot_uids.push(artifact_uid.clone());
+                artifact_uid: _,
             }
-            Artifact::File {
-                artifact_uid,
-                filepath,
-                filename,
-                ..
+            | Artifact::File {
+                artifact_uid: _,
+                filepath: _,
+                filename: _,
+                mime_type: _,
+                description: _,
+                size_bytes: _,
             } => {
-                let button_text = file_button_label(filename, filepath);
-                let theme = theme.clone();
-                buttons.push(ctx.add_typed_action_view(move |_| {
-                    make_file_button(button_text, artifact_uid.clone(), theme)
-                }));
+                // OpenWarp no longer has cloud artifact storage, so file and screenshot
+                // artifacts cannot be fetched. Keep deserialization for legacy history,
+                // but do not render buttons that can only fail.
             }
         }
-    }
-
-    if !screenshot_uids.is_empty() {
-        let theme = theme.clone();
-        buttons.push(ctx.add_typed_action_view(move |_| {
-            make_screenshot_button("Screenshots".to_string(), screenshot_uids, theme)
-        }));
     }
 
     buttons
@@ -260,36 +231,6 @@ fn make_pr_button(
         "Open pull request",
         None,
         ArtifactButtonAction::OpenPullRequest { url },
-        theme,
-    )
-}
-
-fn make_screenshot_button(
-    label: String,
-    artifact_uids: Vec<String>,
-    theme: Arc<dyn ActionButtonTheme>,
-) -> ActionButton {
-    make_artifact_button(
-        label,
-        Icon::Image,
-        "View screenshots",
-        None,
-        ArtifactButtonAction::ViewScreenshots { artifact_uids },
-        theme,
-    )
-}
-
-fn make_file_button(
-    label: String,
-    artifact_uid: String,
-    theme: Arc<dyn ActionButtonTheme>,
-) -> ActionButton {
-    make_artifact_button(
-        label,
-        Icon::File,
-        "Download file",
-        None,
-        ArtifactButtonAction::DownloadFile { artifact_uid },
         theme,
     )
 }

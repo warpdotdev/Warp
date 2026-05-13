@@ -49,8 +49,8 @@ pub struct OpenMCPSettingsArgs {
     pub autoinstall: Option<String>,
 }
 
-/// Source query parameter value indicating auth was initiated from cloud agent setup.
-/// OpenWarp Wave 7-3:URI handler / Settings UI 已删,仅供 `update_environment_form` 在 Cloud Mode UI
+/// Source query parameter value indicating auth was initiated from agent setup.
+/// OpenWarp Wave 7-3:URI handler / Settings UI 已删,仅供 `update_environment_form` 在 agent UI
 /// 大手术 commit 完成前充当起起过渡 (后者不拼发出的 URL 用到)。
 pub const CLOUD_SETUP_SOURCE: &str = "cloud_setup";
 
@@ -720,12 +720,10 @@ impl Action {
     }
 }
 
-/// Handles all incoming urls. These urls are file urls, auth urls for login,
-/// and team urls for opening team settings.
+/// Handles all incoming urls, including file URLs and local app intents.
 pub fn handle_incoming_uri(url: &Url, ctx: &mut AppContext) {
     // Non-dogfood builds must never log the full URL here: URLs routed to this
-    // handler can carry secrets in their query string (for example, the
-    // Firebase `refresh_token` on `warp://auth/desktop_redirect?...`). Log
+    // handler can carry secrets in their query string. Log
     // only the non-sensitive components (scheme, host, path) on release
     // channels; dogfood builds retain the full URL for local debugging.
     safe_info!(
@@ -1148,9 +1146,8 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
 ///
 /// The returned string contains only the URL's scheme, host, and path — never
 /// its query string, fragment, or userinfo component. URLs that reach
-/// [`handle_incoming_uri`] can carry secrets in their query (for example, the
-/// Firebase refresh token in `warp://auth/desktop_redirect?refresh_token=...`),
-/// so this helper exists to give [`safe_info!`] a redacted representation that
+/// [`handle_incoming_uri`] can carry secrets in their query, so this helper
+/// exists to give [`safe_info!`] a redacted representation that
 /// still preserves enough signal for triage.
 ///
 /// `url.host_str()` can return `None` for schemes that don't require a host

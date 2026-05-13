@@ -171,7 +171,7 @@ impl OrchestrationEventStreamer {
                     self.on_conversation_status_updated(*conversation_id, ctx);
                 }
             }
-            BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
+            BlocklistAIHistoryEvent::ConversationAgentIdAssigned {
                 conversation_id, ..
             } => self.on_server_token_assigned(*conversation_id, ctx),
             BlocklistAIHistoryEvent::UpdatedStreamingExchange {

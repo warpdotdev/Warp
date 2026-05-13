@@ -24,7 +24,6 @@ use crate::{
         model::block::{BlockId, SerializedBlock},
         shared_session::IsSharedSessionCreator,
         shell::ShellType,
-        view::ConversationRestorationInNewPaneType,
         TerminalView,
     },
     util::sync::Condition,
@@ -42,7 +41,6 @@ pub(crate) struct TerminalDriverOptions {
     pub env_vars: HashMap<OsString, OsString>,
     pub should_share: bool,
     pub task_id: Option<AmbientAgentTaskId>,
-    pub conversation_restoration: Option<ConversationRestorationInNewPaneType>,
 }
 
 /// Events emitted by [`TerminalDriver`] for [`super::AgentDriver`] to react to.
@@ -89,7 +87,6 @@ fn create_terminal_view(
                 is_shared_session_creator,
                 initial_directory: Some(options.working_dir),
                 env_vars: options.env_vars,
-                conversation_restoration: options.conversation_restoration,
                 ..Default::default()
             }),
         },

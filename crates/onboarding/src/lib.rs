@@ -31,7 +31,7 @@ pub use localization::set_localizer;
 /// skip-login confirmation dialog so the two always stay in sync.
 pub const AI_FEATURES: &[&str] = &[
     "Warp agents",
-    "Oz cloud agents platform",
+    "Oz local agents platform",
     "Next command predictions",
     "Prompt suggestions",
     "Remote control with Claude Code, Codex, and other agents",
@@ -66,7 +66,7 @@ impl std::fmt::Display for SessionDefault {
 }
 
 pub use agent_onboarding_view::{AgentOnboardingAction, AgentOnboardingEvent, AgentOnboardingView};
-pub use model::{OnboardingAuthState, SelectedSettings, UICustomizationSettings};
+pub use model::{SelectedSettings, UICustomizationSettings};
 pub use slides::ProjectOnboardingSettings;
 pub use telemetry::OnboardingEvent;
 

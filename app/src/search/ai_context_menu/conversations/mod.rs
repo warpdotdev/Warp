@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 
 /// Lightweight representation of a conversation for the @conversations context menu.
 /// Only carries the fields needed for display and insertion — avoids constructing
-/// a full `ConversationNavigationData` for cloud conversations that have no local state.
+/// a full `ConversationNavigationData` for conversations that have no local state.
 #[derive(Debug)]
 pub struct ConversationContextItem {
     pub title: String,

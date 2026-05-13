@@ -153,7 +153,7 @@ pub fn render_agent_shortcuts_view(
         app,
     ));
 
-    // Code review is not available for cloud agents.
+    // Code review is not available for ambient agent panes.
     if !context.is_cloud_agent {
         if let Some(keystroke) = keybinding_name_to_keystroke(TOGGLE_RIGHT_PANEL_BINDING_NAME, app)
         {

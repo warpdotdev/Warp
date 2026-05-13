@@ -103,7 +103,7 @@ impl BlocklistAIHistoryModel {
     ///
     /// This method automatically determines whether to load from memory or local storage:
     /// - If the conversation is already in memory, returns it immediately
-    /// - If has_local_data is true, loads from the local database synchronously
+    /// - If is_restorable_locally is true, loads from the local database synchronously
     ///
     /// Note: This does NOT insert the conversation into memory. Callers are responsible
     /// for inserting the loaded conversation if needed.
@@ -128,7 +128,7 @@ impl BlocklistAIHistoryModel {
             return box_future(futures::future::ready(None));
         };
 
-        if metadata.has_local_data {
+        if metadata.is_restorable_locally {
             // Load from local database synchronously
             let result = self
                 .load_conversation_from_db(&conversation_id)
@@ -328,7 +328,7 @@ impl BlocklistAIHistoryModel {
                     initial_working_directory,
                     credits_spent,
                     server_conversation_token,
-                    has_local_data: true,
+                    is_restorable_locally: true,
                     artifacts,
                     ambient_agent_task_id: None,
                 }))

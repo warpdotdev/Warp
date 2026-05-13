@@ -22,13 +22,6 @@ use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity, Window
 
 const SESSION_EXPIRATION_TIME: chrono::Duration = chrono::Duration::weeks(1);
 
-/// Protected eviction: we'll always keep at least 200 personal tasks in the model.
-/// This is so that whenever we evict stale tasks, we do not evict relevant, recent personal tasks
-/// (e.g. if I load in 500 team Slack tasks from today, we should _not_ evict my personal conversation
-/// from yesterday).
-const MAX_PERSONAL_TASKS: usize = 200;
-const MAX_TEAM_TASKS: usize = 300;
-
 #[derive(PartialEq)]
 pub enum SessionStatus {
     Available,
@@ -156,14 +149,6 @@ impl AgentManagementFilters {
             || self.environment != EnvironmentFilter::default()
             || self.harness != HarnessFilter::default()
     }
-}
-
-/// Preference for which type of link/action to use for a conversation or task.
-enum LinkPreference {
-    /// Use conversation link/action
-    Conversation,
-    /// No link/action available
-    None,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -551,42 +536,6 @@ impl ConversationOrTask<'_> {
         }
     }
 
-    /// Returns the preferred link type based on session state.
-    /// CloudConversations was removed in OpenWarp, so the conversation-link
-    /// path is no longer reachable for tasks.
-    fn link_preference(&self) -> LinkPreference {
-        match self {
-            ConversationOrTask::Task(_) => LinkPreference::None,
-            ConversationOrTask::Conversation(_) => LinkPreference::Conversation,
-        }
-    }
-
-    /// Get a link to a session or conversation, depending on whether the cloud agent is running
-    pub fn session_or_conversation_link(&self, app: &AppContext) -> Option<String> {
-        match self.link_preference() {
-            LinkPreference::Conversation => match self {
-                ConversationOrTask::Task(task) => task
-                    .conversation_id
-                    .as_ref()
-                    .map(|id| ServerConversationToken::new(id.clone()).conversation_link()),
-                ConversationOrTask::Conversation(conversation) => {
-                    let history_model = BlocklistAIHistoryModel::as_ref(app);
-                    history_model
-                        .conversation(&conversation.nav_data.id)
-                        .and_then(|c| c.server_conversation_token())
-                        .map(|t| t.conversation_link())
-                        .or_else(|| {
-                            history_model
-                                .get_conversation_metadata(&conversation.nav_data.id)
-                                .and_then(|m| m.server_conversation_token.as_ref())
-                                .map(|t| t.conversation_link())
-                        })
-                }
-            },
-            LinkPreference::None => None,
-        }
-    }
-
     pub fn get_session_status(&self) -> Option<SessionStatus> {
         match self {
             ConversationOrTask::Task(task) => {
@@ -670,26 +619,18 @@ impl ConversationOrTask<'_> {
         &self,
         restore_layout: Option<RestoreConversationLayout>,
     ) -> Option<WorkspaceAction> {
-        match self.link_preference() {
-            LinkPreference::Conversation => match self {
-                ConversationOrTask::Task(task) => task.conversation_id.as_ref().map(|id| {
-                    WorkspaceAction::OpenConversationTranscriptViewer {
-                        conversation_id: ServerConversationToken::new(id.clone()),
-                        ambient_agent_task_id: Some(task.task_id),
-                    }
-                }),
-                ConversationOrTask::Conversation(metadata) => {
-                    let nav_data = &metadata.nav_data;
-                    Some(WorkspaceAction::RestoreOrNavigateToConversation {
-                        conversation_id: nav_data.id,
-                        window_id: nav_data.window_id,
-                        pane_view_locator: nav_data.pane_view_locator,
-                        terminal_view_id: nav_data.terminal_view_id,
-                        restore_layout,
-                    })
-                }
-            },
-            LinkPreference::None => None,
+        match self {
+            ConversationOrTask::Task(_) => None,
+            ConversationOrTask::Conversation(metadata) => {
+                let nav_data = &metadata.nav_data;
+                Some(WorkspaceAction::RestoreOrNavigateToConversation {
+                    conversation_id: nav_data.id,
+                    window_id: nav_data.window_id,
+                    pane_view_locator: nav_data.pane_view_locator,
+                    terminal_view_id: nav_data.terminal_view_id,
+                    restore_layout,
+                })
+            }
         }
     }
 }
@@ -739,8 +680,6 @@ pub struct AgentConversationsModel {
 pub enum AgentConversationsModelEvent {
     /// Initial load of tasks completed.
     ConversationsLoaded,
-    /// New tasks were received during polling (view should diff against its local state).
-    NewTasksReceived,
     /// Existing task data may have been updated (e.g., state changes).
     TasksUpdated,
     /// Conversation status data was updated
@@ -760,7 +699,7 @@ impl SingletonEntity for AgentConversationsModel {}
 impl AgentConversationsModel {
     pub fn new(_ctx: &mut ModelContext<Self>) -> Self {
         // OpenWarp(本地化,Phase 3b-1 / Wave 6-6):AgentConversationsModel 原本负责轮询/探听
-        // 云端 ambient agent tasks 与 cloud conversation metadata。本地化场景下:
+        // 远端 ambient agent tasks 与 conversation metadata。本地化场景下:
         //   - 不订阅任何事件
         //   - 无轮询子系统(Wave 6-6 物理删)
         //   - has_finished_initial_load 直接为 true,使 UI 查询以空集合返回
@@ -830,35 +769,6 @@ impl AgentConversationsModel {
         }
     }
 
-    // Update the model with new tasks retrieved from the server.
-    fn update_model_with_new_tasks(
-        &mut self,
-        tasks: Vec<AmbientAgentTask>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let mut has_new_tasks = false;
-        let mut has_updated_tasks = false;
-
-        for task in tasks {
-            let task_id = task.task_id;
-            match self.tasks.get(&task_id) {
-                Some(existing_task) => {
-                    if existing_task != &task {
-                        has_updated_tasks = true
-                    }
-                }
-                None => has_new_tasks = true,
-            };
-            self.tasks.insert(task_id, task);
-        }
-
-        if has_new_tasks {
-            ctx.emit(AgentConversationsModelEvent::NewTasksReceived);
-        } else if has_updated_tasks {
-            ctx.emit(AgentConversationsModelEvent::TasksUpdated);
-        }
-    }
-
     /// Returns true if we have tasks or local conversations in this view
     pub fn has_items(&self) -> bool {
         !self.tasks.is_empty() || !self.conversations.is_empty()
@@ -873,7 +783,7 @@ impl AgentConversationsModel {
     /// conversation entry both point at the same underlying local run.
     ///
     /// We first match using the orchestration agent ID (task ID / run ID under v2), and fall back
-    /// to the server conversation token for cases where the task only carries conversation identity
+    /// to the legacy conversation token for cases where the task only carries conversation identity
     /// through `conversation_id`.
     fn conversation_id_shadowed_by_task(
         task: &AmbientAgentTask,
@@ -934,9 +844,7 @@ impl AgentConversationsModel {
                     return;
                 };
 
-                let task_id = conversation
-                    .server_metadata()
-                    .and_then(|metadata| metadata.ambient_agent_task_id);
+                let task_id = conversation.task_id();
                 if let Some(task_id) = task_id {
                     // If the conversation is associated with a task, update the saved task
                     // with live artifacts.
@@ -961,7 +869,7 @@ impl AgentConversationsModel {
             // doesn't change any ConversationNavigationData fields (title comes from
             // UpdateTaskDescription, last_updated uses exchange.start_time which is set at append time).
             | BlocklistAIHistoryEvent::UpdatedStreamingExchange { .. }
-            | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
+            | BlocklistAIHistoryEvent::ConversationAgentIdAssigned { .. }
             => {}
         }
     }
@@ -1107,31 +1015,6 @@ impl AgentConversationsModel {
 
     pub fn is_task_manually_opened(&self, task_id: &AmbientAgentTaskId) -> bool {
         self.manually_opened_task_ids.contains(task_id)
-    }
-
-    /// Enforces cap on tasks stored in the model so it doesn't grow without bound.
-    /// We always keep at least 200 personal tasks around so an influx of team tasks
-    /// doesn't result in evicting personal task data.
-    fn enforce_task_cap(&mut self, current_user_uid: &str) {
-        let total_cap = MAX_PERSONAL_TASKS + MAX_TEAM_TASKS;
-        if self.tasks.len() <= total_cap {
-            return;
-        }
-
-        let (mut personal, mut team): (Vec<_>, Vec<_>) =
-            self.tasks.drain().partition(|(_, task)| {
-                task.creator
-                    .as_ref()
-                    .is_some_and(|c| c.uid == current_user_uid)
-            });
-
-        // Sort each by updated_at (newest first), truncate
-        personal.sort_by(|a, b| b.1.updated_at.cmp(&a.1.updated_at));
-        team.sort_by(|a, b| b.1.updated_at.cmp(&a.1.updated_at));
-        personal.truncate(MAX_PERSONAL_TASKS);
-        team.truncate(MAX_TEAM_TASKS);
-
-        self.tasks = personal.into_iter().chain(team).collect();
     }
 
     /// Clears all stored conversation and task data in memory.

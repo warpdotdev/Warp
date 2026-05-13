@@ -10,9 +10,6 @@ use warpui::color::ColorU;
 
 use crate::ai::artifacts::{deserialize_artifacts, Artifact};
 use crate::ui_components::icons::Icon;
-use crate::view_components::DismissibleToast;
-use crate::workspace::ToastStack;
-use warpui::{SingletonEntity, View, ViewContext};
 
 use super::AmbientAgentTaskId;
 
@@ -183,7 +180,7 @@ impl AgentSource {
             AgentSource::Cli => "CLI",
             AgentSource::ScheduledAgent => "Scheduled",
             AgentSource::Interactive => "Warp (local agent)",
-            AgentSource::WebApp => "Oz Web",
+            AgentSource::WebApp => "Oz",
             AgentSource::GitHubAction => "GitHub Action",
         }
     }
@@ -325,24 +322,6 @@ pub enum AmbientAgentTaskState {
 }
 
 impl AmbientAgentTaskState {
-    /// Returns the query param value for the server API.
-    pub fn as_query_param(&self) -> Option<&str> {
-        match self {
-            AmbientAgentTaskState::Queued => Some("QUEUED"),
-            AmbientAgentTaskState::Pending => Some("PENDING"),
-            AmbientAgentTaskState::Claimed => Some("CLAIMED"),
-            AmbientAgentTaskState::InProgress => Some("INPROGRESS"),
-            AmbientAgentTaskState::Succeeded => Some("SUCCEEDED"),
-            AmbientAgentTaskState::Failed => Some("FAILED"),
-            AmbientAgentTaskState::Error => Some("ERROR"),
-            AmbientAgentTaskState::Blocked => Some("BLOCKED"),
-            AmbientAgentTaskState::Cancelled => Some("CANCELLED"),
-            // Unknown states are only for resilient deserialization and should not be
-            // sent back as filter values.
-            AmbientAgentTaskState::Unknown => None,
-        }
-    }
-
     pub fn is_working(&self) -> bool {
         match self {
             AmbientAgentTaskState::Queued
@@ -445,16 +424,4 @@ pub struct TaskStatusMessage {
 pub struct RequestUsage {
     pub inference_cost: Option<f64>,
     pub compute_cost: Option<f64>,
-}
-
-/// Cancel an ambient agent task and show a toast with the result.
-pub fn cancel_task_with_toast<V: View>(task_id: AmbientAgentTaskId, ctx: &mut ViewContext<V>) {
-    let window_id = ctx.window_id();
-    log::info!("Ignoring remote cancel for disabled cloud agent task {task_id}");
-    ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-        let toast = DismissibleToast::default(
-            "Cloud agent cancellation is disabled in OpenWarp".to_string(),
-        );
-        toast_stack.add_ephemeral_toast(toast, window_id, ctx);
-    });
 }

@@ -11,13 +11,12 @@
 //! 167 处 `crate::auth::AuthStateProvider::as_ref(ctx).get()` 调用一行不改即可继续编译,
 //! 运行时永远拿到"已登录、Free Tier 无限额"的本地占位状态。
 //!
-//! 物理删除清单见 README:21 个 UI / RPC / Firebase / token 持久化 / web handoff /
+//! 物理删除清单见 README:21 个 UI / RPC / token 持久化 / web handoff /
 //! login_slide / paste_auth_token_modal / web_handoff 等文件随云端账号体系一并下线。
 
 use std::sync::Arc;
 
 use anyhow::Result;
-use chrono::{DateTime, FixedOffset};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -47,9 +46,9 @@ pub const API_KEY_PREFIX: &str = "wk-";
 
 // ---------- Credentials / AuthToken / LoginToken ----------
 //
-// 原来用于 Firebase / API key / SessionCookie 几种认证方式的运行时分支。OpenWarp
+// 原来用于云端 token / API key / SessionCookie 几种认证方式的运行时分支。OpenWarp
 // 本地化后只保留 `ApiKey` / `Test` 两种实际用得到的 variant 加上为编译兼容保留的
-// `SessionCookie`。`Firebase` variant 物理删,所有原 Firebase 分支在 OpenWarp 下
+// `SessionCookie`。云端 token variant 物理删,所有原云鉴权分支在 OpenWarp 下
 // 永远走 `None` / 早 return。
 
 /// 表示用户与 Warp 的认证方式。
@@ -162,15 +161,6 @@ pub struct UserMetadata {
     pub email: String,
     pub display_name: Option<String>,
     pub photo_url: Option<String>,
-}
-
-/// `FirebaseAuthTokens` 类型 facade。OpenWarp 不再发任何 Firebase 请求,该 struct
-/// 实际从未被构造;保留是给少量遗留 import 兼容编译。
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FirebaseAuthTokens {
-    pub id_token: String,
-    pub refresh_token: String,
-    pub expiration_time: DateTime<FixedOffset>,
 }
 
 /// 当前登录用户(本地占位)。
@@ -518,7 +508,7 @@ pub struct AuthRedirectPayload {
 impl AuthRedirectPayload {
     pub fn from_url(_url: url::Url) -> Result<Self, anyhow::Error> {
         Err(anyhow::anyhow!(
-            "OpenWarp 已下线 Firebase 登录,不再处理浏览器回跳 URL"
+            "OpenWarp 已下线云端登录,不再处理浏览器回跳 URL"
         ))
     }
 }
@@ -704,96 +694,6 @@ pub enum WebHandoffEvent {
     Unsupported,
 }
 
-/// PasteAuthTokenModalView facade。
-pub struct PasteAuthTokenModalView;
-
-impl PasteAuthTokenModalView {
-    pub fn new(_ctx: &mut ViewContext<Self>) -> Self {
-        Self
-    }
-}
-
-impl Entity for PasteAuthTokenModalView {
-    type Event = PasteAuthTokenModalEvent;
-}
-
-impl View for PasteAuthTokenModalView {
-    fn ui_name() -> &'static str {
-        "PasteAuthTokenModalView (stub)"
-    }
-
-    fn render(&self, _app: &AppContext) -> Box<dyn Element> {
-        Box::new(Empty::new())
-    }
-}
-
-impl warpui::TypedActionView for PasteAuthTokenModalView {
-    type Action = ();
-    fn handle_action(&mut self, _action: &(), _ctx: &mut ViewContext<Self>) {}
-}
-
-#[derive(Debug)]
-pub enum PasteAuthTokenModalEvent {
-    Cancelled,
-    TokenSubmitted(String),
-}
-
-/// LoginSlideView facade。
-pub struct LoginSlideView;
-
-impl LoginSlideView {
-    /// 原 `LoginSlideView::new` 接受丰富参数(theme 选择 / `LoginSlideSource` 等)。
-    /// 本 stub 以服务于保持原调用 callsite 0 改动为目标,接受与原签名同样多的参数
-    /// 但全部忽略。返回空 structure。
-    pub fn new(
-        _ai_enabled: bool,
-        _theme_name: &str,
-        _use_vertical_tabs: bool,
-        _intention: onboarding::OnboardingIntention,
-        _source: LoginSlideSource,
-        _ctx: &mut ViewContext<Self>,
-    ) -> Self {
-        Self
-    }
-
-    /// 返回是否 token 输入框 visible。OpenWarp:永 false。
-    pub fn is_auth_token_input_visible(&self) -> bool {
-        false
-    }
-}
-
-impl Entity for LoginSlideView {
-    type Event = LoginSlideEvent;
-}
-
-impl View for LoginSlideView {
-    fn ui_name() -> &'static str {
-        "LoginSlideView (stub)"
-    }
-
-    fn render(&self, _app: &AppContext) -> Box<dyn Element> {
-        Box::new(Empty::new())
-    }
-}
-
-impl warpui::TypedActionView for LoginSlideView {
-    type Action = ();
-    fn handle_action(&mut self, _action: &(), _ctx: &mut ViewContext<Self>) {}
-}
-
-#[derive(Debug)]
-pub enum LoginSlideEvent {
-    BackToOnboarding,
-    LoginLaterConfirmed,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum LoginSlideSource {
-    OnboardingFlow,
-    PrivacySettingsFromTerminalIntentionTheme,
-    LoginExistingUserFromWelcome,
-}
-
 /// 登录失败原因 facade(原 `auth/login_failure_notification.rs` 定义)。
 #[derive(Clone, Debug)]
 pub enum LoginFailureReason {
@@ -824,43 +724,14 @@ pub enum AuthManagerEvent {
     CreateAnonymousUserFailed,
 }
 
-/// Google Identity Platform / Firebase Auth REST 错误 payload。
-///
-/// 历史上 `crates/firebase` 封装 `/v1/accounts/lookup` 与 `/v1/token` 的错误响应。
-/// OpenWarp Wave 5-1 把整 `firebase` crate 物理删,把唯一仍被消费的 `FirebaseError`
-/// 内联到 auth facade,作为 [`UserAuthenticationError::DeniedAccessToken`] /
-/// [`UserAuthenticationError::UserAccountDisabled`] 的 payload 占位 — 这两个
-/// variant 在 OpenWarp 路径下永不构造,仅保留 enum 形以避免 `root_view.rs` 等
-/// 消费点 match arm 全量改动。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FirebaseError {
-    pub code: i32,
-    pub message: String,
-}
-
-impl std::error::Error for FirebaseError {}
-
-impl std::fmt::Display for FirebaseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Firebase request failed with status {} and message: {}",
-            self.code, self.message
-        )
-    }
-}
-
-/// 用户认证错误 facade。`root_view.rs` / `server/sync_queue.rs` 等多处仍 match
-/// 各 variant,因此保留 enum;OpenWarp 不再触发任何 variant 的构造。
-///
-/// `DeniedAccessToken` / `UserAccountDisabled` 携带本模块内联的 [`FirebaseError`]
-/// 以维持旧 mock 构造点编译。
+/// 用户认证错误 facade。少量订阅方仍 match 各 variant,因此保留 enum;
+/// OpenWarp 不再触发任何 variant 的构造。
 #[derive(Debug, thiserror::Error)]
 pub enum UserAuthenticationError {
-    #[error("Access token denied: {0:?}")]
-    DeniedAccessToken(FirebaseError),
-    #[error("User account disabled: {0:?}")]
-    UserAccountDisabled(FirebaseError),
+    #[error("Access token denied")]
+    DeniedAccessToken,
+    #[error("User account disabled")]
+    UserAccountDisabled,
     #[error("Invalid state parameter")]
     InvalidStateParameter,
     #[error("Missing state parameter")]

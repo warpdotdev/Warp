@@ -49,35 +49,21 @@ fn write_surfaced_parent_bridge_message(state_dir: &Path, record: &MessageBridge
 #[test]
 fn claude_command_uses_session_id_when_not_resuming() {
     let uuid = Uuid::new_v4();
-    let cmd = claude_command("claude", &uuid, "/tmp/prompt.txt", None, false);
+    let cmd = claude_command("claude", &uuid, "/tmp/prompt.txt", None);
     assert!(
         cmd.contains(&format!("--session-id {uuid}")),
-        "expected --session-id flag in non-resume command, got: {cmd}"
+        "expected --session-id flag, got: {cmd}"
     );
     assert!(
         !cmd.contains("--resume"),
-        "non-resume command should not contain --resume, got: {cmd}"
-    );
-}
-
-#[test]
-fn claude_command_uses_resume_flag_when_resuming() {
-    let uuid = Uuid::new_v4();
-    let cmd = claude_command("claude", &uuid, "/tmp/prompt.txt", None, true);
-    assert!(
-        cmd.contains(&format!("--resume {uuid}")),
-        "expected --resume flag in resume command, got: {cmd}"
-    );
-    assert!(
-        !cmd.contains("--session-id"),
-        "resume command should not contain --session-id, got: {cmd}"
+        "command should not contain --resume, got: {cmd}"
     );
 }
 
 #[test]
 fn claude_command_pipes_prompt_path() {
     let uuid = Uuid::new_v4();
-    let cmd = claude_command("claude", &uuid, "/tmp/prompt with spaces.txt", None, true);
+    let cmd = claude_command("claude", &uuid, "/tmp/prompt with spaces.txt", None);
     assert!(
         cmd.contains("< '/tmp/prompt with spaces.txt'"),
         "expected single-quoted stdin redirect of the prompt path, got: {cmd}"

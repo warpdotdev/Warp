@@ -37,7 +37,7 @@ pub enum ExitAgentViewError {
     LongRunningCommand,
     #[error("Cannot exit conversation as a viewer.")]
     ConversationViewer,
-    #[error("Cannot exit cloud agent.")]
+    #[error("Cannot exit agent.")]
     AmbientAgent,
 }
 
@@ -131,9 +131,9 @@ pub enum AgentViewEntryOrigin {
     AcceptedPassiveCodeDiff,
     /// Entered agent view by starting conversation with an inline code review submission.
     InlineCodeReview,
-    /// Entered agent view through a cloud agent prompt.
+    /// Entered agent view through an ambient agent prompt.
     CloudAgent,
-    /// Entered agent view by opening an existing non-Oz cloud agent run (live shared-session
+    /// Entered agent view by opening an existing non-Oz ambient agent run (live shared-session
     /// viewer or transcript viewer).
     ThirdPartyCloudAgent,
     /// Entered agent view via the CLI (e.g. `warp agent run`).

@@ -17,9 +17,7 @@ use warp_core::ui::appearance::Appearance as CoreAppearance;
 use warp_core::ui::theme::color::internal_colors;
 
 use crate::ai::agent::conversation::ConversationStatus;
-use crate::ai::artifacts::{
-    open_screenshot_lightbox, Artifact, ArtifactButtonsRow, ArtifactButtonsRowEvent,
-};
+use crate::ai::artifacts::{Artifact, ArtifactButtonsRow, ArtifactButtonsRowEvent};
 use crate::appearance::Appearance;
 use crate::notifications::item::NotificationSourceAgent;
 use crate::notifications::telemetry::{ArtifactType, NotificationsTelemetryEvent};
@@ -500,18 +498,6 @@ pub(crate) fn handle_notification_artifact_buttons_event(
                 ctx
             );
             ctx.open_url(url);
-        }
-        ArtifactButtonsRowEvent::ViewScreenshots { artifact_uids } => {
-            open_screenshot_lightbox(artifact_uids, ctx);
-        }
-        ArtifactButtonsRowEvent::DownloadFile { artifact_uid } => {
-            send_telemetry_from_ctx!(
-                NotificationsTelemetryEvent::ArtifactClicked {
-                    artifact_type: ArtifactType::File
-                },
-                ctx
-            );
-            crate::ai::artifacts::download_file_artifact(artifact_uid, ctx);
         }
     }
 }

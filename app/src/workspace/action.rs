@@ -569,8 +569,8 @@ pub enum WorkspaceAction {
     OpenAmbientAgentSession {
         task_id: AmbientAgentTaskId,
     },
-    /// Load cloud conversation data into a transcript viewer.
-    /// Used when CloudConversations is enabled and the sandbox is not running.
+    /// Load conversation data into a transcript viewer.
+    /// Used for persisted view-only conversations.
     OpenConversationTranscriptViewer {
         conversation_id: ServerConversationToken,
         ambient_agent_task_id: Option<AmbientAgentTaskId>,

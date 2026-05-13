@@ -2399,4 +2399,4 @@ fn test_standard_tab_context_menu_shows_hover_only_tab_bar() {
 }
 
 // 已删:test_open_cloud_agent_setup_guide_action_opens_management_view_and_is_idempotent
-// agent_management_view 字段连同 cloud agent setup guide 整片功能在 Phase 2c 已删。
+// agent_management_view 字段连同 agent setup guide 整片功能在 Phase 2c 已删。

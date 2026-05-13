@@ -1,12 +1,12 @@
 use itertools::Itertools as _;
-use markdown_parser::{parse_markdown, FormattedText, FormattedTextFragment, FormattedTextLine};
+use markdown_parser::parse_markdown;
 use parking_lot::FairMutex;
 use std::{borrow::Cow, cmp::Reverse, path::Path, sync::Arc};
 use warp_core::ui::Icon;
 use warpui::{
     elements::{
-        Container, CornerRadius, CrossAxisAlignment, Flex, FormattedTextElement,
-        HighlightedHyperlink, MainAxisSize, MouseStateHandle, ParentElement, Radius, Text,
+        Container, CornerRadius, CrossAxisAlignment, Flex, FormattedTextElement, MainAxisSize,
+        MouseStateHandle, ParentElement, Radius, Text,
     },
     fonts::{Properties, Weight},
     keymap::Keystroke,
@@ -45,10 +45,8 @@ use crate::{
         TerminalModel,
     },
     util::time_format::format_approx_duration_from_now_utc,
-    workspaces::user_workspaces::UserWorkspaces,
 };
 
-const CLOUD_AGENT_DOCS_URL: &str = "https://docs.warp.dev/agent-platform/cloud-agents/overview";
 const MAX_RECENT_CONVERSATION_COUNT: usize = 3;
 
 #[derive(Default)]
@@ -316,37 +314,32 @@ impl View for AgentViewZeroStateBlock {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
 
-        let header_props = if self.origin.is_cloud_agent() {
-            HeaderProps {
-                title: crate::t!("agent-zero-state-title-cloud").into(),
-                description: AgentViewDescription::CloudModeWithDocsLink,
-                icon: Icon::OzCloud,
-            }
-        } else {
-            let active_session = self.active_session(app);
-            let location_label = active_session.as_deref().and_then(|session| {
-                format_session_location(session, self.current_working_directory.as_deref())
-            });
-            let local_description = match location_label {
-                Some(location_label) => crate::t!(
-                    "agent-zero-state-description-with-location",
-                    location = location_label
-                ),
-                None => crate::t!("agent-zero-state-description"),
-            };
+        let active_session = self.active_session(app);
+        let location_label = active_session.as_deref().and_then(|session| {
+            format_session_location(session, self.current_working_directory.as_deref())
+        });
+        let local_description = match location_label {
+            Some(location_label) => crate::t!(
+                "agent-zero-state-description-with-location",
+                location = location_label
+            ),
+            None => crate::t!("agent-zero-state-description"),
+        };
 
-            HeaderProps {
-                title: crate::t!("agent-zero-state-title").into(),
-                description: AgentViewDescription::PlainText(vec![local_description.into()]),
-                icon: Icon::Oz,
-            }
+        let header_props = HeaderProps {
+            title: crate::t!("agent-zero-state-title").into(),
+            description: AgentViewDescription::PlainText(vec![local_description.into()]),
+            icon: if self.origin.is_cloud_agent() {
+                Icon::OzCloud
+            } else {
+                Icon::Oz
+            },
         };
 
         let mut content = Flex::column()
             .with_main_axis_size(MainAxisSize::Min)
             .with_children(render_title_and_description(header_props, app));
 
-        let active_session = self.active_session(app);
         let body = render_body(
             ZeroStateBodyProps {
                 origin: self.origin,
@@ -452,8 +445,6 @@ fn current_working_directory_for_zero_state(terminal_model: &TerminalModel) -> O
 enum AgentViewDescription {
     /// Plain text descriptions (used for local agent mode).
     PlainText(Vec<Cow<'static, str>>),
-    /// Cloud mode description with "Visit docs" hyperlink.
-    CloudModeWithDocsLink,
 }
 
 struct HeaderProps {
@@ -532,53 +523,6 @@ fn render_title_and_description(props: HeaderProps, app: &AppContext) -> Vec<Box
                     .finish()
             }));
         }
-        AgentViewDescription::CloudModeWithDocsLink => {
-            // First line: plain text.
-            items.push(
-                Container::new(
-                    Text::new(
-                        "Run your agent task in an isolated cloud environment.",
-                        appearance.ui_font_family(),
-                        appearance.monospace_font_size(),
-                    )
-                    .with_color(sub_text_color)
-                    .finish(),
-                )
-                .with_margin_bottom(styles::DESCRIPTION_LINE_MARGIN_BOTTOM)
-                .finish(),
-            );
-
-            // Second line: text with "Visit docs" hyperlink.
-            let description_with_link = FormattedText::new([FormattedTextLine::Line(vec![
-                FormattedTextFragment::plain_text(crate::t!(
-                    "agent-zero-state-cloud-agents-description"
-                )),
-                FormattedTextFragment::hyperlink(
-                    crate::t!("agent-zero-state-visit-docs"),
-                    CLOUD_AGENT_DOCS_URL,
-                ),
-            ])]);
-
-            items.push(
-                Container::new(
-                    FormattedTextElement::new(
-                        description_with_link,
-                        appearance.monospace_font_size(),
-                        appearance.ui_font_family(),
-                        appearance.monospace_font_family(),
-                        sub_text_color,
-                        HighlightedHyperlink::default(),
-                    )
-                    .with_hyperlink_font_color(theme.accent().into_solid())
-                    .register_default_click_handlers(|url, _, ctx| {
-                        ctx.open_url(&url.url);
-                    })
-                    .finish(),
-                )
-                .with_margin_bottom(-12.)
-                .finish(),
-            );
-        }
     }
 
     items
@@ -605,7 +549,7 @@ fn render_body(props: ZeroStateBodyProps<'_>, app: &AppContext) -> Vec<Box<dyn E
         state_handles,
     } = props;
 
-    // Cloud agent mode doesn't show keyboard shortcuts.
+    // Ambient-agent mode doesn't show keyboard shortcuts.
     if origin.is_cloud_agent() {
         return vec![];
     }
@@ -864,46 +808,12 @@ fn render_recent_conversations_section(
     )
 }
 
-/// Renders the ambient credits banner showing free cloud credits.
-/// If `link_mouse_state` is provided, a "Launch cloud agent" link is shown.
-pub fn render_ambient_credits_banner(credits: i32, app: &AppContext) -> Box<dyn Element> {
-    if UserWorkspaces::as_ref(app).is_byo_api_key_enabled() {
-        return Empty::new().finish();
-    }
-
-    let appearance = Appearance::as_ref(app);
-    let theme = appearance.theme();
-    let font_family = appearance.ui_font_family();
-    let font_size = styles::CREDITS_BANNER_FONT_SIZE;
-
-    // Use ANSI terminal colors for the pill styling.
-    let text_color = theme.terminal_colors().normal.blue;
-
-    let credits_text = format!("{credits} free cloud agent credits");
-    let text = Text::new(credits_text, font_family, font_size)
-        .with_color(text_color.into())
-        .with_style(Properties::default().weight(Weight::Semibold))
-        .soft_wrap(false)
-        .finish();
-
-    Container::new(text)
-        .with_border(Border::all(1.).with_border_color(text_color.into()))
-        .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
-        .with_vertical_padding(2.)
-        .with_horizontal_padding(6.)
-        .with_margin_left(8.)
-        .finish()
-}
-
 mod styles {
     use warp_core::ui::appearance::Appearance;
 
     pub const CONTAINER_VERTICAL_PADDING: f32 = 16.;
     pub const TITLE_MARGIN_BOTTOM: f32 = 8.;
     pub const SECTION_HEADER_MARGIN_BOTTOM: f32 = 8.;
-    pub const DESCRIPTION_LINE_MARGIN_BOTTOM: f32 = 6.;
-    pub const CREDITS_BANNER_FONT_SIZE: f32 = 12.;
-
     pub fn title_font_size(appearance: &Appearance) -> f32 {
         appearance.monospace_font_size() + 6.
     }

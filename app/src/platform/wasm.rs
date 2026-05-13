@@ -38,7 +38,7 @@ pub enum AuthHandoffError {
     Unexpected(JsValue),
 }
 
-/// Fetch the user's Firebase refresh token from the host React app.
+/// Fetch the host app's optional local user handoff token.
 pub fn user_handoff() -> Result<Option<String>, AuthHandoffError> {
     ffi::user_handoff().map_err(|err| {
         if ReferenceError::instanceof(&err) {

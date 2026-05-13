@@ -369,7 +369,7 @@ fn test_ambient_agent_conversations_excluded_from_list_but_accessible_by_id() {
                 server_conversation_token: Some(ServerConversationToken::new(
                     "token-regular".to_string(),
                 )),
-                has_local_data: false,
+                is_restorable_locally: false,
                 artifacts: Vec::new(),
                 ambient_agent_task_id: None,
             };
@@ -387,7 +387,7 @@ fn test_ambient_agent_conversations_excluded_from_list_but_accessible_by_id() {
                 server_conversation_token: Some(ServerConversationToken::new(
                     "token-ambient".to_string(),
                 )),
-                has_local_data: false,
+                is_restorable_locally: false,
                 artifacts: Vec::new(),
                 ambient_agent_task_id: Some(ambient_task_id),
             };

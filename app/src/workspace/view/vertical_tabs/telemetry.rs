@@ -1,7 +1,4 @@
 use serde_json::{json, Value};
-use strum_macros::{EnumDiscriminants, EnumIter};
-use warp_core::features::FeatureFlag;
-use warp_core::telemetry::{EnablementState, TelemetryEvent, TelemetryEventDesc};
 
 use crate::workspace::tab_settings::{
     VerticalTabsCompactSubtitle, VerticalTabsDisplayGranularity, VerticalTabsPrimaryInfo,
@@ -85,8 +82,7 @@ impl VerticalTabsChipEntrypoint {
     }
 }
 
-#[derive(Debug, EnumDiscriminants)]
-#[strum_discriminants(derive(EnumIter))]
+#[derive(Debug)]
 pub enum VerticalTabsTelemetryEvent {
     /// The user updated a display option in the vertical tabs settings popup.
     DisplayOptionChanged(VerticalTabsDisplayOption),
@@ -99,70 +95,3 @@ pub enum VerticalTabsTelemetryEvent {
         entrypoint: VerticalTabsChipEntrypoint,
     },
 }
-
-impl TelemetryEvent for VerticalTabsTelemetryEvent {
-    fn name(&self) -> &'static str {
-        VerticalTabsTelemetryEventDiscriminants::from(self).name()
-    }
-
-    fn payload(&self) -> Option<Value> {
-        match self {
-            Self::DisplayOptionChanged(option) => Some(json!({
-                "option": option.option_name(),
-                "value": option.serialized_value(),
-            })),
-            Self::DiffStatsChipClicked { entrypoint } => Some(json!({
-                "entrypoint": entrypoint.serialized(),
-            })),
-            Self::PrChipClicked { entrypoint } => Some(json!({
-                "entrypoint": entrypoint.serialized(),
-            })),
-        }
-    }
-
-    fn description(&self) -> &'static str {
-        VerticalTabsTelemetryEventDiscriminants::from(self).description()
-    }
-
-    fn enablement_state(&self) -> EnablementState {
-        VerticalTabsTelemetryEventDiscriminants::from(self).enablement_state()
-    }
-
-    fn contains_ugc(&self) -> bool {
-        false
-    }
-
-    fn event_descs() -> impl Iterator<Item = Box<dyn TelemetryEventDesc>> {
-        warp_core::telemetry::enum_events::<Self>()
-    }
-}
-
-impl TelemetryEventDesc for VerticalTabsTelemetryEventDiscriminants {
-    fn name(&self) -> &'static str {
-        match self {
-            Self::DisplayOptionChanged => "VerticalTabs.DisplayOptionChanged",
-            Self::DiffStatsChipClicked => "VerticalTabs.DiffStatsChipClicked",
-            Self::PrChipClicked => "VerticalTabs.PrChipClicked",
-        }
-    }
-
-    fn description(&self) -> &'static str {
-        match self {
-            Self::DisplayOptionChanged => {
-                "User updated a display option in the vertical tabs settings popup"
-            }
-            Self::DiffStatsChipClicked => {
-                "User clicked a diff stats chip in the vertical tabs panel or detail sidecar"
-            }
-            Self::PrChipClicked => {
-                "User clicked a GitHub PR chip in the vertical tabs panel or detail sidecar"
-            }
-        }
-    }
-
-    fn enablement_state(&self) -> EnablementState {
-        EnablementState::Flag(FeatureFlag::VerticalTabs)
-    }
-}
-
-warp_core::register_telemetry_event!(VerticalTabsTelemetryEvent);

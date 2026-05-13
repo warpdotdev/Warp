@@ -15,7 +15,6 @@ use warpui::{ModelHandle, ModelSpawner};
 
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent_events::AgentEventStreamClient;
-use crate::ai::agent_sdk::harness_support_client::HarnessSupportClient;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::terminal::model::block::BlockId;
 use crate::terminal::model::session::ExecuteCommandOptions;
@@ -23,13 +22,8 @@ use crate::terminal::CLIAgent;
 
 use super::super::terminal::{CommandHandle, TerminalDriver};
 use super::super::{AgentDriver, AgentDriverError};
-use super::claude_transcript::{
-    claude_config_dir, write_envelope, write_session_index_entry, ClaudeResumeInfo,
-};
 use super::json_utils::{read_json_file_or_default, write_json_file};
-use super::{
-    write_temp_file, HarnessRunner, ManagedSecretValue, ResumePayload, SavePoint, ThirdPartyHarness,
-};
+use super::{write_temp_file, HarnessRunner, ManagedSecretValue, SavePoint, ThirdPartyHarness};
 mod parent_bridge;
 
 #[cfg(test)]
@@ -76,17 +70,6 @@ impl ThirdPartyHarness for ClaudeHarness {
         })
     }
 
-    async fn fetch_resume_payload(
-        &self,
-        conversation_id: &AIConversationId,
-        _harness_support_client: Arc<dyn HarnessSupportClient>,
-    ) -> Result<Option<ResumePayload>, AgentDriverError> {
-        log::warn!(
-            "Claude conversation {conversation_id} cannot be resumed from cloud transcript storage in OpenWarp"
-        );
-        Ok(None)
-    }
-
     fn build_runner(
         &self,
         prompt: &str,
@@ -94,17 +77,9 @@ impl ThirdPartyHarness for ClaudeHarness {
         resumption_prompt: Option<&str>,
         working_dir: &Path,
         task_id: Option<AmbientAgentTaskId>,
-        _harness_support_client: Arc<dyn HarnessSupportClient>,
         agent_event_stream_client: Arc<dyn AgentEventStreamClient>,
         terminal_driver: ModelHandle<TerminalDriver>,
-        resume: Option<ResumePayload>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
-        // Extract the Claude variant; any other variant is ignored since it belongs to a
-        // different harness. Today there are no other variants, but this keeps the shape
-        // ready for future CLI-specific payloads.
-        let claude_resume = resume.map(|payload| match payload {
-            ResumePayload::Claude(info) => info,
-        });
         // Claude treats the user-turn message as immediate intent, so the resumption preamble
         // is most reliable when prepended directly to the prompt that gets piped into the CLI.
         let owned_prompt = match resumption_prompt {
@@ -119,7 +94,6 @@ impl ThirdPartyHarness for ClaudeHarness {
             task_id,
             agent_event_stream_client,
             terminal_driver,
-            claude_resume,
         )?))
     }
 }
@@ -130,19 +104,16 @@ const CLAUDE_EXIT_COMMAND: &str = "/exit";
 /// Build the shell command that launches the Claude CLI for a given session and
 /// prompt file.
 ///
-/// When `resuming` is true we pass `--resume <uuid>` so Claude picks up the
-/// existing on-disk session; otherwise we pass `--session-id <uuid>` to pin a
-/// fresh session to that id. If `system_prompt_path` is provided, the CLI is
-/// told to append its contents to the base system prompt.
+/// The CLI receives `--session-id <uuid>` to pin a fresh local session to that id.
+/// If `system_prompt_path` is provided, the CLI appends its contents to the base
+/// system prompt.
 fn claude_command(
     cli_name: &str,
     session_id: &Uuid,
     prompt_path: &str,
     system_prompt_path: Option<&str>,
-    resuming: bool,
 ) -> String {
-    let flag = if resuming { "--resume" } else { "--session-id" };
-    let mut cmd = format!("{cli_name} {flag} {session_id} --dangerously-skip-permissions");
+    let mut cmd = format!("{cli_name} --session-id {session_id} --dangerously-skip-permissions");
     if let Some(sp_path) = system_prompt_path {
         let _ = write!(cmd, " --append-system-prompt-file '{sp_path}'");
     }
@@ -176,9 +147,6 @@ struct ClaudeHarnessRunner {
     parent_bridge: Option<MessageBridge>,
     /// Lazily cached output of `claude --version`.
     claude_version: Mutex<Option<String>>,
-    /// When resuming an existing conversation, we keep the restored local conversation id.
-    /// Fresh OpenWarp runs generate a local id instead of creating a cloud record.
-    preexisting_conversation_id: Option<AIConversationId>,
 }
 
 impl ClaudeHarnessRunner {
@@ -191,43 +159,13 @@ impl ClaudeHarnessRunner {
         task_id: Option<AmbientAgentTaskId>,
         agent_event_stream_client: Arc<dyn AgentEventStreamClient>,
         terminal_driver: ModelHandle<TerminalDriver>,
-        resume: Option<ClaudeResumeInfo>,
     ) -> Result<Self, AgentDriverError> {
         // Write the prompt to a temp file so we can feed it via stdin redirect,
         // avoiding shell-quoting issues with complex content (e.g. skill instructions).
         let temp_file = write_temp_file("oz_prompt_", prompt)?;
         let prompt_path = temp_file.path().display().to_string();
 
-        let (session_id, preexisting_conversation_id, resuming) = match resume {
-            Some(ClaudeResumeInfo {
-                conversation_id,
-                session_id,
-                mut envelope,
-            }) => {
-                // Rehydrate the stored envelope under the current working directory so
-                // `claude --resume <uuid>` finds the jsonl under ~/.claude/projects/<encoded_cwd>/.
-                // The original envelope's cwd usually points at the cloud sandbox path, which
-                // doesn't exist locally.
-                envelope.cwd = working_dir.to_path_buf();
-                let config_root = claude_config_dir().map_err(|e| {
-                    AgentDriverError::ConfigBuildFailed(
-                        e.context("Failed to resolve Claude config dir"),
-                    )
-                })?;
-                write_envelope(&envelope, &config_root).map_err(|e| {
-                    AgentDriverError::ConfigBuildFailed(
-                        e.context("Failed to rehydrate Claude transcript"),
-                    )
-                })?;
-                // Index write is best-effort: upstream Claude versions vary in how they use
-                // `sessions-index.json`, so losing the index entry shouldn't abort the run.
-                if let Err(e) = write_session_index_entry(session_id, working_dir, &config_root) {
-                    log::warn!("Failed to update Claude sessions-index.json: {e:#}");
-                }
-                (session_id, Some(conversation_id), true)
-            }
-            None => (Uuid::new_v4(), None, false),
-        };
+        let session_id = Uuid::new_v4();
 
         let temp_system_prompt_file = system_prompt
             .map(|sp| write_temp_file("oz_system_prompt_", sp))
@@ -246,7 +184,6 @@ impl ClaudeHarnessRunner {
                 &session_id,
                 &prompt_path,
                 system_prompt_path.as_deref(),
-                resuming,
             ),
             cli_name: cli_command.to_string(),
             _temp_prompt_file: temp_file,
@@ -258,7 +195,6 @@ impl ClaudeHarnessRunner {
             working_dir: working_dir.to_path_buf(),
             parent_bridge,
             claude_version: Mutex::new(None),
-            preexisting_conversation_id,
         })
     }
 }
@@ -341,17 +277,8 @@ impl HarnessRunner for ClaudeHarnessRunner {
         &self,
         foreground: &ModelSpawner<AgentDriver>,
     ) -> Result<CommandHandle, AgentDriverError> {
-        let conversation_id = match self.preexisting_conversation_id {
-            Some(id) => {
-                log::info!("Resuming Claude conversation {id}");
-                id
-            }
-            None => {
-                let id = AIConversationId::new();
-                log::info!("Created local Claude conversation {id}");
-                id
-            }
-        };
+        let conversation_id = AIConversationId::new();
+        log::info!("Created local Claude conversation {conversation_id}");
         self.start_parent_bridge(foreground)
             .await
             .map_err(AgentDriverError::ConfigBuildFailed)?;
@@ -447,6 +374,15 @@ fn prepare_claude_environment_config(
     prepare_claude_config(&claude_json_path, working_dir, api_key_suffix.as_deref())?;
     prepare_claude_settings(&claude_settings_path)?;
     Ok(())
+}
+
+fn claude_config_dir() -> Result<PathBuf> {
+    if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
+        return Ok(PathBuf::from(dir));
+    }
+    dirs::home_dir()
+        .map(|h| h.join(".claude"))
+        .ok_or_else(|| anyhow::anyhow!("could not determine home directory"))
 }
 
 fn prepare_claude_config(

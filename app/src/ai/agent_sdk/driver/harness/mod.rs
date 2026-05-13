@@ -12,9 +12,7 @@ use warp_cli::agent::Harness;
 use warp_managed_secrets::ManagedSecretValue;
 use warpui::{ModelHandle, ModelSpawner, SingletonEntity};
 
-use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent_events::AgentEventStreamClient;
-use crate::ai::agent_sdk::harness_support_client::HarnessSupportClient;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::terminal::cli_agent_sessions::{CLIAgentSessionStatus, CLIAgentSessionsModel};
 use crate::terminal::CLIAgent;
@@ -30,27 +28,15 @@ use super::{
 };
 
 mod claude_code;
-pub(crate) mod claude_transcript;
 mod gemini;
 mod json_utils;
 
 pub(crate) use claude_code::ClaudeHarness;
-use claude_transcript::ClaudeResumeInfo;
 use gemini::GeminiHarness;
-
-/// Harness-agnostic payload describing how to resume an existing conversation.
-///
-/// Each variant carries the data a specific harness needs to rehydrate state before its CLI
-/// launches. Harnesses match on the variant they produce and ignore others; new CLIs that
-/// want resume support add a new variant and override [`ThirdPartyHarness::fetch_resume_payload`].
-pub(crate) enum ResumePayload {
-    /// Claude Code session state rehydrated from a stored transcript payload.
-    Claude(ClaudeResumeInfo),
-}
 
 /// Trait for third-party agent harnesses that execute prompts via their own CLIs.
 ///
-/// Each new external harness (e.g. Claude, Codex) implements this to be used with cloud agents.
+/// Each new external harness (e.g. Claude, Codex) implements this to be used with local agent runs.
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 pub(crate) trait ThirdPartyHarness: Send + Sync {
@@ -82,32 +68,7 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
         Ok(())
     }
 
-    /// Fetch the harness-specific resume payload for an existing conversation.
-    ///
-    /// The driver calls this when the user passes `--conversation <id>` and the harness
-    /// matches the stored conversation's harness. Harnesses that don't support resume
-    /// use the default impl, which returns `Ok(None)` and causes the run to start fresh.
-    ///
-    /// OpenWarp no longer downloads cloud transcript payloads; harnesses that cannot restore
-    /// from local state return `Ok(None)` and start fresh.
-    async fn fetch_resume_payload(
-        &self,
-        _conversation_id: &AIConversationId,
-        _harness_support_client: Arc<dyn HarnessSupportClient>,
-    ) -> Result<Option<ResumePayload>, AgentDriverError> {
-        Ok(None)
-    }
-
     /// Build a runner for executing this harness with the given prompt.
-    ///
-    /// If `resume` is `Some`, the harness matches on its own [`ResumePayload`] variant and
-    /// reuses the stored session/conversation ids instead of minting fresh ones. Variants
-    /// belonging to other harnesses are ignored.
-    ///
-    /// `resumption_prompt`, when non-empty, is a short user-turn preamble the server emits
-    /// during a resumed session. Each harness decides exactly how to surface it (e.g. Claude
-    /// prepends it to the user-turn prompt that gets piped into the CLI). Harnesses that
-    /// don't yet support resumption can ignore it.
     #[allow(clippy::too_many_arguments)]
     fn build_runner(
         &self,
@@ -116,10 +77,8 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
         resumption_prompt: Option<&str>,
         working_dir: &Path,
         task_id: Option<AmbientAgentTaskId>,
-        harness_support_client: Arc<dyn HarnessSupportClient>,
         agent_event_stream_client: Arc<dyn AgentEventStreamClient>,
         terminal_driver: ModelHandle<TerminalDriver>,
-        resume: Option<ResumePayload>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError>;
 }
 
@@ -305,8 +264,7 @@ pub(crate) enum SavePoint {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 pub(crate) trait HarnessRunner: Send + Sync {
-    /// Create the external conversation on the server and start the harness
-    /// command in the terminal.
+    /// Create local conversation state and start the harness command in the terminal.
     ///
     /// Returns a [`CommandHandle`] that resolves to the exit code. The runner
     /// stores the conversation ID and block ID internally for use in

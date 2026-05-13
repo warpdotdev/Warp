@@ -190,7 +190,7 @@ pub(super) fn parse_context_attachments(
 
     // Add pending file attachments as FilePathReference.
     // Duplicate basenames get a (1), (2), ... suffix to avoid collisions,
-    // matching the pattern in build_file_attachment_map.
+    // matching the legacy attachment-key pattern.
     for file in context_model.pending_files().iter() {
         let attachment = AIAgentAttachment::FilePathReference {
             file_id: uuid::Uuid::new_v4().to_string(),

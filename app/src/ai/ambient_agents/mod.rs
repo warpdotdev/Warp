@@ -16,7 +16,7 @@ pub use task::{
     TaskStatusMessage,
 };
 pub const OUT_OF_CREDITS_TASK_FAILURE_MESSAGE: &str =
-    "Cloud agent usage limit reached. Please try again later.";
+    "Agent usage limit reached. Please try again later.";
 pub const SERVER_OVERLOADED_TASK_FAILURE_MESSAGE: &str =
     "Warp is temporarily overloaded. Please try again shortly.";
 
@@ -38,7 +38,7 @@ pub struct SpawnAgentRequest {
     pub attachments: Vec<AttachmentInput>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub interactive: Option<bool>,
-    /// Populated when a cloud agent spawns a child run via the public API.
+    /// Populated when an agent spawns a child run via the public API.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_run_id: Option<String>,
     /// Base64-encoded `warp.multi_agent.v1.Skill` payloads to restore as runtime skills.

@@ -202,13 +202,6 @@ pub(crate) trait CliAgentPluginManager: Send + Sync {
     /// Manual update instructions for the modal UI.
     fn update_instructions(&self) -> &'static PluginInstructions;
 
-    /// Install the Oz platform plugin for this CLI agent, if one exists,
-    /// which provides skills that third-party harnesses can use to interact with
-    /// the Oz platform.
-    /// Default is a no-op — only agents with a platform plugin should override.
-    async fn install_platform_plugin(&self) -> Result<(), PluginInstallError> {
-        Ok(())
-    }
 }
 
 /// Returns a plugin manager for the given CLI agent, or `None` if the agent

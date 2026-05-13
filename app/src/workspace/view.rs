@@ -2766,8 +2766,7 @@ impl Workspace {
             &AgentConversationsModel::handle(ctx),
             |me, _, event, ctx| match event {
                 // Update transcript details if task or conversation data is updated
-                AgentConversationsModelEvent::NewTasksReceived
-                | AgentConversationsModelEvent::TasksUpdated
+                AgentConversationsModelEvent::TasksUpdated
                 | AgentConversationsModelEvent::ConversationUpdated
                 | AgentConversationsModelEvent::ConversationArtifactsUpdated { .. } => {
                     me.update_transcript_details_panel_data(ctx);
@@ -18273,12 +18272,12 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         if self.auth_state.is_user_anonymous().unwrap_or_default() {
-            // User has a Firebase anonymous account — use the linking flow.
+            // User has an anonymous local account, so use the linking flow.
             AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
                 auth_manager.initiate_anonymous_user_linking(entrypoint, ctx);
             });
         } else {
-            // User is fully logged out (no Firebase user) — open the regular sign-up page.
+            // User is fully logged out, so open the regular sign-up page.
             AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
                 let sign_up_url = auth_manager.sign_up_url();
                 ctx.open_url(&sign_up_url);

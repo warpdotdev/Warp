@@ -1,4 +1,4 @@
-//! Loading screen UI for cloud mode initialization.
+//! Loading screen UI for ambient-agent initialization.
 
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use warp_core::ui::appearance::Appearance;
@@ -26,7 +26,7 @@ use crate::ui_components::blended_colors;
 /// Icon size for the error icon
 const ERROR_ICON_SIZE: f32 = 24.;
 
-/// Renders the cloud mode loading screen with shimmering warp logo and tips.
+/// Renders the ambient-agent loading screen with shimmering warp logo and tips.
 pub fn render_cloud_mode_loading_screen(
     message: &str,
     appearance: &Appearance,
@@ -141,7 +141,7 @@ fn render_tier_limits_footer(
     None
 }
 
-/// Renders the cloud mode error screen.
+/// Renders the ambient-agent error screen.
 pub fn render_cloud_mode_error_screen(
     error_message: &str,
     appearance: &Appearance,
@@ -228,7 +228,7 @@ pub fn render_cloud_mode_error_screen(
         .finish()
 }
 
-/// Renders the cloud mode GitHub authentication required screen.
+/// Renders the ambient-agent GitHub authentication required screen.
 pub fn render_cloud_mode_github_auth_required_screen(
     auth_url: &str,
     appearance: &Appearance,
@@ -318,7 +318,7 @@ pub fn render_cloud_mode_github_auth_required_screen(
         .finish()
 }
 
-/// Renders the cloud mode cancelled screen.
+/// Renders the ambient-agent cancelled screen.
 pub fn render_cloud_mode_cancelled_screen(appearance: &Appearance) -> Box<dyn Element> {
     let theme = appearance.theme();
 
@@ -339,9 +339,9 @@ pub fn render_cloud_mode_cancelled_screen(appearance: &Appearance) -> Box<dyn El
     .with_height(ERROR_ICON_SIZE)
     .finish();
 
-    // Title text - "Cloud Agent Run Cancelled"
+    // Title text - "Agent Run Cancelled"
     let title_text = Text::new(
-        "Cloud Agent Run Cancelled",
+        "Agent Run Cancelled",
         appearance.ui_font_family(),
         appearance.monospace_font_size() + 2.,
     )
@@ -349,9 +349,9 @@ pub fn render_cloud_mode_cancelled_screen(appearance: &Appearance) -> Box<dyn El
     .with_color(title_color)
     .finish();
 
-    // Subtitle text - "No cloud environment was started"
+    // Subtitle text - "No environment was started"
     let subtitle_text = Text::new(
-        "No cloud environment was started",
+        "No environment was started",
         appearance.ui_font_family(),
         appearance.monospace_font_size(),
     )

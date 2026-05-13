@@ -442,12 +442,6 @@ pub enum FeatureFlag {
     /// Enables the provider command for linking third-party services.
     ProviderCommand,
 
-    /// Enables the integration command for managing agent integrations.
-    IntegrationCommand,
-
-    /// Enables the artifact command for uploading and downloading CLI artifacts.
-    ArtifactCommand,
-
     /// Groups MCP tools and resources by their originating server when sending context to the AI backend.
     MCPGroupedServerContext,
 
@@ -527,9 +521,6 @@ pub enum FeatureFlag {
 
     /// Enables computer use functionality in local clients.
     LocalComputerUse,
-
-    /// Enables team API key creation in the API key management UI.
-    TeamApiKeys,
 
     /// Enables the "New agent" prompt chip in terminal mode when AgentView is enabled.
     ///
@@ -682,9 +673,6 @@ pub enum FeatureFlag {
     /// Enables tab configs — user-definable TOML templates for launching custom tab layouts.
     TabConfigs,
 
-    /// When enabled, free-tier users are blocked from AI features (no-AI experiment arm).
-    FreeUserNoAi,
-
     /// Enables the ask_user_question tool allowing the agent to ask clarifying questions.
     AskUserQuestion,
 
@@ -763,7 +751,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::NLDClassifierModelEnabled,
     FeatureFlag::Projects,
     FeatureFlag::ProviderCommand,
-    FeatureFlag::ArtifactCommand,
     FeatureFlag::MarkdownImages,
     FeatureFlag::FileAndDiffSetComments,
     FeatureFlag::FileGlobV2Warnings,

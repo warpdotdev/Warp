@@ -2745,7 +2745,7 @@ impl PaneGroup {
                     }
                 }
                 _ => {
-                    self.replace_pane_with_new_cloud_conversation(pane_id, ctx);
+                    self.replace_pane_with_new_agent_conversation(pane_id, ctx);
                 }
             }
         }
@@ -2786,17 +2786,15 @@ impl PaneGroup {
             } else if let Some(pane_id) =
                 group.find_pane_id_for_terminal_view(target_view.id(), ctx)
             {
-                log::error!(
-                    "Failed to restore ambient agent pane, replacing with new cloud conversation"
-                );
-                group.replace_pane_with_new_cloud_conversation(pane_id, ctx);
+                log::error!("Failed to restore ambient agent pane, replacing with a new agent pane");
+                group.replace_pane_with_new_agent_conversation(pane_id, ctx);
             }
         });
         true
     }
 
-    /// Replaces a pane with a new cloud conversation.
-    fn replace_pane_with_new_cloud_conversation(
+    /// Replaces a pane with a new agent conversation.
+    fn replace_pane_with_new_agent_conversation(
         &mut self,
         pane_id: PaneId,
         ctx: &mut ViewContext<Self>,
@@ -3028,7 +3026,7 @@ impl PaneGroup {
         )
     }
 
-    /// Create a new pane group for a view-only cloud conversation.
+    /// Create a new pane group for a view-only conversation.
     pub fn new_for_conversation_transcript_viewer(
         conversation: AIConversation,
         ambient_agent_task_id: Option<AmbientAgentTaskId>,
@@ -3144,9 +3142,7 @@ impl PaneGroup {
             .map(|session| session.terminal_manager(ctx));
 
         let ambient_agent_task_id = match &cloud_conversation {
-            LoadedConversationData::Oz(conversation) => conversation
-                .server_metadata()
-                .and_then(|metadata| metadata.ambient_agent_task_id),
+            LoadedConversationData::Oz(conversation) => conversation.task_id(),
             LoadedConversationData::CLIAgent(cli_conversation) => {
                 cli_conversation.metadata.ambient_agent_task_id
             }

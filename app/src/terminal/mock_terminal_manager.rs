@@ -71,7 +71,7 @@ impl MockTerminalManager {
                 None,
                 prompt_type,
                 None,
-                // We use conversation restoration to load a view-only cloud conversation
+                // We use conversation restoration to load a view-only conversation.
                 // into the web view.
                 conversation_restoration,
                 None, // inactive_pty_reads_rx

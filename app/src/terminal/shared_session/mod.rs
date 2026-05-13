@@ -19,11 +19,9 @@ pub mod ai_agent;
 pub mod participant_avatar_view;
 pub mod presence_manager;
 pub mod render_util;
-pub mod replay_agent_conversations;
 pub(crate) mod selections;
 pub mod settings;
 // OpenWarp:删除 share_modal(云端 shared session 弹窗)
-pub(super) mod shared_handlers;
 pub mod viewer;
 
 #[cfg(test)]

@@ -455,18 +455,6 @@ impl PassiveSuggestionsModel {
             return;
         }
 
-        // Startup commands run while bootstrapping an Oz cloud environment, so we skip
-        // passive prompt suggestion generation for them to avoid unnecessary requests.
-        let is_oz_environment_startup_command = false
-            && self
-                .terminal_model
-                .lock()
-                .block_list()
-                .block_at(block_completed.index)
-                .is_some_and(|block| block.is_oz_environment_startup_command());
-        if is_oz_environment_startup_command {
-            return;
-        }
         let is_prompt_suggestions_enabled = is_prompt_suggestions_enabled(ctx);
         let is_passive_code_diffs_enabled = is_passive_code_diffs_enabled(ctx);
         if !is_prompt_suggestions_enabled && !is_passive_code_diffs_enabled {

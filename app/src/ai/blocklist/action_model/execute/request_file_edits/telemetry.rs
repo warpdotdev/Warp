@@ -4,15 +4,11 @@
 /// V4A patch format used by `apply_patch`.
 use ai::diff_validation::DiffMatchFailures;
 use serde::Serialize;
-use serde_json::json;
-use strum_macros::{EnumDiscriminants, EnumIter};
-use warp_core::telemetry::{EnablementState, TelemetryEvent, TelemetryEventDesc};
 
 use crate::ai::{agent::AIIdentifiers, blocklist::RequestedEditResolution};
 
 /// Telemetry events associated with the `RequestFileEdits` AI agent action.
-#[derive(Serialize, Debug, EnumDiscriminants)]
-#[strum_discriminants(derive(EnumIter))]
+#[derive(Serialize, Debug)]
 pub enum RequestFileEditsTelemetryEvent {
     EditResolved(EditResolvedEvent),
     EditAcceptClicked(EditAcceptClickedEvent),
@@ -147,102 +143,3 @@ pub struct MalformedFinalLineProxyEvent {
     /// Whether this is a passive diff.
     pub passive_diff: bool,
 }
-
-impl TelemetryEvent for RequestFileEditsTelemetryEvent {
-    fn name(&self) -> &'static str {
-        RequestFileEditsTelemetryEventDiscriminants::from(self).name()
-    }
-
-    fn payload(&self) -> Option<serde_json::Value> {
-        match self {
-            RequestFileEditsTelemetryEvent::EditResolved(resolved_edit_event) => {
-                Some(json!(resolved_edit_event))
-            }
-            RequestFileEditsTelemetryEvent::EditAcceptClicked(edit_accept_clicked_event) => {
-                Some(json!(edit_accept_clicked_event))
-            }
-            RequestFileEditsTelemetryEvent::EditAcceptAndContinueClicked(
-                edit_accept_and_continue_clicked_event,
-            ) => Some(json!(edit_accept_and_continue_clicked_event)),
-            RequestFileEditsTelemetryEvent::DiffMatchFailed(diff_application_error_event) => {
-                Some(json!(diff_application_error_event))
-            }
-            RequestFileEditsTelemetryEvent::DiffInvalidFile(diff_invalid_file_event) => {
-                Some(json!(diff_invalid_file_event))
-            }
-            RequestFileEditsTelemetryEvent::EditReceived(edit_received_event) => {
-                Some(json!(edit_received_event))
-            }
-            RequestFileEditsTelemetryEvent::MissingLineNumbers(missing_line_numbers_event) => {
-                Some(json!(missing_line_numbers_event))
-            }
-            RequestFileEditsTelemetryEvent::MalformedFinalLineProxy(
-                malformed_final_line_proxy_event,
-            ) => Some(json!(malformed_final_line_proxy_event)),
-        }
-    }
-
-    fn description(&self) -> &'static str {
-        RequestFileEditsTelemetryEventDiscriminants::from(self).description()
-    }
-
-    fn enablement_state(&self) -> EnablementState {
-        RequestFileEditsTelemetryEventDiscriminants::from(self).enablement_state()
-    }
-
-    fn contains_ugc(&self) -> bool {
-        RequestFileEditsTelemetryEventDiscriminants::from(self).contains_ugc()
-    }
-
-    fn event_descs() -> impl Iterator<Item = Box<dyn TelemetryEventDesc>> {
-        warp_core::telemetry::enum_events::<Self>()
-    }
-}
-
-impl RequestFileEditsTelemetryEventDiscriminants {
-    pub fn contains_ugc(&self) -> bool {
-        false
-    }
-}
-
-impl TelemetryEventDesc for RequestFileEditsTelemetryEventDiscriminants {
-    fn name(&self) -> &'static str {
-        match self {
-            Self::EditResolved => "AgentMode.Code.SuggestedEditResolved",
-            Self::EditAcceptClicked => "AgentMode.Code.SuggestedEditAcceptClicked",
-            Self::EditAcceptAndContinueClicked => {
-                "AgentMode.Code.SuggestedEditAcceptAndContinueClicked"
-            }
-            Self::DiffMatchFailed => "AgentMode.Code.DiffMatchFailed",
-            Self::DiffInvalidFile => "AgentMode.Code.InvalidFile",
-            Self::EditReceived => "AgentMode.Code.SuggestedEditReceived",
-            Self::MissingLineNumbers => "AgentMode.Code.MissingLineNumbers",
-            Self::MalformedFinalLineProxy => "AgentMode.Code.MalformedFinalLineProxy",
-        }
-    }
-
-    fn description(&self) -> &'static str {
-        match self {
-            Self::EditResolved => "Agent Mode pending code edit suggestion resolved",
-            Self::EditAcceptClicked => {
-                "User selected Accept for a code diff suggestion in Agent Mode"
-            }
-            Self::EditAcceptAndContinueClicked => {
-                "User selected Accept and start conversation for a code diff suggestion in Agent Mode"
-            }
-            Self::DiffMatchFailed => "Failed to match code diff",
-            Self::DiffInvalidFile => "File(s) in code diff could not be found",
-            Self::EditReceived => "Agent Mode suggested a code edit",
-            Self::MissingLineNumbers => "Code diff was missing line numbers",
-            Self::MalformedFinalLineProxy => {
-                "Suggested code diff likely required malformed trailing line correction (heuristic)"
-            }
-        }
-    }
-
-    fn enablement_state(&self) -> EnablementState {
-        EnablementState::Always
-    }
-}
-
-warp_core::register_telemetry_event!(RequestFileEditsTelemetryEvent);

@@ -3014,7 +3014,7 @@ impl TerminalView {
                         conversation_utils::remove_conversation(
                             *conversation_id,
                             me.view_id,
-                            false, // Empty new conversations were never synced to the cloud.
+                            false,
                             ctx,
                         );
                     }
@@ -4174,7 +4174,7 @@ impl TerminalView {
     }
 
     fn can_pop_nested_cloud_agent_view(&self, _ctx: &AppContext) -> bool {
-        // openWarp:cloud_mode 已删除,nested cloud agent view 永远不存在。
+        // openWarp:cloud_mode 已删除,nested agent view 永远不存在。
         false
     }
 
@@ -5088,7 +5088,7 @@ impl TerminalView {
             | BlocklistAIHistoryEvent::UpgradedTask { .. }
             | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
             | BlocklistAIHistoryEvent::DeletedConversation { .. }
-            | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. } => {}
+            | BlocklistAIHistoryEvent::ConversationAgentIdAssigned { .. } => {}
         }
         ctx.notify();
     }
@@ -11945,7 +11945,7 @@ impl TerminalView {
 /// Gets display strings for:
 /// - Toggle input mode: from TerminalKeybindings (editable binding)
 /// - Submit to local agent: fixed binding (cmd-enter / ctrl-shift-enter)
-/// - Submit to cloud agent: fixed binding (cmd-alt-enter / ctrl-alt-enter)
+/// - Submit to ambient agent: fixed binding (cmd-alt-enter / ctrl-alt-enter)
 fn build_onboarding_keybindings(ctx: &AppContext) -> OnboardingKeybindings {
     let toggle_input_mode = TerminalKeybindings::handle(ctx)
         .as_ref(ctx)
@@ -15209,7 +15209,7 @@ impl TerminalView {
         );
         items.push(MenuItem::Separator);
 
-        // CloudConversations was removed in OpenWarp; share-conversation menu item omitted.
+        // Remote conversation sharing was removed in OpenWarp; share-conversation menu item omitted.
         let _ = ai_conversation_id;
 
         items.push(
@@ -21507,7 +21507,7 @@ impl TerminalView {
                 }
             }
             OpenConversationShareDialog { conversation_id: _ } => {
-                // AI conversation sharing was removed alongside the CloudConversations feature.
+                // AI conversation sharing was removed alongside remote conversation sharing.
             }
             CopyAgentCommand { ai_block_view_id } => {
                 for rich_content in self.rich_content_views.iter() {
@@ -24360,7 +24360,7 @@ impl View for TerminalView {
             }
         }
 
-        // Render first-time cloud agent setup view when in Setup status
+        // First-time ambient-agent setup has been removed in OpenWarp.
         if self.ambient_agent_view_model.as_ref(app).is_in_setup() {}
 
         if self.ssh_file_upload.as_ref(app).has_upload() {

@@ -103,7 +103,7 @@ impl AmbientAgentEntryBlock {
         ai_context_model
             .selected_conversation(app)
             .and_then(|c| c.title())
-            .unwrap_or_else(|| "New cloud agent".to_owned())
+            .unwrap_or_else(|| "New agent".to_owned())
     }
 
     fn ambient_agent_view_model<'a>(&self, app: &'a AppContext) -> &'a AmbientAgentViewModel {

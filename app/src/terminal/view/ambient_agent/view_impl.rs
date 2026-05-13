@@ -69,7 +69,7 @@ impl TerminalView {
             .is_some_and(|workspace| workspace.billing_metadata.is_user_on_paid_plan());
 
         if is_on_paid_plan {
-            // 去云端分支:不再展示 cloud agent capacity 模态
+            // 去云端分支:不再展示 agent capacity 模态
         } else {
             AIRequestUsageModel::handle(ctx).update(ctx, |model, ctx| {
                 model.refresh_request_usage_async(ctx);

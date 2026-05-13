@@ -10,7 +10,7 @@
 # =============================================================================
 
 app-name = Warp
-app-tagline = The cloud-backed terminal for individuals and teams
+app-tagline = The local-first agentic terminal for developers
 
 common-ok = OK
 common-cancel = Cancel
@@ -88,12 +88,10 @@ common-skip = Skip
 common-get-warping = Get Warping
 common-try-again = Try again
 common-settings = Settings
-common-premium = Premium
 common-recommended = Recommended
 common-enabled = Enabled
 common-disabled = Disabled
 common-free = Free
-common-subscribe = Subscribe
 common-list-prefix = {" - "}
 common-current-directory = the current directory
 
@@ -126,8 +124,8 @@ agent-management-artifact-screenshot = Screenshot
 agent-management-artifact-file = File
 agent-management-source-scheduled = Scheduled
 agent-management-source-local-agent = Warp (local agent)
-agent-management-source-cloud-agent = Warp (cloud agent)
-agent-management-source-oz-web = Oz Web
+agent-management-source-cloud-agent = Warp agent
+agent-management-source-oz-web = Oz
 agent-management-source-github-action = GitHub Action
 agent-management-no-session-available = No session available
 agent-management-session-expired = Session expired
@@ -137,7 +135,7 @@ agent-management-metadata-harness = Harness: { $harness }
 agent-management-metadata-run-time = Run time: { $run_time }
 agent-management-metadata-credits-used = Credits used: { $usage }
 agent-management-environment-selected = Environment: { $environment }
-agent-management-loading-cloud-runs = Loading cloud agent runs
+agent-management-loading-cloud-runs = Loading agent runs
 
 # =============================================================================
 # SECTION: workspace-runtime (Owner: agent-i18n-remaining)
@@ -168,7 +166,7 @@ workspace-search-tabs-placeholder = Search tabs...
 workspace-rearrange-toolbar-items = Re-arrange toolbar items
 workspace-new-session-agent = Agent
 workspace-new-session-terminal = Terminal
-workspace-new-session-cloud-oz = Cloud Oz
+workspace-new-session-cloud-oz = Agent tab
 workspace-new-session-local-docker-sandbox = Local Docker Sandbox
 workspace-new-worktree-config = New worktree config
 workspace-new-tab-config = New tab config
@@ -219,7 +217,7 @@ app-menu-warp-slack-community = Warp Slack Community...
 workspace-update-and-relaunch-warp = Update and relaunch Warp
 workspace-updating-to-version = Updating to ({ $version })
 workspace-update-warp-manually = Update Warp manually
-workspace-view-all-cloud-runs = View all cloud runs
+workspace-view-all-cloud-runs = View all agent runs
 pane-get-started-title = Get started
 pane-new-tab-title = New tab
 
@@ -242,7 +240,7 @@ terminal-dont-ask-again = Don't ask me this again
 terminal-clear-upload = Clear upload
 terminal-manage-defaults = Manage defaults
 terminal-free-credits = Free credits
-terminal-cloud-agent-run = Cloud agent run
+terminal-cloud-agent-run = Agent run
 terminal-agent-header-for-terminal = for terminal
 ssh-remote-choice-title = Choose your experience for this remote session:
 ssh-remote-choice-install-extension = Install Warp's SSH extension
@@ -258,9 +256,8 @@ ai-document-save-as-markdown-file = Save as markdown file
 ai-document-attach-to-active-session = Attach to active session
 ai-document-copy-plan-id = Copy plan ID
 ai-document-plan-id-copied = Plan ID copied to clipboard
-ai-conversation-view-in-oz = View in Oz
-ai-conversation-view-in-oz-tooltip = View this run in the Oz web app
-ai-artifact-prepare-download-failed = Failed to prepare file download.
+ai-conversation-view-in-oz = View run
+ai-conversation-view-in-oz-tooltip = View this agent run
 ai-block-open-in-github = Open in GitHub
 ai-block-open-in-code-review = Open in code review
 ai-block-manage-rules = Manage rules
@@ -306,7 +303,7 @@ ai-ask-user-answered-question = Answered question
 ai-ask-user-answered-all-questions = Answered all { $total } questions
 ai-ask-user-answered-count = Answered { $answered_count } of { $total } questions
 ai-code-diff-requested-edit-title = Requested Edit
-ai-cloud-setup-visit-oz = Visit Oz
+ai-cloud-setup-visit-oz = Open agent setup
 ai-inline-code-diff-review-changes = Review changes
 ai-execution-profile-name-placeholder = e.g. "YOLO code"
 ai-execution-profile-delete-profile = Delete profile
@@ -342,7 +339,7 @@ openwarp-launch-contribute-title = Contribute
 openwarp-launch-contribute-description = Warp's client code is now open source. Get started by using the /feedback skill to open an issue, and follow the contribution guidelines here.
 openwarp-launch-contribute-link-text = here
 openwarp-launch-oad-title = Open Automated Development
-openwarp-launch-oad-description = The Warp repo is managed by an agent-first workflow powered by Oz, our cloud agent orchestration platform.
+openwarp-launch-oad-description = The Warp repo is managed by an agent-first local workflow powered by Oz.
 openwarp-launch-auto-model-title = Introducing 'auto (open-weights)'
 openwarp-launch-auto-model-description = We've added a new auto model that picks the best open weight model for a task, like Kimi or MiniMax.
 hoa-see-whats-new = See what's new
@@ -395,7 +392,7 @@ terminal-choose-execution-profile-tooltip = Choose an AI execution profile
 terminal-choose-agent-model-tooltip = Choose an agent model
 terminal-input-cli-agent-rich-input-hint = Tell the agent what to build...
 terminal-input-enter-prompt-for-agent = Enter prompt for { $agent }...
-terminal-input-cloud-agent-hint = Kick off a cloud agent
+terminal-input-cloud-agent-hint = Kick off an agent
 terminal-input-a11y-label = Command Input.
 terminal-input-a11y-helper = Input your shell command, press enter to execute. Press cmd-up to navigate to output of previously executed commands. Press cmd-l to re-focus command input.
 terminal-input-ai-command-search-hint = Type '#' for AI command suggestions
@@ -589,7 +586,7 @@ settings-section-third-party-cli-agents = Third party CLI agents
 settings-section-code = Code
 settings-section-editor-and-code-review = Editor and Code Review
 settings-section-cloud-environments = Environments
-settings-section-oz-cloud-api-keys = Oz Cloud API Keys
+settings-section-oz-cloud-api-keys = Agent API Keys
 settings-title = Settings
 
 # Context menu items (split / close pane)
@@ -619,9 +616,7 @@ settings-about-update-available = New version { $version } is available.
 settings-about-update-check-now = Check for updates
 settings-about-update-open-release = Download from GitHub
 
-# main_page.rs — referral / account
-settings-main-referral-cta = Earn rewards by sharing Warp with friends & colleagues
-settings-main-refer-a-friend = Refer a friend
+# main_page.rs — account
 settings-main-sign-up = Sign up
 settings-main-plan-free = Free
 settings-main-compare-plans = Compare plans
@@ -629,9 +624,6 @@ settings-main-contact-support = Contact support
 settings-main-manage-billing = Manage billing
 settings-main-upgrade-to-turbo = Upgrade to Turbo plan
 settings-main-upgrade-to-lightspeed = Upgrade to Lightspeed plan
-
-# main_page.rs — settings sync
-settings-main-settings-sync-label = Settings sync
 
 # main_page.rs — version / autoupdate
 settings-main-version-label = Version
@@ -744,8 +736,8 @@ settings-mcp-update-modal-no-updates = No updates available
 # --- ANCHOR-SUB-PLATFORM (agent-settings-platform) ---
 # 此锚点下放 settings_view/platform_page.rs 字符串
 # 命名前缀:settings-platform-*
-settings-platform-section-title = Oz Cloud API Keys
-settings-platform-description = Create and manage API keys to allow other Oz cloud agents to access your Warp account.
+settings-platform-section-title = Agent API Keys
+settings-platform-description = Create and manage API keys to allow local agents to access your Warp account.
     For more information, visit the
 settings-platform-documentation-link = Documentation.
 settings-platform-create-button = + Create API Key
@@ -791,7 +783,7 @@ settings-keybindings-press-new-shortcut = Press new keyboard shortcut
 settings-keybindings-description = Add your own custom keybindings to existing actions below.
 settings-keybindings-use-prefix = Use
 settings-keybindings-use-suffix = to reference these keybindings in a side pane at anytime.
-settings-keybindings-not-synced-tooltip = Keyboard shortcuts are not synced to the cloud
+settings-keybindings-not-synced-tooltip = Keyboard shortcuts are stored locally on this machine
 settings-keybindings-subheader = Configure keyboard shortcuts
 settings-keybindings-command-column = Command
 
@@ -969,9 +961,9 @@ settings-ai-toolbar-commands-description = Add regex patterns to show the coding
 settings-ai-coding-agent-other = Other
 settings-ai-coding-agent-select-header = Select coding agent
 
-# Experimental / Cloud Agent
-settings-ai-cloud-agent-computer-use = Computer use in Cloud Agents
-settings-ai-cloud-agent-computer-use-description = Enable computer use in cloud agent conversations started from the Warp app.
+# Experimental / Agent
+settings-ai-cloud-agent-computer-use = Computer use in agents
+settings-ai-cloud-agent-computer-use-description = Enable computer use in agent conversations started from the Warp app.
 settings-ai-orchestration-label = Orchestration
 settings-ai-orchestration-description = Enable multi-agent orchestration, allowing the agent to spawn and coordinate parallel sub-agents.
 
@@ -1114,7 +1106,7 @@ settings-features-restart-warp-to-apply = Restart Warp for changes to take effec
 # 命名前缀:settings-teams-*
 settings-teams-page-title = Teams
 settings-teams-create-page-subtitle = Create a team
-settings-teams-create-description = When you create a team, you can collaborate on agent-driven development by sharing cloud agent runs, environments, automations, and artifacts. You can also create a shared knowledge store for teammates and agents alike.
+settings-teams-create-description = When you create a team, you can collaborate on agent-driven development by sharing local runs, automations, and artifacts. You can also create a shared knowledge store for teammates and agents alike.
 settings-teams-create-button = Create
 settings-teams-team-name-placeholder = Team name
 settings-teams-rename-placeholder = Your new team name
@@ -1245,9 +1237,6 @@ settings-privacy-telemetry-description = App analytics help us make the product 
 settings-privacy-telemetry-description-old = App analytics help us make the product better for you. We only collect app usage metadata, never console input or output.
 settings-privacy-telemetry-free-tier-note = On the free tier, analytics must be enabled to use AI features.
 settings-privacy-telemetry-docs-link = Read more about Warp's use of data
-settings-privacy-data-management-title = Manage your data
-settings-privacy-data-management-description = At any time, you may choose to delete your Warp account permanently. You will no longer be able to use Warp.
-settings-privacy-data-management-link = Visit the data management page
 settings-privacy-policy-title = Privacy policy
 settings-privacy-policy-link = Read Warp's privacy policy
 settings-privacy-tab-personal = Personal
@@ -1264,9 +1253,9 @@ settings-privacy-secret-display-mode-title = Secret visual redaction mode
 settings-privacy-secret-display-mode-description = Choose how secrets are visually presented in the block list while keeping them searchable. This setting only affects what you see in the block list.
 settings-privacy-crash-reports-title = Send crash reports
 settings-privacy-crash-reports-description = Crash reports assist with debugging and stability improvements.
-settings-privacy-cloud-conv-title = Store AI conversations in the cloud
-settings-privacy-cloud-conv-description-on = Agent conversations can be shared with others and are retained when you log in on different devices. This data is only stored for product functionality, and Warp will not use it for analytics.
-settings-privacy-cloud-conv-description-off = Agent conversations are only stored locally on your machine, are lost upon logout, and cannot be shared. Note: conversation data for ambient agents are still stored in the cloud.
+settings-privacy-cloud-conv-title = Store AI conversations locally
+settings-privacy-cloud-conv-description-on = Agent conversations are stored on this machine for local product functionality.
+settings-privacy-cloud-conv-description-off = Agent conversations are stored locally on this machine and are removed when local data is cleared.
 settings-privacy-org-managed-tooltip = This setting is managed by your organization.
 settings-privacy-network-log-title = Network log console
 settings-privacy-network-log-description = We've built a native console that allows you to view all communications from Warp to external servers to ensure you feel comfortable that your work is always kept safe.
@@ -1771,7 +1760,7 @@ keybinding-desc-workspace-create-personal-folder-menu = New Personal Folder
 keybinding-desc-workspace-new-tab = Create new tab
 keybinding-desc-workspace-new-terminal-tab = New Terminal Tab
 keybinding-desc-workspace-new-agent-tab = New Agent Tab
-keybinding-desc-workspace-new-cloud-agent-tab = New Cloud Agent Tab
+keybinding-desc-workspace-new-cloud-agent-tab = New Agent Tab
 new-session-create-new-tab = Create New Tab
 new-session-create-new-window = Create New Window
 new-session-split-pane-down = Split Pane Down
@@ -2239,7 +2228,6 @@ rules-init-project-button = Initialize Project
 
 # --- Agent view zero-state + message bar ---
 agent-zero-state-title = New Oz agent conversation
-agent-zero-state-title-cloud = New Oz cloud agent conversation
 agent-zero-state-description = Send a prompt below to start a new conversation
 agent-zero-state-description-with-location = Send a prompt below to start a new conversation in `{ $location }`
 agent-zero-state-recent-activity = RECENT ACTIVITY
@@ -2352,7 +2340,6 @@ toggle-suffix-input-message-line = terminal input message line
 toggle-suffix-slash-commands-terminal = slash commands in terminal mode
 toggle-suffix-integrated-gpu = integrated GPU rendering (low power)
 toggle-suffix-wayland = Wayland for window management
-toggle-suffix-settings-sync = settings sync
 toggle-suffix-app-analytics = app analytics
 toggle-suffix-crash-reporting = crash reporting
 toggle-suffix-secret-redaction = secret redaction
@@ -2894,7 +2881,6 @@ workspace-right-panel-close-panel = Close panel
 workspace-right-panel-code-review = Code review
 workspace-right-panel-minimize = Minimize
 workspace-right-panel-maximize = Maximize
-terminal-pane-new-cloud-agent-title = New cloud agent
 terminal-pane-new-agent-conversation-title = New agent conversation
 vertical-tabs-no-tabs-open = No tabs open
 vertical-tabs-untitled-tab = Untitled tab
@@ -3008,9 +2994,9 @@ auth-paste-token-continue = Continue
 auth-offline-first-use-description = You are currently offline. An internet connection is required to use Warp for the first time.
 auth-offline-first-use-learn-more = Learn more
 auth-offline-overlay-title = Using Warp Offline
-auth-offline-overlay-paragraph-1 = All of Warp's non-cloud features work offline.
-auth-offline-overlay-paragraph-2 = However, we require users to be online when using Warp for the first time in order to enable Warp's AI and cloud features.
-auth-offline-overlay-paragraph-3 = We offer cloud features to all users, and so we need an internet connection to meter AI usage, prevent abuse, and associate cloud objects with users. If you opt to use Warp logged-out, a unique ID will be attached to an anonymous user account in order to support these features.
+auth-offline-overlay-paragraph-1 = Warp can be used offline for local terminal and agent workflows.
+auth-offline-overlay-paragraph-2 = Some setup flows may still need an internet connection when they depend on external providers.
+auth-offline-overlay-paragraph-3 = Logged-out usage keeps local workflows on this machine.
 auth-offline-overlay-dismiss = Dismiss
 auth-privacy-settings-title = Privacy Settings
 auth-privacy-settings-done = Done
@@ -3116,7 +3102,6 @@ agent-tip-interactive-tools = Prompt the agent to control interactive tools like
 agent-tip-code-review-panel = <keybinding> to open the code review panel and review the agent's changes.
 agent-tip-add-mcp = `/add-mcp` to add an MCP server to your workspace.
 agent-tip-open-mcp-servers = `/open-mcp-servers` to view and share MCP servers with your team.
-agent-tip-create-environment = `/create-environment` to turn a repo into a remote docker environment an agent can run in.
 agent-tip-add-prompt = `/add-prompt` to create a reusable prompt for repeatable workflows.
 agent-tip-add-rule = `/add-rule` to create a global agent rule.
 agent-tip-fork = `/fork` to create a fresh copy of the current conversation, optionally with a new prompt.
@@ -3217,7 +3202,7 @@ onboarding-intention-terminal-title = Just use the terminal
 onboarding-intention-terminal-badge = No AI features
 onboarding-intention-terminal-description = A modern terminal optimized for speed, context, and control without AI.
 onboarding-ai-feature-warp-agents = Warp agents
-onboarding-ai-feature-oz-cloud-agents-platform = Oz cloud agents platform
+onboarding-ai-feature-oz-cloud-agents-platform = Oz local agents platform
 onboarding-ai-feature-next-command-predictions = Next command predictions
 onboarding-ai-feature-prompt-suggestions = Prompt suggestions
 onboarding-ai-feature-remote-control-agents = Remote control with Claude Code, Codex, and other agents
@@ -3235,12 +3220,6 @@ onboarding-agent-autonomy-partial-subtitle = Can plan, read files, and execute l
 onboarding-agent-autonomy-none-title = None
 onboarding-agent-autonomy-none-subtitle = Takes no actions without your approval.
 onboarding-agent-disable-warp-agent = Disable Warp Agent
-onboarding-agent-upgrade-title = Upgrade for access to premium models.
-onboarding-agent-upgrade-subtitle = State-of-the-art models require paid plans.
-onboarding-agent-paste-token-link = Click here
-onboarding-agent-open-page-manually = {" "}and open the page manually.{" "}
-onboarding-agent-paste-token-suffix = {" "}to paste your token from the browser.
-onboarding-agent-plan-activated = Plan successfully activated. All premium models are available.
 onboarding-project-title = Open a project
 onboarding-project-subtitle = Set up a project to optimize it for coding in Warp.
 onboarding-project-open-local-folder = Open local folder
@@ -3267,20 +3246,6 @@ onboarding-customize-global-file-search = Global file search
 onboarding-customize-warp-drive = Warp Drive
 onboarding-customize-tools-panel = Tools panel
 onboarding-customize-code-review = Code review
-onboarding-free-user-title = Let's get started.
-onboarding-free-user-agent-title = Agent driven development with Warp's built-in agent
-onboarding-free-user-agent-description = Iterate, plan, and build with Oz: Warp's built-in agent. Available locally or in the cloud.
-onboarding-free-user-terminal-title = Classic terminal with third-party agents
-onboarding-free-user-terminal-description = A modern terminal that supports third-party agents (Claude Code, Codex, Gemini CLI) and classic terminal workflows.
-onboarding-free-user-subscribe-title = Subscribe to access agent driven development in Warp.
-onboarding-free-user-subscribe-item-credits = 1,500 credits per month
-onboarding-free-user-subscribe-item-models = Access to frontier OpenAI, Anthropic, and Google models
-onboarding-free-user-subscribe-item-reload = Access to Reload credits and volume-based discounts
-onboarding-free-user-subscribe-item-cloud-agents = Extended cloud agents access
-onboarding-free-user-subscribe-item-indexing = Highest codebase indexing limits
-onboarding-free-user-subscribe-item-drive = Unlimited Warp Drive objects and collaboration
-onboarding-free-user-subscribe-item-support = Private email support
-onboarding-free-user-subscribe-item-cloud-storage = Unlimited cloud conversation storage
 
 auth-opt-out-line-1 = If you'd like to opt out of analytics and AI features,
 auth-opt-out-line-2-prefix = you can adjust your{" "}
@@ -3322,8 +3287,6 @@ auth-require-login-share = In order to share, please create an account.
 auth-welcome-title = Welcome to Warp!
 auth-sign-up-for-warp = Sign up for Warp
 auth-browser-sign-in-title = Sign in on your browser\nto continue
-auth-browser-not-launched-prefix = If your browser hasn't launched,{" "}
-auth-copy-url = copy the URL
 auth-open-page-manually-suffix = and open the page manually.
 
 voice-try-input = Try Voice Input
@@ -3603,7 +3566,6 @@ notifications-banner-set-permissions = Set permissions
 ai-edit-api-keys = Edit API Keys
 ai-manage-privacy-settings = Manage privacy settings
 ai-block-manage-agent-permissions = Manage Agent permissions
-agent-zero-state-cloud-agents-description = Use cloud agents to run parallel agents, build agents that run autonomously, and check in on your agents from anywhere.{" "}
 agent-zero-state-visit-docs = Visit docs
 ai-execution-profile-agent-decides = Agent decides
 ai-execution-profile-always-ask = Always ask

@@ -50,7 +50,7 @@ define_settings_group!(ThemeSettings, settings: [
 impl Theme {
     fn current_value_is_syncable(&self) -> bool {
         let current_value = self.value();
-        // Don't sync custom themes because they reference local files that aren't synced to the cloud.
+        // Custom themes reference local files, so they remain local-only.
         !matches!(current_value, ThemeKind::Custom(_))
     }
 }

@@ -18,7 +18,7 @@ const ZERO_STATE_SCORE: i64 = 1000;
 pub struct ConversationDataSource;
 
 impl ConversationDataSource {
-    /// Merges local conversations and cloud agent tasks, deduplicated by
+    /// Merges local conversations and ambient-agent tasks, deduplicated by
     /// `server_conversation_token`.
     fn collect_conversations(app: &AppContext) -> Vec<ConversationContextItem> {
         let mut seen_tokens: HashSet<String> = HashSet::new();
@@ -39,8 +39,8 @@ impl ConversationDataSource {
             }
         }
 
-        // Source 2: cloud agent tasks. Every ambient agent conversation has a
-        // corresponding task, so this covers all cloud conversations.
+        // Source 2: ambient-agent tasks. Every ambient-agent conversation has a
+        // corresponding task, so this covers conversations without local state.
         let agent_model = AgentConversationsModel::as_ref(app);
         for task in agent_model.tasks_iter() {
             if let Some(conv_id) = &task.conversation_id {

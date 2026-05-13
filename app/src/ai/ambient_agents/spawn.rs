@@ -50,7 +50,7 @@ pub enum AmbientAgentEvent {
     SessionStarted { session_join_info: SessionJoinInfo },
     /// Timed out waiting for the agent session to be ready.
     TimedOut,
-    /// Cloud agent capacity limit has been reached. This does not block
+    /// Agent capacity limit has been reached. This does not block
     /// the task from eventually starting.
     AtCapacity,
 }
@@ -69,6 +69,6 @@ pub fn spawn_task(
     _timeout: Option<Duration>,
 ) -> impl Stream<Item = Result<AmbientAgentEvent, anyhow::Error>> {
     async_stream::stream! {
-        yield Err(anyhow::anyhow!("Cloud agent spawning is disabled in OpenWarp"));
+        yield Err(anyhow::anyhow!("Agent spawning is disabled in OpenWarp"));
     }
 }

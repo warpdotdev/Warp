@@ -41,7 +41,7 @@ impl AgentEventStreamClient for DisabledAgentEventStreamClient {
         _since_sequence: i64,
     ) -> Result<http_client::EventSourceStream> {
         Err(anyhow!(
-            "Cloud agent event stream disabled in OpenWarp - RTC endpoint is removed"
+            "Agent event stream disabled in OpenWarp - RTC endpoint is removed"
         ))
     }
 }

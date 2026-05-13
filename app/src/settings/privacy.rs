@@ -94,8 +94,8 @@ impl PartialEq for CustomSecretRegex {
 impl settings_value::SettingsValue for CustomSecretRegex {}
 
 // openWarp 闭源遥测剥离:三个隐私开关默认值 true → false。原 Warp 默认开是商业产品的
-// "选择退出"模式;openWarp 已物理切断 Rudder/Sentry/cloud-conversation-storage 三条
-// 外发链路,默认开关只会在新用户面前显示 ON 但实际不外发,造成认知割裂。改为默认 OFF。
+// "选择退出"模式;OpenWarp 已物理切断遥测、崩溃上报、云端对话存储三条外发链路,
+// 默认开关只会在新用户面前显示 ON 但实际不外发,造成认知割裂。改为默认 OFF。
 define_settings_group!(WarpDrivePrivacySettings, settings: [
     is_telemetry_enabled: IsTelemetryEnabled {
         type: bool,

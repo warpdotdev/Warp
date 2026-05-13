@@ -13,7 +13,6 @@ use crate::agent::OutputFormat;
 #[cfg(windows)]
 mod process_handle;
 
-pub mod artifact;
 pub mod scope;
 pub mod skill;
 
@@ -21,8 +20,6 @@ pub mod agent;
 pub mod completions;
 pub mod config_file;
 // OpenWarp Wave 7-2:`environment` CLI 随 cloud ambient agent 主体子系统物理删。
-pub mod harness_support;
-pub mod integration;
 pub mod json_filter;
 pub mod mcp;
 pub mod model;
@@ -156,15 +153,6 @@ impl Args {
                     }
                 }
 
-                if !FeatureFlag::IntegrationCommand.is_enabled() {
-                    let args: Vec<String> = env::args().collect();
-                    if args.len() > 1 && args[1] == "integration" {
-                        eprintln!("error: unrecognized subcommand 'integration'\n");
-                        eprintln!("For more information, try '--help'");
-                        std::process::exit(2);
-                    }
-                }
-
                 let args: Vec<String> = env::args().collect();
                 if args.len() > 1 && args[1] == "secret" {
                     eprintln!("error: unrecognized subcommand 'secret'\n");
@@ -177,15 +165,6 @@ impl Args {
                     eprintln!("error: unrecognized subcommand 'federate'\n");
                     eprintln!("For more information, try '--help'");
                     std::process::exit(2);
-                }
-
-                if !FeatureFlag::ArtifactCommand.is_enabled() {
-                    let args: Vec<String> = env::args().collect();
-                    if args.len() > 1 && args[1] == "artifact" {
-                        eprintln!("error: unrecognized subcommand 'artifact'\n");
-                        eprintln!("For more information, try '--help'");
-                        std::process::exit(2);
-                    }
                 }
 
                 let command = Self::clap_command();
@@ -212,32 +191,9 @@ impl Args {
         // OpenWarp Wave 7-2:`environment` 子命令与 `--environment` 参数随 cloud ambient agent
         // 主体物理删 —— enum variant 已从 `CliCommand` 和 `RunAgentArgs` 移除。
 
-        // CloudConversations was removed in OpenWarp; the --conversation flag is
-        // always hidden from help text.
-        command = command.mut_subcommand("agent", |agent_cmd| {
-            agent_cmd.mut_subcommand("run", |run_cmd| {
-                run_cmd.mut_arg("conversation", |arg| arg.hide(true))
-            })
-        });
-
         // Hide the provider subcommand from help text
         if !FeatureFlag::ProviderCommand.is_enabled() {
             command = command.mut_subcommand("provider", |c| c.hide(true));
-        }
-
-        // Hide the integration subcommand from help text
-        if !FeatureFlag::IntegrationCommand.is_enabled() {
-            command = command.mut_subcommand("integration", |c| c.hide(true));
-        }
-
-        // Hide the harness-support subcommand from help text.
-        if !FeatureFlag::AgentHarness.is_enabled() {
-            command = command.mut_subcommand("harness-support", |c| c.hide(true));
-        }
-
-        // Hide the artifact subcommand from help text.
-        if !FeatureFlag::ArtifactCommand.is_enabled() {
-            command = command.mut_subcommand("artifact", |c| c.hide(true));
         }
 
         // Wire up `--version` / `-V` using the same version metadata used elsewhere in the
@@ -381,17 +337,6 @@ pub enum CliCommand {
     #[command(subcommand)]
     Provider(crate::provider::ProviderCommand),
 
-    /// Manage integrations.
-    #[command(subcommand)]
-    Integration(crate::integration::IntegrationCommand),
-
-    /// Support commands for agent harnesses to integrate with Oz.
-    #[command(hide = true)]
-    HarnessSupport(crate::harness_support::HarnessSupportArgs),
-
-    /// Manage artifacts.
-    #[command(subcommand)]
-    Artifact(crate::artifact::ArtifactCommand),
 }
 
 /// A subcommand of the main Warp application. This includes all [`WorkerCommand`]s as well as app-specific debugging tools.
@@ -431,10 +376,6 @@ pub enum Command {
     #[clap(long_flag = "dump-debug-info")]
     DumpDebugInfo,
 
-    /// Print telemetry events in production and exit.
-    #[clap(long_flag = "print-telemetry-events", hide = true)]
-    #[cfg(not(target_family = "wasm"))]
-    PrintTelemetryEvents,
 }
 
 impl Command {
@@ -444,8 +385,6 @@ impl Command {
             Command::Worker(_) => false,
             Command::CommandLine(_) | Command::DumpDebugInfo => true,
             Command::Completions { .. } => true,
-            #[cfg(not(target_family = "wasm"))]
-            Command::PrintTelemetryEvents => true,
         }
     }
 }

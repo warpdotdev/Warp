@@ -1120,7 +1120,7 @@ impl TerminalView {
     }
 
     /// Returns true if viewer-driven sizing should be active.
-    /// For cloud agent sessions (AmbientAgent), the same-user identity check is skipped.
+    /// For ambient-agent sessions, the same-user identity check is skipped.
     /// Otherwise, conditions: exactly 1 viewer, and that viewer is the same user as the sharer.
     pub(crate) fn is_viewer_driven_sizing_eligible(
         &self,

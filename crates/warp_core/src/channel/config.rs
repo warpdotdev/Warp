@@ -18,6 +18,7 @@ pub struct ChannelConfig {
     pub mcp_static_config: Option<McpStaticConfig>,
 }
 
+#[cfg(not(feature = "test-util"))]
 pub(crate) const DISABLED_HTTP_SENTINEL: &str = "http://192.0.2.0:9";
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -49,7 +50,7 @@ pub struct McpOAuthProviderConfig {
     pub client_secret: Cow<'static, str>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-util")))]
 mod tests {
     use super::*;
 

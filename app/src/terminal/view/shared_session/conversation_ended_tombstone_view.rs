@@ -261,12 +261,6 @@ impl ConversationEndedTombstoneView {
                 ArtifactButtonsRowEvent::OpenPullRequest { url } => {
                     ctx.open_url(url);
                 }
-                ArtifactButtonsRowEvent::ViewScreenshots { artifact_uids } => {
-                    crate::ai::artifacts::open_screenshot_lightbox(artifact_uids, ctx);
-                }
-                ArtifactButtonsRowEvent::DownloadFile { artifact_uid } => {
-                    crate::ai::artifacts::download_file_artifact(artifact_uid, ctx);
-                }
             },
         );
 

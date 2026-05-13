@@ -71,7 +71,7 @@ pub enum HarnessSelectorEvent {
     MenuVisibilityChanged { open: bool },
 }
 
-/// A dropdown selector for choosing which execution harness to run cloud agent
+/// A dropdown selector for choosing which execution harness to run the ambient agent.
 /// prompts with.
 pub struct HarnessSelector {
     button: ViewHandle<ActionButton>,

@@ -51,12 +51,12 @@ pub struct PendingFile {
 }
 
 /// 单个 text-like PendingFile inline 进 prompt 的硬上限,超出直接 skip(避免拉爆 context)。
-/// 与 `attachment_utils::MAX_ATTACHMENT_SIZE_BYTES`(10MB,用于 cloud upload)区别:
-/// 那个是上传字节上限,这个是 inline 进 LLM prompt 的 token 友好上限。
+/// 与 `attachment_utils::MAX_ATTACHMENT_SIZE_BYTES`(10MB,用于二进制附件)区别:
+/// 那个是字节上限,这个是 inline 进 LLM prompt 的 token 友好上限。
 const MAX_INLINE_TEXT_FILE_BYTES: usize = 256 * 1024;
 
 /// 单个 binary PendingFile(PDF / 音频 / 其它)送进 BYOP `Binary` ContentPart 的硬上限。
-/// 跟 cloud upload 用同一个 10MB 上限对齐,避免一次请求 base64 后撑爆 HTTP body。
+/// 跟二进制附件使用同一个 10MB 上限,避免一次请求 base64 后撑爆 HTTP body。
 const MAX_INLINE_BINARY_FILE_BYTES: usize = 10 * 1024 * 1024;
 
 /// 判断 PendingFile 是否"看起来是文本",决定 P0 是否 inline。

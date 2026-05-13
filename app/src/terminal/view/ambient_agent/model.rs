@@ -39,7 +39,7 @@ pub struct AgentProgress {
 pub enum Status {
     /// Not in an ambient agent session.
     NotAmbientAgent,
-    /// First-time environment setup for cloud agents.
+    /// First-time ambient-agent setup.
     Setup,
     /// The user is composing their ambient agent prompt.
     Composing,
@@ -66,14 +66,14 @@ pub enum Status {
 pub struct AmbientAgentViewModel {
     status: Status,
 
-    /// The request with which the cloud agent was spawned, if it was spawned.
+    /// The request with which the ambient agent was spawned, if it was spawned.
     request: Option<SpawnAgentRequest>,
 
     /// The terminal view this model is part of.
     terminal_view_id: EntityId,
 
     /// Whether this ambient agent view has a parent terminal view to return to.
-    /// `false` for standalone views (e.g., from "New Cloud Conversation").
+    /// `false` for standalone views.
     /// `true` for nested views (pushed onto an existing terminal's pane stack).
     has_parent_terminal: bool,
 
@@ -83,21 +83,21 @@ pub struct AmbientAgentViewModel {
     /// UI state for rendering the ambient agent progress screen.
     pub ui_state: AmbientAgentProgressUIState,
 
-    /// The task ID for the current cloud agent task, if one has been spawned.
+    /// The task ID for the current ambient-agent task, if one has been spawned.
     task_id: Option<AmbientAgentTaskId>,
 
-    /// The local conversation associated with this cloud agent run, if any.
+    /// The local conversation associated with this ambient-agent run, if any.
     /// Set for remote child agents spawned via `start_agent` so the `run_id`
     /// from the server response can be wired back to the conversation.
     conversation_id: Option<AIConversationId>,
 
-    /// Selected execution harness for the cloud agent run.
+    /// Selected execution harness for the ambient-agent run.
     /// Defaults to `Harness::Oz`. Used to populate `AgentConfigSnapshot.harness` on spawn.
     harness: Harness,
     /// Whether the optimistic InitialUserQuery block has been inserted for the current run.
     has_inserted_cloud_mode_user_query_block: bool,
     /// Whether the harness CLI (e.g. `claude`, `gemini`) has started running for a non-oz run.
-    /// Used to transition the cloud-mode setup UI out of the pre-first-exchange phase when
+    /// Used to transition the ambient-agent setup UI out of the pre-first-exchange phase when
     /// there is no oz `AppendedExchange` to key off of.
     harness_command_started: bool,
 }
@@ -183,7 +183,7 @@ impl AmbientAgentViewModel {
         !matches!(self.status, Status::NotAmbientAgent)
     }
 
-    /// Returns the task ID for the current cloud agent task, if one has been spawned.
+    /// Returns the task ID for the current ambient-agent task, if one has been spawned.
     pub fn task_id(&self) -> Option<AmbientAgentTaskId> {
         self.task_id
     }
@@ -319,7 +319,7 @@ impl AmbientAgentViewModel {
         ctx.notify();
     }
 
-    /// Sets the local conversation ID associated with this cloud agent run.
+    /// Sets the local conversation ID associated with this ambient-agent run.
     pub fn set_conversation_id(&mut self, id: Option<AIConversationId>) {
         self.conversation_id = id;
     }
@@ -486,7 +486,7 @@ impl AmbientAgentViewModel {
                                     | AmbientAgentTaskState::Unknown => {
                                         let error = status_message
                                             .map(|msg| msg.message)
-                                            .unwrap_or_else(|| "Cloud agent failed".to_string());
+                                            .unwrap_or_else(|| "Agent failed".to_string());
                                         me.handle_spawn_error(error, ctx);
                                     }
                                 }
@@ -508,7 +508,7 @@ impl AmbientAgentViewModel {
                             }
 
                             if matches!(me.status, Status::WaitingForSession { .. }) {
-                                // 去云端分支:不再展示 cloud agent capacity 模态
+                                // 去云端分支:不再展示 agent capacity 模态
                             }
                         }
                         AmbientAgentEvent::TimedOut => {}
@@ -727,7 +727,7 @@ pub enum AmbientAgentViewModelEvent {
     SessionReady,
     /// The ambient agent failed.
     Failed { error_message: String },
-    /// Request to show the cloud agent AI credits modal.
+    /// Request to show the agent credits modal.
     ShowAICreditModal,
     /// The ambient agent needs GitHub authentication.
     NeedsGithubAuth,

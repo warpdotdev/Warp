@@ -31,7 +31,6 @@ mod crash_reporting;
 mod debounce;
 mod debug_dump;
 mod default_terminal;
-mod download_method;
 mod drive;
 #[cfg(windows)]
 mod dynamic_libraries;
@@ -651,10 +650,6 @@ pub fn run() -> Result<()> {
             }
             warp_cli::Command::DumpDebugInfo => {
                 return debug_dump::run();
-            }
-            #[cfg(not(target_family = "wasm"))]
-            warp_cli::Command::PrintTelemetryEvents => {
-                return TelemetryEvent::print_telemetry_events_json();
             }
         }
     }
@@ -1371,11 +1366,6 @@ fn initialize_app(
         // If the app was opened while logged out, record an event for measuring new users.
         // This is sent immediately in case they quit the app on the signup screen.
         send_telemetry_sync_from_app_ctx!(TelemetryEvent::LoggedOutStartup, ctx);
-        download_method::determine_and_report(
-            auth_state.clone(),
-            ctx.background_executor().clone(),
-        );
-
         // 未登录用户也需要能查看启动时序(BYOP 场景占多数),在首帧后
         // 打一次 WARP_STARTUP_TRACE 表。不发任何遥测,不影响逻辑。
         ctx.on_first_frame_drawn(move |ctx| {
@@ -1449,10 +1439,6 @@ fn initialize_app(
     ctx.add_singleton_model(move |_| History::new(command_history));
 
     ctx.add_singleton_model(CustomSecretRegexUpdater::new);
-
-    // OpenWarp(本地化,Phase 5):`TelemetryCollector` 已物理删除。原负责 RudderStack 上报
-    // 调度与持久化,本地化场景下 telemetry 宏全 no-op,不需要上报调度器。
-    timer.mark_interval_end("INITIALIZE_TELEMETRY_COLLECTION");
 
     // Register initial keybindings prior to creating menus
     ai::init(ctx);
@@ -1759,10 +1745,7 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
             NetworkStatus::handle(ctx)
                 .update(ctx, move |me, ctx| me.reachability_changed(reachable, ctx));
         })),
-        // openWarp 闭源遥测剥离 P4d:on_become_active 原会触发 ctx.record_app_focus
-        // 累积每日聚焦时长 → Rudder。剥离后 callback 留空(回调本身仍由平台层触发,
-        // 仅删 telemetry 副作用)。
-        on_become_active: Some(Box::new(move |_ctx| {})),
+        on_become_active: None,
         on_screen_changed: Some(Box::new(move |ctx| {
             ctx.dispatch_global_action(
                 "root_view:move_quake_mode_window_from_screen_change",
@@ -1810,7 +1793,6 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
                 }
             }
             ctx.dispatch_global_action("root_view:update_quake_mode_state", &update_quake_mode_arg);
-            // openWarp 闭源遥测剥离 P4d:on_resigned_active 原同步累积聚焦时长 → Rudder。
         })),
         on_will_terminate: Some(Box::new(move |ctx| {
             NotebookManager::handle(ctx).update(ctx, |manager, ctx| {
@@ -1822,9 +1804,6 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
             PersistenceWriter::handle(ctx).update(ctx, |writer, _ctx| {
                 writer.terminate();
             });
-
-            // OpenWarp(本地化,Phase 5):`TelemetryCollector` 已物理删除,
-            // 退出时不再需要 flush telemetry queue。
 
             // We want to tear down the terminal server before relaunching for
             // autoupdate, to ensure we're not running any extra Warp processes
@@ -2333,10 +2312,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::ShellSelector,
         #[cfg(feature = "block_toolbelt_save_as_workflow")]
         FeatureFlag::BlockToolbeltSaveAsWorkflow,
-        #[cfg(feature = "integration_command")]
-        FeatureFlag::IntegrationCommand,
-        #[cfg(feature = "artifact_command")]
-        FeatureFlag::ArtifactCommand,
         // OpenWarp Wave 7-2:`CloudEnvironments` FeatureFlag 随 cloud ambient agent 主体子系统
         // 物理删 —— `warp environment` 子命令 + `--environment` 参数同步下线。
         #[cfg(all(feature = "simulate_github_unauthed", debug_assertions))]
@@ -2577,8 +2552,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::AgentModeComputerUse,
         #[cfg(feature = "local_computer_use")]
         FeatureFlag::LocalComputerUse,
-        #[cfg(feature = "team_api_keys")]
-        FeatureFlag::TeamApiKeys,
         #[cfg(feature = "agent_toolbar_editor")]
         FeatureFlag::AgentToolbarEditor,
         #[cfg(feature = "configurable_toolbar")]

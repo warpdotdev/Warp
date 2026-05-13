@@ -5,9 +5,6 @@
 //! tombstone 已经不存在但保留 schema 以维持向后兼容/未来重建。
 
 use serde::Serialize;
-use serde_json::json;
-use strum_macros::{EnumDiscriminants, EnumIter};
-use warp_core::telemetry::{EnablementState, TelemetryEvent, TelemetryEventDesc};
 
 /// 通知 artifact 类型(用于 telemetry)。
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -16,63 +13,11 @@ pub enum ArtifactType {
     Plan,
     Branch,
     PullRequest,
-    File,
 }
 
 /// 通知中心相关的 telemetry 事件。
-#[derive(Serialize, Debug, EnumDiscriminants)]
-#[strum_discriminants(derive(EnumIter))]
+#[derive(Serialize, Debug)]
 pub enum NotificationsTelemetryEvent {
-    /// 用户在通知项里点击了 artifact 按钮(plan / branch / PR / file)
+    /// 用户在通知项里点击了 artifact 按钮(plan / branch / PR)
     ArtifactClicked { artifact_type: ArtifactType },
 }
-
-impl TelemetryEvent for NotificationsTelemetryEvent {
-    fn name(&self) -> &'static str {
-        NotificationsTelemetryEventDiscriminants::from(self).name()
-    }
-
-    fn payload(&self) -> Option<serde_json::Value> {
-        match self {
-            NotificationsTelemetryEvent::ArtifactClicked { artifact_type } => {
-                Some(json!({ "artifact_type": artifact_type }))
-            }
-        }
-    }
-
-    fn description(&self) -> &'static str {
-        NotificationsTelemetryEventDiscriminants::from(self).description()
-    }
-
-    fn enablement_state(&self) -> EnablementState {
-        NotificationsTelemetryEventDiscriminants::from(self).enablement_state()
-    }
-
-    fn contains_ugc(&self) -> bool {
-        false
-    }
-
-    fn event_descs() -> impl Iterator<Item = Box<dyn TelemetryEventDesc>> {
-        warp_core::telemetry::enum_events::<Self>()
-    }
-}
-
-impl TelemetryEventDesc for NotificationsTelemetryEventDiscriminants {
-    fn name(&self) -> &'static str {
-        match self {
-            Self::ArtifactClicked => "Notifications.ArtifactClicked",
-        }
-    }
-
-    fn description(&self) -> &'static str {
-        match self {
-            Self::ArtifactClicked => "User clicked an artifact button in a notification",
-        }
-    }
-
-    fn enablement_state(&self) -> EnablementState {
-        EnablementState::Always
-    }
-}
-
-warp_core::register_telemetry_event!(NotificationsTelemetryEvent);

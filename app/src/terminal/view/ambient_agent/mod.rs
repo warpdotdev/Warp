@@ -1,5 +1,5 @@
 mod block;
-// OpenWarp Wave 7-2:`first_time_setup` 随 cloud ambient agent UI 物理删。
+// OpenWarp Wave 7-2:`first_time_setup` 随 ambient agent UI 物理删。
 mod footer;
 mod harness_selector;
 mod host_selector;

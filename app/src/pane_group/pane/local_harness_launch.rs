@@ -107,11 +107,6 @@ pub(super) async fn prepare_local_harness_child_launch(
                 if let Err(error) = manager.install().await {
                     log::warn!("Claude plugin installation failed for child harness: {error}");
                 }
-                if let Err(error) = manager.install_platform_plugin().await {
-                    log::warn!(
-                        "Claude platform plugin installation failed for child harness: {error}"
-                    );
-                }
             }
 
             build_local_claude_child_command(&prompt)

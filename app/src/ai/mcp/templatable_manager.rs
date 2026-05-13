@@ -84,7 +84,7 @@ pub struct TemplatableMCPServerManager {
     cli_spawned_server_uuids: HashSet<Uuid>,
 }
 
-/// Information about a spawned server task.
+/// Information about a spawned agent task.
 #[cfg_attr(target_family = "wasm", allow(dead_code))]
 struct SpawnedServerInfo {
     abort_handle: AbortHandle,

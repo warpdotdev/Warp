@@ -198,13 +198,6 @@ static DEFAULT_TIPS: LazyLock<Vec<AgentTip>> = LazyLock::new(|| {
             kind: AgentTipKind::Mcp,
         },
         AgentTip {
-            description: crate::t!("agent-tip-create-environment"),
-            link: Some("https://docs.warp.dev/reference/cli/integration-setup".to_string()),
-            binding_name: None,
-            action: None,
-            kind: AgentTipKind::General,
-        },
-        AgentTip {
             description: crate::t!("agent-tip-add-prompt"),
             link: None,
             binding_name: None,
@@ -311,7 +304,7 @@ static DEFAULT_TIPS: LazyLock<Vec<AgentTip>> = LazyLock::new(|| {
         },
         AgentTip {
             description: crate::t!("agent-tip-desktop-notifications"),
-            link: Some("https://docs.warp.dev/agent-platform/cloud-agents/managing-cloud-agents#in-app-agent-notifications".to_string()),
+            link: None,
             binding_name: None,
             action: None,
             kind: AgentTipKind::General,

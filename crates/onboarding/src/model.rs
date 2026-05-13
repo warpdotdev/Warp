@@ -55,13 +55,6 @@ impl UICustomizationSettings {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OnboardingAuthState {
-    LoggedOut,
-    FreeUser,
-    PayingUser,
-}
-
 #[derive(Clone, Debug)]
 pub enum SelectedSettings {
     Terminal {
@@ -127,8 +120,6 @@ pub(crate) enum OnboardingStateEvent {
     SelectedSlideChanged,
     IntentionChanged,
     Completed,
-    UpgradeRequested,
-    AuthStateChanged,
 }
 
 #[derive(Clone, Debug)]
@@ -143,15 +134,6 @@ pub(crate) struct OnboardingStateModel {
     workspace_enforces_autonomy: bool,
     /// Whether the AgentView feature flag is enabled.
     agent_modality_enabled: bool,
-    /// Whether the user is in the FreeUserNoAi experiment group (and is free tier).
-    /// When true, the Agent Driven Development option on the intention slide is locked
-    /// behind an upgrade CTA.
-    free_user_no_ai_experiment: bool,
-    /// Yearly price per month in USD cents for the agent plan badge.
-    /// When `None`, falls back to a hardcoded default ($18/mo).
-    agent_price_cents: Option<i32>,
-    /// Auth / billing state of the user.
-    auth_state: OnboardingAuthState,
 }
 
 impl OnboardingStateModel {
@@ -161,9 +143,6 @@ impl OnboardingStateModel {
         default_model_id: LLMId,
         workspace_enforces_autonomy: bool,
         agent_modality_enabled: bool,
-        free_user_no_ai_experiment: bool,
-        agent_price_cents: Option<i32>,
-        auth_state: OnboardingAuthState,
     ) -> Self {
         Self {
             step: OnboardingStep::Intro,
@@ -174,26 +153,7 @@ impl OnboardingStateModel {
             models,
             workspace_enforces_autonomy,
             agent_modality_enabled,
-            free_user_no_ai_experiment,
-            agent_price_cents,
-            auth_state,
         }
-    }
-
-    pub(crate) fn auth_state(&self) -> OnboardingAuthState {
-        self.auth_state
-    }
-
-    pub(crate) fn set_auth_state(
-        &mut self,
-        auth_state: OnboardingAuthState,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if self.auth_state == auth_state {
-            return;
-        }
-        self.auth_state = auth_state;
-        ctx.emit(OnboardingStateEvent::AuthStateChanged);
     }
 
     pub(crate) fn settings(&self) -> SelectedSettings {
@@ -287,28 +247,6 @@ impl OnboardingStateModel {
         self.ui_customization.show_project_explorer = enabled;
         self.ui_customization.show_global_search = enabled;
         self.ui_customization.show_warp_drive = enabled;
-        ctx.notify();
-    }
-
-    pub(crate) fn free_user_no_ai_experiment(&self) -> bool {
-        self.free_user_no_ai_experiment
-    }
-
-    pub(crate) fn agent_price_badge(&self) -> String {
-        const DEFAULT_AGENT_PRICE_CENTS: i32 = 1800;
-        let cents = self.agent_price_cents.unwrap_or(DEFAULT_AGENT_PRICE_CENTS);
-        format!("Starting at ${}/mo", cents / 100)
-    }
-
-    pub(crate) fn set_agent_price_cents(
-        &mut self,
-        cents: Option<i32>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if self.agent_price_cents == cents {
-            return;
-        }
-        self.agent_price_cents = cents;
         ctx.notify();
     }
 
@@ -448,18 +386,6 @@ impl OnboardingStateModel {
         ctx.notify();
     }
 
-    pub(crate) fn set_free_user_no_ai_experiment(
-        &mut self,
-        value: bool,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if self.free_user_no_ai_experiment == value {
-            return;
-        }
-        self.free_user_no_ai_experiment = value;
-        ctx.notify();
-    }
-
     pub(crate) fn set_workspace_enforces_autonomy(
         &mut self,
         value: bool,
@@ -512,23 +438,8 @@ impl OnboardingStateModel {
         self.set_intention(OnboardingIntention::AgentDrivenDevelopment, ctx);
     }
 
-    pub(crate) fn is_model_disabled(&self, model_id: &LLMId) -> bool {
-        self.models
-            .iter()
-            .find(|m| &m.id == model_id)
-            .is_some_and(|m| m.requires_upgrade)
-    }
-
-    pub(crate) fn request_upgrade(&mut self, ctx: &mut ModelContext<Self>) {
-        ctx.emit(OnboardingStateEvent::UpgradeRequested);
-    }
-
     pub(crate) fn on_user_selected_model(&mut self, model_id: LLMId, ctx: &mut ModelContext<Self>) {
         if self.agent_settings.selected_model_id == model_id {
-            return;
-        }
-
-        if self.is_model_disabled(&model_id) {
             return;
         }
 

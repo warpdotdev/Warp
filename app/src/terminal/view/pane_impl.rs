@@ -116,7 +116,7 @@ impl TerminalView {
                 }
                 None => {
                     if is_ambient_agent {
-                        default_agent_conversation_title(is_ambient_agent)
+                        default_agent_conversation_title()
                     } else {
                         self.terminal_title.clone()
                     }
@@ -809,13 +809,12 @@ impl TerminalView {
     fn selected_conversation_display_title_for_chrome(
         &self,
         conversation: &AIConversation,
-        is_ambient_agent: bool,
     ) -> String {
         if FeatureFlag::AgentView.is_enabled() {
             conversation
                 .title()
                 .filter(|title| !title.is_empty())
-                .unwrap_or_else(|| default_agent_conversation_title(is_ambient_agent))
+                .unwrap_or_else(default_agent_conversation_title)
         } else {
             conversation
                 .title()
@@ -869,10 +868,9 @@ impl TerminalView {
     }
 
     pub fn selected_conversation_display_title(&self, ctx: &AppContext) -> Option<String> {
-        let is_ambient_agent = self.is_ambient_agent_session(ctx);
         self.selected_conversation_for_user_facing_chrome(ctx)
             .map(|conversation| {
-                self.selected_conversation_display_title_for_chrome(conversation, is_ambient_agent)
+                self.selected_conversation_display_title_for_chrome(conversation)
             })
     }
 
@@ -900,10 +898,6 @@ impl TerminalView {
     }
 }
 
-fn default_agent_conversation_title(is_ambient_agent: bool) -> String {
-    if is_ambient_agent {
-        crate::t!("terminal-pane-new-cloud-agent-title")
-    } else {
-        crate::t!("terminal-pane-new-agent-conversation-title")
-    }
+fn default_agent_conversation_title() -> String {
+    crate::t!("terminal-pane-new-agent-conversation-title")
 }

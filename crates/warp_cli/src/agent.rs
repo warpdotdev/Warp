@@ -204,7 +204,7 @@ pub enum AgentCommand {
         clap::ArgGroup::new("prompt_group")
             .required(true)
             .multiple(true)
-            .args(["prompt", "saved_prompt", "task_id", "skill"])
+            .args(["prompt", "saved_prompt", "skill"])
     )
 )]
 pub struct RunAgentArgs {
@@ -269,10 +269,6 @@ pub struct RunAgentArgs {
     )]
     pub idle_on_complete: Option<humantime::Duration>,
 
-    /// Identifier for the task that spawned this agent, used to report progress.
-    #[arg(long = "task-id", hide = true, conflicts_with_all = ["prompt", "saved_prompt", "file"])]
-    pub task_id: Option<String>,
-
     /// Whether we are running the agent in a sandboxed environment.
     #[arg(long = "sandboxed", hide = true)]
     pub sandboxed: bool,
@@ -282,10 +278,6 @@ pub struct RunAgentArgs {
 
     #[command(flatten)]
     pub computer_use: HiddenComputerUseArgs,
-
-    /// Continue an existing cloud conversation by ID.
-    #[arg(long = "conversation", value_name = "ID")]
-    pub conversation: Option<String>,
 
     /// Agent profile to configure the terminal session.
     #[arg(long = "profile", value_name = "ID")]

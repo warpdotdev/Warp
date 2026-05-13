@@ -28,7 +28,7 @@ pub fn remove_conversation(
     conversation_id: AIConversationId,
     terminal_view_id: EntityId,
     // Kept for API compatibility with existing callers; cloud sync was removed
-    // when CloudConversations feature was deleted.
+    // when remote conversation sharing was deleted.
     _delete_from_cloud: bool,
     ctx: &mut AppContext,
 ) {

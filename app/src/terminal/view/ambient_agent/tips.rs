@@ -1,4 +1,4 @@
-//! Local fallback tips for the removed cloud-mode loading screen.
+//! Local fallback tips for the ambient-agent loading screen.
 
 use crate::ai::agent_tips::AITip;
 use warpui::keymap::Keystroke;
@@ -36,7 +36,7 @@ impl AITip for CloudModeTip {
     // Uses the default implementation which adds "Tip: " prefix and parses backticks as inline code
 }
 
-/// Returns a collection of tips for the removed cloud mode loading screen.
+/// Returns a collection of tips for the ambient-agent loading screen.
 pub fn get_cloud_mode_tips() -> Vec<CloudModeTip> {
     Vec::new()
 }

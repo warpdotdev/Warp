@@ -34,7 +34,7 @@ pub enum ThemePickerSlideEvent {
     },
     /// Emitted when the user clicks the "Privacy Settings" link on the terminal
     /// intention theme slide. The parent orchestrator is expected to open the
-    /// privacy settings (e.g. via a LoginSlideView in privacy-only mode).
+    /// privacy settings.
     PrivacySettingsRequested,
 }
 

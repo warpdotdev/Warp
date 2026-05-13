@@ -78,9 +78,7 @@ pub struct AIConversationMetadata {
     pub server_conversation_token: Option<ServerConversationToken>,
 
     /// Whether the full conversation data exists in the local database.
-    /// false = must be fetched from server
-    /// true = exists in local DB and can be fetched from there, even if it also exists in server
-    pub has_local_data: bool,
+    pub is_restorable_locally: bool,
 
     /// Artifacts (plans, PRs) created during this conversation.
     pub artifacts: Vec<Artifact>,
@@ -107,11 +105,9 @@ impl From<&AIConversation> for AIConversationMetadata {
             initial_working_directory: conversation.initial_working_directory(),
             credits_spent: Some(conversation.credits_spent()),
             server_conversation_token: conversation.server_conversation_token().cloned(),
-            has_local_data: true,
+            is_restorable_locally: true,
             artifacts: conversation.artifacts().to_vec(),
-            ambient_agent_task_id: conversation
-                .server_metadata()
-                .and_then(|metadata| metadata.ambient_agent_task_id),
+            ambient_agent_task_id: conversation.task_id(),
         }
     }
 }
@@ -861,9 +857,9 @@ impl BlocklistAIHistoryModel {
                     .insert(token.clone(), conversation_id);
             }
 
-            // Notify observers when a conversation first receives its server token.
+            // Notify observers when a conversation first receives its agent id.
             if !had_token_before && conversation.server_conversation_token().is_some() {
-                ctx.emit(BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
+                ctx.emit(BlocklistAIHistoryEvent::ConversationAgentIdAssigned {
                     conversation_id,
                     terminal_view_id,
                 });
@@ -873,7 +869,7 @@ impl BlocklistAIHistoryModel {
 
     /// Assigns a `run_id` to a conversation that was spawned as a remote child
     /// agent. Updates the `agent_id_to_conversation_id` index and emits
-    /// `ConversationServerTokenAssigned` so the `StartAgentExecutor` can
+    /// `ConversationAgentIdAssigned` so the `StartAgentExecutor` can
     /// complete the pending `start_agent` tool call.
     pub fn assign_run_id_for_conversation(
         &mut self,
@@ -904,7 +900,7 @@ impl BlocklistAIHistoryModel {
                 .insert(token.clone(), conversation_id);
         }
 
-        ctx.emit(BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
+        ctx.emit(BlocklistAIHistoryEvent::ConversationAgentIdAssigned {
             conversation_id,
             terminal_view_id,
         });
@@ -1950,11 +1946,11 @@ pub enum BlocklistAIHistoryEvent {
         task_id: TaskId,
     },
 
-    /// Emitted when the optimistically created task is "upgraded" to a server-backed task upon
+    /// Emitted when the optimistically created task is upgraded to a confirmed task upon
     /// receiving a CreateTask client action.
     UpgradedTask {
         optimistic_id: TaskId,
-        server_id: TaskId,
+        confirmed_task_id: TaskId,
         terminal_view_id: EntityId,
     },
 
@@ -2061,7 +2057,7 @@ pub enum BlocklistAIHistoryEvent {
     /// Emitted when a conversation first receives its server-assigned conversation token
     /// (during StreamInit). Used by the StartAgentExecutor to resolve pending StartAgent
     /// actions for child agent conversations.
-    ConversationServerTokenAssigned {
+    ConversationAgentIdAssigned {
         conversation_id: AIConversationId,
         terminal_view_id: EntityId,
     },
@@ -2124,7 +2120,7 @@ impl BlocklistAIHistoryEvent {
             | BlocklistAIHistoryEvent::UpdatedConversationArtifacts {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
+            | BlocklistAIHistoryEvent::ConversationAgentIdAssigned {
                 terminal_view_id, ..
             } => Some(*terminal_view_id),
             // UpdatedConversationMetadata can have None when updating historical-only conversations
