@@ -305,16 +305,14 @@ impl RemoteDiffStateModel {
             if let Some(pos) = diffs
                 .files
                 .iter()
-                .position(|f| f.file_path.to_string_lossy() == file_path.as_str())
+                .position(|f| f.file_path == event_path)
             {
                 diffs.files[pos] = new_diff.file_diff.clone();
             } else {
                 diffs.files.push(new_diff.file_diff.clone());
             }
         } else {
-            diffs
-                .files
-                .retain(|f| f.file_path.to_string_lossy() != file_path.as_str());
+            diffs.files.retain(|f| f.file_path != event_path);
         }
         diffs.total_additions = diffs.files.iter().map(|f| f.additions()).sum();
         diffs.total_deletions = diffs.files.iter().map(|f| f.deletions()).sum();
