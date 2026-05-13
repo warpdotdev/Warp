@@ -22,8 +22,8 @@ use crate::{
 
 use super::{
     app_database_file_path, database_file_path_for_scope, decode_path, deduplicate_events,
-    encode_path, get_all_codebase_index_metadata, read_sqlite_data, save_app_state,
-    save_codebase_index_metadata, setup_database, start_writer,
+    encode_path, get_all_codebase_index_metadata, read_remote_codebase_indexing_data,
+    read_sqlite_data, save_app_state, save_codebase_index_metadata, setup_database, start_writer,
 };
 
 #[test]
@@ -96,7 +96,7 @@ fn test_codebase_metadata(path: &str) -> WorkspaceMetadata {
 }
 
 #[test]
-fn sqlite_read_restores_app_state_and_codebase_metadata() {
+fn remote_codebase_indexing_read_restores_only_codebase_metadata() {
     let tempdir = tempfile::tempdir().expect("tempdir should be created");
     let database_path = tempdir.path().join("warp.sqlite");
     let mut conn = setup_database(&database_path).expect("database should initialize");
@@ -112,10 +112,11 @@ fn sqlite_read_restores_app_state_and_codebase_metadata() {
     let metadata = test_codebase_metadata("/tmp/remote-repo");
     save_codebase_index_metadata(&mut conn, metadata.clone())
         .expect("codebase index metadata should save");
-    let restored = read_sqlite_data(&mut conn, None).expect("persisted data should load");
-    assert_eq!(restored.app_state.windows.len(), 1);
-    assert_eq!(restored.codebase_indices.len(), 1);
-    assert_eq!(restored.codebase_indices[0].path, metadata.path);
+
+    let restored = read_remote_codebase_indexing_data(&mut conn)
+        .expect("daemon codebase index metadata should load");
+    assert_eq!(restored.len(), 1);
+    assert_eq!(restored[0].path, metadata.path);
 }
 
 #[test]
