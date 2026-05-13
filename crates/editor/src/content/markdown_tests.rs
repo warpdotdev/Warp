@@ -405,6 +405,75 @@ fn test_url_link_display_text_round_trip_is_stable() {
             after_third, expected_escaped,
             "third round-trip should be stable"
         );
+
+        // Plain text should be the clean, unescaped URL — no backslashes.
+        let plain_text = app.read_model(&buffer3, |buffer, _| buffer.text().as_str().to_string());
+        assert_eq!(plain_text, "https://example.com/index.html#section");
+    });
+}
+
+#[test]
+fn test_markdown_escapes_punctuation() {
+    App::test((), |mut app| async move {
+        // markdown() escapes special chars.
+        let markdown = "Here's a markdown comment.\n";
+        let (buffer, _) = Buffer::mock_from_markdown(
+            markdown,
+            None,
+            Box::new(|_, _| IndentBehavior::Ignore),
+            &mut app,
+        );
+        let escaped = app.read_model(&buffer, |buffer, _| buffer.markdown());
+        assert!(
+            escaped.contains("\\."),
+            "expected escaped periods, got: {escaped}"
+        );
+    });
+}
+
+#[test]
+fn test_markdown_unescaped_does_not_escape_punctuation() {
+    App::test((), |mut app| async move {
+        // markdown_unescaped() should not add backslashes before periods.
+        let markdown = "Here's a markdown comment.\n";
+        let (buffer, _) = Buffer::mock_from_markdown(
+            markdown,
+            None,
+            Box::new(|_, _| IndentBehavior::Ignore),
+            &mut app,
+        );
+        let unescaped = app.read_model(&buffer, |buffer, _| buffer.markdown_unescaped());
+        assert!(
+            !unescaped.contains("\\."),
+            "expected no escaped periods, got: {unescaped}"
+        );
+        assert!(
+            unescaped.contains("comment."),
+            "expected unescaped period, got: {unescaped}"
+        );
+    });
+}
+
+#[test]
+fn test_markdown_unescaped_preserves_urls() {
+    App::test((), |mut app| async move {
+        // markdown_unescaped() should not escape characters inside URLs.
+        let markdown = "Check out https://www.example.com/path\n";
+        let (buffer, _) = Buffer::mock_from_markdown(
+            markdown,
+            None,
+            Box::new(|_, _| IndentBehavior::Ignore),
+            &mut app,
+        );
+        let unescaped = app.read_model(&buffer, |buffer, _| buffer.markdown_unescaped());
+        assert!(
+            !unescaped.contains("\\/"),
+            "expected no escaped slashes, got: {unescaped}"
+        );
+        assert!(
+            unescaped.contains("https://www.example.com/path"),
+            "expected URL preserved, got: {unescaped}"
+        );
     });
 }
 

@@ -917,13 +917,13 @@ fn test_autolink_with_escaped_dash() {
 
 #[test]
 fn test_autolink_with_multiple_escapes() {
-    // Multiple escaped characters should all be unescaped.
+    // Multiple escaped characters (`.`, `-`, `#`) should all be unescaped.
     assert_eq!(
-        test_parse_markdown("https://github\\.com/foo\\-bar"),
+        test_parse_markdown("https://github\\.com/foo\\-bar\\#anchor"),
         vec![FormattedTextLine::Line(vec![
             FormattedTextFragment::hyperlink(
-                "https://github.com/foo-bar",
-                "https://github.com/foo-bar"
+                "https://github.com/foo-bar#anchor",
+                "https://github.com/foo-bar#anchor"
             ),
         ])]
     );
@@ -950,6 +950,22 @@ fn test_autolink_escape_roundtrip_is_stable() {
     let clean = test_parse_markdown("https://google.com");
     let escaped = test_parse_markdown("https://google\\.com");
     assert_eq!(clean, escaped);
+}
+
+#[test]
+fn test_parse_url_preserves_non_escaped_backslash() {
+    // A backslash followed by a non-punctuation character is not a markdown escape
+    // sequence and should be left as-is.
+    let source = "https://example.com/path\\nname";
+    assert_eq!(
+        test_parse_markdown(source),
+        vec![FormattedTextLine::Line(vec![
+            FormattedTextFragment::hyperlink(
+                "https://example.com/path\\nname",
+                "https://example.com/path\\nname"
+            ),
+        ])]
+    );
 }
 
 #[test]
