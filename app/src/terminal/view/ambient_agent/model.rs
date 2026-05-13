@@ -367,10 +367,6 @@ impl AmbientAgentViewModel {
                 && computer_use::is_supported_on_current_platform(),
         );
 
-        let default_host = std::env::var("WARP_CLOUD_MODE_DEFAULT_HOST")
-            .ok()
-            .filter(|s| !s.is_empty());
-
         let harness_override =
             (self.harness != Harness::Oz).then(|| HarnessConfig::from_harness_type(self.harness));
 
@@ -378,7 +374,6 @@ impl AmbientAgentViewModel {
             environment_id: None,
             model_id: Some(model_id),
             computer_use_enabled,
-            worker_host: default_host,
             harness: harness_override,
             ..Default::default()
         });
