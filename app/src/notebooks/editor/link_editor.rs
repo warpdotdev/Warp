@@ -55,7 +55,7 @@ impl LinkEditor {
 
         let tag_editor = ctx.add_typed_action_view(|ctx| {
             let mut editor = EditorView::single_line(editor_options.clone(), ctx);
-            editor.set_placeholder_text("Text", ctx);
+            editor.set_placeholder_text(t!("notebook.link_text_placeholder"), ctx);
             editor
         });
 
@@ -65,7 +65,7 @@ impl LinkEditor {
 
         let url_editor = ctx.add_typed_action_view(|ctx| {
             let mut editor = EditorView::single_line(editor_options.clone(), ctx);
-            editor.set_placeholder_text("Link (web or file)", ctx);
+            editor.set_placeholder_text(t!("notebook.link_url_placeholder"), ctx);
             editor
         });
 

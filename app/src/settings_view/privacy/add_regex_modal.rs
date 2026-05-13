@@ -51,7 +51,7 @@ impl AddRegexModal {
                 ..Default::default()
             };
             let mut editor = EditorView::single_line(options, ctx);
-            editor.set_placeholder_text("e.g. \"Google API Key\"", ctx);
+            editor.set_placeholder_text(t!("privacy.name_placeholder"), ctx);
             editor
         });
 
@@ -66,7 +66,7 @@ impl AddRegexModal {
                 ..Default::default()
             };
             let mut editor = EditorView::single_line(options, ctx);
-            editor.set_placeholder_text("\\bAIza[0-9A-Za-z-_]{35}\\b", ctx);
+            editor.set_placeholder_text(t!("privacy.regex_pattern_placeholder"), ctx);
             editor
         });
 

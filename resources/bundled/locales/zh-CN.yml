@@ -269,6 +269,7 @@ zh-CN:
     to_continue: "后继续。"
     regain_ai_access_suffix: "以重新获得 AI 功能访问权限。"
     contact_admin_resolve_billing: "请联系你的团队管理员解决账单问题。"
+    model_unavailable_free_users: "{display_name} 不对免费用户开放。"
     switch_to_build_plan: "切换到 Build 套餐"
     upgrade_to_build_plan: "升级到 Build 套餐"
     flexible_pricing_suffix: "以使用更灵活的定价模式。"
@@ -299,6 +300,7 @@ zh-CN:
     emails_placeholder: "邮箱，用逗号分隔"
     set: "设置"
     invite: "邀请"
+    create_team: "创建团队"
     offline: "你当前离线。"
     member_limit_admin: "你已达到当前计划的团队成员上限。升级以添加更多队友。"
     member_limit_admin_contact_support: "你已达到当前计划的团队成员上限。请联系 support@warp.dev 添加更多队友。"
@@ -666,6 +668,8 @@ zh-CN:
     zero_data_retention_admin_tooltip: "你的管理员已为团队启用零数据保留。用户生成内容永远不会被收集。"
     name_optional: "名称（可选）"
     regex_pattern: "Regex 模式"
+    name_placeholder: "例如 \"Google API Key\""
+    regex_pattern_placeholder: "\\bAIza[0-9A-Za-z-_]{35}\\b"
     invalid_regex: "无效 regex"
     add_regex: "添加 regex"
 
@@ -793,8 +797,14 @@ zh-CN:
     refresh_notebook: "刷新笔记本"
     refresh: "刷新"
     insert_block: "插入区块"
+    embed: "嵌入"
+    divider: "分隔线"
     apply_link: "应用链接"
+    link_text_placeholder: "文本"
+    link_url_placeholder: "链接（网页或文件）"
     link_copied: "链接已复制到剪贴板"
+    raw: "原始"
+    rendered: "渲染"
 
   # ── 引导 ──
   onboarding:
@@ -862,6 +872,7 @@ zh-CN:
     reset_to_default: "恢复默认"
     keybinding: "按键绑定"
     seconds: "秒"
+    reset_to_warp_defaults: "重置为 Warp 默认值"
     view_all_system_fonts: "查看所有可用系统字体"
     font_weight: "字体粗细"
     font_size_px: "字号（px）"
@@ -921,6 +932,10 @@ zh-CN:
     description: "摘要已在运行。如果现在取消，请求仍可能产生费用，当前进度会丢失，重新开始也会花更久。\n\n确定要取消吗？"
     cancel_summarization: "取消摘要"
     continue_summarization: "继续摘要"
+
+  build_plan_migration:
+    learn_more_prefix: "在我们的"
+    pricing_page: "定价页面了解更多"
 
   # ── 共享区块 ──
   shared_blocks:

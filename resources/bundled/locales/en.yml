@@ -269,6 +269,7 @@ en:
     to_continue: " to continue."
     regain_ai_access_suffix: " to regain access to AI features."
     contact_admin_resolve_billing: "Contact your team admin to resolve billing issues."
+    model_unavailable_free_users: "{display_name} is not available for free users. "
     switch_to_build_plan: "Switch to the Build plan"
     upgrade_to_build_plan: "Upgrade to the Build plan"
     flexible_pricing_suffix: " for a more flexible pricing model."
@@ -299,6 +300,7 @@ en:
     emails_placeholder: "Emails, comma separated"
     set: "Set"
     invite: "Invite"
+    create_team: "Create team"
     offline: "You are offline."
     member_limit_admin: "You've reached the team member limit for your plan. Upgrade to add more teammates."
     member_limit_admin_contact_support: "You've reached the team member limit for your plan. Contact support@warp.dev to add more teammates."
@@ -666,6 +668,8 @@ en:
     zero_data_retention_admin_tooltip: "Your administrator has enabled zero data retention for your team. User generated content will never be collected."
     name_optional: "Name (optional)"
     regex_pattern: "Regex pattern"
+    name_placeholder: "e.g. \"Google API Key\""
+    regex_pattern_placeholder: "\\bAIza[0-9A-Za-z-_]{35}\\b"
     invalid_regex: "Invalid regex"
     add_regex: "Add regex"
 
@@ -793,8 +797,14 @@ en:
     refresh_notebook: "Refresh notebook"
     refresh: "Refresh"
     insert_block: "Insert block"
+    embed: "Embed"
+    divider: "Divider"
     apply_link: "Apply link"
+    link_text_placeholder: "Text"
+    link_url_placeholder: "Link (web or file)"
     link_copied: "Link copied to clipboard"
+    raw: "Raw"
+    rendered: "Rendered"
 
   # ── Onboarding ──
   onboarding:
@@ -862,6 +872,7 @@ en:
     reset_to_default: "Reset to default"
     keybinding: "Keybinding"
     seconds: "seconds"
+    reset_to_warp_defaults: "Reset to Warp defaults"
     view_all_system_fonts: "View all available system fonts"
     font_weight: "Font weight"
     font_size_px: "Font size (px)"
@@ -921,6 +932,10 @@ en:
     description: "Summarization is already running. If you cancel now, the request may still incur cost, any progress so far will be lost, and restarting will take longer.\n\nAre you sure you want to cancel?"
     cancel_summarization: "Cancel summarization"
     continue_summarization: "Continue summarization"
+
+  build_plan_migration:
+    learn_more_prefix: "Learn more on our "
+    pricing_page: "pricing page"
 
   # ── Shared Blocks ──
   shared_blocks:

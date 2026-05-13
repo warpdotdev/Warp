@@ -500,16 +500,19 @@ impl SearchItem for ModelSearchItem {
                 );
 
             let mut text_fragments = vec![
-                FormattedTextFragment::plain_text(format!(
-                    "{display_name} is not available for free users. "
+                FormattedTextFragment::plain_text(t!(
+                    "billing.model_unavailable_free_users",
+                    display_name
                 )),
-                FormattedTextFragment::hyperlink("Upgrade", upgrade_url),
+                FormattedTextFragment::hyperlink(t!("billing.upgrade"), upgrade_url),
             ];
 
             if byok_available {
-                text_fragments.push(FormattedTextFragment::plain_text(" or ".to_string()));
+                text_fragments.push(FormattedTextFragment::plain_text(t!(
+                    "billing.or_separator"
+                )));
                 text_fragments.push(FormattedTextFragment::hyperlink_action(
-                    "bring your own key",
+                    t!("billing.bring_your_own_key"),
                     WorkspaceAction::ShowSettingsPageWithSearch {
                         search_query: "api".to_string(),
                         section: Some(SettingsSection::WarpAgent),
