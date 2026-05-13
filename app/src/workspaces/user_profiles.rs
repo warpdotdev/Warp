@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use session_sharing_protocol::common::ProfileData;
 use warpui::{Entity, SingletonEntity};
 
 use crate::auth::UserUid;
@@ -14,17 +13,6 @@ pub struct UserProfileWithUID {
     pub display_name: Option<String>,
     pub email: String,
     pub photo_url: String,
-}
-
-impl From<ProfileData> for UserProfileWithUID {
-    fn from(data: ProfileData) -> Self {
-        Self {
-            firebase_uid: UserUid::new(&data.firebase_uid),
-            display_name: Some(data.display_name),
-            email: data.email.unwrap_or_default(),
-            photo_url: data.photo_url.unwrap_or_default(),
-        }
-    }
 }
 
 impl From<crate::persistence::model::UserProfile> for UserProfileWithUID {

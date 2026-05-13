@@ -1,7 +1,6 @@
 //! [`TerminalView`]-specific implementation for shared sessions.
 
 use crate::context_chips::ContextChipKind;
-use crate::drive::sharing::ShareableObject;
 use crate::editor::{InteractionState, ReplicaId};
 use crate::settings::InputModeSettings;
 use crate::terminal::block_list_viewport::ScrollPositionUpdate;
@@ -399,20 +398,6 @@ impl TerminalView {
             self.restore_pty_to_sharer_size(ctx);
         }
 
-        // For ambient agent tasks, preserve the shareable object so the share dialog remains visible
-        let is_ambient_agent = self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
-        let shareable_object_to_keep = if is_ambient_agent {
-            self.shared_session
-                .as_ref()
-                .map(|session| ShareableObject::Session {
-                    handle: ctx.handle(),
-                    session_id: *session.session_id(),
-                    started_at: *session.started_at(),
-                })
-        } else {
-            None
-        };
-
         self.shared_session = None;
         self.insert_shared_session_ended_banner(ctx);
         self.on_shared_session_reconnection_status_changed(false, ctx);
@@ -434,10 +419,6 @@ impl TerminalView {
 
         self.pane_configuration.update(ctx, |pane_config, ctx| {
             pane_config.refresh_pane_header_overflow_menu_items(ctx);
-            // TODO(openwarp-cloud-removal Phase 5): `shareable_object_to_keep`
-            // 是为 sharing UI 准备的 ShareableObject 状态;sharing UI 删后无
-            // 消费者,但保留计算路径以便 Phase 5 一并退役 shared_session。
-            let _ = shareable_object_to_keep;
             pane_config.notify_header_content_changed(ctx);
             ctx.notify();
         });

@@ -1,20 +1,17 @@
 use std::{borrow::Cow, str::FromStr};
 
-use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
-use session_sharing_protocol::common::{ProfileData as SessionSharingProfileData, Role, SessionId};
 use warp_core::ui::appearance::Appearance;
 use warpui::{
     color::ColorU,
     ui_components::components::{UiComponent, UiComponentStyles},
-    AppContext, SingletonEntity, WeakViewHandle,
+    AppContext, SingletonEntity,
 };
 
 use crate::{
     auth::UserUid,
     cloud_object::{model::persistence::CloudModel, Owner},
     server::ids::ServerId,
-    terminal::TerminalView,
     ui_components::{
         avatar::{Avatar, AvatarContent},
         icons::Icon,
@@ -89,25 +86,6 @@ impl FromStr for SharingAccessLevel {
     }
 }
 
-impl From<Role> for SharingAccessLevel {
-    fn from(role: Role) -> Self {
-        match role {
-            Role::Reader => Self::View,
-            Role::Executor => Self::Edit,
-            Role::Full => Self::Full,
-        }
-    }
-}
-
-impl From<SharingAccessLevel> for Role {
-    fn from(access_level: SharingAccessLevel) -> Self {
-        match access_level {
-            SharingAccessLevel::View => Self::Reader,
-            SharingAccessLevel::Edit | SharingAccessLevel::Full => Self::Executor,
-        }
-    }
-}
-
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum LinkSharingSubjectType {
     None,
@@ -128,20 +106,17 @@ pub enum Subject {
 #[derive(Debug, Clone)]
 pub enum UserKind {
     Account(UserUid),
-    SharedSessionParticipant(SessionSharingProfileData),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TeamKind {
     Team { team_uid: ServerId },
-    SharedSessionTeam { team_uid: ServerId, name: String },
 }
 
 impl TeamKind {
     pub fn team_uid(&self) -> ServerId {
         match self {
             TeamKind::Team { team_uid } => *team_uid,
-            TeamKind::SharedSessionTeam { team_uid, .. } => *team_uid,
         }
     }
 }
@@ -158,9 +133,6 @@ impl Subject {
         match self {
             Subject::User(user_kind) => match user_kind {
                 UserKind::Account(user_uid) => Some(*user_uid),
-                UserKind::SharedSessionParticipant(profile_data) => {
-                    Some(UserUid::new(profile_data.firebase_uid.as_str()))
-                }
             },
             Subject::PendingUser { .. } | Subject::Team(_) | Subject::AnyoneWithLink(_) => None,
         }
@@ -169,9 +141,6 @@ impl Subject {
     pub fn is_user(&self, other_uid: UserUid) -> bool {
         match self {
             Subject::User(UserKind::Account(user_uid)) => *user_uid == other_uid,
-            Subject::User(UserKind::SharedSessionParticipant(profile_data)) => {
-                profile_data.firebase_uid.as_str() == other_uid.as_str()
-            }
             Subject::PendingUser { .. } | Subject::Team(_) | Subject::AnyoneWithLink(_) => false,
         }
     }
@@ -188,12 +157,6 @@ impl PartialEq for UserKind {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Account(self_uid), Self::Account(other_uid)) => self_uid == other_uid,
-            (
-                Self::SharedSessionParticipant(self_profile),
-                Self::SharedSessionParticipant(other_profile),
-            ) => self_profile.firebase_uid == other_profile.firebase_uid,
-            (Self::Account(_), Self::SharedSessionParticipant(_))
-            | (Self::SharedSessionParticipant(_), Self::Account(_)) => false,
         }
     }
 }
@@ -204,13 +167,6 @@ impl PartialEq for UserKind {
 pub enum ShareableObject {
     /// A shareable Warp Drive object.
     WarpDriveObject(ServerId),
-    /// A shared terminal session. Shared sessions are identified by the participating terminal
-    /// pane.
-    Session {
-        handle: WeakViewHandle<TerminalView>,
-        session_id: SessionId,
-        started_at: DateTime<Local>,
-    },
 }
 
 impl ShareableObject {
@@ -220,7 +176,6 @@ impl ShareableObject {
             ShareableObject::WarpDriveObject(id) => CloudModel::as_ref(app)
                 .get_by_uid(&id.uid())
                 .and_then(|object| object.object_link()),
-            ShareableObject::Session { .. } => None,
         }
     }
 }
@@ -298,7 +253,6 @@ impl SubjectExt for Subject {
                 UserKind::Account(user_uid) => UserProfiles::as_ref(app)
                     .profile_for_uid(*user_uid)
                     .map(|profile| profile.email.as_str()),
-                UserKind::SharedSessionParticipant(profile_data) => profile_data.email.as_deref(),
             },
             Subject::PendingUser { email } => email.as_deref(),
             Subject::Team(_) => None,
@@ -328,9 +282,6 @@ impl UserKindExt for UserKind {
             UserKind::Account(id) => UserProfiles::as_ref(app)
                 .displayable_identifier_for_uid(*id)
                 .map(Cow::from),
-            UserKind::SharedSessionParticipant(participant_info) => {
-                Some(participant_info.display_name.clone().into())
-            }
         }
     }
 
@@ -345,18 +296,6 @@ impl UserKindExt for UserKind {
                     None
                 }
             }
-            UserKind::SharedSessionParticipant(participant_info) => {
-                // Only show the user's email if it's not the display name.
-                if participant_info
-                    .email
-                    .as_ref()
-                    .is_some_and(|email| email == &participant_info.display_name)
-                {
-                    None
-                } else {
-                    participant_info.email.clone()
-                }
-            }
         }
     }
 
@@ -369,15 +308,6 @@ impl UserKindExt for UserKind {
                 },
                 None => AvatarContent::DisplayName(String::new()),
             },
-            UserKind::SharedSessionParticipant(participant_info) => {
-                match &participant_info.photo_url {
-                    Some(url) => AvatarContent::Image {
-                        url: url.clone(),
-                        display_name: participant_info.display_name.clone(),
-                    },
-                    None => AvatarContent::DisplayName(participant_info.display_name.clone()),
-                }
-            }
         }
     }
 }
@@ -394,7 +324,6 @@ impl TeamKindExt for TeamKind {
             TeamKind::Team { team_uid, .. } => UserWorkspaces::as_ref(app)
                 .team_from_uid(*team_uid)
                 .map(|team| team.name.clone()),
-            TeamKind::SharedSessionTeam { name, .. } => Some(name.clone()),
         }
     }
 }

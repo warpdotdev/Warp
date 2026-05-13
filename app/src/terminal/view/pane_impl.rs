@@ -8,7 +8,6 @@ use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_c
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::conversation_status_ui::{render_status_element, STATUS_ELEMENT_PADDING};
 use crate::appearance::Appearance;
-use crate::drive::sharing::ShareableObject;
 use crate::features::FeatureFlag;
 use crate::menu::{MenuItem, MenuItemFields};
 use crate::pane_group::focus_state::{PaneFocusHandle, PaneGroupFocusEvent, PaneGroupFocusState};
@@ -134,20 +133,6 @@ impl TerminalView {
         self.update_agent_view_pane_header(ctx);
     }
 
-    /// Returns the shareable object for the active agent view, if any.
-    /// AI conversation sharing was removed alongside the CloudConversations feature.
-    fn agent_view_shareable_object(&self, ctx: &ViewContext<Self>) -> Option<ShareableObject> {
-        // If we're in a shared session, prioritize this to share.
-        if let Some(shared_session) = &self.shared_session {
-            return Some(ShareableObject::Session {
-                handle: ctx.handle(),
-                session_id: *shared_session.session_id(),
-                started_at: *shared_session.started_at(),
-            });
-        }
-        None
-    }
-
     /// Updates the pane header's shareable object based on agent view state.
     /// This should be called when entering/exiting agent view or when the conversation changes.
     pub(super) fn update_agent_view_pane_header(&mut self, ctx: &mut ViewContext<Self>) {
@@ -160,10 +145,6 @@ impl TerminalView {
         // any conversation started, to view cloud mode sessions that failed during setup.
         let is_ambient_agent = self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
         if !is_ambient_agent {
-            // TODO(openwarp-cloud-removal Phase 5): sharing UI 已退役,不再
-            // 把 ShareableObject 灌进 pane header;`agent_view_shareable_object`
-            // 路径保留以便 Phase 5 整体退役。
-            let _ = self.agent_view_shareable_object(ctx);
             self.pane_configuration.update(ctx, |pane_config, ctx| {
                 pane_config.notify_header_content_changed(ctx);
                 pane_config.refresh_pane_header_overflow_menu_items(ctx);
