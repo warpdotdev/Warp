@@ -33,13 +33,26 @@ fn snapshot_replaces_statuses_for_host() {
 fn availability_uses_active_navigated_repo() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
-    model.record_navigated_directory(host.clone(), "/repo".to_string(), true);
+    model.record_navigated_directory(host.clone(), "/repo".to_string());
     model.apply_status_update(&host, ready_status("/repo"));
 
     let availability = model.availability_for_remote(&host, Some("/repo/src"), None);
 
     assert!(availability.is_ready());
     assert_eq!(availability.repo_path(), Some("/repo"));
+}
+
+#[test]
+fn availability_uses_active_navigated_non_git_directory() {
+    let mut model = RemoteCodebaseIndexModel::default();
+    let host = host();
+    model.record_navigated_directory(host.clone(), "/directory".to_string());
+    model.apply_status_update(&host, ready_status("/directory"));
+
+    let availability = model.availability_for_remote(&host, Some("/repo/src"), None);
+
+    assert!(availability.is_ready());
+    assert_eq!(availability.repo_path(), Some("/directory"));
 }
 
 #[test]

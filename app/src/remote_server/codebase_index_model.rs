@@ -18,7 +18,6 @@ use super::manager::{RemoteServerManager, RemoteServerManagerEvent};
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ActiveRemoteRepo {
     remote_path: RemotePath,
-    is_git: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -149,7 +148,6 @@ impl RemoteCodebaseIndexModel {
                 statuses,
             } => {
                 self.apply_statuses_snapshot(host_id, statuses);
-                ctx.notify();
             }
             RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
                 remote_identity_key: _,
@@ -157,7 +155,6 @@ impl RemoteCodebaseIndexModel {
                 status,
             } => {
                 self.apply_status_update(host_id, status.clone());
-                ctx.notify();
             }
             RemoteServerManagerEvent::NavigatedToDirectory {
                 session_id: _,
@@ -165,7 +162,7 @@ impl RemoteCodebaseIndexModel {
                 indexed_path,
                 is_git,
             } => {
-                self.record_navigated_directory(host_id.clone(), indexed_path.clone(), *is_git);
+                self.record_navigated_directory(host_id.clone(), indexed_path.clone());
                 if *is_git && should_auto_index_remote_codebase(ctx) {
                     // Mirrors local auto-indexing for the thin remote E2E path. TODO(APP-3792):
                     // route remote indexing through the speedbump/consent flow instead of
@@ -174,11 +171,9 @@ impl RemoteCodebaseIndexModel {
                         manager.index_codebase(host_id.clone(), indexed_path.clone(), ctx);
                     });
                 }
-                ctx.notify();
             }
             RemoteServerManagerEvent::HostDisconnected { host_id } => {
                 self.remove_host(host_id);
-                ctx.notify();
             }
             RemoteServerManagerEvent::SessionConnecting { .. }
             | RemoteServerManagerEvent::SessionConnected { .. }
@@ -221,17 +216,12 @@ impl RemoteCodebaseIndexModel {
         self.statuses.insert(remote_path, status);
     }
 
-    fn record_navigated_directory(&mut self, host_id: HostId, repo_path: String, is_git: bool) {
+    fn record_navigated_directory(&mut self, host_id: HostId, repo_path: String) {
         let Some(remote_path) = remote_path_from_repo_path(&host_id, &repo_path) else {
             return;
         };
-        self.active_repos_by_host.insert(
-            host_id,
-            ActiveRemoteRepo {
-                remote_path,
-                is_git,
-            },
-        );
+        self.active_repos_by_host
+            .insert(host_id, ActiveRemoteRepo { remote_path });
     }
 
     fn remove_host(&mut self, host_id: &HostId) {
@@ -250,7 +240,6 @@ impl RemoteCodebaseIndexModel {
             .or_else(|| {
                 self.active_repos_by_host
                     .get(host_id)
-                    .filter(|repo| repo.is_git)
                     .map(|repo| repo.remote_path.path.as_str().to_string())
             })
             .or_else(|| {
