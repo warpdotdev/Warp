@@ -416,6 +416,8 @@ en:
     secret_key_once: "This secret key is shown only once. Copy and store it securely."
     no_agents_available: "No agents available. Create one first."
     secret_key_copied: "Secret key copied."
+    api_keys_description_prefix: "Create and manage API keys to allow other Oz cloud agents to access your Warp account.\nFor more information, visit the "
+    documentation_link: "Documentation."
 
   arguments:
     add_workflow_argument: "Add a workflow argument"
@@ -476,6 +478,11 @@ en:
     command_denylist_placeholder: "e.g. rm .*"
     repo_path_placeholder: "e.g. ~/code-repos/repo"
     profile_name_placeholder: "e.g. \"YOLO code\""
+    edit_profile: "Edit Profile"
+    name: "Name"
+    default_profile_name_cannot_be_changed: "Default profile name cannot be changed."
+    profiles: "Profiles"
+    manage_profiles: "Manage profiles"
 
   autoupdate:
     run_package_manager_to_update: "Run {package_manager_name} to update"
@@ -853,6 +860,8 @@ en:
     match_terminal: "Match terminal"
     line_height: "Line height"
     reset_to_default: "Reset to default"
+    keybinding: "Keybinding"
+    seconds: "seconds"
     view_all_system_fonts: "View all available system fonts"
     font_weight: "Font weight"
     font_size_px: "Font size (px)"
@@ -895,6 +904,23 @@ en:
     failed_suggest_docker: "Failed to suggest a Docker image"
     unknown_response: "Unknown response from suggestCloudEnvironmentImage"
     failed_load_github_repositories: "Failed to load GitHub repositories"
+
+  close_session_confirmation:
+    title: "Close session?"
+    description: "You are about to close a session that is currently being shared. Closing it will end sharing for everyone."
+    close_session: "Close session"
+    dont_show_again: "Don't show again."
+
+  rewind_confirmation:
+    rewind: "Rewind"
+    description: "Are you sure you want to rewind? This will restore your code and conversation to before this point, and cancel any commands the agent is currently running. A copy of the original conversation will be saved in your conversation history."
+    info: "Rewinding does not affect files edited manually or via shell commands."
+
+  summarization_cancel:
+    title: "Cancel summarization?"
+    description: "Summarization is already running. If you cancel now, the request may still incur cost, any progress so far will be lost, and restarting will take longer.\n\nAre you sure you want to cancel?"
+    cancel_summarization: "Cancel summarization"
+    continue_summarization: "Continue summarization"
 
   # ── Shared Blocks ──
   shared_blocks:

@@ -1936,7 +1936,7 @@ impl EnvironmentsPageWidget {
                     )
                     .with_tooltip(move || {
                         share_ui_builder
-                            .tool_tip("Share".to_string())
+                            .tool_tip(t!("drive.share").to_string())
                             .build()
                             .finish()
                     })
@@ -1972,7 +1972,7 @@ impl EnvironmentsPageWidget {
             if is_card_hovered {
                 edit_button = edit_button.with_tooltip(move || {
                     edit_ui_builder
-                        .tool_tip("Edit".to_string())
+                        .tool_tip(t!("drive.edit").to_string())
                         .build()
                         .finish()
                 });

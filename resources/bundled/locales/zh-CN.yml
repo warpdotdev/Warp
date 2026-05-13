@@ -416,6 +416,8 @@ zh-CN:
     secret_key_once: "此密钥只会显示一次。请复制并安全保存。"
     no_agents_available: "没有可用 Agent。请先创建一个。"
     secret_key_copied: "密钥已复制。"
+    api_keys_description_prefix: "创建并管理 API keys，让其他 Oz 云端 Agents 访问你的 Warp 账户。\n如需了解更多信息，请访问"
+    documentation_link: "文档。"
 
   arguments:
     add_workflow_argument: "添加工作流参数"
@@ -476,6 +478,11 @@ zh-CN:
     command_denylist_placeholder: "例如 rm .*"
     repo_path_placeholder: "例如 ~/code-repos/repo"
     profile_name_placeholder: "例如 \"YOLO code\""
+    edit_profile: "编辑配置"
+    name: "名称"
+    default_profile_name_cannot_be_changed: "默认配置名称无法更改。"
+    profiles: "配置"
+    manage_profiles: "管理配置"
 
   autoupdate:
     run_package_manager_to_update: "运行 {package_manager_name} 更新"
@@ -853,6 +860,8 @@ zh-CN:
     match_terminal: "跟随终端"
     line_height: "行高"
     reset_to_default: "恢复默认"
+    keybinding: "按键绑定"
+    seconds: "秒"
     view_all_system_fonts: "查看所有可用系统字体"
     font_weight: "字体粗细"
     font_size_px: "字号（px）"
@@ -895,6 +904,23 @@ zh-CN:
     failed_suggest_docker: "建议 Docker 镜像失败"
     unknown_response: "suggestCloudEnvironmentImage 返回未知响应"
     failed_load_github_repositories: "加载 GitHub 仓库失败"
+
+  close_session_confirmation:
+    title: "关闭会话？"
+    description: "你即将关闭一个正在共享的会话。关闭后，所有人的共享都会结束。"
+    close_session: "关闭会话"
+    dont_show_again: "不再显示。"
+
+  rewind_confirmation:
+    rewind: "回退"
+    description: "确定要回退吗？这会将你的代码和对话恢复到此处之前，并取消 Agent 当前正在运行的所有命令。原始对话的副本会保存在你的对话历史中。"
+    info: "回退不会影响手动编辑或通过 shell 命令编辑的文件。"
+
+  summarization_cancel:
+    title: "取消摘要？"
+    description: "摘要已在运行。如果现在取消，请求仍可能产生费用，当前进度会丢失，重新开始也会花更久。\n\n确定要取消吗？"
+    cancel_summarization: "取消摘要"
+    continue_summarization: "继续摘要"
 
   # ── 共享区块 ──
   shared_blocks:
