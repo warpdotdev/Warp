@@ -4681,4 +4681,3 @@ impl TelemetryEvent {
         }
     }
 }
-
