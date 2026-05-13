@@ -439,6 +439,7 @@ en:
     no_search_results: "No search results found"
     no_server_selected: "No MCP server selected"
     no_updates_available: "No updates available"
+    search_mcp_servers: "Search MCP Servers"
 
   platform:
     api_key_deleted: "API key deleted"
@@ -668,6 +669,8 @@ en:
     view_markdown_preview: "View Markdown preview"
     go_to_definition: "Go to definition"
     find_references: "Find references"
+    goto_line_placeholder: "Line number:Column"
+    go_to_line: "Go to line"
 
   code_file_tree:
     open_in_new_pane: "Open in new pane"
@@ -726,6 +729,8 @@ en:
     copy_workflow_text: "Copy workflow text"
     copy_id: "Copy id"
     copy_variables: "Copy variables"
+    preparing: "Preparing..."
+    choose_files: "Choose files..."
     create_account_to_use: "To use Warp Drive, please create an account."
     supported_import_file_types: "md, yaml, yml"
     no_access: "No access"
@@ -906,6 +911,8 @@ en:
     keybinding: "Keybinding"
     seconds: "seconds"
     reset_to_warp_defaults: "Reset to Warp defaults"
+    executable_path: "Executable path"
+    directory_path: "Directory path"
     view_all_system_fonts: "View all available system fonts"
     font_weight: "Font weight"
     font_size_px: "Font size (px)"
@@ -972,6 +979,12 @@ en:
 
   global_search:
     search_in_files: "Search in files"
+
+  ssh_install_tmux:
+    why_need_tmux: "Why do I need tmux?"
+
+  ssh_remote_server_choice:
+    dont_ask_again: "Don't ask me this again"
 
   # ── Shared Blocks ──
   shared_blocks:
@@ -1457,6 +1470,7 @@ en:
     share_session: "Share session..."
     stop_sharing: "Stop sharing"
     copy_session_sharing_link: "Copy session sharing link"
+    offline_reconnecting: "Offline, trying to reconnect..."
 
   # ── Ambient Agent ──
   ambient_agent:
@@ -1465,6 +1479,7 @@ en:
     upgrade: "Upgrade"
     powerful_cloud_agents_suffix: " for more powerful cloud agents."
     authenticate_with_github: "Authenticate with GitHub"
+    free_credits: "Free credits"
 
   # ── SSH File Upload ──
   ssh_file_upload:
