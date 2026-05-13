@@ -30,7 +30,9 @@ use settings::Setting;
 
 use crate::{
     ai::{
-        request_usage_model::{BonusGrant, BonusGrantScope, BonusGrantType},
+        request_usage_model::{
+            BonusGrant, BonusGrantScope, BonusGrantType, AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD,
+        },
         AIRequestUsageModel,
     },
     auth::{
@@ -67,8 +69,8 @@ use super::{
     },
     billing_and_usage_page::{BillingAndUsagePageAction, BillingUsageTab},
     settings_page::{
-        render_customer_type_badge, render_info_icon, AdditionalInfo, MatchData, SettingsPageMeta,
-        SettingsPageViewHandle, PAGE_PADDING,
+        render_customer_type_badge, render_info_icon, render_sub_header, AdditionalInfo, MatchData,
+        SettingsPageMeta, SettingsPageViewHandle, PAGE_PADDING,
     },
     SettingsSection,
 };
@@ -77,7 +79,7 @@ pub use super::billing_and_usage_page::BillingAndUsagePageEvent;
 
 const ADDON_CREDITS_DESCRIPTION: &str = "Add-on credits are purchased in prepaid packages that roll over each billing cycle and expire after one year. The more you purchase, the better the per-credit rate. Once your base plan credits are used, add-on credits will be consumed.";
 const ADDITIONAL_ADDON_CREDITS_DESCRIPTION_FOR_TEAM: &str =
-    "Purchased add-on credits are shared across your team.";
+    "Purchased add-on credits are added to your personal balance.";
 
 const AUTO_RELOAD_DELINQUENT_WARNING_STRING: &str =
     "Restricted due to billing issue. Update your payment method to purchase add-on credits.";
@@ -93,28 +95,22 @@ const CARD_BORDER_COLOR: ColorU = ColorU {
     a: 255,
 };
 const BASE_CREDITS_DOT_COLOR: ColorU = ColorU {
-    r: 0,
-    g: 194,
-    b: 255,
+    r: 207,
+    g: 145,
+    b: 216,
     a: 255,
 };
 const BONUS_CREDITS_DOT_COLOR: ColorU = ColorU {
-    r: 255,
-    g: 165,
-    b: 100,
-    a: 255,
-};
-const CLOUD_CREDITS_DOT_COLOR: ColorU = ColorU {
-    r: 147,
-    g: 112,
-    b: 219,
+    r: 236,
+    g: 148,
+    b: 85,
     a: 255,
 };
 const DEFAULT_MAX_MONTHLY_SPEND_CENTS: i32 = 20_000;
+const AMBIENT_AGENT_TRIAL_TITLE: &str = "Cloud agent trial";
 
 #[derive(Default)]
 struct PlanSectionMouseStates {
-    anonymous_user_sign_up_button: MouseStateHandle,
     manage_billing_link: MouseStateHandle,
     open_admin_panel_link: MouseStateHandle,
     admin_panel_link: MouseStateHandle,
@@ -127,6 +123,12 @@ struct BuyCreditsMouseStates {
     auto_reload_switch: SwitchStateHandle,
     auto_reload_info: MouseStateHandle,
     buy_button: MouseStateHandle,
+}
+#[derive(Default)]
+struct AmbientTrialMouseStates {
+    new_agent_button: MouseStateHandle,
+    buy_more_button: MouseStateHandle,
+    dismiss_button: MouseStateHandle,
 }
 
 #[derive(Default)]
@@ -187,7 +189,6 @@ impl GrantBucket {
 struct ClassifiedGrants {
     personal: GrantBucket,
     team: GrantBucket,
-    cloud: GrantBucket,
 }
 
 impl ClassifiedGrants {
@@ -195,7 +196,6 @@ impl ClassifiedGrants {
         let now = chrono::Utc::now();
         let mut personal = Vec::new();
         let mut team = Vec::new();
-        let mut cloud = Vec::new();
 
         for grant in grants {
             if grant.expiration.is_some_and(|exp| now >= exp) {
@@ -208,9 +208,7 @@ impl ClassifiedGrants {
             let in_workspace_scope =
                 workspace_uid.is_some_and(|uid| grant.scope == BonusGrantScope::Workspace(uid));
             if grant.grant_type == BonusGrantType::AmbientOnly {
-                if in_user_scope || in_workspace_scope {
-                    cloud.push(grant.clone());
-                }
+                continue;
             } else if in_user_scope {
                 personal.push(grant.clone());
             } else if in_workspace_scope {
@@ -221,12 +219,11 @@ impl ClassifiedGrants {
         Self {
             personal: GrantBucket { grants: personal },
             team: GrantBucket { grants: team },
-            cloud: GrantBucket { grants: cloud },
         }
     }
 
     fn has_any(&self) -> bool {
-        !self.personal.is_empty() || !self.team.is_empty() || !self.cloud.is_empty()
+        !self.personal.is_empty() || !self.team.is_empty()
     }
 }
 
@@ -236,9 +233,11 @@ pub struct BillingAndUsagePageV2View {
     selected_tab: BillingUsageTab,
     usage_history: UsageHistoryState,
     addon_credits: AddonCreditsState,
+    pending_auto_reload_toast: Option<String>,
     tab_mouse_states: TabMouseStates,
     plan_mouse_states: PlanSectionMouseStates,
     buy_credits_mouse_states: BuyCreditsMouseStates,
+    ambient_trial_mouse_states: AmbientTrialMouseStates,
 }
 
 impl BillingAndUsagePageV2View {
@@ -326,9 +325,11 @@ impl BillingAndUsagePageV2View {
                 denomination_buttons: Default::default(),
                 purchase_loading: false,
             },
+            pending_auto_reload_toast: None,
             tab_mouse_states: Default::default(),
             plan_mouse_states: Default::default(),
             buy_credits_mouse_states: Default::default(),
+            ambient_trial_mouse_states: Default::default(),
         };
         me.update_addon_credits_options(ctx);
         me.refresh_addon_credits_settings(ctx);
@@ -378,9 +379,13 @@ impl BillingAndUsagePageV2View {
             UserWorkspacesEvent::UpdateWorkspaceSettingsSuccess => {
                 self.update_addon_credit_modal(ctx);
                 self.refresh_addon_credits_settings(ctx);
+                if let Some(message) = self.pending_auto_reload_toast.take() {
+                    self.show_toast(&message, ToastFlavor::Success, ctx);
+                }
                 ctx.notify();
             }
             UserWorkspacesEvent::UpdateWorkspaceSettingsRejected(_err) => {
+                self.pending_auto_reload_toast = None;
                 self.show_toast(
                     "Failed to update workspace settings",
                     ToastFlavor::Error,
@@ -643,33 +648,6 @@ impl BillingAndUsagePageV2View {
                     .finish(),
                 );
             }
-        } else if self.auth_state.is_anonymous_or_logged_out() {
-            right_side.add_child(
-                appearance
-                    .ui_builder()
-                    .button(
-                        ButtonVariant::Accent,
-                        self.plan_mouse_states.anonymous_user_sign_up_button.clone(),
-                    )
-                    .with_style(UiComponentStyles {
-                        font_size: Some(14.),
-                        font_weight: Some(Weight::Semibold),
-                        border_radius: Some(CornerRadius::with_all(Radius::Pixels(4.))),
-                        padding: Some(Coords {
-                            top: 12.,
-                            bottom: 12.,
-                            left: 40.,
-                            right: 40.,
-                        }),
-                        ..Default::default()
-                    })
-                    .with_text_label("Sign up".to_owned())
-                    .build()
-                    .on_click(move |ctx, _, _| {
-                        ctx.dispatch_typed_action(BillingAndUsagePageAction::SignupAnonymousUser);
-                    })
-                    .finish(),
-            );
         } else {
             let current_user_id = self.auth_state.user_id().unwrap_or_default();
             right_side.add_child(
@@ -804,23 +782,6 @@ impl BillingAndUsagePageV2View {
             );
         }
 
-        if !classified.cloud.is_empty() {
-            cards_row.add_child(
-                Expanded::new(
-                    1.,
-                    render_balance_card(
-                        appearance,
-                        CLOUD_CREDITS_DOT_COLOR,
-                        "Cloud credits",
-                        &classified.cloud.expiry_label(),
-                        classified.cloud.total_balance(),
-                        CARD_BORDER_COLOR,
-                    ),
-                )
-                .finish(),
-            );
-        }
-
         Some(
             Flex::column()
                 .with_child(
@@ -839,6 +800,165 @@ impl BillingAndUsagePageV2View {
                         .with_height(24.)
                         .finish(),
                 )
+                .finish(),
+        )
+    }
+
+    fn render_ambient_agent_trial_widget(
+        &self,
+        ai_model: &AIRequestUsageModel,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Option<Box<dyn Element>> {
+        let credits_remaining = ai_model.ambient_only_credits_remaining()?;
+        if credits_remaining == 0 {
+            return None;
+        }
+
+        if *AISettings::as_ref(app).ambient_agent_trial_widget_dismissed {
+            return None;
+        }
+
+        let theme = appearance.theme();
+        let ui_builder = appearance.ui_builder();
+        let fg = theme.foreground().into_solid();
+        let bg = theme.background().into_solid();
+
+        let title = Text::new_inline(AMBIENT_AGENT_TRIAL_TITLE, appearance.ui_font_family(), 14.)
+            .with_color(theme.active_ui_text_color().into())
+            .with_style(Properties::default().weight(Weight::Semibold))
+            .finish();
+
+        let credits_text = if credits_remaining == 1 {
+            "1 credit remaining".to_string()
+        } else {
+            format!(
+                "{} credits remaining",
+                credits_remaining.separate_with_commas()
+            )
+        };
+        let credits_label = Text::new_inline(credits_text, appearance.ui_font_family(), 12.)
+            .with_color(blended_colors::text_sub(theme, theme.surface_1()))
+            .finish();
+
+        let left_side = Flex::row()
+            .with_child(title)
+            .with_child(Container::new(credits_label).with_margin_left(8.).finish())
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .finish();
+
+        let mut right_side = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
+
+        if credits_remaining >= AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD {
+            let new_agent_button = ui_builder
+                .button(
+                    ButtonVariant::Secondary,
+                    self.ambient_trial_mouse_states.new_agent_button.clone(),
+                )
+                .with_text_label("New agent".to_string())
+                .with_style(UiComponentStyles {
+                    font_color: Some(bg),
+                    background: Some(fg.into()),
+                    font_size: Some(14.),
+                    font_weight: Some(Weight::Semibold),
+                    padding: Some(Coords {
+                        top: 7.,
+                        bottom: 7.,
+                        left: 12.,
+                        right: 12.,
+                    }),
+                    ..Default::default()
+                })
+                .build()
+                .on_click(|ctx, _, _| {
+                    ctx.dispatch_typed_action(WorkspaceAction::AddAmbientAgentTab);
+                })
+                .finish();
+            right_side.add_child(
+                Container::new(new_agent_button)
+                    .with_margin_right(8.)
+                    .finish(),
+            );
+        }
+
+        let is_on_paid_plan = UserWorkspaces::as_ref(app)
+            .current_team()
+            .is_some_and(|team| team.billing_metadata.is_user_on_paid_plan());
+        if !is_on_paid_plan {
+            let user_id = AuthStateProvider::as_ref(app).get().user_id();
+            let buy_more_button = ui_builder
+                .button(
+                    ButtonVariant::Secondary,
+                    self.ambient_trial_mouse_states.buy_more_button.clone(),
+                )
+                .with_text_label("Buy more".to_string())
+                .with_style(UiComponentStyles {
+                    background: Some(bg.into()),
+                    font_size: Some(14.),
+                    font_weight: Some(Weight::Semibold),
+                    padding: Some(Coords {
+                        top: 7.,
+                        bottom: 7.,
+                        left: 12.,
+                        right: 12.,
+                    }),
+                    ..Default::default()
+                })
+                .build()
+                .on_click(move |ctx, _, _| {
+                    if let Some(user_id) = user_id {
+                        ctx.dispatch_typed_action(BillingAndUsagePageAction::Upgrade {
+                            team_uid: None,
+                            user_id,
+                        });
+                    }
+                })
+                .finish();
+            right_side.add_child(buy_more_button);
+        }
+
+        if credits_remaining < AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD {
+            let dismiss_button = icon_button(
+                appearance,
+                Icon::X,
+                false,
+                self.ambient_trial_mouse_states.dismiss_button.clone(),
+            )
+            .with_style(UiComponentStyles {
+                width: Some(32.),
+                height: Some(32.),
+                padding: Some(Coords::uniform(8.)),
+                ..Default::default()
+            })
+            .build()
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(
+                    BillingAndUsagePageAction::DismissAmbientAgentTrialWidget,
+                );
+            })
+            .finish();
+            right_side.add_child(Container::new(dismiss_button).with_margin_left(4.).finish());
+        }
+
+        let row_content = Flex::row()
+            .with_child(Shrinkable::new(1., left_side).finish())
+            .with_child(right_side.finish())
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_main_axis_size(MainAxisSize::Max)
+            .finish();
+
+        let bright_blue: ColorU = theme.terminal_colors().bright.blue.into();
+        let gradient_start = ColorU::transparent_black();
+        let gradient_end = ColorU::new(bright_blue.r, bright_blue.g, bright_blue.b, 40);
+
+        Some(
+            Container::new(row_content)
+                .with_horizontal_background_gradient(gradient_start, gradient_end)
+                .with_border(Border::all(1.).with_border_color(theme.accent_overlay().into()))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+                .with_margin_bottom(16.)
+                .with_uniform_padding(12.)
                 .finish(),
         )
     }
@@ -881,9 +1001,9 @@ impl BillingAndUsagePageV2View {
                         .current_team()
                         .is_some_and(|t| t.billing_metadata.is_on_legacy_paid_plan());
                     let (link, suffix) = if is_legacy {
-                        ("Switch to the Build plan", " to purchase add-on credits.")
+                        ("Switch to Build", " to purchase add-on credits.")
                     } else {
-                        ("Upgrade to the Build plan", " to purchase add-on credits.")
+                        ("Upgrade to Build", " to purchase add-on credits.")
                     };
                     Some(
                         FormattedTextElement::new(
@@ -937,6 +1057,7 @@ impl BillingAndUsagePageV2View {
 
         if let Some(explanation) = purchase_restriction_message {
             let card = Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_children([
                     Container::new(header).with_margin_bottom(8.).finish(),
                     explanation,
@@ -1078,23 +1199,21 @@ impl BillingAndUsagePageV2View {
         }
         let purchase_button = purchase_button.finish();
 
-        let auto_reload_credit_amount = if auto_reload_enabled {
-            selected_credit_option
-                .map(|o| o.credits.to_string())
-                .unwrap_or_else(|| "your selected".to_string())
-        } else {
-            "your selected".to_string()
-        };
+        let auto_reload_credit_amount = selected_credit_option
+            .map(|o| format!("{} credits", o.credits.separate_with_commas()))
+            .unwrap_or_else(|| "selected credit amount".to_string());
         let auto_reload_tooltip_text = format!(
-            "When enabled, auto reload will automatically purchase {auto_reload_credit_amount} \
-            credits when your add-on credit balance reaches 100 credits remaining."
+            "When any member on your team’s credit balance reaches 100 credits remaining, \
+            automatically purchase {auto_reload_credit_amount}."
         );
 
         let auto_reload_switch_element = {
             let switch_builder = ui_builder
                 .switch(self.buy_credits_mouse_states.auto_reload_switch.clone())
                 .check(auto_reload_enabled);
-            if delinquent {
+            let cannot_enable_auto_reload =
+                !auto_reload_enabled && selected_credit_option.is_none();
+            if delinquent || cannot_enable_auto_reload {
                 switch_builder.disable().build().finish()
             } else {
                 switch_builder
@@ -1140,7 +1259,7 @@ impl BillingAndUsagePageV2View {
             })
             .unwrap_or_default();
 
-        let mut price_row = Flex::row()
+        let price_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_child(
                 Text::new_inline(price_label, appearance.ui_font_family(), 14.)
@@ -1148,9 +1267,6 @@ impl BillingAndUsagePageV2View {
                     .with_style(Properties::default().weight(Weight::Medium))
                     .finish(),
             );
-        if auto_reload_enabled {
-            price_row.add_child(render_auto_reload_chip(appearance));
-        }
 
         let right_group = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -1249,9 +1365,13 @@ impl BillingAndUsagePageV2View {
     }
 
     fn render_overview_tab(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
-        let mut content = Flex::column();
-
-        content.add_child(self.render_plan_section(appearance, app));
+        let mut content = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+        let ai_model = AIRequestUsageModel::as_ref(app);
+        if let Some(ambient_trial_widget) =
+            self.render_ambient_agent_trial_widget(ai_model, appearance, app)
+        {
+            content.add_child(ambient_trial_widget);
+        }
         if let Some(balance) = self.render_balance_section(appearance, app) {
             content.add_child(balance);
         }
@@ -1260,8 +1380,6 @@ impl BillingAndUsagePageV2View {
             .current_team()
             .map(|t| t.billing_metadata.is_delinquent_due_to_payment_issue())
             .unwrap_or_default();
-
-        let ai_model = AIRequestUsageModel::as_ref(app);
 
         if let (Some(ws), Some(team)) = (
             UserWorkspaces::as_ref(app).current_workspace(),
@@ -1455,9 +1573,13 @@ impl SettingsPageMeta for BillingAndUsagePageV2View {
     }
 
     fn should_render(&self, ctx: &AppContext) -> bool {
-        !AuthStateProvider::as_ref(ctx)
+        let is_logged_in = !AuthStateProvider::as_ref(ctx)
             .get()
-            .is_anonymous_or_logged_out()
+            .is_anonymous_or_logged_out();
+        let is_build = UserWorkspaces::as_ref(ctx)
+            .current_workspace()
+            .is_some_and(|workspace| workspace.billing_metadata.is_on_build_plan());
+        is_logged_in && is_build
     }
 
     fn on_page_selected(&mut self, _allow_steal_focus: bool, ctx: &mut ViewContext<Self>) {
@@ -1494,6 +1616,8 @@ impl View for BillingAndUsagePageV2View {
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let mut page = Flex::column();
+        page.add_child(render_sub_header(appearance, "Billing and Usage", None));
+        page.add_child(self.render_plan_section(appearance, app));
 
         let tabs = vec![
             SettingsTab::new(
@@ -1675,6 +1799,23 @@ impl TypedActionView for BillingAndUsagePageV2View {
                 self.show_addon_credit_modal(ctx);
             }
             BillingAndUsagePageAction::UpdateAutoReloadEnabled { team_uid, enabled } => {
+                let auto_reload_denomination_credits = if *enabled {
+                    let Some(option) = self
+                        .addon_credits
+                        .options
+                        .get(self.addon_credits.selected_denomination)
+                    else {
+                        self.show_toast(
+                            "Unable to enable auto-reload until pricing options load.",
+                            ToastFlavor::Error,
+                            ctx,
+                        );
+                        return;
+                    };
+                    Some(option.credits)
+                } else {
+                    None
+                };
                 send_telemetry_from_ctx!(
                     TelemetryEvent::AutoReloadToggledFromBillingSettings {
                         enabled: *enabled,
@@ -1685,14 +1826,14 @@ impl TypedActionView for BillingAndUsagePageV2View {
                     },
                     ctx
                 );
-                let auto_reload_denomination_credits = if *enabled {
-                    self.addon_credits
-                        .options
-                        .get(self.addon_credits.selected_denomination)
-                        .map(|o| o.credits)
+                self.pending_auto_reload_toast = Some(if *enabled {
+                    let credits = auto_reload_denomination_credits
+                        .map(|c| c.separate_with_commas())
+                        .unwrap_or_else(|| "your selected".to_string());
+                    format!("Auto-reload enabled. We'll refill with {credits} credits when your balance runs low.")
                 } else {
-                    None
-                };
+                    "Auto-reload disabled.".to_string()
+                });
                 UserWorkspaces::handle(ctx).update(ctx, |ws, ctx| {
                     ws.update_addon_credits_settings(
                         *team_uid,
@@ -1702,15 +1843,6 @@ impl TypedActionView for BillingAndUsagePageV2View {
                         ctx,
                     );
                 });
-                let toast_message = if *enabled {
-                    let credits = auto_reload_denomination_credits
-                        .map(|c| c.separate_with_commas())
-                        .unwrap_or_else(|| "your selected".to_string());
-                    format!("Auto-reload enabled. We'll refill with {credits} credits when your balance runs low.")
-                } else {
-                    "Auto-reload disabled.".to_string()
-                };
-                self.show_toast(&toast_message, ToastFlavor::Success, ctx);
             }
             BillingAndUsagePageAction::DismissAmbientAgentTrialWidget => {
                 AISettings::handle(ctx).update(ctx, |settings, ctx| {
@@ -1728,25 +1860,6 @@ impl TypedActionView for BillingAndUsagePageV2View {
             }
         }
     }
-}
-
-fn render_auto_reload_chip(appearance: &Appearance) -> Box<dyn Element> {
-    let theme = appearance.theme();
-    Container::new(
-        Container::new(
-            Text::new_inline("Auto-reload", appearance.ui_font_family(), 14.)
-                .with_color(theme.accent().into_solid())
-                .finish(),
-        )
-        .with_horizontal_padding(4.)
-        .with_vertical_padding(2.)
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-        .with_border(Border::all(1.).with_border_color(theme.accent_overlay().into()))
-        .with_background(warp_core::ui::theme::color::internal_colors::accent_overlay_1(theme))
-        .finish(),
-    )
-    .with_margin_left(8.)
-    .finish()
 }
 
 fn render_balance_card(
