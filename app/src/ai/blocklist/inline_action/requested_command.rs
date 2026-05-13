@@ -10,6 +10,7 @@ use std::sync::Arc;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::Icon;
 use warp_editor::render::element::VerticalExpansionBehavior;
+use warpui::clipboard::ClipboardContent;
 use warpui::elements::{ConstrainedBox, ScrollbarWidth};
 use warpui::ui_components::components::UiComponent as _;
 use warpui::{
@@ -68,7 +69,11 @@ use crate::view_components::compactible_action_button::{
     MEDIUM_SIZE_SWITCH_THRESHOLD, SMALL_SIZE_SWITCH_THRESHOLD,
 };
 use crate::view_components::compactible_split_action_button::CompactibleSplitActionButton;
-use crate::{cmd_or_ctrl_shift, settings::InputModeSettings, ui_components::blended_colors};
+use crate::{
+    cmd_or_ctrl_shift,
+    settings::{InputModeSettings, SelectionSettings},
+    ui_components::blended_colors,
+};
 
 use super::inline_action_icons::{self, icon_size};
 
@@ -204,6 +209,7 @@ pub enum RequestedCommandViewAction {
     ToggleExpanded,
     OpenActiveAgentProfileEditor,
     SelectText,
+    CopyOnSelect(String),
 }
 
 pub struct RequestedCommandView {
@@ -556,7 +562,12 @@ impl RequestedCommandView {
                 // The `is_some` check is necessary because `CodeEditorEvent::SelectionChanged` is
                 // also emitted when the editor's selection is cleared via external means
                 // (i.e. when a text selection is made outside the `CodeEditorView`).
-                if view.as_ref(ctx).selected_text(ctx).is_some() {
+                if let Some(selected_text) = view.as_ref(ctx).selected_text(ctx) {
+                    self.mcp_content_selection_handle.clear();
+                    if let Ok(mut mcp_selection) = self.mcp_content_selected_text.write() {
+                        *mcp_selection = None;
+                    }
+                    self.maybe_copy_on_select(selected_text, ctx);
                     ctx.emit(RequestedCommandViewEvent::TextSelected);
                 }
             }
@@ -966,15 +977,22 @@ impl RequestedCommandView {
     }
 
     pub fn clear_selection(&mut self, ctx: &mut ViewContext<Self>) {
-        // Clear MCP content selection if it exists, else fall back to editor selection.
+        // Clear both local selection states; either one can be stale after switching selection targets.
         self.mcp_content_selection_handle.clear();
         if let Ok(mut mcp_selection) = self.mcp_content_selected_text.write() {
             *mcp_selection = None;
-        } else if let Some(editor) = &self.editor {
+        }
+        if let Some(editor) = &self.editor {
             editor.update(ctx, |editor, ctx| {
                 editor.clear_selection(ctx);
             });
         }
+    }
+
+    fn maybe_copy_on_select(&self, selection: String, ctx: &mut ViewContext<Self>) {
+        SelectionSettings::handle(ctx).update(ctx, |selection_settings, ctx| {
+            selection_settings.maybe_copy_on_select(ClipboardContent::plain_text(selection), ctx);
+        });
     }
 
     /// Extracts the tool name from MCP tool command text, removing parameters.
@@ -1447,8 +1465,16 @@ impl View for RequestedCommandView {
             let selectable_text = SelectableArea::new(
                 self.mcp_content_selection_handle.clone(),
                 #[allow(clippy::unwrap_used)]
-                move |selection_args, _, _| {
-                    *mcp_selected_text.write().unwrap() = selection_args.selection;
+                move |selection_args, ctx, _| {
+                    let selection = selection_args.selection;
+                    if let Some(selection) =
+                        selection.as_ref().filter(|selection| !selection.is_empty())
+                    {
+                        ctx.dispatch_typed_action(RequestedCommandViewAction::CopyOnSelect(
+                            selection.clone(),
+                        ));
+                    }
+                    *mcp_selected_text.write().unwrap() = selection;
                 },
                 text_element,
             )
@@ -1596,6 +1622,9 @@ impl TypedActionView for RequestedCommandView {
             }
             RequestedCommandViewAction::SelectText => {
                 ctx.emit(RequestedCommandViewEvent::TextSelected);
+            }
+            RequestedCommandViewAction::CopyOnSelect(selection) => {
+                self.maybe_copy_on_select(selection.clone(), ctx);
             }
         }
     }

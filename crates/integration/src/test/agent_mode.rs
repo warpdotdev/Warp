@@ -34,6 +34,8 @@ cfg_if::cfg_if! {
             static ref END_OF_LAST_BLOCK_POSITION: Vector2F = vec2f(209.0, 668.0);
             /// Position in the middle of the word "mo|de" of the AI block output.
             static ref MIDDLE_OF_MODE_POSITION: Vector2F = vec2f(224.0, 557.0);
+            /// Position to the right of "dummy output" on the same AI block output line.
+            static ref END_OF_AI_OUTPUT_LINE_POSITION: Vector2F = vec2f(565.0, 557.0);
         }
     } else {
         lazy_static! {
@@ -43,6 +45,8 @@ cfg_if::cfg_if! {
             static ref END_OF_LAST_BLOCK_POSITION: Vector2F = vec2f(214.0, 645.0);
             /// Position in the middle of the word "mo|de" of the AI block output.
             static ref MIDDLE_OF_MODE_POSITION: Vector2F = vec2f(222.0, 530.0);
+            /// Position to the right of "dummy output" on the same AI block output line.
+            static ref END_OF_AI_OUTPUT_LINE_POSITION: Vector2F = vec2f(560.0, 530.0);
         }
     }
 }
@@ -744,6 +748,65 @@ echo \"hello Im the third block\"
 hello Im the third block".into()
                 )
             ),
+        )
+}
+
+pub fn test_copy_on_select_within_ai_simple() -> Builder {
+    builder_with_setup()
+        .with_step(
+            new_step_with_default_assertions("Enable copy on select").add_assertion(|app, _| {
+                SelectionSettings::handle(app).update(app, |settings, ctx| {
+                    settings
+                        .copy_on_select
+                        .set_value(true, ctx)
+                        .expect("can enable copy_on_select");
+                    async_assert!(settings.copy_on_select_enabled())
+                })
+            }),
+        )
+        .with_step(
+            // Drag within the AI block output, from "mo|de" to the right on the same line.
+            new_step_with_default_assertions("start selecting")
+                .with_event(Event::LeftMouseDown {
+                    position: *MIDDLE_OF_MODE_POSITION,
+                    modifiers: Default::default(),
+                    click_count: 1,
+                    is_first_mouse: false,
+                })
+                .with_event(Event::LeftMouseDragged {
+                    position: *END_OF_AI_OUTPUT_LINE_POSITION,
+                    modifiers: Default::default(),
+                })
+                .add_assertion(assert_view_has_text_selection(true)),
+        )
+        .with_step(
+            new_step_with_default_assertions("end selecting")
+                .with_event(Event::LeftMouseUp {
+                    position: *END_OF_AI_OUTPUT_LINE_POSITION,
+                    modifiers: Default::default(),
+                })
+                .add_assertion(assert_view_has_text_selection(false))
+                .add_assertion(|app, window_id| {
+                    let terminal_view = single_terminal_view_for_tab(app, window_id, 0);
+                    terminal_view.read(app, |terminal_view, ctx| {
+                        let ai_block = terminal_view.last_ai_block().expect("AI block exists");
+                        ai_block.read(ctx, |ai_block, _| {
+                            let is_simple_selection =
+                                matches!(ai_block.selection_type(), SelectionType::Simple);
+                            let is_selected_text_correct =
+                                ai_block.selected_text(ctx).is_some_and(|selected_text| {
+                                    selected_text == "de and this is my dummy output"
+                                });
+                            async_assert!(
+                                is_simple_selection && is_selected_text_correct,
+                                "AI block has expected selection"
+                            )
+                        })
+                    })
+                })
+                .add_assertion(assert_clipboard_contains_string(
+                    "de and this is my dummy output".into(),
+                )),
         )
 }
 

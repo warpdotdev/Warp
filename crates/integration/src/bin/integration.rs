@@ -385,6 +385,7 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_selection_ai_to_last_semantic);
     register_test!(test_selection_ai_to_last_lines);
     register_test!(test_selection_last_to_ai_simple);
+    register_test!(test_copy_on_select_within_ai_simple);
     register_test!(test_selection_last_to_ai_semantic);
     register_test!(test_selection_last_to_ai_lines);
     register_test!(test_restored_ai_block_renders_mermaid_and_local_images);

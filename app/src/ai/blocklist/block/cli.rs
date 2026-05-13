@@ -56,7 +56,7 @@ use crate::code::editor::view::{CodeEditorEvent, CodeEditorRenderOptions};
 use crate::menu::MenuItemFields;
 use crate::send_telemetry_from_ctx;
 use crate::server::telemetry::TelemetryEvent;
-use crate::settings::AISettings;
+use crate::settings::{AISettings, SelectionSettings};
 use crate::terminal::input::SET_INPUT_MODE_TERMINAL_ACTION_NAME;
 use crate::terminal::model::block::BlockId;
 use crate::terminal::{ShellLaunchData, TerminalModel};
@@ -815,7 +815,8 @@ impl CLISubagentView {
                 });
                 ctx.subscribe_to_view(&view, |me, view, event, ctx| match event {
                     CodeEditorEvent::SelectionChanged => {
-                        if view.as_ref(ctx).selected_text(ctx).is_some() {
+                        if let Some(selected_text) = view.as_ref(ctx).selected_text(ctx) {
+                            me.maybe_copy_on_select(selected_text, ctx);
                             me.clear_other_selections(Some(view.id()), ctx);
                             ctx.emit(CLISubagentViewEvent::TextSelected);
                         }
@@ -963,6 +964,12 @@ impl CLISubagentView {
             .or_else(|| self.selected_text.read().clone())
             .filter(|selection| !selection.is_empty())
     }
+
+    fn maybe_copy_on_select(&self, selection: String, ctx: &mut ViewContext<Self>) {
+        SelectionSettings::handle(ctx).update(ctx, |selection_settings, ctx| {
+            selection_settings.maybe_copy_on_select(ClipboardContent::plain_text(selection), ctx);
+        });
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1034,6 +1041,9 @@ impl View for CLISubagentView {
                         {
                             output_selection_handle.clear();
                             action_selection_handle.clear();
+                            ctx.dispatch_typed_action(CLISubagentAction::CopyOnSelect(
+                                selection.clone(),
+                            ));
                             *selected_text.write() = Some(selection);
                             ctx.dispatch_typed_action(CLISubagentAction::SelectText);
                         }
@@ -1275,6 +1285,9 @@ impl View for CLISubagentView {
                     {
                         query_selection_handle.clear();
                         action_selection_handle.clear();
+                        ctx.dispatch_typed_action(CLISubagentAction::CopyOnSelect(
+                            selection.clone(),
+                        ));
                         *selected_text.write() = Some(selection);
                         ctx.dispatch_typed_action(CLISubagentAction::SelectText);
                     }
@@ -1393,6 +1406,9 @@ impl View for CLISubagentView {
                     {
                         query_selection_handle.clear();
                         output_selection_handle.clear();
+                        ctx.dispatch_typed_action(CLISubagentAction::CopyOnSelect(
+                            selection.clone(),
+                        ));
                         *selected_text.write() = Some(selection);
                         ctx.dispatch_typed_action(CLISubagentAction::SelectText);
                     }
@@ -1446,6 +1462,7 @@ pub enum CLISubagentAction {
     ToggleAlwaysAllowReadFiles,
     DismissInput,
     SelectText,
+    CopyOnSelect(String),
     CopyDebugId(String),
     OpenFeedbackDocs,
 }
@@ -1533,6 +1550,9 @@ impl TypedActionView for CLISubagentView {
                 ctx.reset_cursor();
                 ctx.focus_self();
                 ctx.emit(CLISubagentViewEvent::TextSelected);
+            }
+            CLISubagentAction::CopyOnSelect(selection) => {
+                self.maybe_copy_on_select(selection.clone(), ctx);
             }
             CLISubagentAction::CopyDebugId(debug_id) => {
                 ctx.clipboard()
