@@ -29,7 +29,7 @@ struct ProfilesCommandRunner;
 
 impl ProfilesCommandRunner {
     fn list(&self, global_options: GlobalOptions, ctx: &mut ModelContext<Self>) {
-        // Ensure initial cloud sync completes so profiles from the server are available.
+        // Ensure locally persisted profiles have completed their initial load.
         let initial_sync = ObjectStoreModel::as_ref(ctx).initial_load_complete();
 
         ctx.spawn(initial_sync, move |_, _, ctx| {

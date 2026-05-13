@@ -21,7 +21,7 @@ pub const SERVER_OVERLOADED_TASK_FAILURE_MESSAGE: &str =
     "Warp is temporarily overloaded. Please try again shortly.";
 
 /// JSON payload for starting an agent run. In OpenWarp this is only used by local UI/CLI
-/// plumbing.
+/// plumbing; no hosted run endpoint is contacted.
 #[derive(Debug, Clone, Serialize)]
 pub struct SpawnAgentRequest {
     pub prompt: String,
@@ -38,7 +38,7 @@ pub struct SpawnAgentRequest {
     pub attachments: Vec<AttachmentInput>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub interactive: Option<bool>,
-    /// Populated when an agent spawns a child run via the public API.
+    /// Populated when an agent spawns a child run.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_run_id: Option<String>,
     /// Base64-encoded `warp.multi_agent.v1.Skill` payloads to restore as runtime skills.
@@ -74,7 +74,7 @@ impl FromStr for AmbientAgentTaskId {
 
 impl AmbientAgentTaskId {
     /// OpenWarp(本地化,Phase 3b-4):本地生成一个 UUID v4 作为 task_id,避免本地
-    /// harness 启动子 task 时向云端发 `create_agent_task` GraphQL mutation。
+    /// harness 启动子 task 时依赖 hosted `create_agent_task`。
     pub fn new_local() -> Self {
         let uuid = Uuid::new_v4();
         // UUID v4 几乎不可能产生 nil(概率 ~ 1/2^122),采用 expect 表示逻辑不可达。

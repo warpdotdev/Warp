@@ -401,7 +401,7 @@ pub mod text {
                     } => {
                         writeln!(
                             w,
-                            "File artifact uploaded: {filepath} (artifact: {artifact_uid})"
+                            "File artifact recorded: {filepath} (artifact: {artifact_uid})"
                         )?;
                     }
                 },
