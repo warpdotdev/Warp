@@ -1017,6 +1017,13 @@ zh-CN:
     loading_agents: "正在加载 Agents..."
     no_results_matched_filters: "没有匹配当前筛选条件的结果"
 
+  # ── Tab Config 侧栏 ──
+  tab_config_sidecar:
+    make_default: "设为默认"
+    already_default: "已是默认项"
+    edit_config: "编辑配置"
+    remove: "移除"
+
   # ── 终端上下文菜单 ──
   terminal_context_menu:
     copy_prompt: "复制提示词"

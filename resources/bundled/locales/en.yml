@@ -1017,6 +1017,13 @@ en:
     loading_agents: "Loading agents..."
     no_results_matched_filters: "No results matched your filters"
 
+  # ── Tab Config Sidecar ──
+  tab_config_sidecar:
+    make_default: "Make default"
+    already_default: "Already the default"
+    edit_config: "Edit config"
+    remove: "Remove"
+
   # ── Terminal Context Menu ──
   terminal_context_menu:
     copy_prompt: "Copy prompt"
