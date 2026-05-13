@@ -203,9 +203,17 @@ fn coerce_integer_value(
         }
     }
 
-    for keyword in ["allOf", "anyOf", "oneOf"] {
+    if let Some(schemas) = schema.get("allOf").and_then(|schemas| schemas.as_array()) {
+        for nested_schema in schemas {
+            coerce_integer_value(value, nested_schema, root_schema, ref_stack);
+        }
+    }
+
+    for keyword in ["anyOf", "oneOf"] {
         if let Some(schemas) = schema.get(keyword).and_then(|schemas| schemas.as_array()) {
-            for nested_schema in schemas {
+            if let Some(nested_schema) = schemas.iter().find(|nested_schema| {
+                schema_matches_value(value, nested_schema, root_schema, ref_stack)
+            }) {
                 coerce_integer_value(value, nested_schema, root_schema, ref_stack);
             }
         }
@@ -217,7 +225,8 @@ fn coerce_integer_value(
 
     match value {
         serde_json::Value::Object(object) => {
-            if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
+            let declared_properties = schema.get("properties").and_then(|p| p.as_object());
+            if let Some(properties) = declared_properties {
                 for (key, property_schema) in properties {
                     if let Some(property_value) = object.get_mut(key) {
                         coerce_integer_value(
@@ -232,7 +241,12 @@ fn coerce_integer_value(
 
             if let Some(additional_properties) = schema.get("additionalProperties") {
                 if additional_properties.is_object() {
-                    for property_value in object.values_mut() {
+                    for (key, property_value) in object.iter_mut() {
+                        if declared_properties
+                            .is_some_and(|properties| properties.contains_key(key))
+                        {
+                            continue;
+                        }
                         coerce_integer_value(
                             property_value,
                             additional_properties,
@@ -251,6 +265,135 @@ fn coerce_integer_value(
             }
         }
         _ => {}
+    }
+}
+
+fn schema_matches_value(
+    value: &serde_json::Value,
+    schema: &serde_json::Value,
+    root_schema: &serde_json::Value,
+    ref_stack: &[String],
+) -> bool {
+    if let Some(ref_path) = schema.get("$ref").and_then(|ref_path| ref_path.as_str()) {
+        if !ref_path.starts_with('#') || ref_stack.iter().any(|seen| seen == ref_path) {
+            return true;
+        }
+
+        let mut next_ref_stack = ref_stack.to_owned();
+        next_ref_stack.push(ref_path.to_string());
+        if let Some(resolved_schema) =
+            root_schema.pointer(ref_path.strip_prefix('#').unwrap_or_default())
+        {
+            return schema_matches_value(value, resolved_schema, root_schema, &next_ref_stack);
+        }
+    }
+
+    if let Some(schemas) = schema.get("allOf").and_then(|schemas| schemas.as_array()) {
+        if !schemas
+            .iter()
+            .all(|schema| schema_matches_value(value, schema, root_schema, ref_stack))
+        {
+            return false;
+        }
+    }
+
+    if let Some(schemas) = schema.get("anyOf").and_then(|schemas| schemas.as_array()) {
+        if !schemas
+            .iter()
+            .any(|schema| schema_matches_value(value, schema, root_schema, ref_stack))
+        {
+            return false;
+        }
+    }
+
+    if let Some(schemas) = schema.get("oneOf").and_then(|schemas| schemas.as_array()) {
+        if !schemas
+            .iter()
+            .any(|schema| schema_matches_value(value, schema, root_schema, ref_stack))
+        {
+            return false;
+        }
+    }
+
+    if let Some(schema_type) = schema.get("type") {
+        let type_matches = match schema_type {
+            serde_json::Value::String(schema_type) => value_matches_schema_type(value, schema_type),
+            serde_json::Value::Array(schema_types) => schema_types.iter().any(|schema_type| {
+                schema_type
+                    .as_str()
+                    .is_some_and(|schema_type| value_matches_schema_type(value, schema_type))
+            }),
+            _ => true,
+        };
+        if !type_matches {
+            return false;
+        }
+    }
+
+    match value {
+        serde_json::Value::Object(object) => {
+            if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
+                for (key, property_schema) in properties {
+                    if let Some(property_value) = object.get(key) {
+                        if !schema_matches_value(
+                            property_value,
+                            property_schema,
+                            root_schema,
+                            ref_stack,
+                        ) {
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            if let Some(additional_properties) = schema.get("additionalProperties") {
+                if additional_properties.is_object() {
+                    let declared_properties = schema.get("properties").and_then(|p| p.as_object());
+                    for (key, property_value) in object {
+                        if declared_properties
+                            .is_some_and(|properties| properties.contains_key(key))
+                        {
+                            continue;
+                        }
+                        if !schema_matches_value(
+                            property_value,
+                            additional_properties,
+                            root_schema,
+                            ref_stack,
+                        ) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        serde_json::Value::Array(items) => {
+            if let Some(items_schema) = schema.get("items") {
+                if !items
+                    .iter()
+                    .all(|item| schema_matches_value(item, items_schema, root_schema, ref_stack))
+                {
+                    return false;
+                }
+            }
+        }
+        _ => {}
+    }
+
+    true
+}
+
+fn value_matches_schema_type(value: &serde_json::Value, schema_type: &str) -> bool {
+    match schema_type {
+        "array" => value.is_array(),
+        "boolean" => value.is_boolean(),
+        "integer" => value.as_f64().is_some_and(|number| number.fract() == 0.0),
+        "null" => value.is_null(),
+        "number" => value.is_number(),
+        "object" => value.is_object(),
+        "string" => value.is_string(),
+        _ => true,
     }
 }
 
@@ -274,7 +417,9 @@ fn coerce_number_to_integer(value: &mut serde_json::Value) {
     if !float.is_finite() || float.fract() != 0.0 {
         return;
     }
-    if float < i64::MIN as f64 || float > i64::MAX as f64 {
+    const I64_MIN_F64: f64 = -9_223_372_036_854_775_808.0;
+    const I64_MAX_PLUS_ONE_F64: f64 = 9_223_372_036_854_775_808.0;
+    if !(I64_MIN_F64..I64_MAX_PLUS_ONE_F64).contains(&float) {
         return;
     }
 

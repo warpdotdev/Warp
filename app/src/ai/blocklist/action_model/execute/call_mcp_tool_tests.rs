@@ -127,6 +127,56 @@ fn array_items_and_one_of_branches_are_coerced() {
 }
 
 #[test]
+fn one_of_uses_first_matching_branch_before_coercing() {
+    let mut args = obj(json!({ "value": 1.0 }));
+    let schema = obj(json!({
+        "properties": {
+            "value": {
+                "oneOf": [
+                    { "type": "number" },
+                    { "type": "integer" }
+                ]
+            }
+        }
+    }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    assert_eq!(serde_json::to_string(&args["value"]).unwrap(), "1.0");
+}
+
+#[test]
+fn additional_properties_skip_declared_properties() {
+    let mut args = obj(json!({
+        "price": 1.0,
+        "quantity": 2.0
+    }));
+    let schema = obj(json!({
+        "properties": {
+            "price": { "type": "number" }
+        },
+        "additionalProperties": { "type": "integer" }
+    }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    assert_eq!(serde_json::to_string(&args["price"]).unwrap(), "1.0");
+    assert_eq!(serde_json::to_string(&args["quantity"]).unwrap(), "2");
+}
+
+#[test]
+fn integer_coercion_rejects_f64_i64_upper_rounding_boundary() {
+    let mut args = obj(json!({ "id": 9_223_372_036_854_775_808.0 }));
+    let schema = obj(json!({
+        "properties": { "id": { "type": "integer" } }
+    }));
+
+    coerce_integer_args(&mut args, &schema);
+
+    assert_eq!(args["id"].as_f64(), Some(9_223_372_036_854_775_808.0));
+}
+
+#[test]
 fn refs_and_nullable_integer_types_are_coerced() {
     let mut args = obj(json!({
         "limit": 5.0,
