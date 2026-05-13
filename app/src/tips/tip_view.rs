@@ -485,7 +485,7 @@ impl TipsView {
                     .set_width(152.)
                     .set_height(34.),
             )
-            .with_centered_text_label("Close Welcome Tips".to_string())
+            .with_centered_text_label(t!("tips.close_welcome_tips").to_string())
             .build()
             .on_click(|ctx, _, _| ctx.dispatch_typed_action(TipsAction::DismissTips))
             .finish();

@@ -394,6 +394,18 @@ en:
   pane_group:
     default_shell_unsupported: "Warp doesn't currently support your default shell, falling back to zsh.  "
 
+  tab_configs:
+    session_type: "Session type"
+    worktree_branch_placeholder: "my-feature-branch"
+
+  tips:
+    close_welcome_tips: "Close Welcome Tips"
+
+  auto_reload:
+    when_enabled_prefix: "When enabled, "
+    auto_reload: "auto-reload"
+    purchase_selected_package_suffix: " will automatically purchase your selected package when you run out. "
+
   env_vars:
     education_text: "Add secret or command. Warp never stores external secrets"
     invoke_error: "An error occurred while trying to invoke the env var"
@@ -973,6 +985,7 @@ en:
     unshared_failed: "Failed to unshare block. Please try again."
     unshare_block: "Unshare block"
     unshare: "Unshare"
+    manage_shared_blocks: "Manage shared blocks"
     copy_link: "Copy link"
 
   # ── Code Review Extended ──

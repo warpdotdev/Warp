@@ -394,6 +394,18 @@ zh-CN:
   pane_group:
     default_shell_unsupported: "Warp 当前不支持你的默认 shell，将回退到 zsh。"
 
+  tab_configs:
+    session_type: "会话类型"
+    worktree_branch_placeholder: "my-feature-branch"
+
+  tips:
+    close_welcome_tips: "关闭欢迎提示"
+
+  auto_reload:
+    when_enabled_prefix: "启用后，"
+    auto_reload: "自动充值"
+    purchase_selected_package_suffix: "会在额度用尽时自动购买你选择的套餐。"
+
   env_vars:
     education_text: "添加密钥或命令。Warp 永远不会存储外部密钥"
     invoke_error: "尝试调用环境变量时出错"
@@ -973,6 +985,7 @@ zh-CN:
     unshared_failed: "取消共享区块失败。请重试。"
     unshare_block: "取消共享区块"
     unshare: "取消共享"
+    manage_shared_blocks: "管理共享区块"
     copy_link: "复制链接"
 
   # ── 代码审查扩展 ──

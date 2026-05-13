@@ -90,7 +90,7 @@ where
     let on_accent_bg = bg.is_some();
     let on_select = Arc::new(on_select);
 
-    let label = Text::new_inline("Session type".to_string(), appearance.ui_font_family(), 12.)
+    let label = Text::new_inline(t!("tab_configs.session_type"), appearance.ui_font_family(), 12.)
         .with_color(if on_accent_bg {
             callout_label_color(appearance)
         } else {
