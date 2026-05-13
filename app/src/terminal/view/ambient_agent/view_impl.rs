@@ -302,7 +302,7 @@ impl TerminalView {
 
         self.enter_agent_view_for_new_conversation(
             None,
-            AgentViewEntryOrigin::ThirdPartyCloudAgent,
+            AgentViewEntryOrigin::ExternalAmbientAgent,
             ctx,
         );
 

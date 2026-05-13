@@ -526,7 +526,7 @@ pub fn init(app: &mut AppContext) {
 }
 
 impl DriveIndex {
-    // Called whenever cloud model or user workspaces change.
+    // Called whenever object store or user workspaces change.
     pub fn initialize_section_states(&mut self, ctx: &mut ViewContext<Self>) {
         let user_workspaces = UserWorkspaces::handle(ctx);
 
@@ -559,16 +559,16 @@ impl DriveIndex {
             dropdown.set_selected_by_index(selected_index, ctx);
         });
 
-        let cloud_model = ObjectStoreModel::handle(ctx);
+        let object_store_model = ObjectStoreModel::handle(ctx);
 
         let spaces = user_workspaces.update(ctx, |user_workspaces, ctx| {
             user_workspaces.all_user_spaces(ctx)
         });
         let num_cloud_objects_per_space = match self.index_variant {
-            DriveIndexVariant::MainIndex => cloud_model
+            DriveIndexVariant::MainIndex => object_store_model
                 .as_ref(ctx)
                 .num_active_cloud_objects_per_space(spaces.iter(), ctx),
-            DriveIndexVariant::Trash => cloud_model
+            DriveIndexVariant::Trash => object_store_model
                 .as_ref(ctx)
                 .num_trashed_cloud_objects_per_space(spaces.iter(), ctx),
         };
@@ -616,7 +616,7 @@ impl DriveIndex {
         spaces.iter().for_each(|space| {
             self.sort_location(
                 StoredObjectLocation::Space(*space),
-                cloud_model.as_ref(ctx),
+                object_store_model.as_ref(ctx),
                 ObjectStoreViewModel::as_ref(ctx),
                 ctx,
             );
@@ -626,12 +626,12 @@ impl DriveIndex {
         // If an item is already focused, retrieve focused item ID then re-sort ordered_items
         // Otherwise, re-sort ordered_items to ensure it is always accurate after a ObjectStoreModel change
         if self.ordered_items.is_empty() {
-            self.compute_ordered_items(cloud_model.as_ref(ctx));
+            self.compute_ordered_items(object_store_model.as_ref(ctx));
             self.focused_index = Some(0);
         } else if let Some(focused_index) = self.focused_index {
-            self.update_focused_params(focused_index, cloud_model.as_ref(ctx));
+            self.update_focused_params(focused_index, object_store_model.as_ref(ctx));
         } else {
-            self.compute_ordered_items(cloud_model.as_ref(ctx));
+            self.compute_ordered_items(object_store_model.as_ref(ctx));
         }
     }
 
@@ -645,14 +645,14 @@ impl DriveIndex {
     fn sort_location(
         &mut self,
         location: StoredObjectLocation,
-        cloud_model: &ObjectStoreModel,
+        object_store_model: &ObjectStoreModel,
         cloud_view_model: &ObjectStoreViewModel,
         app: &AppContext,
     ) {
         let item_iter = match (self.index_variant, location) {
             (DriveIndexVariant::MainIndex, StoredObjectLocation::Space(Space::Shared)) => {
                 let user_uid = AuthStateProvider::as_ref(app).get().user_id();
-                cloud_model
+                object_store_model
                     .active_cloud_objects_in_location_without_descendents(location, app)
                     .filter(move |cloud_object| {
                         cloud_object.renders_in_warp_drive()
@@ -666,7 +666,7 @@ impl DriveIndex {
                         app,
                     ))
             }
-            (DriveIndexVariant::MainIndex, _) => cloud_model
+            (DriveIndexVariant::MainIndex, _) => object_store_model
                 .active_cloud_objects_in_location_without_descendents(location, app)
                 .filter(|cloud_object| cloud_object.renders_in_warp_drive())
                 .sorted_by(self.sorting_choice.sort_by(
@@ -674,14 +674,14 @@ impl DriveIndex {
                     UpdateTimestamp::Revision,
                     app,
                 )),
-            (DriveIndexVariant::Trash, StoredObjectLocation::Space(space)) => cloud_model
+            (DriveIndexVariant::Trash, StoredObjectLocation::Space(space)) => object_store_model
                 .directly_trashed_cloud_objects_in_space(space, app)
                 .sorted_by(self.sorting_choice.sort_by(
                     cloud_view_model,
                     UpdateTimestamp::Trashed,
                     app,
                 )),
-            (DriveIndexVariant::Trash, _) => cloud_model
+            (DriveIndexVariant::Trash, _) => object_store_model
                 .indirectly_trashed_cloud_objects_in_location_without_descendents(location, app)
                 .sorted_by(self.sorting_choice.sort_by(
                     cloud_view_model,
@@ -706,7 +706,7 @@ impl DriveIndex {
                             if folder.model().is_open {
                                 self.sort_location(
                                     StoredObjectLocation::Folder(folder.id),
-                                    cloud_model,
+                                    object_store_model,
                                     cloud_view_model,
                                     app,
                                 )
@@ -722,9 +722,9 @@ impl DriveIndex {
     }
 
     /// Recursively populates and sorts the ordered_items list used for WD keyboard navigation
-    fn sort_ordered_items(&mut self, uids: Vec<String>, cloud_model: &ObjectStoreModel) {
+    fn sort_ordered_items(&mut self, uids: Vec<String>, object_store_model: &ObjectStoreModel) {
         for uid in uids {
-            if let Some(cloud_object) = cloud_model.get_by_uid(&uid) {
+            if let Some(cloud_object) = object_store_model.get_by_uid(&uid) {
                 // Add object to the list
                 let cloud_id = cloud_object.object_type_and_id();
                 self.ordered_items.push(WarpDriveItemId::Object(cloud_id));
@@ -738,7 +738,7 @@ impl DriveIndex {
                             self.sorted_orders_by_location
                                 [&StoredObjectLocation::Folder(folder_id)]
                                 .clone(),
-                            cloud_model,
+                            object_store_model,
                         )
                     }
                 }
@@ -747,7 +747,7 @@ impl DriveIndex {
     }
 
     /// Sets the ordered_items vector used for WD keyboard navigation
-    fn compute_ordered_items(&mut self, cloud_model: &ObjectStoreModel) {
+    fn compute_ordered_items(&mut self, object_store_model: &ObjectStoreModel) {
         self.ordered_items.clear();
         for section in self.sections.clone() {
             if let DriveIndexSection::Space(space) = section {
@@ -776,7 +776,7 @@ impl DriveIndex {
                         else {
                             return;
                         };
-                        self.sort_ordered_items(uids.to_vec(), cloud_model);
+                        self.sort_ordered_items(uids.to_vec(), object_store_model);
                     }
                 }
             }
@@ -787,11 +787,15 @@ impl DriveIndex {
     }
 
     /// Updates both ordered_items and focused_index, the parameters used for WD keyboard navigation
-    fn update_focused_params(&mut self, focused_index: usize, cloud_model: &ObjectStoreModel) {
+    fn update_focused_params(
+        &mut self,
+        focused_index: usize,
+        object_store_model: &ObjectStoreModel,
+    ) {
         // Error check to make sure indexing into ordered_items will be valid
         if focused_index < self.ordered_items.len() {
             // Retrieve the focused item ID, then re-sort ordered_items
-            self.compute_ordered_items(cloud_model);
+            self.compute_ordered_items(object_store_model);
             let Some(focused_item_id) = self.ordered_items.get(focused_index) else {
                 return;
             };
@@ -806,13 +810,13 @@ impl DriveIndex {
     }
 
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
-        let cloud_model = ObjectStoreModel::handle(ctx);
-        ctx.observe(&cloud_model, Self::on_cloud_model_changed);
+        let object_store_model = ObjectStoreModel::handle(ctx);
+        ctx.observe(&object_store_model, Self::on_object_store_model_changed);
 
         let object_actions = ObjectActions::handle(ctx);
         ctx.observe(&object_actions, Self::on_object_actions_changed);
 
-        ctx.subscribe_to_model(&cloud_model, |index, _, event, ctx| {
+        ctx.subscribe_to_model(&object_store_model, |index, _, event, ctx| {
             index.handle_object_store_event(event, ctx);
         });
 
@@ -1060,13 +1064,13 @@ impl DriveIndex {
         ctx.notify();
     }
 
-    fn on_cloud_model_changed(
+    fn on_object_store_model_changed(
         &mut self,
-        cloud_model: ModelHandle<ObjectStoreModel>,
+        object_store_model: ModelHandle<ObjectStoreModel>,
         ctx: &mut ViewContext<Self>,
     ) {
         self.initialize_section_states(ctx);
-        self.num_errored_objects = cloud_model.as_ref(ctx).num_visible_errored_objects();
+        self.num_errored_objects = object_store_model.as_ref(ctx).num_visible_errored_objects();
         ctx.notify();
     }
 
@@ -1499,8 +1503,8 @@ impl DriveIndex {
         // Only show Empty Trash button when online, do not show for Shared space
         if self.is_online(app) && space != &Space::Shared {
             // Disable Empty Trash button if trash is empty
-            let cloud_model = ObjectStoreModel::as_ref(app);
-            if cloud_model
+            let object_store_model = ObjectStoreModel::as_ref(app);
+            if object_store_model
                 .directly_trashed_cloud_objects_in_space(*space, app)
                 .count()
                 == 0
@@ -1861,7 +1865,7 @@ impl DriveIndex {
     fn render_space_items(
         &self,
         space: Space,
-        cloud_model: &ObjectStoreModel,
+        object_store_model: &ObjectStoreModel,
         item_mouse_states: &Vec<ItemStates>,
         active_hover_preview: bool,
         appearance: &Appearance,
@@ -1880,7 +1884,7 @@ impl DriveIndex {
                     DriveIndexVariant::MainIndex => {
                         let user_uid = AuthStateProvider::as_ref(app).get().user_id();
                         let is_shared_space = space == Space::Shared;
-                        cloud_model
+                        object_store_model
                             .active_cloud_objects_in_location_without_descendents(
                                 StoredObjectLocation::Space(space),
                                 app,
@@ -1897,7 +1901,7 @@ impl DriveIndex {
                                 app,
                             ))
                     }
-                    DriveIndexVariant::Trash => cloud_model
+                    DriveIndexVariant::Trash => object_store_model
                         .directly_trashed_cloud_objects_in_space(space, app)
                         .sorted_by(self.sorting_choice.sort_by(
                             cloud_view_model,
@@ -1911,7 +1915,7 @@ impl DriveIndex {
 
         let item_iter = results
             .into_iter()
-            .filter_map(|uid| cloud_model.get_by_uid(&uid));
+            .filter_map(|uid| object_store_model.get_by_uid(&uid));
 
         for object in item_iter {
             if let Some(item_and_children) = self.render_item_and_children(
@@ -1921,7 +1925,7 @@ impl DriveIndex {
                 space_idx,
                 0,
                 active_hover_preview,
-                cloud_model,
+                object_store_model,
                 appearance,
                 app,
             ) {
@@ -2182,7 +2186,7 @@ impl DriveIndex {
         &self,
         section: DriveIndexSection,
         appearance: &Appearance,
-        cloud_model: &ObjectStoreModel,
+        object_store_model: &ObjectStoreModel,
         app: &AppContext,
     ) -> Option<impl Iterator<Item = Box<dyn Element>>> {
         let mut rendered_space = vec![];
@@ -2249,7 +2253,7 @@ impl DriveIndex {
                                 .map(|item_mouse_states| {
                                     let space_items = self.render_space_items(
                                         space,
-                                        cloud_model,
+                                        object_store_model,
                                         item_mouse_states,
                                         active_hover_preview,
                                         appearance,
@@ -2339,7 +2343,7 @@ impl DriveIndex {
 
     fn render_all_sections(&self, app: &AppContext) -> impl Iterator<Item = Box<dyn Element>> {
         let appearance = Appearance::as_ref(app);
-        let cloud_model = ObjectStoreModel::as_ref(app);
+        let object_store_model = ObjectStoreModel::as_ref(app);
 
         let mut sections = vec![];
 
@@ -2349,7 +2353,8 @@ impl DriveIndex {
 
         for section in self.sections.iter() {
             // items_in_space includes the header of the space as well as all the untrashed cloud objects.
-            let rendered_section = self.render_section(*section, appearance, cloud_model, app);
+            let rendered_section =
+                self.render_section(*section, appearance, object_store_model, app);
             if let Some(rendered_section) = rendered_section {
                 let mut section_content =
                     Container::new(Flex::column().with_children(rendered_section).finish());
@@ -2565,7 +2570,7 @@ impl DriveIndex {
         space_index: usize,
         folder_depth: usize,
         active_hover_preview: bool,
-        cloud_model: &ObjectStoreModel,
+        object_store_model: &ObjectStoreModel,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Option<RenderedWarpDriveItemAndChildren> {
@@ -2667,7 +2672,7 @@ impl DriveIndex {
                     .unwrap_or_else(|| {
                         let cloud_view_model = ObjectStoreViewModel::as_ref(app);
                         match self.index_variant {
-                            DriveIndexVariant::MainIndex => cloud_model
+                            DriveIndexVariant::MainIndex => object_store_model
                                 .active_cloud_objects_in_location_without_descendents(
                                     StoredObjectLocation::Folder(folder.id),
                                     app,
@@ -2677,7 +2682,7 @@ impl DriveIndex {
                                     UpdateTimestamp::Revision,
                                     app,
                                 )),
-                            DriveIndexVariant::Trash => cloud_model
+                            DriveIndexVariant::Trash => object_store_model
                                 .indirectly_trashed_cloud_objects_in_location_without_descendents(
                                     StoredObjectLocation::Folder(folder.id),
                                     app,
@@ -2694,7 +2699,7 @@ impl DriveIndex {
 
                 let item_iter = results
                     .into_iter()
-                    .filter_map(|uid| cloud_model.get_by_uid(&uid));
+                    .filter_map(|uid| object_store_model.get_by_uid(&uid));
 
                 item_iter.for_each(|object| {
                     // TODO: Remove this check once we change our permissions logic. This is a temporary
@@ -2709,7 +2714,7 @@ impl DriveIndex {
                             space_index + total_rows_for_item,
                             folder_depth + 1,
                             active_hover_preview,
-                            cloud_model,
+                            object_store_model,
                             appearance,
                             app,
                         ) {
@@ -3112,16 +3117,16 @@ impl DriveIndex {
             return;
         }
 
-        let cloud_model = ObjectStoreModel::handle(ctx);
+        let object_store_model = ObjectStoreModel::handle(ctx);
 
         // Only proceed if we can move the object to this location AND the operation results in a change.
         // Even though an object technically can be moved to its current location (can_move_object_to_location returns true)
         // we do not need to do any of the update logic that follows.
-        if !cloud_model.as_ref(ctx).can_move_object_to_location(
+        if !object_store_model.as_ref(ctx).can_move_object_to_location(
             &object_type_and_id.uid(),
             new_location,
             ctx,
-        ) || cloud_model
+        ) || object_store_model
             .as_ref(ctx)
             .object_location(&object_type_and_id.uid(), ctx)
             .is_none_or(|location| location == new_location)
@@ -3169,8 +3174,8 @@ impl DriveIndex {
         match new_location {
             StoredObjectLocation::Space(space) => self.open_section_of_space(space),
             StoredObjectLocation::Folder(folder_id) => {
-                cloud_model.update(ctx, |cloud_model, ctx| {
-                    cloud_model.open_folder(folder_id, ctx);
+                object_store_model.update(ctx, |object_store_model, ctx| {
+                    object_store_model.open_folder(folder_id, ctx);
                 });
             }
             // If location is the trash, then the above move_[object]_to_location call already trashed the object
@@ -3387,11 +3392,11 @@ impl DriveIndex {
                             }
                         }
                         ObjectTypeAndId::Folder(folder_id) => {
-                            let cloud_model = ObjectStoreModel::handle(ctx);
+                            let object_store_model = ObjectStoreModel::handle(ctx);
 
                             // When untrashing a folder, check to see if there are any notebooks or workflows
                             // in the trashed folder and make sure they are within limits.
-                            let trashed_object_types = cloud_model
+                            let trashed_object_types = object_store_model
                                 .as_ref(ctx)
                                 .trashed_cloud_object_types_in_location_with_descendants(
                                     StoredObjectLocation::Folder(*folder_id),
@@ -4530,8 +4535,8 @@ impl DriveIndex {
 
         let access_level =
             ObjectStoreViewModel::as_ref(app).access_level(&object_type_and_id.uid(), app);
-        let cloud_model = ObjectStoreModel::as_ref(app);
-        let object = cloud_model.get_by_uid(&object_type_and_id.uid());
+        let object_store_model = ObjectStoreModel::as_ref(app);
+        let object = object_store_model.get_by_uid(&object_type_and_id.uid());
 
         if let Some(object) = object {
             if self.is_online(app) && object.metadata().is_errored() {
@@ -4702,13 +4707,19 @@ impl DriveIndex {
                         }
                     }
                     ObjectTypeAndId::Folder(id) => {
-                        ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| match key {
-                            DriveIndexAction::EnterKey => {
-                                cloud_model.toggle_folder_open(*id, ctx);
+                        ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, ctx| {
+                            match key {
+                                DriveIndexAction::EnterKey => {
+                                    object_store_model.toggle_folder_open(*id, ctx);
+                                }
+                                DriveIndexAction::LeftArrowKey => {
+                                    object_store_model.close_folder(*id, ctx)
+                                }
+                                DriveIndexAction::RightArrowKey => {
+                                    object_store_model.open_folder(*id, ctx)
+                                }
+                                _ => {}
                             }
-                            DriveIndexAction::LeftArrowKey => cloud_model.close_folder(*id, ctx),
-                            DriveIndexAction::RightArrowKey => cloud_model.open_folder(*id, ctx),
-                            _ => {}
                         });
                     }
                     ObjectTypeAndId::GenericStringObject { object_type, id: _ } => {
@@ -4985,8 +4996,8 @@ impl TypedActionView for DriveIndex {
                     })
                     .unwrap_or_else(|| OperatingSystem::get().default_shell_family());
 
-                let cloud_model = ObjectStoreModel::as_ref(ctx);
-                let object = cloud_model.get_by_uid(&object_type_and_id.uid());
+                let object_store_model = ObjectStoreModel::as_ref(ctx);
+                let object = object_store_model.get_by_uid(&object_type_and_id.uid());
 
                 if let Some(object) = object {
                     match object.object_type() {
@@ -5159,13 +5170,13 @@ impl TypedActionView for DriveIndex {
                         ctx,
                     );
                 }
-                ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
-                    cloud_model.toggle_folder_open(*id, ctx);
+                ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, ctx| {
+                    object_store_model.toggle_folder_open(*id, ctx);
                 });
             }
             DriveIndexAction::CollapseAllInLocation(location) => {
-                ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
-                    cloud_model.collapse_all_in_location(*location, self.index_variant, ctx);
+                ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, ctx| {
+                    object_store_model.collapse_all_in_location(*location, self.index_variant, ctx);
                 });
             }
             DriveIndexAction::TrashObject { object_type_and_id } => {

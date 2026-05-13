@@ -178,16 +178,16 @@ impl NotebookEmbed {
     }
 
     fn maybe_get_workflow<'a>(&self, ctx: &'a AppContext) -> Option<&'a WorkflowObject> {
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
 
         // Currently we are only supporting embedded workflows. We could support
         // more drive objects in the future.
         let id = WorkflowId::from_hash(&self.hashed_id)?;
-        cloud_model
+        object_store_model
             .get_by_uid(&id.to_server_id().uid())
             .and_then(|object| object.as_any().downcast_ref::<WorkflowObject>())
             .and_then(|workflow| {
-                if workflow.is_trashed(cloud_model) {
+                if workflow.is_trashed(object_store_model) {
                     None
                 } else {
                     Some(workflow)

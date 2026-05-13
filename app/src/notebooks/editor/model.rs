@@ -215,8 +215,8 @@ impl NotebooksEditorModel {
             Self::handle_interaction_state_model_event,
         );
 
-        let cloud_model = ObjectStoreModel::handle(ctx);
-        ctx.subscribe_to_model(&cloud_model, |me, event, ctx| {
+        let object_store_model = ObjectStoreModel::handle(ctx);
+        ctx.subscribe_to_model(&object_store_model, |me, event, ctx| {
             me.handle_object_store_event(event, ctx)
         });
 

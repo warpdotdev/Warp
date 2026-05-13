@@ -740,7 +740,7 @@ fn handle_terminal_view_event(
                 ctx.notify();
             }
             // OpenWarp Wave 7-3:`Event::EnvironmentSetupModeSelectorToggled` handler 随
-            // Cloud Mode UI 子系统物理删。
+            // ambient-agent UI 子系统物理删。
             Event::AnonymousUserSignup => ctx.emit(pane_group::Event::AnonymousUserSignup),
             #[cfg(feature = "local_fs")]
             Event::OpenFileWithTarget {
@@ -843,7 +843,7 @@ fn handle_terminal_view_event(
                     initial_content: initial_content.clone(),
                 });
             }
-            // OpenWarp Wave 7-3:`OpenEnvironmentManagementPane` event forwarding 随 Cloud Mode UI
+            // OpenWarp Wave 7-3:`OpenEnvironmentManagementPane` event forwarding 随 ambient-agent UI
             // 子系统物理删。
             #[cfg(feature = "local_fs")]
             Event::FileRenamed { old_path, new_path } => {

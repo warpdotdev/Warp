@@ -248,7 +248,7 @@ impl View for AmbientAgentEntryBlock {
                 blended_colors::fg_overlay_1(appearance.theme())
             };
             render_block_container(
-                AgentViewEntryOrigin::CloudAgent,
+                AgentViewEntryOrigin::AmbientAgent,
                 row.finish(),
                 background.into(),
                 appearance,

@@ -110,7 +110,7 @@ pub enum SettingsPageViewHandle {
     // 云端 API key 管理 UI 完全代表 Warp Inc 云端账号,与 BYOP 无关。
     // OpenWarp Wave 6-8:`SharedBlocks` / `Referrals` variant 随 `ShowBlocksView` /
     // `ReferralsPageView` 与对应 ServerApi client trait 物理删。
-    // OpenWarp Wave 7-3:`CloudEnvironments` variant 随 Cloud Mode UI 子系统物理删。
+    // OpenWarp Wave 7-3:`CloudEnvironments` variant 随 ambient-agent UI 子系统物理删。
     Privacy(ViewHandle<PrivacyPageView>),
     Warpify(ViewHandle<WarpifyPageView>),
     AI(ViewHandle<AISettingsPageView>),
@@ -131,7 +131,7 @@ impl SettingsPageViewHandle {
             Teams(view_handle) => ChildView::new(view_handle).finish(),
             // OpenWarp Wave 3-1:`OzCloudAPIKeys` arm 随 `platform_page` 一同物理删。
             // OpenWarp Wave 6-8:`SharedBlocks` / `Referrals` arm 随 variant 物理删。
-            // OpenWarp Wave 7-3:`CloudEnvironments` arm 随 Cloud Mode UI 一同物理删。
+            // OpenWarp Wave 7-3:`CloudEnvironments` arm 随 ambient-agent UI 一同物理删。
             Privacy(view_handle) => ChildView::new(view_handle).finish(),
             Warpify(view_handle) => ChildView::new(view_handle).finish(),
             AI(view_handle) => ChildView::new(view_handle).finish(),
@@ -192,7 +192,7 @@ pub enum SettingsPageEvent {
     FocusModal,
     Pane(PaneEventWrapper),
     // OpenWarp Wave 7-3:`EnvironmentSetupModeSelectorToggled` /
-    // `AgentAssistedEnvironmentModalToggled` 随 Cloud Mode UI 子系统物理删。
+    // `AgentAssistedEnvironmentModalToggled` 随 ambient-agent UI 子系统物理删。
 }
 
 /// Wrapper for pane events to avoid circular dependency with pane module.

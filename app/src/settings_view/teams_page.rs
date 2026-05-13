@@ -296,7 +296,7 @@ impl Tabs for TeamsInviteOption {
         TeamsPageAction::ChangeInviteViewOption(selection)
     }
 
-    fn label(&self, _team: &Team, _cloud_model: &ObjectStoreModel) -> String {
+    fn label(&self, _team: &Team, _object_store_model: &ObjectStoreModel) -> String {
         self.tab_name()
     }
 }
@@ -384,7 +384,7 @@ pub struct TeamsPageView {
     user_workspaces: ModelHandle<UserWorkspaces>,
     ai_request_usage_model: ModelHandle<AIRequestUsageModel>,
     pricing_info_model: ModelHandle<PricingInfoModel>,
-    cloud_model: ModelHandle<ObjectStoreModel>,
+    object_store_model: ModelHandle<ObjectStoreModel>,
     invite_view: TeamsInviteOption,
     team_members_mouse_state_handles: Vec<MouseStateHandle>,
     team_approved_domains_mouse_state_handles: Vec<MouseStateHandle>,
@@ -595,8 +595,8 @@ impl TeamsPageView {
             ctx.notify();
         });
 
-        let cloud_model = ObjectStoreModel::handle(ctx);
-        ctx.observe(&cloud_model, |me, _, ctx| {
+        let object_store_model = ObjectStoreModel::handle(ctx);
+        ctx.observe(&object_store_model, |me, _, ctx| {
             me.update_team_members_state(ctx);
             me.update_approved_domains_state(ctx);
         });
@@ -742,7 +742,7 @@ impl TeamsPageView {
             user_workspaces,
             ai_request_usage_model: AIRequestUsageModel::handle(ctx),
             pricing_info_model,
-            cloud_model,
+            object_store_model,
             invite_view: TeamsInviteOption::default(),
             team_members_mouse_state_handles,
             team_approved_domains_mouse_state_handles,
@@ -1752,7 +1752,7 @@ impl TeamsWidget {
     fn render_team_management_page(
         &self,
         team_metadata: &Team,
-        cloud_model: &ObjectStoreModel,
+        object_store_model: &ObjectStoreModel,
         ai_request_usage_model: &AIRequestUsageModel,
         view: &TeamsPageView,
         appearance: &Appearance,
@@ -1799,9 +1799,14 @@ impl TeamsWidget {
         if has_plan_limit {
             // Render plan usage and limits
             main_content.add_child(
-                Container::new(self.render_plan_usage(team_metadata, cloud_model, appearance, app))
-                    .with_padding_top(CONTENT_SEPARATION_PADDING)
-                    .finish(),
+                Container::new(self.render_plan_usage(
+                    team_metadata,
+                    object_store_model,
+                    appearance,
+                    app,
+                ))
+                .with_padding_top(CONTENT_SEPARATION_PADDING)
+                .finish(),
             )
         }
 
@@ -1989,7 +1994,7 @@ impl TeamsWidget {
     fn render_plan_usage(
         &self,
         team: &Team,
-        cloud_model: &ObjectStoreModel,
+        object_store_model: &ObjectStoreModel,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -2010,7 +2015,7 @@ impl TeamsWidget {
                     crate::t!("settings-teams-shared-notebooks"),
                     appearance,
                 ));
-                let num_shared_notebooks = cloud_model
+                let num_shared_notebooks = object_store_model
                     .active_notebooks_in_space(Space::Team { team_uid: team.uid }, app)
                     .count();
                 shared_notebooks_column.add_child(
@@ -2036,7 +2041,7 @@ impl TeamsWidget {
                     crate::t!("settings-teams-shared-workflows"),
                     appearance,
                 ));
-                let num_shared_workflows = cloud_model
+                let num_shared_workflows = object_store_model
                     .active_workflows_in_space(Space::Team { team_uid: team.uid }, app)
                     .count();
                 shared_workflows_column.add_child(
@@ -3633,13 +3638,13 @@ impl SettingsWidget for TeamsWidget {
         // related to team administration when offline.
         let content = if NetworkStatus::as_ref(app).is_online() {
             let teams = view.user_workspaces.as_ref(app);
-            let cloud_model = view.cloud_model.as_ref(app);
+            let object_store_model = view.object_store_model.as_ref(app);
             let ai_request_usage_model = view.ai_request_usage_model.as_ref(app);
 
             match teams.current_team() {
                 Some(team) => self.render_team_management_page(
                     team,
-                    cloud_model,
+                    object_store_model,
                     ai_request_usage_model,
                     view,
                     appearance,

@@ -157,7 +157,7 @@ pub use pane::ai_fact_pane::AIFactPane;
 pub use pane::code_diff_pane::CodeDiffPane;
 pub use pane::code_pane::CodePane;
 pub use pane::env_var_collection_pane::EnvVarCollectionPane;
-// OpenWarp Wave 7-3:`EnvironmentManagementPane` 随 Cloud Mode UI 子系统物理删。
+// OpenWarp Wave 7-3:`EnvironmentManagementPane` 随 ambient-agent UI 子系统物理删。
 pub use pane::execution_profile_editor_pane::ExecutionProfileEditorPane;
 pub use pane::file_pane::FilePane;
 pub use pane::notebook_pane::NotebookPane;
@@ -623,7 +623,7 @@ pub enum Event {
         initial_content: Option<String>,
     },
     OpenAddRulePane,
-    // OpenWarp Wave 7-3:`OpenEnvironmentManagementPane` event 随 Cloud Mode UI
+    // OpenWarp Wave 7-3:`OpenEnvironmentManagementPane` event 随 ambient-agent UI
     // 子系统物理删。
     OpenFilesPalette {
         source: PaletteSource,
@@ -809,7 +809,7 @@ pub struct PaneGroup {
 
     /// Pane with an open environment setup mode selector modal (rendered at tab level).
     // OpenWarp Wave 7-3:`pane_with_open_environment_setup_mode_selector` /
-    // `pane_with_open_agent_assisted_environment_modal` 随 Cloud Mode UI 子系统
+    // `pane_with_open_agent_assisted_environment_modal` 随 ambient-agent UI 子系统
     // 物理删。
 
     /// If the left panel is open for this pane group
@@ -948,8 +948,8 @@ enum AmbientRestoreKind {
     /// defer the real restoration to the pending-restoration subscription
     /// (which waits for the data to be loaded async).
     PendingRestoration { task_id: AmbientAgentTaskId },
-    /// If there's no task ID to restore, we open a fresh cloud mode pane
-    /// (this is a valid state from when a user quits with an empty cloud mode pane).
+    /// If there's no task ID to restore, we open a fresh ambient-agent pane
+    /// (this is a valid state from when a user quits with an empty ambient-agent pane).
     NewCloudConversation,
 }
 
@@ -1836,7 +1836,7 @@ impl PaneGroup {
                     };
                     Ok((PaneData::new(pane_id), focus))
                 }
-            } // OpenWarp Wave 7-3:`EnvironmentManagement` LeafContents arm 随 Cloud Mode UI
+            } // OpenWarp Wave 7-3:`EnvironmentManagement` LeafContents arm 随 ambient-agent UI
               // 子系统物理删。
         };
 
@@ -2469,7 +2469,7 @@ impl PaneGroup {
             user_default_shell_changed_banner,
             active_file_model,
             terminal_with_open_summarization_dialog: None,
-            // OpenWarp Wave 7-3:Cloud Mode UI 子系统中的 pane-level modal 跟踪
+            // OpenWarp Wave 7-3:ambient-agent UI 子系统中的 pane-level modal 跟踪
             // 字段随 UI 物理删。
             right_panel_open: false,
             left_panel_open: false,
@@ -2621,7 +2621,7 @@ impl PaneGroup {
         (PaneData::new(pane_id), focus)
     }
 
-    fn create_cloud_mode_terminal(
+    fn create_ambient_agent_loading_terminal(
         resources: TerminalViewResources,
         view_bounds_size: Vector2F,
         ctx: &mut ViewContext<Self>,
@@ -2643,7 +2643,7 @@ impl PaneGroup {
         ModelHandle<Box<dyn TerminalManager>>,
     ) {
         let (terminal_view, terminal_manager) =
-            Self::create_cloud_mode_terminal(resources, view_bounds_size, ctx);
+            Self::create_ambient_agent_loading_terminal(resources, view_bounds_size, ctx);
 
         terminal_view.update(ctx, |view, ctx| {
             view.enter_ambient_agent_setup(None, ctx);
@@ -3210,7 +3210,7 @@ impl PaneGroup {
                     // it passes `should_hide_block`'s agent view filter.
                     view.enter_agent_view_for_new_conversation(
                         None,
-                        AgentViewEntryOrigin::ThirdPartyCloudAgent,
+                        AgentViewEntryOrigin::ExternalAmbientAgent,
                         ctx,
                     );
                     if let Some(vehicle_conversation_id) = view.active_conversation_id(ctx) {
@@ -3371,7 +3371,7 @@ impl PaneGroup {
         };
         let view_bounds = Self::estimated_view_bounds(ctx);
         let (view, terminal_manager) =
-            Self::create_cloud_mode_terminal(resources, view_bounds.size(), ctx);
+            Self::create_ambient_agent_terminal(resources, view_bounds.size(), ctx);
         let pane_data = TerminalPane::new(
             uuid.as_bytes().to_vec(),
             terminal_manager,
@@ -3868,7 +3868,7 @@ impl PaneGroup {
             }
 
             // OpenWarp:删除 share_block_modal cleanup(云端 share block)
-            // OpenWarp Wave 7-3:Cloud Mode UI 子系统中的 pane-level modal 跟踪
+            // OpenWarp Wave 7-3:ambient-agent UI 子系统中的 pane-level modal 跟踪
             // 字段 cleanup 随 UI 物理删。
 
             self.focus_next_terminal_pane_and_activate_session(
@@ -3892,7 +3892,7 @@ impl PaneGroup {
             self.clean_up_pane(pane_id, ctx);
 
             // OpenWarp:删除 share_block_modal cleanup(云端 share block)
-            // OpenWarp Wave 7-3:Cloud Mode UI 子系统中的 pane-level modal 跟踪
+            // OpenWarp Wave 7-3:ambient-agent UI 子系统中的 pane-level modal 跟踪
             // 字段 cleanup 随 UI 物理删。
 
             self.focus_next_terminal_pane_and_activate_session(
@@ -6227,7 +6227,7 @@ impl View for PaneGroup {
         }
 
         // OpenWarp Wave 7-3:environment setup mode selector / agent-assisted environment
-        // modal 在 tab 层级的覆盖渲染随 Cloud Mode UI 子系统物理删。
+        // modal 在 tab 层级的覆盖渲染随 ambient-agent UI 子系统物理删。
 
         stack.finish()
     }

@@ -196,8 +196,8 @@ pub struct PresenceManager {
     /// Our own Participant ID.
     id: ParticipantId,
 
-    /// Our own Firebase UID.
-    firebase_uid: UserUid,
+    /// Our own user UID.
+    user_uid: UserUid,
 
     /// Our own role, None iff is sharer.
     pub role: Option<Role>,
@@ -251,10 +251,10 @@ pub fn get_available_color(chosen_colors: &HashSet<ColorU>) -> ColorU {
 }
 
 impl PresenceManager {
-    pub fn new_for_sharer(id: ParticipantId, firebase_uid: UserUid) -> Self {
+    pub fn new_for_sharer(id: ParticipantId, user_uid: UserUid) -> Self {
         Self {
             id: id.clone(),
-            firebase_uid,
+            user_uid,
             role: None,
             sharer_id: id,
             sharer: None,
@@ -270,7 +270,7 @@ impl PresenceManager {
 
     pub fn new_for_viewer(
         id: ParticipantId,
-        firebase_uid: UserUid,
+        user_uid: UserUid,
         participants: ParticipantList,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
@@ -288,7 +288,7 @@ impl PresenceManager {
 
         let mut manager = Self {
             id,
-            firebase_uid,
+            user_uid,
             role: Some(Role::default()),
             sharer_id: participants.sharer.info.id.clone(),
             sharer: Some(sharer),
@@ -309,9 +309,9 @@ impl PresenceManager {
         self.id.clone()
     }
 
-    /// Returns our own Firebase UID.
-    pub fn firebase_uid(&self) -> UserUid {
-        self.firebase_uid
+    /// Returns our own user UID.
+    pub fn user_uid(&self) -> UserUid {
+        self.user_uid
     }
 
     /// Returns the sharer's participant id.
@@ -734,18 +734,18 @@ impl PresenceManager {
     }
 
     /// Returns a viewer's firebase uid, if the viewer is known to us.
-    pub fn viewer_firebase_uid(&self, viewer_id: &ParticipantId) -> Option<UserUid> {
+    pub fn viewer_user_uid(&self, viewer_id: &ParticipantId) -> Option<UserUid> {
         if *viewer_id == self.id {
-            return Some(self.firebase_uid);
+            return Some(self.user_uid);
         }
 
         self.present_viewers
             .get(viewer_id)
-            .map(|v| v.info.profile_data.firebase_uid.as_str())
+            .map(|v| v.info.profile_data.user_uid.as_str())
             .or_else(|| {
                 self.absent_viewers
                     .get(viewer_id)
-                    .map(|v| v.participant_info.profile_data.firebase_uid.as_str())
+                    .map(|v| v.participant_info.profile_data.user_uid.as_str())
             })
             .map(UserUid::new)
     }
@@ -756,17 +756,17 @@ impl PresenceManager {
         &self,
         viewer_uid: UserUid,
     ) -> impl Iterator<Item = &ParticipantId> + '_ {
-        let is_viewer_self = self.firebase_uid == viewer_uid;
+        let is_viewer_self = self.user_uid == viewer_uid;
         let viewer_ids = self
             .present_viewers
             .values()
-            .filter(move |v| viewer_uid.as_string() == v.info.profile_data.firebase_uid)
+            .filter(move |v| viewer_uid.as_string() == v.info.profile_data.user_uid)
             .map(|v| &v.info.id);
         viewer_ids.chain(is_viewer_self.then_some(&self.id))
     }
 
     /// Returns a participant ID for a participant associated with the given
-    /// Firebase UID.
+    /// user UID.
     pub fn present_viewer_id_for_uid(&self, viewer_uid: UserUid) -> Option<&ParticipantId> {
         self.present_viewer_ids_for_uid(viewer_uid).next()
     }

@@ -3345,7 +3345,7 @@ impl FeaturesPageView {
                         *val != DefaultSessionMode::DockerSandbox || docker_sandbox_enabled
                     })
                     // 去中心化分支:不再展示 Oz / Agent 选项。
-                    .filter(|val| *val != DefaultSessionMode::CloudAgent)
+                    .filter(|val| *val != DefaultSessionMode::AmbientAgent)
                     .map(|val| {
                         DropdownItem::new(
                             val.display_name(),

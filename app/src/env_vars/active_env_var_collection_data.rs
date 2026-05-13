@@ -47,9 +47,9 @@ impl ActiveEnvVarCollectionData {
         // /Untrash::Success),无云 = 永不触发;`trash_object`/`untrash_object` 已本地化
         // 不 emit `ObjectOperationComplete`。Phase 2c‑1 删除订阅 + handler。
         // `ObjectStoreModel` 订阅保留(本地对象变更仍需 breadcrumbs 刷新)。
-        let cloud_model = ObjectStoreModel::handle(ctx);
+        let object_store_model = ObjectStoreModel::handle(ctx);
 
-        ctx.subscribe_to_model(&cloud_model, |me, event, ctx| {
+        ctx.subscribe_to_model(&object_store_model, |me, event, ctx| {
             me.handle_object_store_event(event, ctx);
         });
 
@@ -193,10 +193,10 @@ impl ActiveEnvVarCollectionData {
                 TrashStatus::Active
             }
             ActiveEnvVarCollection::CommittedEnvVarCollection(id) => {
-                let cloud_model = ObjectStoreModel::as_ref(ctx);
-                match cloud_model.get_env_var_collection(id) {
+                let object_store_model = ObjectStoreModel::as_ref(ctx);
+                match object_store_model.get_env_var_collection(id) {
                     Some(env_var_collection) => {
-                        if env_var_collection.is_trashed(cloud_model) {
+                        if env_var_collection.is_trashed(object_store_model) {
                             TrashStatus::Trashed
                         } else {
                             TrashStatus::Active

@@ -159,7 +159,7 @@ impl RuleEditorView {
 
     pub fn set_ai_rule(&mut self, sync_id: Option<SyncId>, ctx: &mut ViewContext<Self>) {
         if let Some(sync_id) = sync_id {
-            // Get the AIFact from the cloud model
+            // Get the AIFact from the object store
             let Some(ai_fact) = ObjectStoreModel::as_ref(ctx)
                 .get_object_of_type::<GenericStringObjectId, AIFactObjectModel>(&sync_id)
             else {

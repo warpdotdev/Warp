@@ -57,9 +57,9 @@ pub fn create_a_personal_notebook(key: impl Into<String>, title: impl Into<Strin
             data.insert(key.clone(), sync_id);
         })
         .add_assertion(move |app, _| {
-            ObjectStoreModel::handle(app).read(app, |cloud_model, ctx| {
+            ObjectStoreModel::handle(app).read(app, |object_store_model, ctx| {
                 async_assert!(
-                    cloud_model
+                    object_store_model
                         .active_cloud_objects_in_space(Space::Personal, ctx)
                         .count()
                         > 0,

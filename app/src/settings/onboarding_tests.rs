@@ -77,8 +77,8 @@ fn apply_onboarding_settings_preserves_existing_profile_object_on_existing_user_
         // Insert the existing user's stored profile without per-object events
         // and emit `InitialLoadCompleted` so `AIExecutionProfilesModel`
         // reconciles to `Synced`.
-        ObjectStoreModel::handle(&app).update(&mut app, move |cloud_model, ctx| {
-            cloud_model.add_object(cloud_sync_id, profile_object);
+        ObjectStoreModel::handle(&app).update(&mut app, move |object_store_model, ctx| {
+            object_store_model.add_object(cloud_sync_id, profile_object);
             ctx.emit(ObjectStoreEvent::InitialLoadCompleted);
         });
 

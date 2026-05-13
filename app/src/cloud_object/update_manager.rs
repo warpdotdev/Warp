@@ -169,8 +169,8 @@ impl UpdateManager {
 
     /// Remove team-owned objects in response to leaving a team.
     pub fn remove_team_objects(&mut self, left_team_uid: ServerId, ctx: &mut ModelContext<Self>) {
-        let cloud_model = ObjectStoreModel::handle(ctx);
-        let objects_to_remove = cloud_model
+        let object_store_model = ObjectStoreModel::handle(ctx);
+        let objects_to_remove = object_store_model
             .as_ref(ctx)
             .all_cloud_objects_in_space(
                 Space::Team {
@@ -182,9 +182,9 @@ impl UpdateManager {
             .collect_vec();
 
         // First, delete in-memory from ObjectStoreModel and object actions.
-        cloud_model.update(ctx, |cloud_model, ctx| {
+        object_store_model.update(ctx, |object_store_model, ctx| {
             for object in objects_to_remove.iter() {
-                cloud_model.delete_object(object.sync_id(), ctx);
+                object_store_model.delete_object(object.sync_id(), ctx);
             }
         });
         ObjectActions::handle(ctx).update(ctx, |object_actions, ctx| {
@@ -220,19 +220,23 @@ impl UpdateManager {
         let _ = ctx;
     }
 
-    fn save_in_memory_object_to_sqlite(&mut self, cloud_model: &ObjectStoreModel, uid: &ObjectUid) {
-        if let Some(cloud_object) = cloud_model.get_by_uid(uid) {
+    fn save_in_memory_object_to_sqlite(
+        &mut self,
+        object_store_model: &ObjectStoreModel,
+        uid: &ObjectUid,
+    ) {
+        if let Some(cloud_object) = object_store_model.get_by_uid(uid) {
             self.save_to_db([cloud_object.upsert_event()]);
         }
     }
 
     fn save_in_memory_object_metadata_to_sqlite(
         &mut self,
-        cloud_model: &ObjectStoreModel,
+        object_store_model: &ObjectStoreModel,
         uid: &ObjectUid,
         hashed_sqlite_id: &str,
     ) {
-        if let Some(cloud_object) = cloud_model.get_by_uid(uid) {
+        if let Some(cloud_object) = object_store_model.get_by_uid(uid) {
             let metadata = cloud_object.metadata().clone();
             let event = ModelEvent::UpdateObjectMetadata {
                 id: hashed_sqlite_id.to_string(),
@@ -263,26 +267,28 @@ impl UpdateManager {
     /// Replace an object's data with its conflicting version. If the object does not have a
     /// conflict, this has no effect.
     pub fn replace_object_with_conflict(&mut self, uid: &ObjectUid, ctx: &mut ModelContext<Self>) {
-        let cloud_model_handle = ObjectStoreModel::handle(ctx);
+        let object_store_model_handle = ObjectStoreModel::handle(ctx);
 
         // Update the in-memory model first, and check for conflicts.
-        let had_conflicts = cloud_model_handle.update(ctx, |cloud_model, ctx| {
-            match cloud_model.get_mut_by_uid(uid) {
-                Some(object) if object.has_conflicting_changes() => {
-                    object.replace_object_with_conflict();
-                    ctx.emit(ObjectStoreEvent::ObjectUpdated {
-                        type_and_id: object.object_type_and_id(),
-                        source: UpdateSource::External,
-                    });
-                    true
-                }
-                _ => false,
-            }
-        });
+        let had_conflicts =
+            object_store_model_handle.update(
+                ctx,
+                |object_store_model, ctx| match object_store_model.get_mut_by_uid(uid) {
+                    Some(object) if object.has_conflicting_changes() => {
+                        object.replace_object_with_conflict();
+                        ctx.emit(ObjectStoreEvent::ObjectUpdated {
+                            type_and_id: object.object_type_and_id(),
+                            source: UpdateSource::External,
+                        });
+                        true
+                    }
+                    _ => false,
+                },
+            );
 
         // Update SQLite, but only if the in-memory model was updated.
         if had_conflicts {
-            self.save_in_memory_object_to_sqlite(cloud_model_handle.as_ref(ctx), uid);
+            self.save_in_memory_object_to_sqlite(object_store_model_handle.as_ref(ctx), uid);
         }
     }
 
@@ -368,9 +374,9 @@ impl UpdateManager {
         notebook_id: SyncId,
         ctx: &mut ModelContext<Self>,
     ) {
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
-        let revision = cloud_model.current_revision(&notebook_id).cloned();
-        if let Some(notebook) = cloud_model.get_notebook(&notebook_id) {
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
+        let revision = object_store_model.current_revision(&notebook_id).cloned();
+        if let Some(notebook) = object_store_model.get_notebook(&notebook_id) {
             let new_notebook = NotebookObjectModel {
                 title: notebook.model().title.to_owned(),
                 data: data.to_string(),
@@ -389,9 +395,9 @@ impl UpdateManager {
         notebook_id: SyncId,
         ctx: &mut ModelContext<Self>,
     ) {
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
-        let revision = cloud_model.current_revision(&notebook_id).cloned();
-        if let Some(notebook) = cloud_model.get_notebook(&notebook_id) {
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
+        let revision = object_store_model.current_revision(&notebook_id).cloned();
+        if let Some(notebook) = object_store_model.get_notebook(&notebook_id) {
             let new_notebook = NotebookObjectModel {
                 title: title.to_string(),
                 data: notebook.model().data.to_owned(),
@@ -421,8 +427,8 @@ impl UpdateManager {
         // OpenWarp:云端移动 RPC 已删除,这里折叠为本地直写并清
         // has_pending_metadata_change 位。
         let _ = (object_type, owner, destination_folder);
-        ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
-            if let Some(obj) = cloud_model.get_mut_by_uid(&server_id.uid()) {
+        ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, ctx| {
+            if let Some(obj) = object_store_model.get_mut_by_uid(&server_id.uid()) {
                 obj.metadata_mut()
                     .pending_changes_statuses
                     .has_pending_metadata_change = false;
@@ -464,8 +470,8 @@ impl UpdateManager {
             let _ = self.copy_workflow_enums_to_drive(server_id, destination_owner, ctx);
         }
 
-        ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
-            if let Some(obj) = cloud_model.get_mut_by_uid(&server_id.uid()) {
+        ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, ctx| {
+            if let Some(obj) = object_store_model.get_mut_by_uid(&server_id.uid()) {
                 obj.metadata_mut()
                     .pending_changes_statuses
                     .has_pending_permissions_change = false;
@@ -503,8 +509,9 @@ impl UpdateManager {
             // Duplicate all enums associated with the workflow
             let enums = workflow_model.get_enum_ids();
             for enum_id in enums.iter() {
-                let cloud_model = ObjectStoreModel::as_ref(ctx);
-                let object: Option<&WorkflowEnumObject> = cloud_model.get_object_of_type(enum_id);
+                let object_store_model = ObjectStoreModel::as_ref(ctx);
+                let object: Option<&WorkflowEnumObject> =
+                    object_store_model.get_object_of_type(enum_id);
                 let Some(object) = object else {
                     log::error!("Could not find referenced workflow enum to copy over to the new space, skipping");
                     continue;
@@ -730,8 +737,8 @@ impl UpdateManager {
         M: StoredObjectModel<IdType = K, StoredObjectType = GenericStoredObject<K, M>> + 'static,
     {
         let (duplicate_model, client_id, owner, initial_folder_id, entrypoint) = {
-            let cloud_model = ObjectStoreModel::as_ref(ctx);
-            let object: GenericStoredObject<K, M> = cloud_model
+            let object_store_model = ObjectStoreModel::as_ref(ctx);
+            let object: GenericStoredObject<K, M> = object_store_model
                 .get_object_of_type(id)
                 .expect("object should exist in order to be duplicated")
                 .clone();
@@ -740,8 +747,11 @@ impl UpdateManager {
             let initial_folder_id = object.metadata.folder_id;
             let entrypoint = StoredObjectEventEntrypoint::Unknown;
             let mut duplicate_model = object.model().clone();
-            let duplicate_name =
-                self.get_next_duplicate_object_name(&object as &dyn StoredObject, cloud_model, ctx);
+            let duplicate_name = self.get_next_duplicate_object_name(
+                &object as &dyn StoredObject,
+                object_store_model,
+                ctx,
+            );
             duplicate_model.set_display_name(&duplicate_name);
             (
                 duplicate_model,
@@ -887,16 +897,16 @@ impl UpdateManager {
     fn get_next_duplicate_object_name(
         &self,
         original_cloud_object: &dyn StoredObject,
-        cloud_model: &ObjectStoreModel,
+        object_store_model: &ObjectStoreModel,
         app: &AppContext,
     ) -> String {
         let original_name = original_cloud_object.display_name();
 
         // Iterate through items in the same folder as the original object that are of the
         // same type, and populate a hashset with those names.
-        let same_type_and_folder_names = cloud_model
+        let same_type_and_folder_names = object_store_model
             .active_cloud_objects_in_location_without_descendents(
-                original_cloud_object.location(cloud_model, app),
+                original_cloud_object.location(object_store_model, app),
                 app,
             )
             .filter(|&object| object.object_type() == original_cloud_object.object_type())
@@ -1048,7 +1058,7 @@ impl UpdateManager {
         let initial_editor_uid = TEST_USER_UID.to_string();
 
         // Update in-memory model.
-        ObjectStoreModel::handle(ctx).update(ctx, move |cloud_model, ctx| {
+        ObjectStoreModel::handle(ctx).update(ctx, move |object_store_model, ctx| {
             let mut object = GenericStoredObject::<K, M>::new_local(
                 model.clone(),
                 owner,
@@ -1056,16 +1066,16 @@ impl UpdateManager {
                 client_id,
             );
             object.metadata.current_editor_uid = Some(initial_editor_uid.clone());
-            cloud_model.create_object(object_id, object, ctx);
+            object_store_model.create_object(object_id, object, ctx);
 
             if force_expand {
-                cloud_model.force_expand_object_and_ancestors(object_id, ctx);
+                object_store_model.force_expand_object_and_ancestors(object_id, ctx);
             }
         });
 
         // Update sqlite.
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
-        if let Some(object) = cloud_model.get_object_of_type::<K, M>(&object_id) {
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
+        if let Some(object) = object_store_model.get_object_of_type::<K, M>(&object_id) {
             self.save_to_db([object.upsert_event()]);
         }
     }
@@ -1098,14 +1108,14 @@ impl UpdateManager {
         let _ = revision_ts; // OpenWarp: 无服务端 revision 协调,忽略。
 
         // Update in-memory model.
-        ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
-            cloud_model.update_object_from_edit(model.clone(), object_id, ctx);
+        ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, ctx| {
+            object_store_model.update_object_from_edit(model.clone(), object_id, ctx);
             ctx.notify();
         });
 
         // Update sqlite.
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
-        if let Some(object) = cloud_model.get_object_of_type::<K, M>(&object_id) {
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
+        if let Some(object) = object_store_model.get_object_of_type::<K, M>(&object_id) {
             self.save_to_db([object.upsert_event()]);
         };
     }
@@ -1189,8 +1199,8 @@ impl UpdateManager {
         editor_uid: Option<String>,
         ctx: &mut ModelContext<Self>,
     ) {
-        ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
-            if let Some(notebook) = cloud_model.get_notebook_mut(notebook_id) {
+        ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, ctx| {
+            if let Some(notebook) = object_store_model.get_notebook_mut(notebook_id) {
                 notebook.metadata.set_current_editor(editor_uid);
                 ctx.notify();
             }
@@ -1246,8 +1256,8 @@ impl UpdateManager {
         ctx: &mut ModelContext<Self>,
     ) -> (Option<ServerTimestamp>, Option<ServerTimestamp>) {
         let timestamp = ServerTimestamp::new(Utc::now());
-        ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
-            if let Some(object) = cloud_model.get_mut_by_uid(uid) {
+        ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, ctx| {
+            if let Some(object) = object_store_model.get_mut_by_uid(uid) {
                 // Here, we write a timestamp to the trashed_ts field. The client will eventually update to
                 // the canonical version of the timestamp once it receives an rtc message from the server.
 
@@ -1284,14 +1294,14 @@ impl UpdateManager {
             // 必须在落 sqlite 前手动清掉,否则 upsert_stored_object 中
             // `if !has_pending_metadata_change` 分支会跳过 trashed_ts 字段写入,
             // 导致重启后从 sqlite 加载到的 trashed_ts 为 NULL,对象重新出现在 PERSONAL。
-            ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, _| {
-                if let Some(object) = cloud_model.get_mut_by_uid(&hashed_id) {
+            ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, _| {
+                if let Some(object) = object_store_model.get_mut_by_uid(&hashed_id) {
                     object
                         .metadata_mut()
                         .pending_changes_statuses
                         .has_pending_metadata_change = false;
                 }
-                self.save_in_memory_object_to_sqlite(cloud_model, &hashed_id);
+                self.save_in_memory_object_to_sqlite(object_store_model, &hashed_id);
             });
             ctx.notify();
             return;
@@ -1314,8 +1324,8 @@ impl UpdateManager {
         }
 
         self.mark_object_trashed_and_return_timestamps(&hashed_id, ctx);
-        ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, _| {
-            if let Some(object) = cloud_model.get_mut_by_uid(&hashed_id) {
+        ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, _| {
+            if let Some(object) = object_store_model.get_mut_by_uid(&hashed_id) {
                 object
                     .metadata_mut()
                     .pending_changes_statuses
@@ -1324,7 +1334,7 @@ impl UpdateManager {
 
             let hashed_sqlite_id = server_id.sqlite_type_and_uid_hash(id.object_id_type());
             self.save_in_memory_object_metadata_to_sqlite(
-                cloud_model,
+                object_store_model,
                 &hashed_id,
                 &hashed_sqlite_id,
             );
@@ -1350,8 +1360,8 @@ impl UpdateManager {
             // OpenWarp:本地对象 untrash —— 清 trashed_ts 同时把
             // has_pending_metadata_change 清掉(本地分支无服务端 ack),
             // 否则 upsert_stored_object 跳过 trashed_ts 写入,sqlite 仍为旧值。
-            ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
-                if let Some(object) = cloud_model.get_mut_by_uid(&hashed_id) {
+            ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, ctx| {
+                if let Some(object) = object_store_model.get_mut_by_uid(&hashed_id) {
                     object.metadata_mut().trashed_ts = None;
                     object
                         .metadata_mut()
@@ -1363,8 +1373,8 @@ impl UpdateManager {
                     });
                 }
             });
-            ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, _| {
-                self.save_in_memory_object_to_sqlite(cloud_model, &hashed_id);
+            ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, _| {
+                self.save_in_memory_object_to_sqlite(object_store_model, &hashed_id);
             });
             ctx.notify();
             return;
@@ -1387,8 +1397,8 @@ impl UpdateManager {
         }
 
         // OpenWarp:云端 untrash RPC 已删除,这里折叠为本地直写并清 pending_untrash 位。
-        ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
-            if let Some(object) = cloud_model.get_mut_by_uid(&hashed_id) {
+        ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, ctx| {
+            if let Some(object) = object_store_model.get_mut_by_uid(&hashed_id) {
                 object.metadata_mut().trashed_ts = None;
                 object
                     .metadata_mut()
@@ -1403,7 +1413,7 @@ impl UpdateManager {
                     source: UpdateSource::Local,
                 });
             }
-            self.save_in_memory_object_to_sqlite(cloud_model, &hashed_id);
+            self.save_in_memory_object_to_sqlite(object_store_model, &hashed_id);
         });
 
         let _ = server_id;
@@ -1484,16 +1494,17 @@ impl UpdateManager {
             }
         };
 
-        let cloud_model_handle = ObjectStoreModel::handle(ctx);
-        let deleted_ids: Vec<SyncId> = cloud_model_handle.read(ctx, |cloud_model, _| {
-            cloud_model
-                .cloud_objects()
-                .filter(|object| {
-                    object.permissions().owner == owner && object.is_trashed(cloud_model)
-                })
-                .map(|object| object.sync_id())
-                .collect()
-        });
+        let object_store_model_handle = ObjectStoreModel::handle(ctx);
+        let deleted_ids: Vec<SyncId> =
+            object_store_model_handle.read(ctx, |object_store_model, _| {
+                object_store_model
+                    .cloud_objects()
+                    .filter(|object| {
+                        object.permissions().owner == owner && object.is_trashed(object_store_model)
+                    })
+                    .map(|object| object.sync_id())
+                    .collect()
+            });
 
         let num_deleted_objects = self.on_object_delete_success(deleted_ids, ctx);
 
@@ -1520,16 +1531,16 @@ impl UpdateManager {
         deleted_ids: Vec<SyncId>,
         ctx: &mut ModelContext<'_, UpdateManager>,
     ) -> i32 {
-        let cloud_model_handle = ObjectStoreModel::handle(ctx);
+        let object_store_model_handle = ObjectStoreModel::handle(ctx);
         let all_object_uids: Vec<ObjectUid> = deleted_ids.iter().map(|&id| id.uid()).collect();
 
         // This variable counts the number of objects deleted client-side in each Empty Trash action,
         // because the server returns everything in the db, including objects that have already been marked for deletion
         let mut num_deleted_objects = 0;
         let mut sync_ids_and_types: Vec<(SyncId, ObjectIdType)> = Vec::new();
-        cloud_model_handle.update(ctx, |cloud_model, ctx| {
+        object_store_model_handle.update(ctx, |object_store_model, ctx| {
             (sync_ids_and_types, num_deleted_objects) =
-                cloud_model.delete_objects_by_id(all_object_uids.clone(), ctx);
+                object_store_model.delete_objects_by_id(all_object_uids.clone(), ctx);
         });
 
         // Deleted the actions associated with these objects too.
@@ -1558,9 +1569,9 @@ impl UpdateManager {
         new_name: String,
         ctx: &mut ModelContext<Self>,
     ) {
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
-        let revision = cloud_model.current_revision(&folder_id).cloned();
-        if let Some(folder) = cloud_model.get_folder(&folder_id) {
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
+        let revision = object_store_model.current_revision(&folder_id).cloned();
+        if let Some(folder) = object_store_model.get_folder(&folder_id) {
             let new_folder = FolderObjectModel {
                 name: new_name,
                 is_open: folder.model().is_open,

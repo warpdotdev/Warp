@@ -9,7 +9,7 @@ use crate::{
 fn test_roundtrip_guests() {
     let guests = vec![
         StoredObjectGuest {
-            subject: Subject::User(UserKind::Account(UserUid::new("firebase_uid"))),
+            subject: Subject::User(UserKind::Account(UserUid::new("local_user_uid"))),
             access_level: SharingAccessLevel::Edit,
             source: None,
         },

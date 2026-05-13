@@ -61,8 +61,8 @@ pub struct ActiveNotebookData {
 
 impl ActiveNotebookData {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
-        let cloud_model = ObjectStoreModel::handle(ctx);
-        ctx.subscribe_to_model(&cloud_model, |me, event, ctx| {
+        let object_store_model = ObjectStoreModel::handle(ctx);
+        ctx.subscribe_to_model(&object_store_model, |me, event, ctx| {
             me.handle_object_store_event(event, ctx);
         });
 
@@ -240,10 +240,10 @@ impl ActiveNotebookData {
         match &self.active_notebook {
             ActiveNotebook::None | ActiveNotebook::NewNotebook(_) => TrashStatus::Active,
             ActiveNotebook::CommittedNotebook(id) => {
-                let cloud_model = ObjectStoreModel::as_ref(ctx);
-                match cloud_model.get_notebook(id) {
+                let object_store_model = ObjectStoreModel::as_ref(ctx);
+                match object_store_model.get_notebook(id) {
                     Some(notebook) => {
-                        if notebook.is_trashed(cloud_model) {
+                        if notebook.is_trashed(object_store_model) {
                             TrashStatus::Trashed
                         } else {
                             TrashStatus::Active

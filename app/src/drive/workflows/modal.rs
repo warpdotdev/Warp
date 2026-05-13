@@ -253,8 +253,8 @@ impl WorkflowModal {
             me.handle_content_editor_event(event, ctx);
         });
 
-        let cloud_model = ObjectStoreModel::handle(ctx);
-        ctx.subscribe_to_model(&cloud_model, |me, _, event, ctx| {
+        let object_store_model = ObjectStoreModel::handle(ctx);
+        ctx.subscribe_to_model(&object_store_model, |me, _, event, ctx| {
             me.handle_object_store_event(event, ctx);
         });
 
@@ -632,8 +632,8 @@ impl WorkflowModal {
     // Identical to logic in DriveIndexAction::CopyObjectToClipboard
     fn copy_object_to_clipboard(&mut self, ctx: &mut ViewContext<Self>) {
         if let Some(workflow_id) = self.workflow_id {
-            let cloud_model = ObjectStoreModel::as_ref(ctx);
-            let object = cloud_model.get_by_uid(&workflow_id.uid());
+            let object_store_model = ObjectStoreModel::as_ref(ctx);
+            let object = object_store_model.get_by_uid(&workflow_id.uid());
 
             if let Some(object) = object {
                 match object.object_type() {

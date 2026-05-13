@@ -54,7 +54,7 @@ impl TerminalView {
         // Don't allow starting a new conversation while the agent is in control. 3p cloud
         // viewers enter agent view to wrap an existing run's content and are not starting a
         // new conversation, so they are exempt from this guard.
-        if !matches!(origin, AgentViewEntryOrigin::ThirdPartyCloudAgent)
+        if !matches!(origin, AgentViewEntryOrigin::ExternalAmbientAgent)
             && !self
                 .ai_context_model
                 .as_ref(ctx)

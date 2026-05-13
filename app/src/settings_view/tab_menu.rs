@@ -30,7 +30,7 @@ pub trait Tabs: PartialEq + Display + Copy {
     fn render_tab(
         &self,
         team: &Team,
-        cloud_model: &ObjectStoreModel,
+        object_store_model: &ObjectStoreModel,
         selected_view_option: &Self,
         mouse_state_handle: MouseStateHandle,
         appearance: &Appearance,
@@ -43,7 +43,7 @@ pub trait Tabs: PartialEq + Display + Copy {
                 self.button_variant(selected_view_option),
                 mouse_state_handle,
             )
-            .with_text_label(self.label(team, cloud_model))
+            .with_text_label(self.label(team, object_store_model))
             .with_style(UiComponentStyles::default().set_border_width(0.))
             .build()
             .on_click(move |ctx, _, _| ctx.dispatch_typed_action(action.clone()))
@@ -54,5 +54,5 @@ pub trait Tabs: PartialEq + Display + Copy {
     #[allow(dead_code)]
     fn action_on_click(&self, selection: Self) -> TeamsPageAction;
     #[allow(dead_code)]
-    fn label(&self, team: &Team, cloud_model: &ObjectStoreModel) -> String;
+    fn label(&self, team: &Team, object_store_model: &ObjectStoreModel) -> String;
 }

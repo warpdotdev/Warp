@@ -1547,7 +1547,7 @@ fn add_open_setting_pages_as_editable_binding(app: &mut AppContext) {
         // OpenWarp Wave 6-8:`workspace:show_settings_referrals_page` keybinding 随
         // `ReferralsPageView` 设置页物理删。
         // OpenWarp Wave 7-3:`workspace:show_settings_environments_page` keybinding 随
-        // Cloud Mode UI 子系统物理删。
+        // ambient-agent UI 子系统物理删。
         EditableBinding::new(
             "workspace:show_mcp_servers_settings_page",
             BindingDescription::new(crate::t!(

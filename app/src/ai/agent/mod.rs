@@ -2043,7 +2043,7 @@ pub enum AIAgentAttachment {
         current: Option<CurrentHead>,
         base: DiffBase,
     },
-    /// Reference to a file on the VM filesystem (e.g., downloaded attachments from cloud mode).
+    /// Reference to a file on the VM filesystem (e.g., attachments restored for an ambient-agent run).
     /// The server uses this to provide the file as an inline reference to the LLM.
     FilePathReference {
         /// The UUID of the attachment (from warp-server's presigned URL flow).

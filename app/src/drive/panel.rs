@@ -232,8 +232,8 @@ impl DrivePanel {
                 object_type_and_id,
                 open_mode,
             } => {
-                let cloud_model = ObjectStoreModel::as_ref(ctx);
-                let object = cloud_model.get_by_uid(&object_type_and_id.uid());
+                let object_store_model = ObjectStoreModel::as_ref(ctx);
+                let object = object_store_model.get_by_uid(&object_type_and_id.uid());
 
                 let workflow: Option<&WorkflowObject> = object.and_then(|object| object.into());
                 if let Some(workflow) = workflow {
@@ -241,8 +241,8 @@ impl DrivePanel {
                 }
             }
             DriveIndexEvent::OpenObject(object_type_and_id) => {
-                let cloud_model = ObjectStoreModel::as_ref(ctx);
-                let object = cloud_model.get_by_uid(&object_type_and_id.uid());
+                let object_store_model = ObjectStoreModel::as_ref(ctx);
+                let object = object_store_model.get_by_uid(&object_type_and_id.uid());
 
                 let notebook_id = object.and_then(|object| {
                     let notebook: Option<&NotebookObject> = object.into();
@@ -282,8 +282,8 @@ impl DrivePanel {
                 ctx.emit(DrivePanelEvent::OpenTeamSettingsPage)
             }
             DriveIndexEvent::RunObject(id) => {
-                let cloud_model = ObjectStoreModel::as_ref(ctx);
-                let object = cloud_model.get_by_uid(&id.uid());
+                let object_store_model = ObjectStoreModel::as_ref(ctx);
+                let object = object_store_model.get_by_uid(&id.uid());
                 if let Some(cloud_object) = object {
                     let workflow: Option<&WorkflowObject> = cloud_object.into();
                     let env_var_collection: Option<&EnvVarCollectionObject> = cloud_object.into();
@@ -308,8 +308,8 @@ impl DrivePanel {
                     *team_uid,
                 )),
             DriveIndexEvent::InvokeEnvVarCollectionInSubshell(id) => {
-                let cloud_model = ObjectStoreModel::as_ref(ctx);
-                let object = cloud_model.get_by_uid(&id.uid());
+                let object_store_model = ObjectStoreModel::as_ref(ctx);
+                let object = object_store_model.get_by_uid(&id.uid());
                 if let Some(cloud_object) = object {
                     let env_var_collection: Option<&EnvVarCollectionObject> = cloud_object.into();
                     if let Some(env_var_collection) = env_var_collection {

@@ -385,7 +385,8 @@ fn test_on_session_share_ended_restores_size_after_viewer_driven_resize() {
 }
 
 #[test]
-fn test_on_session_share_ended_inserts_tombstone_for_ambient_session_under_cloud_mode_setup_v2() {
+fn test_on_session_share_ended_inserts_tombstone_for_ambient_session_under_ambient_agent_setup_v2()
+{
     App::test((), |mut app| async move {
         let terminal = terminal_view_for_viewer(&mut app);
         let initial_block_height_items = terminal.read(&app, |view, _| {
@@ -409,7 +410,7 @@ fn test_on_session_share_ended_inserts_tombstone_for_ambient_session_under_cloud
 }
 
 #[test]
-fn test_on_session_share_ended_does_not_insert_tombstone_for_non_ambient_session_under_cloud_mode_setup_v2(
+fn test_on_session_share_ended_does_not_insert_tombstone_for_non_ambient_session_under_ambient_agent_setup_v2(
 ) {
     App::test((), |mut app| async move {
         let terminal = terminal_view_for_viewer(&mut app);

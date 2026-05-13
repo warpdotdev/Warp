@@ -3466,13 +3466,13 @@ fn upsert_user_profiles(
             // Delete any stale profile with that uid
             diesel::delete(
                 schema::user_profiles::dsl::user_profiles
-                    .filter(firebase_uid.eq(profile.firebase_uid.to_string())),
+                    .filter(firebase_uid.eq(profile.local_user_uid.to_string())),
             )
             .execute(conn)?;
 
             // Insert a new user profile row
             let new_user_profile = UserProfile {
-                firebase_uid: profile.firebase_uid.to_string(),
+                firebase_uid: profile.local_user_uid.to_string(),
                 photo_url: profile.photo_url,
                 display_name: profile.display_name,
                 email: profile.email,

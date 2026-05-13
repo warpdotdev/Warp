@@ -269,10 +269,10 @@ impl ExportManager {
         shell_family: ShellFamily,
         ctx: &mut ModelContext<Self>,
     ) -> anyhow::Result<SpawnedFutureHandle> {
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
         let (name, extension, data) = match object {
             ObjectTypeAndId::Workflow(workflow_id) => {
-                let workflow = cloud_model
+                let workflow = object_store_model
                     .get_workflow(&workflow_id)
                     .ok_or_else(|| anyhow!("no workflow for {workflow_id}"))?;
 
@@ -283,7 +283,7 @@ impl ExportManager {
                 (workflow.model().data.name().to_owned(), "yaml", data)
             }
             ObjectTypeAndId::Notebook(notebook_id) => {
-                let notebook = cloud_model
+                let notebook = object_store_model
                     .get_notebook(&notebook_id)
                     .ok_or_else(|| anyhow!("no notebook for {notebook_id}"))?;
                 let internal_data = &notebook.model().data;
@@ -295,7 +295,7 @@ impl ExportManager {
                 (notebook.model().title.clone(), "md", data)
             }
             ObjectTypeAndId::GenericStringObject { object_type, id } => {
-                if let Some(env_var_collection) = cloud_model.get_env_var_collection(&id) {
+                if let Some(env_var_collection) = object_store_model.get_env_var_collection(&id) {
                     let env_var_collection_model = env_var_collection.model();
 
                     let exported_variables = env_var_collection_model

@@ -110,8 +110,8 @@ fn initialize_app(app: &mut App) {
 
 /// Add a mocked workflow.
 fn add_workflow(id: SyncId, workflow: Workflow, app: &mut App) {
-    ObjectStoreModel::handle(app).update(app, |cloud_model, _ctx| {
-        cloud_model.add_object(
+    ObjectStoreModel::handle(app).update(app, |object_store_model, _ctx| {
+        object_store_model.add_object(
             id,
             WorkflowObject::new(
                 id,
@@ -125,8 +125,8 @@ fn add_workflow(id: SyncId, workflow: Workflow, app: &mut App) {
 
 /// Add a mocked notebook.
 fn add_notebook(id: SyncId, title: impl Into<String>, data: impl Into<String>, app: &mut App) {
-    ObjectStoreModel::handle(app).update(app, |cloud_model, _ctx| {
-        cloud_model.add_object(
+    ObjectStoreModel::handle(app).update(app, |object_store_model, _ctx| {
+        object_store_model.add_object(
             id,
             NotebookObject::new(
                 id,

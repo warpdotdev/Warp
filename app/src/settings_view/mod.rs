@@ -91,7 +91,7 @@ mod settings_file_footer;
 pub(crate) mod settings_page;
 mod tab_menu;
 mod teams_page;
-// OpenWarp Wave 7-3:`telemetry` 随唯一 variant `EnvironmentsPageOpened` (Cloud Mode UI)
+// OpenWarp Wave 7-3:`telemetry` 随唯一 variant `EnvironmentsPageOpened` (ambient-agent UI)
 // 一同物理删。
 mod transfer_ownership_confirmation_modal;
 // OpenWarp Wave 7-2:`update_environment_form` 随 cloud ambient agent 主体物理删 ——
@@ -204,7 +204,7 @@ pub enum SettingsSection {
     EditorAndCodeReview,
     // OpenWarp Wave 3-1:`OzCloudAPIKeys` enum variant 随 Warp Inc API key 管理 UI
     // 一同物理删。
-    // OpenWarp Wave 7-3:`CloudEnvironments` 随 Cloud Mode UI 子系统物理删。
+    // OpenWarp Wave 7-3:`CloudEnvironments` 随 ambient-agent UI 子系统物理删。
 }
 
 use crate::util::bindings::custom_tag_to_keystroke;
@@ -272,7 +272,7 @@ impl SettingsSection {
             // EditorAndCodeReview is the only label still pointing at the Code page.
             Self::EditorAndCodeReview => Self::Code,
             // OpenWarp Wave 3-1:`OzCloudAPIKeys` 随 UI 一同物理删。
-            // OpenWarp Wave 7-3:`CloudEnvironments` umbrella 随 Cloud Mode UI 一同物理删。
+            // OpenWarp Wave 7-3:`CloudEnvironments` umbrella 随 ambient-agent UI 一同物理删。
             other => *other,
         }
     }
@@ -931,7 +931,7 @@ macro_rules! update_page {
             SettingsPageViewHandle::Warpify(handle) => $ctx.update_view(handle, $update),
             // OpenWarp Wave 3-1:`OzCloudAPIKeys` arm 随 variant 一同物理删。
             // OpenWarp Wave 6-8:`SharedBlocks` / `Referrals` arm 随 variant 物理删。
-            // OpenWarp Wave 7-3:`CloudEnvironments` arm 随 Cloud Mode UI 一同物理删。
+            // OpenWarp Wave 7-3:`CloudEnvironments` arm 随 ambient-agent UI 一同物理删。
             SettingsPageViewHandle::Privacy(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::AI(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::About(handle) => $ctx.update_view(handle, $update),
@@ -1015,7 +1015,7 @@ impl SettingsView {
         });
 
         // Environments page
-        // OpenWarp Wave 7-3:`environments_page_handle` 随 Cloud Mode UI 子系统物理删。
+        // OpenWarp Wave 7-3:`environments_page_handle` 随 ambient-agent UI 子系统物理删。
 
         // Keybindings page
         let keybindings_handle = ctx.add_typed_action_view(KeybindingsView::new);
@@ -1513,7 +1513,7 @@ impl SettingsView {
         }
     }
 
-    // OpenWarp Wave 7-3:`handle_environments_page_event` 随 Cloud Mode UI 子系统物理删。
+    // OpenWarp Wave 7-3:`handle_environments_page_event` 随 ambient-agent UI 子系统物理删。
 
     fn handle_features_page_event(
         &mut self,
@@ -1699,7 +1699,7 @@ impl SettingsView {
             self.clear_search_query(ctx);
         }
         self.current_settings_page = section;
-        // OpenWarp Wave 7-3:`SettingsTelemetryEvent::EnvironmentsPageOpened` 随 Cloud Mode UI
+        // OpenWarp Wave 7-3:`SettingsTelemetryEvent::EnvironmentsPageOpened` 随 ambient-agent UI
         // 子系统物理删。
         let _ = previous_section;
 
@@ -2285,7 +2285,7 @@ impl View for SettingsView {
         }
 
         // OpenWarp Wave 7-3:environment setup mode selector / agent-assisted environment
-        // modal 覆盖渲染随 Cloud Mode UI 子系统物理删。
+        // modal 覆盖渲染随 ambient-agent UI 子系统物理删。
 
         SavePosition::new(stack.finish(), POSITION_ID).finish()
     }

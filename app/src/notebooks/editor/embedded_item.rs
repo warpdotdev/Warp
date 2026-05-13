@@ -223,14 +223,14 @@ impl EmbeddedWorkflow {
 
 impl EmbeddedItem for EmbeddedWorkflow {
     fn layout(&self, text_layout: &TextLayout, app: &AppContext) -> Box<dyn LaidOutEmbeddedItem> {
-        let cloud_model = ObjectStoreModel::as_ref(app);
+        let object_store_model = ObjectStoreModel::as_ref(app);
         let cloud_workflow = self.get_workflow(app);
 
         let base_text_style = &text_layout.rich_text_styles().base_text;
         let width = text_layout.max_width() - EMBED_WORKFLOW_TEXT_SPACING.x_axis_offset();
 
         let Some(workflow) = cloud_workflow.and_then(|workflow| {
-            if !workflow.is_trashed(cloud_model) {
+            if !workflow.is_trashed(object_store_model) {
                 Some(Into::<Workflow>::into(workflow))
             } else {
                 None
@@ -305,7 +305,7 @@ impl EmbeddedItem for EmbeddedWorkflow {
     }
 
     fn to_rich_format(&self, app: &AppContext) -> EmbeddedItemRichFormat<'_> {
-        let cloud_model = ObjectStoreModel::as_ref(app);
+        let object_store_model = ObjectStoreModel::as_ref(app);
         let workflow = self.get_workflow(app);
 
         // If the workflow is no longer accessible or is trashed, set the content to
@@ -313,7 +313,7 @@ impl EmbeddedItem for EmbeddedWorkflow {
         // attributes so we could re-parse the ID and metadata when pasted into Warp.
         let workflow_content = workflow
             .and_then(|workflow| {
-                if !workflow.is_trashed(cloud_model) {
+                if !workflow.is_trashed(object_store_model) {
                     Some(workflow.model().data.content().to_owned())
                 } else {
                     None

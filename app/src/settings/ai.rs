@@ -298,7 +298,7 @@ pub enum DefaultSessionMode {
     /// New sessions start in agent view.
     Agent,
     /// New sessions start in cloud (ambient) agent mode.
-    CloudAgent,
+    AmbientAgent,
     /// New sessions open a user-defined tab config.
     /// The specific config is identified by the companion `default_tab_config_path` setting.
     TabConfig,
@@ -323,7 +323,7 @@ impl DefaultSessionMode {
         match self {
             DefaultSessionMode::Terminal => "Terminal",
             DefaultSessionMode::Agent => "Agent",
-            DefaultSessionMode::CloudAgent => "Cloud Oz",
+            DefaultSessionMode::AmbientAgent => "Ambient Agent",
             DefaultSessionMode::TabConfig => "Tab Config",
             DefaultSessionMode::DockerSandbox => "Local Docker Sandbox",
         }
@@ -1987,8 +1987,8 @@ impl AISettings {
         match mode {
             // Terminal and TabConfig don't require AI.
             DefaultSessionMode::Terminal | DefaultSessionMode::TabConfig => mode,
-            // Agent and CloudAgent require AI to be enabled.
-            DefaultSessionMode::Agent | DefaultSessionMode::CloudAgent => {
+            // Agent and AmbientAgent require AI to be enabled.
+            DefaultSessionMode::Agent | DefaultSessionMode::AmbientAgent => {
                 if self.is_any_ai_enabled(app) {
                     mode
                 } else {

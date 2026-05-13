@@ -22,9 +22,9 @@ pub fn assert_rule_exists(
     let expected_content = expected_content.into();
     Box::new(move |app, _window_id, data| {
         let sync_id: &SyncId = data.get(&expected_id_key).expect("No saved AI fact ID");
-        ObjectStoreModel::handle(app).read(app, |cloud_model, _| {
-            if let Some(ai_fact) =
-                cloud_model.get_object_of_type::<GenericStringObjectId, AIFactObjectModel>(sync_id)
+        ObjectStoreModel::handle(app).read(app, |object_store_model, _| {
+            if let Some(ai_fact) = object_store_model
+                .get_object_of_type::<GenericStringObjectId, AIFactObjectModel>(sync_id)
             {
                 let content = match &ai_fact.model().string_model {
                     crate::ai::facts::AIFact::Memory(memory) => &memory.content,
@@ -40,16 +40,16 @@ pub fn assert_rule_exists(
 /// Assert that the total number of AI facts matches the expected count
 pub fn assert_rule_count(expected_count: usize) -> AssertionCallback {
     Box::new(move |app, _| {
-        ObjectStoreModel::handle(app).read(app, |cloud_model, ctx| {
-            let count = rule_count(cloud_model, ctx);
+        ObjectStoreModel::handle(app).read(app, |object_store_model, ctx| {
+            let count = rule_count(object_store_model, ctx);
             async_assert_eq!(count, expected_count, "Rule count should match")
         })
     })
 }
 
-/// Helper function to count AI facts in the cloud model
-pub fn rule_count(cloud_model: &ObjectStoreModel, _ctx: &AppContext) -> usize {
-    cloud_model
+/// Helper function to count AI facts in the object store
+pub fn rule_count(object_store_model: &ObjectStoreModel, _ctx: &AppContext) -> usize {
+    object_store_model
         .get_all_objects_of_type::<GenericStringObjectId, AIFactObjectModel>()
         .count()
 }

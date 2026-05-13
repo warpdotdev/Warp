@@ -789,7 +789,7 @@ impl ObjectStoreModel {
     }
 
     #[allow(unused)]
-    /// Returns only active (not trashed) folders in cloud model.
+    /// Returns only active (not trashed) folders in object store.
     pub fn get_all_active_folders(&self) -> impl Iterator<Item = &FolderObject> {
         self.objects_by_id
             .values()
@@ -797,7 +797,7 @@ impl ObjectStoreModel {
             .filter_map(|object| object.into())
     }
 
-    /// Returns all folders (trashed or not) in cloud model.
+    /// Returns all folders (trashed or not) in object store.
     pub fn get_all_active_and_inactive_folders(&self) -> impl Iterator<Item = &FolderObject> {
         self.objects_by_id
             .values()
@@ -841,7 +841,7 @@ impl ObjectStoreModel {
             .and_then(|object| object.into())
     }
 
-    /// Returns only active (not trashed) workflows in cloud model.
+    /// Returns only active (not trashed) workflows in object store.
     pub fn get_all_active_workflows(&self) -> impl Iterator<Item = &WorkflowObject> {
         self.objects_by_id
             .values()
@@ -849,14 +849,14 @@ impl ObjectStoreModel {
             .filter_map(|object| object.into())
     }
 
-    /// Returns all workflows (trashed or not) in cloud model.
+    /// Returns all workflows (trashed or not) in object store.
     pub fn get_all_active_and_inactive_workflows(&self) -> impl Iterator<Item = &WorkflowObject> {
         self.objects_by_id
             .values()
             .filter_map(|object| object.into())
     }
 
-    /// Returns all workflows (trashed or not) in cloud model.
+    /// Returns all workflows (trashed or not) in object store.
     pub fn get_all_active_and_inactive_workflows_mut(
         &mut self,
     ) -> impl Iterator<Item = &mut WorkflowObject> {
@@ -1009,7 +1009,7 @@ impl ObjectStoreModel {
         self.objects_by_id.get(uid).and_then(|object| object.into())
     }
 
-    /// Returns only active (not trashed) EVCs in cloud model.
+    /// Returns only active (not trashed) EVCs in object store.
     pub fn get_all_active_env_var_collections(
         &self,
     ) -> impl Iterator<Item = &EnvVarCollectionObject> {
@@ -1025,7 +1025,7 @@ impl ObjectStoreModel {
             .and_then(|warp_cloud_object| warp_cloud_object.metadata().revision.as_ref())
     }
 
-    /// Returns only active (not trashed) notebooks in cloud model.
+    /// Returns only active (not trashed) notebooks in object store.
     pub fn get_all_active_notebooks(&self) -> impl Iterator<Item = &NotebookObject> {
         self.objects_by_id
             .values()
@@ -1033,7 +1033,7 @@ impl ObjectStoreModel {
             .filter_map(|object| object.into())
     }
 
-    /// Returns all notebooks (trashed or not) in cloud model.
+    /// Returns all notebooks (trashed or not) in object store.
     pub fn get_all_active_and_inactive_notebooks(&self) -> impl Iterator<Item = &NotebookObject> {
         self.objects_by_id
             .values()

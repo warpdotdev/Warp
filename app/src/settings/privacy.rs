@@ -260,7 +260,7 @@ impl PrivacySettings {
                 .expect("is_crash_reporting_enabled is a boolean."),
         );
 
-        // Listen for changes to the cloud model and update ourselves when they happen.
+        // Listen for changes to the object store and update ourselves when they happen.
         ctx.subscribe_to_model(&WarpDrivePrivacySettings::handle(ctx), |me, event, ctx| {
             let privacy_settings = WarpDrivePrivacySettings::as_ref(ctx);
             match event {
@@ -628,8 +628,8 @@ impl PrivacySettings {
         // Check if the warp drive preferences are set. If they are, and telemetry and crash reporting
         // are set as warp drive prefs, then use those.  Otherwise, update the warp drive prefs to match
         // the values from the legacy user_settings endpoint so that we can use warp drive prefs going forward.
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
-        let cloud_prefs = cloud_model.get_all_preferences_by_storage_key();
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
+        let cloud_prefs = object_store_model.get_all_preferences_by_storage_key();
         let cloud_telemetry_value =
             cloud_prefs
                 .get(IsTelemetryEnabled::storage_key())

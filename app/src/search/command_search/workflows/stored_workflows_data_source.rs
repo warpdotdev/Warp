@@ -40,7 +40,7 @@ pub fn stored_workflows_data_source(
             let filter_to_command_workflows =
                 query.filters.contains(&QueryFilter::Workflows) || !is_ai_enabled;
 
-            let cloud_model = ObjectStoreModel::as_ref(app);
+            let object_store_model = ObjectStoreModel::as_ref(app);
             let user_workspaces = UserWorkspaces::as_ref(app);
 
             let candidates: Vec<WorkflowMatchCandidate> = user_workspaces
@@ -48,7 +48,7 @@ pub fn stored_workflows_data_source(
                 .into_iter()
                 .flat_map(|space| {
                     let source: WorkflowSource = space.into();
-                    cloud_model
+                    object_store_model
                         .active_workflows_in_space(space, app)
                         .map(move |workflow| WorkflowMatchCandidate {
                             id: workflow.id,

@@ -36,14 +36,14 @@ impl SyncDataSource for NotebookDataSource {
         let query_text = &query.text;
 
         // Get all notebooks from ObjectStoreModel
-        let cloud_model = ObjectStoreModel::as_ref(app);
+        let object_store_model = ObjectStoreModel::as_ref(app);
         let _user_workspaces = UserWorkspaces::as_ref(app);
 
         // Get notebooks from all spaces the user has access to
         let mut notebook_results = Vec::new();
         let notebook_manager = NotebookManager::as_ref(app);
 
-        let mut notebooks: Vec<_> = cloud_model
+        let mut notebooks: Vec<_> = object_store_model
             .get_all_active_notebooks()
             .filter(|notebook| {
                 // Notebooks and plans have separate filters.

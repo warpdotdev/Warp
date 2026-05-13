@@ -57,7 +57,7 @@ pub const CAN_FORK_FROM_LAST_KNOWN_GOOD_STATE_KEY: &str = "CanForkFromLastKnownG
 pub const INPUT_BOX_VISIBLE_KEY: &str = "InputVisible";
 pub const KEYBOARD_PROTOCOL_ENABLED_KEY: &str = "KeyboardProtocolEnabled";
 pub const CLI_AGENT_SESSION_ACTIVE_KEY: &str = "CLIAgentSessionActive";
-pub const ROOT_CLOUD_MODE_PANE_KEY: &str = "RootCloudModePane";
+pub const ROOT_AMBIENT_AGENT_PANE_KEY: &str = "RootAmbientAgentPane";
 
 /// Some keybindings will do different things in different contexts. We break
 /// these into their own function to ensure we pay special attention to
@@ -1093,7 +1093,7 @@ fn register_input_mode_bindings(app: &mut AppContext) {
         TerminalAction::SetInputModeAgent,
         agent_mode_predicate.clone()
             & !id!("Input")
-            & !id!(ROOT_CLOUD_MODE_PANE_KEY)
+            & !id!(ROOT_AMBIENT_AGENT_PANE_KEY)
             & !id!(flags::HAS_PENDING_PROMPT_SUGGESTION)
             & !id!(SSH_ERROR_BLOCK_VISIBLE_KEY),
     )

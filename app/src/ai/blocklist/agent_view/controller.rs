@@ -132,10 +132,10 @@ pub enum AgentViewEntryOrigin {
     /// Entered agent view by starting conversation with an inline code review submission.
     InlineCodeReview,
     /// Entered agent view through an ambient agent prompt.
-    CloudAgent,
+    AmbientAgent,
     /// Entered agent view by opening an existing non-Oz ambient agent run (live shared-session
     /// viewer or transcript viewer).
-    ThirdPartyCloudAgent,
+    ExternalAmbientAgent,
     /// Entered agent view via the CLI (e.g. `warp agent run`).
     Cli,
     /// Entered agent view by adding an image (drag-and-drop or paste).
@@ -201,8 +201,8 @@ pub enum AutoTriggerBehavior {
 }
 
 impl AgentViewEntryOrigin {
-    pub fn is_cloud_agent(&self) -> bool {
-        matches!(self, Self::CloudAgent)
+    pub fn is_ambient_agent(&self) -> bool {
+        matches!(self, Self::AmbientAgent)
     }
 
     pub fn should_autotrigger_request(&self) -> AutoTriggerBehavior {
@@ -710,7 +710,7 @@ impl AgentViewController {
                 .active_block()
                 .is_active_and_long_running()
                 && !terminal_model.is_conversation_transcript_viewer()
-                && !matches!(origin, AgentViewEntryOrigin::ThirdPartyCloudAgent)
+                && !matches!(origin, AgentViewEntryOrigin::ExternalAmbientAgent)
         };
 
         if is_long_running {
@@ -780,7 +780,7 @@ impl AgentViewController {
                 history_model.start_new_conversation(
                     self.terminal_view_id,
                     false,
-                    matches!(origin, AgentViewEntryOrigin::CloudAgent),
+                    matches!(origin, AgentViewEntryOrigin::AmbientAgent),
                     ctx,
                 )
             });
@@ -801,7 +801,7 @@ impl AgentViewController {
             .block_list_mut()
             .set_agent_view_state(self.agent_view_state.clone());
 
-        if origin == AgentViewEntryOrigin::CloudAgent {
+        if origin == AgentViewEntryOrigin::AmbientAgent {
             self.ambient_agent_view_model.update(ctx, |model, ctx| {
                 model.enter_composing_from_setup(ctx);
             });

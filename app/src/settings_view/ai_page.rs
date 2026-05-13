@@ -734,8 +734,8 @@ impl AISettingsPageView {
             },
         );
 
-        let cloud_model = ObjectStoreModel::handle(ctx);
-        ctx.subscribe_to_model(&cloud_model, |me, _, event, ctx| {
+        let object_store_model = ObjectStoreModel::handle(ctx);
+        ctx.subscribe_to_model(&object_store_model, |me, _, event, ctx| {
             let added_or_deleted_mcp_servers = matches!(
                 event,
                 ObjectStoreEvent::ObjectCreated { type_and_id } | ObjectStoreEvent::ObjectDeleted { type_and_id, .. }

@@ -385,7 +385,7 @@ pub enum WorkspaceAction {
     },
     OpenAIFactCollection,
     OpenMCPServerCollection,
-    // OpenWarp Wave 7-3:`OpenEnvironmentManagementPane` WorkspaceAction 随 Cloud Mode UI
+    // OpenWarp Wave 7-3:`OpenEnvironmentManagementPane` WorkspaceAction 随 ambient-agent UI
     // 子系统物理删。
     ToggleAIDocumentPane {
         document_id: AIDocumentId,
@@ -909,7 +909,7 @@ impl WorkspaceAction {
             FileRenamed { .. } => false, // File rename doesn't change workspace state
             #[cfg(feature = "local_fs")]
             FileDeleted { .. } => false, // File deletion doesn't change workspace state
-            // OpenWarp Wave 7-3:`OpenEnvironmentManagementPane` WorkspaceAction 随 Cloud Mode UI
+            // OpenWarp Wave 7-3:`OpenEnvironmentManagementPane` WorkspaceAction 随 ambient-agent UI
             // 子系统物理删。
             #[cfg(target_os = "linux")]
             DismissWaylandCrashRecoveryBannerAndOpenLink => false,

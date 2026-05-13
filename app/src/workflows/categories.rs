@@ -496,10 +496,10 @@ impl CategoriesView {
 
     pub fn load_cloud_workflows(&mut self, ctx: &mut ViewContext<Self>) {
         let user_workspaces = UserWorkspaces::as_ref(ctx);
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
 
         for space in user_workspaces.all_user_spaces(ctx) {
-            let workflows_in_space = cloud_model.active_workflows_in_space(space, ctx);
+            let workflows_in_space = object_store_model.active_workflows_in_space(space, ctx);
             let new_workflows_in_space = Self::categorize_workflows(
                 // Don't include AI workflows in Voltron.
                 workflows_in_space

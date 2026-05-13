@@ -14,7 +14,7 @@ pub(super) mod code_diff_pane;
 pub(super) mod code_diff_pane_model;
 pub(super) mod code_pane;
 pub(super) mod env_var_collection_pane;
-// OpenWarp Wave 7-3:`environment_management_pane` 随 Cloud Mode UI 子系统物理删。
+// OpenWarp Wave 7-3:`environment_management_pane` 随 ambient-agent UI 子系统物理删。
 pub(super) mod execution_profile_editor_pane;
 pub(super) mod file_pane;
 pub(super) mod get_started_pane;
@@ -140,7 +140,7 @@ pub(crate) enum IPaneType {
     Code,
     CodeDiff,
     EnvVarCollection,
-    // OpenWarp Wave 7-3:`EnvironmentManagement` IPaneType 随 Cloud Mode UI 子系统
+    // OpenWarp Wave 7-3:`EnvironmentManagement` IPaneType 随 ambient-agent UI 子系统
     // 物理删。
     Workflow,
     Settings,
@@ -218,7 +218,7 @@ impl PaneId {
         Self::new_from_ctx(IPaneType::EnvVarCollection, ctx)
     }
 
-    // OpenWarp Wave 7-3:`from_environment_management_pane_ctx` 随 Cloud Mode UI 子系统
+    // OpenWarp Wave 7-3:`from_environment_management_pane_ctx` 随 ambient-agent UI 子系统
     // 物理删。
 
     /// Creates a [`PaneId`] from a [`ViewContext<PaneView<WorkflowView>>`]
@@ -308,7 +308,7 @@ impl PaneId {
         Self::new(IPaneType::EnvVarCollection, env_var_collection_view)
     }
 
-    // OpenWarp Wave 7-3:`from_environment_management_pane_view` 随 Cloud Mode UI 子系统
+    // OpenWarp Wave 7-3:`from_environment_management_pane_view` 随 ambient-agent UI 子系统
     // 物理删。
 
     /// Creates a [`PaneId`] from a [`PaneView<WorkflowView>`] entity ID.
@@ -418,7 +418,7 @@ impl PaneId {
     }
 
     pub fn is_environment_management_pane(&self) -> bool {
-        // OpenWarp Wave 7-3:Cloud Mode UI 子系统物理删,任意 pane 都不是
+        // OpenWarp Wave 7-3:ambient-agent UI 子系统物理删,任意 pane 都不是
         // environment management pane。调用者为渐进式清理保留、返回 false。
         false
     }

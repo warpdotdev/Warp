@@ -2607,8 +2607,8 @@ pub struct TerminalView {
     /// Weak handle to the [`PaneStack`] this view is part of, allowing push/pop operations.
     pane_stack: Option<WeakModelHandle<crate::pane_group::pane::PaneStack<Self>>>,
 
-    /// If set, indicates a cloud mode entry is waiting for the fullscreen agent view to be exited.
-    /// This is used to ensure rich content inserted for cloud mode is scoped to the top-level
+    /// If set, indicates a ambient-agent entry is waiting for the fullscreen agent view to be exited.
+    /// This is used to ensure rich content inserted for ambient-agent content is scoped to the top-level
     /// terminal view (not a specific agent view conversation).
 
     /// Whether we're waiting for the result of an AWS CLI login command.
@@ -2861,7 +2861,7 @@ impl TerminalView {
                                 && !matches!(
                                     origin,
                                     AgentViewEntryOrigin::SlashInit
-                                        | AgentViewEntryOrigin::ThirdPartyCloudAgent
+                                        | AgentViewEntryOrigin::ExternalAmbientAgent
                                 );
                             if should_insert_zero_state_block {
                                 let mut should_show_init_callout = false;
@@ -4165,7 +4165,7 @@ impl TerminalView {
             .can_exit_agent_view(ctx)
         {
             Err(ExitAgentViewError::LongRunningCommand)
-                if self.can_pop_nested_cloud_agent_view(ctx) =>
+                if self.can_pop_nested_ambient_agent_view(ctx) =>
             {
                 Ok(())
             }
@@ -4173,16 +4173,16 @@ impl TerminalView {
         }
     }
 
-    fn can_pop_nested_cloud_agent_view(&self, _ctx: &AppContext) -> bool {
-        // openWarp:cloud_mode 已删除,nested agent view 永远不存在。
+    fn can_pop_nested_ambient_agent_view(&self, _ctx: &AppContext) -> bool {
+        // openWarp:ambient_agent 已删除,nested agent view 永远不存在。
         false
     }
 
     /// Exits the active agent, either:
     /// * Exiting agent view for the selected conversation
-    /// * Popping the current view off the navigation stack (for cloud mode agents)
+    /// * Popping the current view off the navigation stack (for ambient-agent sessions)
     fn exit_agent_view(&mut self, ctx: &mut ViewContext<Self>) {
-        // For ambient agent sessions (cloud mode), always pop from pane stack.
+        // For ambient-agent sessions, always pop from pane stack.
         // These sessions are pushed onto a nav stack and have no underlying terminal
         // to return to via the normal agent view exit path.
         if self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent() {
@@ -13901,7 +13901,7 @@ impl TerminalView {
             return;
         }
 
-        // Then check if there's selected text in the cloud mode error screen
+        // Then check if there's selected text in the ambient-agent error screen
         let error_selected_text = self
             .ambient_agent_view_model
             .as_ref(ctx)
@@ -18556,7 +18556,7 @@ impl TerminalView {
                 }
                 self.create_and_push_docker_sandbox(ctx);
             }
-            InputEvent::ExitCloudModeAndStartLocalAgent { initial_prompt } => {
+            InputEvent::ExitAmbientAgentAndStartLocalAgent { initial_prompt } => {
                 let origin = AgentViewEntryOrigin::Input {
                     was_prompt_autodetected: false,
                 };
@@ -18576,7 +18576,7 @@ impl TerminalView {
                     // pane stack and has no parent terminal to host a local agent conversation.
                     if active_view.id() == self.id() {
                         log::warn!(
-                            "ExitCloudModeAndStartLocalAgent received but cloud-mode pane has no parent terminal"
+                            "ExitAmbientAgentAndStartLocalAgent received but ambient-agent pane has no parent terminal"
                         );
                     } else {
                         active_view.update(ctx, |view, ctx| {
@@ -18585,7 +18585,7 @@ impl TerminalView {
                     }
                 } else {
                     log::warn!(
-                        "ExitCloudModeAndStartLocalAgent received but no pane stack available; cannot start local agent without a parent terminal"
+                        "ExitAmbientAgentAndStartLocalAgent received but no pane stack available; cannot start local agent without a parent terminal"
                     );
                 }
 
@@ -18610,7 +18610,7 @@ impl TerminalView {
                         .block_list()
                         .active_block()
                         .is_active_and_long_running();
-                    if is_long_running && self.can_pop_nested_cloud_agent_view(ctx) {
+                    if is_long_running && self.can_pop_nested_ambient_agent_view(ctx) {
                         self.exit_agent_view(ctx);
                     } else if !is_long_running {
                         // During first-time setup, always exit directly without confirmation
@@ -18890,7 +18890,7 @@ impl TerminalView {
         }
 
         // Don't pass an initial prompt, which auto-sends the request.
-        self.enter_agent_view_for_new_conversation(None, AgentViewEntryOrigin::CloudAgent, ctx);
+        self.enter_agent_view_for_new_conversation(None, AgentViewEntryOrigin::AmbientAgent, ctx);
 
         if let Some(prompt) = initial_prompt {
             self.input.update(ctx, |input, ctx| {
@@ -24515,7 +24515,7 @@ impl View for TerminalView {
         if ambient_agent_view_model.is_ambient_agent()
             && !ambient_agent_view_model.has_parent_terminal()
         {
-            context.set.insert(init::ROOT_CLOUD_MODE_PANE_KEY);
+            context.set.insert(init::ROOT_AMBIENT_AGENT_PANE_KEY);
         }
 
         if let Some(WithinBlockBanner::WarpifyBanner(state)) =

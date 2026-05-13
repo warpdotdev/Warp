@@ -1459,7 +1459,7 @@ impl WorkflowView {
             WorkflowViewMode::Create => WorkflowViewMode::Create,
         };
 
-        // Always reset the view with cloud model when we transition to the view or edit mode.
+        // Always reset the view with object store when we transition to the view or edit mode.
         // This reset is necessary when transitioning to edit mode so that we can reset the `revision_ts`.
         // Without this, any updates after a first update will get rejected, due to a perceived conflict.
         if matches!(self.workflow_view_mode, WorkflowViewMode::View)
@@ -1480,7 +1480,7 @@ impl WorkflowView {
     fn copy_to_command_line(&mut self, ctx: &mut ViewContext<Self>) {
         // If we are in a context where we can run workflows AND the content is dirty (e.g. not
         // saved). Copy the current workflow to the command line buffer.
-        // Otherwise use the workflow that exists in cloud model cache.
+        // Otherwise use the workflow that exists in object store cache.
         // This is because we want to use the version of the edited command that a user has in the
         // buffer if they click to execute a command from the workflow in pane.
         if self.is_workflow_dirty(ctx) {
@@ -2763,13 +2763,13 @@ impl WorkflowView {
     }
 
     pub(super) fn render_trash_banner(&self, app: &AppContext) -> Option<Box<dyn Element>> {
-        let cloud_model = ObjectStoreModel::as_ref(app);
+        let object_store_model = ObjectStoreModel::as_ref(app);
         let deleted = if matches!(self.workflow_view_mode, WorkflowViewMode::Create) {
             return None;
         } else {
-            match cloud_model.get_workflow(&self.workflow_id) {
+            match object_store_model.get_workflow(&self.workflow_id) {
                 Some(notebook) => {
-                    if notebook.is_trashed(cloud_model) {
+                    if notebook.is_trashed(object_store_model) {
                         false
                     } else {
                         return None;

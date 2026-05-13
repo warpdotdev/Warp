@@ -9,7 +9,7 @@ pub enum UserProfilesEvent {}
 /// Public struct for storing UserProfile data restored from local SQLite.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UserProfileWithUID {
-    pub firebase_uid: UserUid,
+    pub local_user_uid: UserUid,
     pub display_name: Option<String>,
     pub email: String,
     pub photo_url: String,
@@ -18,7 +18,7 @@ pub struct UserProfileWithUID {
 impl From<crate::persistence::model::UserProfile> for UserProfileWithUID {
     fn from(user_profile: crate::persistence::model::UserProfile) -> Self {
         UserProfileWithUID {
-            firebase_uid: UserUid::new(&user_profile.firebase_uid),
+            local_user_uid: UserUid::new(&user_profile.firebase_uid),
             display_name: user_profile.display_name,
             email: user_profile.email,
             photo_url: user_profile.photo_url,
@@ -59,7 +59,7 @@ impl UserProfiles {
     pub fn insert_profiles(&mut self, user_profiles: &Vec<UserProfileWithUID>) {
         for user_profile in user_profiles {
             self.users_by_id.insert(
-                user_profile.firebase_uid,
+                user_profile.local_user_uid,
                 UserProfileData {
                     display_name: user_profile.display_name.clone(),
                     email: user_profile.email.clone(),
@@ -117,7 +117,7 @@ mod tests {
     fn displayable_identifier_prefers_local_display_name() {
         let uid = UserUid::new("local-user-1");
         let profiles = UserProfiles::new(vec![UserProfileWithUID {
-            firebase_uid: uid,
+            local_user_uid: uid,
             display_name: Some("Local User".to_string()),
             email: "local@example.com".to_string(),
             photo_url: String::new(),
@@ -133,7 +133,7 @@ mod tests {
     fn displayable_identifier_falls_back_to_email_for_local_cache() {
         let uid = UserUid::new("local-user-2");
         let profiles = UserProfiles::new(vec![UserProfileWithUID {
-            firebase_uid: uid,
+            local_user_uid: uid,
             display_name: Some(String::new()),
             email: "fallback@example.com".to_string(),
             photo_url: String::new(),

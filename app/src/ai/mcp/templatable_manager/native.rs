@@ -197,8 +197,8 @@ impl TemplatableMCPServerManager {
         });
 
         // TemplatableMCPServerManager is the source of truth for templatable MCP servers stored on the cloud
-        let cloud_model = ObjectStoreModel::handle(ctx);
-        ctx.subscribe_to_model(&cloud_model, |me, event, ctx| match event {
+        let object_store_model = ObjectStoreModel::handle(ctx);
+        ctx.subscribe_to_model(&object_store_model, |me, event, ctx| match event {
             ObjectStoreEvent::ObjectUpdated {
                 type_and_id:
                     ObjectTypeAndId::GenericStringObject {

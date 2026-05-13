@@ -120,7 +120,7 @@ pub struct AIExecutionProfilesModel {
     /// - CLI: When running in CLI mode, a more permissive default profile that doesn't sync to cloud.
     ///
     /// Note that the default_profile_state becomes synced either (1) when an edit happens on
-    /// this client or (2) when a default profile is received from the cloud model (say, it was
+    /// this client or (2) when a default profile is received from the object store (say, it was
     /// created for the user on another client). Once the profile is synced, it's never unsynced
     /// again. CLI profiles are currently never synced.
     default_profile_state: DefaultProfileState,
@@ -141,8 +141,8 @@ impl AIExecutionProfilesModel {
                 let profile_id_to_sync_id: HashMap<ClientProfileId, SyncId> = HashMap::new();
                 let active_profiles_per_session: HashMap<EntityId, ClientProfileId> = HashMap::new();
             } else {
-                let cloud_model = ObjectStoreModel::handle(ctx).as_ref(ctx);
-                let all_profile_objects: Vec<&super::AIExecutionProfileObject> = cloud_model
+                let object_store_model = ObjectStoreModel::handle(ctx).as_ref(ctx);
+                let all_profile_objects: Vec<&super::AIExecutionProfileObject> = object_store_model
                     .get_all_objects_of_type::<GenericStringObjectId, AIExecutionProfileObjectModel>()
                     .collect();
 
@@ -387,8 +387,8 @@ impl AIExecutionProfilesModel {
                         data: AIExecutionProfile::default(),
                     };
                 };
-                let cloud_model = ObjectStoreModel::as_ref(ctx);
-                let data = cloud_model
+                let object_store_model = ObjectStoreModel::as_ref(ctx);
+                let data = object_store_model
                     .get_object_of_type::<GenericStringObjectId, AIExecutionProfileObjectModel>(
                         sync_id,
                     )
@@ -445,8 +445,8 @@ impl AIExecutionProfilesModel {
 
         // Handle all synced profiles (default and non-default)
         let sync_id = self.profile_id_to_sync_id.get(&profile_id)?;
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
-        let data = cloud_model
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
+        let data = object_store_model
             .get_object_of_type::<GenericStringObjectId, AIExecutionProfileObjectModel>(sync_id)
             .map(|o| o.model().string_model.clone())
             .unwrap_or_default();
@@ -1348,8 +1348,8 @@ impl AIExecutionProfilesModel {
 
         let mut value_changed = false;
         if let Some(sync_id) = self.profile_id_to_sync_id.get(&profile_id) {
-            let cloud_model = ObjectStoreModel::as_ref(ctx);
-            if let Some(object) = cloud_model
+            let object_store_model = ObjectStoreModel::as_ref(ctx);
+            if let Some(object) = object_store_model
                 .get_object_of_type::<GenericStringObjectId, AIExecutionProfileObjectModel>(sync_id)
             {
                 let mut data = object.model().string_model.clone();
@@ -1445,8 +1445,8 @@ impl AIExecutionProfilesModel {
     /// UI ends up reading a fresh client-side default with only a few fields
     /// touched.
     fn reconcile_with_cloud_state_after_initial_load(&mut self, ctx: &mut ModelContext<Self>) {
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
-        let all_profiles: Vec<(SyncId, bool)> = cloud_model
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
+        let all_profiles: Vec<(SyncId, bool)> = object_store_model
             .get_all_objects_of_type::<GenericStringObjectId, AIExecutionProfileObjectModel>()
             .map(|o| (o.id, o.model().string_model.is_default_profile))
             .collect();
@@ -1507,8 +1507,8 @@ impl AIExecutionProfilesModel {
         sync_id: SyncId,
         ctx: &mut ModelContext<Self>,
     ) {
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
-        let Some(object) = cloud_model
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
+        let Some(object) = object_store_model
             .get_object_of_type::<GenericStringObjectId, AIExecutionProfileObjectModel>(&sync_id)
         else {
             log::warn!("Received ObjectCreated event for AI execution profile but object not found in ObjectStoreModel: {sync_id:?}");

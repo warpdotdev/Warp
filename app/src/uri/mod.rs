@@ -309,7 +309,7 @@ impl UriHost {
                         }
                         "environments" => {
                             // OpenWarp Wave 7-3:warp://settings/environments URI handler 随
-                            // Cloud Mode UI 子系统物理删。还保留 GitHub auth completion
+                            // ambient-agent UI 子系统物理删。还保留 GitHub auth completion
                             // 通知 —— 其他独立的组件可能需要听。
                             GitHubAuthNotifier::handle(ctx).update(ctx, |notifier, ctx| {
                                 notifier.notify_auth_completed(ctx);
@@ -1005,7 +1005,7 @@ fn active_terminal_view_id_in_window(window_id: WindowId, ctx: &AppContext) -> O
     })
 }
 
-fn find_cloud_mode_terminal_view_id(
+fn find_ambient_agent_terminal_view_id(
     primary_window_id: Option<WindowId>,
     ctx: &AppContext,
 ) -> Option<EntityId> {
@@ -1024,7 +1024,7 @@ fn find_cloud_mode_terminal_view_id(
         };
         for workspace in workspaces {
             if let Some(terminal_view_id) = workspace.read(ctx, |workspace, w_ctx| {
-                find_cloud_mode_terminal_in_workspace(workspace, w_ctx)
+                find_ambient_agent_terminal_in_workspace(workspace, w_ctx)
             }) {
                 return Some(terminal_view_id);
             }
@@ -1034,7 +1034,7 @@ fn find_cloud_mode_terminal_view_id(
     None
 }
 
-fn find_cloud_mode_terminal_in_workspace(
+fn find_ambient_agent_terminal_in_workspace(
     workspace: &Workspace,
     ctx: &AppContext,
 ) -> Option<EntityId> {

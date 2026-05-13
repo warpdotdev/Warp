@@ -242,8 +242,8 @@ pub trait StoredObject: Debug {
 
         match self.metadata().folder_id {
             Some(folder_id) => {
-                let cloud_model = ObjectStoreModel::as_ref(app);
-                if let Some(folder) = cloud_model.get_folder_by_uid(&folder_id.uid()) {
+                let object_store_model = ObjectStoreModel::as_ref(app);
+                if let Some(folder) = object_store_model.get_folder_by_uid(&folder_id.uid()) {
                     let mut path = vec![];
                     let ancestors = folder.containing_objects_path(app);
                     path.extend(ancestors);
@@ -279,9 +279,13 @@ pub trait StoredObject: Debug {
     /// Returns the direct location of the object. If the object
     /// is not in a folder, this will be the object's space. Otherwise, it will
     /// be the folder the object is placed in directly, even if that folder is nested.
-    fn location(&self, cloud_model: &ObjectStoreModel, app: &AppContext) -> StoredObjectLocation {
+    fn location(
+        &self,
+        object_store_model: &ObjectStoreModel,
+        app: &AppContext,
+    ) -> StoredObjectLocation {
         if let Some(folder_id) = self.metadata().folder_id {
-            if cloud_model.get_folder(&folder_id).is_some() {
+            if object_store_model.get_folder(&folder_id).is_some() {
                 return StoredObjectLocation::Folder(folder_id);
             }
         }
@@ -291,14 +295,14 @@ pub trait StoredObject: Debug {
 
     /// Return true is this object or any of its ancestors are trashed. Also returns true
     /// if a cycle is detected.
-    fn is_trashed(&self, cloud_model: &ObjectStoreModel) -> bool {
-        self.is_trashed_internal(cloud_model, &mut HashSet::new())
+    fn is_trashed(&self, object_store_model: &ObjectStoreModel) -> bool {
+        self.is_trashed_internal(object_store_model, &mut HashSet::new())
     }
 
     /// Helper function for is_trashed.
     fn is_trashed_internal(
         &self,
-        cloud_model: &ObjectStoreModel,
+        object_store_model: &ObjectStoreModel,
         ancestors: &mut HashSet<String>,
     ) -> bool {
         // Base case: If the object is trashed, return true.
@@ -315,8 +319,8 @@ pub trait StoredObject: Debug {
                 }
                 ancestors.insert(hashed_parent_id.clone());
 
-                match cloud_model.get_by_uid(&hashed_parent_id) {
-                    Some(parent) => parent.is_trashed_internal(cloud_model, ancestors),
+                match object_store_model.get_by_uid(&hashed_parent_id) {
+                    Some(parent) => parent.is_trashed_internal(object_store_model, ancestors),
                     None => {
                         // If the object has a parent, but the parent is not in ObjectStoreModel, assume
                         // the object is shared, but not its parent. For backwards compatibility,
@@ -436,7 +440,7 @@ pub trait StoredObject: Debug {
     fn clone_box(&self) -> Box<dyn StoredObject>;
 }
 
-/// Defines a common trait for cloud models to implement.
+/// Defines a common trait for object store models to implement.
 /// The "model" is the domain specific piece of data for a cloud object,
 /// e.g. it contains the notebook, workflow, or folder specific data, but has
 /// no logic around metadata, permissions, or sync status.
@@ -1021,10 +1025,10 @@ fn get_top_folder_trashed_ts(
     app: &AppContext,
 ) -> Option<ServerTimestamp> {
     let mut folder_id = folder_id;
-    let cloud_model = ObjectStoreModel::as_ref(app);
+    let object_store_model = ObjectStoreModel::as_ref(app);
     while let Some(current_folder_id) = folder_id {
         // If the parent folder isn't in ObjectStoreModel, short-circuit so we don't loop forever.
-        let folder = cloud_model.get_folder_by_uid(&current_folder_id.uid())?;
+        let folder = object_store_model.get_folder_by_uid(&current_folder_id.uid())?;
 
         if let Some(_parent_folder_id) = folder.metadata.folder_id {
             folder_id = folder.metadata.folder_id

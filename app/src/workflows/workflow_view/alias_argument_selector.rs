@@ -117,17 +117,19 @@ impl AliasArgumentSelector {
                 self.argument_type = AliasArgumentType::Text;
             }
             ArgumentType::Enum { enum_id } => {
-                let cloud_model = ObjectStoreModel::as_ref(ctx);
+                let object_store_model = ObjectStoreModel::as_ref(ctx);
 
                 // Get the variants from the unsaved enum data, if it exists.
-                // Otherwise, pull it from the cloud model.
+                // Otherwise, pull it from the object store.
                 let enum_variants = enum_data
                     .get(enum_id)
                     .and_then(|workflow_enum| workflow_enum.new_data.clone())
                     .or_else(|| {
-                        cloud_model.get_workflow_enum(enum_id).map(|workflow_enum| {
-                            workflow_enum.model().string_model.variants.clone()
-                        })
+                        object_store_model
+                            .get_workflow_enum(enum_id)
+                            .map(|workflow_enum| {
+                                workflow_enum.model().string_model.variants.clone()
+                            })
                     });
 
                 match enum_variants {

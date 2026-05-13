@@ -72,7 +72,7 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     GPUSettings::register(ctx);
     GeneralSettings::register(ctx);
     AISettings::register_and_subscribe_to_events(ctx);
-    // OpenWarp Wave 7-3:`CloudAgentSettings` 随 Cloud Mode UI 子系统物理删。
+    // OpenWarp Wave 7-3:`AmbientAgentSettings` 随 ambient-agent UI 子系统物理删。
     ScrollSettings::register(ctx);
     SelectionSettings::register(ctx);
     InputModeSettings::register(ctx);

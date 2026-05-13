@@ -230,8 +230,8 @@ impl LinkedWorkflowData {
     pub fn linked_workflow(&self, ctx: &AppContext) -> Option<(WorkflowType, WorkflowSource)> {
         match self {
             LinkedWorkflowData::Id(id) => {
-                let cloud_model = ObjectStoreModel::as_ref(ctx);
-                let workflow = cloud_model.get_workflow(id);
+                let object_store_model = ObjectStoreModel::as_ref(ctx);
+                let workflow = object_store_model.get_workflow(id);
                 let workflow_source =
                     match ObjectStoreViewModel::as_ref(ctx).object_space(&id.uid(), ctx) {
                         Some(Space::Team { team_uid }) => WorkflowSource::Team { team_uid },

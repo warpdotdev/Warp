@@ -44,11 +44,11 @@ pub fn terminal_view_for_viewer(app: &mut App) -> ViewHandle<TerminalView> {
             .to_owned()
     });
 
-    let firebase_uid = UserUid::new("mock_firebase_uid");
+    let user_uid = UserUid::new("mock_user_uid");
     terminal.update(app, |view, ctx| {
         view.on_session_share_joined(
             ParticipantId::new(),
-            firebase_uid,
+            user_uid,
             ReplicaId::random(),
             Box::new(ParticipantList::default()),
             SessionId::new(),

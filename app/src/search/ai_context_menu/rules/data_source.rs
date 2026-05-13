@@ -31,12 +31,12 @@ impl SyncDataSource for RulesDataSource {
     ) -> Result<Vec<QueryResult<Self::Action>>, DataSourceRunErrorWrapper> {
         let query_text = &query.text;
 
-        let cloud_model = ObjectStoreModel::as_ref(app);
+        let object_store_model = ObjectStoreModel::as_ref(app);
         let mut rule_results = Vec::new();
 
-        let mut rules: Vec<_> = cloud_model
+        let mut rules: Vec<_> = object_store_model
             .get_all_objects_of_type::<GenericStringObjectId, AIFactObjectModel>()
-            .filter(|ai_fact| !ai_fact.is_trashed(cloud_model))
+            .filter(|ai_fact| !ai_fact.is_trashed(object_store_model))
             .collect();
 
         // Sort by revision timestamp ascending so that position-based scores

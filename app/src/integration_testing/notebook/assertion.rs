@@ -42,15 +42,16 @@ pub fn assert_notebook_contents(
 /// Asserts that there is a json preference object in the SQLite db with the given contents.
 pub fn assert_cloud_preference_exists(expected_preference: Preference) -> AssertionCallback {
     Box::new(move |app, _window_id| {
-        let stored_preference =
-            app.get_singleton_model_handle::<ObjectStoreModel>()
-                .read(app, |cloud_model, _| {
-                    let object = cloud_model
-                        .get_all_objects_of_type::<GenericStringObjectId, PreferenceObjectModel>()
-                        .find(|p| p.model().string_model == expected_preference)
-                        .expect("Expected to find a matching preference object");
-                    object.model().string_model.clone()
-                });
+        let stored_preference = app.get_singleton_model_handle::<ObjectStoreModel>().read(
+            app,
+            |object_store_model, _| {
+                let object = object_store_model
+                    .get_all_objects_of_type::<GenericStringObjectId, PreferenceObjectModel>()
+                    .find(|p| p.model().string_model == expected_preference)
+                    .expect("Expected to find a matching preference object");
+                object.model().string_model.clone()
+            },
+        );
         async_assert!(
             expected_preference == stored_preference,
             "Expected json object contents to match:\n{expected_preference:?}\nBut got:\n{stored_preference:?}"

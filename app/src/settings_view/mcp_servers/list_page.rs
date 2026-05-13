@@ -113,7 +113,7 @@ pub struct MCPServersListPageView {
 
 impl MCPServersListPageView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
-        Self::listen_to_cloud_model_events(ctx);
+        Self::listen_to_object_store_model_events(ctx);
 
         // Subscribe to templatable MCP server manager state changes
         let templatable_manager = TemplatableMCPServerManager::handle(ctx);
@@ -246,9 +246,9 @@ impl MCPServersListPageView {
         me
     }
 
-    fn listen_to_cloud_model_events(ctx: &mut ViewContext<Self>) {
-        let cloud_model = ObjectStoreModel::handle(ctx);
-        ctx.subscribe_to_model(&cloud_model, |me, _, event, ctx| match event {
+    fn listen_to_object_store_model_events(ctx: &mut ViewContext<Self>) {
+        let object_store_model = ObjectStoreModel::handle(ctx);
+        ctx.subscribe_to_model(&object_store_model, |me, _, event, ctx| match event {
             ObjectStoreEvent::ObjectUpdated {
                 type_and_id:
                     ObjectTypeAndId::GenericStringObject {

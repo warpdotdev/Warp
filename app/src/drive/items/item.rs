@@ -839,8 +839,8 @@ impl UiComponent for WarpDriveRow<'_> {
                                 else {
                                     return AcceptedByDropTarget::No;
                                 };
-                                let cloud_model = ObjectStoreModel::handle(app);
-                                if cloud_model.as_ref(app).can_move_object_to_location(
+                                let object_store_model = ObjectStoreModel::handle(app);
+                                if object_store_model.as_ref(app).can_move_object_to_location(
                                     &item.uid(),
                                     *location,
                                     app,

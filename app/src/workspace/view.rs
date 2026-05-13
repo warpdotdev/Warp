@@ -158,7 +158,7 @@ use crate::settings::{
     AISettings, AISettingsChangedEvent, CodeSettings, CodeSettingsChangedEvent, CtrlTabBehavior,
     DefaultSessionMode, InputModeSettings,
 };
-// OpenWarp Wave 7-3:`environments_page::EnvironmentsPage` import 随 Cloud Mode UI
+// OpenWarp Wave 7-3:`environments_page::EnvironmentsPage` import 随 ambient-agent UI
 // 子系统物理删。
 use crate::settings_view::pane_manager::SettingsPaneManager;
 use crate::settings_view::{SettingsSection, SettingsView, SettingsViewEvent};
@@ -1356,8 +1356,8 @@ impl Workspace {
                         ctx,
                         true,
                     );
-                    ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
-                        cloud_model.force_expand_object_and_ancestors(id, ctx);
+                    ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, ctx| {
+                        object_store_model.force_expand_object_and_ancestors(id, ctx);
                     });
                 }
 
@@ -1372,8 +1372,8 @@ impl Workspace {
                         &OpenWarpDriveObjectSettings::default(),
                         ctx,
                     );
-                    ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
-                        cloud_model.force_expand_object_and_ancestors(id, ctx);
+                    ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, ctx| {
+                        object_store_model.force_expand_object_and_ancestors(id, ctx);
                     });
                 }
 
@@ -1382,8 +1382,8 @@ impl Workspace {
                     id_to_force_expand = Some(folder.id);
                 }
                 if let Some(id) = id_to_force_expand {
-                    ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
-                        cloud_model.force_expand_object_and_ancestors(id, ctx);
+                    ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, ctx| {
+                        object_store_model.force_expand_object_and_ancestors(id, ctx);
                     });
                 }
 
@@ -3639,11 +3639,11 @@ impl Workspace {
                     // After opening Warp Drive, if we rendered the Warp Home placeholder panel, replace it with one of
                     // the user's own objects.
                     if show_warp_home {
-                        let cloud_model = ObjectStoreModel::as_ref(ctx);
-                        let candidate_objects = cloud_model
+                        let object_store_model = ObjectStoreModel::as_ref(ctx);
+                        let candidate_objects = object_store_model
                             .cloud_objects()
                             .filter(|object| {
-                                !object.is_trashed(cloud_model)
+                                !object.is_trashed(object_store_model)
                                     && object.renders_in_warp_drive()
                                     && !object.metadata().is_welcome_object
                             })
@@ -5541,8 +5541,8 @@ impl Workspace {
 
     fn export_all_warp_drive_objects(&mut self, ctx: &mut ViewContext<Self>) {
         let window_id = ctx.window_id();
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
-        let exportable_objects = cloud_model.get_all_exportable_object_ids();
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
+        let exportable_objects = object_store_model.get_all_exportable_object_ids();
         ExportManager::handle(ctx).update(ctx, move |export_manager, ctx| {
             export_manager.export(window_id, &exportable_objects, ctx);
         });
@@ -5551,7 +5551,7 @@ impl Workspace {
     /// Builds the unified new-session menu items
     /// tab bar chevron and the vertical tab bar `+` button.
     ///
-    /// Order: Agent → Terminal (sidecar) → Cloud Oz → [tab configs] → separator → New worktree config (sidecar) → New tab config → separator → Reopen closed session.
+    /// Order: Agent → Terminal (sidecar) → Ambient Agent → [tab configs] → separator → New worktree config (sidecar) → New tab config → separator → Reopen closed session.
     fn unified_new_session_menu_items(
         &self,
         ctx: &mut ViewContext<Self>,
@@ -6939,7 +6939,7 @@ impl Workspace {
         });
     }
 
-    // OpenWarp Wave 7-3:`open_environment_management_pane` 随 Cloud Mode UI 子系统
+    // OpenWarp Wave 7-3:`open_environment_management_pane` 随 ambient-agent UI 子系统
     // 物理删。
 
     pub(super) fn active_session_view(
@@ -8771,8 +8771,8 @@ impl Workspace {
             // Check if workflow displayed in info box matches the one that was just updated.
             if open_workflow_id == Some(*workflow_id) {
                 // Fetch latest version of workflow and update info box with fresh contents
-                let cloud_model = ObjectStoreModel::as_ref(ctx);
-                if let Some(workflow) = cloud_model.get_workflow(workflow_id) {
+                let object_store_model = ObjectStoreModel::as_ref(ctx);
+                if let Some(workflow) = object_store_model.get_workflow(workflow_id) {
                     // Proc same behavior as DrivePanelEvent::RunWorkflow
                     self.run_cloud_workflow_in_active_input(
                         workflow.clone(),
@@ -12938,7 +12938,7 @@ impl Workspace {
                 self.open_execution_profile_editor_pane(None, *profile_id, ctx);
             }
             // OpenWarp Wave 7-3:`pane_group::Event::OpenEnvironmentManagementPane` handler 随
-            // Cloud Mode UI 子系统物理删。
+            // ambient-agent UI 子系统物理删。
             pane_group::Event::LeftPanelToggled { is_open } => {
                 // Only handle visibility changes from the active pane group.
                 if pane_group.id() == self.active_tab_pane_group().id() {
@@ -13949,7 +13949,7 @@ impl Workspace {
             return;
         };
 
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
 
         let object_id = result
             .server_id
@@ -13957,7 +13957,7 @@ impl Workspace {
             .or_else(|| result.client_id.map(|client_id| client_id.to_string()));
 
         if let Some(object_id) = object_id {
-            if let Some(object) = cloud_model.get_by_uid(&object_id) {
+            if let Some(object) = object_store_model.get_by_uid(&object_id) {
                 let object_type_and_id = object.object_type_and_id();
                 if !object.should_show_activity_toasts() {
                     // Early exit for objects that don't show toasts.
@@ -14162,8 +14162,8 @@ impl Workspace {
         if result.success_type == OperationSuccessType::Success
             && result.operation == ObjectOperation::Update
         {
-            let cloud_model = ObjectStoreModel::as_ref(ctx);
-            let updated_object = cloud_model
+            let object_store_model = ObjectStoreModel::as_ref(ctx);
+            let updated_object = object_store_model
                 .get_by_uid(&result.server_id.expect("Expect server id on success").uid());
             if let Some(ObjectTypeAndId::Workflow(workflow_id)) =
                 updated_object.map(|o| o.object_type_and_id())
@@ -18512,7 +18512,7 @@ impl TypedActionView for Workspace {
                     // (add_terminal_tab applies DefaultSessionMode::Agent internally).
                     DefaultSessionMode::Terminal
                     | DefaultSessionMode::Agent
-                    | DefaultSessionMode::CloudAgent => {
+                    | DefaultSessionMode::AmbientAgent => {
                         if FeatureFlag::WelcomeTab.is_enabled() {
                             self.add_welcome_tab(ctx);
                         } else {
@@ -19573,7 +19573,7 @@ impl TypedActionView for Workspace {
                 );
             }
             // OpenWarp Wave 7-3:`OpenEnvironmentManagementPane` WorkspaceAction handler 随
-            // Cloud Mode UI 子系统物理删。
+            // ambient-agent UI 子系统物理删。
             ToggleAIDocumentPane {
                 document_id,
                 document_version,
@@ -20875,7 +20875,7 @@ impl View for Workspace {
                 }
             }
 
-            // Action sidecar for actionable items (Terminal, Agent, Cloud Oz, tab configs).
+            // Action sidecar for actionable items (Terminal, Agent, Ambient Agent, tab configs).
             if let Some(sidecar_item) = &self.tab_config_action_sidecar_item {
                 let anchor_label = self.new_session_dropdown_menu.read(app, |menu, _| {
                     menu.hovered_index().and_then(|idx| {

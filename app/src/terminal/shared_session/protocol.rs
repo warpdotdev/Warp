@@ -188,7 +188,7 @@ pub struct ParticipantPresenceUpdate {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct ProfileData {
-    pub firebase_uid: String,
+    pub user_uid: String,
     pub display_name: String,
     pub photo_url: Option<String>,
     pub email: Option<String>,

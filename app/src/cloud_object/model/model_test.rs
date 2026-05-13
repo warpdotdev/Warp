@@ -38,7 +38,7 @@ use crate::UpdateManager;
 
 use super::*;
 
-fn create_cloud_model(
+fn create_object_store_model(
     app: &mut App,
     objects: Vec<Box<dyn StoredObject>>,
 ) -> ModelHandle<ObjectStoreModel> {
@@ -162,7 +162,7 @@ fn mock_trashed_cloud_folder(id: SyncId, name: String, folder_id: Option<SyncId>
     folder
 }
 
-fn folder_from_cloud_model(model: &ObjectStoreModel, id: SyncId) -> &FolderObject {
+fn folder_from_object_store_model(model: &ObjectStoreModel, id: SyncId) -> &FolderObject {
     model.get_folder_by_uid(&id.uid()).expect("is a folder")
 }
 
@@ -210,8 +210,8 @@ fn test_create_json_object() {
     ));
 
     App::test((), |mut app| async move {
-        let cloud_model = create_cloud_model(&mut app, vec![json_object]);
-        cloud_model.read(&app, |model, _| {
+        let object_store_model = create_object_store_model(&mut app, vec![json_object]);
+        object_store_model.read(&app, |model, _| {
             let json_object: &PreferenceObject =
                 model.get_object_of_type(&id).expect("model should exist");
             assert_eq!(
@@ -295,9 +295,9 @@ fn test_collapse_all_in_location() {
 
     App::test((), |mut app| async move {
         app.add_singleton_model(UserWorkspaces::default_mock);
-        let cloud_model = create_cloud_model(&mut app, folders);
+        let object_store_model = create_object_store_model(&mut app, folders);
 
-        cloud_model.update(&mut app, |model, ctx| {
+        object_store_model.update(&mut app, |model, ctx| {
             // first, collapse all folders in folder 1
             model.collapse_all_in_location(
                 StoredObjectLocation::Folder(folder_1_id),
@@ -306,17 +306,17 @@ fn test_collapse_all_in_location() {
             );
 
             // folders 1, 4, and 5 should be collapsed
-            let folder_1 = folder_from_cloud_model(model, folder_1_id);
-            let folder_4 = folder_from_cloud_model(model, folder_4_id);
-            let folder_5 = folder_from_cloud_model(model, folder_5_id);
+            let folder_1 = folder_from_object_store_model(model, folder_1_id);
+            let folder_4 = folder_from_object_store_model(model, folder_4_id);
+            let folder_5 = folder_from_object_store_model(model, folder_5_id);
             assert!(!folder_1.model.is_open);
             assert!(!folder_4.model.is_open);
             assert!(!folder_5.model.is_open);
             // but the others are still open
-            let folder_2 = folder_from_cloud_model(model, folder_2_id);
-            let folder_3 = folder_from_cloud_model(model, folder_3_id);
-            let folder_6 = folder_from_cloud_model(model, folder_6_id);
-            let folder_7 = folder_from_cloud_model(model, folder_7_id);
+            let folder_2 = folder_from_object_store_model(model, folder_2_id);
+            let folder_3 = folder_from_object_store_model(model, folder_3_id);
+            let folder_6 = folder_from_object_store_model(model, folder_6_id);
+            let folder_7 = folder_from_object_store_model(model, folder_7_id);
             assert!(folder_2.model.is_open);
             assert!(folder_3.model.is_open);
             assert!(folder_6.model.is_open);
@@ -328,13 +328,13 @@ fn test_collapse_all_in_location() {
                 ctx,
             );
             // now all folders in this space are collapsed
-            let folder_1 = folder_from_cloud_model(model, folder_1_id);
-            let folder_2 = folder_from_cloud_model(model, folder_2_id);
-            let folder_3 = folder_from_cloud_model(model, folder_3_id);
-            let folder_4 = folder_from_cloud_model(model, folder_4_id);
-            let folder_5 = folder_from_cloud_model(model, folder_5_id);
-            let folder_6 = folder_from_cloud_model(model, folder_6_id);
-            let folder_7 = folder_from_cloud_model(model, folder_7_id);
+            let folder_1 = folder_from_object_store_model(model, folder_1_id);
+            let folder_2 = folder_from_object_store_model(model, folder_2_id);
+            let folder_3 = folder_from_object_store_model(model, folder_3_id);
+            let folder_4 = folder_from_object_store_model(model, folder_4_id);
+            let folder_5 = folder_from_object_store_model(model, folder_5_id);
+            let folder_6 = folder_from_object_store_model(model, folder_6_id);
+            let folder_7 = folder_from_object_store_model(model, folder_7_id);
             assert!(!folder_1.model.is_open);
             assert!(!folder_2.model.is_open);
             assert!(!folder_3.model.is_open);
@@ -393,9 +393,9 @@ fn test_collapse_all_in_trash() {
 
     App::test((), |mut app| async move {
         app.add_singleton_model(UserWorkspaces::default_mock);
-        let cloud_model = create_cloud_model(&mut app, folders);
+        let object_store_model = create_object_store_model(&mut app, folders);
 
-        cloud_model.update(&mut app, |model, ctx| {
+        object_store_model.update(&mut app, |model, ctx| {
             // first, collapse all folders in folder 1
             model.collapse_all_in_location(
                 StoredObjectLocation::Folder(folder_1_id),
@@ -404,16 +404,16 @@ fn test_collapse_all_in_trash() {
             );
 
             // folders 1, 4 should be collapsed
-            let folder_1 = folder_from_cloud_model(model, folder_1_id);
-            let folder_4 = folder_from_cloud_model(model, folder_4_id);
+            let folder_1 = folder_from_object_store_model(model, folder_1_id);
+            let folder_4 = folder_from_object_store_model(model, folder_4_id);
             assert!(!folder_1.model.is_open);
             assert!(!folder_4.model.is_open);
             // but the others, including folder 5, are still open
-            let folder_2 = folder_from_cloud_model(model, folder_2_id);
-            let folder_3 = folder_from_cloud_model(model, folder_3_id);
-            let folder_5 = folder_from_cloud_model(model, folder_5_id);
-            let folder_6 = folder_from_cloud_model(model, folder_6_id);
-            let folder_7 = folder_from_cloud_model(model, folder_7_id);
+            let folder_2 = folder_from_object_store_model(model, folder_2_id);
+            let folder_3 = folder_from_object_store_model(model, folder_3_id);
+            let folder_5 = folder_from_object_store_model(model, folder_5_id);
+            let folder_6 = folder_from_object_store_model(model, folder_6_id);
+            let folder_7 = folder_from_object_store_model(model, folder_7_id);
             assert!(folder_2.model.is_open);
             assert!(folder_3.model.is_open);
             assert!(folder_5.model.is_open);
@@ -426,13 +426,13 @@ fn test_collapse_all_in_trash() {
                 ctx,
             );
             // now all folders in this space are collapsed
-            let folder_1 = folder_from_cloud_model(model, folder_1_id);
-            let folder_2 = folder_from_cloud_model(model, folder_2_id);
-            let folder_3 = folder_from_cloud_model(model, folder_3_id);
-            let folder_4 = folder_from_cloud_model(model, folder_4_id);
-            let folder_5 = folder_from_cloud_model(model, folder_5_id);
-            let folder_6 = folder_from_cloud_model(model, folder_6_id);
-            let folder_7 = folder_from_cloud_model(model, folder_7_id);
+            let folder_1 = folder_from_object_store_model(model, folder_1_id);
+            let folder_2 = folder_from_object_store_model(model, folder_2_id);
+            let folder_3 = folder_from_object_store_model(model, folder_3_id);
+            let folder_4 = folder_from_object_store_model(model, folder_4_id);
+            let folder_5 = folder_from_object_store_model(model, folder_5_id);
+            let folder_6 = folder_from_object_store_model(model, folder_6_id);
+            let folder_7 = folder_from_object_store_model(model, folder_7_id);
             assert!(!folder_1.model.is_open);
             assert!(!folder_2.model.is_open);
             assert!(!folder_3.model.is_open);
@@ -569,10 +569,10 @@ fn test_shared_personal_object() {
             },
         );
 
-        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, ctx| {
-            cloud_model.add_object(shared_notebook_id, shared_notebook);
+        ObjectStoreModel::handle(&app).update(&mut app, |object_store_model, ctx| {
+            object_store_model.add_object(shared_notebook_id, shared_notebook);
 
-            let space = cloud_model
+            let space = object_store_model
                 .get_notebook(&shared_notebook_id)
                 .expect("Notebook is in ObjectStoreModel")
                 .space(ctx);
@@ -607,10 +607,10 @@ fn test_unshared_personal_object() {
             },
         );
 
-        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, ctx| {
-            cloud_model.add_object(shared_notebook_id, shared_notebook);
+        ObjectStoreModel::handle(&app).update(&mut app, |object_store_model, ctx| {
+            object_store_model.add_object(shared_notebook_id, shared_notebook);
 
-            let space = cloud_model
+            let space = object_store_model
                 .get_notebook(&shared_notebook_id)
                 .expect("Notebook is in ObjectStoreModel")
                 .space(ctx);
@@ -646,10 +646,10 @@ fn test_shared_team_object() {
             },
         );
 
-        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, ctx| {
-            cloud_model.add_object(shared_notebook_id, shared_notebook);
+        ObjectStoreModel::handle(&app).update(&mut app, |object_store_model, ctx| {
+            object_store_model.add_object(shared_notebook_id, shared_notebook);
 
-            let space = cloud_model
+            let space = object_store_model
                 .get_notebook(&shared_notebook_id)
                 .expect("Notebook is in ObjectStoreModel")
                 .space(ctx);
@@ -685,10 +685,10 @@ fn test_unshared_team_object() {
             },
         );
 
-        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, ctx| {
-            cloud_model.add_object(shared_notebook_id, shared_notebook);
+        ObjectStoreModel::handle(&app).update(&mut app, |object_store_model, ctx| {
+            object_store_model.add_object(shared_notebook_id, shared_notebook);
 
-            let space = cloud_model
+            let space = object_store_model
                 .get_notebook(&shared_notebook_id)
                 .expect("Notebook is in ObjectStoreModel")
                 .space(ctx);
@@ -727,9 +727,9 @@ fn test_shared_object_in_unshared_folder() {
         );
         shared_notebook.metadata_mut().folder_id = Some(unshared_folder_id);
 
-        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, ctx| {
-            cloud_model.add_object(shared_notebook_id, shared_notebook);
-            let notebook = cloud_model
+        ObjectStoreModel::handle(&app).update(&mut app, |object_store_model, ctx| {
+            object_store_model.add_object(shared_notebook_id, shared_notebook);
+            let notebook = object_store_model
                 .get_notebook(&shared_notebook_id)
                 .expect("Notebook is in ObjectStoreModel");
 
@@ -739,32 +739,32 @@ fn test_shared_object_in_unshared_folder() {
 
             // Check location-based APIs.
             assert_eq!(
-                notebook.location(cloud_model, ctx),
+                notebook.location(object_store_model, ctx),
                 StoredObjectLocation::Space(Space::Shared)
             );
             assert!(notebook.metadata.folder_id.is_some());
 
             // Despite the missing parent folder, the notebook is not trashed.
-            assert!(!notebook.is_trashed(cloud_model));
+            assert!(!notebook.is_trashed(object_store_model));
 
             // Check that iteration APIs include the notebook where it's expected.
-            assert!(cloud_model
+            assert!(object_store_model
                 .active_cloud_objects_in_space(Space::Shared, ctx)
                 .any(|obj| obj.uid() == notebook.uid()));
-            assert!(cloud_model
+            assert!(object_store_model
                 .active_cloud_objects_in_location_without_descendents(
                     StoredObjectLocation::Space(Space::Shared),
                     ctx
                 )
                 .any(|obj| obj.uid() == notebook.uid()));
             assert_eq!(
-                cloud_model
+                object_store_model
                     .trashed_cloud_objects_in_space(Space::Shared, ctx)
                     .count(),
                 0
             );
             assert_eq!(
-                cloud_model
+                object_store_model
                     .trashed_cloud_objects_in_location_without_descendents(
                         StoredObjectLocation::Space(Space::Shared),
                         ctx
@@ -775,13 +775,13 @@ fn test_shared_object_in_unshared_folder() {
 
             let folder_location = StoredObjectLocation::Folder(unshared_folder_id);
             assert_eq!(
-                cloud_model
+                object_store_model
                     .active_cloud_objects_in_location_without_descendents(folder_location, ctx)
                     .count(),
                 0
             );
             assert_eq!(
-                cloud_model
+                object_store_model
                     .trashed_cloud_objects_in_location_without_descendents(folder_location, ctx)
                     .count(),
                 0
@@ -812,8 +812,8 @@ fn active_object_uids_matches_naive_with_no_trashed_objects() {
     ];
 
     App::test((), |mut app| async move {
-        let cloud_model = create_cloud_model(&mut app, objects);
-        cloud_model.read(&app, |model, _| {
+        let object_store_model = create_object_store_model(&mut app, objects);
+        object_store_model.read(&app, |model, _| {
             assert_eq!(model.active_object_uids(), naive_active_object_uids(model));
             assert_eq!(model.active_object_uids().len(), 2);
         });
@@ -838,8 +838,8 @@ fn active_object_uids_matches_naive_with_directly_trashed_object() {
     ];
 
     App::test((), |mut app| async move {
-        let cloud_model = create_cloud_model(&mut app, objects);
-        cloud_model.read(&app, |model, _| {
+        let object_store_model = create_object_store_model(&mut app, objects);
+        object_store_model.read(&app, |model, _| {
             let active = model.active_object_uids();
             assert_eq!(active, naive_active_object_uids(model));
             assert_eq!(active.len(), 1);
@@ -875,8 +875,8 @@ fn active_object_uids_matches_naive_with_indirectly_trashed_children() {
     ];
 
     App::test((), |mut app| async move {
-        let cloud_model = create_cloud_model(&mut app, objects);
-        cloud_model.read(&app, |model, _| {
+        let object_store_model = create_object_store_model(&mut app, objects);
+        object_store_model.read(&app, |model, _| {
             let active = model.active_object_uids();
             assert_eq!(active, naive_active_object_uids(model));
             assert_eq!(active.len(), 1);
@@ -917,8 +917,8 @@ fn active_object_uids_matches_naive_with_nested_trashed_folder() {
     ];
 
     App::test((), |mut app| async move {
-        let cloud_model = create_cloud_model(&mut app, objects);
-        cloud_model.read(&app, |model, _| {
+        let object_store_model = create_object_store_model(&mut app, objects);
+        object_store_model.read(&app, |model, _| {
             let active = model.active_object_uids();
             assert_eq!(active, naive_active_object_uids(model));
             assert_eq!(active.len(), 1);
@@ -930,8 +930,8 @@ fn active_object_uids_matches_naive_with_nested_trashed_folder() {
 #[test]
 fn active_object_uids_matches_naive_with_empty_model() {
     App::test((), |mut app| async move {
-        let cloud_model = create_cloud_model(&mut app, vec![]);
-        cloud_model.read(&app, |model, _| {
+        let object_store_model = create_object_store_model(&mut app, vec![]);
+        object_store_model.read(&app, |model, _| {
             let active = model.active_object_uids();
             assert_eq!(active, naive_active_object_uids(model));
             assert!(active.is_empty());

@@ -2045,7 +2045,7 @@ impl RootView {
         ctx: &mut ViewContext<Self>,
     ) -> bool {
         if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
-            let cloud_model = ObjectStoreModel::as_ref(ctx);
+            let object_store_model = ObjectStoreModel::as_ref(ctx);
 
             match arg.object_type {
                 ObjectType::Notebook => {
@@ -2078,7 +2078,10 @@ impl RootView {
                 ObjectType::GenericStringObject(GenericStringObjectFormat::Json(
                     JsonObjectType::EnvVarCollection,
                 )) => {
-                    if cloud_model.get_by_uid(&arg.server_id.uid()).is_none() {
+                    if object_store_model
+                        .get_by_uid(&arg.server_id.uid())
+                        .is_none()
+                    {
                         display_object_missing_error_in_window(ctx.window_id(), ctx);
                         return false;
                     }
@@ -2098,7 +2101,10 @@ impl RootView {
                     });
                 }
                 ObjectType::Folder => {
-                    if cloud_model.get_by_uid(&arg.server_id.uid()).is_none() {
+                    if object_store_model
+                        .get_by_uid(&arg.server_id.uid())
+                        .is_none()
+                    {
                         display_object_missing_error_in_window(ctx.window_id(), ctx);
                         return false;
                     }
@@ -2453,8 +2459,8 @@ impl RootView {
 
     fn export_all_warp_drive_objects(&mut self, ctx: &mut ViewContext<Self>) {
         let window_id = ctx.window_id();
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
-        let exportable_objects = cloud_model.get_all_exportable_object_ids();
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
+        let exportable_objects = object_store_model.get_all_exportable_object_ids();
         ExportManager::handle(ctx).update(ctx, move |export_manager, ctx| {
             export_manager.export(window_id, &exportable_objects, ctx);
         });

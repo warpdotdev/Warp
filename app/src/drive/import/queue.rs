@@ -294,9 +294,9 @@ impl ImportQueue {
                 return;
             }
 
-            let cloud_model = ObjectStoreModel::as_ref(ctx);
+            let object_store_model = ObjectStoreModel::as_ref(ctx);
 
-            let Some(folder_id) = cloud_model
+            let Some(folder_id) = object_store_model
                 .get_folder_by_uid(&result.server_id.expect("Expect id").uid())
                 .and_then(|folder| folder.id.into_server())
             else {

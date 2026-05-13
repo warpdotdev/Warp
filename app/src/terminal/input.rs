@@ -1035,10 +1035,10 @@ pub enum Event {
         origin: AgentViewEntryOrigin,
     },
     CreateDockerSandbox,
-    /// Exit cloud mode (ambient agent) and start a new *local* agent conversation in the root terminal.
+    /// Exit ambient agent and start a new *local* agent conversation in the root terminal.
     ///
     /// If `initial_prompt` is `Some`, it should prefill the local agent prompt but not auto-send.
-    ExitCloudModeAndStartLocalAgent {
+    ExitAmbientAgentAndStartLocalAgent {
         initial_prompt: Option<String>,
     },
     ScrollToExchange {
@@ -2105,7 +2105,7 @@ impl Input {
                     editor.reset_height_shrink_delay(ctx);
                 });
 
-                if *origin == AgentViewEntryOrigin::CloudAgent {
+                if *origin == AgentViewEntryOrigin::AmbientAgent {
                     // By default, shared session viewers cannot edit the input - override that for composing ambient agent queries.
                     me.editor.update(ctx, |editor, ctx| {
                         editor.set_interaction_state(InteractionState::Editable, ctx);
@@ -2277,7 +2277,7 @@ impl Input {
                     ctx.emit(Event::RegisterPluginListener(*agent));
                 }
                 // OpenWarp Wave 7-3:`AgentInputFooterEvent::OpenEnvironmentManagementPane` handler
-                // 随 Cloud Mode UI 子系统物理删。
+                // 随 ambient-agent UI 子系统物理删。
                 #[cfg(not(target_family = "wasm"))]
                 AgentInputFooterEvent::OpenPluginInstructionsPane(agent, kind) => {
                     ctx.emit(Event::OpenPluginInstructionsPane(*agent, *kind));
@@ -4697,7 +4697,7 @@ impl Input {
             .count();
 
         // Image context is available whenever the feature flag is enabled and we're in AI input
-        // mode, including cloud mode
+        // mode, including ambient-agent mode
         let image_context_options = if FeatureFlag::ImageAsContext.is_enabled()
             && matches!(ai_input_model.input_type(), InputType::AI)
         {
@@ -6516,11 +6516,11 @@ impl Input {
                 });
 
                 // Get enum variants
-                let cloud_model = ObjectStoreModel::as_ref(ctx);
+                let object_store_model = ObjectStoreModel::as_ref(ctx);
                 let enum_variants_map = argument_index_to_object_id_map
                     .iter()
                     .filter_map(|(index, object_id)| {
-                        cloud_model
+                        object_store_model
                             .get_workflow_enum(object_id)
                             .map(|workflow_enum| {
                                 workflow_enum.model().string_model.variants.clone()
@@ -11893,7 +11893,7 @@ impl Input {
                 {
                     return;
                 }
-                // In cloud mode (ambient agent), Cmd+Enter should exit cloud mode entirely and start a
+                // In ambient agent, Cmd+Enter should exit ambient-agent session entirely and start a
                 // new *local* agent conversation in the root terminal. This should work whether the
                 // buffer is empty (blank convo) or non-empty (prefill draft, but don't auto-send).
                 if self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent() {
@@ -11902,7 +11902,7 @@ impl Input {
                     draft.truncate(draft.trim_end().len());
 
                     let is_empty = draft.trim().is_empty();
-                    ctx.emit(Event::ExitCloudModeAndStartLocalAgent {
+                    ctx.emit(Event::ExitAmbientAgentAndStartLocalAgent {
                         initial_prompt: (!is_empty).then_some(draft),
                     });
                     return;

@@ -18,9 +18,9 @@ use warpui::App;
 fn test_choosing_preset_colors() {
     App::test((), |mut app| async move {
         // Initialize with a sharer.
-        let firebase_uid = UserUid::new("mock_firebase_uid");
+        let user_uid = UserUid::new("mock_user_uid");
         let presence_manager =
-            app.add_model(|_| PresenceManager::new_for_sharer(ParticipantId::new(), firebase_uid));
+            app.add_model(|_| PresenceManager::new_for_sharer(ParticipantId::new(), user_uid));
 
         let sharer_id = ParticipantId::new();
         let sharer = Sharer {
@@ -177,7 +177,7 @@ fn test_choosing_preset_colors() {
 fn test_dont_include_self_in_viewers() {
     App::test((), |mut app| async move {
         let self_id = ParticipantId::new();
-        let self_firebase_uid = UserUid::new("mock_firebase_uid");
+        let self_user_uid = UserUid::new("mock_user_uid");
 
         let sharer = Sharer {
             ..Default::default()
@@ -225,7 +225,7 @@ fn test_dont_include_self_in_viewers() {
         let presence_manager = app.add_model(|ctx| {
             PresenceManager::new_for_viewer(
                 self_id.clone(),
-                self_firebase_uid,
+                self_user_uid,
                 participant_list.clone(),
                 ctx,
             )
@@ -307,11 +307,11 @@ fn test_selected_block_index_for_avatar() {
             pending_guests: Default::default(),
         };
 
-        let firebase_uid = UserUid::new("mock_firebase_uid");
+        let user_uid = UserUid::new("mock_user_uid");
         let presence_manager = app.add_model(|ctx| {
             PresenceManager::new_for_viewer(
                 ParticipantId::new(),
-                firebase_uid,
+                user_uid,
                 participant_list.clone(),
                 ctx,
             )

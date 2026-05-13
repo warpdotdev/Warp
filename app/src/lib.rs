@@ -1537,7 +1537,7 @@ fn initialize_app(
         .cloned()
         .collect::<Vec<_>>();
 
-    let cloud_model = ctx.add_singleton_model(|_ctx| {
+    let object_store_model = ctx.add_singleton_model(|_ctx| {
         ObjectStoreModel::new(
             persistence_writer.sender(),
             cloud_objects,
@@ -1547,7 +1547,7 @@ fn initialize_app(
 
     // OpenWarp(Wave 4):SyncQueue 整删后,不再有 `unsynced_actions` /
     // `objects_with_pending_changes` 跟踪;本地写入即“完成”。
-    let _ = (&cloud_model, &object_actions);
+    let _ = (&object_store_model, &object_actions);
     // 保留 `ObjectTypeAndId` import 供同 crate 其他模块按 `crate::` 路径访问。
     let _: Option<ObjectTypeAndId> = None;
 

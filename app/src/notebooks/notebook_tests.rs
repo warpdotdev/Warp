@@ -358,7 +358,7 @@ fn test_eager_baton_grab_same_current_editor() {
         // Set the current editor of the notebook to be the test notebook
         cloud_notebook.metadata.current_editor_uid = Some(TEST_USER_UID.to_string().clone());
 
-        // Add the notebook to cloud model
+        // Add the notebook to object store
         ObjectStoreModel::handle(&app).update(&mut app, |model, _| {
             model.add_object(cloud_notebook.id, cloud_notebook.clone())
         });
@@ -405,14 +405,14 @@ fn test_not_eager_baton_grab_different_editor() {
         cloud_notebook.metadata.current_editor_uid = Some(uid.clone());
         UserProfiles::handle(&app).update(&mut app, |user_profiles, _| {
             user_profiles.insert_profiles(&vec![UserProfileWithUID {
-                firebase_uid: UserUid::new(&uid),
+                local_user_uid: UserUid::new(&uid),
                 display_name: Some(email.clone()),
                 email: email.clone(),
                 photo_url: "".to_string(),
             }]);
         });
 
-        // Add the notebook to cloud model
+        // Add the notebook to object store
         ObjectStoreModel::handle(&app).update(&mut app, |model, _| {
             model.add_object(cloud_notebook.id, cloud_notebook.clone())
         });
@@ -457,9 +457,9 @@ fn test_baton_grab_editor_changed_offline() {
         let mut updated_notebook = mock_stored_notebook("Test Notebook", "Some text");
         let cloud_notebook = updated_notebook.clone();
 
-        // Add the notebook to the cloud model, with no editor.
-        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, _| {
-            cloud_model.add_object(cloud_notebook.id, cloud_notebook.clone());
+        // Add the notebook to the object store, with no editor.
+        ObjectStoreModel::handle(&app).update(&mut app, |object_store_model, _| {
+            object_store_model.add_object(cloud_notebook.id, cloud_notebook.clone());
         });
 
         // Open the notebook, before initial load has finished.
@@ -471,7 +471,7 @@ fn test_baton_grab_editor_changed_offline() {
         updated_notebook.metadata.current_editor_uid = Some(other_uid.to_string());
         UserProfiles::handle(&app).update(&mut app, |user_profiles, _| {
             user_profiles.insert_profiles(&vec![UserProfileWithUID {
-                firebase_uid: UserUid::new(other_uid),
+                local_user_uid: UserUid::new(other_uid),
                 display_name: Some(other_email.to_string()),
                 email: other_email.to_string(),
                 photo_url: "".to_string(),
@@ -513,9 +513,9 @@ fn test_baton_grab_editor_left_offline() {
         updated_notebook.metadata.current_editor_uid = Some(other_uid.to_string());
         let cloud_notebook = updated_notebook.clone();
 
-        // Add the notebook to the cloud model, with the saved editor.
-        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, _| {
-            cloud_model.add_object(cloud_notebook.id, cloud_notebook.clone());
+        // Add the notebook to the object store, with the saved editor.
+        ObjectStoreModel::handle(&app).update(&mut app, |object_store_model, _| {
+            object_store_model.add_object(cloud_notebook.id, cloud_notebook.clone());
         });
 
         // Open the notebook, before initial load has finished.
@@ -558,8 +558,8 @@ fn test_close_unmodified() {
         let cloud_notebook = mock_stored_notebook("Test", "Some text");
         let notebook_id = cloud_notebook.id;
 
-        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, _| {
-            cloud_model.add_object(cloud_notebook.id, cloud_notebook.clone());
+        ObjectStoreModel::handle(&app).update(&mut app, |object_store_model, _| {
+            object_store_model.add_object(cloud_notebook.id, cloud_notebook.clone());
         });
 
         let (_, notebook_view, _) = create_notebook(&mut app);
