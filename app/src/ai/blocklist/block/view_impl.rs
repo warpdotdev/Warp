@@ -669,12 +669,13 @@ pub fn render_citation(
                 .to_warp_drive_item(appearance)?;
             (
                 item.icon(appearance, Some(theme.active_ui_text_color())),
-                item.display_name().unwrap_or(String::from("Untitled")),
+                item.display_name()
+                    .unwrap_or_else(|| t!("ai_output.untitled").to_string()),
             )
         }
         AIAgentCitation::WarpDocumentation { .. } => {
             let icon = Icon::Warp.to_warpui_icon(theme.foreground()).finish();
-            let name = String::from("Warp Docs");
+            let name = t!("ai_output.warp_docs").to_string();
             (Some(icon), name)
         }
         AIAgentCitation::WebPage { url } => {
@@ -767,7 +768,7 @@ where
                     appearance
                         .ui_builder()
                         .link(
-                            "Manage AI Autonomy permissions".into(),
+                            t!("ai_output.manage_ai_autonomy_permissions").to_string(),
                             None,
                             Some(Box::new(move |ctx| {
                                 ctx.dispatch_typed_action(
@@ -794,7 +795,7 @@ where
 /// This function is needed both above (i.e. `block.rs`) and below (i.e. `output.rs`), and as such
 /// cannot reside in `output.rs` because we don't want to make `mod output` public.
 pub fn render_autonomy_checkbox_setting_speedbump_footer(
-    description: &'static str,
+    description: String,
     checked: bool,
     on_toggled_action: AIBlockAction,
     checkbox_handle: MouseStateHandle,
@@ -822,7 +823,7 @@ pub fn render_autonomy_checkbox_setting_speedbump_footer(
         .with_child(
             Container::new(
                 Text::new(
-                    description,
+                    description.clone(),
                     appearance.ui_font_family(),
                     appearance.monospace_font_size() - 1.,
                 )
@@ -840,7 +841,7 @@ pub fn render_autonomy_checkbox_setting_speedbump_footer(
                     appearance
                         .ui_builder()
                         .link(
-                            "Manage AI Autonomy permissions".into(),
+                            t!("ai_output.manage_ai_autonomy_permissions").to_string(),
                             None,
                             Some(Box::new(move |ctx| {
                                 ctx.dispatch_typed_action(

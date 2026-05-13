@@ -710,7 +710,7 @@ impl RequestedCommandView {
             ) if show_for_action_id == &self.action_id => {
                 *shown.lock() = true;
                 Some(render_autonomy_checkbox_setting_speedbump_footer(
-                    "Always allow Oz to execute read-only commands (relies on model)",
+                    t!("ai_output.always_allow_oz_read_only_commands").to_string(),
                     *checked,
                     AIBlockAction::ToggleAutoexecuteReadonlyCommandsSpeedbumpCheckbox,
                     self.autoexecute_readonly_commands_speedbump_checkbox_handle
