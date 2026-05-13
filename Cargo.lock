@@ -6675,6 +6675,7 @@ dependencies = [
  "smol_str",
  "tokenizers",
  "warp_completer",
+ "warp_features",
 ]
 
 [[package]]

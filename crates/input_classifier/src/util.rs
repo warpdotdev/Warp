@@ -58,13 +58,10 @@ pub fn is_prefix_of_natural_language_word(input: &str) -> bool {
 /// Returns whether the input is likely a shell command based on a token-level
 /// scoring heuristic.
 ///
-/// A token counts toward the "likely shell" score only when the completer attached
-/// a description to it (i.e. it recognized the token as a known command / flag /
-/// path). Shell-syntax characters in tokens (e.g. `--flag`, `path/to/file`,
-/// `KEY=val`) are intentionally NOT counted here — that heuristic is too noisy
-/// for natural-language prompts that happen to contain URLs, file paths, or
-/// dashed words. Routing those cases to the downstream NLD classifier yields
-/// better accuracy.
+/// In v1, a token counts toward the "likely shell" score when the completer
+/// attached a description to it or when it contains shell-syntax characters.
+/// In v2, shell-syntax characters are ignored and only tokens with completer
+/// descriptions count toward the score.
 pub async fn is_likely_shell_command(
     input: &ParsedTokensSnapshot,
     word_tokens_count: usize,
@@ -86,7 +83,9 @@ pub async fn is_likely_shell_command(
             return true;
         }
 
-        if token.token_description.is_some() {
+        if token.token_description.is_some()
+            || check_if_token_has_shell_syntax(token.token.as_str())
+        {
             likely_command_token_count += 1;
         }
 
@@ -112,6 +111,18 @@ pub async fn is_likely_shell_command(
         || (word_tokens_count < 3 && is_first_token_command)
     {
         return true;
+    }
+
+    false
+}
+
+fn check_if_token_has_shell_syntax(word: &str) -> bool {
+    if cfg!(feature = "nld_heuristic_v2") {
+        return false;
+    }
+
+    if cfg!(feature = "nld_heuristic_v1") {
+        return natural_language_detection::check_if_token_has_shell_syntax(word);
     }
 
     false

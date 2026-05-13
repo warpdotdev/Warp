@@ -6,6 +6,7 @@ use crate::test_utils::CompletionContext;
 use super::*;
 
 async fn mock_parsed_input_token(buffer_text: String) -> ParsedTokensSnapshot {
+    warp_features::mark_initialized();
     let completion_context = CompletionContext::new();
     parse_current_commands_and_tokens(buffer_text, &completion_context).await
 }
@@ -16,100 +17,164 @@ fn clear_all_token_descriptions(snapshot: &mut ParsedTokensSnapshot) {
     }
 }
 
-#[test]
-fn test_is_likely_shell_command_one_off_keyword_short_circuits() {
-    futures::executor::block_on(async move {
-        // First token in `ONE_OFF_SHELL_COMMAND_KEYWORDS` should short-circuit to true
-        let mut token = mock_parsed_input_token("sudo apt update".to_string()).await;
-        let word_tokens_count = token.parsed_tokens.len();
-        clear_all_token_descriptions(&mut token);
-        assert!(is_likely_shell_command(&token, word_tokens_count).await);
+async fn one_off_keyword_short_circuits() {
+    let mut token = mock_parsed_input_token("sudo apt update".to_string()).await;
+    let word_tokens_count = token.parsed_tokens.len();
+    clear_all_token_descriptions(&mut token);
+    assert!(is_likely_shell_command(&token, word_tokens_count).await);
 
-        // Same short-circuit for `echo`.
-        let mut token = mock_parsed_input_token("echo hello world".to_string()).await;
-        let word_tokens_count = token.parsed_tokens.len();
-        clear_all_token_descriptions(&mut token);
-        assert!(is_likely_shell_command(&token, word_tokens_count).await);
-    });
+    let mut token = mock_parsed_input_token("echo hello world".to_string()).await;
+    let word_tokens_count = token.parsed_tokens.len();
+    clear_all_token_descriptions(&mut token);
+    assert!(is_likely_shell_command(&token, word_tokens_count).await);
 }
 
-#[test]
-fn test_is_likely_shell_command_first_token_with_description_short_input() {
-    futures::executor::block_on(async move {
-        // First token has a description (real command) and total word tokens < 3 should short-circuit to true.
-        let token = mock_parsed_input_token("cargo --version".to_string()).await;
-        assert!(is_likely_shell_command(&token, 2).await);
-    });
+async fn first_token_with_description_short_input_is_shell() {
+    let token = mock_parsed_input_token("cargo --version".to_string()).await;
+    assert!(is_likely_shell_command(&token, 2).await);
 }
 
-#[test]
-fn test_is_likely_shell_command_no_descriptions_returns_false() {
-    futures::executor::block_on(async move {
-        // None of the tokens have descriptions and none are one-off keywords should return false
-        let mut token = mock_parsed_input_token("install --foo=bar baz".to_string()).await;
-        let word_tokens_count = token.parsed_tokens.len();
-        clear_all_token_descriptions(&mut token);
-        assert!(!is_likely_shell_command(&token, word_tokens_count).await);
-    });
+async fn no_descriptions_returns_false() {
+    let mut token = mock_parsed_input_token("install --foo=bar baz".to_string()).await;
+    let word_tokens_count = token.parsed_tokens.len();
+    clear_all_token_descriptions(&mut token);
+    assert!(!is_likely_shell_command(&token, word_tokens_count).await);
 }
 
-#[test]
-fn test_is_likely_shell_command_shell_syntax_no_longer_votes() {
-    futures::executor::block_on(async move {
-        // Tokens with shell-syntax characters (`-`, `=`, `/`) but not in whiltelist keywords
-        // or not with token_description should return false
-        let mut token =
-            mock_parsed_input_token("git --foo=bar /path/to/file --baz".to_string()).await;
-        let word_tokens_count = token.parsed_tokens.len();
-        // Keep only the first token's description (mocking the completer
-        // recognizing `git` but nothing else).
-        for (idx, t) in token.parsed_tokens.iter_mut().enumerate() {
-            if idx != 0 {
-                t.token_description = None;
-            }
+async fn shell_syntax_tokens_with_only_first_token_description() -> bool {
+    let mut token = mock_parsed_input_token("git --foo=bar /path/to/file --baz".to_string()).await;
+    let word_tokens_count = token.parsed_tokens.len();
+
+    for (idx, token) in token.parsed_tokens.iter_mut().enumerate() {
+        if idx != 0 {
+            token.token_description = None;
         }
-        // word_tokens_count >= 3 disables the short-input shortcut, so the only
-        // path to true is the threshold check: 1/5 likely tokens = 0.2 < 0.5.
-        assert!(word_tokens_count >= 3);
-        assert!(!is_likely_shell_command(&token, word_tokens_count).await);
+    }
+
+    assert!(word_tokens_count >= 3);
+    is_likely_shell_command(&token, word_tokens_count).await
+}
+
+async fn url_like_token_in_nl_prompt_is_shell() -> bool {
+    let mut token = mock_parsed_input_token(
+        "read this https://example.com/foo-bar and summarize it".to_string(),
+    )
+    .await;
+    let word_tokens_count = token.parsed_tokens.len();
+    clear_all_token_descriptions(&mut token);
+    is_likely_shell_command(&token, word_tokens_count).await
+}
+
+async fn file_path_in_nl_prompt_is_shell() -> bool {
+    let mut token =
+        mock_parsed_input_token("look at this /users/foo/bar.log file".to_string()).await;
+    let word_tokens_count = token.parsed_tokens.len();
+    clear_all_token_descriptions(&mut token);
+    is_likely_shell_command(&token, word_tokens_count).await
+}
+
+async fn majority_described_tokens_returns_true() {
+    let token =
+        mock_parsed_input_token("cargo build --release --workspace --all-features".to_string())
+            .await;
+    let word_tokens_count = token.parsed_tokens.len();
+    assert!(is_likely_shell_command(&token, word_tokens_count).await);
+}
+
+#[cfg(all(feature = "nld_heuristic_v1", not(feature = "nld_heuristic_v2")))]
+#[test]
+fn test_is_likely_shell_command_one_off_keyword_short_circuits_true_for_nld_heuristic_v1() {
+    futures::executor::block_on(one_off_keyword_short_circuits());
+}
+
+#[cfg(feature = "nld_heuristic_v2")]
+#[test]
+fn test_is_likely_shell_command_one_off_keyword_short_circuits_true_for_nld_heuristic_v2() {
+    futures::executor::block_on(one_off_keyword_short_circuits());
+}
+
+#[cfg(all(feature = "nld_heuristic_v1", not(feature = "nld_heuristic_v2")))]
+#[test]
+fn test_is_likely_shell_command_first_token_with_description_short_input_true_for_nld_heuristic_v1()
+{
+    futures::executor::block_on(first_token_with_description_short_input_is_shell());
+}
+
+#[cfg(feature = "nld_heuristic_v2")]
+#[test]
+fn test_is_likely_shell_command_first_token_with_description_short_input_true_for_nld_heuristic_v2()
+{
+    futures::executor::block_on(first_token_with_description_short_input_is_shell());
+}
+
+#[cfg(all(feature = "nld_heuristic_v1", not(feature = "nld_heuristic_v2")))]
+#[test]
+fn test_is_likely_shell_command_no_descriptions_false_for_nld_heuristic_v1() {
+    futures::executor::block_on(no_descriptions_returns_false());
+}
+
+#[cfg(feature = "nld_heuristic_v2")]
+#[test]
+fn test_is_likely_shell_command_no_descriptions_false_for_nld_heuristic_v2() {
+    futures::executor::block_on(no_descriptions_returns_false());
+}
+
+#[cfg(all(feature = "nld_heuristic_v1", not(feature = "nld_heuristic_v2")))]
+#[test]
+fn test_is_likely_shell_command_shell_syntax_votes_true_for_nld_heuristic_v1() {
+    futures::executor::block_on(async move {
+        assert!(shell_syntax_tokens_with_only_first_token_description().await);
     });
 }
 
+#[cfg(feature = "nld_heuristic_v2")]
 #[test]
-fn test_is_likely_shell_command_url_like_token_in_nl_prompt() {
+fn test_is_likely_shell_command_shell_syntax_does_not_vote_false_for_nld_heuristic_v2() {
     futures::executor::block_on(async move {
-        // Natural-language prompt containing a URL should return false
-        let mut token = mock_parsed_input_token(
-            "read this https://example.com/foo-bar and summarize it".to_string(),
-        )
-        .await;
-        let word_tokens_count = token.parsed_tokens.len();
-        clear_all_token_descriptions(&mut token);
-        assert!(!is_likely_shell_command(&token, word_tokens_count).await);
+        assert!(!shell_syntax_tokens_with_only_first_token_description().await);
     });
 }
 
+#[cfg(all(feature = "nld_heuristic_v1", not(feature = "nld_heuristic_v2")))]
 #[test]
-fn test_is_likely_shell_command_file_path_in_nl_prompt() {
+fn test_is_likely_shell_command_url_like_token_in_nl_prompt_false_for_nld_heuristic_v1() {
     futures::executor::block_on(async move {
-        // Natural-language prompt containing a file path should return false
-        let mut token =
-            mock_parsed_input_token("look at this /users/foo/bar.log file".to_string()).await;
-        let word_tokens_count = token.parsed_tokens.len();
-        clear_all_token_descriptions(&mut token);
-        assert!(!is_likely_shell_command(&token, word_tokens_count).await);
+        assert!(!url_like_token_in_nl_prompt_is_shell().await);
     });
 }
 
+#[cfg(feature = "nld_heuristic_v2")]
 #[test]
-fn test_is_likely_shell_command_majority_described_tokens() {
+fn test_is_likely_shell_command_url_like_token_in_nl_prompt_false_for_nld_heuristic_v2() {
     futures::executor::block_on(async move {
-        // Completer recognizes the majority of tokens (>= 50% for
-        // 5+ tokens) should return true
-        let token =
-            mock_parsed_input_token("cargo build --release --workspace --all-features".to_string())
-                .await;
-        let word_tokens_count = token.parsed_tokens.len();
-        assert!(is_likely_shell_command(&token, word_tokens_count).await);
+        assert!(!url_like_token_in_nl_prompt_is_shell().await);
     });
+}
+
+#[cfg(all(feature = "nld_heuristic_v1", not(feature = "nld_heuristic_v2")))]
+#[test]
+fn test_is_likely_shell_command_file_path_in_nl_prompt_false_for_nld_heuristic_v1() {
+    futures::executor::block_on(async move {
+        assert!(!file_path_in_nl_prompt_is_shell().await);
+    });
+}
+
+#[cfg(feature = "nld_heuristic_v2")]
+#[test]
+fn test_is_likely_shell_command_file_path_in_nl_prompt_false_for_nld_heuristic_v2() {
+    futures::executor::block_on(async move {
+        assert!(!file_path_in_nl_prompt_is_shell().await);
+    });
+}
+
+#[cfg(all(feature = "nld_heuristic_v1", not(feature = "nld_heuristic_v2")))]
+#[test]
+fn test_is_likely_shell_command_majority_described_tokens_true_for_nld_heuristic_v1() {
+    futures::executor::block_on(majority_described_tokens_returns_true());
+}
+
+#[cfg(feature = "nld_heuristic_v2")]
+#[test]
+fn test_is_likely_shell_command_majority_described_tokens_true_for_nld_heuristic_v2() {
+    futures::executor::block_on(majority_described_tokens_returns_true());
 }
