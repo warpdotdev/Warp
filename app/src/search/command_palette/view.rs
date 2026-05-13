@@ -337,18 +337,6 @@ impl View {
             .map(|item| &item.search_result)
     }
 
-    pub fn set_fixed_query_filters(
-        &mut self,
-        title: String,
-        filters: Vec<QueryFilter>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.search_bar.update(ctx, |search_bar, ctx| {
-            search_bar.set_fixed_filters(title, filters, ctx);
-        });
-        ctx.notify();
-    }
-
     /// Set the active query filter in the search bar to be `filter`.
     pub fn set_active_query_filter(&mut self, filter: QueryFilter, ctx: &mut ViewContext<Self>) {
         self.search_bar.update(ctx, |view, ctx| {
@@ -963,11 +951,10 @@ impl View {
                 path: _,
                 project_name,
             } => {
-                // AcceptProject is handled by the welcome palette, not the regular command palette.
-                // This case should not normally be reached in the command palette context, but we
-                // include it for completeness. If this somehow gets executed, we'll just log it.
+                // Project actions are handled by the welcome palette, not the regular command
+                // palette.
                 log::warn!(
-                    "OpenProjectConvo action unexpectedly handled in command palette for project: {project_name}"
+                    "NewConversationInProject action unexpectedly handled in command palette for project: {project_name}"
                 );
             }
             CommandPaletteItemAction::NewConversation => {

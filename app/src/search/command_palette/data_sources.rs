@@ -8,7 +8,6 @@ use crate::search::command_palette::files;
 use crate::search::command_palette::launch_config;
 use crate::search::command_palette::mixer::{CommandPaletteItemAction, ItemSummary};
 use crate::search::command_palette::new_session::NewSessionDataSource;
-use crate::search::command_palette::repos::RepoDataSource;
 use crate::search::command_palette::{navigation, tabs, CommandPaletteMixer};
 use crate::search::data_source::QueryResult;
 use crate::search::files::model::FileSearchModel;
@@ -31,9 +30,7 @@ pub struct DataSourceStore {
     warp_drive_data_source: ModelHandle<warp_drive::DataSource>,
     launch_config_data_source: ModelHandle<launch_config::DataSource>,
     new_session_data_source: Option<ModelHandle<NewSessionDataSource>>,
-    historical_conversation_data_source: ModelHandle<conversations::DataSource>,
     all_conversation_data_source: ModelHandle<conversations::DataSource>,
-    repo_data_source: ModelHandle<RepoDataSource>,
     tabs_data_source: Option<ModelHandle<tabs::DataSource>>,
 }
 
@@ -57,13 +54,8 @@ impl DataSourceStore {
             && cfg!(feature = "local_tty"))
         .then_some(ctx.add_model(|ctx| NewSessionDataSource::new(binding_source, ctx)));
 
-        let historical_conversation_data_source: ModelHandle<conversations::DataSource> =
-            ctx.add_model(|_| conversations::DataSource::historical());
-
         let all_conversation_data_source: ModelHandle<conversations::DataSource> =
             ctx.add_model(|_| conversations::DataSource::new());
-
-        let repo_data_source = ctx.add_model(|_| RepoDataSource::new());
 
         Self {
             actions_data_source,
@@ -71,9 +63,7 @@ impl DataSourceStore {
             warp_drive_data_source,
             launch_config_data_source,
             new_session_data_source,
-            historical_conversation_data_source,
             all_conversation_data_source,
-            repo_data_source,
             tabs_data_source: None,
         }
     }
@@ -156,17 +146,7 @@ impl DataSourceStore {
                     self.all_conversation_data_source.clone(),
                     HashSet::from([QueryFilter::Conversations]),
                 );
-
-                mixer.add_sync_source(
-                    self.historical_conversation_data_source.clone(),
-                    HashSet::from([QueryFilter::HistoricalConversations]),
-                );
             }
-
-            mixer.add_sync_source(
-                self.repo_data_source.clone(),
-                HashSet::from([QueryFilter::Repos]),
-            );
 
             ctx.notify();
         });
@@ -288,12 +268,6 @@ impl DataSourceStore {
                     is_directory: true,
                 };
                 Some(QueryResult::from(search_item))
-            }
-            ItemSummary::Project { path: _ } => {
-                // For project summaries, we would need a project data source to reconstruct the item,
-                // but this is typically handled by the welcome palette, not the command palette.
-                // For now, return None as projects aren't expected in the regular command palette.
-                None
             }
             ItemSummary::Conversation { id } => conversations::DataSource::query_result(id, app),
 

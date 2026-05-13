@@ -84,12 +84,6 @@ pub enum FilterState {
 
     /// A single filter has been selected by and is visible to the user
     Visible(QueryFilter),
-
-    /// A fixed set of filters has been applied and is not visible to the user
-    Fixed {
-        placeholder_text: String,
-        query_filters: Vec<QueryFilter>,
-    },
 }
 
 impl FilterState {
@@ -97,7 +91,6 @@ impl FilterState {
         match self {
             FilterState::Unfiltered => true,
             FilterState::Visible(_) => false,
-            FilterState::Fixed { .. } => true,
         }
     }
 }
@@ -339,12 +332,10 @@ impl<T: Action + Clone> SearchBarState<T> {
         self.query_result_renderers.as_ref()
     }
 
-    /// Returns the active visible [`QueryFilter`] or `None` if either there is no filter set
-    /// or the search bar is in a "fixed filters" state.
+    /// Returns the active visible [`QueryFilter`] or `None` if there is no filter set.
     pub fn active_visible_query_filter(&self) -> Option<QueryFilter> {
         match self.query_filter {
             FilterState::Visible(filter) => Some(filter),
-            FilterState::Fixed { .. } => None,
             FilterState::Unfiltered => None,
         }
     }
@@ -602,7 +593,6 @@ impl<T: Action + Clone> SearchBar<T> {
         let filter_and_atom_text = match &self.state.as_ref(ctx).query_filter {
             FilterState::Visible(filter) => Some((*filter, filter.filter_atom().primary_text)),
             FilterState::Unfiltered => None,
-            FilterState::Fixed { .. } => None,
         };
         self.set_visible_query_filter(filter_and_atom_text, ctx);
         self.handle_editor_text_update(ctx);
@@ -652,28 +642,7 @@ impl<T: Action + Clone> SearchBar<T> {
         match self.state.as_ref(ctx).query_filter {
             FilterState::Unfiltered => true,
             FilterState::Visible(_) => true,
-            FilterState::Fixed { .. } => false,
         }
-    }
-
-    /// Sets this search bar to fixed query filter mode - it will not display the filters to the user
-    /// and the user cannot cancel them by hitting backspace
-    pub fn set_fixed_filters(
-        &mut self,
-        label: String,
-        filters: Vec<QueryFilter>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.state.update(ctx, |state, ctx| {
-            state.query_filter = FilterState::Fixed {
-                placeholder_text: label,
-                query_filters: filters,
-            };
-            state.should_show_zero_state = false;
-            ctx.notify();
-        });
-
-        self.update_placeholder_text(ctx);
     }
 
     /// Updates the active filter and re-runs the query, since results may be affected by the newly
@@ -737,7 +706,6 @@ impl<T: Action + Clone> SearchBar<T> {
         let filters: HashSet<QueryFilter> = match &self.state.as_ref(ctx).query_filter {
             FilterState::Unfiltered => HashSet::new(),
             FilterState::Visible(filter) => HashSet::from_iter([*filter]),
-            FilterState::Fixed { query_filters, .. } => HashSet::from_iter(query_filters.clone()),
         };
 
         self.mixer.update(ctx, |mixer, ctx| {
@@ -886,11 +854,6 @@ impl<T: Action + Clone> SearchBar<T> {
                     FilterState::Visible(filter) => {
                         editor.set_placeholder_text(filter.placeholder_text(), ctx);
                     }
-                    FilterState::Fixed {
-                        placeholder_text, ..
-                    } => {
-                        editor.set_placeholder_text(placeholder_text.clone(), ctx);
-                    }
                     FilterState::Unfiltered => {
                         editor.set_placeholder_text(self.placeholder_text, ctx);
                     }
@@ -923,8 +886,8 @@ impl<T: Action + Clone> SearchBar<T> {
     /// (completing the 'history:' atom text) as an autosuggestion.
     fn update_filter_autosuggestion_text(&self, ctx: &mut ViewContext<Self>) {
         match self.state.as_ref(ctx).query_filter {
-            FilterState::Visible(_) | FilterState::Fixed { .. } => {
-                // If there is an active filter or the filters are fixed, there should never be filter autosuggestion text
+            FilterState::Visible(_) => {
+                // If there is an active filter, there should never be filter autosuggestion text
                 // (the user has already applied a filter and can't apply another one).
                 if self.editor_handle.as_ref(ctx).active_autosuggestion() {
                     self.editor_handle.update(ctx, |editor, ctx| {

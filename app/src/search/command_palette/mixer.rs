@@ -140,8 +140,10 @@ impl CommandPaletteItemAction {
                 // CreateFile actions should not show up in recent items
                 ItemSummary::NoOp
             }
-            CommandPaletteItemAction::NewConversationInProject { path, .. } => {
-                ItemSummary::Project { path: path.clone() }
+            CommandPaletteItemAction::NewConversationInProject { .. } => {
+                // Project actions are handled by the welcome palette, not the regular command
+                // palette recent-items section.
+                ItemSummary::NoOp
             }
             CommandPaletteItemAction::NewConversation => ItemSummary::NewConversation,
             CommandPaletteItemAction::NoOp => ItemSummary::NoOp,
@@ -196,9 +198,6 @@ pub enum ItemSummary {
     Directory {
         path: String,
         project_directory: String,
-    },
-    Project {
-        path: String,
     },
     Conversation {
         id: AIConversationId,
