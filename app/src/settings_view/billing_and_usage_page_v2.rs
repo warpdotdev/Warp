@@ -1243,11 +1243,12 @@ impl BillingAndUsagePageV2View {
             },
         );
 
-        let denomination_row = Container::new(denomination_buttons_row)
-            .with_margin_bottom(8.)
-            .finish();
-
-        upper_section.add_child(denomination_row);
+        if has_admin_permissions || !auto_reload_enabled {
+            let denomination_row = Container::new(denomination_buttons_row)
+                .with_margin_bottom(8.)
+                .finish();
+            upper_section.add_child(denomination_row);
+        }
 
         let card_upper = Container::new(upper_section.finish())
             .with_horizontal_padding(16.)
@@ -1313,13 +1314,12 @@ impl BillingAndUsagePageV2View {
                 RESTRICTED_BILLING_USAGE_WARNING_STRING.to_string(),
             ));
         } else if would_exceed {
-            lower_children.push(
-                self.render_warning_row(
-                    appearance,
-                    "Reloading would exceed your monthly limit. Increase your limit to continue."
-                        .to_string(),
-                ),
-            );
+            let warning_text = if has_admin_permissions {
+                "This purchase would exceed your monthly limit. Increase your limit to continue."
+            } else {
+                "This purchase would exceed your team’s monthly spend limit. Contact a team admin to increase it."
+            };
+            lower_children.push(self.render_warning_row(appearance, warning_text.to_string()));
         }
 
         let card_lower = Container::new(
@@ -1758,12 +1758,19 @@ impl TypedActionView for BillingAndUsagePageV2View {
                 self.addon_credits.selected_denomination = *i;
                 self.update_denomination_buttons_focus(ctx);
                 UserWorkspaces::handle(ctx).update(ctx, |ws, ctx| {
+                    let has_admin_permissions = ws.current_team().is_some_and(|team| {
+                        AuthStateProvider::as_ref(ctx)
+                            .get()
+                            .user_email()
+                            .is_some_and(|email| team.has_admin_permissions(&email))
+                    });
                     let team_uid = ws.current_team_uid();
                     if let Some((workspace, team_uid)) = ws.current_workspace().zip(team_uid) {
-                        if workspace
-                            .settings
-                            .addon_credits_settings
-                            .auto_reload_enabled
+                        if has_admin_permissions
+                            && workspace
+                                .settings
+                                .addon_credits_settings
+                                .auto_reload_enabled
                         {
                             if let Some(opt) = self
                                 .addon_credits
