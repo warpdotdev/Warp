@@ -1098,14 +1098,13 @@ impl BlocklistAIActionModel {
         let Some(actions_to_cancel) = self.pending_actions.get_mut(&conversation_id) else {
             return;
         };
-        log::info!("Canceling pending actions for conversation_id={conversation_id:?}, reason={reason:?}, backtrace=\n{}",
-        std::backtrace::Backtrace::force_capture());
         for action in actions_to_cancel.drain(..).collect_vec() {
             log::info!(
-                "Canceling pending action of type {:?} action_id={:?}, reason={:?}",
+                "Canceling pending action of type {:?} conversation_id={conversation_id:?} action_id={:?}, reason={:?}, backtrace=\n{}",
                 AIAgentActionTypeDiscriminants::from(&action.action),
                 action.id,
-                reason
+                reason,
+                std::backtrace::Backtrace::force_capture()
             );
             self.cancel_pending_action(conversation_id, action, reason, ctx);
         }
