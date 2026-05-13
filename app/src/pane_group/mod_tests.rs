@@ -82,7 +82,9 @@ use crate::{
     AgentNotificationsModel, GlobalResourceHandles, GlobalResourceHandlesProvider,
 };
 use chrono::Utc;
-use persistence::model::ConversationUsageMetadata;
+use persistence::model::{
+    AgentConversation, AgentConversationData, AgentConversationRecord, ConversationUsageMetadata,
+};
 #[cfg(feature = "local_fs")]
 use repo_metadata::RepoMetadataModel;
 use repo_metadata::{repositories::DetectedRepositories, watcher::DirectoryWatcher};
@@ -344,6 +346,44 @@ fn cloud_conversation_with_ambient_task(task_id: AmbientAgentTaskId) -> CloudCon
     conversation.set_task_id(task_id);
     conversation.set_server_metadata(test_server_conversation_metadata(Some(task_id)));
     CloudConversationData::Oz(Box::new(conversation))
+}
+
+fn persisted_remote_child_conversation(
+    conversation_id: AIConversationId,
+    parent_conversation_id: AIConversationId,
+    task_id: AmbientAgentTaskId,
+) -> AgentConversation {
+    AgentConversation {
+        conversation: AgentConversationRecord {
+            id: 0,
+            conversation_id: conversation_id.to_string(),
+            conversation_data: serde_json::to_string(&AgentConversationData {
+                server_conversation_token: Some("restored-child-token".to_string()),
+                conversation_usage_metadata: None,
+                reverted_action_ids: None,
+                forked_from_server_conversation_token: None,
+                artifacts_json: None,
+                parent_agent_id: Some("parent-run-id".to_string()),
+                agent_name: Some("Agent 1".to_string()),
+                orchestration_harness_type: None,
+                parent_conversation_id: Some(parent_conversation_id.to_string()),
+                is_remote_child: true,
+                run_id: Some(task_id.to_string()),
+                autoexecute_override: None,
+                last_event_sequence: None,
+            })
+            .expect("conversation data should serialize"),
+            last_modified_at: Utc::now().naive_utc(),
+        },
+        tasks: vec![warp_multi_agent_api::Task {
+            id: Uuid::new_v4().to_string(),
+            messages: vec![],
+            dependencies: None,
+            description: String::new(),
+            summary: String::new(),
+            server_data: String::new(),
+        }],
+    }
 }
 
 fn start_parent_conversation(
@@ -689,6 +729,59 @@ fn test_restored_remote_hidden_child_pane_enters_existing_ambient_session() {
                 "remote child restore should view the existing ambient session"
             );
             assert_eq!(active_conversation_id, Some(child_conversation_id));
+        });
+    });
+}
+
+#[test]
+fn test_create_missing_child_agent_panes_restores_remote_child_from_history_model() {
+    let _orchestration_v2 = FeatureFlag::OrchestrationV2.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let pane_group = mock_pane_group(&mut app, Default::default());
+
+        pane_group.update(&mut app, |panes, ctx| {
+            let parent_pane_id = get_newly_created_pane_id(panes, &[]);
+            let parent_conversation_id = start_parent_conversation(panes, parent_pane_id, ctx);
+            let child_conversation_id = AIConversationId::new();
+            let task_id = new_ambient_agent_task_id();
+
+            assert!(
+                !panes.child_agent_panes.contains_key(&child_conversation_id),
+                "child pane should not exist before startup restoration runs",
+            );
+
+            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, _| {
+                history_model
+                    .set_parent_for_conversation(child_conversation_id, parent_conversation_id);
+            });
+            RestoredAgentConversations::handle(ctx).update(ctx, |store, _| {
+                *store =
+                    RestoredAgentConversations::new(vec![persisted_remote_child_conversation(
+                        child_conversation_id,
+                        parent_conversation_id,
+                        task_id,
+                    )]);
+            });
+
+            panes.create_missing_child_agent_panes(parent_pane_id, ctx);
+
+            let child_pane_id = panes
+                .child_agent_panes
+                .get(&child_conversation_id)
+                .copied()
+                .expect("startup restoration should recreate the remote child pane");
+            let (ambient_task_id, is_agent_running, active_conversation_id) =
+                ambient_child_session_state(panes, child_pane_id, ctx);
+
+            assert_eq!(ambient_task_id, Some(task_id));
+            assert!(
+                is_agent_running,
+                "restored remote child pane should reconnect to the ambient session",
+            );
+            assert_eq!(active_conversation_id, Some(child_conversation_id));
+            assert_eq!(panes.focused_pane_id(ctx), parent_pane_id);
         });
     });
 }

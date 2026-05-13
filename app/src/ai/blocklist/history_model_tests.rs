@@ -20,17 +20,23 @@ use crate::{
     },
     cloud_object::{Owner, Revision, ServerMetadata, ServerPermissions},
     input_suggestions::HistoryInputSuggestion,
-    persistence::{model::PersistedAutoexecuteMode, ModelEvent},
+    persistence::{
+        model::{AgentConversation, AgentConversationRecord, PersistedAutoexecuteMode},
+        ModelEvent,
+    },
     server::ids::ServerId,
     terminal::model::session::SessionId,
-    test_util::settings::initialize_settings_for_tests,
+    test_util::settings::{
+        initialize_history_persistence_for_tests, initialize_settings_for_tests,
+    },
     GlobalResourceHandles, GlobalResourceHandlesProvider,
 };
 
 use super::{
-    AIConversationMetadata, AIQueryHistoryOutputStatus, BlocklistAIHistoryModel, PersistedAIInput,
-    PersistedAIInputType,
+    convert_persisted_conversation_to_ai_conversation_with_metadata, AIConversationMetadata,
+    AIQueryHistoryOutputStatus, BlocklistAIHistoryModel, PersistedAIInput, PersistedAIInputType,
 };
+use uuid::Uuid;
 
 /// Helper function to create a PersistedAIInput for testing
 fn create_persisted_query(
@@ -90,9 +96,32 @@ fn create_exchange_with_query(
     }
 }
 
+fn persisted_agent_conversation_from_update_event(event: ModelEvent) -> AgentConversation {
+    let ModelEvent::UpdateMultiAgentConversation {
+        conversation_id,
+        updated_tasks,
+        conversation_data,
+    } = event
+    else {
+        panic!("expected UpdateMultiAgentConversation event");
+    };
+
+    AgentConversation {
+        conversation: AgentConversationRecord {
+            id: 0,
+            conversation_id,
+            conversation_data: serde_json::to_string(&conversation_data)
+                .expect("conversation data should serialize"),
+            last_modified_at: Utc::now().naive_utc(),
+        },
+        tasks: updated_tasks,
+    }
+}
+
 #[test]
 fn start_new_child_conversation_persists_harness_metadata() {
     App::test((), |mut app| async move {
+        initialize_history_persistence_for_tests(&mut app);
         let terminal_view_id = EntityId::new();
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
 
@@ -997,6 +1026,244 @@ fn test_update_event_sequence_persists_updated_conversation_state() {
 }
 
 #[test]
+fn test_start_new_child_conversation_persists_child_metadata_for_restore() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let mut global_resource_handles = GlobalResourceHandles::mock(&mut app);
+        global_resource_handles.model_event_sender = Some(sender);
+        app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resource_handles));
+
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+        let terminal_view_id = EntityId::new();
+        let parent_run_id = Uuid::new_v4().to_string();
+
+        let (parent_conversation_id, child_conversation_id, expected_parent_agent_id) =
+            history_model.update(&mut app, |history_model, ctx| {
+                let parent_conversation_id =
+                    history_model.start_new_conversation(terminal_view_id, false, false, ctx);
+                history_model.set_server_conversation_token_for_conversation(
+                    parent_conversation_id,
+                    "parent-server-token".to_string(),
+                );
+                history_model
+                    .conversation_mut(&parent_conversation_id)
+                    .expect("parent conversation should exist")
+                    .set_run_id(parent_run_id.clone());
+                let expected_parent_agent_id = history_model
+                    .conversation(&parent_conversation_id)
+                    .and_then(|conversation| conversation.orchestration_agent_id())
+                    .expect("parent conversation should expose an orchestration agent id");
+                let child_conversation_id = history_model.start_new_child_conversation(
+                    terminal_view_id,
+                    "Agent 1".to_string(),
+                    parent_conversation_id,
+                    Some(Harness::Claude),
+                    ctx,
+                );
+                (
+                    parent_conversation_id,
+                    child_conversation_id,
+                    expected_parent_agent_id,
+                )
+            });
+
+        let persisted_conversation = persisted_agent_conversation_from_update_event(
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("child creation should persist conversation state"),
+        );
+        let restored =
+            convert_persisted_conversation_to_ai_conversation_with_metadata(persisted_conversation)
+                .expect("persisted child conversation should be restorable");
+
+        assert_eq!(restored.id(), child_conversation_id);
+        assert_eq!(
+            restored.parent_conversation_id(),
+            Some(parent_conversation_id)
+        );
+        assert_eq!(
+            restored.parent_agent_id(),
+            Some(expected_parent_agent_id.as_str())
+        );
+        assert_eq!(restored.agent_name(), Some("Agent 1"));
+        assert_eq!(restored.orchestration_harness(), Some(Harness::Claude));
+    });
+}
+
+#[test]
+fn test_mark_conversation_as_remote_child_persists_updated_conversation_state() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let mut global_resource_handles = GlobalResourceHandles::mock(&mut app);
+        global_resource_handles.model_event_sender = Some(sender);
+        app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resource_handles));
+
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+        let terminal_view_id = EntityId::new();
+
+        let conversation_id = history_model.update(&mut app, |history_model, ctx| {
+            history_model.start_new_conversation(terminal_view_id, false, false, ctx)
+        });
+
+        history_model.update(&mut app, |history_model, ctx| {
+            history_model.mark_conversation_as_remote_child(conversation_id, ctx);
+        });
+
+        let persisted_conversation = persisted_agent_conversation_from_update_event(
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("remote child mutation should persist conversation state"),
+        );
+        let restored =
+            convert_persisted_conversation_to_ai_conversation_with_metadata(persisted_conversation)
+                .expect("persisted remote child conversation should be restorable");
+
+        assert_eq!(restored.id(), conversation_id);
+        assert!(restored.is_remote_child());
+    });
+}
+
+#[test]
+fn test_initialize_output_for_response_stream_persists_updated_conversation_state() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let mut global_resource_handles = GlobalResourceHandles::mock(&mut app);
+        global_resource_handles.model_event_sender = Some(sender);
+        app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resource_handles));
+
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+        let terminal_view_id = EntityId::new();
+        let now = Local::now();
+
+        let conversation_id = history_model.update(&mut app, |history_model, ctx| {
+            history_model.start_new_conversation(terminal_view_id, false, false, ctx)
+        });
+
+        let stream_id = ResponseStreamId::new_for_test();
+        history_model.update(&mut app, |history_model, ctx| {
+            let exchange = create_exchange_with_query("query", now, None);
+            let task_id = history_model
+                .conversation(&conversation_id)
+                .expect("conversation should exist")
+                .get_root_task_id()
+                .clone();
+            let request_input = RequestInput {
+                conversation_id,
+                input_messages: std::collections::HashMap::from([(task_id, exchange.input)]),
+                working_directory: exchange.working_directory,
+                model_id: exchange.model_id,
+                coding_model_id: exchange.coding_model_id,
+                cli_agent_model_id: exchange.cli_agent_model_id,
+                computer_use_model_id: exchange.computer_use_model_id,
+                shared_session_response_initiator: exchange.response_initiator,
+                request_start_ts: exchange.start_time,
+                supported_tools_override: None,
+            };
+            history_model
+                .update_conversation_for_new_request_input(
+                    request_input,
+                    stream_id.clone(),
+                    terminal_view_id,
+                    ctx,
+                )
+                .unwrap();
+        });
+
+        let server_token = "stream-init-token".to_string();
+        let run_id = Uuid::new_v4().to_string();
+        history_model.update(&mut app, |history_model, ctx| {
+            history_model.initialize_output_for_response_stream(
+                &stream_id,
+                conversation_id,
+                terminal_view_id,
+                warp_multi_agent_api::response_event::StreamInit {
+                    request_id: "request-1".to_string(),
+                    conversation_id: server_token.clone(),
+                    run_id: run_id.clone(),
+                },
+                ctx,
+            );
+        });
+
+        let persisted_conversation = persisted_agent_conversation_from_update_event(
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("stream init should persist conversation state"),
+        );
+        let restored =
+            convert_persisted_conversation_to_ai_conversation_with_metadata(persisted_conversation)
+                .expect("persisted StreamInit conversation should be restorable");
+
+        assert_eq!(
+            restored
+                .server_conversation_token()
+                .map(|token| token.as_str()),
+            Some(server_token.as_str())
+        );
+        assert_eq!(restored.run_id().as_deref(), Some(run_id.as_str()));
+    });
+}
+
+#[test]
+fn test_assign_run_id_for_conversation_persists_updated_conversation_state() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let mut global_resource_handles = GlobalResourceHandles::mock(&mut app);
+        global_resource_handles.model_event_sender = Some(sender);
+        app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resource_handles));
+
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+        let terminal_view_id = EntityId::new();
+
+        let conversation_id = history_model.update(&mut app, |history_model, ctx| {
+            let conversation_id =
+                history_model.start_new_conversation(terminal_view_id, false, false, ctx);
+            history_model.set_server_conversation_token_for_conversation(
+                conversation_id,
+                "assigned-run-token".to_string(),
+            );
+            conversation_id
+        });
+
+        let task_id: AmbientAgentTaskId = Uuid::new_v4().to_string().parse().unwrap();
+        history_model.update(&mut app, |history_model, ctx| {
+            history_model.assign_run_id_for_conversation(
+                conversation_id,
+                task_id.to_string(),
+                Some(task_id),
+                terminal_view_id,
+                ctx,
+            );
+        });
+
+        let persisted_conversation = persisted_agent_conversation_from_update_event(
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("run id assignment should persist conversation state"),
+        );
+        let restored =
+            convert_persisted_conversation_to_ai_conversation_with_metadata(persisted_conversation)
+                .expect("persisted run id assignment should be restorable");
+
+        assert_eq!(
+            restored
+                .server_conversation_token()
+                .map(|token| token.as_str()),
+            Some("assigned-run-token")
+        );
+        assert_eq!(restored.task_id(), Some(task_id));
+    });
+}
+
+#[test]
 fn test_find_by_token_after_merge_cloud_metadata() {
     App::test((), |mut app| async move {
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
@@ -1130,6 +1397,7 @@ fn test_find_by_token_returns_none_after_reset() {
 #[test]
 fn test_find_by_token_after_initialize_output_for_response_stream() {
     App::test((), |mut app| async move {
+        initialize_history_persistence_for_tests(&mut app);
         let now = Local::now();
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
         let terminal_view_id = EntityId::new();
@@ -1197,6 +1465,7 @@ fn test_find_by_token_after_initialize_output_for_response_stream() {
 #[test]
 fn test_find_by_token_after_assign_run_id_for_conversation() {
     App::test((), |mut app| async move {
+        initialize_history_persistence_for_tests(&mut app);
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
         let terminal_view_id = EntityId::new();
 

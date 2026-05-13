@@ -1,6 +1,7 @@
 #![allow(deprecated)]
 use super::*;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
+use crate::test_util::settings::initialize_history_persistence_for_tests;
 use std::collections::HashSet;
 use warp_core::features::FeatureFlag;
 use warp_multi_agent_api as api;
@@ -398,6 +399,7 @@ fn test_has_pending_events_tracks_any_event_kind() {
 fn test_restored_v1_child_reregisters_lifecycle_subscription() {
     App::test((), |mut app| async move {
         let _orchestration_v2 = FeatureFlag::OrchestrationV2.override_enabled(false);
+        initialize_history_persistence_for_tests(&mut app);
         let terminal_view_id = EntityId::new();
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
         let service = app.add_model(|_| OrchestrationEventService::new_without_subscriptions());

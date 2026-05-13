@@ -2944,7 +2944,7 @@ impl AIConversation {
             conversation_id: self.id.to_string(),
             updated_tasks: self
                 .all_tasks()
-                .filter_map(|task| task.source().cloned())
+                .filter_map(|task| task.source_for_persistence())
                 .collect(),
             conversation_data: AgentConversationData {
                 server_conversation_token: self
