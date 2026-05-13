@@ -148,7 +148,10 @@ impl RemoteCodebaseIndexModel {
                 is_git,
             } => {
                 self.record_navigated_directory(remote_path);
-                if *is_git && should_auto_index_remote_codebase(ctx) {
+                if *is_git
+                    && should_auto_index_remote_codebase(ctx)
+                    && self.should_request_auto_index_for_navigated_git_repo(remote_path)
+                {
                     // Mirrors local auto-indexing for the thin remote E2E path. TODO(APP-3792):
                     // route remote indexing through the speedbump/consent flow instead of
                     // requesting immediately on navigation.
@@ -182,6 +185,20 @@ impl RemoteCodebaseIndexModel {
             | RemoteServerManagerEvent::BinaryInstallComplete { .. }
             | RemoteServerManagerEvent::ClientRequestFailed { .. }
             | RemoteServerManagerEvent::ServerMessageDecodingError { .. } => {}
+        }
+    }
+    fn should_request_auto_index_for_navigated_git_repo(&self, remote_path: &RemotePath) -> bool {
+        let Some(status) = self.status_for_repo(remote_path) else {
+            return true;
+        };
+
+        match search_availability_for_status(status, remote_path.clone()) {
+            RemoteCodebaseSearchAvailability::Ready(_)
+            | RemoteCodebaseSearchAvailability::Indexing { .. } => false,
+            RemoteCodebaseSearchAvailability::NoConnectedHost
+            | RemoteCodebaseSearchAvailability::NoActiveRepo
+            | RemoteCodebaseSearchAvailability::NotIndexed { .. }
+            | RemoteCodebaseSearchAvailability::Unavailable { .. } => true,
         }
     }
 

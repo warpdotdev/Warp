@@ -21,6 +21,15 @@ fn ready_status(repo_path: &str) -> RemoteCodebaseIndexStatus {
         ),
     }
 }
+
+fn status_with_state(
+    repo_path: &str,
+    state: RemoteCodebaseIndexState,
+) -> RemoteCodebaseIndexStatus {
+    let mut status = ready_status(repo_path);
+    status.state = state;
+    status
+}
 fn status_with_path(repo_path: &str) -> RemoteCodebaseIndexStatusWithPath {
     RemoteCodebaseIndexStatusWithPath {
         remote_path: remote_path(repo_path),
@@ -102,6 +111,59 @@ fn missing_root_hash_is_unavailable() {
         availability,
         RemoteCodebaseSearchAvailability::Unavailable { .. }
     ));
+}
+
+#[test]
+fn auto_index_navigated_git_repo_when_status_is_missing() {
+    let model = RemoteCodebaseIndexModel::default();
+
+    assert!(model.should_request_auto_index_for_navigated_git_repo(&remote_path("/repo")));
+}
+
+#[test]
+fn auto_index_navigated_git_repo_skips_existing_searchable_index() {
+    let mut model = RemoteCodebaseIndexModel::default();
+    model.apply_status_update(remote_path("/ready"), ready_status("/ready"));
+    model.apply_status_update(
+        remote_path("/stale"),
+        status_with_state("/stale", RemoteCodebaseIndexState::Stale),
+    );
+
+    assert!(!model.should_request_auto_index_for_navigated_git_repo(&remote_path("/ready")));
+    assert!(!model.should_request_auto_index_for_navigated_git_repo(&remote_path("/stale")));
+}
+
+#[test]
+fn auto_index_navigated_git_repo_skips_index_already_in_progress() {
+    let mut model = RemoteCodebaseIndexModel::default();
+    model.apply_status_update(
+        remote_path("/queued"),
+        status_with_state("/queued", RemoteCodebaseIndexState::Queued),
+    );
+    model.apply_status_update(
+        remote_path("/indexing"),
+        status_with_state("/indexing", RemoteCodebaseIndexState::Indexing),
+    );
+
+    assert!(!model.should_request_auto_index_for_navigated_git_repo(&remote_path("/queued")));
+    assert!(!model.should_request_auto_index_for_navigated_git_repo(&remote_path("/indexing")));
+}
+
+#[test]
+fn auto_index_navigated_git_repo_when_existing_index_is_unusable() {
+    let mut model = RemoteCodebaseIndexModel::default();
+    let mut missing_root_hash = ready_status("/missing-root-hash");
+    missing_root_hash.root_hash = None;
+    model.apply_status_update(remote_path("/missing-root-hash"), missing_root_hash);
+    model.apply_status_update(
+        remote_path("/failed"),
+        status_with_state("/failed", RemoteCodebaseIndexState::Failed),
+    );
+
+    assert!(
+        model.should_request_auto_index_for_navigated_git_repo(&remote_path("/missing-root-hash"))
+    );
+    assert!(model.should_request_auto_index_for_navigated_git_repo(&remote_path("/failed")));
 }
 
 #[test]
