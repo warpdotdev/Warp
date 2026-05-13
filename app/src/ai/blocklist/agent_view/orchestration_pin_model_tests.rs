@@ -68,7 +68,7 @@ fn toggle_pin_persists_pinned_state_to_sqlite_event() {
 
         // Restore a conversation that starts unpinned. The history model is
         // the source of truth for the persisted flag.
-        let conversation = AIConversation::new(false);
+        let conversation = AIConversation::new(false, false);
         let conversation_id = conversation.id();
         let terminal_view_id = warpui::EntityId::new();
         history_model.update(&mut app, |model, ctx| {
