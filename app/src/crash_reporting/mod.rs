@@ -30,6 +30,8 @@ use warpui::windowing::{self, StateEvent, WindowManager};
 
 #[cfg(linux_or_windows)]
 pub use sentry_minidump::run_server as run_minidump_server;
+const INVALID_DISABLE_REASON_REQUIRES_UPGRADE_EVENT_MESSAGE: &str =
+    "Invalid DisableReason 'REQUIRES_UPGRADE'. Make sure to update client GraphQL types! Error";
 
 lazy_static! {
     /// The RAII guard returned by the call to initialize the Rust Sentry client must be kept in
@@ -52,6 +54,13 @@ lazy_static! {
 
     /// The set of tags that we want to attach to all Sentry reports.
     static ref TAGS: RwLock<HashMap<String, String>> = Default::default();
+}
+
+fn should_drop_sentry_event(event: &sentry::protocol::Event<'_>) -> bool {
+    // Explicitly drop this message on the client before sending to Sentry. Even though this message
+    // doesn't consume sentry quota, the rate of this message is frequent enough that it ends up
+    // causing us to get rate limited by sentry because of the frequency of the error.
+    event.message.as_deref() == Some(INVALID_DISABLE_REASON_REQUIRES_UPGRADE_EVENT_MESSAGE)
 }
 
 /// Sets a kv-pair as a Sentry tag for the rest of the application's lifetime.
@@ -323,6 +332,9 @@ fn init_sentry(user_id: Option<UserUid>, email: Option<String>, ctx: &mut AppCon
     let mut sentry_options = sentry_client_options();
     sentry_options.before_breadcrumb = Some(Arc::new(Box::new(before_breadcrumb)));
     sentry_options.before_send = Some(Arc::new(move |mut event| {
+        if should_drop_sentry_event(&event) {
+            return None;
+        }
         let mut crash_recovery_metadata = CrashRecoveryMetadata::new();
 
         for exception in event.exception.iter_mut() {
@@ -406,6 +418,13 @@ fn sentry_client_options() -> sentry::ClientOptions {
         environment: Some(get_environment()),
         auto_session_tracking: true,
         session_mode: SessionMode::Application,
+        before_send: Some(Arc::new(|event| {
+            if should_drop_sentry_event(&event) {
+                None
+            } else {
+                Some(event)
+            }
+        })),
         ..Default::default()
     }
 }
