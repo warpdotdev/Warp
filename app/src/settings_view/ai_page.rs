@@ -602,7 +602,7 @@ impl AISettingsPageView {
                 let expanded = host_native_absolute_path(s, &None, &None);
                 Path::new(&expanded).is_dir()
             });
-            input.set_placeholder_text("e.g. ~/code-repos/repo", ctx);
+            input.set_placeholder_text(t!("ai_settings_page.repo_path_placeholder"), ctx);
             input
         });
         Self::update_editor_interaction_state(
@@ -641,7 +641,7 @@ impl AISettingsPageView {
             };
             let mut editor = EditorView::new(options, ctx);
 
-            editor.set_placeholder_text("Commands, comma separated", ctx);
+            editor.set_placeholder_text(t!("ai_settings_page.commands_comma_placeholder"), ctx);
 
             let current_value = AISettings::as_ref(ctx)
                 .autodetection_command_denylist
@@ -663,7 +663,7 @@ impl AISettingsPageView {
         let command_execution_allowlist_editor = ctx.add_typed_action_view(|ctx| {
             let mut input =
                 SubmittableTextInput::new(ctx).validate_on_edit(|s| Regex::new(s).is_ok());
-            input.set_placeholder_text("e.g. ls .*", ctx);
+            input.set_placeholder_text(t!("ai_settings_page.command_allowlist_placeholder"), ctx);
             input
         });
         Self::update_editor_interaction_state(
@@ -695,7 +695,7 @@ impl AISettingsPageView {
         let command_execution_denylist_editor = ctx.add_typed_action_view(|ctx| {
             let mut input =
                 SubmittableTextInput::new(ctx).validate_on_edit(|s| Regex::new(s).is_ok());
-            input.set_placeholder_text("e.g. rm .*", ctx);
+            input.set_placeholder_text(t!("ai_settings_page.command_denylist_placeholder"), ctx);
             input
         });
         Self::update_editor_interaction_state(
@@ -727,7 +727,7 @@ impl AISettingsPageView {
         let cli_agent_footer_command_editor = ctx.add_typed_action_view(|ctx| {
             let mut input =
                 SubmittableTextInput::new(ctx).validate_on_edit(|s| Regex::new(s).is_ok());
-            input.set_placeholder_text("command (supports regex)", ctx);
+            input.set_placeholder_text(t!("ai_settings_page.command_regex_placeholder"), ctx);
             input
         });
         // The coding agent footer command editor is always enabled,
@@ -1214,7 +1214,7 @@ impl AISettingsPageView {
                 let expanded = host_native_absolute_path(s, &None, &None);
                 Path::new(&expanded).is_dir()
             });
-            input.set_placeholder_text("e.g. ~/code-repos/repo", ctx);
+            input.set_placeholder_text(t!("ai_settings_page.repo_path_placeholder"), ctx);
             input
         });
 
@@ -1249,7 +1249,7 @@ impl AISettingsPageView {
         let command_denylist_editor = ctx.add_typed_action_view(|ctx| {
             let mut input =
                 SubmittableTextInput::new(ctx).validate_on_edit(|s| Regex::new(s).is_ok());
-            input.set_placeholder_text("e.g. rm .*", ctx);
+            input.set_placeholder_text(t!("ai_settings_page.command_denylist_placeholder"), ctx);
             input
         });
         Self::update_editor_interaction_state(
@@ -1287,7 +1287,7 @@ impl AISettingsPageView {
         let command_allowlist_editor = ctx.add_typed_action_view(|ctx| {
             let mut input =
                 SubmittableTextInput::new(ctx).validate_on_edit(|s| Regex::new(s).is_ok());
-            input.set_placeholder_text("e.g. ls .*", ctx);
+            input.set_placeholder_text(t!("ai_settings_page.command_allowlist_placeholder"), ctx);
             input
         });
         Self::update_editor_interaction_state(
@@ -2139,7 +2139,7 @@ impl AISettingsPageView {
                     }
 
                     items.push(
-                        MenuItemFields::new("Other")
+                        MenuItemFields::new(t!("ai_settings_page.other"))
                             .with_on_select_action(DropdownAction::SelectActionAndClose(
                                 AISettingsPageAction::SetCLIAgentForCommand {
                                     pattern: pattern_clone.clone(),
@@ -2152,19 +2152,19 @@ impl AISettingsPageView {
                     dropdown.set_rich_items(items, ctx);
 
                     dropdown.set_menu_header_text_override(|label| {
-                        if label == "Other" {
-                            "Select coding agent".to_string()
+                        if label == t!("ai_settings_page.other") {
+                            t!("ai_settings_page.select_coding_agent").to_string()
                         } else {
                             label.to_string()
                         }
                     });
 
                     let selected_name = if matches!(current_agent, CLIAgent::Unknown) {
-                        "Other"
+                        t!("ai_settings_page.other").to_string()
                     } else {
-                        current_agent.display_name()
+                        current_agent.display_name().to_string()
                     };
-                    dropdown.set_selected_by_name(selected_name, ctx);
+                    dropdown.set_selected_by_name(&selected_name, ctx);
 
                     dropdown
                 })
@@ -3623,28 +3623,39 @@ impl SettingsWidget for UsageWidget {
                 let upgrade_url = UserWorkspaces::upgrade_link_for_team(team.uid);
                 if has_admin_permissions {
                     vec![
-                        FormattedTextFragment::hyperlink("Upgrade", upgrade_url),
-                        FormattedTextFragment::plain_text(" to get more AI usage."),
+                        FormattedTextFragment::hyperlink(
+                            t!("ai_settings_page.upgrade"),
+                            upgrade_url,
+                        ),
+                        FormattedTextFragment::plain_text(t!(
+                            "ai_settings_page.to_get_more_ai_usage"
+                        )),
                     ]
                 } else {
                     // The /upgrade page says to contact their administrator.
                     vec![
-                        FormattedTextFragment::hyperlink("Compare plans", upgrade_url),
-                        FormattedTextFragment::plain_text(" for more AI usage."),
+                        FormattedTextFragment::hyperlink(
+                            t!("ai_settings_page.compare_plans"),
+                            upgrade_url,
+                        ),
+                        FormattedTextFragment::plain_text(t!("ai_settings_page.for_more_ai_usage")),
                     ]
                 }
             } else {
                 vec![
-                    FormattedTextFragment::hyperlink("Contact support", "mailto:support@warp.dev"),
-                    FormattedTextFragment::plain_text(" for more AI usage."),
+                    FormattedTextFragment::hyperlink(
+                        t!("ai_settings_page.contact_support"),
+                        "mailto:support@warp.dev",
+                    ),
+                    FormattedTextFragment::plain_text(t!("ai_settings_page.for_more_ai_usage")),
                 ]
             }
         } else {
             let user_id = auth_state.user_id().unwrap_or_default();
             let upgrade_url = UserWorkspaces::upgrade_link(user_id);
             vec![
-                FormattedTextFragment::hyperlink("Upgrade", upgrade_url),
-                FormattedTextFragment::plain_text(" to get more AI usage."),
+                FormattedTextFragment::hyperlink(t!("ai_settings_page.upgrade"), upgrade_url),
+                FormattedTextFragment::plain_text(t!("ai_settings_page.to_get_more_ai_usage")),
             ]
         };
 
@@ -4790,16 +4801,16 @@ impl AgentsWidget {
 
         let subtext = {
             let subtext_fragments = vec![
-                FormattedTextFragment::plain_text(
-                    "You haven't added any MCP servers yet. Once you do, you'll be able to control how much autonomy the Warp Agent has when interacting with them. ",
-                ),
+                FormattedTextFragment::plain_text(t!(
+                    "ai_settings_page.no_mcp_servers_description"
+                )),
                 FormattedTextFragment::hyperlink_action(
-                    "Add a server",
+                    t!("ai_settings_page.add_server"),
                     AISettingsPageAction::OpenMCPServerCollection,
                 ),
-                FormattedTextFragment::plain_text(" or "),
+                FormattedTextFragment::plain_text(t!("ai_settings_page.or_separator")),
                 FormattedTextFragment::hyperlink(
-                    "learn more about MCPs.",
+                    t!("ai_settings_page.learn_more_about_mcps"),
                     "https://docs.warp.dev/agent-platform/capabilities/mcp",
                 ),
             ];
@@ -5095,9 +5106,11 @@ impl AIInputWidget {
             static AUTODETECTION_DESCRIPTION_FRAGMENTS: LazyLock<Vec<FormattedTextFragment>> =
                 LazyLock::new(|| {
                     vec![
-                        FormattedTextFragment::plain_text("Encountered an incorrect detection? "),
+                        FormattedTextFragment::plain_text(t!(
+                            "ai_settings_page.incorrect_detection_prompt"
+                        )),
                         FormattedTextFragment::hyperlink(
-                            "Let us know",
+                            t!("ai_settings_page.let_us_know"),
                             "https://warpdotdev.typeform.com/to/offrTIpq",
                         ),
                     ]
@@ -5560,11 +5573,9 @@ impl VoiceWidget {
         ));
 
         let voice_input_description_text_fragments = vec![
-            FormattedTextFragment::plain_text(
-                "Voice input allows you to control Warp by speaking directly to your terminal (powered by ",
-            ),
+            FormattedTextFragment::plain_text(t!("ai_settings_page.voice_input_description_start")),
             FormattedTextFragment::hyperlink("Wispr Flow", WISPR_FLOW_URL),
-            FormattedTextFragment::plain_text(")."),
+            FormattedTextFragment::plain_text(t!("ai_settings_page.voice_input_description_end")),
         ];
 
         let voice_input_description = FormattedTextElement::new(
@@ -5835,15 +5846,15 @@ impl SettingsWidget for CLIAgentWidget {
         );
 
         let description_fragments = vec![
-            FormattedTextFragment::plain_text(
-                "Show a toolbar with quick actions when running coding agents like ",
-            ),
+            FormattedTextFragment::plain_text(t!(
+                "ai_settings_page.coding_agent_toolbar_description_start"
+            )),
             FormattedTextFragment::inline_code("claude"),
-            FormattedTextFragment::plain_text(", "),
+            FormattedTextFragment::plain_text(t!("ai_settings_page.comma_separator")),
             FormattedTextFragment::inline_code("codex"),
-            FormattedTextFragment::plain_text(", or "),
+            FormattedTextFragment::plain_text(t!("ai_settings_page.comma_or_separator")),
             FormattedTextFragment::inline_code("gemini"),
-            FormattedTextFragment::plain_text("."),
+            FormattedTextFragment::plain_text(t!("common.period")),
         ];
 
         let description = FormattedTextElement::new(
@@ -6660,54 +6671,65 @@ impl ApiKeysWidget {
         // Show upgrade CTA if BYOK is not enabled
         if !is_byo_enabled {
             let auth_state = AuthStateProvider::as_ref(app).get();
-            let upgrade_text_fragments = if let Some(team) =
-                UserWorkspaces::as_ref(app).current_team()
-            {
-                // Enterprise teams don't have a self-serve upgrade path; route them
-                // to sales to enable BYOK on their existing plan.
-                if team.billing_metadata.customer_type == CustomerType::Enterprise {
-                    vec![
-                        FormattedTextFragment::hyperlink("Contact sales", "mailto:sales@warp.dev"),
-                        FormattedTextFragment::plain_text(
-                            " to enable bringing your own API keys on your Enterprise plan.",
-                        ),
-                    ]
-                } else {
-                    let current_user_email = auth_state.user_email().unwrap_or_default();
-                    let has_admin_permissions = team.has_admin_permissions(&current_user_email);
-                    let upgrade_url = UserWorkspaces::upgrade_link_for_team(team.uid);
-                    if has_admin_permissions {
+            let upgrade_text_fragments =
+                if let Some(team) = UserWorkspaces::as_ref(app).current_team() {
+                    // Enterprise teams don't have a self-serve upgrade path; route them
+                    // to sales to enable BYOK on their existing plan.
+                    if team.billing_metadata.customer_type == CustomerType::Enterprise {
                         vec![
                             FormattedTextFragment::hyperlink(
-                                "Upgrade to the Build plan",
-                                upgrade_url,
+                                t!("ai_settings_page.contact_sales"),
+                                "mailto:sales@warp.dev",
                             ),
-                            FormattedTextFragment::plain_text(" to use your own API keys."),
+                            FormattedTextFragment::plain_text(t!(
+                                "ai_settings_page.enterprise_byok_suffix"
+                            )),
                         ]
                     } else {
-                        vec![FormattedTextFragment::plain_text(
-                            "Ask your team's admin to upgrade to the Build plan to use your own API keys.",
-                        )]
+                        let current_user_email = auth_state.user_email().unwrap_or_default();
+                        let has_admin_permissions = team.has_admin_permissions(&current_user_email);
+                        let upgrade_url = UserWorkspaces::upgrade_link_for_team(team.uid);
+                        if has_admin_permissions {
+                            vec![
+                                FormattedTextFragment::hyperlink(
+                                    t!("ai_settings_page.upgrade_to_build_plan"),
+                                    upgrade_url,
+                                ),
+                                FormattedTextFragment::plain_text(t!(
+                                    "ai_settings_page.use_own_api_keys_suffix"
+                                )),
+                            ]
+                        } else {
+                            vec![FormattedTextFragment::plain_text(t!(
+                                "ai_settings_page.ask_admin_upgrade_build_for_byok"
+                            ))]
+                        }
                     }
-                }
-            } else if FeatureFlag::SoloUserByok.is_enabled()
-                && auth_state.is_anonymous_or_logged_out()
-            {
-                vec![
-                    FormattedTextFragment::hyperlink_action(
-                        "Create an account",
-                        AISettingsPageAction::SignupAnonymousUser,
-                    ),
-                    FormattedTextFragment::plain_text(" to use your own API keys."),
-                ]
-            } else {
-                let user_id = auth_state.user_id().unwrap_or_default();
-                let upgrade_url = UserWorkspaces::upgrade_link(user_id);
-                vec![
-                    FormattedTextFragment::hyperlink("Upgrade to the Build plan", upgrade_url),
-                    FormattedTextFragment::plain_text(" to use your own API keys."),
-                ]
-            };
+                } else if FeatureFlag::SoloUserByok.is_enabled()
+                    && auth_state.is_anonymous_or_logged_out()
+                {
+                    vec![
+                        FormattedTextFragment::hyperlink_action(
+                            t!("ai_settings_page.create_account"),
+                            AISettingsPageAction::SignupAnonymousUser,
+                        ),
+                        FormattedTextFragment::plain_text(t!(
+                            "ai_settings_page.use_own_api_keys_suffix"
+                        )),
+                    ]
+                } else {
+                    let user_id = auth_state.user_id().unwrap_or_default();
+                    let upgrade_url = UserWorkspaces::upgrade_link(user_id);
+                    vec![
+                        FormattedTextFragment::hyperlink(
+                            t!("ai_settings_page.upgrade_to_build_plan"),
+                            upgrade_url,
+                        ),
+                        FormattedTextFragment::plain_text(t!(
+                            "ai_settings_page.use_own_api_keys_suffix"
+                        )),
+                    ]
+                };
 
             let upgrade_text_element = FormattedTextElement::new(
                 FormattedText::new([FormattedTextLine::Line(upgrade_text_fragments)]),
@@ -6848,7 +6870,7 @@ impl AwsBedrockWidget {
                 ..Default::default()
             };
             let mut editor = EditorView::single_line(options, ctx);
-            editor.set_placeholder_text("aws login", ctx);
+            editor.set_placeholder_text(t!("ai_settings_page.aws_login_placeholder"), ctx);
             editor.set_buffer_text(&aws_auth_refresh_command, ctx);
             editor
         });
@@ -6896,7 +6918,7 @@ impl AwsBedrockWidget {
                 ..Default::default()
             };
             let mut editor = EditorView::single_line(options, ctx);
-            editor.set_placeholder_text("default", ctx);
+            editor.set_placeholder_text(t!("ai_settings_page.default_profile_placeholder"), ctx);
             editor.set_buffer_text(&aws_auth_refresh_profile, ctx);
             editor
         });
