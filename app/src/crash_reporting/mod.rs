@@ -30,8 +30,8 @@ use warpui::windowing::{self, StateEvent, WindowManager};
 
 #[cfg(linux_or_windows)]
 pub use sentry_minidump::run_server as run_minidump_server;
-const INVALID_DISABLE_REASON_REQUIRES_UPGRADE_EVENT_MESSAGE: &str =
-    "Invalid DisableReason 'REQUIRES_UPGRADE'. Make sure to update client GraphQL types! Error";
+const UPDATE_CLIENT_GRAPHQL_TYPES_MESSAGE: &str =
+    "Make sure to update client GraphQL types!";
 
 lazy_static! {
     /// The RAII guard returned by the call to initialize the Rust Sentry client must be kept in
@@ -60,7 +60,7 @@ fn should_drop_sentry_event(event: &sentry::protocol::Event<'_>) -> bool {
     // Explicitly drop this message on the client before sending to Sentry. Even though this message
     // doesn't consume sentry quota, the rate of this message is frequent enough that it ends up
     // causing us to get rate limited by sentry because of the frequency of the error.
-    event.message.as_deref() == Some(INVALID_DISABLE_REASON_REQUIRES_UPGRADE_EVENT_MESSAGE)
+    event.message.and_then(|message| message.contains(UPDATE_CLIENT_GRAPHQL_TYPES_MESSAGE))
 }
 
 /// Sets a kv-pair as a Sentry tag for the rest of the application's lifetime.
