@@ -52,7 +52,7 @@ const MENU_HEADER_LABEL: &str = "API key";
 
 const SIDECAR_HEADER_LABEL: &str = "Choose a type";
 
-const NO_SECRET_LABEL: &str = "Inherit credentials from environment";
+const NO_SECRET_LABEL: &str = "Inherit from environment";
 
 const NEW_ITEM_LABEL: &str = "New";
 
