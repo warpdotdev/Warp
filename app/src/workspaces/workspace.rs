@@ -46,7 +46,7 @@ pub struct Workspace {
     pub invite_code: Option<WorkspaceInviteCode>,
     pub invite_link_domain_restrictions: Vec<InviteLinkDomainRestriction>,
     pub pending_email_invites: Vec<EmailInvite>,
-    // If the team is eligible for discovery, then show toggle for setting discoverability to the team's admin
+    // If local cached metadata marks the team as discoverable, show the discoverability toggle to the team admin
     pub is_eligible_for_discovery: bool,
     pub members: Vec<WorkspaceMember>,
     pub total_requests_used_since_last_refresh: i32,
@@ -243,7 +243,7 @@ impl Ord for InviteLinkDomainRestriction {
     }
 }
 
-/// This enum is the rust representation of `CustomerType` from the GraphQL Schema.
+/// Local representation of persisted customer/entitlement categories.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum CustomerType {
     #[default]
@@ -278,7 +278,7 @@ impl CustomerType {
     }
 }
 
-/// This enum is the rust representation of `DelinquencyStatus` from the GraphQL Schema.
+/// Local representation of persisted billing delinquency status.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum DelinquencyStatus {
     #[default]
@@ -289,7 +289,7 @@ pub enum DelinquencyStatus {
     Unknown,
 }
 
-/// Rust representation of feature policies from the GraphQL Schema.
+/// Local representation of feature policy data restored from persisted workspace metadata.
 #[derive(Clone, Debug, Copy, Serialize, Deserialize)]
 pub struct WarpAiPolicy {
     pub limit: i64,
@@ -387,7 +387,7 @@ pub enum HostEnablementSetting {
     RespectUserSetting,
 }
 
-/// This struct is the rust representation of `Tier` from the GraphQL Schema.
+/// Local representation of a persisted workspace entitlement tier.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Tier {
@@ -410,7 +410,7 @@ pub struct Tier {
     pub ambient_agents_policy: Option<AmbientAgentsPolicy>,
 }
 
-/// This struct is the rust representation of `BillingMetadata` from the GraphQL Schema.
+/// Local representation of persisted billing/entitlement metadata used by BYOP and local workspace policy checks.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BillingMetadata {
@@ -600,7 +600,7 @@ impl BillingMetadata {
             | CustomerType::SelfServe => true,
             CustomerType::Business => {
                 // Legacy Business has a non-SelfServe service agreement type;
-                // Build Business uses SelfServe. See gql_convert.rs for context.
+                // Build Business uses SelfServe in persisted upstream-compatible metadata.
                 !matches!(
                     self.service_agreements.first().map(|sa| &sa.type_),
                     Some(ServiceAgreementType::SelfServe)

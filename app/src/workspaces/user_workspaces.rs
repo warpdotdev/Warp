@@ -74,7 +74,7 @@ pub enum UserWorkspacesEvent {
 /// UserWorkspaces is a singleton model that holds workspace metadata (name, members, etc).
 /// It should be used for getting information about the workspaces, teams, current teams,
 /// and all other things related to operating on workspace and team data.
-/// TODO: move other server_api calls to update_manager to correctly update sqlite.
+/// TODO: consolidate local SQLite refresh/update paths.
 pub struct UserWorkspaces {
     current_workspace_uid: Tracked<Option<WorkspaceUid>>,
     workspaces: Tracked<Vec<Workspace>>,
@@ -97,7 +97,7 @@ pub struct WorkspacesMetadataResponse {
     pub feature_model_choices: Option<()>,
 }
 
-// A representation of all data we fetch at a single time via our 10 minute poll.
+// A representation of all workspace data refreshed together.
 // Prefer adding to this struct if you need relatively fresh data vs making
 // independent queries.
 pub struct WorkspacesMetadataWithPricing {
@@ -731,7 +731,7 @@ impl UserWorkspaces {
         entrypoint: StoredObjectEventEntrypoint,
         _ctx: &mut ModelContext<Self>,
     ) {
-        // OpenWarp(本地化,Phase 5):原发 GraphQL `RemoveUserFromTeam`,本地无 team 概念 → no-op。
+        // OpenWarp(本地化):移除成员路径在本地无远端 team 写入目标 → no-op。
         let _ = (user_uid, team_uid, entrypoint);
     }
 
@@ -756,7 +756,7 @@ impl UserWorkspaces {
         domains: Vec<String>,
         ctx: &mut ModelContext<Self>,
     ) {
-        // OpenWarp(本地化,Phase 5):原发 GraphQL `AddInviteLinkDomainRestriction`,本地无 team/invite 概念 → 发 Success 事件使 UI 不卡住。
+        // OpenWarp(本地化):域限制路径在本地无远端 team/invite 写入目标 → 发 Success 事件使 UI 不卡住。
         let _ = (team_uid, domains);
         ctx.emit(UserWorkspacesEvent::AddDomainRestrictionsSuccess);
         ctx.notify();
