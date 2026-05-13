@@ -97,7 +97,6 @@ pub trait ManagedSecretsClient: 'static + Send + Sync {
     async fn get_task_secrets(
         &self,
         task_id: String,
-        workload_token: String,
     ) -> Result<HashMap<String, ManagedSecretValue>>;
 
     /// Issue a short-lived OIDC identity token for the current task.

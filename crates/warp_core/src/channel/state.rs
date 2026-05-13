@@ -177,10 +177,6 @@ impl ChannelState {
         }
     }
 
-    pub fn workload_audience_url() -> Cow<'static, str> {
-        Cow::Borrowed(DISABLED_HTTP_SENTINEL)
-    }
-
     // Returns the origin url, with scheme, domain, and ports (if any)
     pub fn server_root_domain() -> Origin {
         Url::parse(&Self::server_root_url())

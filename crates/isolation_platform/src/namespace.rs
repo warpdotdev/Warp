@@ -3,9 +3,10 @@ use std::{env, fs, time::Duration};
 use base64::prelude::{BASE64_URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, Utc};
 use command::r#async::Command;
-use warp_core::channel::ChannelState;
 
 use crate::{IsolationPlatformError, WorkloadToken};
+
+const OPENWARP_WORKLOAD_AUDIENCE: &str = "http://192.0.2.0:9";
 
 /// Detect whether or not we are running in a Namespace instance.
 pub fn is_in_namespace_instance() -> bool {
@@ -23,7 +24,7 @@ pub async fn issue_workload_token(
         .arg("auth")
         .arg("issue-id-token")
         .arg("--audience")
-        .arg(&*ChannelState::workload_audience_url())
+        .arg(OPENWARP_WORKLOAD_AUDIENCE)
         .arg("--output")
         .arg("json");
 

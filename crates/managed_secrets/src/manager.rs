@@ -1,4 +1,4 @@
-use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
+use std::{collections::HashMap, future::Future, sync::Arc};
 
 use warpui::{Entity, SingletonEntity};
 
@@ -146,12 +146,7 @@ impl ManagedSecretManager {
     ) -> impl Future<Output = anyhow::Result<HashMap<String, ManagedSecretValue>>> + use<> {
         let client = self.client.clone();
         async move {
-            // We only need the workload token for the duration of the request.
-            let workload_token =
-                warp_isolation_platform::issue_workload_token(Some(Duration::from_mins(5))).await?;
-            let secrets = client
-                .get_task_secrets(task_id, workload_token.token)
-                .await?;
+            let secrets = client.get_task_secrets(task_id).await?;
             Ok(secrets)
         }
     }

@@ -20,9 +20,7 @@ tink-proto = "0.3"
 tink-hybrid = "0.3"
 zeroize = "1.8"
 warpui.workspace = true
-warp_core.workspace = true
 vec1.workspace = true
-warp_isolation_platform.workspace = true
 
 # Pure-Rust HPKE implementation (RFC 9180).
 hpke = { version = "0.13", default-features = false, features = ["alloc", "x25519"] }

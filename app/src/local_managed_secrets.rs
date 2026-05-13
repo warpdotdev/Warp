@@ -57,7 +57,6 @@ impl ManagedSecretsClient for DisabledManagedSecretsClient {
     async fn get_task_secrets(
         &self,
         _task_id: String,
-        _workload_token: String,
     ) -> Result<HashMap<String, ManagedSecretValue>> {
         Ok(HashMap::new())
     }
