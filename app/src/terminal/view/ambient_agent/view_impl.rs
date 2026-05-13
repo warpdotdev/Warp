@@ -256,17 +256,12 @@ impl TerminalView {
                             .set_is_executing_oz_environment_startup_commands(false);
                     }
                 }
-                // Collapse the setup-commands summary, matching the oz first-exchange behavior.
-                self.ambient_agent_view_model.update(ctx, |model, ctx| {
-                    model.set_setup_command_visibility(false, ctx);
-                });
                 // Force a fresh viewer size report to the sharer so the harness CLI (e.g.
                 // the claude TUI) starts at our terminal's actual dimensions instead of
                 // whatever the sandbox PTY was sized to during setup.
                 self.force_report_viewer_terminal_size(ctx);
                 ctx.notify();
             }
-            AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility => (),
         }
     }
 

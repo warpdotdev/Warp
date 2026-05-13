@@ -18,7 +18,6 @@ use crate::ai::api_error::AIApiError;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::blocklist::BlocklistAIPermissions;
 use crate::ai::llms::{LLMId, LLMPreferences};
-use crate::terminal::view::ambient_agent::SetupCommandState;
 
 use super::AmbientAgentProgressUIState;
 
@@ -84,8 +83,6 @@ pub struct AmbientAgentViewModel {
     /// UI state for rendering the ambient agent progress screen.
     pub ui_state: AmbientAgentProgressUIState,
 
-    setup_commands_state: SetupCommandState,
-
     /// The task ID for the current cloud agent task, if one has been spawned.
     task_id: Option<AmbientAgentTaskId>,
 
@@ -120,7 +117,6 @@ impl AmbientAgentViewModel {
             has_parent_terminal,
             progress_timer_handle: None,
             ui_state,
-            setup_commands_state: Default::default(),
             task_id: None,
             conversation_id: None,
             harness: Harness::default(),
@@ -131,25 +127,6 @@ impl AmbientAgentViewModel {
 
     pub fn request(&self) -> Option<&SpawnAgentRequest> {
         self.request.as_ref()
-    }
-
-    pub fn setup_command_state(&self) -> &SetupCommandState {
-        &self.setup_commands_state
-    }
-
-    pub fn setup_command_state_mut(&mut self) -> &mut SetupCommandState {
-        &mut self.setup_commands_state
-    }
-
-    pub(super) fn set_setup_command_visibility(
-        &mut self,
-        is_visible: bool,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if is_visible != self.setup_commands_state.should_expand() {
-            self.setup_commands_state.set_should_expand(is_visible);
-            ctx.emit(AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility);
-        }
     }
 
     /// Returns the agent progress for tracking spawn steps.
@@ -749,9 +726,7 @@ pub enum AmbientAgentViewModelEvent {
     /// The ambient agent has started sharing its session.
     SessionReady,
     /// The ambient agent failed.
-    Failed {
-        error_message: String,
-    },
+    Failed { error_message: String },
     /// Request to show the cloud agent AI credits modal.
     ShowAICreditModal,
     /// The ambient agent needs GitHub authentication.
@@ -764,8 +739,6 @@ pub enum AmbientAgentViewModelEvent {
     /// Fires once per run and signals the transition out of the pre-first-exchange phase
     /// for claude / gemini / other third-party harnesses.
     HarnessCommandStarted,
-
-    UpdatedSetupCommandVisibility,
 }
 
 impl Entity for AmbientAgentViewModel {
