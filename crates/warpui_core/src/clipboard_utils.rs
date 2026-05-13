@@ -354,43 +354,17 @@ pub fn read_images_from_clipboard(
     }
 }
 
-/// Windows-only fallback: enumerate every clipboard format present and find
-/// one whose bytes look like a known image (PNG/JPEG/GIF/WebP via `infer`).
+/// Windows 专用兜底: 只枚举看起来像图片的剪贴板格式,并寻找
+/// PNG/JPEG/GIF/WebP 等已知图片字节。
 ///
-/// This handles screenshot tools that don't write CF_DIB at all and instead
-/// register custom format names like "PNG", "image/png", or vendor-specific
-/// names that we can't enumerate ahead of time. Standard non-image format codes
-/// (text, locale, file-list, metafile, etc.) are skipped, and registered
-/// formats (>= 0xC000) plus CF_DIB/CF_DIBV5 are probed.
+/// 这用于兼容不写 CF_DIB、只注册 "PNG" 或 "image/png" 之类格式名的截图工具。
+/// 不要探测任意注册格式: clipboard-win 读取原始字节时必须调用
+/// GlobalSize/GlobalLock,而一些外部剪贴板格式不能安全地当成 HGLOBAL 字节缓冲读取。
 #[cfg(target_os = "windows")]
 fn try_read_image_via_custom_windows_formats(
     filename: Option<String>,
 ) -> Option<crate::clipboard::ImageData> {
     use clipboard_win::{raw, Clipboard, EnumFormats};
-
-    // Standard Windows clipboard format codes we never want to probe — they
-    // are guaranteed not to contain a PNG/JPEG/GIF/WebP raw payload.
-    // CF_BITMAP/CF_DIB/CF_DIBV5 we *do* keep, on the off chance a tool stuffed
-    // a complete PNG file into a DIB-named slot (some apps do this).
-    const SKIP_STANDARD: &[u32] = &[
-        1,  // CF_TEXT
-        2,  // CF_BITMAP — HBITMAP handle, not raw bytes (get_vec yields garbage)
-        4,  // CF_SYLK
-        5,  // CF_DIF
-        6,  // CF_TIFF
-        7,  // CF_OEMTEXT
-        13, // CF_UNICODETEXT
-        15, // CF_HDROP
-        16, // CF_LOCALE
-            // We DO probe 8 = CF_DIB and 17 = CF_DIBV5 — those carry raw DIB bytes
-            // that we can decode via try_decode_dib_to_png below.
-    ];
-
-    // CF_DIB = 8, CF_DIBV5 = 17. Treat these (and any registered format whose
-    // bytes start with a valid DIB header) as candidates for DIB → PNG decode
-    // when `infer` doesn't recognize PNG/JPEG/GIF/WebP magic.
-    const CF_DIB: u32 = 8;
-    const CF_DIBV5: u32 = 17;
 
     // RAII OpenClipboard / CloseClipboard. arboard has already released the
     // clipboard by the time we get here (its `get().image()` call returned).
@@ -402,34 +376,30 @@ fn try_read_image_via_custom_windows_formats(
         }
     };
 
-    // Collect formats first so we can both diagnose and probe them.
-    let formats: Vec<u32> = EnumFormats::new().collect();
+    // 先收集候选格式,避免为了诊断而 raw-read 外部应用放入的每一种自定义格式。
+    let formats: Vec<(u32, String)> = EnumFormats::new()
+        .filter_map(|fmt| {
+            let name = raw::format_name_big(fmt).unwrap_or_else(|| format!("<unknown {fmt:#06x}>"));
+            is_windows_image_clipboard_format_candidate(fmt, &name).then_some((fmt, name))
+        })
+        .collect();
     if formats.is_empty() {
         return None;
     }
 
-    let names: Vec<String> = formats
-        .iter()
-        .map(|&f| raw::format_name_big(f).unwrap_or_else(|| format!("<unknown {:#06x}>", f)))
-        .collect();
+    let names: Vec<String> = formats.iter().map(|(_, name)| name.clone()).collect();
     log::info!(
-        "Custom-format fallback: clipboard has {} format(s): {:?}",
+        "Custom-format fallback: clipboard has {} image candidate format(s): {:?}",
         formats.len(),
         names
     );
 
-    for &fmt in &formats {
-        if SKIP_STANDARD.contains(&fmt) {
-            continue;
-        }
-
+    for (fmt, name) in formats {
         let mut buf: Vec<u8> = Vec::new();
         match raw::get_vec(fmt, &mut buf) {
             Ok(_) if !buf.is_empty() => {
                 // 1) Try magic-byte detection (PNG / JPEG / GIF / WebP)
                 if let Some(img) = try_preserve_original_format(&buf, filename.clone()) {
-                    let name = raw::format_name_big(fmt)
-                        .unwrap_or_else(|| format!("<unknown {:#06x}>", fmt));
                     log::info!(
                         "Custom-format fallback: matched format {name:?} ({} bytes, mime={})",
                         buf.len(),
@@ -442,10 +412,8 @@ fn try_read_image_via_custom_windows_formats(
                 // bytes. Some screenshot tools (PixPin, etc.) write a DIB that
                 // arboard fails to parse but the `image` crate's BmpDecoder
                 // handles fine via `new_without_file_header`.
-                if fmt == CF_DIB || fmt == CF_DIBV5 || looks_like_dib(&buf) {
+                if is_windows_dib_clipboard_format(fmt) || looks_like_dib(&buf) {
                     if let Some(img) = try_decode_dib_to_png(&buf, filename.clone()) {
-                        let name = raw::format_name_big(fmt)
-                            .unwrap_or_else(|| format!("<unknown {:#06x}>", fmt));
                         log::info!(
                             "Custom-format fallback: decoded DIB from format {name:?} ({} bytes → {} bytes PNG)",
                             buf.len(),
@@ -465,6 +433,28 @@ fn try_read_image_via_custom_windows_formats(
 
     log::info!("Custom-format fallback: no format on clipboard contained recognizable image bytes");
     None
+}
+
+#[cfg(target_os = "windows")]
+fn is_windows_dib_clipboard_format(format: u32) -> bool {
+    const CF_DIB: u32 = 8;
+    const CF_DIBV5: u32 = 17;
+
+    format == CF_DIB || format == CF_DIBV5
+}
+
+#[cfg(target_os = "windows")]
+fn is_windows_image_clipboard_format_candidate(format: u32, name: &str) -> bool {
+    if is_windows_dib_clipboard_format(format) {
+        return true;
+    }
+
+    // 只有格式名明确表示图片字节的注册格式才足够适合 raw-read。
+    // 这样保留常见截图工具支持,同时文本粘贴时不会触碰浏览器/编辑器的任意私有格式。
+    let normalized = name.to_ascii_lowercase();
+    ["png", "jpeg", "jpg", "gif", "webp", "image/"]
+        .iter()
+        .any(|token| normalized.contains(token))
 }
 
 /// Detect whether a byte slice plausibly starts with a Windows DIB header.

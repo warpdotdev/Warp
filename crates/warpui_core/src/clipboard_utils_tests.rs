@@ -283,6 +283,31 @@ mod image_processing_tests {
         let result = convert_raw_bitmap_to_png(usize::MAX, 1, vec![255, 0, 0, 255], None);
         assert!(result.is_none());
     }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_windows_image_clipboard_format_candidates() {
+        assert!(is_windows_image_clipboard_format_candidate(8, "CF_DIB"));
+        assert!(is_windows_image_clipboard_format_candidate(17, "CF_DIBV5"));
+        assert!(is_windows_image_clipboard_format_candidate(0xC001, "PNG"));
+        assert!(is_windows_image_clipboard_format_candidate(
+            0xC002,
+            "image/jpeg"
+        ));
+
+        assert!(!is_windows_image_clipboard_format_candidate(
+            13,
+            "CF_UNICODETEXT"
+        ));
+        assert!(!is_windows_image_clipboard_format_candidate(
+            0xC003,
+            "HTML Format"
+        ));
+        assert!(!is_windows_image_clipboard_format_candidate(
+            0xC004,
+            "Chromium Web Custom MIME Data Format"
+        ));
+    }
 }
 
 // ============================================================================
