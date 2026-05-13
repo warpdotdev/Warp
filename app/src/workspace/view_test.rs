@@ -7,10 +7,12 @@ use crate::ai::llms::LLMPreferences;
 use crate::ai::restored_conversations::RestoredAgentConversations;
 use crate::ai::skills::SkillManager;
 use crate::ai::AIRequestUsageModel;
+use crate::auth::UserUid;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::model::view::CloudViewModel;
 use crate::context_chips::prompt::Prompt;
 use crate::editor::Event;
+use crate::editor::ReplicaId;
 use crate::gpu_state::GPUState;
 use crate::network::NetworkStatus;
 use crate::notebooks::editor::keys::NotebookKeybindings;
@@ -24,16 +26,15 @@ use repo_metadata::repositories::DetectedRepositories;
 use repo_metadata::watcher::DirectoryWatcher;
 #[cfg(feature = "local_fs")]
 use repo_metadata::RepoMetadataModel;
+use session_sharing_protocol::common::{ParticipantId, ParticipantList};
 use session_sharing_protocol::sharer::SessionSourceType;
 use std::collections::HashMap;
 use std::sync::Arc;
 use watcher::HomeDirectoryWatcher;
 
-use crate::server::cloud_objects::update_manager::UpdateManager;
+use crate::cloud_object::update_manager::UpdateManager;
 use crate::server::experiments::ServerExperiments;
-use crate::server::server_api::ServerApiProvider;
 
-use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::settings::PrivacySettings;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::settings_view::DisplayCount;
@@ -43,8 +44,6 @@ use crate::terminal::history::History;
 use crate::terminal::keys::TerminalKeybindings;
 #[cfg(windows)]
 use crate::util::traffic_lights::windows::RendererState;
-use crate::workspaces::team_tester::TeamTesterStatus;
-use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_profiles::UserProfiles;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
@@ -71,7 +70,6 @@ use crate::{experiments, workspace, GlobalResourceHandlesProvider};
 use ai::project_context::model::ProjectContextModel;
 use pane_group::{NotebookPane, PaneState, SplitPaneState, TerminalPaneId};
 use session_sharing_protocol::common::SessionId;
-use terminal::shared_session::permissions_manager::SessionPermissionsManager;
 use terminal::view::ActiveSessionState;
 use warpui::AddSingletonModel;
 use warpui::{platform::WindowStyle, App, ViewHandle};
@@ -80,9 +78,7 @@ fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
 
     // Add the necessary singleton models to the App
-    app.add_singleton_model(|_ctx| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(|_ctx| PtySpawner::new_for_test());
     app.add_singleton_model(|_| Prompt::mock());
@@ -92,8 +88,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
     app.add_singleton_model(|_ctx| UserProfiles::new(Vec::new()));
-    app.add_singleton_model(TeamTesterStatus::mock);
-    app.add_singleton_model(TeamUpdateManager::mock);
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(MCPGalleryManager::new);
     app.add_singleton_model(CloudViewModel::mock);
@@ -110,7 +104,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| ResizableData::default());
     app.add_singleton_model(LocalWorkflows::new);
     app.add_singleton_model(UndoCloseStack::new);
-    app.add_singleton_model(terminal::shared_session::manager::Manager::new);
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(|_| WorkspaceToastStack);
     app.add_singleton_model(|_| ObjectActions::new(Vec::new()));
@@ -121,7 +114,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
     app.add_singleton_model(AgentConversationsModel::new);
-    app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(LLMPreferences::new);
     app.add_singleton_model(|_| SettingsPaneManager::new());
     app.add_singleton_model(|_| AIFactManager::new());
@@ -347,8 +339,6 @@ impl Drop for TabConfigCleanupGuard {
 
 /// Creates a workspace with a single, shared session.
 fn mock_workspace_with_shared_session(app: &mut App) -> ViewHandle<Workspace> {
-    use crate::terminal::shared_session::manager::Manager;
-
     // Create the workspace as a session-sharing sharer.
     let global_resource_handles = GlobalResourceHandles::mock(app);
     let (_, workspace) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
@@ -384,14 +374,6 @@ fn mock_workspace_with_shared_session(app: &mut App) -> ViewHandle<Workspace> {
         );
     });
 
-    // Make sure the view is registered with the shared session manager.
-    app.read(|ctx| {
-        let manager = Manager::as_ref(ctx);
-        let shared_sessions = manager.shared_views(ctx).collect_vec();
-        assert_eq!(shared_sessions.len(), 1);
-        assert_eq!(shared_sessions[0].id(), terminal_view.id());
-    });
-
     workspace
 }
 
@@ -400,13 +382,14 @@ fn mock_workspace_viewing_shared_session(app: &mut App) -> ViewHandle<Workspace>
     // Create the workspace as a session-sharing sharer.
     let global_resource_handles = GlobalResourceHandles::mock(app);
 
-    let session_id = SessionId::new();
-
     let (_, workspace) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
         Workspace::new(
             global_resource_handles,
             None,
-            NewWorkspaceSource::SharedSessionAsViewer { session_id },
+            NewWorkspaceSource::Empty {
+                previous_active_window: None,
+                shell: None,
+            },
             ctx,
         )
     });
@@ -421,10 +404,16 @@ fn mock_workspace_viewing_shared_session(app: &mut App) -> ViewHandle<Workspace>
             .unwrap()
     });
 
-    // Ensure session is opened as a viewer.
-    terminal_view.read(app, |terminal, _ctx| {
-        let model = terminal.model.clone();
-        assert!(model.lock().shared_session_status().is_viewer());
+    terminal_view.update(app, |view, ctx| {
+        view.on_session_share_joined(
+            ParticipantId::new(),
+            UserUid::new("mock_firebase_uid"),
+            ReplicaId::random(),
+            Box::new(ParticipantList::default()),
+            SessionId::new(),
+            SessionSourceType::default(),
+            ctx,
+        );
     });
 
     workspace
@@ -838,7 +827,6 @@ fn setup_session_sharing_test(workspace: &ViewHandle<Workspace>, app: &mut App) 
 
 #[test]
 fn test_close_tab_confirmation_dialog() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
     App::test((), |mut app| async move {
         initialize_app(&mut app);
         app.update(disable_quit_warning);
@@ -904,7 +892,6 @@ fn test_close_tab_confirmation_dialog() {
 
 #[test]
 fn test_close_pane_confirmation_dialog() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 
@@ -959,7 +946,6 @@ fn test_close_pane_confirmation_dialog() {
 
 #[test]
 fn test_reopen_closed_shared_tab() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 
@@ -987,7 +973,6 @@ fn test_reopen_closed_shared_tab() {
 
 #[test]
 fn test_close_other_tabs_confirmation_dialog() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 
@@ -1026,7 +1011,6 @@ fn test_close_other_tabs_confirmation_dialog() {
 
 #[test]
 fn test_close_tabs_right_confirmation_dialog() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 
@@ -1068,7 +1052,6 @@ fn test_close_tabs_right_confirmation_dialog() {
 
 #[test]
 fn test_confirmation_dialog_dont_show_again() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
     App::test((), |mut app| async move {
         initialize_app(&mut app);
         app.update(disable_quit_warning);
@@ -1125,8 +1108,6 @@ fn test_confirmation_dialog_dont_show_again() {
 
 #[test]
 fn test_close_last_tab_skip_confirmation() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-
     App::test((), |mut app| async move {
         initialize_app(&mut app);
         app.update(disable_quit_warning);
@@ -1384,190 +1365,7 @@ fn test_open_or_toggle_warp_drive() {
 }
 
 #[test]
-fn test_stop_sharing_session() {
-    use crate::terminal::shared_session::manager::Manager;
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        // Create a workspace with a single session that's shared.
-        let workspace = mock_workspace_with_shared_session(&mut app);
-        let terminal_view = workspace.read(&app, |workspace, ctx| {
-            assert_eq!(workspace.tabs.len(), 1);
-            workspace
-                .active_tab_pane_group()
-                .as_ref(ctx)
-                .focused_session_view(ctx)
-                .unwrap()
-        });
-
-        // Stop sharing the shared session.
-        workspace.update(&mut app, |workspace, ctx| {
-            workspace.stop_sharing_session(
-                &terminal_view.id(),
-                SharedSessionActionSource::Tab,
-                ctx,
-            );
-        });
-
-        // Ensure that the session is no longer registered with the shared session manager.
-        app.read(|ctx| {
-            let manager = Manager::as_ref(ctx);
-            let shared_sessions = manager.shared_views(ctx).collect_vec();
-            assert_eq!(shared_sessions.len(), 0);
-        });
-    });
-}
-
-#[test]
-fn test_stop_sharing_all_sessions_in_tab() {
-    use crate::terminal::shared_session::manager::Manager;
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        // Create a workspace with two tabs. First tab has two shared sessions. Second tab has one shared session.
-        let workspace = mock_workspace_with_shared_session(&mut app);
-        let second_tab_session = workspace.update(&mut app, |workspace, ctx| {
-            workspace
-                .active_tab_pane_group()
-                .update(ctx, |pane_group, ctx| {
-                    pane_group.handle_action(&PaneGroupAction::Add(Direction::Right), ctx);
-                    pane_group
-                        .terminal_view_at_pane_index(1, ctx)
-                        .unwrap()
-                        .update(ctx, |terminal_view, ctx| {
-                            terminal_view.attempt_to_share_session(
-                                SharedSessionScrollbackType::None,
-                                None,
-                                SessionSourceType::default(),
-                                false,
-                                ctx,
-                            );
-                        });
-                });
-
-            workspace.add_terminal_tab(false, ctx);
-            workspace
-                .active_tab_pane_group()
-                .update(ctx, |pane_group, ctx| {
-                    pane_group
-                        .terminal_view_at_pane_index(0, ctx)
-                        .unwrap()
-                        .update(ctx, |terminal_view, ctx| {
-                            terminal_view.attempt_to_share_session(
-                                SharedSessionScrollbackType::None,
-                                None,
-                                SessionSourceType::default(),
-                                false,
-                                ctx,
-                            );
-                        });
-                });
-
-            workspace
-                .active_tab_pane_group()
-                .read(ctx, |pane_group, ctx| {
-                    pane_group.terminal_view_at_pane_index(0, ctx).unwrap().id()
-                })
-        });
-
-        // Ensure we have three shared sessions registered.
-        app.read(|ctx| {
-            let manager = Manager::as_ref(ctx);
-            let shared_sessions = manager.shared_views(ctx).collect_vec();
-            assert_eq!(shared_sessions.len(), 3);
-        });
-
-        // Stop sharing all sessions in first tab.
-        workspace.update(&mut app, |workspace, ctx| {
-            let tab = workspace.tabs[0].pane_group.downgrade();
-            workspace.stop_sharing_all_panes_in_tab(&tab, ctx);
-        });
-
-        // Ensure that the only remaining shared session is the one in the other tab.
-        app.read(|ctx| {
-            let manager = Manager::as_ref(ctx);
-            let shared_sessions = manager.shared_views(ctx).collect_vec();
-            assert_eq!(shared_sessions.len(), 1);
-            assert_eq!(shared_sessions[0].id(), second_tab_session);
-        });
-    });
-}
-
-#[test]
-fn test_tab_context_menu_share_session_items() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-        let workspace = mock_workspace(&mut app);
-        let shared_pane_id = setup_session_sharing_test(&workspace, &mut app);
-
-        workspace.update(&mut app, |workspace, ctx| {
-            // Focus the shared session
-            workspace.activate_tab(1, ctx);
-            workspace
-                .active_tab_pane_group()
-                .update(ctx, |pane_group, ctx| {
-                    pane_group.focus_pane_by_id(shared_pane_id, ctx);
-                });
-        });
-
-        // When there's a single shared session in a tab (focused), the options
-        // for sharing are "Stop sharing" and "Stop sharing all".
-        workspace.read(&app, |workspace, ctx| {
-            let items = workspace.tabs[1].menu_items(1, 3, ctx);
-            assert!(items[0]
-                .is_approximately_same_item_as(&MenuItemFields::new("Stop sharing").into_item()));
-            assert!(items[1].is_approximately_same_item_as(
-                &MenuItemFields::new("Stop sharing all").into_item()
-            ));
-        });
-
-        // Focus the other, non-shared pane in the tab
-        workspace.update(&mut app, |workspace, ctx| {
-            workspace.activate_tab(1, ctx);
-            workspace
-                .active_tab_pane_group()
-                .update(ctx, |pane_group, ctx| {
-                    pane_group.pane_by_index(1).unwrap().focus(ctx);
-                });
-        });
-
-        // When there's a single shared session in a tab (unfocused), the options
-        // for sharing are "Share session" and "Stop sharing all".
-        workspace.read(&app, |workspace, ctx| {
-            let items = workspace.tabs[1].menu_items(1, 3, ctx);
-            assert!(items[0]
-                .is_approximately_same_item_as(&MenuItemFields::new("Share session").into_item()));
-            assert!(items[1].is_approximately_same_item_as(
-                &MenuItemFields::new("Stop sharing all").into_item()
-            ));
-        });
-
-        // Stop sharing.
-        workspace.update(&mut app, |workspace, ctx| {
-            let tab = workspace.tabs[1].pane_group.downgrade();
-            workspace.stop_sharing_all_panes_in_tab(&tab, ctx);
-        });
-
-        // When there's no shared sessions in a tab, the only option is "Share session".
-        workspace.read(&app, |workspace, ctx| {
-            let items = workspace.tabs[1].menu_items(1, 3, ctx);
-            assert!(items[0]
-                .is_approximately_same_item_as(&MenuItemFields::new("Share session").into_item()));
-            assert!(items[1].is_approximately_same_item_as(&MenuItem::Separator));
-        });
-    });
-}
-
-#[test]
 fn test_view_only_session() {
-    let _guard = FeatureFlag::ViewingSharedSessions.override_enabled(true);
-
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 

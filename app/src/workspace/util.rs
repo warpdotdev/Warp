@@ -158,7 +158,7 @@ impl WorkspaceState {
             || self.is_remove_tab_config_dialog_open
             || {
                 let one_time_modal = OneTimeModalModel::as_ref(app);
-                one_time_modal.is_oz_launch_modal_open()
+                one_time_modal.is_openwarp_launch_modal_open()
                     || one_time_modal.is_build_plan_migration_modal_open()
             }
     }

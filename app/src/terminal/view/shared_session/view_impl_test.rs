@@ -5,11 +5,12 @@ use warpui::App;
 
 use crate::context_chips::prompt_type::PromptType;
 
+use crate::assert_lines_approx_eq;
 use crate::terminal::model::blocks::{ToTotalIndex as _, INLINE_BANNER_HEIGHT};
+use crate::terminal::session_settings::SessionSettings;
 use crate::terminal::view::shared_session::test_utils::terminal_view_for_viewer;
 use crate::test_util::add_window_with_terminal;
 use crate::test_util::terminal::initialize_app_for_terminal_view;
-use crate::{assert_lines_approx_eq, FeatureFlag};
 
 use super::*;
 
@@ -57,8 +58,6 @@ fn test_prompt_context_menu_items_shared_session_viewer_no_edit_prompt() {
 
 #[test]
 fn test_shared_session_banners() {
-    let _flag = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
 
@@ -203,8 +202,6 @@ fn test_shared_session_banners() {
 
 #[test]
 fn test_resize_shared_session_viewer_from_server() {
-    let _flag = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-
     App::test((), |mut app| async move {
         let terminal = terminal_view_for_viewer(&mut app);
         terminal.update(&mut app, |view, ctx| {
@@ -275,9 +272,6 @@ fn test_resize_shared_session_viewer_from_server() {
 
 #[test]
 fn test_resize_shared_session_viewer_independent_of_sharer() {
-    let _create_flag = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-    let _view_flag = FeatureFlag::ViewingSharedSessions.override_enabled(true);
-
     App::test((), |mut app| async move {
         let terminal = terminal_view_for_viewer(&mut app);
         terminal.update(&mut app, |view, ctx| {
@@ -340,8 +334,6 @@ fn test_resize_shared_session_viewer_independent_of_sharer() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_on_session_share_ended_restores_size_after_viewer_driven_resize() {
-    let _flag = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
         let terminal = add_window_with_terminal(&mut app, None);
@@ -394,8 +386,6 @@ fn test_on_session_share_ended_restores_size_after_viewer_driven_resize() {
 
 #[test]
 fn test_on_session_share_ended_inserts_tombstone_for_ambient_session_under_cloud_mode_setup_v2() {
-    let _flag = FeatureFlag::CloudModeSetupV2.override_enabled(true);
-
     App::test((), |mut app| async move {
         let terminal = terminal_view_for_viewer(&mut app);
         let initial_block_height_items = terminal.read(&app, |view, _| {
@@ -421,8 +411,6 @@ fn test_on_session_share_ended_inserts_tombstone_for_ambient_session_under_cloud
 #[test]
 fn test_on_session_share_ended_does_not_insert_tombstone_for_non_ambient_session_under_cloud_mode_setup_v2(
 ) {
-    let _flag = FeatureFlag::CloudModeSetupV2.override_enabled(true);
-
     App::test((), |mut app| async move {
         let terminal = terminal_view_for_viewer(&mut app);
         let initial_block_height_items = terminal.read(&app, |view, _| {

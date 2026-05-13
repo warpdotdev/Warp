@@ -46,6 +46,7 @@ pub mod i18n;
 mod input_classifier;
 mod interval_timer;
 mod linear;
+mod local_managed_secrets;
 mod menu;
 mod modal;
 mod network;
@@ -71,6 +72,7 @@ mod resource_limits;
 mod safe_triangle;
 mod search_bar;
 mod server;
+mod server_time;
 mod session_management;
 mod shell_indicator;
 mod skill_manager;
@@ -148,7 +150,6 @@ use code::editor_management::CodeManager;
 use code::opened_files::OpenedFilesModel;
 use code_review::GlobalCodeReviewModel;
 use quit_warning::UnsavedStateSummary;
-use server::telemetry::context_provider::AppTelemetryContextProvider;
 // OpenWarp(本地化,Phase 4):`ServerVoiceTranscriber` 原用于默认 VoiceTranscriber 注入,现走 `VoiceTranscriber::disabled()`,同名 import 暂收。
 #[cfg(feature = "local_fs")]
 use settings::import::model::ImportedConfigModel;
@@ -199,6 +200,7 @@ use crate::autoupdate::{AutoupdateState, RelaunchModel};
 use crate::changelog_model::ChangelogModel;
 use crate::cloud_object::model::actions::ObjectActions;
 use crate::cloud_object::model::view::CloudViewModel;
+use crate::cloud_object::update_manager::UpdateManager;
 use crate::code::global_buffer_model::GlobalBufferModel;
 use crate::context_chips::prompt::Prompt;
 use crate::default_terminal::DefaultTerminal;
@@ -212,7 +214,6 @@ use crate::notebooks::CloudNotebook;
 use crate::palette::PaletteMode;
 use crate::persistence::PersistenceWriter;
 use crate::projects::ProjectManagementModel;
-use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::experiments::ServerExperiments;
 use crate::session_management::{RunningSessionSummary, SessionNavigationData};
 use crate::settings::manager::SettingsManager;
@@ -233,7 +234,6 @@ use crate::warp_managed_paths_watcher::{ensure_warp_watch_roots_exist, WarpManag
 use crate::workflows::aliases::WorkflowAliases;
 use crate::workflows::local_workflows::LocalWorkflows;
 use crate::workspace::{ActiveSession, OneTimeModalModel, ToastStack};
-use crate::workspaces::team_tester::TeamTesterStatus;
 use crate::workspaces::user_profiles::UserProfiles;
 #[cfg(feature = "local_tty")]
 use anyhow::Context;
@@ -274,13 +274,15 @@ use crate::server::telemetry::{AppStartupInfo, CloseTarget, PaletteSource};
 use crate::terminal::CustomSecretRegexUpdater;
 use crate::util::bindings::is_binding_cross_platform;
 use crate::workspace::{PaneViewLocator, Workspace, WorkspaceAction};
-use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use warp_logging::LogDestination;
 
 // Re-export the send_telemetry_from_ctx macro at the crate root level
 pub use warp_core::send_telemetry_from_app_ctx;
 pub use warp_core::send_telemetry_from_ctx;
+pub use warp_core::send_telemetry_on_executor;
+pub use warp_core::send_telemetry_sync_from_app_ctx;
+pub use warp_core::send_telemetry_sync_from_ctx;
 
 // Re-export the safe logging macros at the crate root level for backwards compatibility
 pub use warp_core::{safe_debug, safe_error, safe_info, safe_warn};
@@ -550,30 +552,6 @@ pub fn run() -> Result<()> {
 
     // Parse command-line arguments.
     let args = warp_cli::Args::from_env();
-
-    // Server URL overrides are only honored on internal dev channels. Release channels silently
-    // ignore `--server-root-url` / `--ws-server-url` / `--session-sharing-server-url` (and their
-    // `WARP_*` env-var equivalents) so shipped builds can't be redirected away from their
-    // baked-in server URLs. See `Channel::allows_server_url_overrides`.
-    if ChannelState::channel().allows_server_url_overrides() {
-        if let Some(url) = args.server_root_url() {
-            if let Err(e) = ChannelState::override_server_root_url(url.to_owned()) {
-                eprintln!("Error: Invalid server root URL: {e:#}");
-            }
-        }
-
-        if let Some(url) = args.ws_server_url() {
-            if let Err(e) = ChannelState::override_ws_server_url(url.to_owned()) {
-                eprintln!("Error: Invalid websocket server URL: {e:#}");
-            }
-        }
-
-        if let Some(url) = args.session_sharing_server_url() {
-            if let Err(e) = ChannelState::override_session_sharing_server_url(url.to_owned()) {
-                eprintln!("Error: Invalid session sharing server URL: {e:#}");
-            }
-        }
-    }
 
     if let Some(command) = args.command() {
         #[cfg(windows)]
@@ -1101,8 +1079,6 @@ fn initialize_app(
     // OpenWarp:保留 AuthStateProvider singleton 仅用于遗留调用点读取本地占位用户态。
     ctx.add_singleton_model(|_ctx| AuthStateProvider::new(auth_state.clone()));
 
-    ctx.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
-
     // OpenWarp Wave 3-1:AuthManager 已本地化为 stub,不再注入 server_api / auth_client。
     ctx.add_singleton_model(AuthManager::new);
 
@@ -1215,9 +1191,7 @@ fn initialize_app(
 
     ctx.add_singleton_model(AIRequestUsageModel::new);
 
-    ctx.add_singleton_model(|ctx| {
-        UserWorkspaces::new(cached_workspaces, current_workspace_uid, ctx)
-    });
+    ctx.add_singleton_model(|_| UserWorkspaces::new(cached_workspaces, current_workspace_uid));
 
     // Initialize ApiKeyManager after UserWorkspaces so it can subscribe to workspace/settings changes
     ctx.add_singleton_model(|ctx| {
@@ -1281,7 +1255,7 @@ fn initialize_app(
     ctx.add_singleton_model(|_| pricing::PricingInfoModel::new());
     ctx.add_singleton_model(|_| {
         ManagedSecretManager::new(
-            Arc::new(server::server_api::managed_secrets::DisabledManagedSecretsClient),
+            Arc::new(local_managed_secrets::DisabledManagedSecretsClient),
             auth_state.clone(),
         )
     });
@@ -1524,7 +1498,6 @@ fn initialize_app(
     context_chips::node_version_popup::init(ctx);
     env_vars::view::env_var_collection::init(ctx);
     ai::agent::todos::popup::init(ctx);
-    terminal::view::init_environment::mode_selector::init(ctx);
     coding_entrypoints::project_buttons::init(ctx);
     if FeatureFlag::CodeReviewSaveChanges.is_enabled() {
         code_review::init(ctx);
@@ -1640,12 +1613,6 @@ fn initialize_app(
 
     ctx.add_singleton_model(|_| AudibleBell::new());
 
-    // This model has to be registered after the user workspaces model because it relies on it,
-    // and before the local workspace/object update models because they rely on the TeamTester model.
-    ctx.add_singleton_model(TeamTesterStatus::new);
-
-    ctx.add_singleton_model(|ctx| TeamUpdateManager::new(persistence_writer.sender(), ctx));
-
     // OpenWarp:UpdateManager 只负责本地 cloud object 的内存/SQLite 同步,不再注入云端 client。
     ctx.add_singleton_model(|ctx| UpdateManager::new(persistence_writer.sender(), ctx));
 
@@ -1719,13 +1686,6 @@ fn initialize_app(
 
     // Add a singleton model for resizable modals whose size should be persisted through restarts.
     ctx.add_singleton_model(|_| ResizableData::default());
-
-    // Add a singleton model to maintain state of shared session across all windows.
-    ctx.add_singleton_model(terminal::shared_session::manager::Manager::new);
-
-    ctx.add_singleton_model(
-        terminal::shared_session::permissions_manager::SessionPermissionsManager::new,
-    );
 
     ctx.add_singleton_model(EnvVarCollectionManager::new);
     ctx.add_singleton_model(WorkflowManager::new);
@@ -2341,14 +2301,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::Ligatures,
         #[cfg(feature = "selectable_prompt")]
         FeatureFlag::SelectablePrompt,
-        #[cfg(feature = "viewing_shared_sessions")]
-        FeatureFlag::ViewingSharedSessions,
-        #[cfg(feature = "creating_shared_sessions")]
-        FeatureFlag::CreatingSharedSessions,
         #[cfg(feature = "agent_mode")]
         FeatureFlag::AgentMode,
-        #[cfg(feature = "shared_session_long_running_commands")]
-        FeatureFlag::SharedSessionWriteToLongRunningCommands,
         #[cfg(feature = "resize_fix")]
         FeatureFlag::ResizeFix,
         #[cfg(feature = "richtext_multiselect")]
@@ -2387,8 +2341,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         // 物理删 —— `warp environment` 子命令 + `--environment` 参数同步下线。
         #[cfg(all(feature = "simulate_github_unauthed", debug_assertions))]
         FeatureFlag::SimulateGithubUnauthed,
-        #[cfg(feature = "session_sharing_acls")]
-        FeatureFlag::SessionSharingAcls,
         #[cfg(feature = "full_screen_zen_mode")]
         FeatureFlag::FullScreenZenMode,
         #[cfg(feature = "minimalist_ui")]
@@ -2437,8 +2389,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::AgentModePrePlanXML,
         #[cfg(feature = "agent_onboarding")]
         FeatureFlag::AgentOnboarding,
-        #[cfg(feature = "agent_shared_sessions")]
-        FeatureFlag::AgentSharedSessions,
         #[cfg(feature = "suggested_rules")]
         FeatureFlag::SuggestedRules,
         #[cfg(feature = "suggested_agent_mode_workflows")]
@@ -2473,14 +2423,10 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::FileRetrievalTools,
         #[cfg(feature = "reload_stale_conversation_files")]
         FeatureFlag::ReloadStaleConversationFiles,
-        #[cfg(feature = "shared_block_title_generation")]
-        FeatureFlag::SharedBlockTitleGeneration,
         #[cfg(feature = "retry_truncated_code_responses")]
         FeatureFlag::RetryTruncatedCodeResponses,
         #[cfg(feature = "read_image_files")]
         FeatureFlag::ReadImageFiles,
-        #[cfg(feature = "usage_based_pricing")]
-        FeatureFlag::UsageBasedPricing,
         #[cfg(feature = "ai_context_menu")]
         FeatureFlag::AIContextMenuEnabled,
         #[cfg(feature = "at_menu_outside_of_ai_mode")]
@@ -2519,8 +2465,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::LinkedCodeBlocks,
         #[cfg(feature = "tabbed_editor_view")]
         FeatureFlag::TabbedEditorView,
-        #[cfg(feature = "send_telemetry_to_file")]
-        FeatureFlag::SendTelemetryToFile,
         #[cfg(feature = "undo_closed_panes")]
         FeatureFlag::UndoClosedPanes,
         #[cfg(feature = "multi_profile")]
@@ -2569,7 +2513,7 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         // 运行期 `is_enabled()` 返回 false,UI 入口隐藏 / 云端调度代码路径不可达。
         // Cargo features 仍保留(保证边缘可编译),Phase 6 统一清理 default 中的未使用 features。
         // 涉及: AmbientAgentsCommandLine / AmbientAgentsImageUpload / ScheduledAmbientAgents /
-        // AgentManagementView / AgentManagementDetailsView / AmbientAgentsRTC。
+        // AgentManagementView / AgentManagementDetailsView。
         // BYOP agent 本地运行不依赖以上任何一项。
         #[cfg(feature = "code_launch_modal")]
         FeatureFlag::CodeLaunchModal,
@@ -2595,8 +2539,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::AutoOpenCodeReviewPane,
         #[cfg(feature = "inline_code_review")]
         FeatureFlag::InlineCodeReview,
-        #[cfg(feature = "create_environment_slash_command")]
-        FeatureFlag::CreateEnvironmentSlashCommand,
         #[cfg(feature = "summarize_conversation_command")]
         FeatureFlag::SummarizationConversationCommand,
         #[cfg(feature = "mcp_grouped_server_context")]
@@ -2625,8 +2567,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::AgentView,
         #[cfg(feature = "agent_view_block_context")]
         FeatureFlag::AgentViewBlockContext,
-        #[cfg(feature = "warp_managed_secrets")]
-        FeatureFlag::WarpManagedSecrets,
         #[cfg(feature = "v4a_file_diffs")]
         FeatureFlag::V4AFileDiffs,
         #[cfg(feature = "interactive_conversation_management_view")]
@@ -2645,7 +2585,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::ConfigurableToolbar,
         #[cfg(feature = "agent_view_prompt_chip")]
         FeatureFlag::AgentViewPromptChip,
-        // OpenWarp(本地化,Phase 3b-1):AmbientAgentsRTC 下柜(上方统一说明)。
         #[cfg(feature = "classic_completions")]
         FeatureFlag::ClassicCompletions,
         #[cfg(feature = "force_classic_completions")]
@@ -2656,8 +2595,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::InlineHistoryMenu,
         #[cfg(feature = "inline_repo_menu")]
         FeatureFlag::InlineRepoMenu,
-        // OpenWarp Wave 7-2:`CloudMode` / `CloudModeFromLocalSession` / `CloudModeImageContext`
-        // 随 cloud ambient agent 主体子系统物理删。
         #[cfg(feature = "summarization_via_message_replacement")]
         FeatureFlag::SummarizationViaMessageReplacement,
         #[cfg(feature = "pluggable_notifications")]
@@ -2670,14 +2607,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::InlineProfileSelector,
         #[cfg(feature = "oz_platform_skills")]
         FeatureFlag::OzPlatformSkills,
-        #[cfg(feature = "oz_identity_federation")]
-        FeatureFlag::OzIdentityFederation,
-        #[cfg(feature = "oz_changelog_updates")]
-        FeatureFlag::OzChangelogUpdates,
         #[cfg(feature = "bundled_skills")]
         FeatureFlag::BundledSkills,
-        #[cfg(feature = "oz_launch_modal")]
-        FeatureFlag::OzLaunchModal,
         #[cfg(feature = "open_warp_launch_modal")]
         FeatureFlag::OpenWarpLaunchModal,
         #[cfg(feature = "new_tab_styling")]
@@ -2716,8 +2647,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::TabConfigs,
         #[cfg(feature = "agent_harness")]
         FeatureFlag::AgentHarness,
-        #[cfg(feature = "oz_handoff")]
-        FeatureFlag::OzHandoff,
         #[cfg(feature = "hoa_notifications")]
         FeatureFlag::HOANotifications,
         #[cfg(feature = "open_code_notifications")]
@@ -2730,8 +2659,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::WarpifyFooter,
         #[cfg(feature = "solo_user_byok")]
         FeatureFlag::SoloUserByok,
-        #[cfg(feature = "skip_firebase_anonymous_user")]
-        FeatureFlag::SkipFirebaseAnonymousUser,
         #[cfg(feature = "hoa_onboarding_flow")]
         FeatureFlag::HOAOnboardingFlow,
         #[cfg(feature = "git_operations_in_code_review")]
@@ -2742,8 +2669,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::CodexNotifications,
         #[cfg(feature = "trim_trailing_blank_lines")]
         FeatureFlag::TrimTrailingBlankLines,
-        // OpenWarp Wave 7-2:`CloudModeSetupV2` / `CloudModeInputV2` 随 cloud ambient agent
-        // 主体子系统物理删。
         #[cfg(feature = "configurable_context_window")]
         FeatureFlag::ConfigurableContextWindow,
     ];

@@ -21,18 +21,22 @@ use chrono::{DateTime, FixedOffset};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use warp_graphql::object_permissions::OwnerType;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
+
+use crate::server_time::ServerTimestamp;
 
 pub const TEST_USER_EMAIL: &str = "test_user@warp.dev";
 pub const TEST_USER_UID: &str = "test_user_uid";
 
-pub mod user_uid {
-    //! 本地定义 `UserUid`,保留旧 import 路径 `crate::auth::user_uid::UserUid`。
-    pub use warp_server_client::auth::UserUid;
-}
+pub mod user_uid;
 
 pub use user_uid::UserUid;
+
+#[derive(Clone, Copy, Debug)]
+pub enum OwnerType {
+    Team,
+    User,
+}
 
 /// OpenWarp 本地 API key 前缀。
 ///
@@ -178,7 +182,7 @@ pub struct User {
     pub needs_sso_link: bool,
     pub anonymous_user_type: Option<AnonymousUserType>,
     pub is_on_work_domain: bool,
-    pub linked_at: Option<warp_graphql::scalars::time::ServerTimestamp>,
+    pub linked_at: Option<ServerTimestamp>,
     pub personal_object_limits: Option<PersonalObjectLimits>,
     pub principal_type: PrincipalType,
 }
@@ -229,7 +233,7 @@ impl User {
         self.personal_object_limits
     }
 
-    pub fn linked_at(&self) -> Option<warp_graphql::scalars::time::ServerTimestamp> {
+    pub fn linked_at(&self) -> Option<ServerTimestamp> {
         self.linked_at
     }
 }
@@ -979,7 +983,7 @@ impl AuthManager {
     // ---------- URL 构造 facade ----------
     //
     // 旧 UI(login_slide / paste_auth_token_modal / auth_view_modal)在物理删除前
-    // 会调用这些方法以填充"在浏览器中打开 https://app.warp.dev/login"等链接。
+    // 会调用这些方法以填充历史登录提示链接;OpenWarp 不再打开 Warp 云登录页。
     // 物理删 UI 后已无调用方,但 enum/trait 仍可能被反射式消费,保留 stub。
 
     pub fn sign_up_url(&self) -> String {

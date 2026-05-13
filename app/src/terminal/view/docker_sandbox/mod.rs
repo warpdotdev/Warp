@@ -68,7 +68,6 @@ fn create_docker_sandbox_view(
             let terminal_manager = crate::terminal::local_tty::TerminalManager::create_model(
                 None,
                 std::collections::HashMap::new(),
-                crate::terminal::shared_session::IsSharedSessionCreator::No,
                 resources,
                 None, /* restored_blocks */
                 None, /* conversation_restoration */

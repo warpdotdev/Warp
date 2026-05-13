@@ -10,11 +10,9 @@ use crate::{
     cloud_object::model::persistence::CloudModel,
     menu::MenuItemFields,
     pane_group::{focus_state::PaneFocusHandle, BackingView, PaneConfiguration, PaneId, PaneView},
-    server::server_api::ServerApiProvider,
     settings_view::keybindings::KeybindingChangedNotifier,
-    terminal::shared_session::permissions_manager::SessionPermissionsManager,
     test_util::settings::initialize_settings_for_tests,
-    NetworkStatus, TeamTesterStatus, UpdateManager, UserProfiles, UserWorkspaces,
+    NetworkStatus, UpdateManager, UserProfiles, UserWorkspaces,
 };
 
 use super::{Event, OpenOverlay};
@@ -108,12 +106,9 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
-    app.add_singleton_model(TeamTesterStatus::new);
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| UserProfiles::new(Vec::new()));
     app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|ctx| UpdateManager::new(None, ctx));
-    app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
     #[cfg(feature = "voice_input")]

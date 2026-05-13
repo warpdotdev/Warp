@@ -113,7 +113,6 @@ pub fn init(app: &mut AppContext) {
     crate::tab_configs::remove_confirmation_dialog::init(app);
     hoa_onboarding::init(app);
     tab_configs::session_config_modal::init(app);
-    view::launch_modal::oz_launch::init(app);
     view::openwarp_launch_modal::init(app);
     view::codex_modal::init(app);
     view::free_tier_limit_hit_modal::init(app);
@@ -202,18 +201,6 @@ pub fn init(app: &mut AppContext) {
                     "workspace:debug_reset_aws_bedrock_login_banner_dismissed",
                     crate::t!("keybinding-desc-workspace-undismiss-aws-login-banner"),
                     WorkspaceAction::DebugResetAwsBedrockLoginBannerDismissed,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:open_oz_launch_modal",
-                    crate::t!("keybinding-desc-workspace-open-oz-launch-modal"),
-                    WorkspaceAction::OpenOzLaunchModal,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:reset_oz_launch_modal_state",
-                    crate::t!("keybinding-desc-workspace-reset-oz-launch-modal-state"),
-                    WorkspaceAction::ResetOzLaunchModalState,
                 )
                 .with_context_predicate(id!("Workspace")),
                 EditableBinding::new(
@@ -735,9 +722,7 @@ pub fn init(app: &mut AppContext) {
         .with_context_predicate(
             id!("Workspace") & id!(flags::IS_ANY_AI_ENABLED) & !id!("Workspace_PaneDragging"),
         )
-        .with_enabled(|| {
-            FeatureFlag::AgentView.is_enabled() && FeatureFlag::CloudMode.is_enabled()
-        }),
+        .with_enabled(|| FeatureFlag::AgentView.is_enabled() && false),
         EditableBinding::new(
             "workspace:toggle_left_panel",
             BindingDescription::new(crate::t!("keybinding-desc-workspace-toggle-left-panel")),

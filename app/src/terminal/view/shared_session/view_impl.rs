@@ -1,6 +1,5 @@
 //! [`TerminalView`]-specific implementation for shared sessions.
 
-use crate::auth::UserUid;
 use crate::context_chips::ContextChipKind;
 use crate::drive::sharing::ShareableObject;
 use crate::editor::{InteractionState, ReplicaId};
@@ -9,50 +8,33 @@ use crate::terminal::block_list_viewport::ScrollPositionUpdate;
 use crate::terminal::model::blocks::BlockListPoint;
 use crate::terminal::model::index::Point;
 use crate::terminal::model::terminal_model::WithinBlock;
-use crate::terminal::session_settings::SessionSettings;
-use crate::terminal::shared_session::manager::Manager;
-use crate::terminal::shared_session::role_change_modal::{
-    RoleChangeCloseSource, RoleChangeOpenSource,
-};
 use crate::terminal::shared_session::settings::SharedSessionSettings;
 use crate::terminal::shared_session::{
-    join_link, SharedSessionActionSource, SharedSessionScrollbackType, SharedSessionStatus,
-    COPY_LINK_TEXT,
+    SharedSessionActionSource, SharedSessionScrollbackType, SharedSessionStatus,
 };
 use crate::terminal::view::{
     ContextMenuAction, Event, InlineBannerItem, InlineBannerType, RichContentInsertionPosition,
     SharedSessionBanners, SizeUpdateBuilder, TerminalAction, TerminalView,
 };
 use crate::terminal::TerminalModel;
-use crate::view_components::{DismissibleToast, ToastFlavor};
+use crate::view_components::ToastFlavor;
 use crate::{
     menu::{MenuItem, MenuItemFields},
     terminal::shared_session::presence_manager::{Event as PresenceManagerEvent, PresenceManager},
 };
-use crate::{send_telemetry_from_ctx, TelemetryEvent};
 use chrono::{DateTime, Local};
 use itertools::Itertools;
-use session_sharing_protocol::common::{
-    ParticipantId, Role, RoleRequestId, RoleRequestResponse, SessionId, WindowSize,
-};
+use session_sharing_protocol::common::{ParticipantId, Role, SessionId, WindowSize};
 use session_sharing_protocol::sharer::SessionSourceType;
 use session_sharing_protocol::sharer::{RoleUpdateReason, SessionEndedReason};
 use session_sharing_protocol::viewer::RoleUpdatedReason;
-use warp_core::features::FeatureFlag;
 use warpui::r#async::Timer;
 
 use settings::Setting as _;
 use warp_core::semantic_selection::SemanticSelection;
-use warp_core::ui::appearance::Appearance;
-use warpui::clipboard::ClipboardContent;
-use warpui::platform::Cursor;
-use warpui::ui_components::button::ButtonVariant;
-use warpui::ui_components::components::UiComponent;
 use warpui::units::IntoLines;
-use warpui::{Element, SingletonEntity};
+use warpui::SingletonEntity;
 use warpui::{ModelHandle, ViewContext};
-
-use crate::menu::Event as MenuEvent;
 
 use crate::terminal::shared_session::participant_avatar_view::ParticipantAvatarEvent;
 use crate::terminal::shared_session::participant_avatar_view::ParticipantAvatarView;
@@ -60,7 +42,6 @@ use crate::terminal::shared_session::participant_avatar_view::ParticipantAvatarV
 use session_sharing_protocol::common::ParticipantList;
 use session_sharing_protocol::common::ParticipantPresenceUpdate;
 
-use warpui::elements::MouseStateHandle;
 use warpui::AppContext;
 
 use super::adapter::{Adapter, Kind, Participant};
@@ -116,24 +97,6 @@ impl TerminalView {
         )
     }
 
-    pub(super) fn handle_viewer_role_change_menu_event(
-        &mut self,
-        event: &MenuEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let MenuEvent::Close { .. } = event {
-            self.close_viewer_role_change_menu(ctx);
-        }
-    }
-
-    fn close_viewer_role_change_menu(&mut self, ctx: &mut ViewContext<Self>) {
-        if let Some(viewer) = self.shared_session_viewer_mut() {
-            viewer.close_role_change_menu();
-            ctx.notify();
-        }
-        self.update_shared_session_pane_header(ctx);
-    }
-
     fn handle_participant_avatar_event(
         &mut self,
         event: &ParticipantAvatarEvent,
@@ -142,50 +105,6 @@ impl TerminalView {
         match event {
             ParticipantAvatarEvent::ScrollToSharedSessionParticipant { participant_id } => {
                 self.scroll_to_shared_session_participant_selection(participant_id, ctx);
-            }
-            ParticipantAvatarEvent::UpdateRole {
-                participant_id,
-                role,
-            } => {
-                let Some(shared_session) = self.shared_session.as_mut() else {
-                    return;
-                };
-
-                // Ensure we're updating a viewer's role to a different one
-                let viewer_role = shared_session
-                    .presence_manager()
-                    .as_ref(ctx)
-                    .viewer_role(participant_id);
-                if let Some(old_role) = viewer_role {
-                    if old_role == *role {
-                        return;
-                    }
-                }
-
-                let should_confirm_shared_session_edit_access =
-                    *SessionSettings::as_ref(ctx).should_confirm_shared_session_edit_access;
-
-                // If we're changing the role to reader or there's no confirmation, then
-                // just update the role.
-                if matches!(role, Role::Reader) || !should_confirm_shared_session_edit_access {
-                    shared_session.update_participant_role(participant_id, *role, ctx);
-                    ctx.emit(Event::UpdateRole {
-                        participant_id: participant_id.clone(),
-                        role: *role,
-                    });
-                } else {
-                    // Otherwise we're changing to an executor and there should be a confirmation.
-                    let show_accent_border = self
-                        .focus_handle()
-                        .map(|fh| fh.is_in_split_pane(ctx))
-                        .unwrap_or(false);
-                    self.set_show_pane_accent_border(show_accent_border, ctx);
-                    ctx.emit(Event::OpenSharedSessionRoleChangeModal {
-                        source: RoleChangeOpenSource::SharerGrant {
-                            participant_id: participant_id.clone(),
-                        },
-                    })
-                }
             }
             ParticipantAvatarEvent::MenuOpened { participant_id } => {
                 // Ensure only one context menu is open at a time
@@ -207,23 +126,6 @@ impl TerminalView {
         self.update_shared_session_pane_header(ctx);
     }
 
-    pub fn update_session_link_permissions(
-        &mut self,
-        role: Option<Role>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        ctx.emit(Event::UpdateSessionLinkPermissions { role });
-    }
-
-    pub fn update_session_team_permissions(
-        &mut self,
-        role: Option<Role>,
-        team_uid: String,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        ctx.emit(Event::UpdateSessionTeamPermissions { role, team_uid });
-    }
-
     pub fn update_role(
         &mut self,
         participant_id: ParticipantId,
@@ -235,47 +137,6 @@ impl TerminalView {
             participant_id,
             role,
         });
-    }
-
-    pub fn update_role_for_user(
-        &mut self,
-        user_uid: UserUid,
-        role: Role,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        // If the user is present in the session, we should update our local state.
-        if let Some(participant_id) = self.shared_session.as_ref().and_then(|session| {
-            session
-                .presence_manager()
-                .as_ref(ctx)
-                .present_viewer_id_for_uid(user_uid)
-                .cloned()
-        }) {
-            self.on_participant_role_changed(&participant_id, role, ctx);
-        }
-
-        ctx.emit(Event::UpdateUserRole { user_uid, role });
-    }
-
-    pub fn update_role_for_pending_user(
-        &mut self,
-        email: String,
-        role: Role,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        ctx.emit(Event::UpdatePendingUserRole { email, role });
-    }
-
-    pub fn add_guests(&mut self, emails: Vec<String>, role: Role, ctx: &mut ViewContext<Self>) {
-        ctx.emit(Event::AddGuests { emails, role })
-    }
-
-    pub fn remove_guest(&mut self, user_uid: UserUid, ctx: &mut ViewContext<Self>) {
-        ctx.emit(Event::RemoveGuest { user_uid })
-    }
-
-    pub fn remove_pending_guest(&mut self, email: String, ctx: &mut ViewContext<Self>) {
-        ctx.emit(Event::RemovePendingGuest { email })
     }
 
     fn refresh_input_data_for_participants(&mut self, ctx: &mut ViewContext<Self>) {
@@ -306,58 +167,6 @@ impl TerminalView {
         // OpenWarp Phase 2a: pane-header sharing UI is gone, so the pane no
         // longer tracks `ShareableObject::Session`. The shared-session itself
         // still runs; it just doesn't surface a "share" button in the header.
-    }
-
-    pub fn on_role_requested(
-        &mut self,
-        participant_id: ParticipantId,
-        role_request_id: RoleRequestId,
-        role: Role,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let Some(presence_manager) = self.shared_session_presence_manager() {
-            let curr_role = presence_manager.as_ref(ctx).viewer_role(&participant_id);
-            if curr_role == Some(role) {
-                return;
-            }
-            presence_manager.update(ctx, |presence_manager, ctx| {
-                presence_manager.on_role_requested(
-                    participant_id.clone(),
-                    role_request_id.clone(),
-                    role,
-                    ctx,
-                );
-            });
-        }
-
-        let show_accent_border = self
-            .focus_handle()
-            .map(|fh| fh.is_in_split_pane(ctx))
-            .unwrap_or(false);
-        self.set_show_pane_accent_border(show_accent_border, ctx);
-
-        ctx.emit(Event::OpenSharedSessionRoleChangeModal {
-            source: RoleChangeOpenSource::SharerResponse {
-                participant_id: participant_id.clone(),
-                role_request_id: role_request_id.clone(),
-                role,
-            },
-        });
-    }
-
-    pub fn on_role_request_cancelled(
-        &mut self,
-        participant_id: ParticipantId,
-        role_request_id: RoleRequestId,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let Some(presence_manager) = self.shared_session_presence_manager() {
-            presence_manager.update(ctx, |presence_manager, ctx| {
-                presence_manager.on_role_request_cancelled(participant_id.clone(), ctx);
-            });
-        }
-
-        ctx.emit(Event::RoleRequestCancelled(role_request_id.clone()));
     }
 
     // OpenWarp:Share Session 路径已切断,下面两个方法保留签名但 no-op,
@@ -455,32 +264,20 @@ impl TerminalView {
             // entry point.
             pane_config.notify_header_content_changed(ctx);
         });
-
-        ctx.emit(Event::EstablishedSharedSession { session_id });
     }
 
     /// The entrypoint to stop a shared session: all attempts to stop a shared session must
     /// go through this API! This is important to guarantee that we correctly stop the share.
-    pub fn stop_sharing_session(
-        &mut self,
-        source: SharedSessionActionSource,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.stop_sharing_session_for_reason(source, SessionEndedReason::EndedBySharer, ctx);
+    pub fn stop_sharing_session(&mut self, ctx: &mut ViewContext<Self>) {
+        self.stop_sharing_session_for_reason(SessionEndedReason::EndedBySharer, ctx);
     }
 
     fn stop_sharing_session_for_reason(
         &mut self,
-        source: SharedSessionActionSource,
         reason: SessionEndedReason,
         ctx: &mut ViewContext<Self>,
     ) {
         ctx.emit(Event::StopSharingCurrentSession { reason });
-
-        send_telemetry_from_ctx!(
-            TelemetryEvent::StoppedSharingCurrentSession { source, reason },
-            ctx
-        );
     }
 
     // TODO: why do we need to pass through input replica ID as a separate argument?
@@ -573,23 +370,9 @@ impl TerminalView {
 
         self.update_shared_session_pane_header(ctx);
         // Shared ambient agent sessions should auto-open the details panel once (same behavior as local cloud mode).
-        if FeatureFlag::CloudMode.is_enabled()
-            && matches!(source_type, SessionSourceType::AmbientAgent { .. })
-        {
+        if false && matches!(source_type, SessionSourceType::AmbientAgent { .. }) {
             self.maybe_auto_open_cloud_mode_details_panel(ctx);
         }
-
-        send_telemetry_from_ctx!(
-            TelemetryEvent::JoinedSharedSession {
-                session_id,
-                source_type,
-            },
-            ctx
-        );
-    }
-
-    pub fn rejoin_session_share(&mut self, ctx: &mut ViewContext<Self>) {
-        ctx.emit(Event::RejoinCurrentSession)
     }
 
     /// Clear the presence manager and handle any UI necessary on shared session end.
@@ -597,7 +380,7 @@ impl TerminalView {
     pub fn on_session_share_ended(&mut self, ctx: &mut ViewContext<Self>) {
         let should_insert_tombstone = {
             let model = self.model.lock();
-            FeatureFlag::CloudModeSetupV2.is_enabled()
+            false
                 && model.is_shared_ambient_agent_session()
                 && !self.has_inserted_conversation_ended_tombstone
                 && !model.is_receiving_agent_conversation_replay()
@@ -673,19 +456,13 @@ impl TerminalView {
 
         match event {
             InactivityModalEvent::TimedOut => self.end_session_on_inactivity_period_expired(ctx),
-            InactivityModalEvent::StopSharing => {
-                self.stop_sharing_session(SharedSessionActionSource::InactivityModal, ctx)
-            }
+            InactivityModalEvent::StopSharing => self.stop_sharing_session(ctx),
             InactivityModalEvent::ContinueSharing => self.reset_sharer_inactivity_timer(ctx),
         }
     }
 
     fn end_session_on_inactivity_period_expired(&mut self, ctx: &mut ViewContext<Self>) {
-        self.stop_sharing_session_for_reason(
-            SharedSessionActionSource::NonUser,
-            SessionEndedReason::InactivityLimitReached,
-            ctx,
-        );
+        self.stop_sharing_session_for_reason(SessionEndedReason::InactivityLimitReached, ctx);
         self.show_persistent_toast(
             "Sharing ended due to inactivity".to_owned(),
             ToastFlavor::Error,
@@ -1014,13 +791,6 @@ impl TerminalView {
         } else {
             return;
         }
-
-        send_telemetry_from_ctx!(
-            TelemetryEvent::JumpToSharedSessionParticipant {
-                jumped_to: participant_id.clone()
-            },
-            ctx
-        );
     }
 
     // If open, ensure that participant avatar context menu is not triggered
@@ -1036,19 +806,6 @@ impl TerminalView {
                 });
             }
         }
-    }
-
-    pub fn open_shared_session_viewer_role_menu(&mut self, ctx: &mut ViewContext<Self>) {
-        let status = self.model.lock().shared_session_status().clone();
-        let SharedSessionStatus::ActiveViewer { role } = status else {
-            return;
-        };
-
-        if let Some(viewer) = self.shared_session_viewer_mut() {
-            viewer.open_role_change_menu(role, ctx);
-        }
-
-        self.update_shared_session_pane_header(ctx);
     }
 
     pub fn make_all_shared_session_participants_readers(
@@ -1076,127 +833,11 @@ impl TerminalView {
         }
 
         self.update_shared_session_pane_header(ctx);
-        ctx.emit(Event::MakeAllParticipantsReaders { reason });
-    }
-
-    pub fn close_shared_session_role_change_modal(
-        &mut self,
-        source: RoleChangeCloseSource,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        ctx.emit(Event::CloseSharedSessionRoleChangeModal(source));
-
-        if let Some(viewer) = self.shared_session_viewer_mut() {
-            viewer.pending_role_request = false;
-        }
-    }
-
-    fn open_shared_session_viewer_request_modal(
-        &mut self,
-        role: Role,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let show_accent_border = self
-            .focus_handle()
-            .map(|fh| fh.is_in_split_pane(ctx))
-            .unwrap_or(false);
-        self.set_show_pane_accent_border(show_accent_border, ctx);
-
-        ctx.emit(Event::OpenSharedSessionRoleChangeModal {
-            source: RoleChangeOpenSource::ViewerRequest { role },
-        });
-        if let Some(viewer) = self.shared_session_viewer_mut() {
-            viewer.pending_role_request = true;
-        }
-    }
-
-    pub fn request_shared_session_role(&mut self, role: Role, ctx: &mut ViewContext<Self>) {
-        if let Some(old_role) = self
-            .shared_session_presence_manager()
-            .as_ref()
-            .and_then(|pm| pm.as_ref(ctx).role())
-        {
-            // Ensure viewer is requesting a role different to their existing one
-            if old_role == role {
-                return;
-            }
-        };
-
-        ctx.emit(Event::RequestSharedSessionRole(role));
-
-        // If we are requesting a role downgrade, don't open modal
-        if matches!(role, Role::Executor) {
-            self.open_shared_session_viewer_request_modal(role, ctx);
-        }
-    }
-
-    pub fn open_shared_session_on_desktop(
-        &mut self,
-        source: SharedSessionActionSource,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        #[cfg(target_family = "wasm")]
-        {
-            let manager = Manager::as_ref(ctx);
-            let Some(session_id) = manager
-                .session_id(&ctx.view_id())
-                .or_else(|| manager.ended_session_id(&ctx.view_id()))
-            else {
-                return;
-            };
-            if let Ok(url) = url::Url::parse(&join_link(&session_id)) {
-                crate::uri::web_intent_parser::open_url_on_desktop(&url);
-            }
-        }
-
-        send_telemetry_from_ctx!(TelemetryEvent::WebSessionOpenedOnDesktop { source }, ctx);
+        log::warn!("Ignoring removed shared session revoke-all network update: {reason:?}");
     }
 
     // Called when viewer receives acknowledgment from server
     // on role request status (in flight, or failed)
-    pub fn on_shared_session_viewer_role_request_in_flight(
-        &mut self,
-        role_request_id: RoleRequestId,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        // TODO: handle both success and failure (if role not in flight, display error instead)
-        ctx.emit(Event::RoleRequestInFlight { role_request_id });
-    }
-
-    pub fn cancel_shared_session_role_request(
-        &mut self,
-        role_request_id: RoleRequestId,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        ctx.emit(Event::CancelRoleRequest(role_request_id));
-        if let Some(viewer) = self.shared_session_viewer_mut() {
-            viewer.pending_role_request = false;
-        }
-    }
-
-    pub fn respond_to_shared_session_role_request(
-        &mut self,
-        participant_id: ParticipantId,
-        role_request_id: RoleRequestId,
-        response: RoleRequestResponse,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let Some(presence_manager) = &self.shared_session_presence_manager() else {
-            return;
-        };
-        presence_manager.update(ctx, |presence_manager, ctx| {
-            presence_manager.on_role_request_responded_to(participant_id.clone(), ctx);
-        });
-        if let RoleRequestResponse::Approved { new_role } = &response {
-            self.on_participant_role_changed(&participant_id, *new_role, ctx);
-        }
-        ctx.emit(Event::RespondToRoleRequest {
-            participant_id,
-            role_request_id,
-            response,
-        });
-    }
-
     /// Updates view state when our own role was changed.
     fn on_self_role_updated(&mut self, role: Role, ctx: &mut ViewContext<Self>) {
         // Update shared session status only if we are an active viewer.
@@ -1217,51 +858,6 @@ impl TerminalView {
                 editor.set_interaction_state(role.into(), ctx);
             });
         });
-    }
-
-    /// Called when we (as a viewer) receive a response to our own role request.
-    pub fn on_shared_session_role_request_response(
-        &mut self,
-        role_request_response: RoleRequestResponse,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let Some(shared_session) = self.shared_session.as_mut() {
-            if let RoleRequestResponse::Approved { new_role } = role_request_response {
-                let self_id = shared_session.presence_manager().as_ref(ctx).id();
-                shared_session.update_participant_role(&self_id, new_role, ctx);
-                self.on_self_role_updated(new_role, ctx);
-            }
-        }
-
-        self.update_shared_session_pane_header(ctx);
-        self.close_shared_session_role_change_modal(RoleChangeCloseSource::ViewerRequest, ctx);
-    }
-
-    // TODO: consider refactoring this so that we don't have to repeat this
-    // logic in TerminalView and Workspace (when starting a share).
-    pub fn copy_shared_session_link(
-        &mut self,
-        source: SharedSessionActionSource,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let manager = Manager::as_ref(ctx);
-        let Some(session_id) = manager
-            .session_id(&ctx.view_id())
-            .or_else(|| manager.ended_session_id(&ctx.view_id()))
-        else {
-            return;
-        };
-
-        ctx.clipboard()
-            .write(ClipboardContent::plain_text(join_link(&session_id)));
-
-        let window_id = ctx.window_id();
-        crate::workspace::ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-            let toast = DismissibleToast::default(COPY_LINK_TEXT.to_string());
-            toast_stack.add_ephemeral_toast(toast, window_id, ctx);
-        });
-
-        send_telemetry_from_ctx!(TelemetryEvent::CopiedSharedSessionLink { source }, ctx);
     }
 
     fn insert_shared_session_started_banner(
@@ -1372,24 +968,9 @@ impl TerminalView {
         if let Some(shared_session) = self.shared_session.as_mut() {
             shared_session.update_participant_role(participant_id, new_role, ctx);
 
-            let is_self = {
-                let presence_manager = shared_session.presence_manager().as_ref(ctx);
-                if FeatureFlag::SessionSharingAcls.is_enabled() {
-                    // If the participant has the same UID as us, then our ACL
-                    // changed too and we need to update our state.
-                    let self_uid = presence_manager.firebase_uid();
-                    let participant_uid = presence_manager.viewer_firebase_uid(participant_id);
-                    participant_uid.is_some_and(|uid| uid == self_uid)
-                } else {
-                    *participant_id == presence_manager.id()
-                }
-            };
+            let is_self = *participant_id == shared_session.presence_manager().as_ref(ctx).id();
             if is_self {
                 self.on_self_role_updated(new_role, ctx);
-                self.close_shared_session_role_change_modal(
-                    RoleChangeCloseSource::SharerGrant,
-                    ctx,
-                );
             }
         }
         self.update_shared_session_pane_header(ctx);
@@ -1527,31 +1108,13 @@ impl TerminalView {
     ) -> Vec<MenuItem<TerminalAction>> {
         let mut items = Vec::new();
 
-        if !model.shared_session_status().is_sharer_or_viewer() {
-            items.push(
-                MenuItemFields::new(crate::t!("terminal-share-session"))
-                    .with_on_select_action(TerminalAction::ContextMenu(
-                        ContextMenuAction::OpenShareSessionModal,
-                    ))
-                    .with_disabled(is_share_session_disabled)
-                    .into_item(),
-            );
-        } else if model.shared_session_status().is_active_sharer() {
+        let _ = is_share_session_disabled;
+        if model.shared_session_status().is_active_sharer() {
             items.push(
                 MenuItemFields::new(crate::t!("terminal-stop-sharing"))
                     .with_on_select_action(TerminalAction::ContextMenu(
                         ContextMenuAction::StopSharing,
                     ))
-                    .into_item(),
-            );
-        }
-
-        if model.shared_session_status().is_sharer_or_viewer() {
-            items.push(
-                MenuItemFields::new(crate::t!("terminal-copy-session-sharing-link"))
-                    .with_on_select_action(TerminalAction::CopySharedSessionLink {
-                        source: SharedSessionActionSource::RightClickMenu,
-                    })
                     .into_item(),
             );
         }
@@ -1653,26 +1216,9 @@ impl TerminalView {
         .build(self, ctx);
         self.resize_internal(size_update, ctx);
     }
-
-    pub fn render_input_request_edit_access_button(
-        &self,
-        button_handle: MouseStateHandle,
-        appearance: &Appearance,
-    ) -> Box<dyn Element> {
-        appearance
-            .ui_builder()
-            .button(ButtonVariant::Basic, button_handle)
-            .with_text_label(crate::t!("terminal-shared-session-request-edit-access"))
-            .build()
-            .on_click(move |ctx, _, _| {
-                ctx.dispatch_typed_action(TerminalAction::RequestSharedSessionRole(Role::Executor));
-            })
-            .with_cursor(Cursor::PointingHand)
-            .with_hover_out_delay(std::time::Duration::from_millis(500))
-            .finish()
-    }
 }
 
 #[cfg(test)]
 #[path = "view_impl_test.rs"]
 mod tests;
+use crate::auth::UserUid;

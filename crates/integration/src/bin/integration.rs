@@ -36,14 +36,7 @@ pub fn main() -> Result<()> {
                 },
             ),
             logfile_name: "warp_integration.log".into(),
-            server_config: WarpServerConfig {
-                firebase_auth_api_key: "".into(),
-                // Use an IP in the IANA testing range, with the TCP discard port, to
-                // black-hole server traffic.
-                server_root_url: "http://192.0.2.0:9".into(),
-                rtc_server_url: "ws://192.0.2.0:9/graphql/v2".into(),
-                session_sharing_server_url: None,
-            },
+            server_config: WarpServerConfig::disabled(),
             oz_config: OzConfig {
                 // Use an IP in the IANA testing range, with the TCP discard port, to
                 // black-hole server traffic.

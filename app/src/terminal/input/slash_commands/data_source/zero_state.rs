@@ -46,7 +46,6 @@ impl SyncDataSource for ZeroStateDataSource {
         // alphabetically, except for the commands in this vec, which are explicitly appended
         // to all the other alphabetically sorted commands, in this order.
         let prioritized_commands = vec![
-            &*commands::CREATE_ENVIRONMENT,
             &*commands::EDIT,
             &*commands::CONVERSATIONS,
             &*commands::PROMPTS,

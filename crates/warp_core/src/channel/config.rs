@@ -33,29 +33,17 @@ pub struct WarpServerConfig {
     pub server_root_url: Cow<'static, str>,
     /// The URL for the RTC server, which serves real-time updates for Warp Drive objects.
     pub rtc_server_url: Cow<'static, str>,
-    /// The URL for the session sharing server, or [`None`] if session sharing is not
-    /// supported.
-    pub session_sharing_server_url: Option<Cow<'static, str>>,
-    /// The API key to use when making requests to Firebase Authentication endpoints.
-    pub firebase_auth_api_key: Cow<'static, str>,
 }
 
 impl WarpServerConfig {
     pub fn production() -> Self {
-        Self {
-            server_root_url: "https://app.warp.dev".into(),
-            rtc_server_url: "wss://rtc.app.warp.dev/graphql/v2".into(),
-            session_sharing_server_url: Some("wss://sessions.app.warp.dev".into()),
-            firebase_auth_api_key: "AIzaSyBdy3O3S9hrdayLJxJ7mriBR4qgUaUygAs".into(),
-        }
+        Self::disabled()
     }
 
     pub fn disabled() -> Self {
         Self {
             server_root_url: DISABLED_HTTP_SENTINEL.into(),
             rtc_server_url: DISABLED_WS_SENTINEL.into(),
-            session_sharing_server_url: None,
-            firebase_auth_api_key: "".into(),
         }
     }
 
@@ -72,7 +60,7 @@ impl WarpServerConfig {
 /// Hard-coded in [`WarpServerConfig::disabled`] / [`OzConfig::disabled`];
 /// matched by [`WarpServerConfig::is_disabled`] / [`OzConfig::is_disabled`].
 pub(crate) const DISABLED_HTTP_SENTINEL: &str = "http://192.0.2.0:9";
-pub(crate) const DISABLED_WS_SENTINEL: &str = "ws://192.0.2.0:9/graphql/v2";
+pub(crate) const DISABLED_WS_SENTINEL: &str = "ws://192.0.2.0:9";
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct OzConfig {
@@ -87,10 +75,7 @@ pub struct OzConfig {
 
 impl OzConfig {
     pub fn production() -> Self {
-        Self {
-            oz_root_url: "https://oz.warp.dev".into(),
-            workload_audience_url: None,
-        }
+        Self::disabled()
     }
 
     pub fn disabled() -> Self {
@@ -109,37 +94,6 @@ impl OzConfig {
 pub struct TelemetryConfig {
     /// The name of the file in which not-yet-sent telemetry events will be stored.
     pub telemetry_file_name: Cow<'static, str>,
-    /// Configuration for Rudderstack, for reporting telemetry events.
-    pub rudderstack_config: Option<RudderStackConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize)]
-pub struct RudderStackConfig {
-    pub write_key: Cow<'static, str>,
-    pub root_url: Cow<'static, str>,
-    pub ugc_write_key: Cow<'static, str>,
-}
-
-impl RudderStackConfig {
-    pub fn non_ugc_destination(&self) -> RudderStackDestination {
-        RudderStackDestination {
-            root_url: self.root_url.clone(),
-            write_key: self.write_key.clone(),
-        }
-    }
-
-    pub fn ugc_destination(&self) -> RudderStackDestination {
-        RudderStackDestination {
-            root_url: self.root_url.clone(),
-            write_key: self.ugc_write_key.clone(),
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct RudderStackDestination {
-    pub root_url: Cow<'static, str>,
-    pub write_key: Cow<'static, str>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -187,19 +141,8 @@ mod tests {
     }
 
     #[test]
-    fn warp_server_config_production_is_not_disabled() {
-        assert!(!WarpServerConfig::production().is_disabled());
-    }
-
-    #[test]
-    fn warp_server_config_real_url_is_not_disabled() {
-        let cfg = WarpServerConfig {
-            server_root_url: "https://app.warp.dev".into(),
-            rtc_server_url: "wss://rtc.app.warp.dev/graphql/v2".into(),
-            session_sharing_server_url: None,
-            firebase_auth_api_key: "".into(),
-        };
-        assert!(!cfg.is_disabled());
+    fn warp_server_config_production_is_disabled_in_openwarp() {
+        assert!(WarpServerConfig::production().is_disabled());
     }
 
     #[test]
@@ -208,8 +151,8 @@ mod tests {
     }
 
     #[test]
-    fn oz_config_production_is_not_disabled() {
-        assert!(!OzConfig::production().is_disabled());
+    fn oz_config_production_is_disabled_in_openwarp() {
+        assert!(OzConfig::production().is_disabled());
     }
 
     #[test]
@@ -217,11 +160,11 @@ mod tests {
         // Lock the sentinel strings: any future change here is a breaking
         // change for the cloud-removal short-circuit and must be intentional.
         assert_eq!(DISABLED_HTTP_SENTINEL, "http://192.0.2.0:9");
-        assert_eq!(DISABLED_WS_SENTINEL, "ws://192.0.2.0:9/graphql/v2");
+        assert_eq!(DISABLED_WS_SENTINEL, "ws://192.0.2.0:9");
 
         let server = WarpServerConfig::disabled();
         assert_eq!(server.server_root_url, "http://192.0.2.0:9");
-        assert_eq!(server.rtc_server_url, "ws://192.0.2.0:9/graphql/v2");
+        assert_eq!(server.rtc_server_url, "ws://192.0.2.0:9");
 
         let oz = OzConfig::disabled();
         assert_eq!(oz.oz_root_url, "http://192.0.2.0:9");

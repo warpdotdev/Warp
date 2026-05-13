@@ -17,7 +17,7 @@ use super::{
 use crate::{
     appearance::Appearance, send_telemetry_from_ctx, settings::CodeSettings,
     terminal::general_settings::GeneralSettings, workspace::tab_settings::TabSettings,
-    workspaces::update_manager::TeamUpdateManager, TelemetryEvent,
+    TelemetryEvent,
 };
 use ai::project_context::model::{ProjectContextModel, ProjectContextModelEvent};
 
@@ -282,14 +282,7 @@ impl SettingsPageMeta for CodeSettingsPageView {
         FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
     }
 
-    fn on_page_selected(&mut self, _: bool, ctx: &mut ViewContext<Self>) {
-        // 立即拉一次 workspace metadata,而不是等下一次轮询,
-        // 让用户能更快看到自己是否处于一个 workspace 中。
-        std::mem::drop(
-            TeamUpdateManager::handle(ctx)
-                .update(ctx, |manager, ctx| manager.refresh_workspace_metadata(ctx)),
-        );
-    }
+    fn on_page_selected(&mut self, _: bool, _ctx: &mut ViewContext<Self>) {}
 
     fn scroll_to_widget(&mut self, widget_id: &'static str) {
         self.page.scroll_to_widget(widget_id)

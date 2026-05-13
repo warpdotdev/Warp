@@ -18,9 +18,6 @@ use crate::pane_group::pane::view::header::components::{
 };
 use crate::pane_group::pane::PaneStack;
 use crate::pane_group::{pane::view, pane::view::PaneHeaderAction, BackingView, SplitPaneState};
-use crate::settings::app_installation_detection::{
-    UserAppInstallDetectionSettings, UserAppInstallStatus,
-};
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::model::terminal_model::ConversationTranscriptViewerStatus;
 use crate::terminal::shared_session::participant_avatar_view::render_participants_and_role_elements;
@@ -32,8 +29,6 @@ use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::icon_button_with_color;
 use crate::ui_components::icons;
 use crate::workspace::tab_settings::TabSettings;
-use settings::Setting as _;
-use warp_core::context_flag::ContextFlag;
 use warp_core::ui::Icon as WarpIcon;
 use warpui::elements::{
     ChildAnchor, ConstrainedBox, CrossAxisAlignment, Flex, MainAxisAlignment, MainAxisSize,
@@ -364,7 +359,7 @@ impl TerminalView {
 
         let mut icon_button_count: u32 = 0;
 
-        if FeatureFlag::CloudMode.is_enabled() {
+        if false {
             let ambient_agent_model = self.ambient_agent_view_model.as_ref(app);
             let button_element = if ambient_agent_model.is_ambient_agent()
                 && ambient_agent_model.is_waiting_for_session()
@@ -549,35 +544,15 @@ impl BackingView for TerminalView {
 
         // Shared-session related items.
         let shared_session_status = model.shared_session_status();
-        let is_ambient_agent = FeatureFlag::CloudMode.is_enabled()
-            && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
+        let is_ambient_agent =
+            false && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
         if shared_session_status.is_sharer_or_viewer() {
-            if !is_ambient_agent {
-                items.push(
-                    MenuItemFields::new(crate::t!("menu-pane-copy-link"))
-                        .with_on_select_action(TerminalAction::CopySharedSessionLink { source })
-                        .into_item(),
-                );
-            }
+            let _ = is_ambient_agent;
 
             if shared_session_status.is_sharer() {
                 items.push(
                     MenuItemFields::new(crate::t!("menu-pane-stop-sharing-session"))
                         .with_on_select_action(TerminalAction::StopSharingCurrentSession { source })
-                        .into_item(),
-                );
-            }
-            if !ContextFlag::HideOpenOnDesktopButton.is_enabled()
-                && *UserAppInstallDetectionSettings::as_ref(ctx)
-                    .user_app_installation_detected
-                    .value()
-                    == UserAppInstallStatus::Detected
-            {
-                items.push(
-                    MenuItemFields::new(crate::t!("menu-pane-open-on-desktop"))
-                        .with_on_select_action(TerminalAction::OpenSharedSessionOnDesktop {
-                            source,
-                        })
                         .into_item(),
                 );
             }
@@ -688,8 +663,8 @@ impl TerminalView {
         let theme = appearance.theme();
 
         // Check if we're configuring or waiting on an ambient agent
-        let is_ambient_agent = FeatureFlag::CloudMode.is_enabled()
-            && self.ambient_agent_view_model.as_ref(app).is_ambient_agent();
+        let is_ambient_agent =
+            false && self.ambient_agent_view_model.as_ref(app).is_ambient_agent();
 
         // When a long-running command is active, show InProgress
         // instead of the conversation's actual status.
@@ -819,14 +794,11 @@ impl TerminalView {
         // Get viewer avatars to render
         let viewers = shared_session.pane_header_viewer_avatars(app);
 
-        // Get role change menu info based on session kind
         let (role_change_menu, is_role_change_menu_open, mouse_state_handle) =
             match shared_session.kind() {
-                SharedSessionKind::Viewer(viewer) => (
-                    Some(viewer.role_change_menu.clone()),
-                    viewer.is_role_change_menu_open,
-                    viewer.role_change_menu_button.clone(),
-                ),
+                SharedSessionKind::Viewer(viewer) => {
+                    (None, false, viewer.role_change_menu_button.clone())
+                }
                 SharedSessionKind::Sharer(sharer) => {
                     (None, false, sharer.revoke_all_mouse_state_handle().clone())
                 }
@@ -848,8 +820,7 @@ impl TerminalView {
     }
 
     pub fn is_ambient_agent_session(&self, ctx: &AppContext) -> bool {
-        FeatureFlag::CloudMode.is_enabled()
-            && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+        false && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
     }
 
     fn selected_conversation_for_user_facing_chrome<'a>(

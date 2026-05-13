@@ -96,11 +96,11 @@ use crate::ASSETS;
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
 
+use crate::ai::ambient_agents::AttachmentInput;
 use crate::ai::attachment_utils::MAX_ATTACHMENT_SIZE_BYTES;
 use crate::ai::block_context::BlockContext;
 use crate::ai::blocklist::AttachmentType;
 use crate::ai::mcp::TemplatableMCPServerManager;
-use crate::server::server_api::ai::AttachmentInput;
 use crate::{
     ai::{
         agent::{AIAgentContext, EntrypointType},
@@ -126,6 +126,7 @@ use crate::{
     channel::{Channel, ChannelState},
     cloud_object::{
         model::{actions::ObjectActionType, persistence::CloudModel, view::CloudViewModel},
+        update_manager::UpdateManager,
         CloudObject, Space,
     },
     cmd_or_ctrl_shift,
@@ -169,7 +170,6 @@ use crate::{
     },
     send_telemetry_from_ctx,
     server::{
-        cloud_objects::update_manager::UpdateManager,
         ids::SyncId,
         telemetry::{
             AICommandSearchEntrypoint, AgentModeAutoDetectionFalsePositivePayload,
@@ -214,7 +214,6 @@ use crate::{
         ForkedConversationDestination, InitContent, RestoreConversationLayout, ToastStack,
         WorkspaceAction,
     },
-    workspaces::user_workspaces::UserWorkspaces,
     AgentModeEntrypoint,
 };
 
@@ -1010,7 +1009,6 @@ pub enum Event {
     OpenViewMCPPane,
     OpenAddMCPPane,
     OpenProjectRulesPane,
-    OpenEnvironmentManagementPane,
     OpenFilesPalette {
         source: PaletteSource,
     },
@@ -1046,15 +1044,9 @@ pub enum Event {
     ScrollToExchange {
         exchange_id: AIAgentExchangeId,
     },
-    /// Trigger environment setup flow with optional repository arguments
-    TriggerEnvironmentSetup {
-        repos: Vec<String>,
-    },
     RegisterPluginListener(CLIAgent),
     #[cfg(not(target_family = "wasm"))]
     OpenPluginInstructionsPane(CLIAgent, PluginModalKind),
-    OpenShareSessionModal,
-    StartRemoteControl,
 }
 
 pub enum InputState {
@@ -2185,7 +2177,7 @@ impl Input {
             )
         });
 
-        let host_selector = if FeatureFlag::CloudModeInputV2.is_enabled() {
+        let host_selector = if false {
             let view = ctx.add_typed_action_view(|ctx| {
                 HostSelector::new(menu_positioning_provider.clone(), ctx)
             });
@@ -2208,10 +2200,6 @@ impl Input {
                 }
                 AgentInputFooterEvent::OpenRichInput | AgentInputFooterEvent::HideRichInput => {
                     ctx.emit(Event::Escape);
-                }
-                AgentInputFooterEvent::StartRemoteControl
-                | AgentInputFooterEvent::StopRemoteControl => {
-                    // Handled by UseAgentToolbar's subscription, not here.
                 }
                 // WriteToPty, InsertIntoCLIRichInput, ToggleCodeReviewPane, and ToggleFileExplorer
                 // are handled by UseAgentToolbar's subscription, not here.
@@ -2602,7 +2590,7 @@ impl Input {
         }
         let inline_history_model = inline_history_menu_view.as_ref(ctx).model().clone();
 
-        let cloud_mode_v2_history_menu_view = if FeatureFlag::CloudModeInputV2.is_enabled() {
+        let cloud_mode_v2_history_menu_view = if false {
             let view = ctx.add_view({
                 let active_session = active_session.clone();
                 let buffer_model = buffer_model.clone();
@@ -5302,11 +5290,6 @@ impl Input {
             PromptAlertEvent::OpenPrivacyPage => {
                 ctx.emit(Event::OpenSettings(SettingsSection::Privacy));
             }
-            PromptAlertEvent::OpenBillingPortal { team_uid } => {
-                UserWorkspaces::handle(ctx).update(ctx, |user_workspaces, ctx| {
-                    user_workspaces.generate_stripe_billing_portal_link(*team_uid, ctx);
-                });
-            }
         }
     }
 
@@ -5839,7 +5822,7 @@ impl Input {
     }
 
     fn should_block_cloud_mode_setup_submission(&self, app: &AppContext) -> bool {
-        if !FeatureFlag::CloudModeSetupV2.is_enabled() {
+        if !false {
             return false;
         }
 
@@ -9717,8 +9700,8 @@ impl Input {
 
         // Shared session viewers cannot attach images unless in cloud mode
         let is_viewer = self.model.lock().shared_session_status().is_viewer();
-        let is_cloud_mode_with_images = FeatureFlag::CloudModeImageContext.is_enabled()
-            && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
+        let is_cloud_mode_with_images =
+            false && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
         if is_viewer && !is_cloud_mode_with_images {
             self.insert_clipboard_text_content(ctx, content);
             return;
@@ -9774,11 +9757,10 @@ impl Input {
 
     /// Check if we can attach on filepaths paste or drag-drop
     fn can_attach_on_filepaths_paste_or_dragdrop(&self, ctx: &mut ViewContext<Self>) -> bool {
-        // Shared session viewers cannot attach images unless in cloud mode
-        // with the CloudModeImageContext feature enabled.
+        // Shared session viewers cannot attach images in OpenWarp.
         let is_viewer = self.model.lock().shared_session_status().is_viewer();
-        let is_cloud_mode_with_images = FeatureFlag::CloudModeImageContext.is_enabled()
-            && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
+        let is_cloud_mode_with_images =
+            false && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
         if is_viewer && !is_cloud_mode_with_images {
             return false;
         }
@@ -11787,11 +11769,8 @@ impl Input {
                     return;
                 }
 
-                // Collect pending images and files, converting to AttachmentInput for the spawn request.
-                // Only include images when CloudModeImageContext is enabled.
-                let attachments: Vec<AttachmentInput> = if FeatureFlag::CloudModeImageContext
-                    .is_enabled()
-                {
+                // Collect pending files for the spawn request. Cloud mode image attachments are disabled in OpenWarp.
+                let attachments: Vec<AttachmentInput> = if false {
                     let mut inputs: Vec<AttachmentInput> = self
                         .ai_context_model
                         .as_ref(ctx)
@@ -13684,11 +13663,6 @@ impl Input {
             PromptSuggestionsEvent::OpenPrivacyPage => {
                 ctx.emit(Event::OpenSettings(SettingsSection::Privacy))
             }
-            PromptSuggestionsEvent::OpenBillingPortal { team_uid } => {
-                UserWorkspaces::handle(ctx).update(ctx, |user_workspaces, ctx| {
-                    user_workspaces.generate_stripe_billing_portal_link(*team_uid, ctx);
-                });
-            }
         }
     }
 
@@ -14113,7 +14087,7 @@ impl View for Input {
         let is_universal_input = self.should_show_universal_developer_input(app);
         let ambient_agent_model = self.ambient_agent_view_model.as_ref(app);
 
-        if FeatureFlag::CloudMode.is_enabled() && ambient_agent_model.should_show_status_footer() {
+        if false && ambient_agent_model.should_show_status_footer() {
             self.render_ambient_agent_status_footer(app)
         } else if FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(app).is_active()

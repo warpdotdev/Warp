@@ -2,7 +2,6 @@ use super::{decode_scrollback, SharedSessionScrollbackType};
 
 use crate::ai::blocklist::agent_view::AgentViewState;
 use crate::assert_lines_approx_eq;
-use crate::channel::ChannelState;
 use crate::terminal::color::List;
 use crate::terminal::model::test_utils::block_size;
 use crate::uri::web_intent_parser::maybe_rewrite_web_url_to_intent;
@@ -22,16 +21,15 @@ pub const MAX_BYTES_SHAREABLE: usize = 5000;
 
 #[test]
 fn maybe_rewrite_web_url_to_shared_session_intent_rewrites_matching_web_url() {
-    let server_root = ChannelState::server_root_url();
-    let web_url = Url::parse(&format!(
-        "{server_root}/session/00000000-0000-0000-0000-000000000000?pwd=secret&preview=true"
-    ))
+    let web_url = Url::parse(
+        "warp://shared_session/00000000-0000-0000-0000-000000000000?pwd=secret&preview=true",
+    )
     .expect("valid shared session web URL");
 
     let maybe_intent = maybe_rewrite_web_url_to_intent(&web_url)
         .expect("expected shared session web URL to rewrite to an intent URL");
 
-    assert_eq!(maybe_intent.scheme(), ChannelState::url_scheme());
+    assert_eq!(maybe_intent.scheme(), "warp");
     assert_eq!(maybe_intent.host_str(), Some("shared_session"));
     assert_eq!(maybe_intent.path(), "/00000000-0000-0000-0000-000000000000");
     assert_eq!(maybe_intent.query(), Some("pwd=secret&preview=true"));
@@ -50,11 +48,9 @@ fn maybe_rewrite_web_url_to_shared_session_intent_ignores_non_matching_host() {
 
 #[test]
 fn maybe_rewrite_web_url_to_shared_session_intent_ignores_invalid_session_id() {
-    let server_root = ChannelState::server_root_url();
-    let web_url = Url::parse(&format!(
-        "{server_root}/session/not-a-valid-session-id?pwd=secret&preview=true",
-    ))
-    .expect("valid web URL with invalid session id path segment");
+    let web_url =
+        Url::parse("warp://shared_session/not-a-valid-session-id?pwd=secret&preview=true")
+            .expect("valid web URL with invalid session id path segment");
 
     let maybe_intent = maybe_rewrite_web_url_to_intent(&web_url);
 

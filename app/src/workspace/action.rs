@@ -13,7 +13,6 @@ use crate::auth::LoginGatedFeature;
 use crate::drive::items::WarpDriveItemId;
 use crate::drive::CloudObjectTypeAndId;
 use crate::palette::PaletteMode;
-use crate::pane_group::PaneGroup;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::search;
 use crate::server::ids::SyncId;
@@ -27,14 +26,13 @@ use crate::themes::theme::AnsiColorIdentifier;
 use crate::themes::theme_chooser::ThemeChooserMode;
 use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
 use crate::workspace::PaneViewLocator;
-use session_sharing_protocol::common::SessionId;
 
 use ui_components::lightbox;
 use warpui::accessibility::AccessibilityVerbosity;
 use warpui::geometry::rect::RectF;
 use warpui::geometry::vector::Vector2F;
 use warpui::platform::Cursor;
-use warpui::{EntityId, WeakViewHandle, WindowId};
+use warpui::{EntityId, WindowId};
 
 use super::global_actions::{ForkFromExchange, ForkedConversationDestination};
 use super::tab_settings::{
@@ -325,16 +323,6 @@ pub enum WorkspaceAction {
     #[cfg(target_family = "wasm")]
     OpenLinkOnDesktop(url::Url),
     ReopenClosedSession,
-    OpenShareSessionModal(usize),
-    StopSharingSessionFromTabMenu {
-        terminal_view_id: EntityId,
-    },
-    StopSharingAllSessionsInTab {
-        pane_group: WeakViewHandle<PaneGroup>,
-    },
-    CopySharedSessionLinkFromTab {
-        tab_index: usize,
-    },
     AddWindow,
     AddWindowWithShell {
         shell: AvailableShell,
@@ -539,12 +527,6 @@ pub enum WorkspaceAction {
     /// Reset the AWS Bedrock login banner dismissed state (for debugging).
     #[cfg(debug_assertions)]
     DebugResetAwsBedrockLoginBannerDismissed,
-    /// Open the Oz Launch Modal (for debugging)
-    #[cfg(debug_assertions)]
-    OpenOzLaunchModal,
-    /// Reset the Oz launch modal dismissed state (for debugging)
-    #[cfg(debug_assertions)]
-    ResetOzLaunchModalState,
     /// Open the OpenWarp Launch Modal (for debugging)
     #[cfg(debug_assertions)]
     OpenOpenWarpLaunchModal,
@@ -587,7 +569,6 @@ pub enum WorkspaceAction {
     /// Open an ambient agent session by joining its shared session.
     /// Used when the sandbox is running or when we need to view a live session.
     OpenAmbientAgentSession {
-        session_id: SessionId,
         task_id: AmbientAgentTaskId,
     },
     /// Load cloud conversation data into a transcript viewer.
@@ -665,7 +646,6 @@ impl From<&WorkspaceAction> for LoginGatedFeature {
             CreateTeamFolder => "Creating a team folder",
             CreateTeamEnvVarCollection => "Creating a team environment variable collection",
             CreateTeamAIPrompt => "Creating a team prompt",
-            OpenShareSessionModal(_) => "Sharing a session",
             _ => "Unknown reason",
         }
     }
@@ -682,7 +662,6 @@ impl WorkspaceAction {
                 | CreateTeamFolder
                 | CreateTeamEnvVarCollection
                 | CreateTeamAIPrompt
-                | OpenShareSessionModal(_)
         )
     }
 
@@ -855,10 +834,6 @@ impl WorkspaceAction {
             | OpenHeaderToolbarEditor
             | ShowHeaderToolbarContextMenu { .. }
             | OpenLink(_)
-            | OpenShareSessionModal(_)
-            | StopSharingSessionFromTabMenu { .. }
-            | StopSharingAllSessionsInTab { .. }
-            | CopySharedSessionLinkFromTab { .. }
             | ReopenClosedSession
             | FocusLeftPanel
             | FocusRightPanel
@@ -924,8 +899,6 @@ impl WorkspaceAction {
             OpenBuildPlanMigrationModal
             | ResetBuildPlanMigrationModalState
             | DebugResetAwsBedrockLoginBannerDismissed
-            | OpenOzLaunchModal
-            | ResetOzLaunchModalState
             | OpenOpenWarpLaunchModal
             | ResetOpenWarpLaunchModalState
             | InstallOpenCodeWarpPlugin

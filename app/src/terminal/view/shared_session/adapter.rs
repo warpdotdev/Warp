@@ -19,9 +19,8 @@ use chrono::{DateTime, Local};
 use markdown_parser::FormattedTextFragment;
 use session_sharing_protocol::common::{ParticipantId, ParticipantList, Role, SessionId};
 use session_sharing_protocol::sharer::SessionSourceType;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::Duration;
-use warp_core::features::FeatureFlag;
 use warpui::{elements::MouseStateHandle, ModelHandle, ViewContext, ViewHandle};
 use warpui::{AppContext, Element};
 
@@ -227,27 +226,7 @@ impl Adapter {
         role: Role,
         ctx: &mut ViewContext<TerminalView>,
     ) {
-        if !FeatureFlag::SessionSharingAcls.is_enabled() {
-            self.update_participant_role_internal(participant_id, role, ctx);
-            return;
-        }
-
-        let presence_manager = self.presence_manager.as_ref(ctx);
-        if let Some(firebase_uid) = presence_manager.viewer_firebase_uid(participant_id) {
-            // Update the local state for all participants that have the same UID.
-            let participant_ids: Vec<ParticipantId> = presence_manager
-                .present_viewer_ids_for_uid(firebase_uid)
-                .cloned()
-                .collect();
-            for participant_id in participant_ids {
-                self.update_participant_role_internal(&participant_id, role, ctx);
-            }
-        } else {
-            log::warn!(
-                "Unable to find firebase uid for viewer {participant_id:?} when updating role"
-            );
-            self.update_participant_role_internal(participant_id, role, ctx);
-        }
+        self.update_participant_role_internal(participant_id, role, ctx);
     }
 
     fn update_participant_role_internal(
@@ -368,43 +347,10 @@ impl Adapter {
     /// Retrieves the viewer avatars we want to render on the right side of the
     /// pane header.
     ///
-    /// If the ACL feature flag is turned on, this method will filter out avatars
-    /// for participants that are:
-    ///     - Duplicate users, i.e. they share the same Firebase UID
-    ///     - Same user as the current viewer
-    ///     - Same user as the sharer
     pub fn pane_header_viewer_avatars(
         &self,
-        ctx: &AppContext,
+        _ctx: &AppContext,
     ) -> Vec<ViewHandle<ParticipantAvatarView>> {
-        let presence_manager = self.presence_manager.as_ref(ctx);
-        if FeatureFlag::SessionSharingAcls.is_enabled() {
-            let self_uid = presence_manager.firebase_uid();
-            let sharer_uid = presence_manager
-                .get_sharer()
-                .map(|s| s.info.profile_data.firebase_uid.as_str());
-            let mut seen_uids = HashSet::new();
-            self.viewers
-                .iter()
-                .filter(|(participant_id, _)| {
-                    let Some(viewer_uid) = presence_manager.viewer_firebase_uid(participant_id)
-                    else {
-                        // If we can't find a Firebase UID for the viewer,
-                        // default to showing them in the session header.
-                        log::warn!("Couldn't find firebase_uid for viewer {participant_id:?}");
-                        return true;
-                    };
-                    let is_duplicate = !seen_uids.insert(viewer_uid);
-                    let is_same_user_as_self = self_uid == viewer_uid;
-                    let is_same_user_as_sharer =
-                        sharer_uid.is_some_and(|sharer_uid| sharer_uid == viewer_uid.as_str());
-
-                    !is_duplicate && !is_same_user_as_self && !is_same_user_as_sharer
-                })
-                .map(|(_, viewer)| viewer.avatar.clone())
-                .collect()
-        } else {
-            self.viewers.values().map(|p| p.avatar.clone()).collect()
-        }
+        self.viewers.values().map(|p| p.avatar.clone()).collect()
     }
 }

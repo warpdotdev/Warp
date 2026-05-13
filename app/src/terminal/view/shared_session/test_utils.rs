@@ -1,3 +1,5 @@
+use std::{collections::HashMap, sync::Arc};
+
 use session_sharing_protocol::common::{ParticipantId, ParticipantList, SessionId};
 use session_sharing_protocol::sharer::SessionSourceType;
 use warpui::platform::WindowStyle;
@@ -5,8 +7,7 @@ use warpui::{App, ViewHandle};
 
 use crate::auth::UserUid;
 use crate::editor::ReplicaId;
-use crate::pane_group::PaneGroup;
-use crate::terminal::shared_session::manager::Manager;
+use crate::pane_group::{NewTerminalOptions, PaneGroup, PanesLayout};
 use crate::terminal::TerminalView;
 use crate::test_util::terminal::initialize_app_for_terminal_view;
 use crate::GlobalResourceHandles;
@@ -16,7 +17,6 @@ use crate::GlobalResourceHandles;
 /// set up for the viewer.
 pub fn terminal_view_for_viewer(app: &mut App) -> ViewHandle<TerminalView> {
     initialize_app_for_terminal_view(app);
-    app.add_singleton_model(Manager::new);
 
     let global_resource_handles = GlobalResourceHandles::mock(app);
     let GlobalResourceHandles {
@@ -26,13 +26,12 @@ pub fn terminal_view_for_viewer(app: &mut App) -> ViewHandle<TerminalView> {
         ..
     } = global_resource_handles.clone();
 
-    let session_id = SessionId::new();
-
     let (_, pane_group) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
-        PaneGroup::new_for_shared_session_viewer(
-            session_id,
+        PaneGroup::new_with_panes_layout(
             tips_completed,
             user_default_shell_unsupported_banner_model_handle,
+            PanesLayout::SingleTerminal(Box::<NewTerminalOptions>::default()),
+            Arc::new(HashMap::new()),
             model_event_sender,
             ctx,
         )

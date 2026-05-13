@@ -6,8 +6,6 @@ use std::path::PathBuf;
 use ai::skills::SkillReference;
 use command_corrections::Correction;
 use pathfinder_geometry::vector::Vector2F;
-use session_sharing_protocol::common::Role;
-use session_sharing_protocol::sharer::RoleUpdateReason;
 use warp_util::user_input::UserInput;
 use warpui::elements::HyperlinkUrl;
 use warpui::event::ModifiersState;
@@ -169,7 +167,6 @@ pub enum TerminalAction {
     CopyOutputs,
     CopyCommands,
     CopyGitBranch,
-    OpenShareModal,
     ReinputCommands,
     ReinputCommandsWithSudo,
     ClearBuffer,
@@ -308,23 +305,9 @@ pub enum TerminalAction {
     StopSharingCurrentSession {
         source: SharedSessionActionSource,
     },
-    OpenSharedSessionOnDesktop {
-        source: SharedSessionActionSource,
-    },
     ToggleBlockFilterOnSelectedOrLastBlock(ToggleBlockFilterSource),
-    OpenShareSessionModal {
-        source: SharedSessionActionSource,
-    },
-    CopySharedSessionLink {
-        source: SharedSessionActionSource,
-    },
     VimModeBanner(VimModeBannerAction),
     ToggleSnackbarInActivePane,
-    MakeAllParticipantsReaders {
-        reason: RoleUpdateReason,
-    },
-    OpenSharedSessionViewerRoleMenu,
-    RequestSharedSessionRole(Role),
     /// User selected a block inside an AI block's attached block menu so we jump to it and select
     /// it if possible.
     SelectAIAttachedBlock(BlockIndex),
@@ -389,14 +372,6 @@ pub enum TerminalAction {
         source: PaletteSource,
     },
     DismissCodeToolbeltTooltip,
-    /// Start the guided Warp Environment setup flow (inserts the inline setup block).
-    SetupCloudEnvironment(Vec<String>),
-    /// Start the guided Warp Environment setup flow immediately (no inline setup block).
-    SetupCloudEnvironmentAndStart(Vec<String>),
-    /// Show the environment setup mode selector to choose between remote GitHub or local agent flow.
-    TriggerEnvironmentSetupSelection(Vec<String>),
-    /// Open the Environment Management pane.
-    OpenEnvironmentManagementPane,
     ToggleLongRunningCommandControl,
     ToggleHideCliResponses,
     ExitAgentView,
@@ -487,7 +462,6 @@ impl fmt::Debug for TerminalAction {
             CopyOutputs => f.write_str("CopyOutputs"),
             CopyCommands => f.write_str("CopyCommands"),
             CopyGitBranch => f.write_str("CopyGitBranch"),
-            OpenShareModal => f.write_str("OpenShareModal"),
             ReinputCommands => f.write_str("ReinputCommands"),
             ReinputCommandsWithSudo => f.write_str("ReinputCommandsWithSudo"),
             ClearBuffer => f.write_str("ClearBuffer"),
@@ -584,21 +558,11 @@ impl fmt::Debug for TerminalAction {
             StopSharingCurrentSession { source } => {
                 write!(f, "StopSharingCurrentSession({source:?})")
             }
-            OpenSharedSessionOnDesktop { source } => {
-                write!(f, "OpenSharedSessionOnDesktop({source:?})")
-            }
             ToggleBlockFilterOnSelectedOrLastBlock(_) => {
                 f.write_str("ToggleBlockFilterOnSelectedOrLastBlock")
             }
-            OpenShareSessionModal { source } => write!(f, "OpenShareSessionModal({source:?})"),
-            CopySharedSessionLink { .. } => f.write_str("CopySharedSessionLink"),
             VimModeBanner(action) => write!(f, "VimModeBanner({action:?})"),
             ToggleSnackbarInActivePane => write!(f, "ToggleSnackbarInActivePane"),
-            MakeAllParticipantsReaders { reason } => {
-                write!(f, "MakeAllParticipantsReaders {{ reason: {reason:?} }}")
-            }
-            OpenSharedSessionViewerRoleMenu => write!(f, "OpenSharedSessionViewerRoleMenu"),
-            RequestSharedSessionRole(role) => write!(f, "RequestSharedSessionRole({role:?})"),
             MiddleClickOnGrid { position } => {
                 write!(f, "MiddleClickonGrid {{ position: {position:?} }}")
             }
@@ -663,10 +627,6 @@ impl fmt::Debug for TerminalAction {
             PickRepoToOpen => write!(f, "PickRepoToOpen"),
             OpenFilesPalette { .. } => write!(f, "OpenFilesPalette"),
             DismissCodeToolbeltTooltip => write!(f, "DismissCodeToolbeltTooltip"),
-            SetupCloudEnvironment(_) => write!(f, "SetupCloudEnvironment"),
-            SetupCloudEnvironmentAndStart(_) => write!(f, "SetupCloudEnvironmentAndStart"),
-            TriggerEnvironmentSetupSelection(_) => write!(f, "TriggerEnvironmentSetupSelection"),
-            OpenEnvironmentManagementPane => write!(f, "OpenEnvironmentManagementPane"),
             SummarizeConversation => write!(f, "SummarizeConversation"),
             ToggleLongRunningCommandControl => {
                 write!(f, "TakeOverLongRunningCommandControlForUser")

@@ -392,7 +392,6 @@ fn root_cloud_mode_pane_sets_root_cloud_mode_context_key() {
         initialize_app_for_terminal_view(&mut app);
         app.add_singleton_model(ImportedConfigModel::new);
         FeatureFlag::AgentView.set_enabled(true);
-        FeatureFlag::CloudMode.set_enabled(true);
 
         let terminal = add_window_with_terminal(&mut app, None);
 
@@ -438,7 +437,6 @@ fn set_input_mode_agent_does_not_enter_local_agent_from_root_cloud_mode_pane() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
         FeatureFlag::AgentView.set_enabled(true);
-        FeatureFlag::CloudMode.set_enabled(true);
 
         let terminal = add_window_with_terminal(&mut app, None);
 

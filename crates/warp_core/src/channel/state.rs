@@ -1,13 +1,11 @@
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use std::{borrow::Cow, collections::HashSet};
-use url::{Origin, ParseError, Url};
+use url::{Origin, Url};
 
 use crate::AppId;
 use crate::{
-    channel::config::{
-        ChannelConfig, McpOAuthProviderConfig, OzConfig, RudderStackDestination, WarpServerConfig,
-    },
+    channel::config::{ChannelConfig, McpOAuthProviderConfig, OzConfig, WarpServerConfig},
     features::FeatureFlag,
 };
 
@@ -80,40 +78,6 @@ impl ChannelState {
 
     pub fn enable_debug_features() -> bool {
         cfg!(debug_assertions) || matches!(Self::channel(), Channel::Local | Channel::Dev)
-    }
-
-    pub fn override_server_root_url(url: impl Into<Cow<'static, str>>) -> Result<(), ParseError> {
-        let url = url.into();
-        Url::parse(&url)?;
-        CHANNEL_STATE.lock().config.server_config.server_root_url = url;
-        Ok(())
-    }
-
-    pub fn override_ws_server_url(url: impl Into<Cow<'static, str>>) -> Result<(), ParseError> {
-        let url = url.into();
-        Url::parse(&url)?;
-        CHANNEL_STATE.lock().config.server_config.rtc_server_url = url;
-        Ok(())
-    }
-
-    pub fn override_session_sharing_server_url(
-        url: impl Into<Cow<'static, str>>,
-    ) -> Result<(), ParseError> {
-        let url = url.into();
-        Url::parse(&url)?;
-        CHANNEL_STATE
-            .lock()
-            .config
-            .server_config
-            .session_sharing_server_url = Some(url);
-        Ok(())
-    }
-
-    pub fn uses_staging_server() -> bool {
-        let Ok(url) = Url::parse(Self::server_root_url().as_ref()) else {
-            return false;
-        };
-        url.host_str() == Some("staging.warp.dev")
     }
 
     /// Returns the canonical identifier for the application.
@@ -217,47 +181,6 @@ impl ChannelState {
             .unwrap_or_default()
     }
 
-    pub fn firebase_api_key() -> Cow<'static, str> {
-        CHANNEL_STATE
-            .lock()
-            .config
-            .server_config
-            .firebase_auth_api_key
-            .clone()
-    }
-
-    pub fn ws_server_url() -> Cow<'static, str> {
-        CHANNEL_STATE
-            .lock()
-            .config
-            .server_config
-            .rtc_server_url
-            .clone()
-    }
-
-    /// Returns the HTTP(S) root URL for the RTC server.
-    ///
-    /// OpenWarp Wave 5-5：原为 `warp-server-rtc` HTTP 端点(如 agent event SSE stream)
-    /// 提供根 URL。随着 `stream_agent_events` / `generate_multi_agent_output` 云端
-    /// SSE 路径 stub 化后,本方法在全仓 0 消费 → 物理删。
-    ///
-    /// `ws_server_url` 仍保留(BYOP harness `agent_sdk/driver/harness/mod.rs:289`
-    /// 仍依赖 — 为本地代理 server 提供 session_sharing-protocol 端点)。
-
-    pub fn session_sharing_server_url() -> Option<Cow<'static, str>> {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "test-util")] {
-                Some(Cow::Borrowed("fake_session_sharing_url"))
-            } else {
-                CHANNEL_STATE.lock().config.server_config.session_sharing_server_url.clone()
-            }
-        }
-    }
-
-    pub fn oz_root_url() -> Cow<'static, str> {
-        CHANNEL_STATE.lock().config.oz_config.oz_root_url.clone()
-    }
-
     pub fn server_root_url() -> Cow<'static, str> {
         cfg_if::cfg_if! {
             if #[cfg(feature = "test-util")] {
@@ -284,32 +207,6 @@ impl ChannelState {
         Url::parse(&Self::server_root_url())
             .expect("Server root URL should be valid")
             .origin()
-    }
-
-    /// Returns the rudderstack destination for all events that don't contain user-generated content.
-    pub fn rudderstack_non_ugc_destination() -> RudderStackDestination {
-        let state = CHANNEL_STATE.lock();
-
-        state
-            .config
-            .telemetry_config
-            .as_ref()
-            .and_then(|tc| tc.rudderstack_config.as_ref())
-            .map(|rs| rs.non_ugc_destination())
-            .unwrap_or_default()
-    }
-
-    /// Returns the rudderstack destination for all events that contain user-generated content.
-    pub fn rudderstack_ugc_destination() -> RudderStackDestination {
-        let state = CHANNEL_STATE.lock();
-
-        state
-            .config
-            .telemetry_config
-            .as_ref()
-            .and_then(|tc| tc.rudderstack_config.as_ref())
-            .map(|rs| rs.ugc_destination())
-            .unwrap_or_default()
     }
 
     pub fn channel() -> Channel {
