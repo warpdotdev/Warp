@@ -1915,22 +1915,23 @@ impl GlobalBufferModel {
         // Apply each edit sequentially: offsets are in sequential coordinates
         // (each relative to the buffer after all preceding edits), so we must
         // apply one at a time and recompute max_offset for each.
-        let final_version = ContentVersion::new();
         buffer.update(ctx, |buffer, ctx| {
             for edit in edits {
                 let max_offset = buffer.max_charoffset();
                 let start =
                     CharOffset::from((edit.start_offset as usize).min(max_offset.as_usize()));
-                let end = CharOffset::from((edit.end_offset as usize).min(max_offset.as_usize()));
+                let end =
+                    CharOffset::from((edit.end_offset as usize).min(max_offset.as_usize()));
                 buffer.insert_at_char_offset_ranges(
                     vec![(start..end, edit.text.clone())],
                     ContentVersion::new(),
                     ctx,
                 );
             }
-            buffer.set_version(final_version);
+            // Allocate the final version after all per-edit versions so the
+            // monotonic ContentVersion counter moves forward.
+            buffer.set_version(ContentVersion::new());
         });
-
         true
     }
 
