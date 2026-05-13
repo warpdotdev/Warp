@@ -212,6 +212,10 @@ pub struct AIConversation {
     /// Artifacts created during this conversation (plans, PRs, etc.).
     artifacts: Vec<Artifact>,
 
+    // TODO(advait): Group child-agent-only fields (parent_agent_id,
+    // agent_name, orchestration_harness_type, parent_conversation_id,
+    // is_remote_child, pinned) into a ChildAgentState sub-struct. See
+    // PR #10777 review.
     /// Server-side identifier of the parent agent that spawned this child, if any.
     /// In v1 this holds the parent's `server_conversation_token`; in v2 (OrchestrationV2)
     /// it holds the parent's `run_id`. Persisted as `parent_agent_id` for serde compat.
