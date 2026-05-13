@@ -190,6 +190,22 @@ impl RemoteCodebaseIndexModel {
         host_id: &HostId,
         statuses: &[RemoteCodebaseIndexStatusWithPath],
     ) {
+        let status_count = statuses.len();
+        log::info!(
+            "[Remote codebase indexing] Client received bootstrap codebase index statuses snapshot: host_id={host_id} status_count={status_count}"
+        );
+        for status_with_path in statuses {
+            log::debug!(
+                "[Remote codebase indexing] Client received bootstrap codebase index status: repo_path={} state={:?} has_root_hash={}",
+                status_with_path.status.repo_path,
+                status_with_path.status.state,
+                status_with_path
+                    .status
+                    .root_hash
+                    .as_deref()
+                    .is_some_and(|root_hash| !root_hash.is_empty()),
+            );
+        }
         self.statuses.retain(|key, _| key.host_id != *host_id);
         for status_with_path in statuses {
             self.apply_status_update(
@@ -200,6 +216,20 @@ impl RemoteCodebaseIndexModel {
     }
 
     fn apply_status_update(&mut self, remote_path: RemotePath, status: RemoteCodebaseIndexStatus) {
+        log::info!(
+            "[Remote codebase indexing] Client applying codebase index status update: host_id={} state={:?} has_root_hash={}",
+            remote_path.host_id,
+            status.state,
+            status
+                .root_hash
+                .as_deref()
+                .is_some_and(|root_hash| !root_hash.is_empty()),
+        );
+        log::debug!(
+            "[Remote codebase indexing] Client applying codebase index status update: repo_path={} state={:?}",
+            status.repo_path,
+            status.state,
+        );
         self.statuses.insert(remote_path, status);
     }
 
