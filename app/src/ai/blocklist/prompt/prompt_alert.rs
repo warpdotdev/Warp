@@ -24,21 +24,12 @@ const ANONYMOUS_USER_REQUEST_LIMIT_SOFT_GATE_PERCENTAGE: f32 = 0.5;
 const NO_CONNECTION_PRIMARY_TEXT: &str = "No internet connection";
 const ANONYMOUS_USER_REQUEST_LIMIT_SOFT_GATE_PRIMARY_TEXT: &str = "";
 const ANONYMOUS_USER_REQUEST_LIMIT_HARD_GATE_PRIMARY_TEXT: &str = "At Limit -";
-const DELINQUENT_DUE_TO_PAYMENT_ISSUE_PRIMARY_TEXT: &str = "Restricted due to payment issue";
 const OUT_OF_REQUESTS_PRIMARY_TEXT: &str = "Out of credits";
 
 const ANONYMOUS_USER_REQUEST_LIMIT_ACTION_TEXT: &str = "Configure local AI provider";
-const OVERAGES_TOGGLEABLE_BUT_NOT_ENABLED_ACTION_TEXT: &str = "Enable premium overages";
-const MONTHLY_OVERAGES_SPEND_LIMIT_REACHED_ACTION_TEXT: &str = "Increase monthly spend limit";
-const NON_ADMIN_CONTACT_ADMIN_TEXT: &str = ", contact a team admin";
-const NON_ADMIN_ASK_ADMIN_TO_ENABLE_OVERAGES_TEXT: &str = ", ask a team admin to enable overages";
-const NON_ADMIN_ASK_ADMIN_TO_INCREASE_OVERAGES_TEXT: &str =
-    ", ask a team admin to increase overages";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PromptAlertAction {
-    OpenSettingsClicked,
-}
+pub enum PromptAlertAction {}
 
 /// The alert state of the chip that appears to the right of certain parts of the prompt.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,12 +41,6 @@ pub enum PromptAlertState {
     AnonymousUserRequestLimitSoftGate,
     /// An anonymous user has reached the request limit.
     AnonymousUserRequestLimitHardGate,
-    /// The user is delinquent due to a payment issue.
-    DelinquentDueToPaymentIssue,
-    /// Overages could be turned on, but aren't enabled.
-    OveragesToggleableButNotEnabled,
-    /// Overages are on, but the spend limit is too low.
-    MonthlyOveragesSpendLimitReached,
     /// The user has reached the request limit.
     RequestLimitReached,
     /// No alert should be displayed.
@@ -128,33 +113,12 @@ impl PromptAlertView {
             }
         }
 
-        // Next, make sure the user isn't delinquent in their plan.
-        let workspace = UserWorkspaces::as_ref(app).current_workspace();
-        if workspace.is_some_and(|w| w.billing_metadata.is_delinquent_due_to_payment_issue()) {
-            return PromptAlertState::DelinquentDueToPaymentIssue;
-        }
-
         // If there is ever any ai remaining, no alert
         if request_usage_model.has_any_ai_remaining(app) {
             return PromptAlertState::NoAlert;
         }
 
-        // Check if overages are available.
-        if let Some(workspace) = workspace {
-            let are_overages_toggleable = workspace.are_overages_toggleable();
-            let are_overages_enabled = workspace.are_overages_enabled();
-
-            if are_overages_toggleable {
-                if are_overages_enabled {
-                    return PromptAlertState::MonthlyOveragesSpendLimitReached;
-                } else {
-                    return PromptAlertState::OveragesToggleableButNotEnabled;
-                }
-            }
-        }
-
-        // If overages aren't available, and since we already checked that the user
-        // has no requests remaining, we can show the generic request limit reached alert.
+        // 本地版没有云端 overages / 计费升级路径。
         PromptAlertState::RequestLimitReached
     }
 
@@ -196,14 +160,7 @@ impl PromptAlertView {
                     ANONYMOUS_USER_REQUEST_LIMIT_HARD_GATE_PRIMARY_TEXT,
                 ));
             }
-            PromptAlertState::DelinquentDueToPaymentIssue => {
-                text_fragments.push(FormattedTextFragment::plain_text(
-                    DELINQUENT_DUE_TO_PAYMENT_ISSUE_PRIMARY_TEXT,
-                ));
-            }
-            PromptAlertState::OveragesToggleableButNotEnabled
-            | PromptAlertState::MonthlyOveragesSpendLimitReached
-            | PromptAlertState::RequestLimitReached => {
+            PromptAlertState::RequestLimitReached => {
                 text_fragments.push(FormattedTextFragment::plain_text(
                     OUT_OF_REQUESTS_PRIMARY_TEXT,
                 ));
@@ -218,12 +175,6 @@ impl PromptAlertView {
         text_fragments: &mut Vec<FormattedTextFragment>,
         app: &AppContext,
     ) {
-        let auth_state = AuthStateProvider::as_ref(app).get();
-        let current_team = UserWorkspaces::as_ref(app).current_team();
-        let has_admin_permissions = current_team.is_some_and(|team| {
-            team.has_admin_permissions(&auth_state.user_email().unwrap_or_default())
-        });
-
         match state {
             PromptAlertState::NoConnection => {}
             PromptAlertState::AnonymousUserRequestLimitSoftGate
@@ -236,37 +187,6 @@ impl PromptAlertView {
                         section: Some(SettingsSection::WarpAgent),
                     },
                 ));
-            }
-            PromptAlertState::DelinquentDueToPaymentIssue => {
-                text_fragments.push(FormattedTextFragment::plain_text(
-                    NON_ADMIN_CONTACT_ADMIN_TEXT,
-                ));
-            }
-            PromptAlertState::OveragesToggleableButNotEnabled => {
-                if has_admin_permissions {
-                    text_fragments.push(FormattedTextFragment::plain_text("  "));
-                    text_fragments.push(FormattedTextFragment::hyperlink_action(
-                        OVERAGES_TOGGLEABLE_BUT_NOT_ENABLED_ACTION_TEXT,
-                        PromptAlertAction::OpenSettingsClicked,
-                    ));
-                } else {
-                    text_fragments.push(FormattedTextFragment::plain_text(
-                        NON_ADMIN_ASK_ADMIN_TO_ENABLE_OVERAGES_TEXT,
-                    ));
-                }
-            }
-            PromptAlertState::MonthlyOveragesSpendLimitReached => {
-                if has_admin_permissions {
-                    text_fragments.push(FormattedTextFragment::plain_text("  "));
-                    text_fragments.push(FormattedTextFragment::hyperlink_action(
-                        MONTHLY_OVERAGES_SPEND_LIMIT_REACHED_ACTION_TEXT,
-                        PromptAlertAction::OpenSettingsClicked,
-                    ));
-                } else {
-                    text_fragments.push(FormattedTextFragment::plain_text(
-                        NON_ADMIN_ASK_ADMIN_TO_INCREASE_OVERAGES_TEXT,
-                    ));
-                }
             }
             PromptAlertState::RequestLimitReached => {
                 text_fragments.push(FormattedTextFragment::plain_text("  "));
@@ -290,9 +210,6 @@ fn does_alert_block_ai_requests(state: &PromptAlertState) -> bool {
         PromptAlertState::AnonymousUserRequestLimitSoftGate | PromptAlertState::NoAlert => false,
         PromptAlertState::NoConnection
         | PromptAlertState::AnonymousUserRequestLimitHardGate
-        | PromptAlertState::DelinquentDueToPaymentIssue
-        | PromptAlertState::OveragesToggleableButNotEnabled
-        | PromptAlertState::MonthlyOveragesSpendLimitReached
         | PromptAlertState::RequestLimitReached => true,
     }
 }
@@ -332,11 +249,7 @@ impl View for PromptAlertView {
                     ctx.open_url(url);
                 }
                 HyperlinkLens::Action(action_ref) => {
-                    if let Some(action) = action_ref.as_any().downcast_ref::<PromptAlertAction>() {
-                        event.dispatch_typed_action(action.clone());
-                    } else if let Some(action) =
-                        action_ref.as_any().downcast_ref::<WorkspaceAction>()
-                    {
+                    if let Some(action) = action_ref.as_any().downcast_ref::<WorkspaceAction>() {
                         event.dispatch_typed_action(action.clone());
                     }
                 }
@@ -375,10 +288,6 @@ impl TypedActionView for PromptAlertView {
     type Action = PromptAlertAction;
 
     fn handle_action(&mut self, action: &Self::Action, _ctx: &mut ViewContext<Self>) {
-        match action {
-            PromptAlertAction::OpenSettingsClicked => {
-                // 去云端分支:不再跳转 billing & usage
-            }
-        }
+        match *action {}
     }
 }

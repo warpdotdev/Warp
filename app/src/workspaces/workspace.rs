@@ -3,9 +3,7 @@ use crate::ai::execution_profiles::{
 };
 use crate::ai::llms::LLMModelHost;
 use crate::{
-    auth::UserUid,
-    pricing::{AddonCreditsOption, StripeSubscriptionPlan},
-    server::ids::ServerId,
+    auth::UserUid, pricing::StripeSubscriptionPlan, server::ids::ServerId,
     settings::AgentModeCommandExecutionPredicate,
 };
 use chrono::Utc;
@@ -103,74 +101,8 @@ impl Workspace {
         self.settings.llm_settings.enabled
     }
 
-    pub fn are_overages_toggleable(&self) -> bool {
-        self.billing_metadata
-            .tier
-            .usage_based_pricing_policy
-            .is_some_and(|policy| policy.toggleable)
-    }
-
-    pub fn are_overages_enabled(&self) -> bool {
-        self.settings.usage_based_pricing_settings.enabled
-    }
-
-    pub fn are_overages_remaining(&self) -> bool {
-        if self.settings.usage_based_pricing_settings.enabled {
-            if let Some(max_spend_cents) = self
-                .settings
-                .usage_based_pricing_settings
-                .max_monthly_spend_cents
-            {
-                if let Some(ai_overages) = &self.billing_metadata.ai_overages {
-                    return ai_overages.current_monthly_request_cost_cents < max_spend_cents as i32;
-                } else {
-                    // If they have the setting enabled but no overages usage so far,
-                    // that means they have no database entry, so they have overages remaining.
-                    return true;
-                }
-            }
-        }
-
-        false
-    }
-
     pub fn is_byo_api_key_enabled(&self) -> bool {
         self.billing_metadata.is_byo_api_key_enabled()
-    }
-
-    /// Returns true if the workspace has reached or exceeded its monthly addon credits spend limit.
-    pub fn is_at_addon_credits_monthly_limit(&self) -> bool {
-        if let Some(limit) = self.settings.addon_credits_settings.max_monthly_spend_cents {
-            self.bonus_grants_purchased_this_month.cents_spent >= limit
-        } else {
-            false
-        }
-    }
-
-    /// Returns true if purchasing addon credits at the given price would reach or exceed the monthly limit.
-    pub fn would_addon_purchase_reach_limit(&self, price_cents: i32) -> bool {
-        if let Some(limit) = self.settings.addon_credits_settings.max_monthly_spend_cents {
-            self.bonus_grants_purchased_this_month.cents_spent + price_cents > limit
-        } else {
-            false
-        }
-    }
-
-    /// Returns the price in cents for the selected auto-reload credit denomination.
-    /// Returns None if auto-reload is not configured or if the denomination can't be found in pricing options.
-    pub fn get_auto_reload_price_cents(
-        &self,
-        addon_credits_options: &[AddonCreditsOption],
-    ) -> Option<i32> {
-        let selected_credits = self
-            .settings
-            .addon_credits_settings
-            .selected_auto_reload_credit_denomination?;
-
-        addon_credits_options
-            .iter()
-            .find(|option| option.credits == selected_credits)
-            .map(|option| option.price_usd_cents)
     }
 }
 
@@ -645,29 +577,6 @@ impl BillingMetadata {
         self.ai_overages
             .as_ref()
             .is_some_and(|ai_overages| ai_overages.current_monthly_requests_used > 0)
-    }
-
-    pub fn has_failed_addon_credit_auto_reload_status(&self) -> bool {
-        self.service_agreements
-            .first()
-            .and_then(|sa| sa.addon_credit_auto_reload_status)
-            .is_some_and(|status| matches!(status, AddonCreditAutoReloadStatus::Failed))
-    }
-
-    pub fn is_enterprise_pay_as_you_go_enabled(&self) -> bool {
-        self.customer_type == CustomerType::Enterprise
-            && self
-                .tier
-                .enterprise_pay_as_you_go_policy
-                .is_some_and(|policy| policy.enabled)
-    }
-
-    pub fn is_enterprise_auto_reload_enabled(&self) -> bool {
-        self.customer_type == CustomerType::Enterprise
-            && self
-                .tier
-                .enterprise_credits_auto_reload_policy
-                .is_some_and(|policy| policy.enabled)
     }
 }
 

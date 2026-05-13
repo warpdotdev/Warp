@@ -12,15 +12,10 @@ use crate::{
     cloud_object::{
         model::persistence::ObjectStoreModel, ObjectType, Owner, Space, StoredObjectEventEntrypoint,
     },
-    pricing::{PricingInfo, PricingInfoModel},
-    report_error,
-    server::{experiments::ServerExperiment, ids::ServerId},
+    server::ids::ServerId,
     settings::{AISettings, PrivacySettings},
-    workspaces::workspace::{
-        AiAutonomySettings, AiOverages, SandboxedAgentSettings, UsageBasedPricingSettings,
-    },
+    workspaces::workspace::{AiAutonomySettings, SandboxedAgentSettings},
 };
-use anyhow::Result;
 use regex::Regex;
 use warp_core::{
     features::FeatureFlag,
@@ -54,9 +49,6 @@ pub enum UserWorkspacesEvent {
     SetTeamMemberRoleRejected(anyhow::Error),
     UpdateWorkspaceSettingsSuccess,
     UpdateWorkspaceSettingsRejected(anyhow::Error),
-    AiOveragesUpdated,
-    PurchaseAddonCreditsSuccess,
-    PurchaseAddonCreditsRejected(anyhow::Error),
     /// Fired whenever the set of teams the user is on changes.
     TeamsChanged,
     /// Fired when a service agreement's sunsetted_to_build_ts field is updated.
@@ -70,28 +62,6 @@ pub enum UserWorkspacesEvent {
 pub struct UserWorkspaces {
     current_workspace_uid: Tracked<Option<WorkspaceUid>>,
     workspaces: Tracked<Vec<Workspace>>,
-}
-
-/// Represents the workspaces a user potentially has access to.
-#[derive(Clone)]
-pub struct WorkspacesMetadataResponse {
-    /// The list of workspaces the user is currently on.
-    pub workspaces: Vec<Workspace>,
-    /// The list of experiments applicable to the user.
-    pub experiments: Option<Vec<ServerExperiment>>,
-    /// TODO(Tyler): Post-workspaces, move this into the workspace object.
-    /// Feature model choices may change from user to user and while the app is open, so we need to periodically update this list.
-    /// It makes most sense to fetch this in workspaces which is queried every 10 minutes.
-    /// This is list of available LLM models for the user.
-    pub feature_model_choices: Option<()>,
-}
-
-// A representation of all workspace data refreshed together.
-// Prefer adding to this struct if you need relatively fresh data vs making
-// independent queries.
-pub struct WorkspacesMetadataWithPricing {
-    pub metadata: WorkspacesMetadataResponse,
-    pub pricing_info: Option<PricingInfo>,
 }
 
 pub struct CreateTeamResponse {
@@ -588,7 +558,7 @@ impl UserWorkspaces {
         // PrivacySettings can't observe UserWorkspaces for updates, as it's initialized too early in
         // the app initialization flow. So, we update it manually whenever teams data changes.
         PrivacySettings::handle(ctx).update(ctx, |settings, ctx| {
-            settings.set_is_telemetry_force_enabled(self.is_telemetry_force_enabled());
+            settings.set_is_telemetry_force_enabled(false);
             settings.set_enterprise_secret_redaction_settings(
                 self.is_enterprise_secret_redaction_enabled(),
                 self.get_enterprise_secret_redaction_regex_list(),
@@ -599,45 +569,6 @@ impl UserWorkspaces {
 
         ctx.emit(UserWorkspacesEvent::TeamsChanged);
         ctx.notify();
-    }
-
-    fn on_workspaces_updated(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Ok(response) => {
-                if let Some(pricing_info) = response.pricing_info {
-                    PricingInfoModel::handle(ctx).update(ctx, |model, ctx| {
-                        model.update_pricing_info(pricing_info, ctx);
-                    });
-                }
-
-                let workspaces = response.metadata.workspaces;
-
-                self.update_workspaces(workspaces.clone(), ctx);
-
-                // Check if the current workspace is still in the list of workspaces.
-                // If it's not, then set the current workspace to the first workspace in the list.
-                if let Some(current_workspace) = self.current_workspace() {
-                    if !self
-                        .workspaces
-                        .iter()
-                        .any(|w| w.uid == current_workspace.uid)
-                    {
-                        if let Some(workspace_uid) = workspaces.first().map(|w| w.uid) {
-                            self.set_current_workspace_uid(workspace_uid, ctx);
-                        }
-                    }
-                } else if let Some(workspace_uid) = workspaces.first().map(|w| w.uid) {
-                    self.set_current_workspace_uid(workspace_uid, ctx);
-                }
-            }
-            Err(e) => {
-                report_error!(e.context("Failed to load user workspaces"));
-            }
-        }
     }
 
     pub fn team_created(
@@ -661,21 +592,6 @@ impl UserWorkspaces {
         let _ = (user_uid, team_uid, entrypoint);
     }
 
-    fn on_add_invite_link_domain_restrictions(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::AddDomainRestrictionsRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::AddDomainRestrictionsSuccess);
-            }
-        };
-        ctx.notify();
-    }
-
     pub fn add_invite_link_domain_restrictions(
         &mut self,
         team_uid: ServerId,
@@ -685,21 +601,6 @@ impl UserWorkspaces {
         // OpenWarp(本地化):域限制路径在本地无远端 team/invite 写入目标 → 发 Success 事件使 UI 不卡住。
         let _ = (team_uid, domains);
         ctx.emit(UserWorkspacesEvent::AddDomainRestrictionsSuccess);
-        ctx.notify();
-    }
-
-    fn on_delete_invite_link_domain_restriction(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::DeleteDomainRestrictionRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::DeleteDomainRestrictionSuccess);
-            }
-        };
         ctx.notify();
     }
 
@@ -714,21 +615,6 @@ impl UserWorkspaces {
         ctx.notify();
     }
 
-    fn on_email_invite_sent(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::EmailInviteRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::EmailInviteSent);
-            }
-        };
-        ctx.notify();
-    }
-
     pub fn send_email_invites(
         &mut self,
         team_uid: ServerId,
@@ -737,21 +623,6 @@ impl UserWorkspaces {
     ) {
         let _ = (team_uid, emails);
         ctx.emit(UserWorkspacesEvent::EmailInviteSent);
-        ctx.notify();
-    }
-
-    pub fn on_is_invite_link_enabled_set(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::ToggleInviteLinksRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::ToggleInviteLinksSuccess);
-            }
-        };
         ctx.notify();
     }
 
@@ -766,39 +637,9 @@ impl UserWorkspaces {
         ctx.notify();
     }
 
-    pub fn on_invite_links_reset(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::ResetInviteLinksRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::ResetInviteLinks);
-            }
-        };
-        ctx.notify();
-    }
-
     pub fn reset_invite_links(&mut self, team_uid: ServerId, ctx: &mut ModelContext<Self>) {
         let _ = team_uid;
         ctx.emit(UserWorkspacesEvent::ResetInviteLinks);
-        ctx.notify();
-    }
-
-    fn on_team_member_role_set(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::SetTeamMemberRoleRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::SetTeamMemberRoleSuccess);
-            }
-        };
         ctx.notify();
     }
 
@@ -814,21 +655,6 @@ impl UserWorkspaces {
         ctx.notify();
     }
 
-    pub fn on_delete_team_invite(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::DeleteTeamInviteRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::DeleteTeamInvite);
-            }
-        };
-        ctx.notify();
-    }
-
     pub fn delete_team_invite(
         &mut self,
         team_uid: ServerId,
@@ -840,134 +666,9 @@ impl UserWorkspaces {
         ctx.notify();
     }
 
-    pub fn update_usage_based_pricing_settings(
-        &mut self,
-        team_uid: ServerId,
-        usage_based_pricing_enabled: bool,
-        max_monthly_spend_cents: Option<u32>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let _ = (
-            team_uid,
-            usage_based_pricing_enabled,
-            max_monthly_spend_cents,
-        );
-        ctx.emit(UserWorkspacesEvent::UpdateWorkspaceSettingsSuccess);
-        ctx.notify();
-    }
-
-    fn on_update_workspace_metadata(
-        &mut self,
-        result: Result<WorkspacesMetadataResponse>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Ok(result) => {
-                let wrapped = WorkspacesMetadataWithPricing {
-                    metadata: result,
-                    pricing_info: None,
-                };
-                self.on_workspaces_updated(Ok(wrapped), ctx);
-                ctx.emit(UserWorkspacesEvent::UpdateWorkspaceSettingsSuccess);
-            }
-            Err(err) => {
-                let err_for_event = anyhow::anyhow!("{}", err);
-                self.on_workspaces_updated(Err(err), ctx);
-                ctx.emit(UserWorkspacesEvent::UpdateWorkspaceSettingsRejected(
-                    err_for_event,
-                ));
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn purchase_addon_credits(
-        &mut self,
-        team_uid: ServerId,
-        credits: i32,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let _ = (team_uid, credits);
-        ctx.emit(UserWorkspacesEvent::PurchaseAddonCreditsSuccess);
-        ctx.notify();
-    }
-
-    fn on_purchase_addon_credits(
-        &mut self,
-        result: Result<WorkspacesMetadataResponse>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Ok(result) => {
-                let wrapped = WorkspacesMetadataWithPricing {
-                    metadata: result,
-                    pricing_info: None,
-                };
-                self.on_workspaces_updated(Ok(wrapped), ctx);
-                ctx.emit(UserWorkspacesEvent::PurchaseAddonCreditsSuccess);
-            }
-            Err(err) => {
-                ctx.emit(UserWorkspacesEvent::PurchaseAddonCreditsRejected(
-                    anyhow::anyhow!(err),
-                ));
-            }
-        };
-        ctx.notify();
-    }
-
     pub fn refresh_ai_overages(&mut self, _ctx: &mut ModelContext<Self>) {
         // OpenWarp(本地化,Phase 5):本地无云端 AI overages 查询,no-op。
         // 调用点 (`blocklist/controller.rs::maybe_refresh_ai_overages`) UI 不发起有意义的更新。
-    }
-
-    pub fn update_addon_credits_settings(
-        &mut self,
-        team_uid: ServerId,
-        auto_reload_enabled: Option<bool>,
-        max_monthly_spend_cents: Option<i32>,
-        selected_auto_reload_credit_denomination: Option<i32>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let _ = (
-            team_uid,
-            auto_reload_enabled,
-            max_monthly_spend_cents,
-            selected_auto_reload_credit_denomination,
-        );
-        ctx.emit(UserWorkspacesEvent::UpdateWorkspaceSettingsSuccess);
-        ctx.notify();
-    }
-
-    fn on_refresh_ai_overages(&mut self, result: Result<AiOverages>, ctx: &mut ModelContext<Self>) {
-        match result {
-            Ok(fresh_ai_overages) => {
-                // TODO: We really need to stop having duplicate billing metadata...
-                if let Some(workspace) = self.current_workspace_mut() {
-                    workspace.billing_metadata.ai_overages = Some(fresh_ai_overages.clone());
-                }
-                if let Some(team) = self.current_team_mut() {
-                    team.billing_metadata.ai_overages = Some(fresh_ai_overages);
-                }
-
-                ctx.emit(UserWorkspacesEvent::AiOveragesUpdated);
-                ctx.notify();
-            }
-            Err(e) => {
-                log::warn!("Failed to refresh AI overages for workspace: {e:?}");
-            }
-        }
-    }
-
-    pub fn usage_based_pricing_settings(&self) -> UsageBasedPricingSettings {
-        self.current_workspace()
-            .map(|workspace| workspace.settings.usage_based_pricing_settings.clone())
-            .unwrap_or_default()
-    }
-
-    pub fn is_telemetry_force_enabled(&self) -> bool {
-        self.current_team()
-            .map(|team| team.organization_settings.telemetry_settings.force_enabled)
-            .unwrap_or(false)
     }
 
     pub fn is_enterprise_secret_redaction_enabled(&self) -> bool {
@@ -1005,7 +706,7 @@ impl UserWorkspaces {
                     .ai_permissions_settings
                     .allow_ai_in_remote_sessions
             })
-            .unwrap_or(true)
+            .unwrap_or(false)
     }
 
     pub fn get_remote_session_regex_list(&self) -> Vec<Regex> {
@@ -1026,7 +727,7 @@ impl UserWorkspaces {
                     .link_sharing_settings
                     .anyone_with_link_sharing_enabled
             })
-            .unwrap_or(true)
+            .unwrap_or(false)
     }
 
     pub fn is_direct_link_sharing_enabled(&self) -> bool {

@@ -36,7 +36,6 @@ use crate::ai::agent::{PassiveSuggestionTrigger, StaticQueryType};
 const INLINE_BANNER_SPACING: f32 = 8.;
 const INLINE_BANNER_BUTTON_PADDING: f32 = 8.;
 
-const DELINQUENT_DUE_TO_PAYMENT_ISSUE_TOOLTIP_MESSAGE: &str = "Restricted due to payment issue";
 const OUT_OF_REQUESTS_TOOLTIP_MESSAGE: &str = "Out of credits";
 
 /// Types of zero-state prompt suggestions.
@@ -138,9 +137,6 @@ fn render_button(
         prompt_alert_state,
         PromptAlertState::NoConnection
             | PromptAlertState::AnonymousUserRequestLimitHardGate
-            | PromptAlertState::DelinquentDueToPaymentIssue
-            | PromptAlertState::OveragesToggleableButNotEnabled
-            | PromptAlertState::MonthlyOveragesSpendLimitReached
             | PromptAlertState::RequestLimitReached
     );
     let opacity: f32 = if is_button_disabled { 0.5 } else { 1.0 };
@@ -284,14 +280,9 @@ fn get_tooltip_text_for_alert_state(alert_state: &PromptAlertState) -> Option<St
     // This is not an exhaustive list; the actual prompt alert component will have more information,
     // so we can keep the tooltip's text relatively minimal and just capture broad groups.
     match alert_state {
-        PromptAlertState::DelinquentDueToPaymentIssue => {
-            Some(DELINQUENT_DUE_TO_PAYMENT_ISSUE_TOOLTIP_MESSAGE.to_string())
-        }
         PromptAlertState::RequestLimitReached
         | PromptAlertState::AnonymousUserRequestLimitHardGate
-        | PromptAlertState::AnonymousUserRequestLimitSoftGate
-        | PromptAlertState::OveragesToggleableButNotEnabled
-        | PromptAlertState::MonthlyOveragesSpendLimitReached => {
+        | PromptAlertState::AnonymousUserRequestLimitSoftGate => {
             Some(OUT_OF_REQUESTS_TOOLTIP_MESSAGE.to_string())
         }
         _ => None,
