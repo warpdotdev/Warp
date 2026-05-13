@@ -12,7 +12,6 @@ use crate::ai::block_context::BlockContext;
 #[cfg(feature = "local_fs")]
 use crate::ai::skills::SkillOpenOrigin;
 use crate::global_resource_handles::GlobalResourceHandlesProvider;
-use crate::terminal::view::ambient_agent::is_cloud_agent_pre_first_exchange;
 use ai::agent::action::InsertReviewComment;
 pub use load_ai_conversation::ConversationRestorationInNewPaneType;
 
@@ -6448,19 +6447,6 @@ impl TerminalView {
             return false;
         }
 
-        // In cloud agent conversations, once the shared session is ready but before the first
-        // agent exchange arrives, we hide the interactive input view. A non-interactive footer is
-        // rendered instead (see `TerminalView::render`).
-        if !false
-            && is_cloud_agent_pre_first_exchange(
-                &self.ambient_agent_view_model,
-                &self.agent_view_controller,
-                app,
-            )
-        {
-            return false;
-        }
-
         if self.active_env_var_collection_block(app).is_some() {
             return false;
         }
@@ -9761,7 +9747,7 @@ impl TerminalView {
             ModelEvent::AfterBlockStarted {
                 command,
                 is_for_in_band_command,
-                block_id,
+                block_id: _,
                 ..
             } => {
                 let did_any_session_contains_remote_blocks =
@@ -9957,8 +9943,6 @@ impl TerminalView {
                             );
                         }
                     }
-
-                    self.maybe_insert_setup_command_blocks(block_id, ctx);
 
                     self.set_current_state(TerminalViewState::LongRunning, ctx);
                     ctx.emit(Event::BlockStarted {
@@ -24078,14 +24062,6 @@ impl View for TerminalView {
 
                 if self.is_input_box_visible(&model, app) {
                     column.add_child(self.render_input());
-                } else if !model.is_read_only()
-                    && is_cloud_agent_pre_first_exchange(
-                        &self.ambient_agent_view_model,
-                        &self.agent_view_controller,
-                        app,
-                    )
-                {
-                    column.add_child(ambient_agent::render_loading_footer(appearance));
                 } else if self.show_remote_server_loading_footer(&model, app) {
                     column.add_child(
                         self.render_remote_server_loading_footer(&model, appearance, app),

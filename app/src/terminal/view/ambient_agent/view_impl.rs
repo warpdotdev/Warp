@@ -1,7 +1,6 @@
 //! [`TerminalView`]-specific implementation for ambient agent functionality.
 
 use warp_cli::agent::Harness;
-use warp_terminal::model::BlockId;
 
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
 use crate::ai::AIRequestUsageModel;
@@ -21,7 +20,7 @@ use super::loading_screen::{
     render_cloud_mode_cancelled_screen, render_cloud_mode_error_screen,
     render_cloud_mode_github_auth_required_screen, render_cloud_mode_loading_screen,
 };
-use super::{is_cloud_agent_pre_first_exchange, AmbientAgentViewModelEvent};
+use super::AmbientAgentViewModelEvent;
 const CHILD_AGENT_GITHUB_AUTH_REQUIRED_BLOCKED_ACTION: &str =
     "GitHub authentication required before starting the child agent.";
 
@@ -269,97 +268,6 @@ impl TerminalView {
             }
             AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility => (),
         }
-    }
-
-    pub(in crate::terminal::view) fn maybe_insert_setup_command_blocks(
-        &mut self,
-        block_id: &BlockId,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if !false {
-            return;
-        }
-
-        if !is_cloud_agent_pre_first_exchange(
-            &self.ambient_agent_view_model,
-            &self.agent_view_controller,
-            ctx,
-        ) {
-            return;
-        }
-
-        // For non-oz harness runs, transition out of the setup phase when the harness CLI
-        // starts (e.g. `claude --session-id …`). The block is the actual harness session
-        // and should NOT be classified as a setup command; the `HarnessCommandStarted`
-        // handler flips the block-list flag so the block renders like a normal CLI-agent
-        // session.
-        if self
-            .ambient_agent_view_model
-            .as_ref(ctx)
-            .is_third_party_harness()
-            && self.active_block_matches_run_harness(ctx)
-        {
-            self.ambient_agent_view_model.update(ctx, |model, ctx| {
-                model.mark_harness_command_started(ctx);
-            });
-            return;
-        }
-
-        let Some(block_index) = self.model.lock().block_list().block_index_for_id(block_id) else {
-            return;
-        };
-
-        if !self
-            .ambient_agent_view_model
-            .as_ref(ctx)
-            .setup_command_state()
-            .did_execute_a_setup_command()
-        {
-            self.ambient_agent_view_model.update(ctx, |model, _| {
-                model
-                    .setup_command_state_mut()
-                    .set_did_execute_a_setup_command(true);
-            });
-
-            let setup_command_text = ctx.add_typed_action_view(|ctx| {
-                super::CloudModeSetupTextBlock::new(
-                    self.ambient_agent_view_model.clone(),
-                    self.agent_view_controller.clone(),
-                    ctx,
-                )
-            });
-            self.insert_rich_content(
-                None,
-                setup_command_text,
-                None,
-                RichContentInsertionPosition::BeforeBlockIndex(block_index),
-                ctx,
-            );
-        }
-
-        let setup_command_block = ctx.add_typed_action_view(|ctx| {
-            super::CloudModeSetupCommandBlock::new(
-                block_id.clone(),
-                self.ambient_agent_view_model.clone(),
-                &self.model_events_handle,
-                self.model.clone(),
-                ctx,
-            )
-        });
-        ctx.subscribe_to_view(&setup_command_block, |me, _, event, _| {
-            let super::CloudModeSetupCommandBlockEvent::ToggleBlockVisibility(block_id) = event;
-            me.model
-                .lock()
-                .block_list_mut()
-                .toggle_visibility_of_block(block_id);
-        });
-        self.insert_rich_content(
-            None,
-            setup_command_block,
-            None,
-            RichContentInsertionPosition::BeforeBlockIndex(block_index),
-            ctx,
-        );
     }
 
     /// Enters agent view for a live shared-session viewer of a non-oz cloud run, so every

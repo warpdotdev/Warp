@@ -14,9 +14,7 @@ use crate::{
         inline_action::inline_action_icons,
         BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
     },
-    terminal::view::ambient_agent::{
-        is_cloud_agent_pre_first_exchange, AmbientAgentViewModel, AmbientAgentViewModelEvent,
-    },
+    terminal::view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -145,15 +143,7 @@ impl View for CloudModeSetupTextBlock {
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_child(
                     Text::new(
-                        if is_cloud_agent_pre_first_exchange(
-                            &self.ambient_agent_view_model,
-                            &self.agent_view_controller,
-                            app,
-                        ) {
-                            "Running setup commands..."
-                        } else {
-                            "Ran setup commands"
-                        },
+                        "Ran setup commands",
                         appearance.ai_font_family(),
                         appearance.monospace_font_size(),
                     )
