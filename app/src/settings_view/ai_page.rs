@@ -13,7 +13,7 @@ use crate::ai::llms::{LLMContextWindow, LLMId, LLMPreferences, LLMPreferencesEve
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::ai::paths::host_native_absolute_path;
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
+use crate::cloud_object::model::persistence::{CloudModel, ObjectStoreEvent};
 use crate::cloud_object::GenericStringObjectFormat::Json;
 use crate::cloud_object::JsonObjectType;
 use crate::cloud_object::ObjectType;
@@ -738,7 +738,7 @@ impl AISettingsPageView {
         ctx.subscribe_to_model(&cloud_model, |me, _, event, ctx| {
             let added_or_deleted_mcp_servers = matches!(
                 event,
-                CloudModelEvent::ObjectCreated { type_and_id } | CloudModelEvent::ObjectDeleted { type_and_id, .. }
+                ObjectStoreEvent::ObjectCreated { type_and_id } | ObjectStoreEvent::ObjectDeleted { type_and_id, .. }
                 if matches!(
                     type_and_id.object_type(),
                     ObjectType::GenericStringObject(Json(JsonObjectType::MCPServer))

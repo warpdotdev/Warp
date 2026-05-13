@@ -21,7 +21,7 @@ use crate::ai::mcp::{
 use crate::ai::mcp::parsing::resolve_json;
 use crate::ai::mcp::TemplatableMCPServer;
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
+use crate::cloud_object::model::persistence::{CloudModel, ObjectStoreEvent};
 use crate::cloud_object::update_manager::{InitiatedBy, UpdateManager};
 use crate::cloud_object::{CloudObject, CloudObjectLocation, CloudObjectMetadataExt, Space};
 use crate::server::ids::{ClientId, ServerId};
@@ -198,7 +198,7 @@ impl TemplatableMCPServerManager {
         // TemplatableMCPServerManager is the source of truth for templatable MCP servers stored on the cloud
         let cloud_model = CloudModel::handle(ctx);
         ctx.subscribe_to_model(&cloud_model, |me, event, ctx| match event {
-            CloudModelEvent::ObjectUpdated {
+            ObjectStoreEvent::ObjectUpdated {
                 type_and_id:
                     ObjectTypeAndId::GenericStringObject {
                         object_type:
@@ -207,7 +207,7 @@ impl TemplatableMCPServerManager {
                     },
                 source: _,
             }
-            | CloudModelEvent::ObjectTrashed {
+            | ObjectStoreEvent::ObjectTrashed {
                 type_and_id:
                     ObjectTypeAndId::GenericStringObject {
                         object_type:
@@ -216,7 +216,7 @@ impl TemplatableMCPServerManager {
                     },
                 source: _,
             }
-            | CloudModelEvent::ObjectUntrashed {
+            | ObjectStoreEvent::ObjectUntrashed {
                 type_and_id:
                     ObjectTypeAndId::GenericStringObject {
                         object_type:
@@ -225,7 +225,7 @@ impl TemplatableMCPServerManager {
                     },
                 source: _,
             }
-            | CloudModelEvent::ObjectDeleted {
+            | ObjectStoreEvent::ObjectDeleted {
                 type_and_id:
                     ObjectTypeAndId::GenericStringObject {
                         object_type:
@@ -234,7 +234,7 @@ impl TemplatableMCPServerManager {
                     },
                 folder_id: _,
             }
-            | CloudModelEvent::ObjectMoved {
+            | ObjectStoreEvent::ObjectMoved {
                 type_and_id:
                     ObjectTypeAndId::GenericStringObject {
                         object_type:
@@ -247,7 +247,7 @@ impl TemplatableMCPServerManager {
             } => {
                 me.refresh_server_objects(ctx);
             },
-            CloudModelEvent::ObjectCreated {
+            ObjectStoreEvent::ObjectCreated {
                 type_and_id:
                     ObjectTypeAndId::GenericStringObject {
                         object_type:

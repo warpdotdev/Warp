@@ -43,14 +43,14 @@ const MAX_MINUTES_UNTIL_NEXT_FORCE_REFRESH: i64 = 2160;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateSource {
-    /// This cloud model change came from the server (i.e. an RTC message).
-    Server,
-    /// This cloud model change originated locally (i.e. from a user edit).
+    /// This object store change came from an external overwrite path.
+    External,
+    /// This object store change originated locally (i.e. from a user edit).
     Local,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CloudModelEvent {
+pub enum ObjectStoreEvent {
     ObjectMoved {
         type_and_id: ObjectTypeAndId,
         source: UpdateSource,
@@ -69,7 +69,7 @@ pub enum CloudModelEvent {
         type_and_id: ObjectTypeAndId,
         source: UpdateSource,
     },
-    NotebookEditorChangedFromServer {
+    NotebookEditorChangedExternally {
         notebook_id: SyncId,
     },
     ObjectCreated {
@@ -90,7 +90,7 @@ pub enum CloudModelEvent {
     ObjectForceExpanded {
         id: String,
     },
-    /// The initial bulk load of cloud objects from the server has completed.
+    /// The initial bulk load of object store entries has completed.
     InitialLoadCompleted,
 }
 
@@ -243,7 +243,7 @@ impl CloudModel {
         object: impl CloudObject + 'static,
         ctx: &mut ModelContext<CloudModel>,
     ) {
-        ctx.emit(CloudModelEvent::ObjectCreated {
+        ctx.emit(ObjectStoreEvent::ObjectCreated {
             type_and_id: object.object_type_and_id(),
         });
         self.create_object_internal(id, object);
@@ -271,7 +271,7 @@ impl CloudModel {
                     object_type_and_id.object_id_type(),
                 ));
 
-                ctx.emit(CloudModelEvent::ObjectDeleted {
+                ctx.emit(ObjectStoreEvent::ObjectDeleted {
                     type_and_id: object.object_type_and_id(),
                     folder_id: object.metadata().folder_id,
                 });
@@ -304,7 +304,7 @@ impl CloudModel {
                 object.sync_id(),
                 object.object_type_and_id().object_id_type(),
             ));
-            ctx.emit(CloudModelEvent::ObjectDeleted {
+            ctx.emit(ObjectStoreEvent::ObjectDeleted {
                 type_and_id: object.object_type_and_id(),
                 folder_id: object.metadata().folder_id,
             });
@@ -368,7 +368,7 @@ impl CloudModel {
             }
 
             if changed {
-                ctx.emit(CloudModelEvent::ObjectMoved {
+                ctx.emit(ObjectStoreEvent::ObjectMoved {
                     type_and_id: object.object_type_and_id(),
                     source: UpdateSource::Local,
                     from_folder: old_folder,
@@ -387,7 +387,7 @@ impl CloudModel {
     ) {
         if let Some(notebook) = self.get_notebook_mut(&notebook_id) {
             notebook.metadata.set_current_editor(new_editor_uid.clone());
-            ctx.emit(CloudModelEvent::NotebookEditorChangedFromServer { notebook_id });
+            ctx.emit(ObjectStoreEvent::NotebookEditorChangedExternally { notebook_id });
             ctx.notify();
         }
     }
@@ -429,8 +429,7 @@ impl CloudModel {
         }
     }
 
-    /// Update an object in the cloud model as part of a local user edit. This should not be used
-    /// for updates received from the server.
+    /// Update an object in the object store as part of a local user edit.
     pub fn update_object_from_edit<K, M>(
         &mut self,
         model: M,
@@ -450,7 +449,7 @@ impl CloudModel {
     {
         if let Some(cloud_object) = self.get_object_of_type_mut(&object_id) {
             cloud_object.set_model(model);
-            ctx.emit(CloudModelEvent::ObjectUpdated {
+            ctx.emit(ObjectStoreEvent::ObjectUpdated {
                 type_and_id: cloud_object.object_type_and_id(),
                 source: UpdateSource::Local,
             });
@@ -458,8 +457,7 @@ impl CloudModel {
         }
     }
 
-    /// Overwrite a workflow's definition. For example, if a workflow is in conflict with the
-    /// server, we'll replace the local state with the server's version.
+    /// Overwrite a workflow's definition from a non-local replacement path.
     pub fn overwrite_workflow(
         &mut self,
         workflow: Workflow,
@@ -468,9 +466,9 @@ impl CloudModel {
     ) {
         if let Some(cloud_workflow) = self.get_workflow_mut(&workflow_id) {
             cloud_workflow.set_model(WorkflowObjectModel::new(workflow));
-            ctx.emit(CloudModelEvent::ObjectUpdated {
+            ctx.emit(ObjectStoreEvent::ObjectUpdated {
                 type_and_id: cloud_workflow.object_type_and_id(),
-                source: UpdateSource::Server,
+                source: UpdateSource::External,
             });
             ctx.notify();
         }
@@ -489,9 +487,9 @@ impl CloudModel {
         {
             cloud_env_var_collection
                 .set_model(EnvVarCollectionObjectModel::new(env_var_collection));
-            ctx.emit(CloudModelEvent::ObjectUpdated {
+            ctx.emit(ObjectStoreEvent::ObjectUpdated {
                 type_and_id: cloud_env_var_collection.object_type_and_id(),
-                source: UpdateSource::Server,
+                source: UpdateSource::External,
             });
             ctx.notify();
         }
@@ -509,9 +507,9 @@ impl CloudModel {
             )
         {
             cloud_workflow_enum.set_model(WorkflowEnumObjectModel::new(workflow_enum));
-            ctx.emit(CloudModelEvent::ObjectUpdated {
+            ctx.emit(ObjectStoreEvent::ObjectUpdated {
                 type_and_id: cloud_workflow_enum.object_type_and_id(),
-                source: UpdateSource::Server,
+                source: UpdateSource::External,
             });
             ctx.notify();
         }
@@ -639,7 +637,7 @@ impl CloudModel {
     }
 
     /// Force expands the object identified by `hash_id` and any of its ancestors. If an object is
-    /// identified by `id`, [`CloudModelEvent::ObjectForceExpanded`] is emitted.
+    /// identified by `id`, [`ObjectStoreEvent::ObjectForceExpanded`] is emitted.
     pub fn force_expand_object_and_ancestors(&mut self, id: SyncId, ctx: &mut ModelContext<Self>) {
         let hashed_id = &id.uid();
         if !self.objects_by_id.contains_key(hashed_id) {
@@ -647,7 +645,7 @@ impl CloudModel {
         }
 
         self.force_expand_object_and_ancestors_internal(id, ctx);
-        ctx.emit(CloudModelEvent::ObjectForceExpanded {
+        ctx.emit(ObjectStoreEvent::ObjectForceExpanded {
             id: hashed_id.clone(),
         });
     }
@@ -706,7 +704,7 @@ impl CloudModel {
         // we have conflict resolution. We should only mark the object as deleted
         // without deleting the content until the server returns successful response.
         if let Some(object) = self.objects_by_id.remove(&id.uid()) {
-            ctx.emit(CloudModelEvent::ObjectDeleted {
+            ctx.emit(ObjectStoreEvent::ObjectDeleted {
                 type_and_id: object.object_type_and_id(),
                 folder_id: object.metadata().folder_id,
             });
@@ -1348,7 +1346,7 @@ impl CloudModel {
 }
 
 impl Entity for CloudModel {
-    type Event = CloudModelEvent;
+    type Event = ObjectStoreEvent;
 }
 
 /// Mark CloudModel as global application state.

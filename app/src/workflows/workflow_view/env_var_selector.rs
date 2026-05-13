@@ -6,7 +6,7 @@ use warpui::{
 
 use crate::{
     cloud_object::{
-        model::persistence::{CloudModel, CloudModelEvent},
+        model::persistence::{CloudModel, ObjectStoreEvent},
         CloudObject as _, GenericStringObjectFormat, JsonObjectType,
     },
     drive::ObjectTypeAndId,
@@ -35,7 +35,7 @@ const DEFAULT_DROPDOWN_WIDTH: f32 = super::argument_editor::ALIAS_ARGUMENT_EDITO
 impl EnvVarSelector {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         ctx.subscribe_to_model(&CloudModel::handle(ctx), |me, _, event, ctx| {
-            me.handle_cloud_model_event(event, ctx);
+            me.handle_object_store_event(event, ctx);
         });
 
         let dropdown = ctx.add_typed_action_view(|ctx| {
@@ -101,12 +101,12 @@ impl EnvVarSelector {
         ctx.emit(EnvVarSelectorEvent::Refreshed);
     }
 
-    fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ViewContext<Self>) {
+    fn handle_object_store_event(&mut self, event: &ObjectStoreEvent, ctx: &mut ViewContext<Self>) {
         match event {
-            CloudModelEvent::ObjectUpdated { type_and_id, .. }
-            | CloudModelEvent::ObjectCreated { type_and_id }
-            | CloudModelEvent::ObjectUntrashed { type_and_id, .. }
-            | CloudModelEvent::ObjectTrashed { type_and_id, .. } => {
+            ObjectStoreEvent::ObjectUpdated { type_and_id, .. }
+            | ObjectStoreEvent::ObjectCreated { type_and_id }
+            | ObjectStoreEvent::ObjectUntrashed { type_and_id, .. }
+            | ObjectStoreEvent::ObjectTrashed { type_and_id, .. } => {
                 if matches!(
                     type_and_id,
                     ObjectTypeAndId::GenericStringObject {

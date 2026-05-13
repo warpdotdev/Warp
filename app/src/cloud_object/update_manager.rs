@@ -12,7 +12,7 @@ use crate::{
             generic_string_model::{
                 GenericStringModel, GenericStringObjectId, Serializer, StringModel,
             },
-            persistence::{CloudModel, CloudModelEvent, UpdateSource},
+            persistence::{CloudModel, ObjectStoreEvent, UpdateSource},
             view::{CloudViewModel, Editor, EditorState},
         },
         CloudModelType, CloudObject, CloudObjectEventEntrypoint, CloudObjectLocation,
@@ -260,8 +260,8 @@ impl UpdateManager {
         fetch_cloud_object_rx
     }
 
-    /// Replace an object's data with the conflicting version from the server. If the object does
-    /// not have a conflict, this has no effect.
+    /// Replace an object's data with its conflicting version. If the object does not have a
+    /// conflict, this has no effect.
     pub fn replace_object_with_conflict(&mut self, uid: &ObjectUid, ctx: &mut ModelContext<Self>) {
         let cloud_model_handle = CloudModel::handle(ctx);
 
@@ -270,9 +270,9 @@ impl UpdateManager {
             match cloud_model.get_mut_by_uid(uid) {
                 Some(object) if object.has_conflicting_changes() => {
                     object.replace_object_with_conflict();
-                    ctx.emit(CloudModelEvent::ObjectUpdated {
+                    ctx.emit(ObjectStoreEvent::ObjectUpdated {
                         type_and_id: object.object_type_and_id(),
-                        source: UpdateSource::Server,
+                        source: UpdateSource::External,
                     });
                     true
                 }
@@ -1256,7 +1256,7 @@ impl UpdateManager {
                     .metadata_mut()
                     .pending_changes_statuses
                     .has_pending_metadata_change = true;
-                ctx.emit(CloudModelEvent::ObjectTrashed {
+                ctx.emit(ObjectStoreEvent::ObjectTrashed {
                     type_and_id: object.object_type_and_id(),
                     source: UpdateSource::Local,
                 });
@@ -1276,7 +1276,7 @@ impl UpdateManager {
         // 标记 trashed_ts + 写 sqlite。**不 emit ObjectOperationComplete**,
         // 因为它的多个消费者(notebooks/env_vars/cloud_object/view)都 `.expect` server_id;
         // Drive UI 已经通过 mark_object_trashed_and_return_timestamps 内部
-        // emit 的 CloudModelEvent::ObjectTrashed 收到通知。
+        // emit 的 ObjectStoreEvent::ObjectTrashed 收到通知。
         let Some(server_id) = id.server_id() else {
             let hashed_id = id.uid();
             self.mark_object_trashed_and_return_timestamps(&hashed_id, ctx);
@@ -1357,7 +1357,7 @@ impl UpdateManager {
                         .metadata_mut()
                         .pending_changes_statuses
                         .has_pending_metadata_change = false;
-                    ctx.emit(CloudModelEvent::ObjectUntrashed {
+                    ctx.emit(ObjectStoreEvent::ObjectUntrashed {
                         type_and_id: object.object_type_and_id(),
                         source: UpdateSource::Local,
                     });
@@ -1398,7 +1398,7 @@ impl UpdateManager {
                     .metadata_mut()
                     .pending_changes_statuses
                     .pending_untrash = false;
-                ctx.emit(CloudModelEvent::ObjectUntrashed {
+                ctx.emit(ObjectStoreEvent::ObjectUntrashed {
                     type_and_id: object.object_type_and_id(),
                     source: UpdateSource::Local,
                 });

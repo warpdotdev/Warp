@@ -12,7 +12,7 @@
 //! - `GenericCloudObject<K, M>` → 本地领域对象的泛型承载结构。
 //! - `CloudModelType` trait → 本地对象类型描述。
 //! - `CloudModel`(`model/persistence.rs`)→ 进程内本地对象全局存储 + SQLite 背存。
-//! - `CloudModelEvent` → 本地模型变更事件总线,被本地 UI 视图订阅。
+//! - `ObjectStoreEvent` → 本地模型变更事件总线,被本地 UI 视图订阅。
 //! - `ObjectTypeAndId` → 本地 ID 判别式,被 Drive UI / search 等 60+ 处使用。
 //!
 //! 之所以采用 "保留原名 + 文档注释" 而非物理重命名(`CloudObject` → `LocalObject`),

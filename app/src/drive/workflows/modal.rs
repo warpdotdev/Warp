@@ -33,7 +33,7 @@ use crate::{
     appearance::Appearance,
     cloud_object::{
         breadcrumbs::{ContainingObject, ContainingObjectKind},
-        model::persistence::{CloudModel, CloudModelEvent},
+        model::persistence::{CloudModel, ObjectStoreEvent},
         update_manager::UpdateManager,
         CloudObject, CloudObjectEventEntrypoint, ObjectType, Owner, Revision,
     },
@@ -255,7 +255,7 @@ impl WorkflowModal {
 
         let cloud_model = CloudModel::handle(ctx);
         ctx.subscribe_to_model(&cloud_model, |me, _, event, ctx| {
-            me.handle_cloud_model_event(event, ctx);
+            me.handle_object_store_event(event, ctx);
         });
 
         let menu = ctx.add_typed_action_view(|_ctx| {
@@ -879,7 +879,7 @@ impl WorkflowModal {
     }
 
     // This method computes the breadcrumb data for the workflow editor. It should be called
-    // every time either the cloud model or workflow ID changes.
+    // every time either the object store or workflow ID changes.
     fn compute_breadcrumbs(&mut self, ctx: &mut ViewContext<Self>) {
         self.breadcrumbs = self.workflow_id.and_then(|workflow_id| {
             CloudModel::as_ref(ctx)
@@ -895,10 +895,10 @@ impl WorkflowModal {
         ctx.notify()
     }
 
-    fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ViewContext<Self>) {
+    fn handle_object_store_event(&mut self, event: &ObjectStoreEvent, ctx: &mut ViewContext<Self>) {
         match event {
-            CloudModelEvent::ObjectMoved { type_and_id, .. }
-            | CloudModelEvent::ObjectPermissionsUpdated { type_and_id, .. } => {
+            ObjectStoreEvent::ObjectMoved { type_and_id, .. }
+            | ObjectStoreEvent::ObjectPermissionsUpdated { type_and_id, .. } => {
                 // Update breadcrumbs if a teammate has moved the workflow elsewhere, or if it's
                 // been shared.
                 if let Some(workflow_id) = self.workflow_id {
@@ -910,14 +910,14 @@ impl WorkflowModal {
                     }
                 }
             }
-            CloudModelEvent::NotebookEditorChangedFromServer { .. }
-            | CloudModelEvent::ObjectUpdated { .. }
-            | CloudModelEvent::ObjectTrashed { .. }
-            | CloudModelEvent::ObjectUntrashed { .. }
-            | CloudModelEvent::ObjectCreated { .. }
-            | CloudModelEvent::ObjectDeleted { .. }
-            | CloudModelEvent::ObjectForceExpanded { .. }
-            | CloudModelEvent::InitialLoadCompleted => {}
+            ObjectStoreEvent::NotebookEditorChangedExternally { .. }
+            | ObjectStoreEvent::ObjectUpdated { .. }
+            | ObjectStoreEvent::ObjectTrashed { .. }
+            | ObjectStoreEvent::ObjectUntrashed { .. }
+            | ObjectStoreEvent::ObjectCreated { .. }
+            | ObjectStoreEvent::ObjectDeleted { .. }
+            | ObjectStoreEvent::ObjectForceExpanded { .. }
+            | ObjectStoreEvent::InitialLoadCompleted => {}
         }
     }
 

@@ -11,7 +11,7 @@ use warpui::{AppContext, ModelContext, SingletonEntity};
 
 use crate::{
     cloud_object::{
-        model::persistence::{CloudModel, CloudModelEvent},
+        model::persistence::{CloudModel, ObjectStoreEvent},
         CloudObject as _,
     },
     drive::ObjectTypeAndId,
@@ -47,7 +47,7 @@ impl WorkflowAliases {
     pub fn connect(&self, ctx: &mut ModelContext<Self>) {
         ctx.subscribe_to_model(&CloudModel::handle(ctx), |me, event, ctx| {
             let result = match event {
-                CloudModelEvent::ObjectTrashed {
+                ObjectStoreEvent::ObjectTrashed {
                     type_and_id: ObjectTypeAndId::Workflow(server_id),
                     ..
                 } => me.remove_aliases_for_workflow(*server_id, ctx),

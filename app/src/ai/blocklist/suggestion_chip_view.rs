@@ -1,7 +1,7 @@
 use crate::ai::agent::{SuggestedAgentModeWorkflow, SuggestedLoggingId, SuggestedRule};
 use crate::ai::facts::AIFactObjectModel;
 use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
-use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
+use crate::cloud_object::model::persistence::{CloudModel, ObjectStoreEvent};
 use crate::cloud_object::update_manager::{
     ObjectOperation, OperationSuccessType, UpdateManagerEvent,
 };
@@ -264,7 +264,7 @@ impl SuggestionChipView {
 
         let cloud_model = CloudModel::handle(ctx);
         ctx.subscribe_to_model(&cloud_model, |me, _, event, ctx| {
-            me.handle_cloud_model_event(event, ctx);
+            me.handle_object_store_event(event, ctx);
         });
     }
 
@@ -299,9 +299,9 @@ impl SuggestionChipView {
         }
     }
 
-    fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ViewContext<Self>) {
+    fn handle_object_store_event(&mut self, event: &ObjectStoreEvent, ctx: &mut ViewContext<Self>) {
         match event {
-            CloudModelEvent::ObjectUpdated {
+            ObjectStoreEvent::ObjectUpdated {
                 type_and_id: ObjectTypeAndId::GenericStringObject { id, .. },
                 ..
             } => {
@@ -309,11 +309,11 @@ impl SuggestionChipView {
                     self.load_suggestion(ctx);
                 }
             }
-            CloudModelEvent::ObjectTrashed {
+            ObjectStoreEvent::ObjectTrashed {
                 type_and_id: ObjectTypeAndId::GenericStringObject { id, .. },
                 ..
             }
-            | CloudModelEvent::ObjectDeleted {
+            | ObjectStoreEvent::ObjectDeleted {
                 type_and_id: ObjectTypeAndId::GenericStringObject { id, .. },
                 ..
             } => {

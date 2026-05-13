@@ -21,7 +21,7 @@ use crate::{
     workspaces::user_profiles::UserProfiles,
 };
 
-use super::persistence::{CloudModel, CloudModelEvent};
+use super::persistence::{CloudModel, ObjectStoreEvent};
 
 pub const EDITOR_TIMEOUT_DURATION_MINUTES: i64 = 15;
 
@@ -73,7 +73,7 @@ pub enum CloudViewModelEvent {
 
 impl CloudViewModel {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
-        ctx.subscribe_to_model(&CloudModel::handle(ctx), Self::handle_cloud_model_event);
+        ctx.subscribe_to_model(&CloudModel::handle(ctx), Self::handle_object_store_event);
         ctx.subscribe_to_model(
             &UpdateManager::handle(ctx),
             Self::handle_update_manager_event,
@@ -309,18 +309,22 @@ impl CloudViewModel {
         }
     }
 
-    fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ModelContext<Self>) {
+    fn handle_object_store_event(
+        &mut self,
+        event: &ObjectStoreEvent,
+        ctx: &mut ModelContext<Self>,
+    ) {
         match event {
-            CloudModelEvent::ObjectUpdated { type_and_id, .. }
-            | CloudModelEvent::ObjectTrashed { type_and_id, .. }
-            | CloudModelEvent::ObjectUntrashed { type_and_id, .. }
-            | CloudModelEvent::ObjectPermissionsUpdated { type_and_id, .. } => {
+            ObjectStoreEvent::ObjectUpdated { type_and_id, .. }
+            | ObjectStoreEvent::ObjectTrashed { type_and_id, .. }
+            | ObjectStoreEvent::ObjectUntrashed { type_and_id, .. }
+            | ObjectStoreEvent::ObjectPermissionsUpdated { type_and_id, .. } => {
                 // If an object is updated, we need to recompute the timestamps of its parents.
                 if self.invalidate_object_timestamps(&type_and_id.uid(), CloudModel::as_ref(ctx)) {
                     ctx.emit(CloudViewModelEvent::SortTimestampsChanged);
                 }
             }
-            CloudModelEvent::ObjectMoved {
+            ObjectStoreEvent::ObjectMoved {
                 from_folder,
                 to_folder,
                 ..
@@ -339,13 +343,12 @@ impl CloudViewModel {
                     ctx.emit(CloudViewModelEvent::SortTimestampsChanged);
                 }
             }
-            CloudModelEvent::ObjectCreated { type_and_id } => {
+            ObjectStoreEvent::ObjectCreated { type_and_id } => {
                 // There are three cases for an ObjectCreated event:
                 // 1. We created a new object locally (in which case type_and_id is a client ID)
-                // 2. We were notified about a new object from the server.
-                // 3. A locally-created object was saved to the server, so we now have a server ID
-                //    for it.
-                // Because we sort on server timestamps, only the second or third cases can affect
+                // 2. We loaded or restored an object created elsewhere.
+                // 3. A locally-created object received a durable ID.
+                // Because we sort on durable timestamps, only the second or third cases can affect
                 // sorting.
                 if type_and_id.has_server_id()
                     && self
@@ -354,16 +357,16 @@ impl CloudViewModel {
                     ctx.emit(CloudViewModelEvent::SortTimestampsChanged);
                 }
             }
-            CloudModelEvent::ObjectDeleted { folder_id, .. } => {
+            ObjectStoreEvent::ObjectDeleted { folder_id, .. } => {
                 if let Some(folder_id) = folder_id {
                     if self.invalidate_folder_timestamps(folder_id, CloudModel::as_ref(ctx)) {
                         ctx.emit(CloudViewModelEvent::SortTimestampsChanged);
                     }
                 }
             }
-            CloudModelEvent::NotebookEditorChangedFromServer { .. }
-            | CloudModelEvent::ObjectForceExpanded { .. }
-            | CloudModelEvent::InitialLoadCompleted => (),
+            ObjectStoreEvent::NotebookEditorChangedExternally { .. }
+            | ObjectStoreEvent::ObjectForceExpanded { .. }
+            | ObjectStoreEvent::InitialLoadCompleted => (),
         }
     }
 

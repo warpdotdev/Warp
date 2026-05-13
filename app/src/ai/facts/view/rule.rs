@@ -1,5 +1,5 @@
 use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
-use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
+use crate::cloud_object::model::persistence::{CloudModel, ObjectStoreEvent};
 use crate::cloud_object::update_manager::UpdateManager;
 use crate::cloud_object::{
     CloudObject, GenericStringObjectFormat, JsonObjectType, Owner, Revision,
@@ -147,12 +147,12 @@ pub struct RuleView {
 impl RuleView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         // OpenWarp(本地化,Phase 2d-1):原 UpdateManager 订阅用来接收云端创建/更新的 ack
-        // 事件、以及网络状态驱动的面板重绘。本地化后 CloudModelEvent 已覆盖本地写入后的
+        // 事件、以及网络状态驱动的面板重绘。本地化后 ObjectStoreEvent 已覆盖本地写入后的
         // UI 刷新需求(2c-2/2c-3 在 update_object/create_object 里发送),UpdateManager 与
         // NetworkStatus 订阅为死代码,一并移除。
         let cloud_model = CloudModel::handle(ctx);
         ctx.subscribe_to_model(&cloud_model, |me, _, event, ctx| {
-            me.handle_cloud_model_event(event, ctx);
+            me.handle_object_store_event(event, ctx);
         });
 
         let owner = UserWorkspaces::as_ref(ctx).personal_drive(ctx);
@@ -266,13 +266,13 @@ impl RuleView {
         }
     }
 
-    fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ViewContext<Self>) {
+    fn handle_object_store_event(&mut self, event: &ObjectStoreEvent, ctx: &mut ViewContext<Self>) {
         match event {
-            CloudModelEvent::ObjectUpdated { .. }
-            | CloudModelEvent::ObjectTrashed { .. }
-            | CloudModelEvent::ObjectUntrashed { .. }
-            | CloudModelEvent::ObjectCreated { .. }
-            | CloudModelEvent::ObjectDeleted { .. } => {
+            ObjectStoreEvent::ObjectUpdated { .. }
+            | ObjectStoreEvent::ObjectTrashed { .. }
+            | ObjectStoreEvent::ObjectUntrashed { .. }
+            | ObjectStoreEvent::ObjectCreated { .. }
+            | ObjectStoreEvent::ObjectDeleted { .. } => {
                 self.fetch_ai_rules(ctx);
             }
             _ => {}

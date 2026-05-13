@@ -23,7 +23,7 @@ use crate::{
     ai::blocklist::block::secret_redaction::find_secrets_in_text_with_levels,
     cloud_object::{
         breadcrumbs::ContainingObject,
-        model::persistence::{CloudModel, CloudModelEvent},
+        model::persistence::{CloudModel, ObjectStoreEvent},
         update_manager::{FetchSingleObjectOption, UpdateManager},
         CloudObjectEventEntrypoint, Owner,
     },
@@ -489,7 +489,7 @@ impl EnvVarCollectionView {
 
         let cloud_model = CloudModel::handle(ctx);
         ctx.subscribe_to_model(&cloud_model, |view, _handle, event, ctx| {
-            view.handle_cloud_model_event(event, ctx);
+            view.handle_object_store_event(event, ctx);
         });
 
         let pane_configuration =
@@ -976,9 +976,9 @@ impl EnvVarCollectionView {
         }
     }
 
-    fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ViewContext<Self>) {
+    fn handle_object_store_event(&mut self, event: &ObjectStoreEvent, ctx: &mut ViewContext<Self>) {
         match event {
-            CloudModelEvent::ObjectCreated { type_and_id, .. } => {
+            ObjectStoreEvent::ObjectCreated { type_and_id, .. } => {
                 if self
                     .as_active_env_var_collection_id(type_and_id, ctx)
                     .is_some()
@@ -986,11 +986,11 @@ impl EnvVarCollectionView {
                     ctx.notify();
                 }
             }
-            CloudModelEvent::ObjectTrashed { .. }
-            | CloudModelEvent::ObjectDeleted { .. }
-            | CloudModelEvent::ObjectUntrashed { .. }
-            | CloudModelEvent::ObjectMoved { .. } => ctx.notify(),
-            CloudModelEvent::ObjectPermissionsUpdated { type_and_id, .. }
+            ObjectStoreEvent::ObjectTrashed { .. }
+            | ObjectStoreEvent::ObjectDeleted { .. }
+            | ObjectStoreEvent::ObjectUntrashed { .. }
+            | ObjectStoreEvent::ObjectMoved { .. } => ctx.notify(),
+            ObjectStoreEvent::ObjectPermissionsUpdated { type_and_id, .. }
                 if self
                     .as_active_env_var_collection_id(type_and_id, ctx)
                     .is_some() =>

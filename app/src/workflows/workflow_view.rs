@@ -19,7 +19,7 @@ use crate::{
     cloud_object::{
         breadcrumbs::ContainingObject,
         model::{
-            persistence::{CloudModel, CloudModelEvent},
+            persistence::{CloudModel, ObjectStoreEvent},
             view::CloudViewModel,
         },
         update_manager::{
@@ -518,7 +518,7 @@ impl WorkflowView {
 
     fn subscribe_to_model_updates(&self, ctx: &mut ViewContext<Self>) {
         ctx.subscribe_to_model(&CloudModel::handle(ctx), move |workflow, _, event, ctx| {
-            workflow.handle_cloud_model_event(event, ctx)
+            workflow.handle_object_store_event(event, ctx)
         });
 
         let update_manager = UpdateManager::handle(ctx);
@@ -527,9 +527,9 @@ impl WorkflowView {
         });
     }
 
-    fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ViewContext<Self>) {
+    fn handle_object_store_event(&mut self, event: &ObjectStoreEvent, ctx: &mut ViewContext<Self>) {
         match event {
-            CloudModelEvent::ObjectUpdated {
+            ObjectStoreEvent::ObjectUpdated {
                 type_and_id: ObjectTypeAndId::Workflow(sync_id),
                 source: _,
             } => {
@@ -537,9 +537,9 @@ impl WorkflowView {
                     self.reset(ctx);
                 }
             }
-            CloudModelEvent::ObjectTrashed { .. }
-            | CloudModelEvent::ObjectDeleted { .. }
-            | CloudModelEvent::ObjectUntrashed { .. } => ctx.notify(),
+            ObjectStoreEvent::ObjectTrashed { .. }
+            | ObjectStoreEvent::ObjectDeleted { .. }
+            | ObjectStoreEvent::ObjectUntrashed { .. } => ctx.notify(),
             _ => (),
         }
     }

@@ -10,7 +10,7 @@ use warpui::{
 
 use crate::{
     cloud_object::{
-        model::persistence::{CloudModel, CloudModelEvent},
+        model::persistence::{CloudModel, ObjectStoreEvent},
         Owner,
     },
     drive::OpenWarpDriveObjectSettings,
@@ -75,7 +75,7 @@ pub enum NotebookSource {
 impl NotebookManager {
     /// Create a new [`NotebookManager`] singleton.
     pub fn new(cached_notebooks: Vec<NotebookObject>, ctx: &mut ModelContext<Self>) -> Self {
-        ctx.subscribe_to_model(&CloudModel::handle(ctx), Self::handle_cloud_model_event);
+        ctx.subscribe_to_model(&CloudModel::handle(ctx), Self::handle_object_store_event);
 
         let mut raw_text_by_hashed_id: HashMap<String, NotebookRawTextStatus> = HashMap::new();
         // Parse all the cached notebook raw text
@@ -136,8 +136,12 @@ impl NotebookManager {
         }
     }
 
-    fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ModelContext<Self>) {
-        if let CloudModelEvent::ObjectUpdated { type_and_id, .. } = event {
+    fn handle_object_store_event(
+        &mut self,
+        event: &ObjectStoreEvent,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if let ObjectStoreEvent::ObjectUpdated { type_and_id, .. } = event {
             if let Some(notebook_id) = type_and_id.as_notebook_id() {
                 self.update_raw_text_for_notebook(notebook_id, ctx);
             }

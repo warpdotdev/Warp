@@ -43,7 +43,7 @@ use crate::{
     cloud_object::{
         grab_edit_access_modal::{GrabEditAccessModal, GrabEditAccessModalEvent},
         model::{
-            persistence::{CloudModel, CloudModelEvent, UpdateSource},
+            persistence::{CloudModel, ObjectStoreEvent, UpdateSource},
             view::{Editor, EditorState},
         },
         update_manager::{FetchSingleObjectOption, UpdateManager},
@@ -408,7 +408,7 @@ impl NotebookView {
 
         let cloud_model = CloudModel::handle(ctx);
         ctx.subscribe_to_model(&cloud_model, |notebook, _handle, event, ctx| {
-            notebook.handle_cloud_model_event(event, ctx);
+            notebook.handle_object_store_event(event, ctx);
         });
 
         let (save_tx, save_rx) = async_channel::unbounded();
@@ -719,7 +719,7 @@ impl NotebookView {
 
     /// Given a cloud object ID, check if it's the ID of the active notebook.
     ///
-    /// This is a helper for handling [`CloudModelEvent`]s, which should be ignored if they're not
+    /// This is a helper for handling [`ObjectStoreEvent`]s, which should be ignored if they're not
     /// for the active notebook.
     fn as_active_notebook_id(
         &self,
@@ -733,11 +733,11 @@ impl NotebookView {
         })
     }
 
-    fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ViewContext<Self>) {
+    fn handle_object_store_event(&mut self, event: &ObjectStoreEvent, ctx: &mut ViewContext<Self>) {
         match event {
-            CloudModelEvent::ObjectUpdated {
+            ObjectStoreEvent::ObjectUpdated {
                 type_and_id,
-                source: UpdateSource::Server,
+                source: UpdateSource::External,
             } => {
                 if let Some(updated_notebook) = self
                     .as_active_notebook_id(type_and_id, ctx)
@@ -747,7 +747,7 @@ impl NotebookView {
                     self.handle_notebook_updated(&updated_notebook, ctx);
                 }
             }
-            CloudModelEvent::ObjectTrashed { .. } | CloudModelEvent::ObjectDeleted { .. } => {
+            ObjectStoreEvent::ObjectTrashed { .. } | ObjectStoreEvent::ObjectDeleted { .. } => {
                 // Check is_trashed rather than the event ID, since this notebook could have been
                 // indirectly trashed.
                 if !self
@@ -759,7 +759,7 @@ impl NotebookView {
                     self.give_up_edit_access_and_start_viewing(ctx)
                 }
             }
-            CloudModelEvent::ObjectUntrashed { .. } => {
+            ObjectStoreEvent::ObjectUntrashed { .. } => {
                 // Re-render if this notebook was potentially untrashed. See the ObjectTrashed case
                 // for why we can't rely on the event ID.
                 if self
@@ -771,7 +771,7 @@ impl NotebookView {
                     ctx.notify();
                 }
             }
-            CloudModelEvent::ObjectMoved { type_and_id, .. } => {
+            ObjectStoreEvent::ObjectMoved { type_and_id, .. } => {
                 if self.as_active_notebook_id(type_and_id, ctx).is_some() {
                     if let Some(space) = self.active_notebook_data.as_ref(ctx).space(ctx) {
                         self.input
@@ -779,7 +779,7 @@ impl NotebookView {
                     }
                 }
             }
-            CloudModelEvent::ObjectCreated { type_and_id, .. } => {
+            ObjectStoreEvent::ObjectCreated { type_and_id, .. } => {
                 if self.as_active_notebook_id(type_and_id, ctx).is_some() {
                     // Re-render to update the status bar.
                     ctx.notify();

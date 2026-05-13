@@ -1,7 +1,7 @@
 use super::env_var_collection_search_item::EnvVarCollectionSearchItem;
 use super::notebook_search_item::NotebookSearchItem;
 use super::workflow_search_item::WorkflowSearchItem;
-use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
+use crate::cloud_object::model::persistence::{CloudModel, ObjectStoreEvent};
 use crate::cloud_object::{
     CloudObject, CloudObjectLocation, GenericStringObjectFormat, JsonObjectType, ObjectType,
 };
@@ -64,13 +64,13 @@ impl DataSource {
 
     fn handle_cloud_object_updated(
         &mut self,
-        event: &CloudModelEvent,
+        event: &ObjectStoreEvent,
         ctx: &mut ModelContext<Self>,
     ) {
         // When the initial bulk load completes, rebuild the entire search index once.
         // Per-object events are suppressed at the source during initial load, so this
         // is the only event we receive from that batch.
-        if let CloudModelEvent::InitialLoadCompleted = event {
+        if let ObjectStoreEvent::InitialLoadCompleted = event {
             self.searcher
                 .refresh_search_index(ctx)
                 .unwrap_or_else(|err| {
@@ -80,10 +80,10 @@ impl DataSource {
         }
 
         match event {
-            CloudModelEvent::ObjectCreated { type_and_id }
-            | CloudModelEvent::ObjectUntrashed { type_and_id, .. }
-            | CloudModelEvent::ObjectMoved { type_and_id, .. }
-            | CloudModelEvent::ObjectUpdated { type_and_id, .. } => {
+            ObjectStoreEvent::ObjectCreated { type_and_id }
+            | ObjectStoreEvent::ObjectUntrashed { type_and_id, .. }
+            | ObjectStoreEvent::ObjectMoved { type_and_id, .. }
+            | ObjectStoreEvent::ObjectUpdated { type_and_id, .. } => {
                 if let Some(obj) = CloudModel::as_ref(ctx).get_by_uid(&type_and_id.uid()) {
                     // Insertion will overwrite the object if it already exists.
                     self.searcher
@@ -95,7 +95,7 @@ impl DataSource {
                     log::error!("Object with ID {type_and_id:?} not found in CloudModel");
                 }
             }
-            CloudModelEvent::ObjectTrashed { type_and_id, .. } => self
+            ObjectStoreEvent::ObjectTrashed { type_and_id, .. } => self
                 .searcher
                 .delete_searchable_object(type_and_id.uid(), type_and_id.object_type(), ctx)
                 .unwrap_or_else(|err| {

@@ -11,7 +11,7 @@ use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
 
 use crate::ai::llms::LLMId;
 use crate::ai::mcp::templatable_manager::TemplatableMCPServerManagerEvent;
-use crate::cloud_object::model::persistence::{CloudModelEvent, UpdateSource};
+use crate::cloud_object::model::persistence::{ObjectStoreEvent, UpdateSource};
 use crate::{send_telemetry_from_ctx, LaunchMode, TelemetryEvent};
 
 use crate::ai::mcp::TemplatableMCPServerManager;
@@ -201,7 +201,7 @@ impl AIExecutionProfilesModel {
         // (3) Keep profile_id_to_sync_id map up to date when profiles are created/deleted remotely
         if !cfg!(feature = "agent_mode_evals") {
             ctx.subscribe_to_model(&CloudModel::handle(ctx), |me, event, ctx| {
-                me.handle_cloud_model_event(event, ctx);
+                me.handle_object_store_event(event, ctx);
             });
         }
 
@@ -222,7 +222,7 @@ impl AIExecutionProfilesModel {
                     .get(id)
                     .expect("default profile is synced but no sync id found");
                 ctx.subscribe_to_model(&CloudModel::handle(ctx), move |me, event, _| {
-                if let CloudModelEvent::ObjectDeleted {
+                if let ObjectStoreEvent::ObjectDeleted {
                     type_and_id: ObjectTypeAndId::GenericStringObject {
                         id: deleted_sync_id,
                         ..
@@ -1373,9 +1373,13 @@ impl AIExecutionProfilesModel {
     }
 
     /// Handle CloudModel events to keep the profile_id_to_sync_id map and default profile state up to date.
-    fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ModelContext<Self>) {
+    fn handle_object_store_event(
+        &mut self,
+        event: &ObjectStoreEvent,
+        ctx: &mut ModelContext<Self>,
+    ) {
         match event {
-            CloudModelEvent::ObjectCreated {
+            ObjectStoreEvent::ObjectCreated {
                 type_and_id:
                     ObjectTypeAndId::GenericStringObject {
                         object_type:
@@ -1385,7 +1389,7 @@ impl AIExecutionProfilesModel {
             } => {
                 self.handle_ai_execution_profile_created(*id, ctx);
             }
-            CloudModelEvent::ObjectDeleted {
+            ObjectStoreEvent::ObjectDeleted {
                 type_and_id:
                     ObjectTypeAndId::GenericStringObject {
                         object_type:
@@ -1396,7 +1400,7 @@ impl AIExecutionProfilesModel {
             } => {
                 self.handle_ai_execution_profile_deleted(*id, ctx);
             }
-            CloudModelEvent::ObjectDeleted {
+            ObjectStoreEvent::ObjectDeleted {
                 type_and_id:
                     ObjectTypeAndId::GenericStringObject {
                         object_type: GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
@@ -1407,7 +1411,7 @@ impl AIExecutionProfilesModel {
                 // Legacy MCP servers are converted to templatable on startup;
                 // no action needed when a legacy cloud object is deleted.
             }
-            CloudModelEvent::ObjectUpdated {
+            ObjectStoreEvent::ObjectUpdated {
                 type_and_id:
                     ObjectTypeAndId::GenericStringObject {
                         object_type:
@@ -1418,7 +1422,7 @@ impl AIExecutionProfilesModel {
             } => {
                 self.handle_ai_execution_profile_updated(*id, *source, ctx);
             }
-            CloudModelEvent::InitialLoadCompleted => {
+            ObjectStoreEvent::InitialLoadCompleted => {
                 self.reconcile_with_cloud_state_after_initial_load(ctx);
             }
             _ => {}
@@ -1592,8 +1596,8 @@ impl AIExecutionProfilesModel {
         source: UpdateSource,
         ctx: &mut ModelContext<Self>,
     ) {
-        // Only notify about updates from the server (not local updates, which we already handle)
-        if source != UpdateSource::Server {
+        // Only notify about external updates (not local updates, which we already handle).
+        if source != UpdateSource::External {
             return;
         }
 
@@ -1601,7 +1605,7 @@ impl AIExecutionProfilesModel {
         let profile_id = self.get_profile_id_by_sync_id(&sync_id);
 
         if let Some(profile_id) = profile_id {
-            log::info!("Execution profile updated from server: {sync_id:?}");
+            log::info!("Execution profile updated externally: {sync_id:?}");
             ctx.emit(AIExecutionProfilesModelEvent::ProfileUpdated(profile_id));
         }
     }

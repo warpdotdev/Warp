@@ -9,7 +9,7 @@ use crate::ai::execution_profiles::{
 };
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
+use crate::cloud_object::model::persistence::{CloudModel, ObjectStoreEvent};
 use crate::cloud_object::update_manager::UpdateManager;
 use crate::cloud_object::{CloudObjectMetadata, CloudObjectPermissions};
 use crate::network::NetworkStatus;
@@ -79,7 +79,7 @@ fn apply_onboarding_settings_preserves_existing_profile_object_on_existing_user_
         // reconciles to `Synced`.
         CloudModel::handle(&app).update(&mut app, move |cloud_model, ctx| {
             cloud_model.add_object(cloud_sync_id, profile_object);
-            ctx.emit(CloudModelEvent::InitialLoadCompleted);
+            ctx.emit(ObjectStoreEvent::InitialLoadCompleted);
         });
 
         // Sanity: reconciliation occurred and the model now reads the

@@ -1,7 +1,7 @@
 use crate::{
     cloud_object::{
         breadcrumbs::ContainingObject,
-        model::{persistence::CloudModelEvent, view::CloudViewModel},
+        model::{persistence::ObjectStoreEvent, view::CloudViewModel},
         CloudObject, Owner, Revision, Space,
     },
     drive::sharing::{ContentEditability, SharingAccessLevel},
@@ -50,7 +50,7 @@ impl ActiveEnvVarCollectionData {
         let cloud_model = CloudModel::handle(ctx);
 
         ctx.subscribe_to_model(&cloud_model, |me, event, ctx| {
-            me.handle_cloud_model_event(event, ctx);
+            me.handle_object_store_event(event, ctx);
         });
 
         Self {
@@ -58,8 +58,12 @@ impl ActiveEnvVarCollectionData {
         }
     }
 
-    fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ModelContext<Self>) {
-        if let CloudModelEvent::ObjectMoved { type_and_id, .. } = event {
+    fn handle_object_store_event(
+        &mut self,
+        event: &ObjectStoreEvent,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if let ObjectStoreEvent::ObjectMoved { type_and_id, .. } = event {
             if let Some(env_var_collection_id) = type_and_id.as_generic_string_object_id() {
                 if self.is_active_env_var_collection(env_var_collection_id) {
                     ctx.emit(ActiveEnvVarCollectionDataEvent::BreadcrumbsChanged)

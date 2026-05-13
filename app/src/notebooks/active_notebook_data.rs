@@ -5,7 +5,7 @@ use crate::{
     cloud_object::{
         breadcrumbs::ContainingObject,
         model::{
-            persistence::{CloudModel, CloudModelEvent},
+            persistence::{CloudModel, ObjectStoreEvent},
             view::{CloudViewModel, Editor, EditorState},
         },
         CloudObject, Owner, Space,
@@ -63,7 +63,7 @@ impl ActiveNotebookData {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         let cloud_model = CloudModel::handle(ctx);
         ctx.subscribe_to_model(&cloud_model, |me, event, ctx| {
-            me.handle_cloud_model_event(event, ctx);
+            me.handle_object_store_event(event, ctx);
         });
 
         Self {
@@ -71,9 +71,13 @@ impl ActiveNotebookData {
         }
     }
 
-    fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ModelContext<Self>) {
+    fn handle_object_store_event(
+        &mut self,
+        event: &ObjectStoreEvent,
+        ctx: &mut ModelContext<Self>,
+    ) {
         match event {
-            CloudModelEvent::NotebookEditorChangedFromServer { notebook_id } => {
+            ObjectStoreEvent::NotebookEditorChangedExternally { notebook_id } => {
                 if self.is_active_notebook(*notebook_id) {
                     if let Some(new_editor) =
                         CloudViewModel::as_ref(ctx).object_current_editor(&notebook_id.uid(), ctx)
@@ -88,7 +92,7 @@ impl ActiveNotebookData {
                     ctx.notify();
                 }
             }
-            CloudModelEvent::ObjectMoved { type_and_id, .. } => {
+            ObjectStoreEvent::ObjectMoved { type_and_id, .. } => {
                 if let Some(notebook_id) = type_and_id.as_notebook_id() {
                     // Update breadcrumb when a notebook is moved, whether by the user or a
                     // teammate.

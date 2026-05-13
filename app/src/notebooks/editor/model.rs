@@ -16,7 +16,7 @@ use warpui::{
 };
 
 use crate::{
-    cloud_object::model::persistence::{CloudModel, CloudModelEvent},
+    cloud_object::model::persistence::{CloudModel, ObjectStoreEvent},
     debounce::debounce,
     editor::InteractionState,
     notebooks::telemetry::BlockInfo,
@@ -217,7 +217,7 @@ impl NotebooksEditorModel {
 
         let cloud_model = CloudModel::handle(ctx);
         ctx.subscribe_to_model(&cloud_model, |me, event, ctx| {
-            me.handle_cloud_model_event(event, ctx)
+            me.handle_object_store_event(event, ctx)
         });
 
         let (resize_tx, resize_rx) = async_channel::unbounded();
@@ -423,7 +423,11 @@ impl NotebooksEditorModel {
         }
     }
 
-    fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ModelContext<Self>) {
+    fn handle_object_store_event(
+        &mut self,
+        event: &ObjectStoreEvent,
+        ctx: &mut ModelContext<Self>,
+    ) {
         // Ignore cloud events until bound to a real window, and when the window is closed.
         let Some(window_id) = self.rte_window_id else {
             return;
@@ -432,11 +436,11 @@ impl NotebooksEditorModel {
             return;
         }
         match event {
-            CloudModelEvent::ObjectUpdated { type_and_id, .. }
-            | CloudModelEvent::ObjectTrashed { type_and_id, .. }
-            | CloudModelEvent::ObjectUntrashed { type_and_id, .. }
-            | CloudModelEvent::ObjectDeleted { type_and_id, .. }
-            | CloudModelEvent::ObjectMoved { type_and_id, .. } => {
+            ObjectStoreEvent::ObjectUpdated { type_and_id, .. }
+            | ObjectStoreEvent::ObjectTrashed { type_and_id, .. }
+            | ObjectStoreEvent::ObjectUntrashed { type_and_id, .. }
+            | ObjectStoreEvent::ObjectDeleted { type_and_id, .. }
+            | ObjectStoreEvent::ObjectMoved { type_and_id, .. } => {
                 if let Some(model) = self
                     .child_models
                     .model_handles::<NotebookEmbed>()

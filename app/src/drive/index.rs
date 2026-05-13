@@ -11,7 +11,7 @@ use crate::{
     },
     cloud_object::{
         model::{
-            persistence::{CloudModel, CloudModelEvent},
+            persistence::{CloudModel, ObjectStoreEvent},
             view::{CloudViewModel, CloudViewModelEvent, UpdateTimestamp},
         },
         update_manager::{FetchSingleObjectOption, UpdateManager},
@@ -812,7 +812,7 @@ impl DriveIndex {
         ctx.observe(&object_actions, Self::on_object_actions_changed);
 
         ctx.subscribe_to_model(&cloud_model, |index, _, event, ctx| {
-            index.handle_cloud_model_event(event, ctx);
+            index.handle_object_store_event(event, ctx);
         });
 
         ctx.subscribe_to_model(
@@ -1104,20 +1104,20 @@ impl DriveIndex {
         }
     }
 
-    fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ViewContext<Self>) {
+    fn handle_object_store_event(&mut self, event: &ObjectStoreEvent, ctx: &mut ViewContext<Self>) {
         match event {
-            CloudModelEvent::ObjectForceExpanded { id } => {
+            ObjectStoreEvent::ObjectForceExpanded { id } => {
                 self.expand_section_for_object(id, ctx);
             }
-            CloudModelEvent::ObjectUpdated { .. }
-            | CloudModelEvent::ObjectTrashed { .. }
-            | CloudModelEvent::ObjectUntrashed { .. }
-            | CloudModelEvent::ObjectCreated { .. }
-            | CloudModelEvent::ObjectMoved { .. }
-            | CloudModelEvent::ObjectDeleted { .. }
-            | CloudModelEvent::ObjectPermissionsUpdated { .. }
-            | CloudModelEvent::NotebookEditorChangedFromServer { .. }
-            | CloudModelEvent::InitialLoadCompleted => {}
+            ObjectStoreEvent::ObjectUpdated { .. }
+            | ObjectStoreEvent::ObjectTrashed { .. }
+            | ObjectStoreEvent::ObjectUntrashed { .. }
+            | ObjectStoreEvent::ObjectCreated { .. }
+            | ObjectStoreEvent::ObjectMoved { .. }
+            | ObjectStoreEvent::ObjectDeleted { .. }
+            | ObjectStoreEvent::ObjectPermissionsUpdated { .. }
+            | ObjectStoreEvent::NotebookEditorChangedExternally { .. }
+            | ObjectStoreEvent::InitialLoadCompleted => {}
         }
     }
 

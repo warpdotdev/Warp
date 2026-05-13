@@ -6,7 +6,7 @@ use crate::ai::execution_profiles::{
 };
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
+use crate::cloud_object::model::persistence::{CloudModel, ObjectStoreEvent};
 use crate::cloud_object::update_manager::UpdateManager;
 use crate::cloud_object::{CloudObjectMetadata, CloudObjectPermissions};
 use crate::network::NetworkStatus;
@@ -81,7 +81,7 @@ fn edits_persist_on_unsynced_default_profile_when_logged_out() {
 /// Regression test for the "log in to an existing user after onboarding"
 /// bug. Objects restored from local storage can already exist in `CloudModel`
 /// before `AIExecutionProfilesModel` observes per-object `ObjectCreated` events.
-/// The model reconciles when it receives `CloudModelEvent::InitialLoadCompleted`.
+/// The model reconciles when it receives `ObjectStoreEvent::InitialLoadCompleted`.
 /// Without the reconciliation handler for `InitialLoadCompleted`, the
 /// existing user's default profile sits in `CloudModel` but
 /// `AIExecutionProfilesModel` stays in `Unsynced`, so a subsequent
@@ -128,7 +128,7 @@ fn reconciles_unsynced_default_profile_with_cloud_after_initial_load() {
         // emit `InitialLoadCompleted` so the reconciliation handler fires.
         CloudModel::handle(&app).update(&mut app, move |cloud_model, ctx| {
             cloud_model.add_object(cloud_sync_id, profile_object);
-            ctx.emit(CloudModelEvent::InitialLoadCompleted);
+            ctx.emit(ObjectStoreEvent::InitialLoadCompleted);
         });
 
         // The model should now be Synced with the stored profile object's sync_id,
