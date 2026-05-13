@@ -8,10 +8,12 @@ use warpui::{Element, Entity, ModelHandle, View, ViewContext, ViewHandle};
 
 use crate::ai::blocklist::agent_view::AgentViewController;
 use crate::search::data_source::{Query, QueryFilter};
-use crate::search::mixer::{AddAsyncSourceOptions, SearchMixer};
+use crate::search::mixer::SearchMixer;
 use crate::terminal::input::buffer_model::{InputBufferModel, InputBufferUpdateEvent};
 use crate::terminal::input::inline_menu::{InlineMenuEvent, InlineMenuPositioner, InlineMenuView};
-use crate::terminal::input::repos::data_source::RepoMenuDataSource;
+use crate::terminal::input::repos::data_source::{
+    RepoGitSummaryCache, RepoGitSummaryCacheEvent, RepoMenuDataSource,
+};
 use crate::terminal::input::repos::AcceptRepo;
 use crate::terminal::input::suggestions_mode_model::{
     InputSuggestionsModeEvent, InputSuggestionsModeModel,
@@ -29,6 +31,7 @@ pub enum InlineReposMenuEvent {
 pub struct InlineReposMenuView {
     menu_view: ViewHandle<InlineMenuView<AcceptRepo>>,
     mixer: ModelHandle<SearchMixer<AcceptRepo>>,
+    git_summary_cache: ModelHandle<RepoGitSummaryCache>,
     input_suggestions_model: ModelHandle<InputSuggestionsModeModel>,
     input_buffer_model: ModelHandle<InputBufferModel>,
 }
@@ -41,21 +44,12 @@ impl InlineReposMenuView {
         positioner: &ModelHandle<InlineMenuPositioner>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let data_source = ctx.add_model(|_| RepoMenuDataSource::new());
+        let git_summary_cache = ctx.add_model(|_| RepoGitSummaryCache::new());
+        let data_source = RepoMenuDataSource::new(git_summary_cache.clone());
 
-        let mixer = ctx.add_model(|ctx| {
+        let mixer = ctx.add_model(|_| {
             let mut mixer = SearchMixer::<AcceptRepo>::new();
-            mixer.add_async_source(
-                data_source.clone(),
-                [QueryFilter::Repos],
-                AddAsyncSourceOptions {
-                    debounce_interval: None,
-                    run_in_zero_state: true,
-                    run_when_unfiltered: false,
-                },
-                ctx,
-            );
-            mixer.run_query(repos_query(""), ctx);
+            mixer.add_sync_source(data_source, [QueryFilter::Repos]);
             mixer
         });
 
@@ -91,12 +85,8 @@ impl InlineReposMenuView {
             |me, input_suggestions_model, event, ctx| {
                 let InputSuggestionsModeEvent::ModeChanged { .. } = event;
                 if input_suggestions_model.as_ref(ctx).is_repos_menu() {
-                    me.mixer.update(ctx, |mixer, ctx| {
-                        mixer.run_query(
-                            repos_query(me.input_buffer_model.as_ref(ctx).current_value()),
-                            ctx,
-                        );
-                    });
+                    let query = me.input_buffer_model.as_ref(ctx).current_value().to_owned();
+                    me.run_query(&query, ctx);
                 }
             },
         );
@@ -104,8 +94,16 @@ impl InlineReposMenuView {
         ctx.subscribe_to_model(input_buffer_model, |me, _, event, ctx| {
             if me.input_suggestions_model.as_ref(ctx).is_repos_menu() {
                 let InputBufferUpdateEvent { new_content, .. } = event;
+                me.run_query(new_content, ctx);
+            }
+        });
+
+        ctx.subscribe_to_model(&git_summary_cache, |me, _, event, ctx| {
+            let RepoGitSummaryCacheEvent::Updated = event;
+            if me.input_suggestions_model.as_ref(ctx).is_repos_menu() {
+                let query = me.input_buffer_model.as_ref(ctx).current_value().to_owned();
                 me.mixer.update(ctx, |mixer, ctx| {
-                    mixer.run_query(repos_query(new_content), ctx);
+                    mixer.run_query(repos_query(&query), ctx);
                 });
             }
         });
@@ -113,9 +111,21 @@ impl InlineReposMenuView {
         Self {
             menu_view,
             mixer,
+            git_summary_cache,
             input_suggestions_model,
             input_buffer_model: input_buffer_model.clone(),
         }
+    }
+
+    fn run_query(&self, text: &str, ctx: &mut ViewContext<Self>) {
+        let query = repos_query(text);
+        let matching_paths = RepoMenuDataSource::matching_paths(&query, ctx);
+        self.mixer.update(ctx, |mixer, ctx| {
+            mixer.run_query(query, ctx);
+        });
+        self.git_summary_cache.update(ctx, |cache, ctx| {
+            cache.refresh_missing(matching_paths, ctx);
+        });
     }
 
     pub fn select_up(&self, ctx: &mut ViewContext<Self>) {
@@ -132,7 +142,7 @@ impl InlineReposMenuView {
     }
 }
 
-/// Build a Query that includes the Repos filter so the async source runs.
+/// Build a Query that includes the Repos filter so the repo source runs.
 fn repos_query(text: &str) -> Query {
     Query {
         text: text.to_owned(),
