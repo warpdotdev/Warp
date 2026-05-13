@@ -795,8 +795,12 @@ impl ServerModel {
 
     fn push_all_codebase_index_statuses(&self, ctx: &mut ModelContext<Self>) {
         let snapshot = self.codebase_index_statuses_snapshot(ctx);
+        let status_count = snapshot.statuses.len();
+        log::info!(
+            "[Remote codebase indexing] Daemon pushing codebase index status updates: status_count={status_count}"
+        );
         for status in snapshot.statuses {
-            log::info!(
+            log::debug!(
                 "[Remote codebase indexing] Daemon pushing codebase index status update: repo_path={} state={:?}",
                 status.repo_path,
                 CodebaseIndexStatusState::try_from(status.state)

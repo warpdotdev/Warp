@@ -136,6 +136,8 @@ use crate::ai::mcp::FileBasedMCPManager;
 use crate::ai::mcp::FileMCPWatcher;
 use crate::uri::web_intent_parser::maybe_rewrite_web_url_to_intent;
 use ::ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
+#[cfg(feature = "local_fs")]
+use ::ai::index::full_source_code_embedding::SnapshotStorage;
 use ::ai::index::full_source_code_embedding::SyncTask;
 use ::ai::index::DEFAULT_SYNC_REQUESTS_PER_MIN;
 use ::ai::project_context::model::ProjectContextModel;
@@ -209,6 +211,7 @@ use crate::autoupdate::{AutoupdateState, RelaunchModel};
 use crate::changelog_model::ChangelogModel;
 use crate::cloud_object::model::actions::ObjectActions;
 use crate::cloud_object::model::view::CloudViewModel;
+use crate::cloud_object::CloudObject;
 use crate::code::global_buffer_model::GlobalBufferModel;
 #[cfg(feature = "local_fs")]
 use crate::code::language_server_shutdown_manager::LanguageServerShutdownManager;
@@ -261,9 +264,13 @@ use referral_theme_status::ReferralThemeStatus;
 use rust_embed::RustEmbed;
 use server::server_api::ServerApiProvider;
 use settings::{ExtraMetaKeys, PrivacySettings};
+#[cfg(feature = "local_fs")]
+use shellexpand::tilde;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::ops::Deref;
+#[cfg(feature = "local_fs")]
+use std::path::PathBuf;
 use std::sync::Arc;
 use terminal::input;
 use terminal::session_settings::SessionSettings;
@@ -345,6 +352,102 @@ fn determine_agent_source(
     }
 }
 
+#[cfg(feature = "local_fs")]
+fn daemon_codebase_index_snapshot_storage(launch_mode: &LaunchMode) -> Option<SnapshotStorage> {
+    match launch_mode {
+        LaunchMode::RemoteServerDaemon { identity_key } => {
+            let data_dir = remote_server::setup::remote_server_daemon_data_dir(identity_key);
+            let snapshot_dir = PathBuf::from(tilde(&data_dir).into_owned())
+                .join("cache")
+                .join("codebase_index_snapshots");
+            SnapshotStorage::from_dir(snapshot_dir)
+        }
+        LaunchMode::App { .. }
+        | LaunchMode::CommandLine { .. }
+        | LaunchMode::RemoteServerProxy
+        | LaunchMode::Test { .. } => None,
+    }
+}
+
+#[derive(Default)]
+struct StartupPersistenceData {
+    cloud_objects: Vec<Box<dyn CloudObject>>,
+    cached_workspaces: Vec<crate::workspaces::workspace::Workspace>,
+    current_workspace_uid: Option<crate::workspaces::workspace::WorkspaceUid>,
+    app_state: Option<AppState>,
+    command_history: Vec<crate::terminal::history::PersistedCommand>,
+    restored_user_profiles: Vec<crate::workspaces::user_profiles::UserProfileWithUID>,
+    time_of_next_force_object_refresh: Option<chrono::DateTime<chrono::Utc>>,
+    object_actions: Vec<ObjectAction>,
+    experiments: Vec<crate::server::experiments::ServerExperiment>,
+    ai_queries: Vec<crate::ai::blocklist::PersistedAIInput>,
+    persisted_workspaces: Vec<::ai::workspace::WorkspaceMetadata>,
+    workspace_language_servers: std::collections::HashMap<
+        std::path::PathBuf,
+        std::collections::HashMap<
+            lsp::supported_servers::LSPServerType,
+            crate::ai::persisted_workspace::EnablementState,
+        >,
+    >,
+    multi_agent_conversations: Vec<persistence::model::AgentConversation>,
+    persisted_projects: Vec<persistence::model::Project>,
+    persisted_project_rules: Vec<::ai::project_context::model::ProjectRulePath>,
+    persisted_ignored_suggestions: Vec<(
+        String,
+        crate::suggestions::ignored_suggestions_model::SuggestionType,
+    )>,
+    persisted_mcp_server_installations:
+        std::collections::HashMap<uuid::Uuid, crate::ai::mcp::TemplatableMCPServerInstallation>,
+    mcp_servers_to_restore: Vec<uuid::Uuid>,
+}
+
+impl StartupPersistenceData {
+    fn from_restored_persistence_data(
+        restored: Option<persistence::RestoredPersistenceData>,
+    ) -> Self {
+        match restored {
+            Some(persistence::RestoredPersistenceData::App(sqlite_data)) => {
+                Self::from_app_persisted_data(sqlite_data)
+            }
+            Some(persistence::RestoredPersistenceData::RemoteCodebaseIndexing(
+                codebase_indices,
+            )) => {
+                let codebase_index_count = codebase_indices.len();
+                log::info!(
+                    "[Remote codebase indexing] Restored daemon codebase index metadata: metadata_count={codebase_index_count}"
+                );
+                Self {
+                    persisted_workspaces: codebase_indices,
+                    ..Default::default()
+                }
+            }
+            None => Default::default(),
+        }
+    }
+
+    fn from_app_persisted_data(sqlite_data: persistence::PersistedData) -> Self {
+        Self {
+            cloud_objects: sqlite_data.cloud_objects,
+            cached_workspaces: sqlite_data.workspaces,
+            current_workspace_uid: sqlite_data.current_workspace_uid,
+            app_state: Some(sqlite_data.app_state),
+            command_history: sqlite_data.command_history,
+            restored_user_profiles: sqlite_data.user_profiles,
+            time_of_next_force_object_refresh: sqlite_data.time_of_next_force_object_refresh,
+            object_actions: sqlite_data.object_actions,
+            experiments: sqlite_data.experiments,
+            ai_queries: sqlite_data.ai_queries,
+            persisted_workspaces: sqlite_data.codebase_indices,
+            workspace_language_servers: sqlite_data.workspace_language_servers,
+            multi_agent_conversations: sqlite_data.multi_agent_conversations,
+            persisted_projects: sqlite_data.projects,
+            persisted_project_rules: sqlite_data.project_rules,
+            persisted_ignored_suggestions: sqlite_data.ignored_suggestions,
+            persisted_mcp_server_installations: sqlite_data.mcp_server_installations,
+            mcp_servers_to_restore: sqlite_data.mcp_servers_to_restore,
+        }
+    }
+}
 /// Launch mode for how to start up Warp.
 #[allow(clippy::large_enum_variant)]
 pub enum LaunchMode {
@@ -1193,7 +1296,7 @@ pub(crate) fn initialize_app(
         })
     });
 
-    let (
+    let StartupPersistenceData {
         cloud_objects,
         cached_workspaces,
         current_workspace_uid,
@@ -1212,51 +1315,7 @@ pub(crate) fn initialize_app(
         persisted_ignored_suggestions,
         persisted_mcp_server_installations,
         mcp_servers_to_restore,
-    ) = sqlite_data
-        .map(|sqlite_data| {
-            (
-                sqlite_data.cloud_objects,
-                sqlite_data.workspaces,
-                sqlite_data.current_workspace_uid,
-                Some(sqlite_data.app_state),
-                sqlite_data.command_history,
-                sqlite_data.user_profiles,
-                sqlite_data.time_of_next_force_object_refresh,
-                sqlite_data.object_actions,
-                sqlite_data.experiments,
-                sqlite_data.ai_queries,
-                sqlite_data.codebase_indices,
-                sqlite_data.workspace_language_servers,
-                sqlite_data.multi_agent_conversations,
-                sqlite_data.projects,
-                sqlite_data.project_rules,
-                sqlite_data.ignored_suggestions,
-                sqlite_data.mcp_server_installations,
-                sqlite_data.mcp_servers_to_restore,
-            )
-        })
-        .unwrap_or_else(|| {
-            (
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-            )
-        });
+    } = StartupPersistenceData::from_restored_persistence_data(sqlite_data);
 
     // Initialize a global model to track server-side experiment state.
     // This depends on the [`GlobalResourceHandlesProvider`] and so it must
@@ -1870,15 +1929,29 @@ pub(crate) fn initialize_app(
     ctx.add_singleton_model(DefaultTerminal::new);
 
     ctx.add_singleton_model(|ctx| {
-        let indices_to_restore = if UserWorkspaces::as_ref(ctx).is_codebase_context_enabled(ctx)
-            && launch_mode.supports_indexing()
-        {
+        let should_restore_indices = launch_mode.supports_indexing()
+            && (matches!(launch_mode, LaunchMode::RemoteServerDaemon { .. })
+                || UserWorkspaces::as_ref(ctx).is_codebase_context_enabled(ctx));
+        let indices_to_restore = if should_restore_indices {
             persisted_workspaces.clone()
         } else {
             vec![]
         };
 
         let codebase_limits = AIRequestUsageModel::as_ref(ctx).codebase_context_limits();
+        #[cfg(feature = "local_fs")]
+        if let Some(snapshot_storage) = daemon_codebase_index_snapshot_storage(launch_mode) {
+            return CodebaseIndexManager::new_with_snapshot_storage(
+                indices_to_restore,
+                codebase_limits.max_indices_allowed,
+                codebase_limits.max_files_per_repo,
+                codebase_limits.embedding_generation_batch_size,
+                server_api_provider.as_ref(ctx).get(),
+                launch_mode.supports_indexing(),
+                Some(snapshot_storage),
+                ctx,
+            );
+        }
 
         CodebaseIndexManager::new(
             indices_to_restore,

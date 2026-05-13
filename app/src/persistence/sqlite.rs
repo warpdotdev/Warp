@@ -51,7 +51,7 @@ use super::model::{
 use super::schema;
 use super::{
     BlockCompleted, FinishedCommandMetadata, ModelEvent, PersistedData, PersistenceScope,
-    StartedCommandMetadata, WriterHandles,
+    RestoredPersistenceData, StartedCommandMetadata, WriterHandles,
 };
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::ambient_agents::scheduled::{
@@ -155,7 +155,7 @@ type DeleteCloudObjectFn =
 pub fn initialize(
     ctx: &mut AppContext,
     scope: PersistenceScope,
-) -> (Option<PersistedData>, Option<WriterHandles>) {
+) -> (Option<RestoredPersistenceData>, Option<WriterHandles>) {
     unsafe {
         // Set up logging before any SQLite calls.
         init_logging();
@@ -163,18 +163,7 @@ pub fn initialize(
     let database_path = database_file_path_for_scope(&scope);
     match init_db(&scope) {
         Ok(mut conn) => {
-            let user_uid = AuthStateProvider::as_ref(ctx).get().user_id();
-            let app_state = match read_sqlite_data(&mut conn, user_uid) {
-                Ok(app_state) => Some(app_state),
-                Err(err) => {
-                    send_telemetry_from_app_ctx!(
-                        TelemetryEvent::DatabaseReadError(err.to_string()),
-                        ctx
-                    );
-                    report_error!(anyhow::Error::new(err).context("Failed to read app state"));
-                    None
-                }
-            };
+            let persisted_data = read_persisted_data_for_scope(&scope, &mut conn, ctx);
 
             let writer_handles = match start_writer(conn, database_path.clone()) {
                 Ok(writer_handles) => Some(writer_handles),
@@ -187,7 +176,7 @@ pub fn initialize(
                     None
                 }
             };
-            (app_state, writer_handles)
+            (persisted_data, writer_handles)
         }
         Err(err) => {
             send_telemetry_from_app_ctx!(
@@ -198,6 +187,52 @@ pub fn initialize(
             (None, None)
         }
     }
+}
+
+fn read_persisted_data_for_scope(
+    scope: &PersistenceScope,
+    conn: &mut SqliteConnection,
+    ctx: &mut AppContext,
+) -> Option<RestoredPersistenceData> {
+    match scope {
+        PersistenceScope::App => {
+            let user_uid = AuthStateProvider::as_ref(ctx).get().user_id();
+            match read_sqlite_data(conn, user_uid) {
+                Ok(app_state) => Some(RestoredPersistenceData::App(app_state)),
+                Err(err) => {
+                    send_telemetry_from_app_ctx!(
+                        TelemetryEvent::DatabaseReadError(err.to_string()),
+                        ctx
+                    );
+                    report_error!(anyhow::Error::new(err).context("Failed to read app state"));
+                    None
+                }
+            }
+        }
+        PersistenceScope::RemoteServerDaemon { .. } => {
+            match read_remote_codebase_indexing_data(conn) {
+                Ok(codebase_indices) => Some(RestoredPersistenceData::RemoteCodebaseIndexing(
+                    codebase_indices,
+                )),
+                Err(err) => {
+                    send_telemetry_from_app_ctx!(
+                        TelemetryEvent::DatabaseReadError(err.to_string()),
+                        ctx
+                    );
+                    report_error!(
+                        anyhow::Error::new(err).context("Failed to read daemon codebase indices")
+                    );
+                    None
+                }
+            }
+        }
+    }
+}
+
+fn read_remote_codebase_indexing_data(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<ai::workspace::WorkspaceMetadata>, diesel::result::Error> {
+    get_all_codebase_index_metadata(conn)
 }
 
 /// Returns a read-only connection to the sqlite database.
@@ -1684,7 +1719,9 @@ fn get_all_mcp_server_installations(
 
     let improper_rows = rows_len - result.len();
     if improper_rows > 0 {
-        log::warn!("Skipping {improper_rows} rows from mcp_server_installations table due to malformation.");
+        log::warn!(
+            "Skipping {improper_rows} rows from mcp_server_installations table due to malformation."
+        );
     }
 
     Ok(result)
