@@ -26,7 +26,9 @@ pub struct FileBasedMCPManager {
     /// Reverse mapping: logical root path → provider → set of server hashes.
     file_based_servers_by_root: HashMap<PathBuf, HashMap<MCPProvider, HashSet<u64>>>,
     /// UUIDs that were actually auto-start requested while parsing each `(root, provider)`.
-    auto_started_servers_by_root: HashMap<PathBuf, HashMap<MCPProvider, HashSet<Uuid>>>,
+    /// They are temporarily stored here and removed to emit FileBasedMCPManagerEvent::CloudEnvMcpScanComplete
+    pending_scan_auto_started_servers_by_root:
+        HashMap<PathBuf, HashMap<MCPProvider, HashSet<Uuid>>>,
 }
 
 impl FileBasedMCPManager {
@@ -46,7 +48,7 @@ impl FileBasedMCPManager {
         Self {
             file_based_servers: Default::default(),
             file_based_servers_by_root: Default::default(),
-            auto_started_servers_by_root: Default::default(),
+            pending_scan_auto_started_servers_by_root: Default::default(),
         }
     }
 
@@ -199,7 +201,7 @@ impl FileBasedMCPManager {
         }
 
         let auto_started_uuids = self.auto_start_file_based_servers(servers_to_spawn, ctx);
-        self.auto_started_servers_by_root
+        self.pending_scan_auto_started_servers_by_root
             .entry(root_path.clone())
             .or_default()
             .insert(provider, auto_started_uuids.into_iter().collect());
@@ -343,8 +345,12 @@ impl FileBasedMCPManager {
         ctx: &mut ModelContext<Self>,
     ) {
         let mcp_enabled = AISettings::as_ref(ctx).is_file_based_mcp_enabled(ctx);
+        // FileMCPWatcher emits CloudEnvMcpScanComplete only after emitting ConfigParsed
+        // for every provider config in this repo scan. Each ConfigParsed call records
+        // the UUIDs actually emitted through SpawnServers in auto_started_servers_by_root,
+        // so this remove() returns the wait set for this completed scan.
         let wait_server_uuids: Vec<Uuid> = self
-            .auto_started_servers_by_root
+            .pending_scan_auto_started_servers_by_root
             .remove(repo_path)
             .into_iter()
             .flat_map(|provider_map| provider_map.into_values())

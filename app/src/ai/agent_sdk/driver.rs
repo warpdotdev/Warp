@@ -1228,9 +1228,7 @@ impl AgentDriver {
         };
 
         if pending_uuids.is_empty() {
-            log::info!(
-                "All file-based MCP servers have reached a terminal state; proceeding"
-            );
+            log::info!("All file-based MCP servers have reached a terminal state; proceeding");
             return Either::Right(future::ready(()));
         }
 
