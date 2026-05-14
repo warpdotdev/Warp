@@ -436,6 +436,8 @@ en:
   node:
     install_nvm_title: "Install nvm to enable version switching"
     install_nvm_description: "This menu helps you switch between Node.js versions — but it requires nvm to be installed."
+    install_nvm: "Install nvm"
+    nvm_install_node: "nvm install node"
     no_versions_installed: "No node versions installed"
     try_installing_with_nvm: "Try installing versions with nvm"
     installed: "Installed"
@@ -1457,8 +1459,12 @@ en:
   # ── Find / Filter ──
   find:
     placeholder: "Find"
+    replace_placeholder: "Replace"
     regex_toggle: "Regex toggle"
     case_sensitive_search: "Case sensitive search"
+    preserve_case: "Preserve case"
+    select_all: "Select all"
+    replace_all: "Replace all"
     find_in_selected_block: "Find in selected block"
     a11y_value: "Type searched phrase."
     a11y_help: "Press escape to quit, use enter and shift-enter to navigate between matches"

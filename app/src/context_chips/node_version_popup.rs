@@ -77,14 +77,14 @@ impl NodeVersionPopupView {
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let install_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Install nvm", SecondaryTheme)
+            ActionButton::new(t!("node.install_nvm").to_string(), SecondaryTheme)
                 .with_icon(icons::Icon::Terminal)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(NodeVersionPopupAction::InstallNvm);
                 })
         });
         let install_latest_node_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("nvm install node", SecondaryTheme)
+            ActionButton::new(t!("node.nvm_install_node").to_string(), SecondaryTheme)
                 .with_icon(icons::Icon::Terminal)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(NodeVersionPopupAction::InstallLatestNodeVersion);

@@ -436,6 +436,8 @@ zh-CN:
   node:
     install_nvm_title: "安装 nvm 以启用版本切换"
     install_nvm_description: "此菜单可帮助你在 Node.js 版本之间切换，但需要先安装 nvm。"
+    install_nvm: "安装 nvm"
+    nvm_install_node: "nvm install node"
     no_versions_installed: "未安装 Node 版本"
     try_installing_with_nvm: "尝试使用 nvm 安装版本"
     installed: "已安装"
@@ -1457,8 +1459,12 @@ zh-CN:
   # ── 查找 / 过滤 ──
   find:
     placeholder: "查找"
+    replace_placeholder: "替换"
     regex_toggle: "Regex 开关"
     case_sensitive_search: "区分大小写搜索"
+    preserve_case: "保留大小写"
+    select_all: "全选"
+    replace_all: "全部替换"
     find_in_selected_block: "在选中区块中查找"
     a11y_value: "输入搜索短语。"
     a11y_help: "按 Escape 退出，按 Enter 和 Shift-Enter 在匹配项之间导航"
