@@ -41,9 +41,11 @@ impl DeleteEnvironmentConfirmationDialog {
         });
 
         let confirm_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new(t!("settings.delete_environment"), DangerPrimaryTheme).on_click(|ctx| {
-                ctx.dispatch_typed_action(DeleteEnvironmentConfirmationDialogAction::Confirm);
-            })
+            ActionButton::new(t!("settings.delete_environment"), DangerPrimaryTheme).on_click(
+                |ctx| {
+                    ctx.dispatch_typed_action(DeleteEnvironmentConfirmationDialogAction::Confirm);
+                },
+            )
         });
 
         Self {
@@ -84,10 +86,11 @@ impl View for DeleteEnvironmentConfirmationDialog {
 
         let appearance = Appearance::as_ref(app);
 
-        let description = format!(
-            "Are you sure you want to remove the {} environment?",
-            self.env_name
-        );
+        let description = t!(
+            "settings.delete_environment_description",
+            name = self.env_name.clone()
+        )
+        .to_string();
 
         let dialog = Dialog::new(
             t!("settings.delete_environment_confirm").to_string(),
