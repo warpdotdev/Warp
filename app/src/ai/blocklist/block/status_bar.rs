@@ -891,11 +891,11 @@ impl BlocklistAIStatusBar {
 
         let progress = ambient_agent_model.agent_progress()?;
         let progress_text = if progress.harness_started_at.is_some() {
-            "Starting Environment (Step 3/3)"
+            t!("ai_ext.starting_environment_step").to_string()
         } else if progress.claimed_at.is_some() {
-            "Creating Environment (Step 2/3)"
+            t!("ai_ext.creating_environment_step").to_string()
         } else {
-            "Connecting to Host (Step 1/3)"
+            t!("ai_ext.connecting_to_host_step").to_string()
         };
         Some(render_warping_indicator_base(
             WarpingIndicatorProps {
@@ -933,11 +933,11 @@ impl BlocklistAIStatusBar {
                     color: Some(error_color),
                 },
                 MessageItem::Text {
-                    content: "Missing GitHub authentication. ".into(),
+                    content: t!("ai_ext.missing_github_auth").to_string().into(),
                     color: Some(error_color),
                 },
                 MessageItem::hyperlink(
-                    "Authenticate GitHub",
+                    t!("ai_ext.authenticate_github").to_string(),
                     auth_url.to_owned(),
                     self.state_handles.github_auth_link.clone(),
                 ),
@@ -965,7 +965,7 @@ impl BlocklistAIStatusBar {
                     color: Some(color),
                 },
                 MessageItem::Text {
-                    content: "Cloud agent run cancelled".into(),
+                    content: t!("ai_ext.cloud_agent_run_cancelled").to_string().into(),
                     color: Some(color),
                 },
             ]));
@@ -1078,10 +1078,8 @@ fn render_fallback_explanation<V: View>(
         .and_then(|base_id| llm_prefs.get_llm_info(base_id))
         .map(|info| info.base_model_name.as_str());
     let text = match primary_name {
-        Some(primary) => {
-            format!("The primary model ({primary}) failed. Retrying with the fallback model.")
-        }
-        None => "The primary model failed. Retrying with the fallback model.".to_owned(),
+        Some(primary) => t!("ai_ext.primary_model_failed_named", primary).to_string(),
+        None => t!("ai_ext.primary_model_failed").to_string(),
     };
     let appearance = Appearance::as_ref(app);
     Text::new_inline(
@@ -1134,8 +1132,8 @@ fn resolve_fallback_warping_message<V: View>(
         return None;
     }
     Some(match display_name.as_deref() {
-        Some(name) => format!("Warping with {name}."),
-        None => "Warping with another model.".to_owned(),
+        Some(name) => t!("ai_ext.warping_with_model", name).to_string(),
+        None => t!("ai_ext.warping_with_another_model").to_string(),
     })
 }
 
@@ -1173,7 +1171,7 @@ impl View for BlocklistAIStatusBar {
                     WarpingIndicatorProps {
                         icon: None,
                         warping_indicator_text: MaybeShimmeringText::Shimmering {
-                            text: "Setting up environment".into(),
+                            text: t!("ai_ext.setting_up_environment"),
                             shimmering_text_handle: self.shimmering_text_handle.clone(),
                         },
                         non_shimmering_text: None,
@@ -1205,8 +1203,8 @@ impl View for BlocklistAIStatusBar {
                         non_shimmering_text: None,
                         non_shimmering_suffix: None,
                         buttons: Some(render_switch_control_to_user_button(
-                            "Exit",
-                            "Exit agent input",
+                            t!("common.exit").to_string(),
+                            t!("ai_ext.exit_agent_input").to_string(),
                             ButtonProps {
                                 button_handle: &self.state_handles.take_over_button,
                                 keystroke: self.set_terminal_input_keystroke.as_ref(),

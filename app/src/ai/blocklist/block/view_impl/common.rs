@@ -127,9 +127,6 @@ pub const STATUS_FOOTER_VERTICAL_PADDING: f32 = 4.;
 pub const WAITING_FOR_USER_INPUT_MESSAGE: &str = "Agent waiting for instructions...";
 const IMAGE_SOURCE_LINK_LINE_INDEX: usize = 1;
 
-const ERROR_APOLOGY_TEXT: &str = "I'm sorry, I couldn't complete that request.";
-const INTERNAL_WARP_ERROR: &str = "Internal Warp error.";
-
 pub const LOAD_OUTPUT_MESSAGE: &str = "Warping...";
 pub const LOAD_OUTPUT_MESSAGE_FOR_ADJUSTING: &str = "Adjusting tasks...";
 pub const LOAD_OUTPUT_MESSAGE_FOR_PASSIVE_CODE_GEN: &str = "Generating fix...";
@@ -447,8 +444,8 @@ pub fn render_warping_indicator<V: View>(
     if let Some(take_over_button_props) = props.take_over_lrc_control_button {
         has_buttons = true;
         buttons_row.add_child(render_switch_control_to_user_button(
-            "Take over",
-            "Take over control of the command",
+            t!("ai_ext.take_over").to_string(),
+            t!("ai_ext.take_over_control").to_string(),
             take_over_button_props,
             appearance,
         ));
@@ -758,13 +755,13 @@ fn render_hide_responses_button(
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
     let button_text = if should_hide_responses {
-        "Show responses"
+        t!("ai_ext.show_responses").to_string()
     } else {
-        "Hide responses"
+        t!("ai_ext.hide_responses").to_string()
     };
     let text = Container::new(
         Text::new(
-            button_text,
+            button_text.clone(),
             appearance.ui_font_family(),
             get_keybinding_font_size(appearance),
         )
@@ -774,9 +771,9 @@ fn render_hide_responses_button(
     .finish();
 
     let tooltip_text = if should_hide_responses {
-        "Show agent responses"
+        t!("ai_ext.show_agent_responses").to_string()
     } else {
-        "Hide agent responses"
+        t!("ai_ext.hide_agent_responses").to_string()
     };
 
     render_warping_indicator_button(
@@ -784,7 +781,7 @@ fn render_hide_responses_button(
         appearance,
         text,
         props.keystroke,
-        tooltip_text.to_string(),
+        tooltip_text,
         props.is_active,
         |ctx| {
             ctx.dispatch_typed_action(BlocklistAIStatusBarAction::ToggleHideResponses);
@@ -793,8 +790,8 @@ fn render_hide_responses_button(
 }
 
 pub fn render_switch_control_to_user_button(
-    text: &'static str,
-    tooltip: &'static str,
+    text: String,
+    tooltip: String,
     props: ButtonProps,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
@@ -815,7 +812,7 @@ pub fn render_switch_control_to_user_button(
         appearance,
         text,
         props.keystroke,
-        tooltip.to_string(),
+        tooltip,
         props.is_active,
         |ctx| {
             ctx.dispatch_typed_action(TerminalAction::SetInputModeTerminal);
@@ -838,7 +835,7 @@ fn render_stop_button(props: ButtonProps, appearance: &Appearance) -> Box<dyn El
         appearance,
         stop_icon,
         props.keystroke,
-        "Stop agent task".to_string(),
+        t!("ai_ext.stop_agent_task").to_string(),
         props.is_active,
         |ctx: &mut EventContext<'_>| {
             ctx.dispatch_typed_action(BlocklistAIStatusBarAction::Stop);
@@ -865,9 +862,9 @@ fn render_queue_next_prompt_button(
     .finish();
 
     let tooltip_text = if props.is_active {
-        "Auto-queue is on: your next prompt will be queued"
+        t!("ai_ext.auto_queue_on").to_string()
     } else {
-        "Auto-queue next prompt while agent is responding"
+        t!("ai_ext.auto_queue_next_prompt").to_string()
     };
 
     render_warping_indicator_button(
@@ -875,7 +872,7 @@ fn render_queue_next_prompt_button(
         appearance,
         icon,
         props.keystroke,
-        tooltip_text.to_string(),
+        tooltip_text,
         props.is_active,
         |ctx| {
             ctx.dispatch_typed_action(TerminalAction::ToggleQueueNextPrompt);
@@ -902,9 +899,9 @@ fn render_auto_approve_button(props: ButtonProps, appearance: &Appearance) -> Bo
     .finish();
 
     let tooltip_text = if props.is_active {
-        "Turn off auto-approve all agent actions"
+        t!("ai_ext.turn_off_auto_approve").to_string()
     } else {
-        "Auto-approve all agent actions for this task"
+        t!("ai_ext.auto_approve_actions").to_string()
     };
 
     render_warping_indicator_button(
@@ -912,7 +909,7 @@ fn render_auto_approve_button(props: ButtonProps, appearance: &Appearance) -> Bo
         appearance,
         icon,
         props.keystroke,
-        tooltip_text.to_string(),
+        tooltip_text,
         props.is_active,
         |ctx| {
             ctx.dispatch_typed_action(TerminalAction::ToggleAutoexecuteMode);
@@ -2114,7 +2111,7 @@ fn render_mermaid_diagram_section<A: Action>(
         .finish();
 
     render_visual_card(
-        "Mermaid diagram".to_string(),
+        t!("ai_ext.mermaid_diagram").to_string(),
         Icon::Dataflow,
         Container::new(mermaid_canvas)
             .with_background(theme.background())
@@ -2955,6 +2952,7 @@ pub struct FailedOutputProps<'a> {
 
 pub fn render_failed_output(props: FailedOutputProps, app: &AppContext) -> Box<dyn Element> {
     let appearance = Appearance::as_ref(app);
+    let error_apology_text = t!("ai_ext.error_apology").to_string();
 
     let error_text = match props.error {
         RenderableAIError::QuotaLimit => {
@@ -2965,14 +2963,16 @@ pub fn render_failed_output(props: FailedOutputProps, app: &AppContext) -> Box<d
                 .to_string();
 
             format!(
-                "{ERROR_APOLOGY_TEXT}\n\nYou've reached your credit limit. Your credit limit resets on {formatted_next_refresh_time}.",
+                "{error_apology_text}\n\n{}",
+                t!("ai_ext.credit_limit_resets", formatted_next_refresh_time)
             )
         }
-        RenderableAIError::ServerOverloaded => {
-            "Warp is currently overloaded. Please try again later.".to_string()
-        }
+        RenderableAIError::ServerOverloaded => t!("ai_ext.server_overloaded").to_string(),
         RenderableAIError::InternalWarpError => {
-            format!("{ERROR_APOLOGY_TEXT}\n\n{INTERNAL_WARP_ERROR}")
+            format!(
+                "{error_apology_text}\n\n{}",
+                t!("ai_ext.internal_warp_error")
+            )
         }
         RenderableAIError::Other {
             error_message,
@@ -2982,13 +2982,17 @@ pub fn render_failed_output(props: FailedOutputProps, app: &AppContext) -> Box<d
             if *will_attempt_resume {
                 if *waiting_for_network {
                     format!(
-                        "{error_message}\n\nWill resume conversation when network connectivity is restored..."
+                        "{error_message}\n\n{}",
+                        t!("ai_ext.resume_when_network_restored")
                     )
                 } else {
-                    format!("{error_message}\n\nAttempting to resume conversation...")
+                    format!(
+                        "{error_message}\n\n{}",
+                        t!("ai_ext.attempting_resume_conversation")
+                    )
                 }
             } else {
-                format!("{ERROR_APOLOGY_TEXT}\n\n{error_message}")
+                format!("{error_apology_text}\n\n{error_message}")
             }
         }
         RenderableAIError::InvalidApiKey {
@@ -3016,8 +3020,8 @@ pub fn render_failed_output(props: FailedOutputProps, app: &AppContext) -> Box<d
             }
             // Fallback for contexts that don't have the stateful view (e.g. CLI subagent)
             format!(
-                "{ERROR_APOLOGY_TEXT}\n\nAWS credentials expired or missing for {model_name}. \
-                 Please refresh your AWS credentials."
+                "{error_apology_text}\n\n{}",
+                t!("ai_ext.aws_credentials_error", model_name)
             )
         }
     };
@@ -3085,7 +3089,7 @@ fn render_invalid_api_key_error(
     .finish();
 
     let alert_text = Text::new(
-        "Provided API key is not valid",
+        t!("ai_ext.invalid_api_key").to_string(),
         appearance.ui_font_family(),
         14.,
     )
@@ -3094,10 +3098,7 @@ fn render_invalid_api_key_error(
     .finish();
 
     let detail_text = Text::new(
-        format!(
-            "Failed to authenticate with {provider} when using {model_name}. \
-                     Double-check that your API key is correct."
-        ),
+        t!("ai_ext.invalid_api_key_detail", provider, model_name).to_string(),
         appearance.ui_font_family(),
         14.,
     )
@@ -3126,7 +3127,7 @@ fn render_invalid_api_key_error(
             background: Some(internal_colors::fg_overlay_3(theme).into()),
             ..Default::default()
         })
-        .with_text_label("Edit API Keys".to_string())
+        .with_text_label(t!("ai_ext.edit_api_keys").to_string())
         .with_cursor(Some(Cursor::PointingHand))
         .build()
         .on_click(move |ctx, _, _| {
@@ -3319,7 +3320,7 @@ pub(crate) fn render_debug_footer<V: View>(
     })
     .finish();
     let copy_button_with_tooltip = appearance.ui_builder().tool_tip_on_element(
-        "Copy debug ID".to_string(),
+        t!("ai_ext.copy_debug_id").to_string(),
         props.debug_copy_button_handle,
         copy_button,
         warpui::elements::ParentAnchor::TopRight,
