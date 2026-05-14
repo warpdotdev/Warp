@@ -2072,6 +2072,7 @@ en:
     search_in_files: "Search in files"
     toggle_case_sensitivity: "Toggle Case Sensitivity"
     toggle_regex: "Toggle Regex"
+    partial_results_message: "The result set only contains a subset of all matches. Be more specific in your search to narrow down results."
 
   ssh_install_tmux:
     why_need_tmux: "Why do I need tmux?"
@@ -2134,6 +2135,11 @@ en:
     search_diff_sets: "Search diff sets or branches to compare…"
     review_comment: "Review Comment"
     uncommitted_changes: "Uncommitted changes"
+    changes_vs_main_branch: "Changes vs. main branch"
+    changes_vs_branch: "Changes vs. {branch}"
+    all_uncommitted_changes: "All uncommitted changes in the working directory"
+    all_changes_vs_main_branch: "All changes compared to the main branch"
+    all_changes_vs_branch: "All changes compared to {branch}"
     no_changes_to_discard: "No changes to discard"
     discard_uncommitted: "Discard uncommitted changes?"
     discard_all_uncommitted_file: "Discard all uncommitted changes to file?"

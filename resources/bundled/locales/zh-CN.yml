@@ -2072,6 +2072,7 @@ zh-CN:
     search_in_files: "搜索文件"
     toggle_case_sensitivity: "切换区分大小写"
     toggle_regex: "切换 Regex"
+    partial_results_message: "结果集只包含部分匹配项。请使用更具体的搜索条件来缩小结果范围。"
 
   ssh_install_tmux:
     why_need_tmux: "为什么需要 tmux？"
@@ -2134,6 +2135,11 @@ zh-CN:
     search_diff_sets: "搜索 diff 集或比较分支…"
     review_comment: "审查评论"
     uncommitted_changes: "未提交的更改"
+    changes_vs_main_branch: "与主分支相比的更改"
+    changes_vs_branch: "与 {branch} 相比的更改"
+    all_uncommitted_changes: "工作目录中的所有未提交更改"
+    all_changes_vs_main_branch: "与主分支相比的所有更改"
+    all_changes_vs_branch: "与 {branch} 相比的所有更改"
     no_changes_to_discard: "没有可丢弃的更改"
     discard_uncommitted: "丢弃未提交的更改？"
     discard_all_uncommitted_file: "丢弃对文件的所有未提交更改？"
