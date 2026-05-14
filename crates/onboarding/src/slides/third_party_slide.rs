@@ -10,12 +10,11 @@ use warp_core::ui::theme::color::internal_colors;
 use warpui::prelude::Align;
 use warpui::{
     elements::{
-        ClippedScrollStateHandle, Container, CrossAxisAlignment, Flex, FormattedTextElement,
-        MainAxisSize, MouseStateHandle, ParentElement,
+        ClippedScrollStateHandle, Container, CrossAxisAlignment, Flex, MainAxisSize,
+        MouseStateHandle, ParentElement,
     },
     fonts::Weight,
     keymap::Keystroke,
-    text_layout::TextAlignment,
     ui_components::components::{UiComponent as _, UiComponentStyles},
     AppContext, Element, Entity, ModelHandle, SingletonEntity as _, TypedActionView, View,
     ViewContext,
@@ -136,7 +135,7 @@ impl ThirdPartySlide {
     fn render_header(&self, appearance: &Appearance) -> Box<dyn Element> {
         let title = appearance
             .ui_builder()
-            .paragraph("Customize third party agents")
+            .paragraph(crate::t!("onboarding.third_party.title").to_string())
             .with_style(UiComponentStyles {
                 font_size: Some(36.),
                 font_weight: Some(Weight::Medium),
@@ -145,19 +144,20 @@ impl ThirdPartySlide {
             .build()
             .finish();
 
-        let subtitle = FormattedTextElement::from_str(
-            "Select defaults for using agents like Claude Code, Codex, and Gemini.",
-            appearance.ui_font_family(),
-            16.,
-        )
-        .with_color(internal_colors::text_sub(
-            appearance.theme(),
-            appearance.theme().background().into_solid(),
-        ))
-        .with_weight(Weight::Normal)
-        .with_alignment(TextAlignment::Left)
-        .with_line_height_ratio(1.0)
-        .finish();
+        let subtitle = appearance
+            .ui_builder()
+            .paragraph(crate::t!("onboarding.third_party.subtitle").to_string())
+            .with_style(UiComponentStyles {
+                font_size: Some(16.),
+                font_weight: Some(Weight::Normal),
+                font_color: Some(internal_colors::text_sub(
+                    appearance.theme(),
+                    appearance.theme().background().into_solid(),
+                )),
+                ..Default::default()
+            })
+            .build()
+            .finish();
 
         Flex::column()
             .with_main_axis_size(MainAxisSize::Min)
@@ -177,11 +177,11 @@ impl ThirdPartySlide {
         let card = render_toggle_card(
             appearance,
             ToggleCardSpec {
-                title: "CLI agent toolbar".to_string(),
+                title: crate::t!("onboarding.third_party.cli_agent_toolbar").to_string(),
                 is_expanded: is_selected,
                 is_left_selected: cli_toolbar_enabled,
-                left_label: "Enabled".to_string(),
-                right_label: "Disabled".to_string(),
+                left_label: crate::t!("onboarding.enabled").to_string(),
+                right_label: crate::t!("onboarding.disabled").to_string(),
                 card_mouse_state: self.cli_toolbar_card_mouse_state.clone(),
                 on_expand: Box::new(|ctx, _, _| {
                     ctx.dispatch_typed_action(ThirdPartySlideAction::SelectSettingCard {
@@ -225,11 +225,11 @@ impl ThirdPartySlide {
         let card = render_toggle_card(
             appearance,
             ToggleCardSpec {
-                title: "Notifications".to_string(),
+                title: crate::t!("onboarding.third_party.notifications").to_string(),
                 is_expanded: is_selected,
                 is_left_selected: show_agent_notifications,
-                left_label: "Enabled".to_string(),
-                right_label: "Disabled".to_string(),
+                left_label: crate::t!("onboarding.enabled").to_string(),
+                right_label: crate::t!("onboarding.disabled").to_string(),
                 card_mouse_state: self.notifications_card_mouse_state.clone(),
                 on_expand: Box::new(|ctx, _, _| {
                     ctx.dispatch_typed_action(ThirdPartySlideAction::SelectSettingCard {
@@ -271,7 +271,7 @@ impl ThirdPartySlide {
         let back_button = self.back_button.render(
             appearance,
             button::Params {
-                content: button::Content::Label("Back".into()),
+                content: button::Content::Label(crate::t!("onboarding.back")),
                 theme: &button::themes::Naked,
                 options: button::Options {
                     on_click: Some(Box::new(|ctx, _app, _pos| {
@@ -286,7 +286,7 @@ impl ThirdPartySlide {
         let next_button = self.next_button.render(
             appearance,
             button::Params {
-                content: button::Content::Label("Next".into()),
+                content: button::Content::Label(crate::t!("onboarding.next")),
                 theme: &button::themes::Primary,
                 options: button::Options {
                     keystroke: Some(enter),

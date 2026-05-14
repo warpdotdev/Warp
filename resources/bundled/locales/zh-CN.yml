@@ -1111,6 +1111,11 @@ zh-CN:
       file_explorer: "文件浏览器"
       global_file_search: "全局文件搜索"
       warp_drive: "Warp Drive"
+    third_party:
+      title: "自定义第三方 Agent"
+      subtitle: "选择 Claude Code、Codex 和 Gemini 等 Agent 的默认使用方式。"
+      cli_agent_toolbar: "CLI Agent 工具栏"
+      notifications: "通知"
 
   # ── 设置 ──
   settings:

@@ -1111,6 +1111,11 @@ en:
       file_explorer: "File explorer"
       global_file_search: "Global file search"
       warp_drive: "Warp Drive"
+    third_party:
+      title: "Customize third party agents"
+      subtitle: "Select defaults for using agents like Claude Code, Codex, and Gemini."
+      cli_agent_toolbar: "CLI agent toolbar"
+      notifications: "Notifications"
 
   # ── Settings ──
   settings:
