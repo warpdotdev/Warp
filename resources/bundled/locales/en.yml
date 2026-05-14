@@ -626,6 +626,19 @@ en:
     give_control_back_to_agent: "Give control back to agent"
     ask_agent_to_resume: "Ask the Warp agent to resume"
 
+  wasm_nux:
+    open_in_desktop_title: "Open in Warp Desktop?"
+    future_links_desktop: "Future links will automatically open on desktop."
+    open_in_warp: "Open in Warp"
+    download_desktop_title: "Download Warp Desktop?"
+    download_description: "Warp is the intelligent terminal with AI and your dev team's knowledge built-in."
+    learn_more: "Learn more"
+    download: "Download"
+    always_open_drive_on_web: "Always open Warp Drive objects on the web?"
+    always_open_shared_sessions_on_web: "Always open shared sessions on the web?"
+    always_open_links_on_web: "Always open Warp links on the web?"
+    change_any_time: "You can change this at any time in settings."
+
   execution_profile:
     models_heading: "MODELS"
     permissions_heading: "PERMISSIONS"
@@ -2065,6 +2078,7 @@ en:
     clear: "Clear"
     close: "Close"
     cancel: "Cancel"
+    "yes": "Yes"
     update: "Update"
     delete: "Delete"
     remove: "Remove"

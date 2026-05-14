@@ -626,6 +626,19 @@ zh-CN:
     give_control_back_to_agent: "将控制权交还给 Agent"
     ask_agent_to_resume: "让 Warp Agent 继续"
 
+  wasm_nux:
+    open_in_desktop_title: "在 Warp Desktop 中打开？"
+    future_links_desktop: "后续链接会自动在桌面端打开。"
+    open_in_warp: "在 Warp 中打开"
+    download_desktop_title: "下载 Warp Desktop？"
+    download_description: "Warp 是内置 AI 与开发团队知识的智能终端。"
+    learn_more: "了解更多"
+    download: "下载"
+    always_open_drive_on_web: "始终在网页端打开 Warp Drive 对象？"
+    always_open_shared_sessions_on_web: "始终在网页端打开共享会话？"
+    always_open_links_on_web: "始终在网页端打开 Warp 链接？"
+    change_any_time: "你随时可以在设置中更改此项。"
+
   execution_profile:
     models_heading: "模型"
     permissions_heading: "权限"
@@ -2065,6 +2078,7 @@ zh-CN:
     clear: "清除"
     close: "关闭"
     cancel: "取消"
+    "yes": "是"
     update: "更新"
     delete: "删除"
     remove: "移除"
