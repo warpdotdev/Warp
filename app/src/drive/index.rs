@@ -168,20 +168,6 @@ pub const AUTOSCROLL_SPEED_MULTIPLIER: f32 = 10.;
 // Sets the distance from a border at which scroll events start to occur.
 pub const AUTOSCROLL_DETECTION_DISTANCE: f32 = 30.0;
 
-const SHARED_OBJECT_LIMIT_HIT_BANNER_LINE: &str =
-    "Upgrade for access to more notebooks, workflows, shared sessions, and AI credits.";
-
-const PAYMENT_ISSUE_BANNER_LINE_1: &str =
-    "Shared objects have been restricted due to a subscription payment issue.";
-
-const PAYMENT_ISSUE_BANNER_LINE_2_ADMIN: &str =
-    "Please update your payment information to restore access.";
-
-const PAYMENT_ISSUE_BANNER_LINE_2_ADMIN_ENTERPRISE: &str =
-    "Please contact support@warp.dev to restore access.";
-
-const PAYMENT_ISSUE_BANNER_LINE_2_NONADMIN: &str = "Please contact a team admin to restore access.";
-
 /// Struct to hold different state-related information on per-space basis.
 /// Currently, we only have 1 space (1 Team), but as we're working on personal space, and add
 /// multiple teams option, we can use this struct to hold states (like mouse, menu open) for each
@@ -4165,12 +4151,20 @@ impl DriveIndex {
         let highlight =
             Highlight::new().with_properties(Properties::default().weight(Weight::Bold));
 
-        let banner_line_1 = format!("You've run out of {object_type}s on your plan.");
+        let banner_line_1 = t!(
+            "drive.shared_object_limit_line_1",
+            object_type = object_type
+        )
+        .to_string();
         let body = Container::new(
             appearance
                 .ui_builder()
                 .wrappable_text(
-                    format!("{banner_line_1} {SHARED_OBJECT_LIMIT_HIT_BANNER_LINE}"),
+                    format!(
+                        "{} {}",
+                        banner_line_1,
+                        t!("drive.shared_object_limit_line_2")
+                    ),
                     true,
                 )
                 .with_highlights((0..banner_line_1.len()).collect::<Vec<_>>(), highlight)
@@ -4248,24 +4242,22 @@ impl DriveIndex {
         let highlight =
             Highlight::new().with_properties(Properties::default().weight(Weight::Bold));
 
+        let banner_line_1 = t!("drive.payment_issue_line_1").to_string();
         let banner_line_2 = if has_admin_permissions && is_on_stripe_paid_plan {
-            PAYMENT_ISSUE_BANNER_LINE_2_ADMIN
+            t!("drive.payment_issue_admin_line_2").to_string()
         } else if has_admin_permissions && !is_on_stripe_paid_plan {
-            PAYMENT_ISSUE_BANNER_LINE_2_ADMIN_ENTERPRISE
+            t!("drive.payment_issue_enterprise_line_2").to_string()
         } else {
-            PAYMENT_ISSUE_BANNER_LINE_2_NONADMIN
+            t!("drive.payment_issue_nonadmin_line_2").to_string()
         };
 
         body.add_child(
             Container::new(
                 appearance
                     .ui_builder()
-                    .wrappable_text(
-                        format!("{PAYMENT_ISSUE_BANNER_LINE_1} {banner_line_2}").to_string(),
-                        true,
-                    )
+                    .wrappable_text(format!("{banner_line_1} {banner_line_2}"), true)
                     .with_highlights(
-                        (0..PAYMENT_ISSUE_BANNER_LINE_1.len()).collect::<Vec<_>>(),
+                        (0..banner_line_1.chars().count()).collect::<Vec<_>>(),
                         highlight,
                     )
                     .with_style(UiComponentStyles {
