@@ -366,7 +366,10 @@ use session_sharing_protocol::common::{
     ServerConversationToken as SessionSharingServerConversationToken,
     WindowSize as SessionSharingWindowSize,
 };
-use shared_session::{SharedSessionAdapter, Viewer};
+use shared_session::{
+    cloud_conversation_continuation::CloudConversationContinuationUiState, SharedSessionAdapter,
+    Viewer,
+};
 use std::any::Any;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -5441,6 +5444,13 @@ impl TerminalView {
         {
             self.fetch_and_update_conversation_details_panel(ctx);
         }
+        if matches!(
+            event,
+            BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
+                | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
+        ) {
+            self.maybe_insert_tombstone_for_non_running_shared_ambient_task(ctx);
+        }
         match event {
             BlocklistAIHistoryEvent::AppendedExchange {
                 exchange_id,
@@ -5798,7 +5808,7 @@ impl TerminalView {
                         if !conversation.status().is_in_progress()
                             && conversation_output_status_from_conversation(conversation).is_some()
                         {
-                            self.insert_conversation_ended_tombstone(ctx);
+                            self.insert_conversation_ended_tombstone_with_cta(None, ctx);
                         }
                     }
                 }
@@ -7177,17 +7187,27 @@ impl TerminalView {
             return;
         }
 
-        let can_continue_owned_task_in_cloud = self.owned_ambient_agent_task_id(ctx).is_some()
-            && FeatureFlag::HandoffCloudCloud.is_enabled();
-        if !can_continue_owned_task_in_cloud {
-            self.insert_conversation_ended_tombstone(ctx);
-        } else if !self
-            .model
-            .lock()
-            .shared_session_status()
-            .is_sharer_or_viewer()
-        {
-            self.enable_owned_cloud_followup_input(task_id, ctx)
+        if FeatureFlag::HandoffCloudCloud.is_enabled() {
+            let has_live_shared_session = {
+                let status = self.model.lock().shared_session_status().clone();
+                status.is_active_viewer() || status.is_active_sharer()
+            };
+            if has_live_shared_session {
+                return;
+            }
+            let Some(state) = self.cloud_conversation_continuation_ui_state(ctx) else {
+                return;
+            };
+            match state {
+                CloudConversationContinuationUiState::Tombstone { cta } => {
+                    self.insert_conversation_ended_tombstone_with_cta(cta, ctx);
+                }
+                CloudConversationContinuationUiState::FollowupInput => {
+                    self.enable_cloud_followup_input(task_id, ctx);
+                }
+            }
+        } else {
+            self.insert_conversation_ended_tombstone_with_cta(None, ctx);
         }
     }
 
@@ -20146,10 +20166,7 @@ impl TerminalView {
         if !FeatureFlag::HandoffCloudCloud.is_enabled() {
             return false;
         }
-        let Some(task_id) = self
-            .pending_cloud_followup_task_id
-            .or_else(|| self.owned_ambient_agent_task_id(ctx))
-        else {
+        let Some(task_id) = self.pending_cloud_followup_task_id else {
             return false;
         };
 

@@ -4277,7 +4277,7 @@ impl PaneGroup {
         // Insert the conversation ended tombstone (includes Open in Warp button on WASM).
         if terminal_manager.is_some() {
             terminal_view.update(ctx, |view, ctx| {
-                view.insert_conversation_ended_tombstone(ctx);
+                view.insert_conversation_ended_tombstone_with_resolved_cta(ctx);
             });
         }
 
@@ -5710,7 +5710,7 @@ impl PaneGroup {
                 shared_session::SharedSessionStatus::FinishedViewer
             };
             view.model.lock().set_shared_session_status(status);
-            view.insert_conversation_ended_tombstone(ctx);
+            view.insert_conversation_ended_tombstone_with_resolved_cta(ctx);
         });
 
         ActiveAgentViewsModel::handle(ctx).update(ctx, |active_views, ctx| {
@@ -6359,7 +6359,7 @@ impl PaneGroup {
         let terminal_view = terminal_manager.as_ref(ctx).view();
         // Insert the conversation ended tombstone (includes Open in Warp button on WASM)
         terminal_view.update(ctx, |view, ctx| {
-            view.insert_conversation_ended_tombstone(ctx);
+            view.insert_conversation_ended_tombstone_with_resolved_cta(ctx);
         });
 
         BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, _ctx| {
