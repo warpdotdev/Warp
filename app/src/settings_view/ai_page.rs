@@ -7141,7 +7141,7 @@ impl ApiKeysWidget {
                             })
                             .finish(),
                         )
-                        .with_background_color(appearance.theme().tooltip_background().into())
+                        .with_background_color(appearance.theme().tooltip_background())
                         .with_vertical_padding(4.)
                         .with_horizontal_padding(8.)
                         .with_border(Border::all(1.).with_border_fill(appearance.theme().outline()))
