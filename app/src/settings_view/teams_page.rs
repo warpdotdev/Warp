@@ -1598,7 +1598,7 @@ impl TeamsPageView {
             let actions = if current_user_has_admin_permissions {
                 vec![ItemAction {
                     icon: Icon::X,
-                    label: "Cancel invite".to_string(),
+                    label: t!("teams.cancel_invite").to_string(),
                     action: TeamsPageAction::DeletePendingEmailInvitation {
                         team_uid: team.uid,
                         invitee_email: email_invite.invitee_email.clone(),
@@ -1635,7 +1635,7 @@ impl TeamsPageView {
                 if current_user_has_owner_permissions && !team_member_has_owner_permissions {
                     actions.push(ItemAction {
                         icon: Icon::Users,
-                        label: "Transfer ownership".to_string(),
+                        label: t!("teams.transfer_ownership").to_string(),
                         action: TeamsPageAction::ShowTransferOwnershipModal {
                             new_owner_email: member.email.clone(),
                             new_owner_uid: member.uid,
@@ -1652,7 +1652,7 @@ impl TeamsPageView {
                     if team_member_has_admin_permissions {
                         actions.push(ItemAction {
                             icon: Icon::ArrowDown,
-                            label: "Demote from admin".to_string(),
+                            label: t!("teams.demote_from_admin").to_string(),
                             action: TeamsPageAction::SetTeamMemberRole {
                                 team_uid: team.uid,
                                 user_uid: member.uid,
@@ -1662,7 +1662,7 @@ impl TeamsPageView {
                     } else {
                         actions.push(ItemAction {
                             icon: Icon::ArrowUp,
-                            label: "Promote to admin".to_string(),
+                            label: t!("teams.promote_to_admin").to_string(),
                             action: TeamsPageAction::SetTeamMemberRole {
                                 team_uid: team.uid,
                                 user_uid: member.uid,
@@ -1676,7 +1676,7 @@ impl TeamsPageView {
                 if current_user_has_admin_permissions && !team_member_has_owner_permissions {
                     actions.push(ItemAction {
                         icon: Icon::X,
-                        label: "Remove from team".to_string(),
+                        label: t!("mcp_ext.remove_from_team").to_string(),
                         action: TeamsPageAction::RemoveUserFromTeam {
                             user_uid: member.uid,
                             team_uid: team.uid,
@@ -1778,19 +1778,23 @@ impl TeamsWidget {
         has_admin_permissions: bool,
     ) -> Box<dyn Element> {
         let prorated_message = if has_admin_permissions {
-            "You'll be charged for a portion of the team member's usage of Warp."
+            t!("teams.member_usage_charge_admin").to_string()
         } else {
-            "Your admin will be charged for a portion of the team member's usage of Warp."
+            t!("teams.member_usage_charge_non_admin").to_string()
         };
 
         let additional_members_cost_money_msg = if let Some((monthly_cost, yearly_cost)) =
             self.get_per_seat_costs(team_metadata, pricing_info_model)
         {
-            format!("Additional members are billed at your plan's per-user rate: ${monthly_cost:.0}/month or ${yearly_cost:.0}/year, depending on your billing interval. {prorated_message}")
-        } else {
-            format!(
-                "Additional members are billed at your plan's per-user rate. {prorated_message}"
+            t!(
+                "teams.additional_members_cost_with_price",
+                monthly = format!("{monthly_cost:.0}"),
+                yearly = format!("{yearly_cost:.0}"),
+                prorated = prorated_message
             )
+            .to_string()
+        } else {
+            t!("teams.additional_members_cost", prorated = prorated_message).to_string()
         };
 
         let horizontal_padding = 16.;
@@ -2019,7 +2023,7 @@ impl TeamsWidget {
                 left_side.add_child(
                     Container::new(self.render_delinquency_badge(
                         appearance,
-                        "PAST DUE".into(),
+                        t!("teams.past_due").to_string(),
                         themes::theme::Fill::from(*PAST_DUE_BADGE_COLOR).into(),
                     ))
                     .with_margin_left(8.)
@@ -2030,7 +2034,7 @@ impl TeamsWidget {
                 left_side.add_child(
                     Container::new(self.render_delinquency_badge(
                         appearance,
-                        "UNPAID".into(),
+                        t!("teams.unpaid").to_string(),
                         themes::theme::Fill::from(*UNPAID_BADGE_COLOR).into(),
                     ))
                     .with_margin_left(8.)
@@ -2062,7 +2066,7 @@ impl TeamsWidget {
             .with_text_and_icon_label(
                 TextAndIcon::new(
                     TextAndIconAlignment::IconFirst,
-                    "Contact support",
+                    t!("settings.contact_support").to_string(),
                     Icon::Phone.to_warpui_icon(appearance.theme().accent()),
                     MainAxisSize::Min,
                     MainAxisAlignment::Center,
@@ -2091,7 +2095,7 @@ impl TeamsWidget {
             .with_text_and_icon_label(
                 TextAndIcon::new(
                     TextAndIconAlignment::IconFirst,
-                    "Manage billing",
+                    t!("settings.manage_billing").to_string(),
                     Icon::CoinsStacked.to_warpui_icon(appearance.theme().accent()),
                     MainAxisSize::Min,
                     MainAxisAlignment::Center,
@@ -2122,7 +2126,7 @@ impl TeamsWidget {
             .with_text_and_icon_label(
                 TextAndIcon::new(
                     TextAndIconAlignment::IconFirst,
-                    "Open admin panel",
+                    t!("teams.open_admin_panel").to_string(),
                     Icon::Users.to_warpui_icon(appearance.theme().accent()),
                     MainAxisSize::Min,
                     MainAxisAlignment::Center,
@@ -2202,10 +2206,10 @@ impl TeamsWidget {
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
         let sub_header_text = match team.billing_metadata.customer_type {
-            CustomerType::Free => "Free plan usage limits",
-            _ => "Plan usage limits",
+            CustomerType::Free => t!("teams.free_plan_usage_limits").to_string(),
+            _ => t!("teams.plan_usage_limits").to_string(),
         };
-        section.add_child(self.render_subsection_header(sub_header_text.into(), appearance));
+        section.add_child(self.render_subsection_header(sub_header_text, appearance));
 
         let mut shared_objects_usage_row =
             Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
@@ -2213,9 +2217,10 @@ impl TeamsWidget {
         if let Some(policy) = team.billing_metadata.tier.shared_notebooks_policy {
             if !policy.is_unlimited {
                 let mut shared_notebooks_column = Flex::column();
-                shared_notebooks_column.add_child(
-                    self.render_plan_usage_header("Shared Notebooks".into(), appearance),
-                );
+                shared_notebooks_column.add_child(self.render_plan_usage_header(
+                    t!("teams.shared_notebooks").to_string(),
+                    appearance,
+                ));
                 let num_shared_notebooks = cloud_model
                     .active_notebooks_in_space(Space::Team { team_uid: team.uid }, app)
                     .count();
@@ -2238,9 +2243,10 @@ impl TeamsWidget {
         if let Some(policy) = team.billing_metadata.tier.shared_workflows_policy {
             if !policy.is_unlimited {
                 let mut shared_workflows_column = Flex::column();
-                shared_workflows_column.add_child(
-                    self.render_plan_usage_header("Shared Workflows".into(), appearance),
-                );
+                shared_workflows_column.add_child(self.render_plan_usage_header(
+                    t!("teams.shared_workflows").to_string(),
+                    appearance,
+                ));
                 let num_shared_workflows = cloud_model
                     .active_workflows_in_space(Space::Team { team_uid: team.uid }, app)
                     .count();
