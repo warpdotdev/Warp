@@ -270,12 +270,11 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
         .with_enabled(|| FeatureFlag::AgentTips.is_enabled())],
         app,
     );
+    let show_oz_changelog_label = t!("ai_settings_page.show_oz_changelog").to_string();
+    let hide_oz_changelog_label = t!("ai_settings_page.hide_oz_changelog").to_string();
     ToggleSettingActionPair::add_toggle_setting_action_pairs_as_bindings(
         vec![ToggleSettingActionPair::custom(
-            SettingActionPairDescriptions::new(
-                "Show Oz changelog in new agent conversation view",
-                "Hide Oz changelog in new agent conversation view",
-            ),
+            SettingActionPairDescriptions::new(&show_oz_changelog_label, &hide_oz_changelog_label),
             builder(SettingsAction::AI(
                 AISettingsPageAction::ToggleShowOzUpdatesInZeroState,
             )),
@@ -361,11 +360,13 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
         .with_enabled(|| cfg!(feature = "voice_input"))],
         app,
     );
+    let show_use_agent_footer_label = t!("ai_settings_page.show_use_agent_footer").to_string();
+    let hide_use_agent_footer_label = t!("ai_settings_page.hide_use_agent_footer").to_string();
     ToggleSettingActionPair::add_toggle_setting_action_pairs_as_bindings(
         vec![ToggleSettingActionPair::custom(
             SettingActionPairDescriptions::new(
-                "Show \"Use Agent\" footer",
-                "Hide \"Use Agent\" footer",
+                &show_use_agent_footer_label,
+                &hide_use_agent_footer_label,
             ),
             builder(SettingsAction::AI(
                 AISettingsPageAction::ToggleUseAgentToolbar,
@@ -5752,7 +5753,7 @@ impl SettingsWidget for OtherAIWidget {
             .with_child(
                 build_sub_header(
                     appearance,
-                    "Other",
+                    t!("ai_settings_page.other").to_string(),
                     Some(styles::header_font_color(is_any_ai_enabled, app)),
                 )
                 .with_padding_bottom(HEADER_PADDING)
@@ -5762,7 +5763,7 @@ impl SettingsWidget for OtherAIWidget {
         if FeatureFlag::AgentView.is_enabled() {
             let mut agent_view_column = Flex::column()
                 .with_child(render_ai_setting_toggle::<ShouldShowOzUpdatesInZeroState>(
-                    "Show Oz changelog in new conversation view",
+                    t!("ai_settings_page.show_oz_changelog_short").to_string(),
                     AISettingsPageAction::ToggleShowOzUpdatesInZeroState,
                     *ai_settings.should_show_oz_updates_in_zero_state,
                     is_toggleable,
@@ -5770,8 +5771,10 @@ impl SettingsWidget for OtherAIWidget {
                     &view.local_only_icon_tooltip_states,
                     app,
                 ))
-                .with_child(render_ai_setting_toggle::<ShouldRenderUseAgentToolbarForUserCommands>(
-                    "Show \"Use Agent\" footer",
+                .with_child(render_ai_setting_toggle::<
+                    ShouldRenderUseAgentToolbarForUserCommands,
+                >(
+                    t!("ai_settings_page.show_use_agent_footer").to_string(),
                     AISettingsPageAction::ToggleUseAgentToolbar,
                     *ai_settings.should_render_use_agent_footer_for_user_commands,
                     is_toggleable,
@@ -5780,7 +5783,7 @@ impl SettingsWidget for OtherAIWidget {
                     app,
                 ))
                 .with_child(render_ai_setting_description(
-                    "Shows hint to use the \"Full Terminal Use\"-enabled agent in long running commands.",
+                    t!("ai_settings_page.use_agent_footer_description").to_string(),
                     is_toggleable,
                     app,
                 ));
@@ -5796,7 +5799,7 @@ impl SettingsWidget for OtherAIWidget {
         }
 
         column.add_child(render_ai_setting_toggle::<ShowConversationHistory>(
-            "Show conversation history in tools panel",
+            t!("ai_settings_page.show_conversation_history").to_string(),
             AISettingsPageAction::ToggleShowConversationHistory,
             *ai_settings.show_conversation_history,
             is_toggleable,
@@ -5805,10 +5808,14 @@ impl SettingsWidget for OtherAIWidget {
             app,
         ));
 
+        let agent_thinking_display_label =
+            t!("ai_settings_page.agent_thinking_display").to_string();
+        let agent_thinking_display_description =
+            t!("ai_settings_page.agent_thinking_display_description").to_string();
         column.add_child(render_dropdown_item(
             appearance,
-            "Agent thinking display",
-            Some("Controls how reasoning/thinking traces are displayed."),
+            &agent_thinking_display_label,
+            Some(&agent_thinking_display_description),
             None,
             LocalOnlyIconState::for_setting(
                 ThinkingDisplayMode::storage_key(),
@@ -5826,9 +5833,11 @@ impl SettingsWidget for OtherAIWidget {
         if FeatureFlag::OpenWarpNewSettingsModes.is_enabled() {
             use crate::util::file::external_editor::settings::OpenConversationLayoutPreference;
 
+            let existing_conversation_layout_label =
+                t!("ai_settings_page.existing_conversation_layout").to_string();
             column.add_child(render_dropdown_item(
                 appearance,
-                "Preferred layout when opening existing agent conversations",
+                &existing_conversation_layout_label,
                 None,
                 None,
                 LocalOnlyIconState::for_setting(
