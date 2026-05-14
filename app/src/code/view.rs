@@ -53,8 +53,8 @@ use warpui::{
     id,
     keymap::EditableBinding,
     ui_components::{button::ButtonVariant, components::UiComponent},
-    AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
-    ViewHandle, WindowId,
+    AppContext, Element, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View,
+    ViewContext, ViewHandle, WindowId,
 };
 
 use crate::{
@@ -90,9 +90,16 @@ const TAB_INTERNAL_MARGIN: f32 = 4.;
 const TAB_HORIZONTAL_MARGIN: f32 = 8.;
 const TAB_PADDING: f32 = 2.;
 
-/// Position id used to track the rendered width of the editor tab strip so
-/// [`TabDisplayMode`] can be derived from the previous-frame layout.
-const TABS_ROW_POSITION_ID: &str = "code_view_tabs_row";
+/// Builds a position id used to track the rendered width of one editor tab
+/// strip so [`TabDisplayMode`] can be derived from the previous-frame layout.
+///
+/// The id is scoped by the owning pane's entity id so that split panes with
+/// multiple `CodeView`s in the same window don't overwrite each other's
+/// cached width (which would otherwise cause one pane to render with the
+/// other pane's display mode).
+fn tabs_row_position_id(pane_id: EntityId) -> String {
+    format!("code_view_tabs_row_{pane_id}")
+}
 
 /// Estimated per-tab width at which we keep the close button visible for every
 /// tab (the historical "wide" behavior). Above this we have enough room for an
@@ -142,6 +149,13 @@ impl TabDisplayMode {
     /// number of tabs currently in the strip. Falls back to [`Self::Wide`] when
     /// the width is unknown (e.g. on the very first frame) so the initial
     /// render keeps the existing behavior.
+    ///
+    /// The tab strip is laid out as N `Shrinkable(flex=1)` tabs *plus* a
+    /// trailing `Expanded(flex=1)` spacer that fills the gap between the last
+    /// tab and the right-hand buttons, so the Flex layout allocates one of
+    /// `tab_count + 1` equal slices to each tab. Dividing by just `tab_count`
+    /// over-estimates the per-tab width and would pick a wider mode than the
+    /// user actually sees (5 tabs is a 20% overestimate, 10 tabs is 10%).
     fn from_tabs_row_width(tabs_row_width: Option<f32>, tab_count: usize) -> Self {
         let Some(total) = tabs_row_width else {
             return Self::Wide;
@@ -149,7 +163,7 @@ impl TabDisplayMode {
         if tab_count == 0 {
             return Self::Wide;
         }
-        let per_tab = total / tab_count as f32;
+        let per_tab = total / (tab_count + 1) as f32;
         if per_tab >= TAB_WIDE_THRESHOLD {
             Self::Wide
         } else if per_tab >= TAB_MEDIUM_THRESHOLD {
@@ -1639,13 +1653,21 @@ impl CodeView {
             .finish(),
         );
 
-        // Overlay the close button at the tab's right edge when appropriate.
+        // Position the close button at the tab's right edge when appropriate.
         // `ParentOffsetBounds::ParentByPosition` keeps the button inside the
         // tab even if the layout otherwise wanted to push it out.
+        //
+        // We use `add_positioned_child` rather than `add_positioned_overlay_child`
+        // on purpose: the overlay variant wraps the child in an `Overlay`
+        // element that explicitly starts a `ClipBounds::None` layer, which
+        // would let the close button render outside the `Clipped` wrapper
+        // around the tab strip when a tab is partially off-screen.
+        // `add_positioned_child` paints in the same clipped layer as the
+        // rest of the tab, so the button respects the strip's clip rect.
         let mut row_stack = Stack::new();
         row_stack.add_child(row.finish());
         if show_close_overlay {
-            row_stack.add_positioned_overlay_child(
+            row_stack.add_positioned_child(
                 Self::render_close_button(
                     appearance,
                     tab_data.mouse_state_handles.close_handle.clone(),
@@ -1772,10 +1794,11 @@ impl CodeView {
         // Pick a per-tab display mode based on the editor tab strip's measured
         // width from the previous frame. While dragging a pane, force Wide so
         // the dragged tab always shows its close affordance.
+        let tabs_row_position_id = tabs_row_position_id(self.pane_configuration.id());
         let tabs_row_width = if is_pane_dragging {
             None
         } else {
-            app.element_position_by_id_at_last_frame(self.window_id, TABS_ROW_POSITION_ID)
+            app.element_position_by_id_at_last_frame(self.window_id, &tabs_row_position_id)
                 .map(|rect| rect.width())
         };
         let display_mode = if is_pane_dragging {
@@ -1957,7 +1980,7 @@ impl CodeView {
         // width and pick a TabDisplayMode for it.
         let clipped_tabs = SavePosition::new(
             Clipped::new(tabs_row.finish()).finish(),
-            TABS_ROW_POSITION_ID,
+            &tabs_row_position_id,
         )
         .finish();
         header_row.add_child(if is_pane_dragging {
@@ -2485,64 +2508,82 @@ mod tab_display_mode_tests {
 
     #[test]
     fn wide_when_each_tab_has_at_least_the_wide_threshold() {
-        // 5 tabs with 1000px of strip → 200px/tab > 160px wide threshold.
+        // 5 tabs + trailing spacer share 1200px → 200px/tab, > 160 threshold.
         assert_eq!(
-            TabDisplayMode::from_tabs_row_width(Some(1000.0), 5),
+            TabDisplayMode::from_tabs_row_width(Some(1200.0), 5),
             TabDisplayMode::Wide,
         );
-        // Right at the wide boundary: 160px/tab.
+        // Right at the wide boundary: TAB_WIDE_THRESHOLD per tab once the
+        // spacer is accounted for (5 tabs + spacer = 6 equal slices).
         assert_eq!(
-            TabDisplayMode::from_tabs_row_width(Some(TAB_WIDE_THRESHOLD * 5.0), 5),
+            TabDisplayMode::from_tabs_row_width(Some(TAB_WIDE_THRESHOLD * 6.0), 5),
             TabDisplayMode::Wide,
         );
     }
 
     #[test]
     fn medium_between_thresholds() {
-        // Just below wide → Medium (active-only close button).
+        // Just below wide → Medium (active-only close button). 4 tabs +
+        // spacer = 5 slices, each just under 160px.
         assert_eq!(
-            TabDisplayMode::from_tabs_row_width(Some((TAB_WIDE_THRESHOLD - 1.0) * 4.0), 4),
+            TabDisplayMode::from_tabs_row_width(Some((TAB_WIDE_THRESHOLD - 1.0) * 5.0), 4),
             TabDisplayMode::Medium,
         );
-        // Right at the medium boundary: 100px/tab.
+        // Right at the medium boundary: 100px/tab (8 tabs + spacer = 9 slices).
         assert_eq!(
-            TabDisplayMode::from_tabs_row_width(Some(TAB_MEDIUM_THRESHOLD * 8.0), 8),
+            TabDisplayMode::from_tabs_row_width(Some(TAB_MEDIUM_THRESHOLD * 9.0), 8),
             TabDisplayMode::Medium,
         );
     }
 
     #[test]
     fn narrow_when_each_tab_falls_below_the_medium_threshold() {
-        // 12 tabs sharing 1000px → ~83px/tab — fits icon+X side by side, so
-        // we still want the regular Narrow mode (icon kept on hover).
+        // 12 tabs + spacer share 1000px → ~77px/tab — fits icon+X side by
+        // side, so we still want the regular Narrow mode (icon kept on hover).
         assert_eq!(
             TabDisplayMode::from_tabs_row_width(Some(1000.0), 12),
             TabDisplayMode::Narrow,
         );
-        // Just below medium boundary.
+        // Just below medium boundary (4 tabs + spacer = 5 slices, ~99/tab).
         assert_eq!(
-            TabDisplayMode::from_tabs_row_width(Some((TAB_MEDIUM_THRESHOLD - 1.0) * 4.0), 4),
+            TabDisplayMode::from_tabs_row_width(Some((TAB_MEDIUM_THRESHOLD - 1.0) * 5.0), 4),
             TabDisplayMode::Narrow,
         );
-        // Right at the very-narrow boundary — still Narrow.
+        // Right at the very-narrow boundary — still Narrow (8 tabs + spacer
+        // = 9 slices, exactly 64/tab).
         assert_eq!(
-            TabDisplayMode::from_tabs_row_width(Some(TAB_VERY_NARROW_THRESHOLD * 8.0), 8),
+            TabDisplayMode::from_tabs_row_width(Some(TAB_VERY_NARROW_THRESHOLD * 9.0), 8),
             TabDisplayMode::Narrow,
         );
     }
 
     #[test]
     fn very_narrow_when_icon_and_close_button_would_overlap() {
-        // 16 tabs in 800px → 50px/tab, below the very-narrow threshold so the
-        // file icon and the close-button overlay would stack on each other.
+        // 16 tabs + spacer share 800px → ~47px/tab, below the very-narrow
+        // threshold so the file icon and the close-button overlay would
+        // stack on each other.
         assert_eq!(
             TabDisplayMode::from_tabs_row_width(Some(800.0), 16),
             TabDisplayMode::VeryNarrow,
         );
-        // Just below the very-narrow boundary.
+        // Just below the very-narrow boundary (6 tabs + spacer = 7 slices,
+        // 63/tab).
         assert_eq!(
-            TabDisplayMode::from_tabs_row_width(Some((TAB_VERY_NARROW_THRESHOLD - 1.0) * 6.0), 6,),
+            TabDisplayMode::from_tabs_row_width(Some((TAB_VERY_NARROW_THRESHOLD - 1.0) * 7.0), 6,),
             TabDisplayMode::VeryNarrow,
+        );
+    }
+
+    #[test]
+    fn spacer_aware_split_at_wide_boundary() {
+        // Regression test for the per-tab width over-estimation bug: ignoring
+        // the trailing spacer in the divisor caused 5 tabs sharing
+        // TAB_WIDE_THRESHOLD * 5 = 800px to be classified Wide (800 / 5 =
+        // 160) when each tab is actually ~133px (800 / 6) and should be
+        // Medium.
+        assert_eq!(
+            TabDisplayMode::from_tabs_row_width(Some(TAB_WIDE_THRESHOLD * 5.0), 5),
+            TabDisplayMode::Medium,
         );
     }
 }
