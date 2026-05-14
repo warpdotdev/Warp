@@ -302,6 +302,16 @@ pub struct Block {
     session_id: Option<SessionId>,
     rprompt: Option<String>,
 
+    /// The command string captured at shell preexec time — i.e. the command
+    /// as the shell received it from the user, before any post-execution
+    /// reconstruction (which loses shebang invocations like `./run-claude.py`
+    /// by reporting them in the runtime-invoked form `python3 ./run-claude.py`).
+    ///
+    /// Used by CLI-agent detection so that shebang scripts resolve to the
+    /// script's basename rather than the interpreter. See `detect_cli_agent_from_model`
+    /// in `app/src/terminal/view/use_agent_footer/mod.rs`.
+    preexec_command: Option<String>,
+
     /// Executor used for spawning futures in the background
     #[allow(dead_code)]
     background_executor: Arc<Background>,
@@ -985,6 +995,7 @@ impl Block {
             conda_env: None,
             node_version: None,
             rprompt: None,
+            preexec_command: None,
             background_executor,
             event_proxy,
             bootstrap_stage,
@@ -2734,6 +2745,18 @@ impl Block {
         self.node_version.as_ref()
     }
 
+    /// The command captured at shell preexec time — i.e. the command as the
+    /// shell received it from the user. Preferred over post-execution
+    /// reconstruction for CLI-agent detection because it preserves shebang
+    /// invocations (e.g. `./run-claude.py` rather than `python3 ./run-claude.py`).
+    ///
+    /// Returns `None` when the block hasn't reached the preexec stage yet
+    /// or when the underlying shell didn't deliver a preexec event for this
+    /// block.
+    pub fn preexec_command(&self) -> Option<&str> {
+        self.preexec_command.as_deref()
+    }
+
     #[cfg(feature = "integration_tests")]
     pub fn prompt_to_string(&self) -> String {
         self.header_grid.prompt_to_string()
@@ -3331,6 +3354,12 @@ impl ansi::Handler for Block {
         self.output_grid.start();
         self.state = BlockState::Executing;
         self.is_for_in_band_command = is_for_in_band_command;
+
+        // Capture the shell-preexec command verbatim so CLI-agent detection can
+        // inspect the command as the shell saw it (e.g. `./run-claude.py`)
+        // rather than the post-exec reconstructed shape that loses shebang
+        // invocations.
+        self.preexec_command = Some(data.command);
 
         self.wakeup_after_delay();
     }

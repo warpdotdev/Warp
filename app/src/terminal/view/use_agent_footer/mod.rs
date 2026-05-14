@@ -386,13 +386,22 @@ impl TerminalView {
             return None;
         }
 
-        let command = active_block.command_with_secrets_obfuscated(false);
+        // Prefer the command the shell received at preexec time — this preserves
+        // shebang invocations (e.g. `./run-claude.py`) that would otherwise be
+        // lost when the active block reconstructs the command from the running
+        // process (`python3 ./run-claude.py`). Fall back to the reconstructed
+        // form when preexec hasn't fired (e.g. very early in the block lifecycle
+        // or shells that don't emit a preexec hook).
+        let reconstructed = active_block.command_with_secrets_obfuscated(false);
+        let command_for_detection: &str = active_block
+            .preexec_command()
+            .unwrap_or(reconstructed.as_str());
 
         let detected = self.active_block_session_id().and_then(|session_id| {
             self.sessions.read(ctx, |sessions, _| {
                 let session = sessions.get(session_id)?;
                 CLIAgent::detect(
-                    &command,
+                    command_for_detection,
                     Some(session.shell_family().escape_char()),
                     Some(session.aliases()),
                     ctx,
@@ -404,8 +413,11 @@ impl TerminalView {
             return Some((agent, None));
         }
 
-        CompiledCommandsForCodingAgentToolbar::matched_agent(ctx, &command).map(|agent| {
-            let prefix = command.split_whitespace().next().map(str::to_owned);
+        // Custom toolbar command patterns continue to match against the
+        // reconstructed form for backward compatibility with patterns that
+        // users may have authored against the post-exec command shape.
+        CompiledCommandsForCodingAgentToolbar::matched_agent(ctx, &reconstructed).map(|agent| {
+            let prefix = reconstructed.split_whitespace().next().map(str::to_owned);
             (agent, prefix)
         })
     }
