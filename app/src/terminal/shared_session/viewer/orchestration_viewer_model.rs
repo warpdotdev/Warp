@@ -96,14 +96,23 @@ pub struct OrchestrationViewerModel {
     terminal_view: WeakViewHandle<TerminalView>,
     /// Known child agents indexed by server-side task id.
     children: HashMap<AmbientAgentTaskId, ChildAgentEntry>,
-    /// Handle for the next scheduled poll. Replaced (and implicitly
-    /// cancelled) by every [`Self::schedule_next_poll`] call, and cleared
-    /// while a kick-induced fetch is in flight — the fetch's response
-    /// callback schedules a fresh timer using the freshest child state.
-    /// The timer chain itself runs for the lifetime of this model; the
-    /// model is dropped when the parent pane's `TerminalManager` is torn
-    /// down (closing the orchestrator's shared session).
+    /// Handle for the next scheduled poll. Aborted and replaced by every
+    /// [`Self::schedule_next_poll`] call so we never have more than one
+    /// timer chain in flight, and cleared while a kick-induced fetch is
+    /// in flight — the fetch's response callback schedules a fresh timer
+    /// using the freshest child state. The timer chain itself runs for
+    /// the lifetime of this model; the model is dropped when the parent
+    /// pane's `TerminalManager` is torn down (closing the orchestrator's
+    /// shared session).
     polling_handle: Option<SpawnedFutureHandle>,
+    /// Monotonic counter incremented before every `fetch_children`
+    /// dispatch. The response callback compares the captured generation
+    /// against this field and drops stale responses, preventing two
+    /// concurrent fetches (typically a timer-fired fetch racing a kick-
+    /// induced fetch) from clobbering each other. Without this guard a
+    /// late-arriving stale snapshot could revert a child's status from
+    /// the freshly-applied state to an older one.
+    fetch_generation: u64,
 }
 
 impl Entity for OrchestrationViewerModel {
@@ -135,12 +144,13 @@ impl OrchestrationViewerModel {
             me.maybe_kick_polling(event, ctx);
         });
 
-        let model = Self {
+        let mut model = Self {
             parent_task_id,
             terminal_view_id,
             terminal_view,
             children: HashMap::new(),
             polling_handle: None,
+            fetch_generation: 0,
         };
 
         // Kick off the recurring poll. `fetch_children`'s response
@@ -158,6 +168,15 @@ impl OrchestrationViewerModel {
     /// terminal state. Polling never stops on its own — see the field doc
     /// on [`Self::polling_handle`] for the lifecycle.
     fn schedule_next_poll(&mut self, ctx: &mut ModelContext<Self>) {
+        // Abort any prior timer before replacing it. `SpawnedFutureHandle`
+        // does NOT abort on drop, so without this call the previous
+        // timer's continuation could still fire and dispatch an extra
+        // `fetch_children`, eventually multiplying into parallel timer
+        // chains.
+        if let Some(prior) = self.polling_handle.take() {
+            prior.abort();
+        }
+
         let all_terminal = !self.children.is_empty()
             && self
                 .children
@@ -236,11 +255,15 @@ impl OrchestrationViewerModel {
         log::info!(
             "[orch-viewer] kick polling: AppendedExchange for tracked conv={conversation_id:?}"
         );
-        // Cancel the pending timer; `fetch_children`'s response callback
+        // Abort the pending timer; `fetch_children`'s response callback
         // will queue a fresh one using the post-fetch state, so a kick
         // landing during the idle (30s) interval correctly tightens back
         // to the fast (5s) interval as soon as the new child surfaces.
-        self.polling_handle = None;
+        // Aborting (rather than just dropping the handle) is required
+        // because `SpawnedFutureHandle` does not cancel on drop.
+        if let Some(prior) = self.polling_handle.take() {
+            prior.abort();
+        }
         self.fetch_children(ctx);
     }
 
@@ -251,7 +274,15 @@ impl OrchestrationViewerModel {
     /// preferable to surfacing a failure modal because orchestrations that
     /// haven't spawned any children yet legitimately return an empty list,
     /// and transient REST errors should not break the viewer.
-    fn fetch_children(&self, ctx: &mut ModelContext<Self>) {
+    fn fetch_children(&mut self, ctx: &mut ModelContext<Self>) {
+        // Stamp the generation BEFORE dispatching so any in-flight stale
+        // fetch (a timer-fired fetch whose REST request hasn't returned
+        // yet, racing this kick) is invalidated when its response
+        // callback compares against the freshly-bumped
+        // `self.fetch_generation`.
+        self.fetch_generation = self.fetch_generation.wrapping_add(1);
+        let fetch_generation = self.fetch_generation;
+
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
         let filter = TaskListFilter {
             ancestor_run_id: Some(self.parent_task_id.to_string()),
@@ -266,6 +297,19 @@ impl OrchestrationViewerModel {
                     .await
             },
             move |me, result, ctx| {
+                // Drop stale responses: a newer fetch was dispatched while
+                // this one was in flight, so applying our snapshot could
+                // revert state the newer fetch's response already wrote.
+                // Skip rescheduling too; the newer fetch's response
+                // callback owns the next reschedule.
+                if me.fetch_generation != fetch_generation {
+                    log::debug!(
+                        "[orch-viewer] dropping stale fetch response: generation={fetch_generation} \
+                         current={}",
+                        me.fetch_generation,
+                    );
+                    return;
+                }
                 match result {
                     Ok(tasks) => me.apply_children_fetch(tasks, ctx),
                     Err(err) => {

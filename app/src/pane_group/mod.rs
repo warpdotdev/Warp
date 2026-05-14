@@ -1869,7 +1869,12 @@ impl PaneGroup {
                 let mut pending_task: Option<AmbientAgentTaskId> = None;
                 let (terminal_view, terminal_manager) = match restore_kind {
                     AmbientRestoreKind::SharedSession { session_id } => {
-                        Self::create_shared_session_viewer(session_id, resources, view_size, ctx)
+                        // Restored root viewer of an orchestrator: enable
+                        // children polling so the pill bar populates after
+                        // rejoin.
+                        Self::create_shared_session_viewer(
+                            session_id, resources, view_size, true, ctx,
+                        )
                     }
                     AmbientRestoreKind::PendingRestoration { task_id } => {
                         let (view, manager) = Self::create_loading_terminal_manager_and_view(
@@ -3504,8 +3509,18 @@ impl PaneGroup {
             model_event_sender: self.model_event_sender.clone(),
         };
         let view_size = Self::estimated_view_bounds(ctx).size();
-        let (new_terminal_view, terminal_manager) =
-            Self::create_shared_session_viewer(child_session_id, resources, view_size, ctx);
+        let (new_terminal_view, terminal_manager) = Self::create_shared_session_viewer(
+            child_session_id,
+            resources,
+            view_size,
+            // Per-child viewer panes never get their own orchestration
+            // model: nested orchestration isn't supported and the parent
+            // viewer's model already discovers grandchildren transitively
+            // via `ancestor_run_id`. See the field doc on
+            // `shared_session::viewer::TerminalManager::enable_orchestration_polling`.
+            false,
+            ctx,
+        );
 
         let pane_data = TerminalPane::new(
             Uuid::new_v4().as_bytes().to_vec(),
@@ -3718,10 +3733,13 @@ impl PaneGroup {
                     session_id,
                     task_id: _,
                 }) => {
+                    // Pending restoration of a root orchestrator viewer:
+                    // enable children polling.
                     let (view, terminal_manager) = Self::create_shared_session_viewer(
                         session_id,
                         resources.clone(),
                         view_size,
+                        true,
                         ctx,
                     );
                     let new_pane = TerminalPane::new(
@@ -4039,10 +4057,13 @@ impl PaneGroup {
                                    pane_history: &mut Vec<PaneId>,
                                    view_bounds: RectF,
                                    ctx: &mut ViewContext<Self>| {
+            // Fresh root viewer for an orchestrator's shared session:
+            // enable children polling so the pill bar populates.
             let (view, terminal_manager) = PaneGroup::create_shared_session_viewer(
                 session_id,
                 resources,
                 view_bounds.size(),
+                true,
                 ctx,
             );
 
@@ -6323,6 +6344,7 @@ impl PaneGroup {
         session_id: SessionId,
         resources: TerminalViewResources,
         initial_size: Vector2F,
+        enable_orchestration_polling: bool,
         ctx: &mut ViewContext<Self>,
     ) -> (
         ViewHandle<TerminalView>,
@@ -6336,6 +6358,7 @@ impl PaneGroup {
                     resources,
                     initial_size,
                     window_id,
+                    enable_orchestration_polling,
                     ctx,
                 ));
             terminal_manager

@@ -109,6 +109,21 @@ pub struct TerminalManager {
     /// can write into it without needing a `&mut self`. Behind
     /// `FeatureFlag::OrchestrationViewerPillBar`.
     orchestration_viewer_model: Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
+    /// Whether this terminal manager should spin up an
+    /// [`OrchestrationViewerModel`] when it joins an ambient agent shared
+    /// session. `true` for the root viewer pane of an orchestrator (the
+    /// model polls for that orchestrator's children); `false` for the
+    /// per-child viewer panes materialized by
+    /// `PaneGroup::ensure_shared_session_viewer_child_pane`, since:
+    ///
+    /// 1. We don't support nested orchestration, so polling for a child's
+    ///    descendants is wasted REST traffic.
+    /// 2. The `ancestor_run_id` filter is transitive: if any grandchildren
+    ///    ever do exist, the parent viewer's model would register them, and
+    ///    a child viewer's model would also register them under a
+    ///    different parent conversation — producing duplicate local
+    ///    conversations for the same server-side task.
+    enable_orchestration_polling: bool,
 }
 
 impl TerminalManager {
@@ -177,6 +192,7 @@ impl TerminalManager {
         initial_size: Vector2F,
         window_id: WindowId,
         is_cloud_mode: bool,
+        enable_orchestration_polling: bool,
         ctx: &mut AppContext,
     ) -> Self {
         // Create all the necessary channels we need for communication.
@@ -292,19 +308,31 @@ impl TerminalManager {
             viewer_remote_update_guard: RemoteUpdateGuard::new(),
             outbound_handlers_registered: false,
             orchestration_viewer_model: Arc::new(FairMutex::new(None)),
+            enable_orchestration_polling,
         }
     }
 
     /// Create a new terminal manager for viewing a shared session.
+    ///
+    /// `enable_orchestration_polling` should be `true` for the root viewer
+    /// of an orchestrator and `false` for per-child viewer panes; see the
+    /// field doc on [`Self::enable_orchestration_polling`].
     pub fn new(
         session_id: SessionId,
         resources: TerminalViewResources,
         initial_size: Vector2F,
         window_id: WindowId,
+        enable_orchestration_polling: bool,
         ctx: &mut AppContext,
     ) -> Self {
-        let mut terminal_manager =
-            Self::new_internal(resources, initial_size, window_id, false, ctx);
+        let mut terminal_manager = Self::new_internal(
+            resources,
+            initial_size,
+            window_id,
+            false,
+            enable_orchestration_polling,
+            ctx,
+        );
 
         terminal_manager.connect_session(
             session_id,
@@ -323,7 +351,11 @@ impl TerminalManager {
         window_id: WindowId,
         ctx: &mut AppContext,
     ) -> Self {
-        Self::new_internal(resources, initial_size, window_id, true, ctx)
+        // Cloud-mode deferred viewers are owner panes that may later attach
+        // to an orchestrator's shared session via `attach_followup_session`;
+        // enable orchestration polling so the pill bar surfaces children
+        // once the session is joined.
+        Self::new_internal(resources, initial_size, window_id, true, true, ctx)
     }
 
     /// Connects a deferred terminal manager to a shared session.
@@ -449,6 +481,7 @@ impl TerminalManager {
             self.network_resources.prompt_type.clone(),
             self.viewer_remote_update_guard.clone(),
             self.orchestration_viewer_model.clone(),
+            self.enable_orchestration_polling,
             ctx,
         );
         if !self.outbound_handlers_registered {
@@ -691,6 +724,7 @@ impl TerminalManager {
         prompt_type: ModelHandle<PromptType>,
         viewer_remote_update_guard: RemoteUpdateGuard,
         orchestration_viewer_model: Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
+        enable_orchestration_polling: bool,
         ctx: &mut AppContext,
     ) {
         // We use a weak view handle instead of a strong reference because we may add a subscription to the view which moves a strong reference of the Model into the callback,
@@ -776,7 +810,13 @@ impl TerminalManager {
                         // shared-session viewer pane materialized by the pane
                         // group when the model emits
                         // `Event::EnsureSharedSessionViewerChildPane`.
-                        if FeatureFlag::OrchestrationViewerPillBar.is_enabled()
+                        //
+                        // `enable_orchestration_polling` is `false` for the
+                        // per-child viewer panes themselves (we don't want
+                        // each child to also poll for descendants — see the
+                        // field doc).
+                        if enable_orchestration_polling
+                            && FeatureFlag::OrchestrationViewerPillBar.is_enabled()
                             && orchestration_viewer_model.lock().is_none()
                         {
                             let weak_view_handle_for_orch = weak_view_handle.clone();
@@ -841,6 +881,13 @@ impl TerminalManager {
                         return;
                     }
                 } else {
+                    // Non-ambient SessionEnded path can't carry an
+                    // orchestration model (the model is only created for
+                    // `SessionSourceType::AmbientAgent`), so the clear is
+                    // a no-op in practice. Calling it anyway keeps the
+                    // shutdown story uniform across the three
+                    // shared_session_ended call sites.
+                    Self::stop_orchestration_polling(&orchestration_viewer_model);
                     Self::shared_session_ended(&view, model.clone(), ctx);
                 }
                 view.update(ctx, |terminal_view, ctx| {
@@ -873,6 +920,9 @@ impl TerminalManager {
                 let Some(view) = weak_view_handle.upgrade(ctx) else {
                     return;
                 };
+                // Viewer has been removed and will not re-attach; stop the
+                // children-polling background work.
+                Self::stop_orchestration_polling(&orchestration_viewer_model);
                 Self::shared_session_ended(&view, model.clone(), ctx);
                 view.update(ctx, |terminal_view, ctx| {
                     let reason_string = viewer_removed_reason_string(reason);
@@ -895,6 +945,9 @@ impl TerminalManager {
                 let Some(view) = weak_view_handle.upgrade(ctx) else {
                     return;
                 };
+                // Reconnection has been abandoned; stop the children-polling
+                // background work.
+                Self::stop_orchestration_polling(&orchestration_viewer_model);
                 Self::shared_session_ended(&view, model.clone(), ctx);
                 view.update(ctx, |terminal_view, ctx| {
                     terminal_view.show_persistent_toast(
@@ -1571,6 +1624,25 @@ impl TerminalManager {
                 }
             }
         });
+    }
+
+    /// Drops the [`OrchestrationViewerModel`] from the shared slot if one
+    /// exists. Called from terminal session-end paths so we don't keep
+    /// polling `GET /agent/runs` after the viewer has been removed,
+    /// reconnection has been abandoned, or a non-ambient session ends.
+    /// `SpawnedFutureHandle` does not abort on drop, but the model's
+    /// timer + REST continuations are dispatched via `ctx.spawn` with
+    /// entity-scoped callbacks; once the entity is dropped here those
+    /// callbacks become no-ops, so the polling loop terminates naturally.
+    /// Ambient `SessionEnded` keeps polling because it can be the front
+    /// half of a cloud-cloud handoff routed through
+    /// `end_current_ambient_session`.
+    fn stop_orchestration_polling(
+        orchestration_viewer_model: &Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
+    ) {
+        if orchestration_viewer_model.lock().take().is_some() {
+            log::info!("[orch-viewer] dropping model: session ended for viewer");
+        }
     }
 
     fn shared_session_ended(
