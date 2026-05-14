@@ -29,6 +29,7 @@ use warpui::{
 use settings::Setting;
 use warp_cli::agent::Harness;
 use warp_core::channel::{Channel, ChannelState};
+use warp_core::features::FeatureFlag;
 use warp_core::ui::theme::Fill;
 
 use crate::ai::auth_secret_types::auth_secret_types_for_harness;
@@ -538,6 +539,11 @@ pub fn first_filtered_model_id<V: View>(
         }
         Some(_) => Some(String::new()),
     }
+}
+
+fn is_harness_picker_disabled(state: &OrchestrationEditState) -> bool {
+    matches!(state.execution_mode, RunAgentsExecutionMode::Local)
+        && !FeatureFlag::LocalClaudeCodexChildHarnesses.is_enabled()
 }
 
 pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
@@ -1145,7 +1151,13 @@ pub fn sync_picker_selections<A: OrchestrationControlAction, V: View>(
     }
     if let Some(harness_picker) = handles.harness_picker.clone() {
         let harness_type = state.harness_type.clone();
+        let is_disabled = is_harness_picker_disabled(state);
         harness_picker.update(ctx, |dropdown, ctx_dropdown| {
+            if is_disabled {
+                dropdown.set_disabled(ctx_dropdown);
+            } else {
+                dropdown.set_enabled(ctx_dropdown);
+            }
             let target = Harness::parse_orchestration_harness(&harness_type).unwrap_or(Harness::Oz);
             // Use the server-provided display_name from HarnessAvailabilityModel
             // so the selection matches the labels (which also use display_name).
