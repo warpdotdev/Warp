@@ -1318,7 +1318,7 @@ impl BillingAndUsagePageV2View {
                     "Auto-reload is paused because the next reload would exceed your monthly spend limit. Increase your limit to continue using auto-reload."
                 }
                 (true, false) => {
-                    "Auto-reload is paused because the next reload would exceed your team’s monthly spend limit."
+                    "Auto-reload is paused because the next reload would exceed your team’s monthly spend limit. Contact a team admin to increase it."
                 }
                 (false, true) => {
                     "This purchase would exceed your monthly limit. Increase your limit to continue."
