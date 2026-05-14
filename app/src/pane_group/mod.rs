@@ -1869,9 +1869,6 @@ impl PaneGroup {
                 let mut pending_task: Option<AmbientAgentTaskId> = None;
                 let (terminal_view, terminal_manager) = match restore_kind {
                     AmbientRestoreKind::SharedSession { session_id } => {
-                        // Restored root viewer of an orchestrator: enable
-                        // children polling so the pill bar populates after
-                        // rejoin.
                         Self::create_shared_session_viewer(
                             session_id, resources, view_size, true, ctx,
                         )
@@ -3273,13 +3270,9 @@ impl PaneGroup {
     ) {
         let child_id = child_conversation.id();
 
-        // Viewer-side children (registered by `OrchestrationViewerModel`)
-        // arrive here only when the user clicked a pill before our
-        // materialization helper had a `session_id` to bind to. The PTY-
-        // backed fallback this method would otherwise create renders as an
-        // empty agent view, which is confusing — show a loading placeholder
-        // pane instead. `ensure_shared_session_viewer_child_pane` discards
-        // and replaces this entry once `session_id` is known.
+        // Viewer-side child clicked before `OrchestrationViewerModel`
+        // surfaced a `session_id`: render a loading placeholder; the real
+        // pane gets swapped in by `ensure_shared_session_viewer_child_pane`.
         if child_conversation.is_viewing_shared_session() {
             let resources = TerminalViewResources {
                 tips_completed: self.tips_completed.clone(),
@@ -3312,19 +3305,11 @@ impl PaneGroup {
                 return;
             }
 
-            // Restore the child conversation into the loading view and
-            // enter agent view so the orchestration pill bar gate in
-            // `maybe_add_parent_navigation_card` (`is_fullscreen()`) passes
-            // and the user can navigate back to the orchestrator (or to
-            // sibling children) while we wait for the child's `session_id`
-            // to arrive. The output area still renders the loading spinner
-            // because the loading view's terminal model has
-            // `ConversationTranscriptViewerStatus::Loading`, which
-            // short-circuits the block list render in `TerminalView::render`
-            // before any restored blocks or the agent view zero state get
-            // a chance to draw. `ensure_shared_session_viewer_child_pane`
-            // will discard and replace this pane once the real shared-
-            // session viewer pane is ready.
+            // Restore the conversation and enter agent view so the pill bar
+            // renders (its gate requires `is_fullscreen()`). The output area
+            // stays a loading spinner because the loading view's
+            // `ConversationTranscriptViewerStatus::Loading` short-circuits
+            // the block list render in `TerminalView::render`.
             loading_view.update(ctx, |terminal_view, ctx| {
                 terminal_view.restore_conversation_after_view_creation(
                     RestoredAIConversation::new(child_conversation),
@@ -3433,44 +3418,25 @@ impl PaneGroup {
         }
     }
 
-    /// Materializes a hidden shared-session viewer pane for a viewer-discovered child agent.
-    ///
-    /// Triggered by [`crate::terminal::Event::EnsureSharedSessionViewerChildPane`], which
-    /// [`crate::terminal::shared_session::viewer::OrchestrationViewerModel`] emits on
-    /// the parent's [`TerminalView`] the first time it observes a `session_id` for one
-    /// of the orchestrator's children.
-    ///
-    /// Mirrors the remote-child branch of [`Self::create_hidden_child_agent_pane`] but
-    /// binds the new pane's [`TerminalManager`] to the child's shared session via
-    /// [`Self::create_shared_session_viewer`], so the child pane gets its own
-    /// [`crate::ai::blocklist::BlocklistAIController`] and viewer-side `Network`. The
-    /// pre-created local conversation (registered by `OrchestrationViewerModel`) is
-    /// restored into the new view to transfer ownership; the child pane's
-    /// `on_shared_init` will rebind the server conversation token onto it once the
-    /// session sends its first `Init`.
-    ///
-    /// Idempotent on [`Self::child_agent_panes`] membership: subsequent calls for the
-    /// same `child_conversation_id` are no-ops.
+    /// Materializes a hidden shared-session viewer pane for a viewer-
+    /// discovered child agent. Triggered by
+    /// `Event::EnsureSharedSessionViewerChildPane`, which
+    /// `OrchestrationViewerModel` emits on the parent's view the first
+    /// time it observes a `session_id` for a child. The new pane gets its
+    /// own `BlocklistAIController` and viewer-side `Network` so child
+    /// traffic doesn't cross the parent's single-stream state.
     fn ensure_shared_session_viewer_child_pane(
         &mut self,
         child_conversation_id: AIConversationId,
         child_session_id: SessionId,
         ctx: &mut ViewContext<Self>,
     ) {
-        // Race recovery: if the user clicked the pill before this helper had
-        // a chance to run (i.e. before [`OrchestrationViewerModel`] surfaced
-        // a `session_id` for the child), the click path falls through to
-        // [`Self::create_hidden_child_agent_pane`]'s local branch and creates
-        // a PTY-backed fallback pane that never joins the child's session.
-        // That fallback gets registered in `child_agent_panes`, and without
-        // this branch our subsequent materialization would idempotently bail,
-        // leaving the user stuck on an empty agent view.
-        //
-        // `OrchestrationViewerModel::ChildAgentEntry::pane_materialization_requested`
-        // gates the emission of `Event::EnsureSharedSessionViewerChildPane`,
-        // so this helper runs at most once per child per model lifetime. Any
-        // existing entry at this point is necessarily a fallback pane;
-        // discarding it and re-materializing is safe.
+        // Race recovery: a pill click before materialization had a
+        // `session_id` falls through to `create_hidden_child_agent_pane`,
+        // which leaves a loading placeholder in `child_agent_panes`. The
+        // emission gate in `OrchestrationViewerModel` guarantees this
+        // helper runs at most once per child per model lifetime, so any
+        // existing entry must be that fallback — safe to discard.
         let fallback_was_swapped_anchor = if let Some(prior_pane_id) = self
             .child_agent_panes
             .get(&child_conversation_id)
@@ -3505,11 +3471,7 @@ impl PaneGroup {
             child_session_id,
             resources,
             view_size,
-            // Per-child viewer panes never get their own orchestration
-            // model: nested orchestration isn't supported and the parent
-            // viewer's model already discovers grandchildren transitively
-            // via `ancestor_run_id`. See the field doc on
-            // `shared_session::viewer::TerminalManager::enable_orchestration_polling`.
+            // Per-child viewer: parent's model already discovers descendants.
             false,
             ctx,
         );
@@ -3544,13 +3506,10 @@ impl PaneGroup {
                 AgentViewEntryOrigin::SharedSessionSelection,
                 ctx,
             );
-            // The shared-session viewer's `TerminalView` is constructed with
-            // `is_cloud_mode=false`, so `ambient_agent_view_model()` is
-            // typically `None` here. Update it opportunistically if the view
-            // happens to expose one (mirrors the guarded call in
-            // `handle_network_events::JoinedSuccessfully`); the network's
-            // own `JoinedSuccessfully` handler is the authoritative source
-            // for ambient agent state.
+            // Shared-session viewer is `is_cloud_mode=false`, so
+            // `ambient_agent_view_model()` is typically `None`. Update
+            // opportunistically; the network's `JoinedSuccessfully` is the
+            // authoritative source for ambient agent state.
             if let Some(ambient_agent_view_model) = terminal_view
                 .ambient_agent_view_model()
                 .into_optional_handle()
@@ -3568,10 +3527,8 @@ impl PaneGroup {
         self.child_agent_panes
             .insert(child_conversation_id, new_pane_id.into());
 
-        // If the discarded fallback pane was occupying a tree slot via
-        // temporary replacement, re-swap so the user lands on the freshly
-        // materialized pane instead of getting kicked back to the
-        // orchestrator pane after the discard reverted the swap.
+        // If the discarded fallback was occupying a tree slot via temporary
+        // replacement, re-swap so the user lands on the new pane.
         if let Some(anchor) = fallback_was_swapped_anchor {
             self.swap_active_pane_to_conversation(anchor, child_conversation_id, ctx);
         }
@@ -3628,8 +3585,6 @@ impl PaneGroup {
         ViewHandle<TerminalView>,
         ModelHandle<Box<dyn TerminalManager>>,
     ) {
-        // Root cloud-mode orchestrator pane: enable children polling so the
-        // pill bar populates once the session is joined.
         let (terminal_view, terminal_manager) =
             Self::create_cloud_mode_terminal(resources, view_bounds_size, true, ctx);
 
@@ -3724,13 +3679,11 @@ impl PaneGroup {
                     session_id,
                     task_id: _,
                 }) => {
-                    // Pending restoration of a root orchestrator viewer:
-                    // enable children polling.
                     let (view, terminal_manager) = Self::create_shared_session_viewer(
                         session_id,
                         resources.clone(),
                         view_size,
-                        true,
+                        true, // root orchestrator viewer
                         ctx,
                     );
                     let new_pane = TerminalPane::new(
@@ -4048,13 +4001,11 @@ impl PaneGroup {
                                    pane_history: &mut Vec<PaneId>,
                                    view_bounds: RectF,
                                    ctx: &mut ViewContext<Self>| {
-            // Fresh root viewer for an orchestrator's shared session:
-            // enable children polling so the pill bar populates.
             let (view, terminal_manager) = PaneGroup::create_shared_session_viewer(
                 session_id,
                 resources,
                 view_bounds.size(),
-                true,
+                true, // root orchestrator viewer
                 ctx,
             );
 
@@ -4474,13 +4425,8 @@ impl PaneGroup {
             model_event_sender: self.model_event_sender.clone(),
         };
         let view_bounds = Self::estimated_view_bounds(ctx);
-        // Per-child cloud-mode viewer pane (remote child of a local
-        // orchestrator): the parent already polls for the orchestrator's
-        // descendants via `OrchestrationViewerModel`, so spinning up
-        // another model keyed on the child's task_id would just duplicate
-        // REST traffic and risk registering grandchildren under the wrong
-        // parent. See the field doc on
-        // `shared_session::viewer::TerminalManager::enable_orchestration_polling`.
+        // Per-child cloud-mode pane: the parent already polls for
+        // descendants, so disable polling on this child.
         let (view, terminal_manager) =
             Self::create_cloud_mode_terminal(resources, view_bounds.size(), false, ctx);
         let pane_data = TerminalPane::new(
@@ -5648,9 +5594,6 @@ impl PaneGroup {
             model_event_sender: self.model_event_sender.clone(),
         };
         let view_bounds = Self::estimated_view_bounds(ctx);
-        // Restored ambient agent pane is reopening as a root cloud-mode
-        // viewer of an orchestrator; enable children polling so the pill
-        // bar repopulates on rejoin.
         let (terminal_view, terminal_manager) =
             Self::create_cloud_mode_terminal(resources, view_bounds.size(), true, ctx);
         let terminal_view_id = terminal_view.id();

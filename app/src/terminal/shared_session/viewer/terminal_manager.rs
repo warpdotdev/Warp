@@ -101,28 +101,16 @@ pub struct TerminalManager {
     current_network: Arc<FairMutex<Option<ModelHandle<Network>>>>,
     viewer_remote_update_guard: RemoteUpdateGuard,
     outbound_handlers_registered: bool,
-    /// Owns child discovery + status polling + per-child shared-session
-    /// connections when the viewer is attached to an orchestrated ambient
-    /// agent run. Lazily created in the `JoinedSuccessfully` handler on the
-    /// first ambient session join. Wrapped in `Arc<FairMutex<Option<...>>>`
-    /// to match the `current_network` pattern so the network-event closure
-    /// can write into it without needing a `&mut self`. Behind
-    /// `FeatureFlag::OrchestrationViewerPillBar`.
+    /// Owns child discovery + status polling for an orchestrated ambient
+    /// agent run. Lazily created in `JoinedSuccessfully` on the first
+    /// ambient session join. `Arc<FairMutex<Option<...>>>` matches
+    /// `current_network` so the network-event closure can write into it
+    /// without `&mut self`. Behind `FeatureFlag::OrchestrationViewerPillBar`.
     orchestration_viewer_model: Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
-    /// Whether this terminal manager should spin up an
-    /// [`OrchestrationViewerModel`] when it joins an ambient agent shared
-    /// session. `true` for the root viewer pane of an orchestrator (the
-    /// model polls for that orchestrator's children); `false` for the
-    /// per-child viewer panes materialized by
-    /// `PaneGroup::ensure_shared_session_viewer_child_pane`, since:
-    ///
-    /// 1. We don't support nested orchestration, so polling for a child's
-    ///    descendants is wasted REST traffic.
-    /// 2. The `ancestor_run_id` filter is transitive: if any grandchildren
-    ///    ever do exist, the parent viewer's model would register them, and
-    ///    a child viewer's model would also register them under a
-    ///    different parent conversation — producing duplicate local
-    ///    conversations for the same server-side task.
+    /// `true` for the root viewer pane of an orchestrator, `false` for
+    /// per-child viewer panes. Skipping polling on children avoids
+    /// duplicated REST traffic and grandchild double-registration via the
+    /// transitive `ancestor_run_id` filter.
     enable_orchestration_polling: bool,
 }
 
@@ -312,11 +300,8 @@ impl TerminalManager {
         }
     }
 
-    /// Create a new terminal manager for viewing a shared session.
-    ///
-    /// `enable_orchestration_polling` should be `true` for the root viewer
-    /// of an orchestrator and `false` for per-child viewer panes; see the
-    /// field doc on [`Self::enable_orchestration_polling`].
+    /// Create a new terminal manager for viewing a shared session. See
+    /// [`Self::enable_orchestration_polling`] for the meaning of the flag.
     pub fn new(
         session_id: SessionId,
         resources: TerminalViewResources,
@@ -343,14 +328,9 @@ impl TerminalManager {
         terminal_manager
     }
 
-    /// Create a new terminal manager for eventually viewing a cloud mode shared session that is
-    /// not yet available.
-    ///
-    /// `enable_orchestration_polling` should be `true` for root cloud-mode
-    /// orchestrator panes (so the pill bar populates once the session is
-    /// joined) and `false` for per-child cloud-mode viewer panes (e.g.
-    /// hidden remote-child panes spawned by a local orchestrator) — see
-    /// the field doc on [`Self::enable_orchestration_polling`].
+    /// Create a new terminal manager for eventually viewing a cloud mode
+    /// shared session that is not yet available. See
+    /// [`Self::enable_orchestration_polling`] for the meaning of the flag.
     pub fn new_deferred(
         resources: TerminalViewResources,
         initial_size: Vector2F,
@@ -811,20 +791,8 @@ impl TerminalManager {
                             model.register_ambient_session(terminal_view_id, task_id, ctx);
                         });
 
-                        // Spin up the orchestration viewer model on first join.
-                        // Idempotent across reconnects via the `is_none()` guard
-                        // on the shared slot. Gated on the feature flag so the
-                        // REST polling is off until the pill bar feature is
-                        // enabled. The model is pure discovery + polling: each
-                        // discovered child gets a dedicated hidden
-                        // shared-session viewer pane materialized by the pane
-                        // group when the model emits
-                        // `Event::EnsureSharedSessionViewerChildPane`.
-                        //
-                        // `enable_orchestration_polling` is `false` for the
-                        // per-child viewer panes themselves (we don't want
-                        // each child to also poll for descendants — see the
-                        // field doc).
+                        // Spin up the orchestration viewer model on first
+                        // join (`is_none()` guards against reconnect dupes).
                         if enable_orchestration_polling
                             && FeatureFlag::OrchestrationViewerPillBar.is_enabled()
                             && orchestration_viewer_model.lock().is_none()
@@ -890,15 +858,10 @@ impl TerminalManager {
                     ) {
                         return;
                     }
-                    // The ambient shared session for this viewer has ended.
                     // Non-owner viewers (read-only) won't get a follow-up
-                    // session and shouldn't keep polling `GET /agent/runs`
-                    // for the rest of the pane's lifetime; owners may
-                    // trigger a cloud-cloud handoff via
-                    // `attach_followup_session`, which reuses the same
-                    // `TerminalManager` and orchestrator `task_id`, so we
-                    // keep their model alive and let it reconcile state on
-                    // the new session's `JoinedSuccessfully`.
+                    // session; owners may handoff via
+                    // `attach_followup_session` (same `TerminalManager`,
+                    // same orchestrator `task_id`), so keep their model.
                     let is_owner = view.read(ctx, |terminal_view, app| {
                         terminal_view.owned_ambient_agent_task_id(app).is_some()
                     });
@@ -906,12 +869,6 @@ impl TerminalManager {
                         Self::stop_orchestration_polling(&orchestration_viewer_model);
                     }
                 } else {
-                    // Non-ambient SessionEnded path can't carry an
-                    // orchestration model (the model is only created for
-                    // `SessionSourceType::AmbientAgent`), so the clear is
-                    // a no-op in practice. Calling it anyway keeps the
-                    // shutdown story uniform across the three
-                    // shared_session_ended call sites.
                     Self::stop_orchestration_polling(&orchestration_viewer_model);
                     Self::shared_session_ended(&view, model.clone(), ctx);
                 }
@@ -1652,23 +1609,12 @@ impl TerminalManager {
     }
 
     /// Drops the [`OrchestrationViewerModel`] from the shared slot if one
-    /// exists. Called from terminal session-end paths so we don't keep
-    /// polling `GET /agent/runs` after the viewer has been removed,
-    /// reconnection has been abandoned, a non-ambient session ends, or a
-    /// non-owner ambient viewer's session ends. `SpawnedFutureHandle` does
-    /// not abort on drop, but the model's timer + REST continuations are
-    /// dispatched via `ctx.spawn` with entity-scoped callbacks; once the
-    /// entity is dropped here those callbacks become no-ops, so the
-    /// polling loop terminates naturally. Owner-side ambient
-    /// `SessionEnded` keeps polling because it can be the front half of a
-    /// cloud-cloud handoff routed through `end_current_ambient_session`.
+    /// exists. Called from terminal session-end paths. The model's
+    /// `ctx.spawn` continuations are entity-scoped, so dropping the
+    /// entity makes them no-ops; no explicit `.abort()` needed.
     fn stop_orchestration_polling(
         orchestration_viewer_model: &Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
     ) {
-        // Drop the model handle from the shared slot. The continuation
-        // closures registered by the model's `ctx.spawn` calls become
-        // no-ops once the entity is dropped, so the polling loop
-        // terminates naturally without an explicit `abort` call here.
         *orchestration_viewer_model.lock() = None;
     }
 

@@ -38,80 +38,43 @@ use crate::server::server_api::ai::TaskListFilter;
 use crate::server::server_api::ServerApiProvider;
 use crate::terminal::{Event as TerminalViewEvent, TerminalView};
 
-/// Maximum number of child runs to request in a single
-/// `GET /agent/runs?ancestor_run_id=` page. Orchestrations rarely exceed a
-/// handful of children today; the limit is generous enough to absorb future
-/// growth without paginating.
+/// Max child runs per `GET /agent/runs?ancestor_run_id=` page.
 const CHILD_DISCOVERY_FETCH_LIMIT: i32 = 100;
-/// How often we re-poll the children list while at least one child is still
-/// in a non-terminal state.
+/// Poll cadence while at least one child is non-terminal.
 const STATUS_POLL_INTERVAL: Duration = Duration::from_secs(5);
-/// Slower polling cadence used once every known child has reached a
-/// terminal [`AmbientAgentTaskState`]. We don't stop polling entirely
-/// because the orchestrator can spawn new children or re-activate existing
-/// ones via follow-up messages (including viewer-sent input), and we want
-/// those to surface in the pill bar without forcing the user to reload.
-/// Polling tightens back to [`STATUS_POLL_INTERVAL`] automatically the next
-/// time a fetch surfaces a non-terminal child, and is kicked immediately on
-/// any [`BlocklistAIHistoryEvent::AppendedExchange`] for a tracked
-/// conversation.
+/// Slower cadence once every known child is terminal. We don't stop
+/// polling entirely because follow-up input can spawn new children.
 const STATUS_POLL_INTERVAL_IDLE: Duration = Duration::from_secs(30);
 
-/// Per-child orchestration metadata tracked by the viewer model. Keyed by
-/// `AmbientAgentTaskId` in [`OrchestrationViewerModel::children`].
+/// Per-child orchestration metadata, keyed by `AmbientAgentTaskId`.
 struct ChildAgentEntry {
-    /// Local id minted via [`BlocklistAIHistoryModel::start_new_child_conversation`].
     conversation_id: AIConversationId,
-    /// Session id for the child's shared session. `None` until the server
-    /// reports a session for the child (typically present once execution
-    /// has been claimed).
+    /// Server-side session id; `None` until execution has been claimed.
     session_id: Option<SessionId>,
-    /// Most recent server-side state observed for this child. We compare
-    /// successive polls against this snapshot to decide whether the local
-    /// conversation needs a [`BlocklistAIHistoryModel::update_conversation_status`]
-    /// call so the pill badge re-renders.
+    /// Most recent state observed; compared against fresh polls to decide
+    /// whether to push a `ConversationStatus` update.
     last_state: AmbientAgentTaskState,
-    /// True once we've emitted
-    /// [`TerminalViewEvent::EnsureSharedSessionViewerChildPane`] for this
-    /// child. The pane group's `ensure_shared_session_viewer_child_pane`
-    /// is itself idempotent, but we track this locally so re-polls don't
-    /// spam the event bus.
+    /// True once we've emitted `EnsureSharedSessionViewerChildPane` for
+    /// this child, so re-polls don't spam the event bus.
     pane_materialization_requested: bool,
 }
 
 /// Owns child discovery + status polling for a shared session viewer of an
 /// orchestrated session.
 pub struct OrchestrationViewerModel {
-    /// The orchestrator's run id. Used as the `ancestor_run_id` filter on
-    /// every children fetch.
+    /// Orchestrator run id; used as the `ancestor_run_id` fetch filter.
     parent_task_id: AmbientAgentTaskId,
-    /// The terminal view id we're attached to. Used as the owner of every
-    /// child conversation in [`BlocklistAIHistoryModel`] and as the pivot
-    /// for finding the orchestrator's local conversation.
+    /// Owns the child conversations and anchors the orchestrator lookup.
     terminal_view_id: EntityId,
-    /// Weak handle to the parent's terminal view. Used to emit
-    /// [`TerminalViewEvent::EnsureSharedSessionViewerChildPane`] when a
-    /// child first becomes joinable, so the pane group can materialize a
-    /// dedicated shared-session pane for it.
+    /// Used to emit `EnsureSharedSessionViewerChildPane` on the parent's
+    /// view when a child becomes joinable.
     terminal_view: WeakViewHandle<TerminalView>,
-    /// Known child agents indexed by server-side task id.
     children: HashMap<AmbientAgentTaskId, ChildAgentEntry>,
-    /// Handle for the next scheduled poll. Aborted and replaced by every
-    /// [`Self::schedule_next_poll`] call so we never have more than one
-    /// timer chain in flight, and cleared while a kick-induced fetch is
-    /// in flight — the fetch's response callback schedules a fresh timer
-    /// using the freshest child state. The timer chain itself runs for
-    /// the lifetime of this model; the model is dropped when the parent
-    /// pane's `TerminalManager` is torn down (closing the orchestrator's
-    /// shared session).
+    /// Aborted and replaced by every `schedule_next_poll` so we never have
+    /// more than one timer chain in flight.
     polling_handle: Option<SpawnedFutureHandle>,
-    /// Monotonic counter incremented before every `fetch_children`
-    /// dispatch. The response callback compares the captured generation
-    /// against this field and drops stale responses, preventing two
-    /// concurrent fetches (typically a timer-fired fetch racing a kick-
-    /// induced fetch) from clobbering each other. Without this guard a
-    /// late-arriving stale snapshot could revert a child's status from
-    /// the freshly-applied state to an older one.
+    /// Bumped before each fetch; stale responses (older generation) are
+    /// dropped so a slow timer-fired fetch can't clobber a fresher kick.
     fetch_generation: u64,
 }
 
@@ -129,13 +92,9 @@ impl OrchestrationViewerModel {
         terminal_view: WeakViewHandle<TerminalView>,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
-        // Kick polling back to fast cadence (and trigger an immediate
-        // fetch) any time a new exchange lands on the orchestrator or one
-        // of its tracked children. This catches the case where polling has
-        // dropped to idle (all children terminal) and then the viewer (or
-        // the agent) sends a follow-up that spawns new children or
-        // re-activates existing ones; without the kick the pill bar would
-        // not update until the next 30s idle poll.
+        // Kick to fast cadence on `AppendedExchange` so follow-up input
+        // that spawns new children surfaces without waiting for the next
+        // 30s idle poll.
         ctx.subscribe_to_model(&BlocklistAIHistoryModel::handle(ctx), |me, event, ctx| {
             me.maybe_kick_polling(event, ctx);
         });
@@ -149,26 +108,16 @@ impl OrchestrationViewerModel {
             fetch_generation: 0,
         };
 
-        // Kick off the recurring poll. `fetch_children`'s response
-        // callback schedules the next poll, which in turn fires another
-        // fetch, creating a self-perpetuating cycle that adapts its
-        // interval to the latest known child state.
+        // Each fetch reschedules itself via its response callback.
         model.fetch_children(ctx);
         model
     }
 
-    /// Schedules the next poll. The interval is [`STATUS_POLL_INTERVAL`]
-    /// while at least one known child is still in a non-terminal state (or
-    /// before any children have been seen), and drops to
-    /// [`STATUS_POLL_INTERVAL_IDLE`] once every known child has reached a
-    /// terminal state. Polling never stops on its own — see the field doc
-    /// on [`Self::polling_handle`] for the lifecycle.
+    /// Schedules the next poll: fast cadence while any child is
+    /// non-terminal, slow cadence once all are terminal.
     fn schedule_next_poll(&mut self, ctx: &mut ModelContext<Self>) {
-        // Abort any prior timer before replacing it. `SpawnedFutureHandle`
-        // does NOT abort on drop, so without this call the previous
-        // timer's continuation could still fire and dispatch an extra
-        // `fetch_children`, eventually multiplying into parallel timer
-        // chains.
+        // `SpawnedFutureHandle` doesn't abort on drop, so abort
+        // explicitly to avoid stacking parallel timer chains.
         if let Some(prior) = self.polling_handle.take() {
             prior.abort();
         }
@@ -188,26 +137,15 @@ impl OrchestrationViewerModel {
             async move {
                 Timer::after(interval).await;
             },
-            |me, _, ctx| {
-                // The next reschedule is driven by `fetch_children`'s
-                // response callback so the interval is picked using the
-                // freshest state.
-                me.fetch_children(ctx);
-            },
+            |me, _, ctx| me.fetch_children(ctx),
         );
         self.polling_handle = Some(handle);
     }
 
-    /// Kicks polling back to fast cadence on `AppendedExchange` for a
-    /// conversation we track — but only during the idle→active
-    /// transition. While we're already polling at
-    /// [`STATUS_POLL_INTERVAL`] (5s) every received exchange would
-    /// otherwise drive an extra REST request even though the next
-    /// scheduled poll is imminent. Narrowing the kick to idle
-    /// transitions keeps the request load bounded for active sessions
-    /// while still surfacing newly spawned / re-activated children
-    /// within seconds of follow-up input. See the subscription wired up
-    /// in [`Self::new`] for context.
+    /// Tightens polling on `AppendedExchange` for a tracked conversation,
+    /// but only during the idle→active transition — while we're already
+    /// polling fast, every received exchange would otherwise add an
+    /// unnecessary REST request.
     fn maybe_kick_polling(
         &mut self,
         event: &BlocklistAIHistoryEvent,
@@ -219,10 +157,6 @@ impl OrchestrationViewerModel {
         else {
             return;
         };
-        // While we're polling at the fast cadence the next poll is
-        // already imminent; kicking would just double the request load on
-        // every streamed exchange. Skip unless every known child is
-        // terminal (we're polling at the 30s idle cadence).
         let all_terminal = !self.children.is_empty()
             && self
                 .children
@@ -231,11 +165,8 @@ impl OrchestrationViewerModel {
         if !all_terminal {
             return;
         }
-        // `polling_handle = None` is the sentinel that a kick fetch is
-        // already in flight (cleared below before dispatching the fetch,
-        // re-armed by the fetch's response callback). Skipping here
-        // prevents pile-up when several exchanges land in quick
-        // succession during the idle→active transition.
+        // `polling_handle = None` means a kick fetch is already in flight;
+        // skipping here prevents pile-up when exchanges arrive in bursts.
         if self.polling_handle.is_none() {
             return;
         }
@@ -248,12 +179,6 @@ impl OrchestrationViewerModel {
         if !is_orchestrator && !is_tracked_child {
             return;
         }
-        // Abort the pending timer; `fetch_children`'s response callback
-        // will queue a fresh one using the post-fetch state, so a kick
-        // landing during the idle (30s) interval correctly tightens back
-        // to the fast (5s) interval as soon as the new child surfaces.
-        // Aborting (rather than just dropping the handle) is required
-        // because `SpawnedFutureHandle` does not cancel on drop.
         if let Some(prior) = self.polling_handle.take() {
             prior.abort();
         }
@@ -261,18 +186,11 @@ impl OrchestrationViewerModel {
     }
 
     /// Issues a `GET /agent/runs?ancestor_run_id={parent_task_id}` request
-    /// and routes the response into [`Self::apply_children_fetch`].
-    ///
-    /// Errors are logged and ignored — the next poll will retry. This is
-    /// preferable to surfacing a failure modal because orchestrations that
-    /// haven't spawned any children yet legitimately return an empty list,
-    /// and transient REST errors should not break the viewer.
+    /// and routes the response into [`Self::apply_children_fetch`]. Errors
+    /// are logged and ignored; the next poll retries.
     fn fetch_children(&mut self, ctx: &mut ModelContext<Self>) {
-        // Stamp the generation BEFORE dispatching so any in-flight stale
-        // fetch (a timer-fired fetch whose REST request hasn't returned
-        // yet, racing this kick) is invalidated when its response
-        // callback compares against the freshly-bumped
-        // `self.fetch_generation`.
+        // Bump generation BEFORE dispatch so any in-flight stale fetch
+        // is invalidated when its response callback compares.
         self.fetch_generation = self.fetch_generation.wrapping_add(1);
         let fetch_generation = self.fetch_generation;
 
@@ -290,11 +208,8 @@ impl OrchestrationViewerModel {
                     .await
             },
             move |me, result, ctx| {
-                // Drop stale responses: a newer fetch was dispatched while
-                // this one was in flight, so applying our snapshot could
-                // revert state the newer fetch's response already wrote.
-                // Skip rescheduling too; the newer fetch's response
-                // callback owns the next reschedule.
+                // Stale fetch: a newer one's already in flight (or applied).
+                // The newer fetch owns rescheduling.
                 if me.fetch_generation != fetch_generation {
                     return;
                 }
@@ -306,9 +221,8 @@ impl OrchestrationViewerModel {
                         );
                     }
                 }
-                // Always reschedule — even on error so transient network
-                // failures don't break the polling loop — using the
-                // freshest child state to pick the interval.
+                // Always reschedule (even on error) so transient failures
+                // don't break the polling loop.
                 me.schedule_next_poll(ctx);
             },
         );
@@ -326,16 +240,9 @@ impl OrchestrationViewerModel {
         let mut to_materialize: Vec<(AIConversationId, SessionId)> = Vec::new();
 
         for task in tasks {
-            // The public API filter is `ancestor_run_id`, which returns every
-            // descendant of the parent run. We previously enforced
-            // single-level by skipping tasks whose direct `parent_run_id`
-            // didn't match us, but locally-spawned children may have an
-            // empty `parent_run_id` on the server (e.g. legacy Oz local
-            // children) or carry a sibling/sub-orchestrator id. Trust the
-            // ancestor filter for membership and let nested grandchildren
-            // through; the pill bar already lays them out under their
-            // correct parent in spawn order. Only the parent task itself
-            // must be skipped to avoid recursing.
+            // `ancestor_run_id` returns every descendant. Trust it for
+            // membership (locally-spawned children may have empty or
+            // sibling `parent_run_id`s), only skipping the parent itself.
             if task.task_id == self.parent_task_id {
                 continue;
             }
@@ -383,15 +290,10 @@ impl OrchestrationViewerModel {
                 continue;
             }
 
-            // New child: register a local conversation under the
-            // orchestrator if we can find it; otherwise wait for the next
-            // poll. Without the orchestrator's local id `start_new_child_conversation`
-            // would record an empty parent agent id and the pill bar would
-            // never link the two.
+            // New child: register under the orchestrator's local
+            // conversation. Without it, `start_new_child_conversation`
+            // would lose the parent linkage. Retry on the next poll.
             let Some(parent_conversation_id) = self.find_parent_conversation_id(ctx) else {
-                // Repeats on every poll until the orchestrator's local
-                // conversation lands; intentionally silent to avoid spam
-                // during the initial join.
                 continue;
             };
 
@@ -416,11 +318,8 @@ impl OrchestrationViewerModel {
                     harness,
                     ctx,
                 );
-                // Suppress server-side status reporting: see
-                // `TaskStatusSyncModel::on_conversation_status_updated`'s
-                // `is_viewing_shared_session` guard. This flag is also what
-                // the eventual hidden child pane will use to disambiguate
-                // viewer-spawned children from local-orchestration ones.
+                // Suppress server-side status reporting (viewer-side); also
+                // disambiguates viewer-spawned children downstream.
                 history.set_viewing_shared_session_for_conversation(conversation_id, true);
                 if let Some(conversation) = history.conversation_mut(&conversation_id) {
                     conversation.set_task_id(task_id);
@@ -455,19 +354,14 @@ impl OrchestrationViewerModel {
         }
     }
 
-    /// Resolves the orchestrator's local conversation id, defaulting to the
-    /// viewer's active conversation. In practice the shared-session viewer
-    /// always sets the orchestrator as the active conversation immediately
-    /// after the first `Init` event (see
-    /// `controller/shared_session.rs::on_shared_init`), so this is the
-    /// stable anchor for hanging children off of.
+    /// Resolves the orchestrator's local conversation id via the view's
+    /// active conversation, which `on_shared_init` sets on first join.
     fn find_parent_conversation_id(&self, ctx: &ModelContext<Self>) -> Option<AIConversationId> {
         BlocklistAIHistoryModel::as_ref(ctx).active_conversation_id(self.terminal_view_id)
     }
 
-    /// Tells the parent's `TerminalView` (and therefore the surrounding
-    /// `TerminalPane` / `PaneGroup`) to materialize a hidden shared-session
-    /// viewer pane for this child. Idempotent on the pane group side.
+    /// Tells the parent's `TerminalView` to materialize a hidden
+    /// shared-session viewer pane for this child.
     fn request_child_pane_materialization(
         &self,
         conversation_id: AIConversationId,
