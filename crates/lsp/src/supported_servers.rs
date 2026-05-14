@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::servers::clangd::ClangdCandidate;
+use crate::servers::dart::DartAnalysisServerCandidate;
 use crate::servers::go::GoPlsCandidate;
 use crate::servers::pyright::PyrightCandidate;
 use crate::servers::rust::RustAnalyzerCandidate;
@@ -42,6 +43,7 @@ pub enum LSPServerType {
     Pyright,
     TypeScriptLanguageServer,
     Clangd,
+    DartAnalysisServer,
 }
 
 /// Provides server-specific configuration for each LSP server type.
@@ -109,6 +111,10 @@ impl LSPServerType {
                     binary_path: path,
                     prepend_args: vec![],
                 }),
+            LSPServerType::DartAnalysisServer => {
+                // Custom Dart SDK installation is not yet supported
+                None
+            }
         }
     }
 
@@ -132,6 +138,7 @@ impl LSPServerType {
             LSPServerType::Pyright => "pyright-langserver",
             LSPServerType::TypeScriptLanguageServer => "typescript-language-server",
             LSPServerType::Clangd => "clangd",
+            LSPServerType::DartAnalysisServer => "dart",
         }
     }
 
@@ -140,6 +147,7 @@ impl LSPServerType {
     fn args(&self) -> Vec<&'static str> {
         match self {
             LSPServerType::RustAnalyzer | LSPServerType::GoPls | LSPServerType::Clangd => vec![],
+            LSPServerType::DartAnalysisServer => vec!["language-server"],
             LSPServerType::Pyright | LSPServerType::TypeScriptLanguageServer => vec!["--stdio"],
         }
     }
@@ -154,6 +162,7 @@ impl LSPServerType {
             LSPServerType::Pyright => vec!["--stdio"],
             LSPServerType::TypeScriptLanguageServer => vec!["--stdio"],
             LSPServerType::Clangd => vec![],
+            LSPServerType::DartAnalysisServer => vec!["language-server"],
         }
     }
 
@@ -172,6 +181,7 @@ impl LSPServerType {
                 ]
             }
             LSPServerType::Clangd => vec![LanguageId::C, LanguageId::Cpp],
+            LSPServerType::DartAnalysisServer => vec![LanguageId::Dart],
         }
     }
 
@@ -205,6 +215,7 @@ impl LSPServerType {
                 Box::new(TypeScriptLanguageServerCandidate::new(client))
             }
             LSPServerType::Clangd => Box::new(ClangdCandidate::new(client)),
+            LSPServerType::DartAnalysisServer => Box::new(DartAnalysisServerCandidate::new(client)),
         }
     }
 
