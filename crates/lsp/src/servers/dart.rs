@@ -13,6 +13,7 @@ use async_trait::async_trait;
 
 #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
 pub struct DartAnalysisServerCandidate {
+    #[allow(dead_code)]
     client: Arc<http_client::Client>,
 }
 

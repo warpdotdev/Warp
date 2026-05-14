@@ -294,6 +294,7 @@ arborium = { version = "2", default-features = false, features = [
   "lang-xml",
   "lang-vue",
   "lang-dockerfile",
+  "lang-dart",
 ] }
 unicode-general-category = "1.1.0"
 unicode-width = "0.1.12"
