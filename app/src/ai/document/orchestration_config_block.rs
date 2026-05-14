@@ -603,9 +603,13 @@ impl TypedActionView for OrchestrationConfigBlockView {
                 ctx.notify();
             }
             OrchestrationConfigBlockAction::AuthSecretChanged { auth_secret_name } => {
-                // No `apply_field_change` here: the secret name is persisted
-                // side-channel via `CloudAgentSettings.last_selected_auth_secret`
-                // and never round-trips through `OrchestrationConfig`.
+                // No `apply_field_change` here: managed secrets are user-scoped
+                // (not plan-scoped), so they are persisted side-channel via
+                // `CloudAgentSettings.last_selected_auth_secret` instead of
+                // being baked into `OrchestrationConfig`. Consequence: changing
+                // the picker doesn't surface a "config modified" signal, and
+                // two users on the same approved plan can have different secret
+                // selections without conflicting.
                 oc::apply_auth_secret_change(
                     &mut self.edit_state,
                     &self.pickers,
