@@ -153,7 +153,7 @@ impl AuthSecretSelector {
             |me, _, event, ctx| match event {
                 HarnessAvailabilityEvent::AuthSecretsLoaded
                 | HarnessAvailabilityEvent::AuthSecretCreated { .. }
-                | HarnessAvailabilityEvent::AuthSecretsFetchFailed { .. } => {
+                | HarnessAvailabilityEvent::AuthSecretsFetchFailed => {
                     me.refresh_menu(ctx);
                     me.refresh_button(ctx);
                 }

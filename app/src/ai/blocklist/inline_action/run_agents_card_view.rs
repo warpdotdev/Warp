@@ -435,7 +435,7 @@ impl RunAgentsCardView {
                 HarnessAvailabilityEvent::Changed
                 | HarnessAvailabilityEvent::AuthSecretsLoaded
                 | HarnessAvailabilityEvent::AuthSecretCreated { .. }
-                | HarnessAvailabilityEvent::AuthSecretsFetchFailed { .. } => {
+                | HarnessAvailabilityEvent::AuthSecretsFetchFailed => {
                     // Repopulate on fetch failure too, otherwise the picker
                     // would stay on the "Loading…" placeholder we wrote
                     // when the fetch started.

@@ -1408,6 +1408,10 @@ pub fn render_picker_row_with_layout<A: OrchestrationControlAction>(
             col.add_child(render_picker_column(label, picker, appearance));
         };
 
+        // Plan-card ordering groups harness-scoped pickers (harness + API
+        // key) before host/environment/model so the API key sits directly
+        // under the harness selector and does not split the model picker
+        // from the "Primary model…" subtext that follows the picker row.
         add(
             &mut column,
             "Agent harness",
@@ -1416,6 +1420,16 @@ pub fn render_picker_row_with_layout<A: OrchestrationControlAction>(
                 .as_ref()
                 .map(|p| ChildView::new(p).finish()),
         );
+        if show_auth_picker {
+            add(
+                &mut column,
+                AUTH_SECRET_COLUMN_LABEL,
+                handles
+                    .auth_secret_picker
+                    .as_ref()
+                    .map(|p| ChildView::new(p).finish()),
+            );
+        }
         if is_remote {
             add(
                 &mut column,
@@ -1442,16 +1456,6 @@ pub fn render_picker_row_with_layout<A: OrchestrationControlAction>(
                 .as_ref()
                 .map(|p| ChildView::new(p).finish()),
         );
-        if show_auth_picker {
-            add(
-                &mut column,
-                AUTH_SECRET_COLUMN_LABEL,
-                handles
-                    .auth_secret_picker
-                    .as_ref()
-                    .map(|p| ChildView::new(p).finish()),
-            );
-        }
 
         Container::new(column.finish())
             .with_margin_top(12.)

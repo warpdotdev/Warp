@@ -64,13 +64,7 @@ pub enum HarnessAvailabilityEvent {
     /// re-render so any "Loading…" placeholders can transition to an
     /// error state — without this signal the picker would otherwise be
     /// stuck on the loading placeholder until the next refetch.
-    ///
-    /// `harness` is kept on the payload for future subscribers that
-    /// need to filter by harness; current subscribers ignore it.
-    AuthSecretsFetchFailed {
-        #[allow(dead_code)]
-        harness: Harness,
-    },
+    AuthSecretsFetchFailed,
     AuthSecretCreated {
         harness: Harness,
         name: String,
@@ -208,7 +202,7 @@ impl HarnessAvailabilityModel {
                         // Notify subscribers so they can drop any
                         // "Loading…" placeholder rendered during the
                         // in-flight fetch and surface the error state.
-                        ctx.emit(HarnessAvailabilityEvent::AuthSecretsFetchFailed { harness });
+                        ctx.emit(HarnessAvailabilityEvent::AuthSecretsFetchFailed);
                     }
                 }
             },

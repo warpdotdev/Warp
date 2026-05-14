@@ -193,12 +193,7 @@ pub struct RunAgentsRequest {
     pub execution_mode: RunAgentsExecutionMode,
     pub agent_run_configs: Vec<RunAgentsAgentRunConfig>,
     pub plan_id: String,
-    /// Name of a managed secret to forward as the authentication credential
-    /// for non-Oz cloud child agents (Claude / Codex). Resolved client-side
-    /// from `CloudAgentSettings.last_selected_auth_secret` at dispatch time;
-    /// not serialized to the wire — the field is populated by the UI on
-    /// Accept and consumed by `launch_remote_child` when building the
-    /// `AgentConfigSnapshot.harness_auth_secrets`.
+    /// Resolved client-side at dispatch time; not serialized to the wire.
     pub harness_auth_secret_name: Option<String>,
 }
 

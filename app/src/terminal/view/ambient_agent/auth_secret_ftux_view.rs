@@ -163,7 +163,7 @@ impl AuthSecretFtuxView {
                 }
                 HarnessAvailabilityEvent::Changed
                 | HarnessAvailabilityEvent::AuthSecretsLoaded
-                | HarnessAvailabilityEvent::AuthSecretsFetchFailed { .. } => {}
+                | HarnessAvailabilityEvent::AuthSecretsFetchFailed => {}
             },
         );
 
