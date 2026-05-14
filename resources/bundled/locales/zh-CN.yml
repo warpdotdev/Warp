@@ -598,6 +598,13 @@ zh-CN:
     share_server: "共享 server"
     server_update_available: "Server 有可用更新"
     editing_restricted_to_admins_and_creator: "只有团队管理员和 MCP server 创建者可以编辑该 MCP server。"
+    delete_mcp_server_title: "删除 MCP server？"
+    delete_mcp_server_description: "这会从你的所有设备卸载并移除此 MCP server。"
+    delete_shared_mcp_server_title: "删除共享 MCP server？"
+    delete_shared_mcp_server_description: "这不仅会为你自己删除此 MCP server，还会从 Warp 及所有队友设备中卸载并移除此 MCP server。"
+    delete_mcp: "删除 MCP"
+    remove_shared_mcp_server_title: "从团队移除共享 MCP server？"
+    remove_shared_mcp_server_description: "这会从 Warp 及所有队友设备中卸载并移除此 MCP server。"
 
   platform:
     api_key_deleted: "API key 已删除"

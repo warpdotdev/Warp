@@ -598,6 +598,13 @@ en:
     share_server: "Share server"
     server_update_available: "Server update available"
     editing_restricted_to_admins_and_creator: "Only team admins and the creator of the MCP server can edit the MCP server."
+    delete_mcp_server_title: "Delete MCP server?"
+    delete_mcp_server_description: "This will uninstall and remove this MCP server from all your devices."
+    delete_shared_mcp_server_title: "Delete shared MCP server?"
+    delete_shared_mcp_server_description: "This will not only delete this MCP server for yourself, but also uninstall and remove this MCP server from Warp and across all of your teammates' devices."
+    delete_mcp: "Delete MCP"
+    remove_shared_mcp_server_title: "Remove shared MCP server from team?"
+    remove_shared_mcp_server_description: "This will uninstall and remove this MCP server from Warp and across all of your teammates' devices."
 
   platform:
     api_key_deleted: "API key deleted"
