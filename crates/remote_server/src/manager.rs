@@ -18,12 +18,15 @@ use crate::proto::{
     GetDiffStateResponse, TextEdit,
 };
 use crate::repo_metadata_proto::proto_load_repo_metadata_directory_response_to_update;
+use crate::setup::PreinstallCheckResult;
+#[cfg(not(target_family = "wasm"))]
+use crate::setup::PreinstallStatus;
 #[cfg(not(target_family = "wasm"))]
 use crate::setup::RemoteOs;
 use crate::setup::RemotePlatform;
 use crate::setup::RemoteServerSetupState;
+#[cfg(not(target_family = "wasm"))]
 use crate::setup::UnsupportedReason;
-use crate::setup::{PreinstallCheckResult, PreinstallStatus};
 #[cfg(not(target_family = "wasm"))]
 use crate::transport::Connection;
 use crate::transport::{Error, InstallSource, RemoteTransport};
