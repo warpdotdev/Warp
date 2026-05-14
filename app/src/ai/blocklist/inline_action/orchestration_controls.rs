@@ -29,6 +29,7 @@ use warpui::{
 use settings::Setting;
 use warp_cli::agent::Harness;
 use warp_core::channel::{Channel, ChannelState};
+use warp_core::features::FeatureFlag;
 use warp_core::ui::theme::Fill;
 
 use crate::ai::auth_secret_types::auth_secret_types_for_harness;
@@ -37,6 +38,9 @@ use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::execution_profiles::model_menu_items::available_model_menu_items;
 use crate::ai::harness_availability::{AuthSecretFetchState, HarnessAvailabilityModel};
 use crate::ai::harness_display;
+use crate::ai::local_child_harnesses::{
+    local_child_harness_disabled_message, local_child_harness_is_enabled,
+};
 use crate::appearance::Appearance;
 use crate::menu::{MenuItem, MenuItemFields};
 use crate::report_if_error;
@@ -100,6 +104,15 @@ pub struct OrchestrationEditState {
 }
 
 impl OrchestrationEditState {
+    pub(crate) fn sanitize_for_local_execution(&mut self) {
+        let Some(harness) = Harness::parse_local_child_harness(&self.harness_type) else {
+            return;
+        };
+        if local_child_harness_disabled_message(harness).is_some() {
+            self.harness_type = "oz".to_string();
+            self.model_id.clear();
+        }
+    }
     pub fn from_run_agents_fields(
         model_id: &str,
         harness_type: &str,
@@ -125,12 +138,16 @@ impl OrchestrationEditState {
                 computer_use_enabled: false,
             },
         };
-        Self {
+        let mut state = Self {
             model_id: config.model_id.clone(),
             harness_type: config.harness_type.clone(),
             execution_mode,
             auth_secret_name: None,
+        };
+        if matches!(state.execution_mode, RunAgentsExecutionMode::Local) {
+            state.sanitize_for_local_execution();
         }
+        state
     }
 
     /// Toggle Local ↔ Cloud. Resets OpenCode to Oz when switching
@@ -149,6 +166,7 @@ impl OrchestrationEditState {
             }
         } else {
             self.execution_mode = RunAgentsExecutionMode::Local;
+            self.sanitize_for_local_execution();
         }
     }
 
@@ -171,9 +189,11 @@ impl OrchestrationEditState {
     }
 
     /// Returns `Some(reason)` if Accept / Apply must be disabled.
-    /// Only hard block: OpenCode + Cloud.
+    /// Hard blocks: OpenCode + Cloud, and temporarily disabled local Claude/Codex.
     pub fn accept_disabled_reason(&self) -> Option<&'static str> {
         match &self.execution_mode {
+            RunAgentsExecutionMode::Local => Harness::parse_local_child_harness(&self.harness_type)
+                .and_then(local_child_harness_disabled_message),
             RunAgentsExecutionMode::Remote { .. }
                 if self.harness_type.eq_ignore_ascii_case("opencode") =>
             {
@@ -181,7 +201,7 @@ impl OrchestrationEditState {
                     "OpenCode is not supported on Cloud yet. Switch to Local or pick a different harness.",
                 )
             }
-            RunAgentsExecutionMode::Local | RunAgentsExecutionMode::Remote { .. } => None,
+            RunAgentsExecutionMode::Remote { .. } => None,
         }
     }
 
@@ -199,6 +219,9 @@ impl OrchestrationEditState {
         }
         if !self.execution_mode.is_remote() && config.execution_mode.is_remote() {
             self.execution_mode = Self::from_orchestration_config(config).execution_mode;
+        }
+        if matches!(self.execution_mode, RunAgentsExecutionMode::Local) {
+            self.sanitize_for_local_execution();
         }
     }
 
@@ -518,9 +541,15 @@ pub fn first_filtered_model_id<V: View>(
     }
 }
 
+fn should_show_harness_picker(state: &OrchestrationEditState) -> bool {
+    !matches!(state.execution_mode, RunAgentsExecutionMode::Local)
+        || FeatureFlag::LocalClaudeCodexChildHarnesses.is_enabled()
+}
+
 pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
     dropdown: &ViewHandle<Dropdown<A>>,
     initial_harness: &str,
+    is_local: bool,
     ctx: &mut ViewContext<V>,
 ) {
     let initial_harness = initial_harness.to_string();
@@ -528,13 +557,30 @@ pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
         let availability = HarnessAvailabilityModel::as_ref(ctx_dropdown);
         let harnesses = availability.available_harnesses();
 
+        let resolve_entry_harness = |harness: Harness, display_name: &str| match harness {
+            Harness::Unknown => [
+                Harness::Oz,
+                Harness::Claude,
+                Harness::OpenCode,
+                Harness::Gemini,
+                Harness::Codex,
+            ]
+            .into_iter()
+            .find(|candidate| harness_display::display_name(*candidate) == display_name)
+            .unwrap_or(Harness::Unknown),
+            harness => harness,
+        };
+
         // Sort enabled harnesses before disabled ones, preserving
         // relative order within each group.
         // Filter out Gemini — it is not yet supported as a multi-agent
         // harness and causes an infinite "Spawning agents" hang.
         let mut sorted: Vec<_> = harnesses
             .iter()
-            .filter(|entry| entry.harness != Harness::Gemini)
+            .filter(|entry| {
+                let harness = resolve_entry_harness(entry.harness, &entry.display_name);
+                harness != Harness::Gemini && (!is_local || local_child_harness_is_enabled(harness))
+            })
             .collect();
         sorted.sort_by_key(|entry| !entry.enabled);
 
@@ -544,9 +590,11 @@ pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
         let target_harness = Harness::parse_orchestration_harness(&initial_harness);
 
         let mut items: Vec<MenuItem<DropdownAction<A>>> = Vec::new();
-        let mut selected_idx = None;
-        for (idx, entry) in sorted.iter().enumerate() {
-            let harness = entry.harness;
+        let mut selected_name: Option<String> = None;
+        let target_display = target_harness.map(|harness| availability.display_name_for(harness));
+
+        for entry in sorted {
+            let harness = resolve_entry_harness(entry.harness, &entry.display_name);
             // Use the server-provided display_name for the label so stale
             // cache entries (where harness deserializes as Unknown) still
             // show the correct name.
@@ -567,21 +615,20 @@ pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
             // the display_name against the client-side name for the target
             // harness. This handles stale cache entries where entry.harness
             // is Unknown but entry.display_name is still correct.
-            if harness_str.eq_ignore_ascii_case(&initial_harness) {
-                selected_idx = Some(idx);
-            } else if selected_idx.is_none() {
-                if let Some(target) = target_harness {
-                    let target_display = harness_display::display_name(target);
+            if selected_name.is_none() {
+                if harness_str.eq_ignore_ascii_case(&initial_harness) {
+                    selected_name = Some(entry.display_name.clone());
+                } else if let Some(target_display) = target_display {
                     if entry.display_name == target_display {
-                        selected_idx = Some(idx);
+                        selected_name = Some(entry.display_name.clone());
                     }
                 }
             }
             items.push(MenuItem::Item(fields));
         }
         dropdown.set_rich_items(items, ctx_dropdown);
-        if let Some(idx) = selected_idx {
-            dropdown.set_selected_by_index(idx, ctx_dropdown);
+        if let Some(name) = selected_name {
+            dropdown.set_selected_by_name(&name, ctx_dropdown);
         }
     });
 }
@@ -928,25 +975,39 @@ pub fn apply_harness_change<A: OrchestrationControlAction, V: View>(
     state.harness_type = new_harness_type.to_string();
 
     let is_local = !state.execution_mode.is_remote();
+    if is_local {
+        state.sanitize_for_local_execution();
+        if state.harness_type != new_harness_type {
+            if let Some(handle) = &handles.harness_picker {
+                populate_harness_picker(handle, &state.harness_type, true, ctx);
+            }
+        }
+    }
     // Try to restore a previously saved model for this harness.
-    let new_key = harness_save_key(new_harness_type);
+    let new_key = harness_save_key(&state.harness_type);
     let restored = memory
         .get(new_key)
-        .filter(|id| is_model_in_filtered_choices(id, new_harness_type, is_local, ctx))
+        .filter(|id| is_model_in_filtered_choices(id, &state.harness_type, is_local, ctx))
         .cloned();
     if let Some(saved_id) = restored {
         state.model_id = saved_id;
-    } else if !is_model_in_filtered_choices(&state.model_id, new_harness_type, is_local, ctx) {
+    } else if !is_model_in_filtered_choices(&state.model_id, &state.harness_type, is_local, ctx) {
         // No saved model — fall back to conversation base model
         // for Oz, or default for non-Oz.
         let reset_id = fallback_base_model_id(ctx)
-            .filter(|id| is_model_in_filtered_choices(id, new_harness_type, is_local, ctx))
-            .or_else(|| first_filtered_model_id(new_harness_type, ctx))
+            .filter(|id| is_model_in_filtered_choices(id, &state.harness_type, is_local, ctx))
+            .or_else(|| first_filtered_model_id(&state.harness_type, ctx))
             .unwrap_or_default();
         state.model_id = reset_id;
     }
     if let Some(handle) = &handles.model_picker {
-        populate_model_picker_for_harness(handle, &state.model_id, new_harness_type, is_local, ctx);
+        populate_model_picker_for_harness(
+            handle,
+            &state.model_id,
+            &state.harness_type,
+            is_local,
+            ctx,
+        );
     }
 
     // Re-resolve auth secret from settings for the new harness.
@@ -972,6 +1033,10 @@ pub fn apply_execution_mode_change<A: OrchestrationControlAction, V: View>(
     ctx: &mut ViewContext<V>,
 ) {
     state.toggle_execution_mode_to_remote(is_remote);
+    let is_local = !state.execution_mode.is_remote();
+    if let Some(handle) = &handles.harness_picker {
+        populate_harness_picker(handle, &state.harness_type, is_local, ctx);
+    }
     // When switching to Cloud with no environment set, pre-fill with
     // the user's last-selected or most recently used environment.
     if is_remote {
@@ -983,7 +1048,6 @@ pub fn apply_execution_mode_change<A: OrchestrationControlAction, V: View>(
             }
         }
     }
-    let is_local = !state.execution_mode.is_remote();
     if !is_model_in_filtered_choices(&state.model_id, &state.harness_type, is_local, ctx) {
         let reset_id = fallback_base_model_id(ctx)
             .filter(|id| is_model_in_filtered_choices(id, &state.harness_type, is_local, ctx))
@@ -1014,12 +1078,15 @@ pub fn repopulate_all_pickers<A: OrchestrationControlAction, V: View>(
     handles: &OrchestrationPickerHandles<A>,
     ctx: &mut ViewContext<V>,
 ) {
+    let is_local = !state.execution_mode.is_remote();
+    if is_local {
+        state.sanitize_for_local_execution();
+    }
     if let Some(handle) = &handles.harness_picker {
-        populate_harness_picker(handle, &state.harness_type, ctx);
+        populate_harness_picker(handle, &state.harness_type, is_local, ctx);
     }
     // Revalidate model_id: if the previously selected model is no longer
     // in the catalog (e.g. server removed it), reset to default.
-    let is_local = !state.execution_mode.is_remote();
     if !is_model_in_filtered_choices(&state.model_id, &state.harness_type, is_local, ctx) {
         if let Some(first_id) = first_filtered_model_id(&state.harness_type, ctx) {
             state.model_id = first_id;
@@ -1084,7 +1151,13 @@ pub fn sync_picker_selections<A: OrchestrationControlAction, V: View>(
     }
     if let Some(harness_picker) = handles.harness_picker.clone() {
         let harness_type = state.harness_type.clone();
+        let show_harness_picker = should_show_harness_picker(state);
         harness_picker.update(ctx, |dropdown, ctx_dropdown| {
+            if show_harness_picker {
+                dropdown.set_enabled(ctx_dropdown);
+            } else {
+                dropdown.set_disabled(ctx_dropdown);
+            }
             let target = Harness::parse_orchestration_harness(&harness_type).unwrap_or(Harness::Oz);
             // Use the server-provided display_name from HarnessAvailabilityModel
             // so the selection matches the labels (which also use display_name).
@@ -1130,6 +1203,10 @@ pub fn sync_picker_selections<A: OrchestrationControlAction, V: View>(
         });
     }
 }
+
+#[cfg(test)]
+#[path = "orchestration_controls_tests.rs"]
+mod tests;
 
 // ── Adaptive picker layout ──────────────────────────────────────────
 
@@ -1398,6 +1475,7 @@ pub fn render_picker_row_with_layout<A: OrchestrationControlAction>(
     vertical: bool,
 ) -> Box<dyn Element> {
     let is_remote = state.execution_mode.is_remote();
+    let show_harness_picker = should_show_harness_picker(state);
 
     let show_auth_picker = should_show_auth_secret_picker(state);
 
@@ -1414,14 +1492,16 @@ pub fn render_picker_row_with_layout<A: OrchestrationControlAction>(
         // key) before host/environment/model so the API key sits directly
         // under the harness selector and does not split the model picker
         // from the "Primary model…" subtext that follows the picker row.
-        add(
-            &mut column,
-            "Agent harness",
-            handles
-                .harness_picker
-                .as_ref()
-                .map(|p| ChildView::new(p).finish()),
-        );
+        if show_harness_picker {
+            add(
+                &mut column,
+                "Agent harness",
+                handles
+                    .harness_picker
+                    .as_ref()
+                    .map(|p| ChildView::new(p).finish()),
+            );
+        }
         if show_auth_picker {
             add(
                 &mut column,
@@ -1471,14 +1551,16 @@ pub fn render_picker_row_with_layout<A: OrchestrationControlAction>(
                 row.add_child(col);
             };
 
-        add_picker(
-            &mut row,
-            "Agent harness",
-            handles
-                .harness_picker
-                .as_ref()
-                .map(|p| ChildView::new(p).finish()),
-        );
+        if show_harness_picker {
+            add_picker(
+                &mut row,
+                "Agent harness",
+                handles
+                    .harness_picker
+                    .as_ref()
+                    .map(|p| ChildView::new(p).finish()),
+            );
+        }
         if is_remote {
             add_picker(
                 &mut row,

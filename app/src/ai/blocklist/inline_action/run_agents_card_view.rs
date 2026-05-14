@@ -105,6 +105,9 @@ impl RunAgentsEditState {
         // Carry the request's auth secret onto the edit state so an
         // explicit value from a previous dispatch survives the round trip.
         orch.auth_secret_name = req.harness_auth_secret_name.clone();
+        if matches!(req.execution_mode, RunAgentsExecutionMode::Local) {
+            orch.sanitize_for_local_execution();
+        }
         Self {
             orch,
             agent_run_configs: req.agent_run_configs.clone(),
@@ -205,7 +208,6 @@ pub struct RunAgentsCardView {
     /// the user's previous model selection for each harness.
     saved_model_per_harness: HashMap<String, String>,
 }
-
 /// Computes the `is_denied` flag at construction time.
 ///
 /// The card is denied when either the action already has a `Denied`
@@ -219,13 +221,6 @@ pub(crate) fn compute_is_denied(
             active_config,
             Some((_, status)) if status.is_disapproved()
         )
-}
-
-fn is_opencode_on_remote(request: &RunAgentsRequest) -> bool {
-    matches!(
-        request.execution_mode,
-        RunAgentsExecutionMode::Remote { .. }
-    ) && request.harness_type.eq_ignore_ascii_case("opencode")
 }
 
 /// Resolves UI-only interactive defaults on edit state that has
@@ -270,7 +265,6 @@ fn resolve_interactive_defaults(
         }
     }
 }
-
 impl RunAgentsCardView {
     pub fn new(
         action_id: AIAgentActionId,
@@ -497,9 +491,9 @@ impl RunAgentsCardView {
                 }
             }
         }
-        // The proto-derived state never has an auth secret. Re-seed from
-        // the persisted per-harness setting so a plan-card selection (or
-        // a previous confirmation-card pick) is honored at dispatch time,
+        // If the streamed request omitted an auth secret, re-seed from the
+        // persisted per-harness setting so a plan-card selection (or a
+        // previous confirmation-card pick) is honored at dispatch time,
         // even if the user never touches the picker on this card.
         if new_state.orch.auth_secret_name.is_none() {
             new_state.orch.auth_secret_name =
@@ -567,16 +561,17 @@ impl RunAgentsCardView {
                 // in `launch_remote_child`.
                 self.state.orch.auth_secret_name =
                     oc::resolve_default_auth_secret_for_harness(&self.state.orch.harness_type, ctx);
-
-                self.auto_launched = true;
-                ctx.notify();
-                return;
+                if self.state.orch.accept_disabled_reason().is_none() {
+                    self.auto_launched = true;
+                    ctx.notify();
+                    return;
+                }
             }
         }
 
-        // No approved config — the confirmation card will be shown.
-        // Resolve from config (if any) then apply interactive defaults
-        // so the pickers display sensible values.
+        // No auto-launchable approved config — the confirmation card
+        // will be shown. Resolve from config (if any) then apply
+        // interactive defaults so the pickers display sensible values.
         if let Some((config, status)) = &self.active_config {
             if status.is_approved() {
                 self.state.orch.resolve_from_config(config);
@@ -595,13 +590,11 @@ impl RunAgentsCardView {
         if self.spawning.is_some() {
             return;
         }
-        let request = self.state.to_request();
-        if is_opencode_on_remote(&request) {
-            log::warn!(
-                "RunAgentsCardView: refusing Accept for OpenCode+Cloud (unsupported per spec)"
-            );
+        if let Some(reason) = self.state.orch.accept_disabled_reason() {
+            log::warn!("RunAgentsCardView: refusing Accept because action is disabled: {reason}");
             return;
         }
+        let request = self.state.to_request();
         let action_id = self.action_id.clone();
         self.action_model.update(ctx, |action_model, action_ctx| {
             action_model.execute_run_agents(&action_id, request, action_ctx);
@@ -643,7 +636,12 @@ impl RunAgentsCardView {
         if self.handles.pickers.harness_picker.is_none() {
             let handle = oc::new_standard_picker_dropdown(&colors, ctx);
             Self::set_upward_menu_position(&handle, ctx);
-            oc::populate_harness_picker(&handle, &state.orch.harness_type, ctx);
+            oc::populate_harness_picker(
+                &handle,
+                &state.orch.harness_type,
+                !state.orch.execution_mode.is_remote(),
+                ctx,
+            );
             Self::subscribe_picker_close(&handle, ctx);
             self.handles.pickers.harness_picker = Some(handle);
         }

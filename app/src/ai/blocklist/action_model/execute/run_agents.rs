@@ -15,6 +15,7 @@ use ai::skills::SkillReference;
 
 use crate::ai::blocklist::inline_action::orchestration_controls::OrchestrationEditState;
 use futures::{future::BoxFuture, FutureExt};
+use warp_cli::agent::Harness;
 use warp_core::execution_mode::AppExecutionMode;
 use warpui::{Entity, ModelContext, ModelHandle};
 
@@ -26,6 +27,7 @@ use crate::ai::agent::{
     StartAgentExecutionMode,
 };
 use crate::ai::blocklist::BlocklistAIHistoryModel;
+use crate::ai::local_child_harnesses::local_child_harness_disabled_message;
 use warpui::SingletonEntity;
 
 /// Per-child spawn timeout. If a child agent doesn't report back within
@@ -344,6 +346,13 @@ fn validate_request(request: &RunAgentsRequest) -> Result<(), String> {
     if request.agent_run_configs.is_empty() {
         return Err("orchestrate: empty agent_run_configs".to_string());
     }
+    if matches!(request.execution_mode, RunAgentsExecutionMode::Local) {
+        if let Some(harness) = Harness::parse_local_child_harness(&request.harness_type) {
+            if let Some(message) = local_child_harness_disabled_message(harness) {
+                return Err(message.to_string());
+            }
+        }
+    }
     if matches!(
         request.execution_mode,
         RunAgentsExecutionMode::Remote { .. }
@@ -394,6 +403,11 @@ pub fn run_agents_to_start_agent_mode(
                     model_id,
                 })
             } else {
+                if let Some(harness) = Harness::parse_local_child_harness(trimmed) {
+                    if let Some(message) = local_child_harness_disabled_message(harness) {
+                        return Err(message.to_string());
+                    }
+                }
                 Ok(StartAgentExecutionMode::Local {
                     harness_type: Some(trimmed.to_string()),
                     model_id,

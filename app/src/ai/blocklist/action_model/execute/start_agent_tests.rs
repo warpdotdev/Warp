@@ -348,6 +348,7 @@ fn execute_returns_detailed_error_when_child_startup_fails_before_initialization
 #[test]
 fn execute_returns_error_when_local_harness_child_requires_orchestration_v2() {
     App::test((), |mut app| async move {
+        let _local_harnesses = FeatureFlag::LocalClaudeCodexChildHarnesses.override_enabled(true);
         let terminal_view_id = EntityId::new();
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
         let executor = app.add_model(StartAgentExecutor::new);
@@ -422,6 +423,7 @@ fn execute_rejects_invalid_local_harness_names_before_pane_creation() {
 fn execute_returns_error_when_local_harness_child_missing_parent_run_id() {
     App::test((), |mut app| async move {
         let _orchestration_v2 = FeatureFlag::OrchestrationV2.override_enabled(true);
+        let _local_harnesses = FeatureFlag::LocalClaudeCodexChildHarnesses.override_enabled(true);
         let terminal_view_id = EntityId::new();
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
         let executor = app.add_model(StartAgentExecutor::new);
@@ -451,6 +453,43 @@ fn execute_returns_error_when_local_harness_child_missing_parent_run_id() {
             AIAgentActionResultType::StartAgent(StartAgentResult::Error { error, version })
                 if error
                     == "Local harness child agents require the parent run_id to be available."
+                    && version == StartAgentVersion::V2
+        ));
+    });
+}
+
+#[test]
+fn execute_rejects_disabled_local_claude_before_other_local_harness_validation() {
+    App::test((), |mut app| async move {
+        let _orchestration_v2 = FeatureFlag::OrchestrationV2.override_enabled(true);
+        let terminal_view_id = EntityId::new();
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+        let executor = app.add_model(StartAgentExecutor::new);
+        let parent_conversation_id = history_model.update(&mut app, |history_model, ctx| {
+            history_model.start_new_conversation(terminal_view_id, false, false, false, ctx)
+        });
+        let action = build_start_agent_action(
+            StartAgentVersion::V2,
+            StartAgentExecutionMode::local_harness("claude".to_string()),
+        );
+
+        let execution = executor.update(&mut app, |executor, ctx| {
+            let input = ExecuteActionInput {
+                action: &action,
+                conversation_id: parent_conversation_id,
+            };
+            let result: AnyActionExecution = executor.execute(input, ctx).into();
+            result
+        });
+
+        let AnyActionExecution::Sync(result) = execution else {
+            panic!("expected sync execution");
+        };
+
+        assert!(matches!(
+            result,
+            AIAgentActionResultType::StartAgent(StartAgentResult::Error { error, version })
+                if error == "Local Claude Code child agents are temporarily disabled."
                     && version == StartAgentVersion::V2
         ));
     });

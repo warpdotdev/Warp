@@ -13,6 +13,7 @@ use ai::agent::action_result::StartAgentVersion;
 use ai::skills::SkillReference;
 use settings::Setting;
 use std::path::PathBuf;
+use warp_core::features::FeatureFlag;
 use warpui::{App, SingletonEntity};
 
 #[test]
@@ -286,6 +287,45 @@ fn remote_arm_rejects_opencode() {
 }
 
 #[test]
+fn local_arm_rejects_disabled_claude() {
+    let err = run_agents_to_start_agent_mode(
+        &RunAgentsExecutionMode::Local,
+        "claude",
+        "auto",
+        &[],
+        None,
+        &agent_cfg(),
+    )
+    .expect_err("Local+claude must be rejected while disabled");
+    assert_eq!(
+        err,
+        "Local Claude Code child agents are temporarily disabled."
+    );
+}
+
+#[test]
+fn local_arm_allows_claude_when_feature_enabled() {
+    let _local_harnesses = FeatureFlag::LocalClaudeCodexChildHarnesses.override_enabled(true);
+
+    let mode = run_agents_to_start_agent_mode(
+        &RunAgentsExecutionMode::Local,
+        "claude",
+        "auto",
+        &[],
+        None,
+        &agent_cfg(),
+    )
+    .expect("Local+claude should convert when feature is enabled");
+    assert!(matches!(
+        mode,
+        StartAgentExecutionMode::Local {
+            harness_type: Some(ref harness_type),
+            model_id: Some(ref model_id),
+        } if harness_type == "claude" && model_id == "auto"
+    ));
+}
+
+#[test]
 fn remote_arm_propagates_claude_auth_secret_into_mode() {
     let mode = run_agents_to_start_agent_mode(
         &RunAgentsExecutionMode::Remote {
@@ -335,6 +375,7 @@ fn remote_arm_filters_whitespace_auth_secret_name_to_none() {
 
 #[test]
 fn local_arm_ignores_auth_secret_name() {
+    let _local_harnesses = FeatureFlag::LocalClaudeCodexChildHarnesses.override_enabled(true);
     let mode = run_agents_to_start_agent_mode(
         &RunAgentsExecutionMode::Local,
         "claude",
@@ -343,7 +384,7 @@ fn local_arm_ignores_auth_secret_name() {
         Some("my-claude-key"),
         &agent_cfg(),
     )
-    .expect("Local+claude must convert");
+    .expect("Local+claude should convert when feature is enabled");
     // Local children don't carry an auth_secret_name field.
     assert!(matches!(mode, StartAgentExecutionMode::Local { .. }));
 }
