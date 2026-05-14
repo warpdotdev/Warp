@@ -156,6 +156,55 @@ fn availability_uses_explicit_path_when_it_matches_known_remote_repo() {
     assert!(availability.is_ready());
     assert_eq!(availability.repo_path(), Some("/workspaces/warp"));
 }
+#[test]
+fn codebases_for_agent_context_includes_searchable_remote_paths() {
+    let mut model = RemoteCodebaseIndexModel::default();
+    model.apply_status_update(
+        remote_path("/workspaces/warp"),
+        ready_status("/workspaces/warp"),
+    );
+    model.apply_status_update(
+        remote_path("/workspaces/stale"),
+        status_with_state("/workspaces/stale", RemoteCodebaseIndexState::Stale),
+    );
+
+    let entries = model.codebases_for_agent_context();
+
+    assert_eq!(
+        entries,
+        vec![
+            RemoteCodebaseContextEntry {
+                name: "stale".to_string(),
+                path: "/workspaces/stale".to_string(),
+            },
+            RemoteCodebaseContextEntry {
+                name: "warp".to_string(),
+                path: "/workspaces/warp".to_string(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn codebases_for_agent_context_skips_unsearchable_remote_paths() {
+    let mut model = RemoteCodebaseIndexModel::default();
+    let mut missing_root_hash = ready_status("/workspaces/missing-root-hash");
+    missing_root_hash.root_hash = None;
+    model.apply_status_update(
+        remote_path("/workspaces/missing-root-hash"),
+        missing_root_hash,
+    );
+    model.apply_status_update(
+        remote_path("/workspaces/indexing"),
+        status_with_state("/workspaces/indexing", RemoteCodebaseIndexState::Indexing),
+    );
+    model.apply_status_update(
+        remote_path("/workspaces/failed"),
+        status_with_state("/workspaces/failed", RemoteCodebaseIndexState::Failed),
+    );
+
+    assert!(model.codebases_for_agent_context().is_empty());
+}
 
 #[test]
 fn resolve_remote_repo_path_falls_back_to_current_remote_cwd_when_no_repo_is_known() {

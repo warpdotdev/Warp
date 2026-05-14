@@ -41,6 +41,12 @@ pub enum RemoteCodebaseSearchAvailability {
     Ready(RemoteCodebaseSearchContext),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RemoteCodebaseContextEntry {
+    pub name: String,
+    pub path: String,
+}
+
 impl RemoteCodebaseSearchAvailability {
     pub fn is_ready(&self) -> bool {
         matches!(self, Self::Ready(_))
@@ -61,6 +67,14 @@ fn remote_path_from_repo_path(host_id: &HostId, repo_path: &str) -> Option<Remot
     StandardizedPath::try_new(repo_path)
         .ok()
         .map(|path| RemotePath::new(host_id.clone(), path))
+}
+
+fn remote_codebase_name(repo_path: &str) -> String {
+    repo_path
+        .rsplit('/')
+        .find(|segment| !segment.is_empty())
+        .unwrap_or(repo_path)
+        .to_string()
 }
 
 #[derive(Default)]
@@ -125,6 +139,26 @@ impl RemoteCodebaseIndexModel {
             manager.ensure_codebase_indexed(remote_path, ctx);
         });
         true
+    }
+
+    pub fn codebases_for_agent_context(&self) -> Vec<RemoteCodebaseContextEntry> {
+        let mut entries = self
+            .statuses
+            .iter()
+            .filter_map(|(remote_path, status)| {
+                search_availability_for_status(status, remote_path.clone())
+                    .is_ready()
+                    .then(|| {
+                        let path = remote_path.path.as_str().to_string();
+                        RemoteCodebaseContextEntry {
+                            name: remote_codebase_name(&path),
+                            path,
+                        }
+                    })
+            })
+            .collect::<Vec<_>>();
+        entries.sort_by(|a, b| a.path.cmp(&b.path));
+        entries
     }
 
     fn handle_remote_server_manager_event(
