@@ -4055,14 +4055,14 @@ impl SettingsWidget for AgentsWidget {
             agents_header.add_child(
                 build_sub_header(
                     appearance,
-                    "Agents",
+                    t!("settings.agents").to_string(),
                     Some(styles::header_font_color(is_any_ai_enabled, app)),
                 )
                 .with_padding_bottom(HEADER_PADDING)
                 .finish(),
             );
             agents_header.add_child(render_ai_setting_description(
-                "Set the boundaries for how your Agent operates. Choose what it can access, how much autonomy it has, and when it must ask for your approval. You can also fine-tune behavior around natural language input, codebase awareness, and more.",
+                t!("settings.agents_description").to_string(),
                 ai_settings.is_any_ai_enabled(app),
                 app,
             ));
@@ -4101,21 +4101,19 @@ impl AgentsWidget {
             .with_child(
                 build_sub_header(
                     appearance,
-                    "Profiles",
+                    t!("settings.profiles").to_string(),
                     Some(styles::header_font_color(is_any_ai_enabled, app)),
                 )
                 .finish(),
             )
             .with_child(
-                Container::new(
-                    render_ai_setting_description(
-                        "Profiles let you define how your Agent operates — from the actions it can take and when it needs approval, to the models it uses for tasks like coding and planning. You can also scope them to individual projects.",
-                        is_any_ai_enabled,
-                        app,
-                    )
-                )
+                Container::new(render_ai_setting_description(
+                    t!("settings.profiles_description").to_string(),
+                    is_any_ai_enabled,
+                    app,
+                ))
                 .with_margin_top(12.)
-                .finish()
+                .finish(),
             )
             .finish();
 
@@ -4159,7 +4157,7 @@ impl AgentsWidget {
         let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
         let model_subheader = Container::new(render_custom_size_header(
             appearance,
-            "Models",
+            t!("settings.models").to_string(),
             14.0,
             Some(styles::header_font_color(is_any_ai_enabled, app)),
         ))
@@ -4316,7 +4314,7 @@ impl AgentsWidget {
         let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
         let permissions_subheader = Container::new(render_custom_size_header(
             appearance,
-            "Permissions",
+            t!("settings.permissions").to_string(),
             14.0,
             Some(styles::header_font_color(is_any_ai_enabled, app)),
         ))
@@ -4325,8 +4323,9 @@ impl AgentsWidget {
 
         let code_diff_setting =
             BlocklistAIPermissions::as_ref(app).get_apply_code_diffs_setting(app, None);
+        let apply_code_diffs_label = t!("settings.apply_code_diffs").to_string();
         let code_diffs = self.render_execution_profile_dropdown(
-            "Apply code diffs",
+            &apply_code_diffs_label,
             Icon::Code2,
             code_diff_setting.description(),
             &view.apply_code_diffs_dropdown_menu,
@@ -4338,8 +4337,9 @@ impl AgentsWidget {
         let read_files_setting =
             BlocklistAIPermissions::as_ref(app).get_read_files_setting(app, None);
         let mut read_files_flex = Flex::column().with_main_axis_size(MainAxisSize::Min);
+        let read_files_label = t!("settings.read_files").to_string();
         read_files_flex.add_child(self.render_execution_profile_dropdown(
-            "Read files",
+            &read_files_label,
             Icon::Notebook,
             read_files_setting.description(),
             &view.read_files_dropdown_menu,
@@ -4368,8 +4368,9 @@ impl AgentsWidget {
         let execute_commands_setting =
             BlocklistAIPermissions::as_ref(app).get_execute_commands_setting(app, None);
         let mut execute_commands_flex = Flex::column().with_main_axis_size(MainAxisSize::Min);
+        let execute_commands_label = t!("settings.execute_commands").to_string();
         execute_commands_flex.add_child(self.render_execution_profile_dropdown(
-            "Execute commands",
+            &execute_commands_label,
             Icon::Terminal,
             execute_commands_setting.description(),
             &view.execute_commands_dropdown_menu,
@@ -4416,9 +4417,10 @@ impl AgentsWidget {
             .ai_autonomy_settings()
             .has_any_overrides()
         {
+            let managed_permissions_text = t!("settings.managed_permissions_notice").to_string();
             widget_children.push(
                 Container::new(render_settings_info_banner(
-                    "Some of your permissions are managed by your workspace.",
+                    &managed_permissions_text,
                     None,
                     appearance,
                 ))
@@ -4431,8 +4433,10 @@ impl AgentsWidget {
 
         let write_to_pty_setting =
             BlocklistAIPermissions::as_ref(app).get_write_to_pty_setting(app, None);
+        let interact_with_running_commands_label =
+            t!("settings.interact_with_running_commands").to_string();
         let write_to_pty = self.render_execution_profile_dropdown(
-            "Interact with running commands",
+            &interact_with_running_commands_label,
             Icon::Workflow,
             write_to_pty_setting.description(),
             &view.write_to_pty_autonomy_dropdown_menu,
