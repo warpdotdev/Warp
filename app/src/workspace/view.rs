@@ -18334,9 +18334,7 @@ impl Workspace {
                     false,
                 )
                 .on_right_click(move |ctx, _, position| {
-                    ctx.dispatch_typed_action(WorkspaceAction::ToggleNewSessionMenu {
-                        position,
-                    });
+                    ctx.dispatch_typed_action(WorkspaceAction::ToggleNewSessionMenu { position });
                 })
                 .finish();
             return Container::new(
