@@ -3357,6 +3357,125 @@ impl PaneGroup {
         }
     }
 
+    /// Materializes a hidden shared-session viewer pane for a viewer-discovered child agent.
+    ///
+    /// Triggered by [`crate::terminal::Event::EnsureSharedSessionViewerChildPane`], which
+    /// [`crate::terminal::shared_session::viewer::OrchestrationViewerModel`] emits on
+    /// the parent's [`TerminalView`] the first time it observes a `session_id` for one
+    /// of the orchestrator's children.
+    ///
+    /// Mirrors the remote-child branch of [`Self::create_hidden_child_agent_pane`] but
+    /// binds the new pane's [`TerminalManager`] to the child's shared session via
+    /// [`Self::create_shared_session_viewer`], so the child pane gets its own
+    /// [`crate::ai::blocklist::BlocklistAIController`] and viewer-side `Network`. The
+    /// pre-created local conversation (registered by `OrchestrationViewerModel`) is
+    /// restored into the new view to transfer ownership; the child pane's
+    /// `on_shared_init` will rebind the server conversation token onto it once the
+    /// session sends its first `Init`.
+    ///
+    /// Idempotent on [`Self::child_agent_panes`] membership: subsequent calls for the
+    /// same `child_conversation_id` are no-ops.
+    fn ensure_shared_session_viewer_child_pane(
+        &mut self,
+        child_conversation_id: AIConversationId,
+        child_session_id: SessionId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self
+            .child_agent_panes
+            .get(&child_conversation_id)
+            .is_some_and(|pane_id| self.has_pane_id(*pane_id))
+        {
+            log::debug!(
+                "[orch-viewer] ensure_shared_session_viewer_child_pane: pane already exists for conv={child_conversation_id:?}"
+            );
+            return;
+        }
+
+        let Some(child_conversation) = BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&child_conversation_id)
+            .cloned()
+        else {
+            log::warn!(
+                "ensure_shared_session_viewer_child_pane: no local conversation {child_conversation_id:?}"
+            );
+            return;
+        };
+        let child_task_id = child_conversation.task_id();
+
+        let resources = TerminalViewResources {
+            tips_completed: self.tips_completed.clone(),
+            server_api: self.server_api.clone(),
+            model_event_sender: self.model_event_sender.clone(),
+        };
+        let view_size = Self::estimated_view_bounds(ctx).size();
+        let (new_terminal_view, terminal_manager) =
+            Self::create_shared_session_viewer(child_session_id, resources, view_size, ctx);
+
+        let pane_data = TerminalPane::new(
+            Uuid::new_v4().as_bytes().to_vec(),
+            terminal_manager,
+            new_terminal_view.clone(),
+            self.model_event_sender.clone(),
+            ctx,
+        );
+        let new_pane_id = pane_data.terminal_pane_id();
+        if self
+            .attach_child_pane_off_tree(Box::new(pane_data), ctx)
+            .is_none()
+        {
+            log::error!(
+                "ensure_shared_session_viewer_child_pane: failed to attach pane for conv={child_conversation_id:?}"
+            );
+            return;
+        }
+
+        let mut entered = false;
+        new_terminal_view.update(ctx, |terminal_view, ctx| {
+            terminal_view.restore_conversation_after_view_creation(
+                RestoredAIConversation::new(child_conversation),
+                true,
+                ctx,
+            );
+            terminal_view.enter_agent_view(
+                None,
+                Some(child_conversation_id),
+                AgentViewEntryOrigin::SharedSessionSelection,
+                ctx,
+            );
+            let Some(ambient_agent_view_model) = terminal_view
+                .ambient_agent_view_model()
+                .into_optional_handle()
+                .cloned()
+            else {
+                log::error!(
+                    "ensure_shared_session_viewer_child_pane: missing ambient agent view model for conv={child_conversation_id:?}"
+                );
+                return;
+            };
+            ambient_agent_view_model.update(ctx, |model, ctx| {
+                model.set_conversation_id(Some(child_conversation_id));
+                if let Some(task_id) = child_task_id {
+                    model.enter_viewing_existing_session(task_id, ctx);
+                }
+            });
+            entered = true;
+        });
+
+        if !entered {
+            self.discard_pane(new_pane_id.into(), ctx);
+            return;
+        }
+
+        log::info!(
+            "[orch-viewer] materialized shared-session viewer child pane: \
+             conv={child_conversation_id:?} session={child_session_id} \
+             pane={new_pane_id:?}"
+        );
+        self.child_agent_panes
+            .insert(child_conversation_id, new_pane_id.into());
+    }
+
     /// Helper that creates the initial [`PaneData`] and [`InitialFocus`] given a terminal view.
     /// This is a common case in creating a new pane group with a single terminal session.
     fn terminal_pane_data(
