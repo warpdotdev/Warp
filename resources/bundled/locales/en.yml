@@ -619,6 +619,7 @@ en:
     host_regex_placeholder: "host (supports regex)"
     warpify_subshell: "Warpify subshell"
     warpify_ssh_session: "Warpify SSH session"
+    do_not_show_again: "Do not show again"
     enable_shell_integration: "Enable Warp shell integration in this session"
     use_agent: "Use agent"
     ask_agent_to_assist: "Ask the Warp agent to assist"

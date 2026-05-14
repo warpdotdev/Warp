@@ -619,6 +619,7 @@ zh-CN:
     host_regex_placeholder: "主机（支持 regex）"
     warpify_subshell: "Warpify 子 shell"
     warpify_ssh_session: "Warpify SSH 会话"
+    do_not_show_again: "不再显示"
     enable_shell_integration: "在此会话中启用 Warp shell integration"
     use_agent: "使用 Agent"
     ask_agent_to_assist: "让 Warp Agent 协助"
