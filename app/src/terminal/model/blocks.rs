@@ -1131,6 +1131,12 @@ impl BlockList {
         }
     }
 
+    pub fn unpin_rich_content_if_pinned(&mut self, view_id: EntityId) {
+        if self.pinned_to_bottom == Some(view_id) {
+            self.pinned_to_bottom = None;
+        }
+    }
+
     pub fn update_agent_view_conversation_id_for_rich_content(
         &mut self,
         rich_content_view_id: EntityId,

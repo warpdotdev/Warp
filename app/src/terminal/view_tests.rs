@@ -21,6 +21,7 @@ use warpui::{App, ReadModel};
 
 use crate::ai::blocklist::agent_view::toolbar_item::AgentToolbarItemKind;
 use crate::ai::blocklist::block::cli_controller::UserTakeOverReason;
+use crate::ai::blocklist::block::pending_user_query_block::PendingUserQueryDisplayState;
 use crate::ai::blocklist::{
     agent_view::AgentViewEntryOrigin, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
     InputConfig, InputType, ResponseStreamId,
@@ -82,6 +83,24 @@ fn has_pending_user_query_block(view: &TerminalView) -> bool {
     view.rich_content_views.iter().any(|rich_content| {
         rich_content.view_id() == view_id && rich_content.is_pending_user_query()
     })
+}
+fn pending_user_query_display_state(
+    view: &TerminalView,
+    ctx: &AppContext,
+) -> Option<PendingUserQueryDisplayState> {
+    let view_id = view.pending_user_query_view_id?;
+    view.rich_content_views
+        .iter()
+        .find_map(|rich_content| match rich_content.metadata() {
+            Some(RichContentMetadata::PendingUserQuery {
+                pending_user_query_block_handle,
+            }) if pending_user_query_block_handle.id() == view_id => Some(
+                pending_user_query_block_handle
+                    .as_ref(ctx)
+                    .display_state_for_test(),
+            ),
+            _ => None,
+        })
 }
 
 fn exchange_with_inputs(inputs: Vec<AIAgentInput>) -> AIAgentExchange {
@@ -1024,6 +1043,10 @@ fn cloud_mode_dispatched_agent_inserts_queued_user_query() {
             view.handle_ambient_agent_event(&AmbientAgentViewModelEvent::DispatchedAgent, ctx);
 
             assert!(has_pending_user_query_block(view));
+            assert_eq!(
+                pending_user_query_display_state(view, ctx),
+                Some(PendingUserQueryDisplayState::Queued)
+            );
         });
     });
 }
@@ -1045,6 +1068,10 @@ fn cloud_mode_failed_inserts_tombstone_and_hides_input() {
             view.enter_ambient_agent_setup(None, ctx);
             view.insert_cloud_mode_queued_user_query_block("queued prompt".to_string(), ctx);
             assert!(has_pending_user_query_block(view));
+            assert_eq!(
+                pending_user_query_display_state(view, ctx),
+                Some(PendingUserQueryDisplayState::Queued)
+            );
 
             view.handle_ambient_agent_event(
                 &AmbientAgentViewModelEvent::Failed {
@@ -1053,9 +1080,18 @@ fn cloud_mode_failed_inserts_tombstone_and_hides_input() {
                 ctx,
             );
 
-            assert!(!has_pending_user_query_block(view));
+            assert!(has_pending_user_query_block(view));
+            assert_eq!(
+                pending_user_query_display_state(view, ctx),
+                Some(PendingUserQueryDisplayState::Unsent)
+            );
             assert!(view.conversation_ended_tombstone_view_id.is_some());
-            assert_eq!(view.rich_content_views.len(), 1);
+            assert_eq!(view.rich_content_views.len(), 2);
+            assert!(view.rich_content_views[0].is_pending_user_query());
+            assert_eq!(
+                Some(view.rich_content_views[1].view_id()),
+                view.conversation_ended_tombstone_view_id
+            );
             {
                 let model = view.model.lock();
                 assert!(!view.is_input_box_visible(&model, ctx));
@@ -1067,7 +1103,12 @@ fn cloud_mode_failed_inserts_tombstone_and_hides_input() {
                 },
                 ctx,
             );
-            assert_eq!(view.rich_content_views.len(), 1);
+            assert_eq!(view.rich_content_views.len(), 2);
+            assert!(has_pending_user_query_block(view));
+            assert_eq!(
+                pending_user_query_display_state(view, ctx),
+                Some(PendingUserQueryDisplayState::Unsent)
+            );
         });
 
         let window_id = app.read(|ctx| terminal.window_id(ctx));
@@ -1093,6 +1134,37 @@ fn cloud_mode_failed_inserts_tombstone_and_hides_input() {
     });
 }
 
+#[test]
+fn queued_prompt_not_marked_unsent_by_cloud_failure_helper() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _pending_query = FeatureFlag::PendingUserQueryIndicator.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        terminal.update(&mut app, |view, ctx| {
+            view.send_user_query_after_next_conversation_finished(
+                "queued prompt".to_string(),
+                true,
+                true,
+                ctx,
+            );
+            assert!(has_pending_user_query_block(view));
+            assert_eq!(
+                pending_user_query_display_state(view, ctx),
+                Some(PendingUserQueryDisplayState::Queued)
+            );
+
+            view.mark_cloud_mode_query_unsent_after_failure(ctx);
+
+            assert!(has_pending_user_query_block(view));
+            assert_eq!(
+                pending_user_query_display_state(view, ctx),
+                Some(PendingUserQueryDisplayState::Queued)
+            );
+        });
+    });
+}
 #[test]
 fn cloud_mode_followup_dispatched_inserts_queued_user_query() {
     App::test((), |mut app| async move {

@@ -22,8 +22,13 @@ use crate::{
     ui_components::{blended_colors, icons::Icon},
     view_components::action_button::{ActionButton, ButtonSize, NakedTheme},
 };
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PendingUserQueryDisplayState {
+    Queued,
+    Unsent,
+}
 
-/// Renders a pending user query block with dimmed text and a "Queued" badge.
+/// Renders a pending user query block with dimmed text and an optional status badge.
 /// Displayed when a follow-up prompt is queued via `/fork-and-compact <prompt>`,
 /// `/compact-and <prompt>`, `/queue <prompt>`, or for the initial prompt of a
 /// Cloud Mode run waiting for its real shared-session transcript query to arrive.
@@ -38,6 +43,7 @@ pub struct PendingUserQueryBlock {
     selected_text: Arc<RwLock<Option<String>>>,
     close_button: Option<ViewHandle<ActionButton>>,
     send_now_button: Option<ViewHandle<ActionButton>>,
+    display_state: PendingUserQueryDisplayState,
 }
 
 impl PendingUserQueryBlock {
@@ -78,6 +84,7 @@ impl PendingUserQueryBlock {
             selected_text: Default::default(),
             close_button,
             send_now_button,
+            display_state: PendingUserQueryDisplayState::Queued,
         }
     }
 
@@ -91,6 +98,16 @@ impl PendingUserQueryBlock {
         self.selection_handle.clear();
         *self.selected_text.write() = None;
         ctx.notify();
+    }
+
+    pub fn mark_unsent(&mut self, ctx: &mut ViewContext<Self>) {
+        self.display_state = PendingUserQueryDisplayState::Unsent;
+        ctx.notify();
+    }
+
+    #[cfg(test)]
+    pub fn display_state_for_test(&self) -> PendingUserQueryDisplayState {
+        self.display_state
     }
 }
 
@@ -163,23 +180,23 @@ impl View for PendingUserQueryBlock {
         .with_selectable(true)
         .finish();
 
-        let queued_badge = Text::new(
-            "Queued",
-            appearance.ui_font_family(),
-            appearance.monospace_font_size().max(4.) - 2.,
-        )
-        .with_style(Properties {
-            style: Style::Italic,
-            weight: Weight::Normal,
-        })
-        .with_color(dimmed_color)
-        .with_selectable(false)
-        .finish();
-
-        let selectable_child = Flex::column()
-            .with_child(prompt_text)
-            .with_child(Container::new(queued_badge).with_margin_top(4.).finish())
+        let mut selectable_child = Flex::column().with_child(prompt_text);
+        if matches!(self.display_state, PendingUserQueryDisplayState::Queued) {
+            let queued_badge = Text::new(
+                "Queued",
+                appearance.ui_font_family(),
+                appearance.monospace_font_size().max(4.) - 2.,
+            )
+            .with_style(Properties {
+                style: Style::Italic,
+                weight: Weight::Normal,
+            })
+            .with_color(dimmed_color)
+            .with_selectable(false)
             .finish();
+            selectable_child.add_child(Container::new(queued_badge).with_margin_top(4.).finish());
+        }
+        let selectable_child = selectable_child.finish();
 
         let semantic_selection = SemanticSelection::as_ref(app);
         let selected_text = self.selected_text.clone();

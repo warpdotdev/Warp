@@ -118,6 +118,45 @@ impl TerminalView {
         }
     }
 
+    pub(super) fn mark_cloud_mode_query_unsent_after_failure(
+        &mut self,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.pending_user_query_kind != Some(PendingUserQueryKind::CloudMode) {
+            return;
+        }
+        let Some(view_id) = self.pending_user_query_view_id else {
+            return;
+        };
+        let Some(handle) =
+            self.rich_content_views
+                .iter()
+                .find_map(|rich_content| match rich_content.metadata() {
+                    Some(RichContentMetadata::PendingUserQuery {
+                        pending_user_query_block_handle,
+                    }) if pending_user_query_block_handle.id() == view_id => {
+                        Some(pending_user_query_block_handle.clone())
+                    }
+                    _ => None,
+                })
+        else {
+            return;
+        };
+
+        handle.update(ctx, |block, ctx| {
+            block.mark_unsent(ctx);
+        });
+        self.model
+            .lock()
+            .block_list_mut()
+            .unpin_rich_content_if_pinned(view_id);
+        self.model
+            .lock()
+            .block_list_mut()
+            .mark_rich_content_dirty(view_id);
+        ctx.notify();
+    }
+
     /// Removes the pending block and immediately submits the queued prompt.
     ///
     /// The plain-text submission path cancels any in-flight stream itself (via
