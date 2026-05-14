@@ -123,12 +123,6 @@ const INVALID_EMAILS_INSTRUCTIONS: &str =
 
 const OFFLINE_TEXT: &str = "You are offline.";
 
-const LIMIT_HIT_ADMIN_TEXT: &str =
-    "You've reached the team member limit for your plan. Upgrade to add more teammates.";
-const LIMIT_HIT_ADMIN_NOT_AUTO_UPGRADEABLE_TEXT: &str = "You've reached the team member limit for your plan. Contact support@warp.dev to add more teammates.";
-const LIMIT_HIT_NON_ADMIN_TEXT: &str =
-    "You've reached the team member limit for your plan. Contact a team admin to add more teammates.";
-
 const DELINQUENT_ADMIN_NON_SELF_SERVE_TEXT: &str = "Team invites have been restricted due to a payment issue. Please contact support@warp.dev to restore access.";
 const DELINQUENT_NON_ADMIN_TEXT: &str = "Team invites have been restricted due to a payment issue. Please contact a team admin to restore access.";
 const DELINQUENT_ADMIN_SELF_SERVE_LINE_1_TEXT: &str =
@@ -137,11 +131,20 @@ const DELINQUENT_ADMIN_SELF_SERVE_LINE_2_PREFIX_TEXT: &str = "Please ";
 const DELINQUENT_ADMIN_SELF_SERVE_LINE_2_LINK_TEXT: &str = "update your payment information";
 const DELINQUENT_ADMIN_SELF_SERVE_LINE_2_SUFFIX_TEXT: &str = " to restore access.";
 
-const TEAM_LIMIT_EXCEEDED_ADMIN_NOT_AUTO_UPGRADEABLE_TEXT: &str = "You've exceeded the team member limit for your plan. Please contact support@warp.dev to upgrade your team.";
-const TEAM_LIMIT_EXCEEDED_NON_ADMIN_TEXT: &str =
-    "You've exceeded the team member limit for your plan. Contact a team admin to upgrade your team.";
-const TEAM_LIMIT_EXCEEDED_ADMIN_UPGRADEABLE: &str =
-    "You've exceeded the team member limit for your plan. Upgrade to add more teammates.";
+// Header-level seat-cap banner copy. The almost-full banner fires at members == limit-1
+// and the full banner fires at members >= limit (subsuming the over-cap state, e.g. 12/10).
+const SEAT_CAP_ALMOST_FULL_HEADLINE: &str = "Your team is almost full \u{2014} 1 seat remaining";
+const SEAT_CAP_ALMOST_FULL_BODY: &str = "Contact sales to upgrade and add more seats.";
+const SEAT_CAP_FULL_HEADLINE: &str = "Your team is full";
+const SEAT_CAP_FULL_BODY: &str =
+    "You've used all of your team's seats. Contact sales to upgrade and add more seats.";
+const SEAT_CAP_CONTACT_SALES_BUTTON_LABEL: &str = "Contact sales";
+const SEAT_CAP_BANNER_HORIZONTAL_PADDING: f32 = 16.;
+const SEAT_CAP_BANNER_VERTICAL_PADDING: f32 = 12.;
+
+// Team-discovery "Request a seat" CTA copy.
+const DISCOVERY_REQUEST_SEAT_BUTTON_LABEL: &str = "Request a seat from your admin";
+const DISCOVERY_REQUEST_SEAT_CONFIRMATION_LABEL: &str = "\u{2713} Seat requested";
 
 const MAX_CHIP_WIDTH: f32 = 280.;
 
@@ -199,6 +202,17 @@ pub enum TeamsPageAction {
         team_uid: ServerId,
     },
     ContactSupport,
+    /// Open a `mailto:sales@warp.dev` link from the seat-cap banners. Used by both the
+    /// almost-full and full banners on the team management page.
+    ContactSales,
+    /// Send a seat request to the admins of a team the user has been blocked from joining
+    /// because the team is at its seat cap. Surfaced from the team-discovery section.
+    /// TODO(seat-caps): currently flips local React-style "requested" state in the view but
+    /// does not yet call a server-side mutation. Wire this up once the `sendSeatRequest`
+    /// GraphQL mutation lands on the server.
+    SendSeatRequest {
+        team_uid: ServerId,
+    },
     /// This action is for toggling the discoverability checkbox before a team is created.
     ToggleTeamDiscoverabilityBeforeCreation,
     /// This action is for toggling the discoverability toggle after a team has been created.
@@ -243,6 +257,8 @@ impl TeamsPageAction {
                 | GenerateStripeBillingPortalLink { .. }
                 | OpenAdminPanel { .. }
                 | ContactSupport
+                | ContactSales
+                | SendSeatRequest { .. }
                 | ToggleTeamDiscoverabilityBeforeCreation
                 | ToggleTeamDiscoverability { .. }
                 | JoinTeamWithTeamDiscovery { .. }
@@ -266,6 +282,8 @@ impl From<&TeamsPageAction> for LoginGatedFeature {
             GenerateStripeBillingPortalLink { .. } => "Generate Stripe Billing Portal Link",
             OpenAdminPanel { .. } => "Open Admin Panel",
             ContactSupport => "Contact Support",
+            ContactSales => "Contact Sales",
+            SendSeatRequest { .. } => "Request a Seat From Admin",
             ToggleTeamDiscoverability { .. } | ToggleTeamDiscoverabilityBeforeCreation => {
                 "Toggle Team Discoverability"
             }
@@ -317,11 +335,11 @@ struct TeamsWidgetMouseHandles {
     stripe_billing_portal_link: MouseStateHandle,
     manage_plan_link: MouseStateHandle,
     enterprise_contact_us_link: MouseStateHandle,
-    invite_by_email_upgrade_button: MouseStateHandle,
     invite_by_email_billing_portal_link: MouseStateHandle,
     discoverable_team_toggle_state: SwitchStateHandle,
     checkbox_mouse_state: MouseStateHandle,
     admin_panel_button: MouseStateHandle,
+    seat_cap_banner_contact_sales_button: MouseStateHandle,
 }
 
 /// TeamsInviteOption is whether the user is looking at invite-by-link or invite-by-email.
@@ -409,6 +427,11 @@ impl Ord for Item {
 struct DiscoverableTeamState {
     team: DiscoverableTeam,
     mouse_state_handle: MouseStateHandle,
+    /// Local-only confirmation flag flipped to `true` after the user clicks
+    /// "Request a seat from your admin" on a discoverable team that is at its seat cap.
+    /// Mirrors the React-side pattern in `BuildPlanRequestUpgradeDialog.tsx`: not persisted
+    /// across reloads, so reopening the page returns to the un-requested state.
+    seat_requested: bool,
 }
 
 impl DiscoverableTeamState {
@@ -416,6 +439,7 @@ impl DiscoverableTeamState {
         Self {
             team,
             mouse_state_handle: Default::default(),
+            seat_requested: false,
         }
     }
 }
@@ -547,6 +571,12 @@ impl TypedActionView for TeamsPageView {
             }
             TeamsPageAction::ContactSupport => {
                 AdminActions::contact_support(ctx);
+            }
+            TeamsPageAction::ContactSales => {
+                AdminActions::contact_sales(ctx);
+            }
+            TeamsPageAction::SendSeatRequest { team_uid } => {
+                self.mark_seat_requested_for_discoverable_team(*team_uid, ctx);
             }
             TeamsPageAction::ToggleTeamDiscoverability {
                 team_uid,
@@ -1506,6 +1536,26 @@ impl TeamsPageView {
             });
     }
 
+    /// Flip the local `seat_requested` flag on the matching `DiscoverableTeamState` so the
+    /// "Request a seat from your admin" button switches to a "Seat requested" confirmation.
+    ///
+    /// State is kept only in-memory; reopening the page clears it. Once the server-side
+    /// `sendSeatRequest` mutation lands (per the May 2026 seat-caps spec), this method should
+    /// also dispatch that mutation through `UserWorkspaces`.
+    fn mark_seat_requested_for_discoverable_team(
+        &mut self,
+        team_uid: ServerId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let team_uid_str = team_uid.to_string();
+        for state in &mut self.discoverable_teams_states {
+            if state.team.team_uid == team_uid_str {
+                state.seat_requested = true;
+            }
+        }
+        ctx.notify();
+    }
+
     fn delete_team_invite(
         &mut self,
         team_uid: ServerId,
@@ -1903,9 +1953,25 @@ impl TeamsWidget {
                 .finish(),
         );
 
-        // 3) Team invitation flows (invite link / email invites)
-        if let Some(workspace_size_policy) =
-            team_metadata.billing_metadata.tier.workspace_size_policy
+        // 3) Header-level seat-cap banner (almost-full or full).
+        // Sits above the team-members section per the May 2026 seat-caps spec. Renders
+        // nothing when the team is below the cap or the policy is unlimited. The full
+        // banner subsumes the over-cap state (`12/10` reads naturally) so we don't need
+        // to special-case grandfathered teams.
+        if let Some(banner) = self.render_seat_cap_banner_if_applicable(
+            team_metadata.billing_metadata.tier.workspace_size_policy,
+            team_metadata.members.len(),
+            appearance,
+        ) {
+            main_content.add_child(banner);
+        }
+
+        // 4) Team invitation flows (invite link / email invites)
+        if team_metadata
+            .billing_metadata
+            .tier
+            .workspace_size_policy
+            .is_some()
         {
             main_content.add_child(self.render_team_invitation_section(
                 team_metadata,
@@ -1913,12 +1979,12 @@ impl TeamsWidget {
                 view,
                 appearance,
                 chip_editor_style,
-                workspace_size_policy,
                 app,
             ));
-        };
+        }
 
-        // 4) Team members
+        // 5) Team members (the section header also renders the seat-counter pill when the
+        // team has a workspace-size policy).
         main_content.add_child(self.render_team_members_section(
             team_metadata,
             &current_user_email,
@@ -1926,7 +1992,7 @@ impl TeamsWidget {
             appearance,
         ));
 
-        // 5) Team discoverability toggle
+        // 6) Team discoverability toggle
         if team_metadata.billing_metadata.customer_type != CustomerType::Enterprise
             && has_admin_permissions
             && team_metadata.is_eligible_for_discovery
@@ -1938,7 +2004,7 @@ impl TeamsWidget {
             ))
         }
 
-        // 6) Deleting/leaving teams
+        // 7) Deleting/leaving teams
         let mut button_row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
         let is_enterprise_team =
             team_metadata.billing_metadata.customer_type == CustomerType::Enterprise;
@@ -2265,7 +2331,6 @@ impl TeamsWidget {
         section.finish()
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_team_invitation_section(
         &self,
         team_metadata: &Team,
@@ -2273,7 +2338,6 @@ impl TeamsWidget {
         view: &TeamsPageView,
         appearance: &Appearance,
         chip_editor_style: UiComponentStyles,
-        workspace_size_policy: WorkspaceSizePolicy,
         app: &AppContext,
     ) -> Box<dyn Element> {
         let mut invitation_section = Flex::column();
@@ -2311,7 +2375,6 @@ impl TeamsWidget {
             view,
             appearance,
             chip_editor_style,
-            workspace_size_policy,
             has_admin_permissions,
         ));
 
@@ -2424,7 +2487,6 @@ impl TeamsWidget {
         view: &TeamsPageView,
         appearance: &Appearance,
         chip_editor_style: UiComponentStyles,
-        policy: WorkspaceSizePolicy,
         has_admin_permissions: bool,
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
@@ -2437,135 +2499,65 @@ impl TeamsWidget {
                 .finish(),
         );
 
+        // The email-invite editor stays visible at and over the seat cap. Per the May 2026
+        // seat-caps spec, admins can create unlimited pending invites regardless of cap; only
+        // acceptance is gated by the cap (server-side, in `addUserToTeam`). The header-level
+        // seat-cap banner above this section communicates the cap state. Payment-delinquent
+        // teams (`PastDue` / `Unpaid`) keep their existing inline copy.
         match team.billing_metadata.delinquency_status {
-            DelinquencyStatus::Unknown | DelinquencyStatus::NoDelinquency => {
-                if policy.is_unlimited
-                    || policy.limit
-                        > team
-                            .members
-                            .len()
-                            .try_into()
-                            .expect("team size should be within max i64 range")
-                {
-                    // Instruction text for invite by email expiry
-                    section.add_child(
-                        Container::new(self.render_sub_text(
-                            INVITE_BY_EMAIL_EXPIRY_INSTRUCTIONS.into(),
-                            appearance,
-                            Some(Coords::uniform(0.).right(48.)),
-                        ))
-                        .with_padding_bottom(TEXT_FIELD_TOP_PADDING)
-                        .finish(),
-                    );
+            DelinquencyStatus::Unknown
+            | DelinquencyStatus::NoDelinquency
+            | DelinquencyStatus::TeamLimitExceeded => {
+                // Instruction text for invite by email expiry
+                section.add_child(
+                    Container::new(self.render_sub_text(
+                        INVITE_BY_EMAIL_EXPIRY_INSTRUCTIONS.into(),
+                        appearance,
+                        Some(Coords::uniform(0.).right(48.)),
+                    ))
+                    .with_padding_bottom(TEXT_FIELD_TOP_PADDING)
+                    .finish(),
+                );
 
-                    // Email invite editor + button
-                    section.add_child(
-                        Flex::row()
-                            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                            .with_child(
-                                Shrinkable::new(
-                                    1.,
-                                    TextInput::new(
-                                        view.email_invites_block_editor.clone(),
-                                        chip_editor_style,
-                                    )
-                                    .build()
-                                    .finish(),
-                                )
-                                .finish(),
-                            )
-                            .with_child(
-                                self.render_send_email_invites_button(team.uid, view, appearance),
-                            )
-                            .finish(),
-                    );
-
-                    if !view.email_invites_block_editor_state.is_valid
-                        && !view.email_invites_block_editor_state.is_empty
-                        && view.email_invites_block_editor_state.num_chips > 0
-                    {
-                        section.add_child(
-                            Container::new(self.render_error_sub_text(
-                                INVALID_EMAILS_INSTRUCTIONS.into(),
-                                appearance,
-                            ))
-                            .with_padding_top(8.)
-                            .finish(),
-                        )
-                    }
-                } else {
-                    // Team is not delinquent, but has hit their team size limit.
-
-                    let team_uid = team.uid;
-
-                    let limit_hit_text = if team.billing_metadata.can_upgrade_to_higher_tier_plan()
-                    {
-                        let mut limit_hit_text_and_upgrade_button = Flex::row()
-                            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                            .with_main_axis_size(MainAxisSize::Max)
-                            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
-
-                        let text = if has_admin_permissions {
-                            LIMIT_HIT_ADMIN_TEXT
-                        } else {
-                            LIMIT_HIT_NON_ADMIN_TEXT
-                        };
-
-                        limit_hit_text_and_upgrade_button.add_child(
+                // Email invite editor + button
+                section.add_child(
+                    Flex::row()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_child(
                             Shrinkable::new(
                                 1.,
-                                self.render_sub_text(
-                                    text.into(),
-                                    appearance,
-                                    Some(Coords::uniform(0.).right(12.)),
-                                ),
+                                TextInput::new(
+                                    view.email_invites_block_editor.clone(),
+                                    chip_editor_style,
+                                )
+                                .build()
+                                .finish(),
                             )
                             .finish(),
-                        );
-
-                        limit_hit_text_and_upgrade_button.add_child(
-                            self.render_compare_plans_button(
-                                "Compare plans",
-                                self.mouse_state_handles
-                                    .invite_by_email_upgrade_button
-                                    .clone(),
-                                team_uid,
-                                appearance,
-                                Some(
-                                    self.button_properties()
-                                        .set_width(COMPARE_PLANS_BUTTON_WIDTH),
-                                ),
-                            ),
-                        );
-
-                        limit_hit_text_and_upgrade_button.finish()
-                    } else {
-                        // Otherwise, they've hit the team size limit, but are not able
-                        // to upgrade to team plan (e.g. they're on a tier that has
-                        // a limit on # of seats but it's not one of free/free preview/legacy/prosumer).
-                        // In that case show message to contact their admin/support with no
-                        // button to `/upgrade`.
-                        let text = if has_admin_permissions {
-                            LIMIT_HIT_ADMIN_NOT_AUTO_UPGRADEABLE_TEXT
-                        } else {
-                            LIMIT_HIT_NON_ADMIN_TEXT
-                        };
-                        self.render_sub_text(
-                            text.into(),
-                            appearance,
-                            Some(Coords::uniform(0.).right(48.)),
                         )
-                    };
+                        .with_child(
+                            self.render_send_email_invites_button(team.uid, view, appearance),
+                        )
+                        .finish(),
+                );
 
+                if !view.email_invites_block_editor_state.is_valid
+                    && !view.email_invites_block_editor_state.is_empty
+                    && view.email_invites_block_editor_state.num_chips > 0
+                {
                     section.add_child(
-                        Container::new(limit_hit_text)
-                            .with_padding_bottom(CONTENT_SEPARATION_PADDING)
-                            .finish(),
-                    );
+                        Container::new(
+                            self.render_error_sub_text(
+                                INVALID_EMAILS_INSTRUCTIONS.into(),
+                                appearance,
+                            ),
+                        )
+                        .with_padding_top(8.)
+                        .finish(),
+                    )
                 }
             }
             DelinquencyStatus::PastDue | DelinquencyStatus::Unpaid => {
-                // If team has hit their team size limit:
                 let team_uid = team.uid;
 
                 let delinquent_text = if has_admin_permissions {
@@ -2643,75 +2635,6 @@ impl TeamsWidget {
                         .finish(),
                 );
             }
-            DelinquencyStatus::TeamLimitExceeded => {
-                // If team has hit their team size limit:
-                let team_uid = team.uid;
-
-                let limit_exceeded_text = if team.billing_metadata.can_upgrade_to_higher_tier_plan()
-                {
-                    let mut limit_exceeded_text_and_upgrade_button = Flex::row()
-                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                        .with_main_axis_size(MainAxisSize::Max)
-                        .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
-
-                    let text = if has_admin_permissions {
-                        TEAM_LIMIT_EXCEEDED_ADMIN_UPGRADEABLE
-                    } else {
-                        TEAM_LIMIT_EXCEEDED_NON_ADMIN_TEXT
-                    };
-
-                    limit_exceeded_text_and_upgrade_button.add_child(
-                        Shrinkable::new(
-                            1.,
-                            self.render_sub_text(
-                                text.into(),
-                                appearance,
-                                Some(Coords::uniform(0.).right(12.)),
-                            ),
-                        )
-                        .finish(),
-                    );
-
-                    limit_exceeded_text_and_upgrade_button.add_child(
-                        self.render_compare_plans_button(
-                            "Compare plans",
-                            self.mouse_state_handles
-                                .invite_by_email_upgrade_button
-                                .clone(),
-                            team_uid,
-                            appearance,
-                            Some(
-                                self.button_properties()
-                                    .set_width(COMPARE_PLANS_BUTTON_WIDTH),
-                            ),
-                        ),
-                    );
-
-                    limit_exceeded_text_and_upgrade_button.finish()
-                } else {
-                    // Otherwise, they've hit the team size limit, but are not able
-                    // to upgrade to team plan (e.g. they're on a tier that has
-                    // a limit on # of seats but it's not one of free/free preview/legacy/prosumer).
-                    // In that case show message to contact their admin/support with no
-                    // button to `/upgrade`.
-                    let text = if has_admin_permissions {
-                        TEAM_LIMIT_EXCEEDED_ADMIN_NOT_AUTO_UPGRADEABLE_TEXT
-                    } else {
-                        TEAM_LIMIT_EXCEEDED_NON_ADMIN_TEXT
-                    };
-                    self.render_sub_text(
-                        text.into(),
-                        appearance,
-                        Some(Coords::uniform(0.).right(48.)),
-                    )
-                };
-
-                section.add_child(
-                    Container::new(limit_exceeded_text)
-                        .with_padding_bottom(CONTENT_SEPARATION_PADDING)
-                        .finish(),
-                );
-            }
         };
 
         Container::new(section.finish())
@@ -2728,14 +2651,25 @@ impl TeamsWidget {
     ) -> Box<dyn Element> {
         let mut section = Flex::column().with_main_axis_size(MainAxisSize::Min);
 
-        // 1) "Team Members" header
+        // 1) "Team Members" header, with a seat-counter pill on the right when the team has
+        // a workspace-size policy.
+        let mut header_row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
+        header_row.add_child(self.render_subsection_header("Team Members".to_owned(), appearance));
+        if let Some(policy) = team.billing_metadata.tier.workspace_size_policy {
+            header_row.add_child(self.render_seat_counter_pill(
+                team.members.len(),
+                policy,
+                appearance,
+            ));
+        }
         section.add_child(
             SavePosition::new(
-                Container::new(
-                    self.render_subsection_header("Team Members".to_owned(), appearance),
-                )
-                .with_padding_bottom(16.)
-                .finish(),
+                Container::new(header_row.finish())
+                    .with_padding_bottom(16.)
+                    .finish(),
                 TEAM_MEMBERS_HEADER_POSITION_ID,
             )
             .finish(),
@@ -3977,43 +3911,207 @@ impl TeamsWidget {
         team_state: &DiscoverableTeamState,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
+        let button_style = UiComponentStyles {
+            font_color: Some(
+                appearance
+                    .theme()
+                    .main_text_color(appearance.theme().accent())
+                    .into_solid(),
+            ),
+            font_weight: Some(Weight::Medium),
+            height: Some(38.),
+            font_size: Some(14.),
+            ..Default::default()
+        };
+
         if team_state.team.team_accepting_invites {
-            self.render_button(
+            return self.render_button(
                 "Join",
                 ButtonVariant::Accent,
                 team_state.mouse_state_handle.clone(),
                 Some(TeamsPageAction::JoinTeamWithTeamDiscovery {
                     team_uid: ServerId::from_string_lossy(&team_state.team.team_uid),
                 }),
-                UiComponentStyles {
-                    font_color: Some(
-                        appearance
-                            .theme()
-                            .main_text_color(appearance.theme().accent())
-                            .into_solid(),
-                    ),
-                    font_weight: Some(Weight::Medium),
-                    height: Some(38.),
-                    font_size: Some(14.),
-                    ..Default::default()
-                },
+                button_style,
                 appearance,
-            )
-        } else {
-            appearance
+            );
+        }
+
+        // Team is at its seat cap. Per the May 2026 seat-caps spec, replace the disabled
+        // "Contact Admin to request access" placeholder with an active "Request a seat
+        // from your admin" button. Once clicked, flip the button into a local-only
+        // "\u{2713} Seat requested" confirmation state. The actual server-side mutation
+        // (`sendSeatRequest`) is wired through `TeamsPageAction::SendSeatRequest`; until
+        // that mutation exists on the server, the action only flips local UI state (see
+        // `mark_seat_requested_for_discoverable_team`).
+        if team_state.seat_requested {
+            return appearance
                 .ui_builder()
                 .button(ButtonVariant::Accent, team_state.mouse_state_handle.clone())
-                .with_style(UiComponentStyles {
-                    font_weight: Some(Weight::Medium),
-                    height: Some(38.),
-                    font_size: Some(14.),
-                    ..Default::default()
-                })
-                .with_centered_text_label("Contact Admin to request access".to_string())
+                .with_style(button_style)
+                .with_centered_text_label(DISCOVERY_REQUEST_SEAT_CONFIRMATION_LABEL.to_string())
                 .disabled()
                 .build()
-                .finish()
+                .finish();
         }
+
+        let team_uid = ServerId::from_string_lossy(&team_state.team.team_uid);
+        self.render_button(
+            DISCOVERY_REQUEST_SEAT_BUTTON_LABEL,
+            ButtonVariant::Accent,
+            team_state.mouse_state_handle.clone(),
+            Some(TeamsPageAction::SendSeatRequest { team_uid }),
+            button_style,
+            appearance,
+        )
+    }
+
+    /// Returns the header-level seat-cap banner element when a team is at or near its
+    /// seat cap. Returns `None` for unlimited policies, missing policies, or members
+    /// counts strictly below `limit - 1` (where the almost-full banner kicks in).
+    fn render_seat_cap_banner_if_applicable(
+        &self,
+        policy: Option<WorkspaceSizePolicy>,
+        members_count: usize,
+        appearance: &Appearance,
+    ) -> Option<Box<dyn Element>> {
+        let policy = policy?;
+        if policy.is_unlimited {
+            return None;
+        }
+        // Members count converted into i64 for comparison. Saturate at i64::MAX in the
+        // (impossible in practice) case where the team has more than i64::MAX members.
+        let members_i64 = i64::try_from(members_count).unwrap_or(i64::MAX);
+        let almost_full_threshold = policy.limit.saturating_sub(1);
+
+        if members_i64 >= policy.limit {
+            Some(self.render_seat_cap_banner(
+                SEAT_CAP_FULL_HEADLINE.to_string(),
+                SEAT_CAP_FULL_BODY.to_string(),
+                appearance,
+            ))
+        } else if members_i64 == almost_full_threshold && policy.limit > 0 {
+            Some(self.render_seat_cap_banner(
+                SEAT_CAP_ALMOST_FULL_HEADLINE.to_string(),
+                SEAT_CAP_ALMOST_FULL_BODY.to_string(),
+                appearance,
+            ))
+        } else {
+            None
+        }
+    }
+
+    /// Renders the alert-style seat-cap banner with a `Contact sales` CTA. Reused for
+    /// both the almost-full and full states.
+    fn render_seat_cap_banner(
+        &self,
+        headline: String,
+        body: String,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let theme = appearance.theme();
+
+        let headline_text = appearance
+            .ui_builder()
+            .span(headline)
+            .with_style(UiComponentStyles {
+                font_family_id: Some(appearance.ui_font_family()),
+                font_weight: Some(Weight::Medium),
+                font_color: Some(theme.active_ui_text_color().with_opacity(90).into()),
+                font_size: Some(14.),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+        let body_text = self.render_sub_text(body, appearance, None);
+
+        let text_column = Flex::column()
+            .with_child(headline_text)
+            .with_child(Container::new(body_text).with_margin_top(4.).finish());
+
+        let contact_sales_button = appearance
+            .ui_builder()
+            .button(
+                ButtonVariant::Accent,
+                self.mouse_state_handles
+                    .seat_cap_banner_contact_sales_button
+                    .clone(),
+            )
+            .with_style(
+                self.button_properties()
+                    .set_width(COMPARE_PLANS_BUTTON_WIDTH),
+            )
+            .with_centered_text_label(SEAT_CAP_CONTACT_SALES_BUTTON_LABEL.to_string())
+            .build()
+            .with_cursor(Cursor::PointingHand)
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(TeamsPageAction::ContactSales);
+            })
+            .finish();
+
+        let row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_child(Shrinkable::new(1., text_column.finish()).finish())
+            .with_child(contact_sales_button);
+
+        Container::new(
+            Container::new(row.finish())
+                .with_vertical_padding(SEAT_CAP_BANNER_VERTICAL_PADDING)
+                .with_horizontal_padding(SEAT_CAP_BANNER_HORIZONTAL_PADDING)
+                .with_background(themes::theme::Fill::from(internal_colors::neutral_4(theme)))
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                .with_border(
+                    Border::all(1.).with_border_fill(themes::theme::Fill::from(
+                        internal_colors::neutral_3(theme),
+                    )),
+                )
+                .finish(),
+        )
+        .with_margin_top(CONTENT_SEPARATION_PADDING)
+        .finish()
+    }
+
+    /// Seat-counter pill rendered to the right of the "Team Members" subsection header.
+    /// Renders `{members_count}/{limit}` for limited policies and `{members_count} seats`
+    /// for unlimited policies. The pill counts only active members; pending invites are
+    /// excluded (admins can keep sending invites past the cap, only acceptance is gated).
+    fn render_seat_counter_pill(
+        &self,
+        members_count: usize,
+        policy: WorkspaceSizePolicy,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let label = if policy.is_unlimited {
+            if members_count == 1 {
+                "1 seat".to_string()
+            } else {
+                format!("{members_count} seats")
+            }
+        } else {
+            format!("{}/{} seats filled", members_count, policy.limit)
+        };
+
+        let theme = appearance.theme();
+        Container::new(
+            Text::new_inline(
+                label,
+                appearance.ui_font_family(),
+                appearance.ui_font_size(),
+            )
+            .with_color(theme.active_ui_text_color().with_opacity(70).into())
+            .with_style(Properties::default().weight(Weight::Medium))
+            .finish(),
+        )
+        .with_uniform_padding(6.)
+        .with_background(themes::theme::Fill::from(internal_colors::neutral_4(theme)))
+        .with_border(
+            Border::all(1.)
+                .with_border_fill(themes::theme::Fill::from(internal_colors::neutral_3(theme))),
+        )
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(3.)))
+        .finish()
     }
 }
 
