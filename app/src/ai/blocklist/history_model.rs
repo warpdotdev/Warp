@@ -2145,6 +2145,25 @@ impl BlocklistAIHistoryModel {
         }
     }
 
+    /// Registers an existing conversation (already in `conversations_by_id`) as
+    /// live for the given terminal view. Use this when the conversation was
+    /// inserted via `insert_forked_conversation_from_tasks` and needs to be
+    /// visible to `all_live_conversations_for_terminal_view` before any async
+    /// work can race.
+    pub fn register_conversation_for_terminal_view(
+        &mut self,
+        conversation_id: AIConversationId,
+        terminal_view_id: EntityId,
+    ) {
+        let list = self
+            .live_conversation_ids_for_terminal_view
+            .entry(terminal_view_id)
+            .or_default();
+        if !list.contains(&conversation_id) {
+            list.push(conversation_id);
+        }
+    }
+
     /// Inserts a conversation into memory by reconstructing exchanges from tasks.
     /// We use this when forking a conversation to ensure that the forked conversation
     /// is immediately available in memory before we try to restore it in a new tab.
