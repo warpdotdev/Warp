@@ -2100,9 +2100,8 @@ impl AIBlock {
                     }
                     AIAgentOutputMessageType::MessagesReceivedFromAgents { messages } => {
                         for received_message in messages {
-                            let collapsible_id = received_message_collapsible_id(
-                                &received_message.message_id,
-                            );
+                            let collapsible_id =
+                                received_message_collapsible_id(&received_message.message_id);
                             self.collapsible_block_states
                                 .entry(collapsible_id.clone())
                                 .or_default();

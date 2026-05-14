@@ -1764,7 +1764,6 @@ const CRUMB_HEIGHT: f32 = 24.;
 const CRUMB_RADIUS: f32 = 4.;
 const CRUMB_HORIZONTAL_PADDING: f32 = 6.;
 
-
 /// Renders a `[Parent Avatar] [Parent Title] > [Child Avatar] [Child Name]`
 /// breadcrumb row when the active conversation is a child agent under an
 /// orchestrator that has been split off into another pane/tab. Returns
