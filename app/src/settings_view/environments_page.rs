@@ -95,9 +95,9 @@ const TOOLBAR_SEARCH_MAX_WIDTH: f32 = 420.;
 
 struct EmptyStateRowConfig {
     icon: Icon,
-    title: &'static str,
-    badge: Option<&'static str>,
-    subtitle: &'static str,
+    title: String,
+    badge: Option<String>,
+    subtitle: String,
     action_button: Box<dyn Element>,
     compact_action_button: Box<dyn Element>,
     icon_size: f32,
@@ -187,17 +187,19 @@ impl EnvironmentDisplayData {
     /// Format the timestamp text showing last edited and last used times.
     fn format_timestamp_text(&self) -> String {
         let last_edited_part = self.last_edited_ts.map(|ts| {
-            format!(
-                "Last edited: {}",
-                format_approx_duration_from_now_utc(ts.utc())
+            t!(
+                "environments.last_edited",
+                value = format_approx_duration_from_now_utc(ts.utc())
             )
+            .to_string()
         });
         let last_used_part = match self.last_used_ts {
-            Some(ts) => format!(
-                "Last used: {}",
-                format_approx_duration_from_now_utc(ts.utc())
-            ),
-            None => "Last used: never".to_string(),
+            Some(ts) => t!(
+                "environments.last_used",
+                value = format_approx_duration_from_now_utc(ts.utc())
+            )
+            .to_string(),
+            None => t!("environments.last_used_never").to_string(),
         };
         match last_edited_part {
             Some(edited) => format!("{} · {}", edited, last_used_part),
@@ -303,10 +305,10 @@ impl EnvironmentsPageView {
     }
 
     fn create_single_line_editor(
-        placeholder: &'static str,
+        placeholder: String,
         ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<EditorView> {
-        let editor = ctx.add_typed_action_view(|ctx| {
+        let editor = ctx.add_typed_action_view(move |ctx| {
             let appearance = Appearance::as_ref(ctx);
             let options = SingleLineEditorOptions {
                 text: TextOptions {
@@ -320,7 +322,7 @@ impl EnvironmentsPageView {
                 ..Default::default()
             };
             let mut editor = EditorView::single_line(options, ctx);
-            editor.set_placeholder_text(placeholder, ctx);
+            editor.set_placeholder_text(placeholder.clone(), ctx);
             editor
         });
         editor
@@ -370,7 +372,8 @@ impl EnvironmentsPageView {
         });
 
         // Create search editor for list page
-        let search_editor = Self::create_single_line_editor("Search environments...", ctx);
+        let search_editor =
+            Self::create_single_line_editor(t!("environments.search_placeholder").to_string(), ctx);
         ctx.subscribe_to_view(&search_editor, |me, _, event, ctx| match event {
             crate::editor::Event::Edited(_) => {
                 me.search_query = me.search_editor.as_ref(ctx).buffer_text(ctx);
@@ -506,8 +509,9 @@ impl EnvironmentsPageView {
         }
 
         // Create pane configuration for BackingView support
-        let pane_configuration =
-            ctx.add_model(|_| crate::pane_group::pane::PaneConfiguration::new("Environments"));
+        let pane_configuration = ctx.add_model(|_| {
+            crate::pane_group::pane::PaneConfiguration::new(t!("environments.title").to_string())
+        });
 
         let mut view = Self {
             page: PageType::new_monolith(
@@ -633,7 +637,7 @@ impl EnvironmentsPageView {
 
             if should_handle {
                 self.pending_save_env_id = None;
-                self.show_success_toast("Successfully updated environment".to_string(), ctx);
+                self.show_success_toast(t!("environments.updated_success").to_string(), ctx);
 
                 // No need to force a global cloud-object refresh here: on update success the
                 // sync pipeline updates this environment's `revision_ts` (used for "Last edited")
@@ -651,7 +655,7 @@ impl EnvironmentsPageView {
                 if let Some(result_client_id) = &result.client_id {
                     if *result_client_id == pending_client_id {
                         self.show_success_toast(
-                            "Successfully created environment".to_string(),
+                            t!("environments.created_success").to_string(),
                             ctx,
                         );
                     }
@@ -668,7 +672,7 @@ impl EnvironmentsPageView {
                 if let Some(server_id) = &result.server_id {
                     if server_id.uid() == pending_env_id.uid() {
                         self.show_success_toast(
-                            "Environment deleted successfully".to_string(),
+                            t!("environments.deleted_success").to_string(),
                             ctx,
                         );
                     }
@@ -691,9 +695,9 @@ impl EnvironmentsPageView {
             self.pending_share_server_id = None;
 
             if matches!(result.success_type, OperationSuccessType::Success) {
-                self.show_success_toast("Successfully shared environment".to_string(), ctx);
+                self.show_success_toast(t!("environments.shared_success").to_string(), ctx);
             } else {
-                self.show_error_toast("Failed to share environment with team".to_string(), ctx);
+                self.show_error_toast(t!("environments.share_failed").to_string(), ctx);
             }
 
             ctx.notify();
@@ -763,7 +767,7 @@ impl EnvironmentsPageView {
 
                 let Some(owner) = owner else {
                     self.show_error_toast(
-                        "Unable to create environment: not logged in.".to_string(),
+                        t!("environments.unable_create_not_logged_in").to_string(),
                         ctx,
                     );
                     return;
@@ -790,7 +794,7 @@ impl EnvironmentsPageView {
                 let Some(existing_env) = CloudAmbientAgentEnvironment::get_by_id(env_id, ctx)
                 else {
                     self.show_error_toast(
-                        "Unable to save: environment no longer exists.".to_string(),
+                        t!("environments.unable_save_no_longer_exists").to_string(),
                         ctx,
                     );
                     return;
@@ -959,7 +963,7 @@ impl TypedActionView for EnvironmentsPageView {
             EnvironmentsPageAction::ShareToTeam(env_id) => {
                 let Some(team_uid) = UserWorkspaces::as_ref(ctx).current_team_uid() else {
                     self.show_error_toast(
-                        "Unable to share environment: you are not currently on a team.".to_string(),
+                        t!("environments.unable_share_not_on_team").to_string(),
                         ctx,
                     );
                     return;
@@ -967,7 +971,7 @@ impl TypedActionView for EnvironmentsPageView {
 
                 let SyncId::ServerId(server_id) = *env_id else {
                     self.show_error_toast(
-                        "Unable to share environment: environment is not yet synced.".to_string(),
+                        t!("environments.unable_share_not_synced").to_string(),
                         ctx,
                     );
                     return;
@@ -1310,12 +1314,16 @@ impl EnvironmentsPageWidget {
         const HEADER_TO_LIST_SPACING: f32 = 8.;
 
         let header = match list_scope {
-            EnvironmentListScope::Personal => Self::render_overline_header("Personal", appearance),
+            EnvironmentListScope::Personal => {
+                Self::render_overline_header(t!("create_api_key.personal").as_ref(), appearance)
+            }
             EnvironmentListScope::Team => {
                 let shared_by_text = UserWorkspaces::as_ref(app)
                     .current_team()
-                    .map(|team| format!("Shared by Warp and {}", team.name))
-                    .unwrap_or_else(|| "Shared by Warp and your team".to_string());
+                    .map(|team| {
+                        t!("environments.shared_by_warp_and_team", team = team.name).to_string()
+                    })
+                    .unwrap_or_else(|| t!("environments.shared_by_warp_and_your_team").to_string());
                 Self::render_overline_header(&shared_by_text, appearance)
             }
         };
@@ -1399,18 +1407,18 @@ impl EnvironmentsPageWidget {
         };
 
         let (github_button_label, github_button_enabled) = if dropdown_state.is_loading {
-            ("Loading...", false)
+            (t!("auth.loading").to_string(), false)
         } else if dropdown_state.load_error_message.is_some() {
-            ("Retry", true)
+            (t!("drive.retry").to_string(), true)
         } else if dropdown_state.auth_url.is_some() {
-            ("Authorize", true)
+            (t!("environments.authorize").to_string(), true)
         } else {
-            ("Get started", true)
+            (t!("agent_management.get_started").to_string(), true)
         };
 
         let github_button = Self::render_empty_state_button(
             appearance,
-            github_button_label,
+            github_button_label.as_str(),
             ButtonVariant::Accent,
             view.empty_state_github_repos_button_mouse_state.clone(),
             github_button_enabled,
@@ -1418,7 +1426,7 @@ impl EnvironmentsPageWidget {
         );
         let github_button_compact = Self::render_empty_state_button(
             appearance,
-            github_button_label,
+            github_button_label.as_str(),
             ButtonVariant::Accent,
             view.empty_state_github_repos_button_mouse_state.clone(),
             github_button_enabled,
@@ -1427,7 +1435,7 @@ impl EnvironmentsPageWidget {
 
         let local_repos_button = Self::render_empty_state_button(
             appearance,
-            "Launch agent",
+            t!("environments.launch_agent").as_ref(),
             ButtonVariant::Secondary,
             view.empty_state_local_repos_button_mouse_state.clone(),
             true,
@@ -1435,7 +1443,7 @@ impl EnvironmentsPageWidget {
         );
         let local_repos_button_compact = Self::render_empty_state_button(
             appearance,
-            "Launch agent",
+            t!("environments.launch_agent").as_ref(),
             ButtonVariant::Secondary,
             view.empty_state_local_repos_button_mouse_state.clone(),
             true,
@@ -1446,10 +1454,9 @@ impl EnvironmentsPageWidget {
             appearance,
             EmptyStateRowConfig {
                 icon: Icon::Github,
-                title: "Quick setup",
-                badge: Some("Suggested"),
-                subtitle:
-                    "Select the GitHub repositories you’d like to work with and we’ll suggest a base image and config",
+                title: t!("environments.quick_setup").to_string(),
+                badge: Some(t!("agent_management.suggested").to_string()),
+                subtitle: t!("environments.quick_setup_subtitle").to_string(),
                 action_button: github_button,
                 compact_action_button: github_button_compact,
                 icon_size,
@@ -1460,10 +1467,9 @@ impl EnvironmentsPageWidget {
             appearance,
             EmptyStateRowConfig {
                 icon: Icon::Terminal,
-                title: "Use the agent",
+                title: t!("environments.use_the_agent").to_string(),
                 badge: None,
-                subtitle:
-                    "Choose a locally set up project and we’ll help you set up an environment based on it",
+                subtitle: t!("environments.use_the_agent_subtitle").to_string(),
                 action_button: local_repos_button,
                 compact_action_button: local_repos_button_compact,
                 icon_size,
@@ -1558,7 +1564,7 @@ impl EnvironmentsPageWidget {
                 .with_spacing(6.)
                 .with_child(
                     Text::new(
-                        title,
+                        title.clone(),
                         appearance.ui_font_family(),
                         appearance.ui_font_size(),
                     )
@@ -1567,10 +1573,10 @@ impl EnvironmentsPageWidget {
                     .finish(),
                 );
 
-            if let Some(badge) = badge {
+            if let Some(badge) = badge.as_ref() {
                 let badge = Container::new(
                     Text::new(
-                        badge,
+                        badge.clone(),
                         appearance.ui_font_family(),
                         appearance.ui_font_size() * 0.85,
                     )
@@ -1591,7 +1597,7 @@ impl EnvironmentsPageWidget {
                 .with_child(title_row.finish())
                 .with_child(
                     Text::new(
-                        subtitle,
+                        subtitle.clone(),
                         appearance.ui_font_family(),
                         appearance.ui_font_size() * 0.9,
                     )
@@ -1856,7 +1862,7 @@ impl EnvironmentsPageWidget {
             let view_runs_link = appearance
                 .ui_builder()
                 .link(
-                    "View my runs".to_string(),
+                    t!("environments.view_my_runs").to_string(),
                     None,
                     Some(Box::new(move |ctx| {
                         ctx.dispatch_typed_action(WorkspaceAction::ViewAgentRunsForEnvironment {
@@ -2075,7 +2081,7 @@ impl BackingView for EnvironmentsPageView {
         _ctx: &HeaderRenderContext<'_>,
         _app: &AppContext,
     ) -> HeaderContent {
-        HeaderContent::simple("Environments")
+        HeaderContent::simple(t!("environments.title").to_string())
     }
 
     fn set_focus_handle(&mut self, focus_handle: PaneFocusHandle, _ctx: &mut ViewContext<Self>) {
