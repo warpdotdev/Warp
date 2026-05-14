@@ -153,3 +153,41 @@ pub async fn run_ssh_script(socket_path: &Path, script: &str, timeout: Duration)
         .map_err(|_| anyhow!("Script timed out after {timeout:?}"))?
         .map_err(|e| anyhow!("Script failed: {e}"))
 }
+
+/// 通过既有 ControlMaster socket 上传单个文件到远端。
+pub async fn scp_upload(
+    socket_path: &Path,
+    local_path: &Path,
+    remote_path: &str,
+    timeout: Duration,
+) -> Result<()> {
+    let output = async {
+        Command::new("scp")
+            .arg("-o")
+            .arg(format!("ControlPath={}", socket_path.display()))
+            .arg("-o")
+            .arg("ControlMaster=no")
+            .arg("-o")
+            .arg("PasswordAuthentication=no")
+            .arg("-o")
+            .arg("ForwardX11=no")
+            .arg("-o")
+            .arg("ConnectTimeout=15")
+            .arg(local_path.as_os_str())
+            .arg(format!("placeholder@placeholder:{remote_path}"))
+            .kill_on_drop(true)
+            .output()
+            .await
+    }
+    .with_timeout(timeout)
+    .await
+    .map_err(|_| anyhow!("SCP upload timed out after {timeout:?}"))?
+    .map_err(|e| anyhow!("SCP upload failed to execute: {e}"))?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Err(anyhow!("SCP upload failed: {stderr}"))
+}

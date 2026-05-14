@@ -270,32 +270,29 @@ pub fn parse_uname_output(output: &str) -> Result<RemotePlatform> {
     Ok(RemotePlatform { os, arch })
 }
 
-/// Returns the remote directory where the binary is installed, keyed by channel.
+/// 返回远端二进制安装目录,按 channel 隔离。
 ///
 /// - stable:      `~/.warp/remote-server`
 /// - preview:     `~/.warp-preview/remote-server`
 /// - dev:         `~/.warp-dev/remote-server`
 /// - local:       `~/.warp-local/remote-server`
 /// - integration: `~/.warp-dev/remote-server`
-/// - warp-oss:    `~/.warp-dev/remote-server`(临时复用官方 dev 通道)
-//
-// OpenWarp remote-server 安装链路走 GitHub Release 资产。
+/// - warp-oss:    `~/.openwarp/remote-server`
 pub fn remote_server_dir() -> String {
     let warp_dir = match ChannelState::channel() {
         Channel::Stable => ".warp",
         Channel::Preview => ".warp-preview",
         Channel::Dev | Channel::Integration => ".warp-dev",
         Channel::Local => ".warp-local",
-        Channel::Oss => ".warp-dev",
+        Channel::Oss => ".openwarp",
     };
     format!("~/{warp_dir}/remote-server")
 }
 
-/// Returns a filesystem-safe directory name for a remote-server identity key.
+/// 返回可安全放入路径的 remote-server identity key 目录名。
 ///
-/// The identity key is not secret, but it can contain bytes that are unsafe or
-/// ambiguous in paths. Keep ASCII alphanumeric characters plus `-` and `_`;
-/// percent-encode all other UTF-8 bytes.
+/// identity key 不是密钥,但可能包含路径中不安全或有歧义的字节。
+/// 保留 ASCII 字母数字以及 `-` / `_`,其他 UTF-8 字节做百分号编码。
 pub fn remote_server_identity_dir_name(identity_key: &str) -> String {
     if identity_key.is_empty() {
         return "empty".to_string();
@@ -313,8 +310,7 @@ pub fn remote_server_identity_dir_name(identity_key: &str) -> String {
     encoded
 }
 
-/// Returns the identity-scoped remote directory used for the daemon socket
-/// and PID file.
+/// 返回按 identity 隔离的远端目录,用于 daemon socket 和 PID 文件。
 pub fn remote_server_daemon_dir(identity_key: &str) -> String {
     format!(
         "{}/{}",
@@ -323,137 +319,99 @@ pub fn remote_server_daemon_dir(identity_key: &str) -> String {
     )
 }
 
-/// Returns the binary name, keyed by channel.
-///
-/// Matches the CLI command names: `oz` (stable), `oz-preview`, `oz-dev`.
-///
-/// 注意:这是远端 remote-server 二进制的文件名,不是本地 CLI 的安装名。
-/// 在 [`Channel::Oss`] 下需要跟 tarball 里实际打包的二进制对得上,
-/// 因此**临时**返回 `oz-dev` —— OpenWarp 自己还没发布远端二进制,我们
-/// 复用官方 dev channel 的 `/download/cli` 产物,而该 tarball 内的
-/// 二进制就是 `oz-dev`。本地 CLI 的安装名仍然由
-/// [`Channel::cli_command_name`] 返回的 `warp-oss` 决定,两者解耦。
-//
-// TODO(openwarp): 待 OpenWarp 发布自己的 remote-server 二进制后,这里
-// 改回 `Channel::cli_command_name()`(即 `warp-oss`),并把 tarball 里的
-// 二进制名一起对齐。
+/// 返回远端 remote-server 二进制文件名。
 pub fn binary_name() -> &'static str {
-    match ChannelState::channel() {
-        Channel::Oss => "oz-dev",
-        _ => ChannelState::channel().cli_command_name(),
-    }
+    ChannelState::channel().cli_command_name()
 }
 
-/// Returns the full remote binary path for the current channel and client
-/// version.
+/// 返回当前 channel 和客户端版本对应的远端二进制完整路径。
 ///
-/// The path-versioning rule is keyed strictly off [`Channel`]:
-///
-/// - [`Channel::Local`] and [`Channel::Oss`] always use the bare
-///   `{binary_name}` path. For `Local` this is the slot
-///   `script/deploy_remote_server` writes to. [`Channel::Oss`] **临时**
-///   也走无版本后缀路径,因为下载链路临时复用官方
-///   `/download/cli?channel=dev` 的 latest 产物,客户端不持有官方 dev
-///   tag,无法拼出 `&version=...`,所以远端文件名只能落到 `oz-dev`
-///   (无版本后缀)。这意味着官方更新 dev 构建后,我们这边的
-///   `binary_check_command` 仍会命中旧文件,**不会自动更新**;直到用户
-///   手动删除 `~/.warp-dev/remote-server/oz-dev` 才会重新下载。这是
-///   临时方案的已知缺陷,等 OpenWarp 自己 release 后会一并修复
-///   (届时回到版本号路径)。
-/// - Every other channel always uses `{binary_name}-{version}`, where
-///   `version` is the baked-in `GIT_RELEASE_TAG` when present and falls
-///   back to `CARGO_PKG_VERSION` otherwise. The fallback keeps the path
-///   deterministic for misconfigured `cargo run --bin {dev,preview,...}`
-///   builds; the resulting `&version=...` query is expected to 404 against
-///   `/download/cli` and surface a clean `SetupFailed` rather than silently
-///   writing to a path that doesn't follow the rule.
+/// Local 构建保留无版本后缀路径,以便 `script/deploy_remote_server`
+/// 覆盖同一个开发 slot。OpenWarp release 构建带 `GIT_RELEASE_TAG`
+/// 时使用版本后缀,这样新版本会自然触发重新安装;源码本地构建没有
+/// release tag,仍使用无后缀路径。
 pub fn remote_server_binary() -> String {
     let dir = remote_server_dir();
     let name = binary_name();
     match ChannelState::channel() {
-        Channel::Local | Channel::Oss => format!("{dir}/{name}"),
+        Channel::Local => format!("{dir}/{name}"),
+        Channel::Oss if ChannelState::app_version().is_none() => format!("{dir}/{name}"),
+        Channel::Oss => format!("{dir}/{name}-{}", pinned_version()),
         Channel::Stable | Channel::Preview | Channel::Dev | Channel::Integration => {
             format!("{dir}/{name}-{}", pinned_version())
         }
     }
 }
 
-/// Returns the shell command to check if the remote server binary exists and
-/// is executable.
+/// 返回检查远端 remote-server 二进制存在且可执行的 shell 命令。
+///
+/// 与上游一致,这里实际运行 `--version`,而不只是 `test -x`;
+/// 这样可以把损坏或无法解析参数的二进制提前识别出来。
 pub fn binary_check_command() -> String {
-    format!("test -x {}", remote_server_binary())
+    format!("{} --version", remote_server_binary())
 }
 
-/// Returns the version string used to pin remote-server installs on
-/// channels that take the versioned path (i.e. everything except
-/// [`Channel::Local`] and [`Channel::Oss`]). Prefers the baked-in
-/// `GIT_RELEASE_TAG` from [`ChannelState::app_version`]; falls back to
-/// `CARGO_PKG_VERSION` so the path / install URL is deterministic even on
-/// dev `cargo run` builds without a release tag. The `CARGO_PKG_VERSION`
-/// fallback is not expected to map to a real `/download/cli` artifact —
-/// it exists to produce a clean install-time failure rather than silently
-/// fall through to the unversioned (Local/Oss-only) path.
+/// 返回用于版本化安装路径的版本号。优先使用编译时注入的
+/// `GIT_RELEASE_TAG`;没有 release tag 时回退到 `CARGO_PKG_VERSION`,
+/// 让需要版本化路径的 channel 保持确定性,并在缺少对应 release 资产时
+/// 清晰失败,而不是误用无版本路径。
 fn pinned_version() -> &'static str {
     ChannelState::app_version().unwrap_or(env!("CARGO_PKG_VERSION"))
 }
 
-/// The install script template, loaded from a standalone `.sh` file for
-/// readability. Placeholders like `{download_base_url}` are substituted by
-/// [`install_script`].
+/// 安装脚本模板独立放在 `.sh` 文件里方便维护。
+/// `{download_base_url}` 等占位符由 [`install_script`] 替换。
 const INSTALL_SCRIPT_TEMPLATE: &str = include_str!("install_remote_server.sh");
 
-/// Returns the install script that downloads and installs the CLI binary
-/// at the current client version.
-///
-/// The script detects the remote architecture via `uname -m`, downloads
-/// the correct Oz CLI tarball from the download URL, and installs it at
-/// the path returned by [`remote_server_binary`] so repeat invocations
-/// are idempotent. The `version_query` / `version_suffix` substitutions
-/// follow the same rule as [`remote_server_binary`]: empty on
-/// [`Channel::Local`] and [`Channel::Oss`] (so the install lands at
-/// the unversioned path used by `script/deploy_remote_server`); pinned to
-/// `&version={v}` / `-{v}` on every other channel, where `v` falls back
-/// to `CARGO_PKG_VERSION` when no release tag is baked in.
-pub fn install_script() -> String {
-    let (version_query, version_suffix) = match ChannelState::channel() {
-        Channel::Local | Channel::Oss => (String::new(), String::new()),
-        Channel::Stable | Channel::Preview | Channel::Dev | Channel::Integration => {
-            let v = pinned_version();
-            (format!("&version={v}"), format!("-{v}"))
-        }
-    };
+/// 返回安装脚本。`staging_tarball_path` 非空时,脚本跳过远端下载,
+/// 改为解压客户端通过 SCP 预上传的 tarball。
+pub fn install_script(staging_tarball_path: Option<&str>) -> String {
+    let version_suffix = version_suffix();
     INSTALL_SCRIPT_TEMPLATE
         .replace("{download_base_url}", &download_url())
-        .replace("{channel}", download_channel())
         .replace("{install_dir}", &remote_server_dir())
         .replace("{binary_name}", binary_name())
-        .replace("{version_query}", &version_query)
         .replace("{version_suffix}", &version_suffix)
+        .replace("{staging_tarball_path}", staging_tarball_path.unwrap_or(""))
 }
 
-/// Construct the OpenWarp remote-server download URL.
+/// 构造 OpenWarp CLI release 资产下载基址。
 fn download_url() -> String {
-    "https://github.com/zerx-lab/warp/releases/latest/download/cli".to_string()
+    let release_path = match ChannelState::app_version() {
+        Some(tag) => format!("download/{tag}"),
+        None => "latest/download".to_string(),
+    };
+    format!("https://github.com/zerx-lab/warp/releases/{release_path}")
 }
 
-/// Maps the client's [`Channel`] to the server's download channel parameter.
-///
-/// The server recognises `"stable"`, `"preview"`, and `"dev"`.  Local and
-/// Integration builds map to `"dev"` so they fetch dogfood artifacts.
-fn download_channel() -> &'static str {
+fn version_suffix() -> String {
     match ChannelState::channel() {
-        Channel::Stable => "stable",
-        Channel::Preview => "preview",
-        Channel::Dev | Channel::Local | Channel::Integration => "dev",
-        Channel::Oss => "dev",
+        Channel::Local => String::new(),
+        Channel::Oss if ChannelState::app_version().is_none() => String::new(),
+        Channel::Oss | Channel::Stable | Channel::Preview | Channel::Dev | Channel::Integration => {
+            format!("-{}", pinned_version())
+        }
     }
 }
 
-/// Timeout for the binary existence check.
+/// 返回指定远端平台对应的 OpenWarp CLI tarball URL。
+pub fn download_tarball_url(platform: &RemotePlatform) -> String {
+    format!(
+        "{}/openwarp-{}-{}.tar.gz",
+        download_url(),
+        platform.os.as_str(),
+        platform.arch.as_str(),
+    )
+}
+
+/// 检查二进制是否存在的超时。
 pub const CHECK_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Timeout for the install script.
+/// 常规远端安装脚本超时。
 pub const INSTALL_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// SCP fallback 包含本地下载、上传和远端解压,给它更宽松的超时。
+pub const SCP_INSTALL_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[cfg(test)]
 #[path = "setup_tests.rs"]

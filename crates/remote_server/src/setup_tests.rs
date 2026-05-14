@@ -181,3 +181,41 @@ fn parse_preinstall_missing_status_falls_open() {
     assert_eq!(result.status, PreinstallStatus::Unknown);
     assert!(result.is_supported());
 }
+
+#[test]
+fn oss_remote_server_dir_uses_openwarp_namespace() {
+    assert_eq!(remote_server_dir(), "~/.openwarp/remote-server");
+}
+
+#[test]
+fn oss_binary_name_matches_openwarp_cli() {
+    assert_eq!(binary_name(), "warp-oss");
+}
+
+#[test]
+fn oss_download_tarball_url_uses_github_release_asset() {
+    let platform = RemotePlatform {
+        os: RemoteOs::Linux,
+        arch: RemoteArch::X86_64,
+    };
+
+    let url = download_tarball_url(&platform);
+
+    assert_eq!(
+        url,
+        "https://github.com/zerx-lab/warp/releases/latest/download/openwarp-linux-x86_64.tar.gz"
+    );
+    assert!(!url.contains("app.warp.dev"));
+    assert!(!url.contains("/download/cli"));
+}
+
+#[test]
+fn install_script_uses_openwarp_asset_and_staging_placeholder() {
+    let script = install_script(Some("~/.openwarp/remote-server/openwarp-upload.tar.gz"));
+
+    assert!(script
+        .contains("staging_tarball_path=\"~/.openwarp/remote-server/openwarp-upload.tar.gz\""));
+    assert!(script.contains("openwarp-$os_name-$arch_name.tar.gz"));
+    assert!(!script.contains("app.warp.dev"));
+    assert!(!script.contains("/download/cli"));
+}

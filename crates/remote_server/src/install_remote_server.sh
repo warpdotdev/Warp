@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
-# Installs the Warp remote server binary on a remote host.
+# 在远端主机安装 OpenWarp CLI 二进制,用于 remote-server-proxy。
 #
-# Placeholders (substituted at runtime by setup.rs):
-#   {download_base_url}  — e.g. https://github.com/zerx-lab/warp/releases/latest/download/cli
-#   {channel}            — stable | preview | dev
-#   {install_dir}        — e.g. ~/.warp/remote-server
-#   {binary_name}        — e.g. oz | oz-dev | oz-preview
-#   {version_query}      — e.g. &version=v0.2026... (empty when no release tag)
-#   {version_suffix}     — e.g. -v0.2026...        (empty when no release tag)
+# setup.rs 会在运行时替换这些占位符:
+#   {download_base_url}     - 例如 https://github.com/zerx-lab/warp/releases/latest/download
+#   {install_dir}           - 例如 ~/.openwarp/remote-server
+#   {binary_name}           - 例如 warp-oss
+#   {version_suffix}        - 例如 -v0.2026...,没有 release tag 时为空
+#   {staging_tarball_path}  - SCP fallback 预上传 tarball 路径,常规下载路径为空
 set -e
 
 arch=$(uname -m)
 case "$arch" in
-  x86_64)        arch_name=x86_64 ;;
+  x86_64|amd64)  arch_name=x86_64 ;;
   aarch64|arm64) arch_name=aarch64 ;;
   *) echo "unsupported arch: $arch" >&2; exit 2 ;;
 esac
@@ -25,26 +24,44 @@ case "$os_kernel" in
 esac
 
 install_dir="{install_dir}"
-install_dir="${install_dir/#\~/"$HOME"}"
+case "$install_dir" in
+  "~"|"~/"*) install_dir="${HOME}${install_dir#\~}" ;;
+esac
 mkdir -p "$install_dir"
 
 tmpdir=$(mktemp -d "$install_dir/.install.XXXXXX")
-# Best-effort cleanup of the staging directory. A failure here (e.g.
-# EBUSY or "Directory not empty" races on some filesystems/mounts)
-# must not fail the install: by the time this fires the binary has
-# either already been moved into its final location, or the script
-# has already failed for an unrelated reason that we want to surface
-# instead of clobbering with the cleanup's exit code.
+# 尽力清理 staging 目录。这里失败不能覆盖真正的安装结果:
+# trap 触发时二进制要么已经移动到最终路径,要么脚本已经因为
+# 其他原因失败,后者的错误更值得暴露给调用方。
 cleanup() {
   rm -rf "$tmpdir" 2>/dev/null || true
 }
 trap cleanup EXIT
 
-curl -fSL "{download_base_url}?package=tar&os=$os_name&arch=$arch_name&channel={channel}{version_query}" \
-  -o "$tmpdir/oz.tar.gz"
-tar -xzf "$tmpdir/oz.tar.gz" -C "$tmpdir"
+staging_tarball_path="{staging_tarball_path}"
+if [ -n "$staging_tarball_path" ]; then
+  case "$staging_tarball_path" in
+    "~"|"~/"*) staging_tarball_path="${HOME}${staging_tarball_path#\~}" ;;
+  esac
+  mv "$staging_tarball_path" "$tmpdir/openwarp.tar.gz"
+else
+  url="{download_base_url}/openwarp-$os_name-$arch_name.tar.gz"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fSL --connect-timeout 15 "$url" -o "$tmpdir/openwarp.tar.gz"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q -O "$tmpdir/openwarp.tar.gz" "$url"
+  else
+    echo "error: neither curl nor wget is available" >&2
+    exit 3
+  fi
+fi
 
-bin=$(find "$tmpdir" -type f -name 'oz*' ! -name '*.tar.gz' | head -n1)
+tar -xzf "$tmpdir/openwarp.tar.gz" -C "$tmpdir"
+
+bin="$tmpdir/{binary_name}"
+if [ ! -f "$bin" ]; then
+  bin=$(find "$tmpdir" -type f \( -name 'warp-oss' -o -name 'oz*' \) ! -path "$tmpdir/resources/*" ! -name '*.tar.gz' | head -n1)
+fi
 if [ -z "$bin" ]; then echo "no binary found in tarball" >&2; exit 1; fi
 chmod +x "$bin"
 mv "$bin" "$install_dir/{binary_name}{version_suffix}"

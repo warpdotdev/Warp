@@ -150,6 +150,30 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Build CLI
+        id: bundle_cli
+        run: |
+          script/bundle --channel "$CHANNEL" --arch ${{ matrix.arch }} --artifact cli --nosign
+        shell: bash
+        env:
+          GIT_RELEASE_TAG: ${{ needs.prepare_metadata.outputs.release_tag }}
+
+      - name: Package CLI tarball
+        run: |
+          cp "${{ steps.bundle_cli.outputs.binary_path }}" warp-oss
+          tar czf openwarp-macos-${{ matrix.arch }}.tar.gz \
+            warp-oss \
+            -C "$(dirname "${{ steps.bundle_cli.outputs.bundled_resources_dir }}")" resources
+        shell: bash
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: openwarp-cli-macos-${{ matrix.arch }}
+          path: openwarp-macos-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
   release_windows:
     name: Build Release (Windows x64)
     runs-on: windows-latest
@@ -247,6 +271,31 @@ jobs:
         with:
           name: openwarp-linux-x86_64
           path: ${{ steps.bundle_app.outputs.packages_dir }}
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Build CLI
+        id: bundle_cli
+        run: |
+          script/bundle --channel "$CHANNEL" --arch x86_64 --artifact cli --packages none
+        shell: bash
+        env:
+          GIT_RELEASE_TAG: ${{ needs.prepare_metadata.outputs.release_tag }}
+          APPIMAGE_EXTRACT_AND_RUN: 1
+
+      - name: Package CLI tarball
+        run: |
+          cp "${{ steps.bundle_cli.outputs.executable_path }}" warp-oss
+          tar czf openwarp-linux-x86_64.tar.gz \
+            warp-oss \
+            -C "$(dirname "${{ steps.bundle_cli.outputs.bundled_resources_dir }}")" resources
+        shell: bash
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: openwarp-cli-linux-x86_64
+          path: openwarp-linux-x86_64.tar.gz
           if-no-files-found: error
           retention-days: 7
 
