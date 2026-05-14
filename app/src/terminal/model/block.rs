@@ -1719,6 +1719,7 @@ impl Block {
     pub fn is_executing(&self) -> bool {
         self.state == BlockState::Executing
     }
+
     fn is_empty_pre_bootstrap_block(&self) -> bool {
         !self.bootstrap_stage.is_done()
             && self.command_should_show_as_empty_when_finished()
