@@ -1733,7 +1733,7 @@ impl CodePageWidget {
                 text: Cow::from("Disabled"),
                 color: theme.disabled_ui_text_color().into_solid(),
                 icon: Some(Icon::SlashCircle),
-                show_retry: false,
+                show_retry: true,
                 show_delete: true,
             },
             RemoteCodebaseIndexState::Queued => IndexingStatusPresentation {
