@@ -439,6 +439,7 @@ async fn upload_transcript(
 }
 
 const CODEX_CONFIG_DIR: &str = ".codex";
+const CODEX_HOME_ENV: &str = "CODEX_HOME";
 const CODEX_AGENTS_OVERRIDE_FILE_NAME: &str = "AGENTS.override.md";
 const CODEX_AUTH_FILE_NAME: &str = "auth.json";
 const CODEX_CONFIG_TOML_FILE_NAME: &str = "config.toml";
@@ -469,9 +470,7 @@ fn prepare_codex_environment_config(
     resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
     third_party_harness_model_config: Option<&HarnessModelConfig>,
 ) -> Result<()> {
-    let home_dir =
-        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
-    let codex_dir = home_dir.join(CODEX_CONFIG_DIR);
+    let codex_dir = codex_config_dir()?;
 
     if let Some(prompt) = system_prompt {
         write_codex_agents_override(&codex_dir, prompt)?;
@@ -495,6 +494,17 @@ fn prepare_codex_environment_config(
         openai_base_url.as_deref(),
     )?;
     Ok(())
+}
+
+fn codex_config_dir() -> Result<PathBuf> {
+    if let Ok(dir) = std::env::var(CODEX_HOME_ENV) {
+        if !dir.is_empty() {
+            return Ok(PathBuf::from(dir));
+        }
+    }
+    dirs::home_dir()
+        .map(|home| home.join(CODEX_CONFIG_DIR))
+        .ok_or_else(|| anyhow::anyhow!("could not determine home directory"))
 }
 
 fn write_codex_agents_override(codex_dir: &Path, system_prompt: &str) -> Result<()> {

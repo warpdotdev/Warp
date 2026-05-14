@@ -578,8 +578,7 @@ pub(crate) fn prepare_claude_environment_config(
     working_dir: &Path,
     resolved_env_vars: &HashMap<OsString, OsString>,
 ) -> Result<()> {
-    let home_dir = claude_home_dir()?;
-    let claude_json_path = home_dir.join(CLAUDE_JSON_FILE_NAME);
+    let claude_json_path = claude_global_config_path()?;
     let claude_settings_path = claude_config_dir()?.join(CLAUDE_SETTINGS_FILE_NAME);
     let api_key_suffix = resolve_anthropic_api_key_suffix(resolved_env_vars);
     prepare_claude_config(&claude_json_path, working_dir, api_key_suffix.as_deref())?;
@@ -587,15 +586,17 @@ pub(crate) fn prepare_claude_environment_config(
     Ok(())
 }
 
-fn claude_home_dir() -> Result<PathBuf> {
-    #[cfg(test)]
-    if let Some(home_dir) = std::env::var_os("HOME") {
-        if !home_dir.as_os_str().is_empty() {
-            return Ok(PathBuf::from(home_dir));
+// This function is used specifically for determining where to land `.claude.json`.
+fn claude_global_config_path() -> Result<PathBuf> {
+    if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
+        if !dir.is_empty() {
+            return Ok(PathBuf::from(dir).join(CLAUDE_JSON_FILE_NAME));
         }
     }
 
-    dirs::home_dir().ok_or_else(|| anyhow::anyhow!("could not determine home directory"))
+    dirs::home_dir()
+        .map(|home| home.join(CLAUDE_JSON_FILE_NAME))
+        .ok_or_else(|| anyhow::anyhow!("could not determine home directory"))
 }
 
 fn prepare_claude_config(
