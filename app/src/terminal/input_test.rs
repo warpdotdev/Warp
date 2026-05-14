@@ -2554,6 +2554,62 @@ fn test_open_slash_command_triggers_completions_when_selected() {
 }
 
 #[test]
+fn test_slash_menu_saved_prompt_inserts_context_reference() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let prompt = "Generate a concise commit message".to_string();
+        let workflow_id = create_cloud_workflow(
+            &mut app,
+            Workflow::AgentMode {
+                name: "commit".to_string(),
+                query: prompt.clone(),
+                description: None,
+                arguments: vec![],
+            },
+        );
+        let terminal = add_window_with_bootstrapped_terminal(&mut app, None, None).await;
+        let input = terminal.read(&app, |terminal, _| terminal.input().clone());
+
+        input.update(&mut app, |input, ctx| {
+            input.replace_buffer_content("/comm", ctx);
+            input.ai_context_model.update(ctx, |model, _ctx| {
+                model.register_at_context_attachment(
+                    "@commit".to_string(),
+                    AIAgentAttachment::PlainText("stale".to_string()),
+                );
+            });
+            input.handle_slash_commands_menu_event(
+                &SlashCommandsEvent::SelectedSavedPrompt { id: workflow_id },
+                ctx,
+            );
+        });
+
+        input.read(&app, |input, ctx| {
+            let pending_attachments = input
+                .ai_context_model
+                .as_ref(ctx)
+                .pending_at_context_attachments();
+            assert_eq!(input.buffer_text(ctx), "@commit ");
+            assert!(!input.is_workflows_info_box_open());
+            assert!(input.ai_input_model.as_ref(ctx).is_ai_input_enabled());
+            assert_eq!(pending_attachments.len(), 1);
+            assert_eq!(
+                pending_attachments.get("@commit"),
+                Some(&AIAgentAttachment::DriveObject {
+                    uid: workflow_id.uid(),
+                    payload: Some(DriveObjectPayload::Workflow {
+                        name: "commit".to_string(),
+                        description: String::new(),
+                        command: prompt,
+                    }),
+                })
+            );
+        });
+    });
+}
+
+#[test]
 fn test_open_slash_command_requires_path() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
