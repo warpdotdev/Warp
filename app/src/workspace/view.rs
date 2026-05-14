@@ -13388,19 +13388,21 @@ impl Workspace {
         });
     }
 
-    /// If the active session slot holds a swapped-in child agent, reverts
-    /// the swap and returns the displaced orchestrator's terminal view so
-    /// the cloud handoff PaneStack push lands on the orchestrator instead
-    /// of polluting the child's stack. Returns `source_view` unchanged
-    /// when no swap is active.
+    /// Resolves the terminal view that should receive the handoff cloud-mode
+    /// pane push and prepares it for the transition:
+    ///
+    /// 1. If the active session slot holds a swapped-in child agent, reverts
+    ///    the swap so the push lands on the orchestrator's PaneStack.
+    /// 2. If the resolved view's agent view is fullscreen, exits it so the
+    ///    cloud pane is visible at the terminal level.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-    fn resolve_handoff_target(
+    fn prepare_handoff_target(
         &mut self,
         source_view: &ViewHandle<TerminalView>,
         ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<TerminalView> {
         let pane_group = self.active_tab_pane_group().clone();
-        if let Some((original_pane_id, orchestrator_view)) =
+        let target = if let Some((original_pane_id, orchestrator_view)) =
             pane_group.as_ref(ctx).original_session_if_swapped(ctx)
         {
             pane_group.update(ctx, |group, ctx| {
@@ -13409,7 +13411,20 @@ impl Workspace {
             orchestrator_view
         } else {
             source_view.clone()
+        };
+
+        let agent_view_controller = target.as_ref(ctx).agent_view_controller().clone();
+        if agent_view_controller
+            .as_ref(ctx)
+            .agent_view_state()
+            .is_fullscreen()
+        {
+            agent_view_controller.update(ctx, |controller, ctx| {
+                controller.exit_agent_view_without_confirmation(ctx);
+            });
         }
+
+        target
     }
 
     /// Opens a cloud pane without forking when there is no local conversation to hand off.
@@ -13423,31 +13438,15 @@ impl Workspace {
         environment_id: Option<SyncId>,
         ctx: &mut ViewContext<Self>,
     ) {
-        // If the active slot holds a swapped-in child, redirect the push
-        // to the orchestrator so the child's PaneStack stays clean.
-        let handoff_target = self.resolve_handoff_target(&source_view, ctx);
-        let Some((new_pane_view, model_handle)) = handoff_target.update(ctx, |view, view_ctx| {
-            view.start_local_to_cloud_handoff_pane(view_ctx)
-        }) else {
+        let handoff_target = self.prepare_handoff_target(&source_view, ctx);
+        let Some((new_pane_view, model_handle)) =
+            handoff_target.update(ctx, |view, view_ctx| view.start_cloud_mode(None, view_ctx))
+        else {
             log::warn!("start_local_to_cloud_handoff: failed to push fresh cloud-mode pane");
             Self::restore_source_handoff_draft(&source_view, launch, environment_id, ctx);
             Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
             return;
         };
-
-        // If the handoff target's agent view is fullscreen, exit it so the
-        // cloud pane is visible at the terminal level, not inside the agent view.
-        let target_agent_view_controller =
-            handoff_target.as_ref(ctx).agent_view_controller().clone();
-        if target_agent_view_controller
-            .as_ref(ctx)
-            .agent_view_state()
-            .is_fullscreen()
-        {
-            target_agent_view_controller.update(ctx, |controller, ctx| {
-                controller.exit_agent_view_without_confirmation(ctx);
-            });
-        }
 
         if let Some(environment_id) = environment_id {
             model_handle.update(ctx, |model, ctx| {
@@ -13622,12 +13621,10 @@ impl Workspace {
         };
         let local_fork_id = local_fork.id();
 
-        // If the active slot holds a swapped-in child, redirect the push
-        // to the orchestrator so the child's PaneStack stays clean.
-        let handoff_target = self.resolve_handoff_target(&source_view, ctx);
-        let Some((new_pane_view, model_handle)) = handoff_target.update(ctx, |view, view_ctx| {
-            view.start_local_to_cloud_handoff_pane(view_ctx)
-        }) else {
+        let handoff_target = self.prepare_handoff_target(&source_view, ctx);
+        let Some((new_pane_view, model_handle)) =
+            handoff_target.update(ctx, |view, view_ctx| view.start_cloud_mode(None, view_ctx))
+        else {
             log::warn!("start_local_to_cloud_handoff: failed to push cloud-mode pane");
             Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
             return;
@@ -13659,20 +13656,6 @@ impl Workspace {
             );
             history_model.set_viewing_shared_session_for_conversation(local_fork_id, true);
         });
-
-        let target_agent_view_controller =
-            handoff_target.as_ref(ctx).agent_view_controller().clone();
-        if target_agent_view_controller
-            .as_ref(ctx)
-            .agent_view_state()
-            .is_fullscreen()
-        {
-            // Exit the handoff target's agent view so the entry block is
-            // visible at the terminal level beneath the cloud pane.
-            target_agent_view_controller.update(ctx, |controller, ctx| {
-                controller.exit_agent_view_without_confirmation(ctx);
-            });
-        }
 
         if let Some(env_id) = environment_id {
             model_handle.update(ctx, |model, ctx| {

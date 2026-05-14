@@ -694,29 +694,10 @@ impl TerminalView {
         self.start_cloud_mode(initial_prompt, ctx);
     }
 
-    /// Push a fresh cloud-mode pane onto this view's pane_stack for a local-to-cloud handoff.
-    /// Returns the pushed view and its `AmbientAgentViewModel` so the caller can restore the
-    /// forked conversation, bind it to the cloud-side conversation id, and seed `PendingHandoff`.
-    ///
-    /// Uses the same setup-mode initialization path as fresh cloud-mode runs (which calls
-    /// `enter_ambient_agent_setup` → `enter_agent_view_for_new_conversation` and focuses the
-    /// input) so the new pane's cloud-mode input is editable and focused immediately. The
-    /// caller then layers the forked conversation's blocks on top via
-    /// `restore_conversation_after_view_creation` and seeds `PendingHandoff`; submission uses
-    /// the cached `forked_conversation_id` from `PendingHandoff`, not the new pane's local
-    /// agent-view conversation id.
-    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-    pub(crate) fn start_local_to_cloud_handoff_pane(
-        &mut self,
-        ctx: &mut ViewContext<Self>,
-    ) -> Option<(ViewHandle<TerminalView>, ModelHandle<AmbientAgentViewModel>)> {
-        self.start_cloud_mode(None, ctx)
-    }
-
     /// Start a cloud mode session nested under this one, pushing a new pane onto this view's
     /// pane_stack and returning the pushed view + model handle. The new pane enters setup mode
     /// with `initial_prompt` (if any) pre-filled in the input.
-    fn start_cloud_mode(
+    pub(crate) fn start_cloud_mode(
         &mut self,
         initial_prompt: Option<String>,
         ctx: &mut ViewContext<Self>,
