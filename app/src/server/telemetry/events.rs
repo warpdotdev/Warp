@@ -464,7 +464,6 @@ pub enum PaletteSource {
     ConversationManager,
     ContextChip,
     PaneHeader,
-    RecentsViewAll,
     AgentTip,
     TitleBarSearchBar,
 }
