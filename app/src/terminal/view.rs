@@ -25995,11 +25995,66 @@ impl TypedActionView for TerminalView {
                 });
             }
             SwitchAgentViewToConversation { conversation_id } => {
-                // Pill-bar nav: swap visibility instead of cloning the
-                // conversation into this pane.
-                ctx.emit(Event::SwapPaneToConversation {
-                    conversation_id: *conversation_id,
-                });
+                // Switch in place when the target conversation belongs to this
+                // terminal view AND is part of a shared-session viewer
+                // orchestration. Shared-session children created by
+                // `OrchestrationViewerModel` are registered under the
+                // orchestrator's pane and lazily joined; reaching the
+                // pane-group swap path would create an empty hidden child
+                // pane and leave the live transcript routing to the
+                // orchestrator view. We allow either the conversation
+                // itself or its parent (the orchestrator) to flag the
+                // session because `OrchestrationViewerModel`'s flag set
+                // on the child can lag, but the orchestrator's flag is
+                // set unconditionally in
+                // `BlocklistAIController::on_shared_init`.
+                let (should_switch_in_place, child_flag, parent_flag, owner_view_id) = {
+                    let history = BlocklistAIHistoryModel::as_ref(ctx);
+                    let conv = history.conversation(conversation_id);
+                    let child_flag = conv.map(|c| c.is_viewing_shared_session()).unwrap_or(false);
+                    let parent_flag = conv
+                        .and_then(|c| c.parent_conversation_id())
+                        .and_then(|pid| history.conversation(&pid))
+                        .map(|p| p.is_viewing_shared_session())
+                        .unwrap_or(false);
+                    let owner_view_id = history.terminal_view_id_for_conversation(conversation_id);
+                    let owns_conversation = owner_view_id == Some(self.view_id);
+                    let is_shared = child_flag || parent_flag;
+                    (
+                        is_shared && owns_conversation,
+                        child_flag,
+                        parent_flag,
+                        owner_view_id,
+                    )
+                };
+                log::info!(
+                    "[orch-switch] SwitchAgentViewToConversation: conv={conversation_id:?} \
+                     self_view_id={self_view_id:?} owner_view_id={owner_view_id:?} \
+                     child_flag={child_flag} parent_flag={parent_flag} \
+                     should_switch_in_place={should_switch_in_place}",
+                    self_view_id = self.view_id,
+                );
+                if should_switch_in_place {
+                    log::info!(
+                        "[orch-switch] entering agent view in place for conv={conversation_id:?}"
+                    );
+                    self.enter_agent_view_for_conversation(
+                        None,
+                        AgentViewEntryOrigin::SharedSessionSelection,
+                        *conversation_id,
+                        ctx,
+                    );
+                    ctx.notify();
+                } else {
+                    log::info!(
+                        "[orch-switch] falling back to SwapPaneToConversation for conv={conversation_id:?}"
+                    );
+                    // Pill-bar nav: swap visibility instead of cloning the
+                    // conversation into this pane.
+                    ctx.emit(Event::SwapPaneToConversation {
+                        conversation_id: *conversation_id,
+                    });
+                }
             }
             OpenChildAgentInNewPane { conversation_id } => {
                 // Reveal the existing child pane as a sibling; preserves

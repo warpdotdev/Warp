@@ -62,6 +62,7 @@ use super::network::{
     control_action_failure_reason_string, session_ended_reason_string,
     viewer_removed_reason_string, write_to_pty_failure_reason_string, Network, NetworkEvent,
 };
+use super::orchestration_viewer_model::OrchestrationViewerModel;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::terminal::view::ambient_agent::is_cloud_agent_pre_first_exchange;
 use crate::terminal::view::ExecuteCommandEvent;
@@ -100,6 +101,14 @@ pub struct TerminalManager {
     current_network: Arc<FairMutex<Option<ModelHandle<Network>>>>,
     viewer_remote_update_guard: RemoteUpdateGuard,
     outbound_handlers_registered: bool,
+    /// Owns child discovery + status polling + per-child shared-session
+    /// connections when the viewer is attached to an orchestrated ambient
+    /// agent run. Lazily created in the `JoinedSuccessfully` handler on the
+    /// first ambient session join. Wrapped in `Arc<FairMutex<Option<...>>>`
+    /// to match the `current_network` pattern so the network-event closure
+    /// can write into it without needing a `&mut self`. Behind
+    /// `FeatureFlag::OrchestrationViewerPillBar`.
+    orchestration_viewer_model: Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
 }
 
 impl TerminalManager {
@@ -282,6 +291,7 @@ impl TerminalManager {
             current_network: Arc::new(FairMutex::new(None)),
             viewer_remote_update_guard: RemoteUpdateGuard::new(),
             outbound_handlers_registered: false,
+            orchestration_viewer_model: Arc::new(FairMutex::new(None)),
         }
     }
 
@@ -438,6 +448,8 @@ impl TerminalManager {
             self.current_network.clone(),
             self.network_resources.prompt_type.clone(),
             self.viewer_remote_update_guard.clone(),
+            self.network_resources.channel_event_proxy.clone(),
+            self.orchestration_viewer_model.clone(),
             ctx,
         );
         if !self.outbound_handlers_registered {
@@ -667,6 +679,11 @@ impl TerminalManager {
         self.network_state = NetworkState::Active(network);
     }
 
+    // Aggregating these into a struct would just shift the same set of
+    // fields into another type purely to placate Clippy without any
+    // readability win, since the closure body still needs each clone
+    // individually. Suppress the lint instead.
+    #[allow(clippy::too_many_arguments)]
     fn handle_network_events(
         network: &ModelHandle<Network>,
         view: &ViewHandle<TerminalView>,
@@ -674,6 +691,8 @@ impl TerminalManager {
         current_network: Arc<FairMutex<Option<ModelHandle<Network>>>>,
         prompt_type: ModelHandle<PromptType>,
         viewer_remote_update_guard: RemoteUpdateGuard,
+        channel_event_proxy: ChannelEventListener,
+        orchestration_viewer_model: Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
         ctx: &mut AppContext,
     ) {
         // We use a weak view handle instead of a strong reference because we may add a subscription to the view which moves a strong reference of the Model into the callback,
@@ -749,6 +768,32 @@ impl TerminalManager {
                         ActiveAgentViewsModel::handle(ctx).update(ctx, |model, ctx| {
                             model.register_ambient_session(terminal_view_id, task_id, ctx);
                         });
+
+                        // Spin up the orchestration viewer model on first join.
+                        // Idempotent across reconnects via the `is_none()` guard
+                        // on the shared slot. Gated on the feature flag so the
+                        // REST polling and child-session connections are off
+                        // until the pill bar feature is enabled.
+                        if FeatureFlag::OrchestrationViewerPillBar.is_enabled()
+                            && orchestration_viewer_model.lock().is_none()
+                        {
+                            let weak_view_handle_for_orch = weak_view_handle.clone();
+                            let terminal_model_for_orch = model.clone();
+                            let channel_event_proxy_for_orch = channel_event_proxy.clone();
+                            let orchestration_viewer_model_slot =
+                                orchestration_viewer_model.clone();
+                            let handle = ctx.add_model(|model_ctx| {
+                                OrchestrationViewerModel::new(
+                                    task_id,
+                                    terminal_view_id,
+                                    weak_view_handle_for_orch,
+                                    terminal_model_for_orch,
+                                    channel_event_proxy_for_orch,
+                                    model_ctx,
+                                )
+                            });
+                            *orchestration_viewer_model_slot.lock() = Some(handle);
+                        }
                     }
                 }
 
