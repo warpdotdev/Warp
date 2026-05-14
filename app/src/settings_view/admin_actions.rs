@@ -21,9 +21,9 @@ impl AdminActions {
         ctx.open_url("mailto:support@warp.dev");
     }
 
-    /// Open the sales email link
+    /// Open the contact sales page
     pub fn contact_sales(ctx: &mut AppContext) {
-        ctx.open_url("mailto:sales@warp.dev");
+        ctx.open_url("https://warp.dev/contact-sales");
     }
 }
 

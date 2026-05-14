@@ -1900,9 +1900,7 @@ impl TeamsWidget {
         } else {
             match cta {
                 SeatCapCta::Upgrade => "Upgrade to grow your team.",
-                SeatCapCta::ContactSales | SeatCapCta::None => {
-                    "Contact sales@warp.dev to grow your team."
-                }
+                SeatCapCta::ContactSales | SeatCapCta::None => "Contact sales to grow your team.",
             }
         };
         let body_prefix = if is_over_cap {
@@ -3001,13 +2999,13 @@ impl TeamsWidget {
             .finish()
     }
 
-    /// "Want to grow your team? <Contact sales@warp.dev>" — opens a mailto.
+    /// "Want to grow your team? <Contact sales>" — opens the contact sales page.
     fn render_outgrow_contact_sales_line(&self, appearance: &Appearance) -> Box<dyn Element> {
         let prefix = self.render_sub_text("Want to grow your team? ".to_string(), appearance, None);
         let link = appearance
             .ui_builder()
             .link(
-                "Contact sales@warp.dev".into(),
+                "Contact sales".into(),
                 None,
                 Some(Box::new(move |ctx| {
                     ctx.dispatch_typed_action(TeamsPageAction::ContactSales);
