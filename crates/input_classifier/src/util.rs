@@ -67,6 +67,7 @@ pub async fn is_likely_shell_command(
     word_tokens_count: usize,
 ) -> bool {
     const YIELD_BATCH_SIZE: usize = 5;
+    let use_nld_heuristic_v2 = cfg!(feature = "nld_heuristic_v2");
 
     let mut likely_command_token_count = 0;
     let total_token_count = input.parsed_tokens.len();
@@ -84,7 +85,10 @@ pub async fn is_likely_shell_command(
         }
 
         if token.token_description.is_some()
-            || check_if_token_has_shell_syntax(token.token.as_str())
+            || (!use_nld_heuristic_v2
+                && natural_language_detection::check_if_token_has_shell_syntax(
+                    token.token.as_str(),
+                ))
         {
             likely_command_token_count += 1;
         }
@@ -96,7 +100,7 @@ pub async fn is_likely_shell_command(
 
     // When token count is lower than 2, we should make sure all tokens
     // are matching the target classification category.
-    let command_threshold = if total_token_count <= 2 {
+    let command_threshold = if use_nld_heuristic_v2 || total_token_count <= 2 {
         1.0
     } else if total_token_count <= 4 {
         DETECT_AS_COMMAND_LOW_TOKEN_THRESHOLD
@@ -111,18 +115,6 @@ pub async fn is_likely_shell_command(
         || (word_tokens_count < 3 && is_first_token_command)
     {
         return true;
-    }
-
-    false
-}
-
-fn check_if_token_has_shell_syntax(word: &str) -> bool {
-    if cfg!(feature = "nld_heuristic_v2") {
-        return false;
-    }
-
-    if cfg!(feature = "nld_heuristic_v1") {
-        return natural_language_detection::check_if_token_has_shell_syntax(word);
     }
 
     false

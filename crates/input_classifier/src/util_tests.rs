@@ -55,6 +55,28 @@ async fn shell_syntax_tokens_with_only_first_token_description() -> bool {
     is_likely_shell_command(&token, word_tokens_count).await
 }
 
+async fn described_token_majority_below_v2_threshold() -> bool {
+    let mut token = mock_parsed_input_token("cargo build --release --workspace".to_string()).await;
+    let word_tokens_count = token.parsed_tokens.len();
+    assert!(word_tokens_count >= 3);
+
+    let description = token
+        .parsed_tokens
+        .iter()
+        .find_map(|token| token.token_description.clone())
+        .expect("test input should include at least one described token");
+    for token in token.parsed_tokens.iter_mut() {
+        token.token_description = Some(description.clone());
+    }
+    token
+        .parsed_tokens
+        .last_mut()
+        .expect("test input should include tokens")
+        .token_description = None;
+
+    is_likely_shell_command(&token, word_tokens_count).await
+}
+
 async fn url_like_token_in_nl_prompt_is_shell() -> bool {
     let mut token = mock_parsed_input_token(
         "read this https://example.com/foo-bar and summarize it".to_string(),
@@ -132,6 +154,22 @@ fn test_is_likely_shell_command_shell_syntax_votes_true_for_nld_heuristic_v1() {
 fn test_is_likely_shell_command_shell_syntax_does_not_vote_false_for_nld_heuristic_v2() {
     futures::executor::block_on(async move {
         assert!(!shell_syntax_tokens_with_only_first_token_description().await);
+    });
+}
+
+#[cfg(all(feature = "nld_heuristic_v1", not(feature = "nld_heuristic_v2")))]
+#[test]
+fn test_is_likely_shell_command_described_token_majority_true_for_nld_heuristic_v1() {
+    futures::executor::block_on(async move {
+        assert!(described_token_majority_below_v2_threshold().await);
+    });
+}
+
+#[cfg(feature = "nld_heuristic_v2")]
+#[test]
+fn test_is_likely_shell_command_described_token_majority_false_for_nld_heuristic_v2() {
+    futures::executor::block_on(async move {
+        assert!(!described_token_majority_below_v2_threshold().await);
     });
 }
 
