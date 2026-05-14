@@ -891,7 +891,10 @@ impl CodeReviewView {
             .map(|p| p.to_path_buf())
             .or_else(|| {
                 repo_metadata::repositories::DetectedRepositories::as_ref(ctx)
-                    .get_root_for_path(path)
+                    .get_root_for_path(&warp_util::local_or_remote_path::LocalOrRemotePath::Local(
+                        path.to_path_buf(),
+                    ))
+                    .and_then(|r| r.to_local_path().map(std::path::Path::to_path_buf))
             })
             .or_else(|| path.parent().map(|p| p.to_path_buf()));
 
@@ -933,7 +936,10 @@ impl CodeReviewView {
             .map(|p| p.to_path_buf())
             .or_else(|| {
                 repo_metadata::repositories::DetectedRepositories::as_ref(ctx)
-                    .get_root_for_path(path)
+                    .get_root_for_path(&warp_util::local_or_remote_path::LocalOrRemotePath::Local(
+                        path.to_path_buf(),
+                    ))
+                    .and_then(|r| r.to_local_path().map(std::path::Path::to_path_buf))
             })
             .or_else(|| path.parent().map(|p| p.to_path_buf()));
 

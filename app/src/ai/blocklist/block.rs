@@ -35,6 +35,8 @@ use crate::ai::blocklist::BlocklistAIContextModel;
 use crate::ai::blocklist::SuggestionDismissButtonTheme;
 #[cfg(not(target_family = "wasm"))]
 use repo_metadata::repositories::DetectedRepositories;
+#[cfg(not(target_family = "wasm"))]
+use warp_util::local_or_remote_path::LocalOrRemotePath;
 
 #[cfg(feature = "local_fs")]
 use crate::ai::skills::SkillOpenOrigin;
@@ -5531,10 +5533,11 @@ impl AIBlock {
         ctx: &mut ViewContext<Self>,
     ) {
         #[cfg(not(target_family = "wasm"))]
-        let repo_path = self
-            .current_working_directory
-            .as_ref()
-            .and_then(|cwd| DetectedRepositories::as_ref(ctx).get_root_for_path(Path::new(cwd)));
+        let repo_path = self.current_working_directory.as_ref().and_then(|cwd| {
+            DetectedRepositories::as_ref(ctx)
+                .get_root_for_path(&LocalOrRemotePath::Local(PathBuf::from(cwd.as_str())))
+                .and_then(|r| r.to_local_path().map(Path::to_path_buf))
+        });
         #[cfg(target_family = "wasm")]
         let repo_path = self.current_working_directory.as_ref().map(PathBuf::from);
 

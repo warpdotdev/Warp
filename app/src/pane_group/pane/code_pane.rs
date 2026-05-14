@@ -1,3 +1,4 @@
+use std::path::Path;
 use warp_util::path::LineAndColumnArg;
 use warpui::{AppContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHandle};
 
@@ -142,8 +143,9 @@ impl PaneContent for CodePane {
                         use crate::code::opened_files::OpenedFilesModel;
                         use repo_metadata::repositories::DetectedRepositories;
 
-                        if let Some(repo_path) =
-                            DetectedRepositories::as_ref(ctx).get_root_for_path(file_path)
+                        if let Some(repo_path) = DetectedRepositories::as_ref(ctx)
+                            .get_root_for_path(&LocalOrRemotePath::Local(file_path.to_path_buf()))
+                            .and_then(|r| r.to_local_path().map(Path::to_path_buf))
                         {
                             OpenedFilesModel::handle(ctx).update(ctx, |opened_files, ctx| {
                                 opened_files.file_opened(repo_path, file_path.clone(), ctx);

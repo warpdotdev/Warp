@@ -185,13 +185,15 @@ pub use init::{
     TOGGLE_HIDE_CLI_RESPONSES_KEYBINDING, TOGGLE_QUEUE_NEXT_PROMPT_KEYBINDING,
 };
 pub use inline_banner::{NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction};
+use repo_metadata::repositories::DetectedRepositories;
 #[cfg(feature = "local_fs")]
-use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
+use repo_metadata::repositories::RepoDetectionSource;
 use session_sharing_protocol::common::LongRunningCommandAgentInteractionState;
 use session_sharing_protocol::sharer::{RoleUpdateReason, SessionEndedReason, SessionSourceType};
 use ssh_file_upload::{FileUpload, FileUploadEvent};
 use uuid::Uuid;
 use warp_core::channel::ChannelState;
+use warp_util::local_or_remote_path::LocalOrRemotePath;
 use warpui::elements::{shimmering_text::ShimmeringTextStateHandle, Border, ChildView};
 use warpui::fonts::Properties;
 use warpui::{ViewHandle, WeakModelHandle};
@@ -4576,8 +4578,13 @@ impl TerminalView {
                     RemoteServerManagerEvent::NavigatedToDirectory {
                         session_id: nav_session_id,
                         remote_path,
-                        ..
+                        is_git,
                     } => {
+                        if *is_git {
+                            DetectedRepositories::handle(ctx).update(ctx, |repos, _| {
+                                repos.register_remote_repo_root(remote_path.clone());
+                            });
+                        }
                         // Check if this navigation belongs to our active session
                         // using exact session_id match (no CWD heuristics).
                         let is_relevant = me
@@ -4613,9 +4620,13 @@ impl TerminalView {
                             ctx
                         );
                     }
+                    RemoteServerManagerEvent::HostDisconnected { host_id } => {
+                        DetectedRepositories::handle(ctx).update(ctx, |repos, _| {
+                            repos.remove_roots_for_host(host_id);
+                        });
+                    }
                     RemoteServerManagerEvent::SessionConnecting { .. }
                     | RemoteServerManagerEvent::HostConnected { .. }
-                    | RemoteServerManagerEvent::HostDisconnected { .. }
                     | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
                     | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
                     | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
@@ -11506,7 +11517,7 @@ impl TerminalView {
                                 let fut = DetectedRepositories::handle(ctx).update(
                                     ctx,
                                     |updater, ctx| {
-                                        updater.detect_possible_git_repo(
+                                        updater.detect_possible_local_git_repo(
                                             directory_for_detection,
                                             RepoDetectionSource::TerminalNavigation,
                                             ctx,
@@ -13353,7 +13364,7 @@ impl TerminalView {
                     .and_then(|pwd| Path::new(&pwd).canonicalize().ok())
                 {
                     DetectedRepositories::as_ref(ctx)
-                        .get_root_for_path(&pwd_path)
+                        .get_root_for_path(&LocalOrRemotePath::Local(pwd_path))
                         .is_some()
                 } else {
                     false
@@ -13462,7 +13473,7 @@ impl TerminalView {
                 .and_then(|pwd| Path::new(&pwd).canonicalize().ok())
                 .is_some_and(|pwd_path| {
                     DetectedRepositories::as_ref(ctx)
-                        .get_root_for_path(&pwd_path)
+                        .get_root_for_path(&LocalOrRemotePath::Local(pwd_path))
                         .is_some()
                 });
 
@@ -13548,7 +13559,7 @@ impl TerminalView {
             .iter()
             .any(|shown_path| shown_path == directory);
         let is_repo = DetectedRepositories::as_ref(ctx)
-            .get_root_for_path(directory)
+            .get_root_for_path(&LocalOrRemotePath::Local(directory.to_path_buf()))
             .is_some();
         let is_any_ai_enabled =
             FeatureFlag::AgentMode.is_enabled() && AISettings::as_ref(ctx).is_any_ai_enabled(ctx);

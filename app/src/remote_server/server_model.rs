@@ -1482,7 +1482,11 @@ impl ServerModel {
         // root path (Some) or None if no git repo was found.
         let path_str = msg.path.clone();
         let git_future = DetectedRepositories::handle(ctx).update(ctx, |repos, ctx| {
-            repos.detect_possible_git_repo(&path_str, RepoDetectionSource::TerminalNavigation, ctx)
+            repos.detect_possible_local_git_repo(
+                &path_str,
+                RepoDetectionSource::TerminalNavigation,
+                ctx,
+            )
         });
 
         let request_id_for_response = request_id.clone();
