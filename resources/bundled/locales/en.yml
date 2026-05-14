@@ -1416,6 +1416,8 @@ en:
     enable_setting: "Enable {setting}"
     disable_setting: "Disable {setting}"
     open_settings_file: "Open settings file"
+    open_file: "Open file"
+    fix_with_oz: "Fix with Oz"
     workspace_override_tooltip: "This option is enforced by your organization's settings and cannot be customized."
     warp_drive_description: "Warp Drive is a workspace in your terminal where you can save Workflows, Notebooks, Prompts, and Environment Variables for personal use or to share with a team."
     add_repo: "Add repo"
