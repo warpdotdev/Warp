@@ -3267,6 +3267,53 @@ impl PaneGroup {
         ctx: &mut ViewContext<Self>,
     ) {
         let child_id = child_conversation.id();
+
+        // Viewer-side children (registered by `OrchestrationViewerModel`)
+        // arrive here only when the user clicked a pill before our
+        // materialization helper had a `session_id` to bind to. The PTY-
+        // backed fallback this method would otherwise create renders as an
+        // empty agent view, which is confusing — show a loading placeholder
+        // pane instead. `ensure_shared_session_viewer_child_pane` discards
+        // and replaces this entry once `session_id` is known.
+        if child_conversation.is_viewing_shared_session() {
+            let resources = TerminalViewResources {
+                tips_completed: self.tips_completed.clone(),
+                server_api: self.server_api.clone(),
+                model_event_sender: self.model_event_sender.clone(),
+            };
+            let view_size = Self::estimated_view_bounds(ctx).size();
+            let (loading_view, loading_manager) = Self::create_loading_terminal_manager_and_view(
+                resources,
+                view_size,
+                ctx.window_id(),
+                ctx,
+            );
+            let pane_data = TerminalPane::new(
+                Uuid::new_v4().as_bytes().to_vec(),
+                loading_manager,
+                loading_view,
+                self.model_event_sender.clone(),
+                ctx,
+            );
+            let new_pane_id = pane_data.terminal_pane_id();
+            if self
+                .attach_child_pane_off_tree(Box::new(pane_data), ctx)
+                .is_none()
+            {
+                log::error!(
+                    "create_hidden_child_agent_pane: failed to attach loading placeholder for \
+                     viewer-side child {child_id:?}"
+                );
+                return;
+            }
+            log::info!(
+                "[orch-viewer] created loading placeholder pane for viewer-side child \
+                 conv={child_id:?} pane={new_pane_id:?}"
+            );
+            self.child_agent_panes.insert(child_id, new_pane_id.into());
+            return;
+        }
+
         if child_conversation.is_remote_child() {
             let Some(task_id) = child_conversation.task_id() else {
                 log::warn!(
