@@ -347,6 +347,11 @@ fn refresh_aws_credentials_oidc(
                 .send()
                 .await
                 .map_err(|err| {
+                    // Dump the full SDK error chain at error level so on-call has
+                    // actionable detail (failure kind, connector cause, AWS service
+                    // exception, etc.) beyond the terse top-level Display that gets
+                    // surfaced to the user.
+                    log::error!("Bedrock OIDC: STS AssumeRoleWithWebIdentity SDK error: {err:#?}");
                     // Surface the AWS service error message for a user-friendly error.
                     let detail = err
                         .as_service_error()
