@@ -21,32 +21,56 @@ const HERO_IMAGE_PATH: &str = "async/png/onboarding/hoa_welcome_banner.png";
 
 struct FeatureItem {
     icon: Icon,
-    title: &'static str,
-    description: &'static str,
+    kind: FeatureItemKind,
+}
+
+enum FeatureItemKind {
+    VerticalTabs,
+    TabConfigs,
+    AgentInbox,
+    NativeCodeReview,
 }
 
 const FEATURE_ITEMS: &[FeatureItem] = &[
     FeatureItem {
         icon: Icon::LayoutAlt01,
-        title: "Vertical tabs",
-        description: "Rich tab titles and metadata like git branch, worktree, and PR. Fully customizable.",
+        kind: FeatureItemKind::VerticalTabs,
     },
     FeatureItem {
         icon: Icon::Sliders,
-        title: "Tab configs",
-        description: "Tab-level schema to set your directory, startup commands, theme, and worktree with one click",
+        kind: FeatureItemKind::TabConfigs,
     },
     FeatureItem {
         icon: Icon::Inbox,
-        title: "Agent inbox",
-        description: "Notifications when any agent needs your attention, also accessible in a central inbox",
+        kind: FeatureItemKind::AgentInbox,
     },
     FeatureItem {
         icon: Icon::MessageCheckSquare,
-        title: "Native code review",
-        description: "Send inline comments from Warp's code review directly to Claude Code, Codex, or OpenCode",
+        kind: FeatureItemKind::NativeCodeReview,
     },
 ];
+
+impl FeatureItemKind {
+    fn title(&self) -> String {
+        match self {
+            Self::VerticalTabs => t!("hoa_onboarding.vertical_tabs_title").to_string(),
+            Self::TabConfigs => t!("hoa_onboarding.tab_configs_title").to_string(),
+            Self::AgentInbox => t!("hoa_onboarding.agent_inbox_title").to_string(),
+            Self::NativeCodeReview => t!("hoa_onboarding.native_code_review_title").to_string(),
+        }
+    }
+
+    fn description(&self) -> String {
+        match self {
+            Self::VerticalTabs => t!("hoa_onboarding.vertical_tabs_description").to_string(),
+            Self::TabConfigs => t!("hoa_onboarding.tab_configs_description").to_string(),
+            Self::AgentInbox => t!("hoa_onboarding.agent_inbox_description").to_string(),
+            Self::NativeCodeReview => {
+                t!("hoa_onboarding.native_code_review_description").to_string()
+            }
+        }
+    }
+}
 
 pub fn render_welcome_banner(
     close_button: &ViewHandle<ActionButton>,
@@ -110,7 +134,7 @@ pub fn render_welcome_banner(
 
     // Title
     let title = Text::new(
-        "Introducing universal agent support: level up any coding agent with Warp",
+        t!("hoa_onboarding.welcome_title").to_string(),
         appearance.ui_font_family(),
         20.,
     )
@@ -137,12 +161,12 @@ pub fn render_welcome_banner(
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
             .with_spacing(2.)
             .with_child(
-                Text::new_inline(item.title.to_string(), appearance.ui_font_family(), 14.)
+                Text::new_inline(item.kind.title(), appearance.ui_font_family(), 14.)
                     .with_color(PhenomenonStyle::modal_feature_title_text())
                     .finish(),
             )
             .with_child(
-                Text::new(item.description, appearance.ui_font_family(), 14.)
+                Text::new(item.kind.description(), appearance.ui_font_family(), 14.)
                     .with_color(PhenomenonStyle::modal_feature_description_text())
                     .finish(),
             )

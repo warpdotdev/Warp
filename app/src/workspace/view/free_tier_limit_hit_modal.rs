@@ -147,7 +147,7 @@ impl FreeTierLimitHitModal {
                         .with_child(
                             Container::new(
                                 FormattedTextElement::from_str(
-                                    "You’re out of credits",
+                                    t!("free_tier_limit.title"),
                                     appearance.ui_font_family(),
                                     24.,
                                 )
@@ -164,7 +164,7 @@ impl FreeTierLimitHitModal {
                         .with_child(
                             Container::new(
                                 FormattedTextElement::from_str(
-                                    "To continue using AI, please upgrade your plan.",
+                                    t!("free_tier_limit.description"),
                                     appearance.ui_font_family(),
                                     14.,
                                 )
@@ -181,9 +181,10 @@ impl FreeTierLimitHitModal {
                             Container::new({
                                 let benefits_text = if let Some(plan) = Self::get_build_plan_details(app) {
                                     let price = plan.monthly_plan_price_per_month_usd_cents / 100;
-                                    format!("The Build plan is ${price}/month which includes everything in the free tier plus:")
+                                    t!("free_tier_limit.build_plan_price_benefits", price = price)
+                                        .to_string()
                                 } else {
-                                    "The Build plan includes everything in the free tier plus:".to_string()
+                                    t!("free_tier_limit.build_plan_benefits").to_string()
                                 };
                                 let formatted_text = FormattedText::new([FormattedTextLine::Line(vec![
                                     FormattedTextFragment::plain_text(benefits_text),
@@ -279,7 +280,7 @@ impl FreeTierLimitHitModal {
                             Container::new({
                                 let formatted_text = FormattedText::new([FormattedTextLine::Line(vec![
                                     FormattedTextFragment::hyperlink(
-                                        "Extended cloud agents access".to_string(),
+                                        t!("free_tier_limit.extended_cloud_agents_access").to_string(),
                                         "https://www.warp.dev/oz".to_string(),
                                     ),
                                 ])]);
