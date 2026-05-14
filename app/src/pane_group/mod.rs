@@ -8,7 +8,7 @@ use crate::ai::agent_conversations_model::{
 use crate::ai::ai_document_view::AIDocumentView;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
-use crate::ai::blocklist::history_model::{BlocklistAIHistoryEvent, CloudConversationData};
+use crate::ai::blocklist::history_model::CloudConversationData;
 use crate::ai::blocklist::inline_action::code_diff_view::CodeDiffView;
 use crate::ai::blocklist::suggested_agent_mode_workflow_modal::SuggestedAgentModeWorkflowAndId;
 use crate::ai::blocklist::suggested_rule_modal::SuggestedRuleAndId;
@@ -3555,54 +3555,6 @@ impl PaneGroup {
                         model.enter_viewing_existing_session(task_id, ctx);
                     }
                 });
-            }
-
-            // Once the network's `JoinedSuccessfully` arrives the shared
-            // session status flips from `ViewPending` to `ActiveViewer`,
-            // which would otherwise let the body render the block list
-            // (including the empty-conversation zero state) before the
-            // child has emitted its first exchange. That reads as "a new
-            // conversation" on the materialized pane, especially on web
-            // where the join handshake completes quickly. Suppress that
-            // gap by marking the view as a loading transcript viewer
-            // until the first exchange streams in; the body's
-            // `is_loading_conversation_transcript()` check then keeps the
-            // loading spinner up across the ViewPending → ActiveViewer
-            // transition. Skip this if the conversation already has
-            // exchanges (e.g. restored from a previous viewer session),
-            // since we'd never get an `AppendedExchange` to clear the
-            // status.
-            let already_has_exchanges = BlocklistAIHistoryModel::as_ref(ctx)
-                .conversation(&child_conversation_id)
-                .is_some_and(|conversation| !conversation.is_empty());
-            if !already_has_exchanges {
-                terminal_view
-                    .model
-                    .lock()
-                    .set_conversation_transcript_viewer_status(Some(
-                        ConversationTranscriptViewerStatus::Loading,
-                    ));
-                let target_conv_id = child_conversation_id;
-                ctx.subscribe_to_model(
-                    &BlocklistAIHistoryModel::handle(ctx),
-                    move |terminal_view, history_model, event, ctx| {
-                        let matches_child = matches!(
-                            event,
-                            BlocklistAIHistoryEvent::AppendedExchange {
-                                conversation_id, ..
-                            } if *conversation_id == target_conv_id,
-                        );
-                        if !matches_child {
-                            return;
-                        }
-                        terminal_view
-                            .model
-                            .lock()
-                            .set_conversation_transcript_viewer_status(None);
-                        ctx.unsubscribe_to_model(&history_model);
-                        ctx.notify();
-                    },
-                );
             }
         });
 
