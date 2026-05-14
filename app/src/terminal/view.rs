@@ -7395,6 +7395,29 @@ impl TerminalView {
         true
     }
 
+    /// Returns true if the active block of this terminal is currently running a command
+    /// (writing to the PTY or actively executing). Used to gate the "still running" toast
+    /// — see #9100. We intentionally do NOT treat "input box hidden" as equivalent to
+    /// "command running": the input can be hidden for many reasons (pending shared
+    /// session, alt-screen application, SSH choice block, AI confirmation block, etc.)
+    /// that have nothing to do with a running command.
+    pub fn is_active_block_running(&self, _app: &AppContext) -> bool {
+        let model = self.model.lock();
+        let active_block = model.block_list().active_block();
+        // Agent-controlled / tagged-in blocks must NOT trigger the "still running"
+        // toast, even when they are technically executing or writing in-band — the
+        // user is intentionally interacting with the agent and the input box is
+        // hidden by design. This exclusion must gate the executing / in-band checks
+        // below, otherwise `is_executing()` short-circuits to `true` first.
+        if active_block.is_agent_in_control() || active_block.is_agent_tagged_in() {
+            return false;
+        }
+        if model.block_list().is_writing_or_executing_in_band_command() {
+            return true;
+        }
+        active_block.is_executing() || active_block.is_active_and_long_running()
+    }
+
     /// Give the agent control of the active long running command
     /// (which was started outside of a conversation).
     fn tag_agent_in(&mut self, ctx: &mut ViewContext<Self>) {

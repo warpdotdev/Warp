@@ -15263,48 +15263,43 @@ impl Workspace {
     ) -> Option<ViewHandle<TerminalView>> {
         let active_pane_group = self.active_tab_pane_group();
 
-        // If there's an active terminal session and it's not busy, return it.
-        // If there is no terminal session open, add a terminal pane to the right and return the new terminal view handle.
-        let terminal_view_handle = active_pane_group
-            .as_ref(ctx)
-            .active_session_view(ctx)
-            .unwrap_or_else(|| {
-                let active_pane_group = self.active_tab_pane_group();
-                active_pane_group.update(ctx, |pane_group, ctx| {
-                    pane_group.add_terminal_pane(Direction::Right, None /*chosen_shell*/, ctx);
+        // Resolve the existing active terminal session, if any. We deliberately do NOT
+        // create a new pane here: creating a pane and then turning around to show a
+        // "still running" toast (or to return None for `RequireExisting`) would leave
+        // the user with a surprise pane and a misleading error. New panes are only
+        // created later, under the explicit "open new" branch below.
+        let existing_terminal_view_handle = active_pane_group.as_ref(ctx).active_session_view(ctx);
+
+        if let Some(terminal_view_handle) = existing_terminal_view_handle.clone() {
+            let is_env_var_block = terminal_view_handle.read(ctx, |terminal_view, ctx| {
+                terminal_view.has_active_env_var_block(ctx)
+            });
+
+            if self.is_input_box_visible(ctx) {
+                active_pane_group
+                    .update(ctx, |pane_group, ctx| pane_group.focus_active_session(ctx));
+                return Some(terminal_view_handle);
+            } else if is_env_var_block {
+                terminal_view_handle.update(ctx, |terminal_view, ctx| {
+                    terminal_view.cancel_env_var_block(ctx);
                 });
                 active_pane_group
-                    .as_ref(ctx)
-                    .active_session_view(ctx)
-                    .unwrap()
-            });
-
-        let is_env_var_block = terminal_view_handle.read(ctx, |terminal_view, ctx| {
-            terminal_view.has_active_env_var_block(ctx)
-        });
-
-        if self.is_input_box_visible(ctx) {
-            active_pane_group.update(ctx, |pane_group, ctx| pane_group.focus_active_session(ctx));
-            return Some(terminal_view_handle);
-        } else if is_env_var_block {
-            terminal_view_handle.update(ctx, |terminal_view, ctx| {
-                terminal_view.cancel_env_var_block(ctx);
-            });
-            active_pane_group.update(ctx, |pane_group, ctx| pane_group.focus_active_session(ctx));
-            return Some(terminal_view_handle);
-        } else if fallback_behavior != TerminalSessionFallbackBehavior::OpenIfNeeded {
-            // The active terminal exists but is busy, and the fallback behavior is
-            // RequireExisting or OpenIfNone. In those cases, show a toast and no-op.
-            self.toast_stack.update(ctx, |toast_stack, ctx| {
-                let mut toast = DismissibleToast::error(
-                    "A command in this session is still running.".to_string(),
-                );
-                if let Some(id) = object_id {
-                    toast = toast.with_object_id(id.uid());
-                }
-                toast_stack.add_ephemeral_toast(toast, ctx);
-            });
-            return None;
+                    .update(ctx, |pane_group, ctx| pane_group.focus_active_session(ctx));
+                return Some(terminal_view_handle);
+            } else if Self::should_show_busy_toast(fallback_behavior, &terminal_view_handle, ctx) {
+                // The active terminal exists and is genuinely busy with a running command,
+                // and the caller asked us not to open a new pane in that case.
+                self.toast_stack.update(ctx, |toast_stack, ctx| {
+                    let mut toast = DismissibleToast::error(
+                        "A command in this session is still running.".to_string(),
+                    );
+                    if let Some(id) = object_id {
+                        toast = toast.with_object_id(id.uid());
+                    }
+                    toast_stack.add_ephemeral_toast(toast, ctx);
+                });
+                return None;
+            }
         }
 
         // There's no available session and we were asked not to create one.
@@ -15314,8 +15309,10 @@ impl Workspace {
 
         // Either:
         // * There's no active session
-        // * The active session is busy but the fallback behavior is OpenIfNeeded
-        // In this case, open a new terminal pane to the right.
+        // * The active session is busy (input not visible) but the fallback behavior is OpenIfNeeded
+        // * The input box just isn't visible for non-running-command reasons (e.g. alt screen,
+        //   pending session). Treat this the same as "open a new pane".
+        // In all of these cases, open a new terminal pane to the right.
 
         if !ContextFlag::CreateNewSession.is_enabled() {
             self.toast_stack.update(ctx, |toast_stack, ctx| {
@@ -15326,7 +15323,54 @@ impl Workspace {
             return None;
         }
 
-        active_pane_group.as_ref(ctx).active_session_view(ctx)
+        // We reach here in one of two cases:
+        //   1. There is no existing session at all → create one.
+        //   2. There IS an existing session but it was not usable above (input box
+        //      not visible, not an env-var block, busy toast was suppressed by
+        //      `OpenIfNeeded`). Per the `OpenIfNeeded` contract, we must create
+        //      a new pane in this case rather than silently returning the busy
+        //      session as if it were focusable. Returning the busy session would
+        //      reintroduce #9100 by letting callers act on a session they can't
+        //      actually type into.
+        //
+        // For `OpenIfNone` specifically: if an existing session was found but its
+        // input box is not visible (e.g. alt-screen application, SSH choice block,
+        // AI confirmation block, init-project step, cloud-agent pre-first-exchange),
+        // we do NOT create a new pane — `OpenIfNone` only creates when there is no
+        // active session at all. We also must NOT return the unfocusable existing
+        // session: callers would proceed as if they had a focusable input and the
+        // user would see no effect. Return `None` instead so the caller can decide.
+        let needs_new_pane = existing_terminal_view_handle.is_none()
+            || fallback_behavior == TerminalSessionFallbackBehavior::OpenIfNeeded;
+        if needs_new_pane {
+            active_pane_group.update(ctx, |pane_group, ctx| {
+                pane_group.add_terminal_pane(Direction::Right, None /*chosen_shell*/, ctx);
+            });
+            return active_pane_group.as_ref(ctx).active_session_view(ctx);
+        }
+
+        // `OpenIfNone` with an existing-but-unfocusable session: signal "no usable
+        // session" to the caller rather than returning the unfocusable handle.
+        None
+    }
+
+    /// Decide whether the "A command in this session is still running." toast should
+    /// be shown. Even if the input box is hidden, we only want to surface this toast
+    /// when the active block is actually executing a command. The input can be hidden
+    /// for many reasons unrelated to a running command (pending shared session,
+    /// alt-screen application, SSH choice block, AI confirmation, etc.) — surfacing
+    /// the "still running" message in those cases is the issue reported in #9100.
+    fn should_show_busy_toast(
+        fallback_behavior: TerminalSessionFallbackBehavior,
+        terminal_view_handle: &ViewHandle<TerminalView>,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        if fallback_behavior == TerminalSessionFallbackBehavior::OpenIfNeeded {
+            return false;
+        }
+        terminal_view_handle.read(ctx, |terminal_view, ctx| {
+            terminal_view.is_active_block_running(ctx)
+        })
     }
 
     /// Opens the LSP log file in a new terminal pane using `tail -f`.

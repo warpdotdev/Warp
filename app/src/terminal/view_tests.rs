@@ -5815,3 +5815,165 @@ fn linear_deeplink_via_default_entrypoint_does_not_auto_submit_in_fullscreen() {
         });
     })
 }
+
+// ---------------------------------------------------------------------------
+// Tests for `is_active_block_running` — the predicate that gates the
+// "A command in this session is still running." toast. See #9100.
+//
+// The exclusion for agent-controlled / tagged-in blocks must gate the
+// `is_executing` / `is_writing_or_executing_in_band_command` short-circuits,
+// otherwise a tagged-in or agent-controlled long-running command would
+// incorrectly trigger the toast (since the input box is hidden by design
+// while the agent is interacting with the command).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn is_active_block_running_returns_false_for_never_started_block() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+        terminal.update(&mut app, |view, ctx| {
+            // Fresh terminal — no block has been started.
+            assert!(!view.is_active_block_running(ctx));
+        });
+    })
+}
+
+#[test]
+fn is_active_block_running_returns_false_for_finished_block() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+        terminal.update(&mut app, |view, ctx| {
+            {
+                let mut model = view.model.lock();
+                model.init_shell(InitShellValue {
+                    session_id: 0.into(),
+                    shell: "zsh".to_owned(),
+                    ..Default::default()
+                });
+                model.bootstrapped(BootstrappedValue {
+                    shell: "zsh".to_owned(),
+                    ..Default::default()
+                });
+                // A block that started and then finished — not running.
+                model.simulate_block("echo hi", "hi\n");
+            }
+            assert!(!view.is_active_block_running(ctx));
+        });
+    })
+}
+
+#[test]
+fn is_active_block_running_returns_true_for_user_long_running_block() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+        terminal.update(&mut app, |view, ctx| {
+            {
+                let mut model = view.model.lock();
+                model.init_shell(InitShellValue {
+                    session_id: 0.into(),
+                    shell: "zsh".to_owned(),
+                    ..Default::default()
+                });
+                model.bootstrapped(BootstrappedValue {
+                    shell: "zsh".to_owned(),
+                    ..Default::default()
+                });
+                model.simulate_long_running_block("sleep 10", "running");
+            }
+            // User-driven long-running command — should gate the toast on.
+            assert!(view.is_active_block_running(ctx));
+        });
+    })
+}
+
+#[test]
+fn is_active_block_running_returns_false_when_user_tagged_in_agent() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        FeatureFlag::AgentView.set_enabled(true);
+        let terminal = add_window_with_terminal(&mut app, None);
+        terminal.update(&mut app, |view, ctx| {
+            {
+                let mut model = view.model.lock();
+                model.init_shell(InitShellValue {
+                    session_id: 0.into(),
+                    shell: "zsh".to_owned(),
+                    ..Default::default()
+                });
+                model.bootstrapped(BootstrappedValue {
+                    shell: "zsh".to_owned(),
+                    ..Default::default()
+                });
+                model.simulate_long_running_block("sleep 10", "running");
+            }
+            view.model
+                .lock()
+                .block_list_mut()
+                .active_block_mut()
+                .set_is_agent_tagged_in(true);
+            // Tagged-in: the input box is hidden by design while the agent
+            // mode input is active — must NOT trigger the "still running" toast.
+            assert!(!view.is_active_block_running(ctx));
+        });
+    })
+}
+
+#[test]
+fn is_active_block_running_returns_false_when_agent_is_in_control() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        FeatureFlag::AgentView.set_enabled(true);
+        let terminal = add_window_with_terminal(&mut app, None);
+        terminal.update(&mut app, |view, ctx| {
+            {
+                let mut model = view.model.lock();
+                model.init_shell(InitShellValue {
+                    session_id: 0.into(),
+                    shell: "zsh".to_owned(),
+                    ..Default::default()
+                });
+                model.bootstrapped(BootstrappedValue {
+                    shell: "zsh".to_owned(),
+                    ..Default::default()
+                });
+                model.simulate_long_running_block("ssh localhost", "Password:");
+            }
+
+            let conversation_id = view.agent_view_controller().update(ctx, |controller, ctx| {
+                controller
+                    .try_enter_inline_agent_view(
+                        None,
+                        AgentViewEntryOrigin::LongRunningCommand,
+                        ctx,
+                    )
+                    .expect("inline agent view should create a conversation")
+            });
+            view.model
+                .lock()
+                .block_list_mut()
+                .active_block_mut()
+                .set_is_agent_tagged_in(true);
+
+            let task_id = TaskId::new("test-task".to_owned());
+            view.model
+                .lock()
+                .block_list_mut()
+                .active_block_mut()
+                .set_agent_interaction_mode_for_agent_monitored_command(&task_id, conversation_id)
+                .expect("tagged-in command should transition to agent-monitored");
+
+            assert!(view
+                .model
+                .lock()
+                .block_list()
+                .active_block()
+                .is_agent_in_control());
+            // Agent in control: the input box visibility for "use agent" is
+            // intentional. Must NOT trigger the stale "still running" toast.
+            assert!(!view.is_active_block_running(ctx));
+        });
+    })
+}

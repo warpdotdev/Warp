@@ -287,6 +287,49 @@ pub fn test_long_running_block_bottom_padding() {
     });
 }
 
+/// Regression test for #9100 — "A command in this session is still running." toast
+/// must not fire for blocks that are not actually executing.
+///
+/// The toast was previously gated on `!is_input_box_visible`, but the input box can
+/// be hidden for many reasons unrelated to a running command (pending shared session,
+/// alt-screen application, SSH choice block, AI confirmation, freshly-created pane,
+/// etc.). Surface predicates we now use to gate the toast must all return false for
+/// an idle / finished block.
+#[test]
+pub fn test_idle_and_finished_blocks_are_not_executing() {
+    // Freshly built block — never started a command.
+    let block = TestBlockBuilder::new().build();
+    assert!(
+        !block.is_executing(),
+        "a never-started block must not report as executing"
+    );
+    assert!(
+        !block.is_active_and_long_running(),
+        "a never-started block must not report as long-running"
+    );
+
+    // Block that started, ran briefly, and finished successfully.
+    let mut block = TestBlockBuilder::new().build();
+    block.precmd(Default::default());
+    block.start();
+    for c in "echo hi".chars() {
+        block.input(c);
+    }
+    block.preexec(Default::default());
+    for c in "hi".chars() {
+        block.input(c);
+    }
+    block.finish(0);
+    assert!(
+        !block.is_executing(),
+        "a finished block must not report as executing"
+    );
+    assert!(
+        !block.is_active_and_long_running(),
+        "a finished block must not report as long-running"
+    );
+}
+
 // Tests that the command grid has a non-zero height even if `preexec` is never called.
 #[test]
 pub fn test_precmd_no_preexec() {
