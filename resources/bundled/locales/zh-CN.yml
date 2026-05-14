@@ -1538,6 +1538,17 @@ zh-CN:
     stop_sharing: "停止共享"
     copy_session_sharing_link: "复制会话共享链接"
     offline_reconnecting: "离线，正在尝试重新连接..."
+    continue_in_cloud_tooltip: "在 Cloud Mode 中继续此任务"
+    fork_conversation_locally: "在本地 fork 此会话"
+    open_conversation_in_desktop: "在 Warp 桌面端打开此会话"
+    viewing_snapshot: "你正在查看快照"
+    agent_task: "Agent 任务"
+    snapshot_subtitle: "此共享会话显示的是你打开时的状态。如果 Agent 仍在运行，请刷新以查看最新进度。"
+    metadata_directory: "目录：{value}"
+    metadata_source: "来源：{value}"
+    metadata_skill: "Skill：{value}"
+    metadata_run_time: "运行时间：{value}"
+    metadata_credits_used: "已用 Credits：{value}"
 
   # ── Ambient Agent ──
   ambient_agent:
