@@ -251,6 +251,8 @@ en:
 
   # ── Authentication ──
   auth:
+    loading: "Loading..."
+    web_handoff_failed: "Error authenticating - please refresh the page"
     log_out_confirm: "Log out?"
     show_running_processes: "Show running processes"
     new_login_detected: "New login detected"

@@ -251,6 +251,8 @@ zh-CN:
 
   # ── 认证 ──
   auth:
+    loading: "正在加载..."
+    web_handoff_failed: "认证出错，请刷新页面"
     log_out_confirm: "确定退出登录？"
     show_running_processes: "显示运行中的进程"
     new_login_detected: "检测到新登录"
