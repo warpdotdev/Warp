@@ -400,10 +400,11 @@ fn conversation_status_from_state(state: &AmbientAgentTaskState) -> Conversation
             blocked_action: String::new(),
         },
         AmbientAgentTaskState::Cancelled => ConversationStatus::Cancelled,
-        // The `Unknown` variant only exists for forward-compatibility with
-        // newer server states. Treat it as still working so the pill bar
-        // doesn't prematurely commit to a final badge.
-        AmbientAgentTaskState::Unknown => ConversationStatus::InProgress,
+        // The `Unknown` variant is a forward-compat catch-all for server
+        // states the client doesn't recognize yet. The rest of the codebase
+        // (`is_terminal`, `is_failure_like`, `Display`, `status_icon_and_color`)
+        // consistently treats it as a terminal error, so we follow suit.
+        AmbientAgentTaskState::Unknown => ConversationStatus::Error,
     }
 }
 
