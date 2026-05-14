@@ -585,6 +585,8 @@ zh-CN:
     add_workflow_argument: "添加工作流参数"
     value_optional: "值（可选）"
     add_environment_variables: "添加环境变量"
+    fill_out_workflow_arguments: "填写此工作流的参数并复制，以便在终端会话中运行"
+    environment_variables: "环境变量"
 
   referrals:
     header: "邀请朋友使用 Warp"

@@ -597,26 +597,27 @@ impl WorkflowView {
                 .finish(),
             )
         } else {
-            arguments_section_row.add_child(Shrinkable::new(
+            arguments_section_row.add_child(
+                Shrinkable::new(
                     1.,
                     Container::new(
                         appearance
-                        .ui_builder()
-                        .span("Fill out the arguments in this workflow and copy it to run in your terminal session")
-                        .with_soft_wrap()
-                        .with_style(UiComponentStyles {
-                            font_size: Some(EDITOR_FONT_SIZE),
-                            font_color: Some(sub_text_color),
-                            ..Default::default()
-                        })
-                        .build()
-                        .finish(),
+                            .ui_builder()
+                            .span(t!("arguments.fill_out_workflow_arguments").to_string())
+                            .with_soft_wrap()
+                            .with_style(UiComponentStyles {
+                                font_size: Some(EDITOR_FONT_SIZE),
+                                font_color: Some(sub_text_color),
+                                ..Default::default()
+                            })
+                            .build()
+                            .finish(),
                     )
                     .with_margin_left(40.)
-                    .finish()
+                    .finish(),
                 )
-                .finish()
-                );
+                .finish(),
+            );
         }
 
         arguments_section_row.finish()
@@ -838,7 +839,7 @@ impl WorkflowView {
             .with_children([
                 appearance
                     .ui_builder()
-                    .span("Environment variables")
+                    .span(t!("arguments.environment_variables").to_string())
                     .with_style(UiComponentStyles {
                         font_size: Some(13.),
                         ..Default::default()

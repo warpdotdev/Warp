@@ -585,6 +585,8 @@ en:
     add_workflow_argument: "Add a workflow argument"
     value_optional: "Value (optional)"
     add_environment_variables: "Add environment variables"
+    fill_out_workflow_arguments: "Fill out the arguments in this workflow and copy it to run in your terminal session"
+    environment_variables: "Environment variables"
 
   referrals:
     header: "Invite a friend to Warp"
