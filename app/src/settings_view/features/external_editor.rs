@@ -144,9 +144,9 @@ impl ExternalEditorView {
         mut make_action: impl FnMut(EditorChoice) -> ExternalEditorAction,
         ctx: &mut ViewContext<Dropdown<ExternalEditorAction>>,
     ) {
-        let default_option_text = "Default App";
+        let default_option_text = t!("features.default_app").to_string();
         let default_app = DropdownItem::new(
-            default_option_text,
+            default_option_text.clone(),
             make_action(EditorChoice::SystemDefault),
         );
 
@@ -176,7 +176,7 @@ impl ExternalEditorView {
             }
             EditorChoice::Warp => dropdown.set_selected_by_name("Warp", ctx),
             EditorChoice::EnvEditor => dropdown.set_selected_by_name("$EDITOR", ctx),
-            EditorChoice::SystemDefault => dropdown.set_selected_by_name(default_option_text, ctx),
+            EditorChoice::SystemDefault => dropdown.set_selected_by_name(&default_option_text, ctx),
         };
     }
 
@@ -276,9 +276,10 @@ impl View for ExternalEditorView {
     fn render(&self, app: &warpui::AppContext) -> Box<dyn warpui::Element> {
         let appearance = Appearance::as_ref(app);
 
+        let open_file_links_label = t!("features.choose_editor_open_file_links").to_string();
         let default_editor = render_dropdown_item(
             appearance,
-            "Choose an editor to open file links",
+            &open_file_links_label,
             None,
             None,
             LocalOnlyIconState::for_setting(
@@ -291,9 +292,11 @@ impl View for ExternalEditorView {
             &self.editor_dropdown,
         );
 
+        let open_code_panel_files_label =
+            t!("features.choose_editor_open_code_panel_files").to_string();
         let code_panels_editor = render_dropdown_item(
             appearance,
-            "Choose an editor to open files from the code review panel, project explorer, and global search",
+            &open_code_panel_files_label,
             None,
             None,
             LocalOnlyIconState::for_setting(
@@ -306,9 +309,10 @@ impl View for ExternalEditorView {
             &self.code_panels_editor_dropdown,
         );
 
+        let open_files_layout_label = t!("features.choose_layout_open_files").to_string();
         let default_layout = render_dropdown_item(
             appearance,
-            "Choose a layout to open files in Warp",
+            &open_files_layout_label,
             None,
             None,
             LocalOnlyIconState::for_setting(
@@ -356,7 +360,7 @@ impl View for ExternalEditorView {
         }
 
         column.add_child(render_body_item::<ExternalEditorAction>(
-            "Open Markdown files in Warp's Markdown Viewer by default".to_string(),
+            t!("features.open_markdown_in_viewer").to_string(),
             Some(AdditionalInfo {
                 mouse_state: self.markdown_viewer_mouse_state.clone(),
                 on_click_action: Some(ExternalEditorAction::OpenUrl(
