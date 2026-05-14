@@ -914,6 +914,9 @@ zh-CN:
     hunk_label: "Hunk:"
     reject: "拒绝"
     accept_and_save: "接受并保存"
+    saved_changes_not_reflected: "此文件有已保存但尚未显示在这里的更改。"
+    discard_this_version: "丢弃此版本"
+    overwrite: "覆盖"
 
   code_file_tree:
     open_in_new_pane: "在新面板中打开"

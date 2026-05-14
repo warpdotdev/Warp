@@ -914,6 +914,9 @@ en:
     hunk_label: "Hunk:"
     reject: "Reject"
     accept_and_save: "Accept and save"
+    saved_changes_not_reflected: "This file has saved changes that are not reflected here."
+    discard_this_version: "Discard this version"
+    overwrite: "Overwrite"
 
   code_file_tree:
     open_in_new_pane: "Open in new pane"
