@@ -6,6 +6,7 @@ use crate::{
         step::new_step_with_default_assertions, view_getters::theme_chooser_view,
     },
     settings_view::SettingsAction,
+    terminal::safe_mode_settings::SafeModeSettings,
     window_settings::WindowSettings,
     workspace::{Workspace, WorkspaceAction},
 };
@@ -29,6 +30,26 @@ pub fn toggle_setting(action: SettingsAction) -> TestStep {
                 &[workspace_view_id],
                 &WorkspaceAction::DispatchToSettingsTab(action.clone()),
             );
+        },
+    )
+}
+
+pub fn toggle_safe_mode_setting() -> TestStep {
+    new_step_with_default_assertions("Toggle safe mode setting").with_action(move |app, _, _| {
+        SafeModeSettings::handle(app).update(app, |settings, ctx| {
+            let _ = settings.safe_mode_enabled.toggle_and_save_value(ctx);
+        });
+    })
+}
+
+pub fn toggle_hide_secrets_in_block_list_setting() -> TestStep {
+    new_step_with_default_assertions("Toggle hide secrets in block list setting").with_action(
+        move |app, _, _| {
+            SafeModeSettings::handle(app).update(app, |settings, ctx| {
+                let _ = settings
+                    .hide_secrets_in_block_list
+                    .toggle_and_save_value(ctx);
+            });
         },
     )
 }

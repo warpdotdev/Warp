@@ -1391,13 +1391,6 @@ fn add_open_setting_pages_as_editable_binding(app: &mut AppContext) {
         .with_context_predicate(id!("Workspace"))
         .with_custom_action(CustomAction::ShowAboutWarp),
         EditableBinding::new(
-            "workspace:show_settings_privacy_page",
-            BindingDescription::new(crate::t!("keybinding-desc-workspace-show-settings-privacy")),
-            WorkspaceAction::ShowSettingsPage(SettingsSection::Privacy),
-        )
-        .with_group(bindings::BindingGroup::Settings.as_str())
-        .with_context_predicate(id!("Workspace")),
-        EditableBinding::new(
             "workspace:show_settings_warpify_page",
             BindingDescription::new(crate::t!("keybinding-desc-workspace-show-settings-warpify"))
                 .with_custom_description(

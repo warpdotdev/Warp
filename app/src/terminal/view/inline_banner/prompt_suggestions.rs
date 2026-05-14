@@ -20,9 +20,7 @@ use warpui::keymap::Keystroke;
 use warpui::platform::Cursor;
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::{elements::MouseStateHandle, Element};
-use warpui::{
-    AppContext, Entity, EventContext, ModelHandle, TypedActionView, ViewContext, ViewHandle,
-};
+use warpui::{AppContext, Entity, EventContext, ModelHandle, ViewContext, ViewHandle};
 use warpui::{SingletonEntity, View};
 
 use crate::terminal::view::{InputType, PromptSuggestion};
@@ -289,11 +287,6 @@ fn get_tooltip_text_for_alert_state(alert_state: &PromptAlertState) -> Option<St
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PromptSuggestionsEvent {
-    OpenPrivacyPage,
-}
-
 pub struct PromptSuggestionsView {
     ai_input_model: ModelHandle<BlocklistAIInputModel>,
     prompt_alert: ViewHandle<PromptAlertView>,
@@ -324,7 +317,7 @@ impl PromptSuggestionsView {
 }
 
 impl Entity for PromptSuggestionsView {
-    type Event = PromptSuggestionsEvent;
+    type Event = ();
 }
 
 impl View for PromptSuggestionsView {
@@ -393,17 +386,5 @@ impl View for PromptSuggestionsView {
             .with_padding_top(1.)
             .with_overdraw_bottom(1.)
             .finish()
-    }
-}
-
-impl TypedActionView for PromptSuggestionsView {
-    type Action = PromptSuggestionsEvent;
-
-    fn handle_action(&mut self, action: &PromptSuggestionsEvent, ctx: &mut ViewContext<Self>) {
-        match action {
-            PromptSuggestionsEvent::OpenPrivacyPage => {
-                ctx.emit(PromptSuggestionsEvent::OpenPrivacyPage);
-            }
-        }
     }
 }

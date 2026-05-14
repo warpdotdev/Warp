@@ -11,9 +11,11 @@ use crate::test::integration_testing::terminal::{
     clear_blocklist_to_remove_bootstrapped_blocks, hover_over_block_zero,
 };
 use crate::test::new_step_with_default_assertions;
-use crate::test::toggle_setting;
 use crate::test::TestStep;
 use warp::cmd_or_ctrl_shift;
+use warp::integration_testing::settings::{
+    toggle_hide_secrets_in_block_list_setting, toggle_safe_mode_setting,
+};
 use warp::integration_testing::terminal::util::current_shell_starter_and_version;
 use warp::integration_testing::terminal::{
     assert_context_menu_is_open, initialize_secret_regexes,
@@ -21,8 +23,6 @@ use warp::integration_testing::terminal::{
 };
 use warp::integration_testing::view_getters::single_terminal_view_for_tab;
 
-use warp::settings_view::PrivacyPageAction;
-use warp::settings_view::SettingsAction;
 use warp::terminal::model::index::Point;
 use warp::terminal::model::terminal_model::{BlockIndex, WithinBlock, WithinModel};
 use warp::terminal::shell::ShellType;
@@ -277,12 +277,8 @@ pub fn test_block_filtering_with_secrets() -> Builder {
         .with_step(initialize_secret_regexes())
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
         .with_step(clear_blocklist_to_remove_bootstrapped_blocks())
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleSafeMode,
-        )))
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleHideSecretsInBlockList,
-        )))
+        .with_step(toggle_safe_mode_setting())
+        .with_step(toggle_hide_secrets_in_block_list_setting())
         .with_step(SecretTestCase::execute_command())
         .with_step(open_block_filter_editor())
         .with_step(SecretTestCase::perform_filter_query())

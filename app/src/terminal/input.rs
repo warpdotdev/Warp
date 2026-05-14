@@ -186,7 +186,7 @@ use crate::{
         MAX_TIMES_TO_SHOW_AUTOSUGGESTION_HINT,
     },
     settings_view::{flags, SettingsSection},
-    terminal::view::inline_banner::{PromptSuggestionsEvent, PromptSuggestionsView},
+    terminal::view::inline_banner::PromptSuggestionsView,
     ui_components::{blended_colors, icons::Icon},
     user_config::WarpConfig,
     util::bindings::{self, CustomAction},
@@ -2886,11 +2886,8 @@ impl Input {
             },
         );
 
-        let prompt_suggestions_view = ctx
-            .add_typed_action_view(|ctx| PromptSuggestionsView::new(ai_input_model.clone(), ctx));
-        ctx.subscribe_to_view(&prompt_suggestions_view, move |me, _, event, ctx| {
-            me.handle_prompt_suggestions_event(event, ctx);
-        });
+        let prompt_suggestions_view =
+            ctx.add_view(|ctx| PromptSuggestionsView::new(ai_input_model.clone(), ctx));
 
         let slash_command_data_source = ctx.add_model(|ctx| {
             SlashCommandDataSource::new(
@@ -13484,18 +13481,6 @@ impl Input {
 
     pub fn should_show_universal_developer_input(&self, app: &AppContext) -> bool {
         InputSettings::as_ref(app).is_universal_developer_input_enabled(app)
-    }
-
-    fn handle_prompt_suggestions_event(
-        &mut self,
-        event: &PromptSuggestionsEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            PromptSuggestionsEvent::OpenPrivacyPage => {
-                ctx.emit(Event::OpenSettings(SettingsSection::Privacy))
-            }
-        }
     }
 
     /// Returns whether the input box is currently pinned to the top of the screen.

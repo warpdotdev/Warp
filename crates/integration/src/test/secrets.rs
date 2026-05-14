@@ -5,7 +5,7 @@ use warp::{
     integration_testing::{
         clipboard::assert_clipboard_contains_string,
         secret_redaction::{assert_secret_tooltip_open, assert_secrets_redacted_for_ai},
-        settings::toggle_setting,
+        settings::{toggle_hide_secrets_in_block_list_setting, toggle_safe_mode_setting},
         step::new_step_with_default_assertions,
         terminal::{
             assert_selected_block_index_is_last_renderable,
@@ -14,7 +14,6 @@ use warp::{
         },
         view_getters::single_terminal_view,
     },
-    settings_view::{PrivacyPageAction, SettingsAction},
     terminal::model::{index::Point, terminal_model::WithinModel},
 };
 use warpui::{async_assert, integration::TestStep};
@@ -29,12 +28,8 @@ pub fn test_secret_is_obfuscated_on_copy() -> Builder {
     new_builder()
         .with_step(initialize_secret_regexes())
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleSafeMode,
-        )))
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleHideSecretsInBlockList,
-        )))
+        .with_step(toggle_safe_mode_setting())
+        .with_step(toggle_hide_secrets_in_block_list_setting())
         .with_step(execute_command_for_single_terminal_in_tab(
             0,
             format!("echo {phone_number}"),
@@ -64,12 +59,8 @@ pub fn test_secret_tooltip_shows_on_click() -> Builder {
     new_builder()
         .with_step(initialize_secret_regexes())
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleSafeMode,
-        )))
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleHideSecretsInBlockList,
-        )))
+        .with_step(toggle_safe_mode_setting())
+        .with_step(toggle_hide_secrets_in_block_list_setting())
         .with_step(execute_command_for_single_terminal_in_tab(
             0,
             format!("echo {phone_number}"),
@@ -92,21 +83,15 @@ pub fn test_secret_tooltip_respects_safe_mode_setting() -> Builder {
         .set_should_run_test(skip_if_powershell_core_2303)
         .with_step(initialize_secret_regexes())
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleSafeMode,
-        ))) // Safe mode is now enabled.
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleHideSecretsInBlockList,
-        )))
+        .with_step(toggle_safe_mode_setting()) // Safe mode is now enabled.
+        .with_step(toggle_hide_secrets_in_block_list_setting())
         .with_step(execute_command_for_single_terminal_in_tab(
             0,
             format!("echo {phone_number}"),
             ExpectedExitStatus::Success,
             phone_number,
         ))
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleSafeMode,
-        ))) // Safe mode is now disabled.
+        .with_step(toggle_safe_mode_setting()) // Safe mode is now disabled.
         .with_step(
             // Note: ideally, we shouldn't hardcode a secret handle ID here but we're doing this
             // for now. This is affected by the addition/removal of new `GridType`s!
@@ -121,21 +106,15 @@ pub fn test_copy_secret_respects_safe_mode_setting() -> Builder {
     new_builder()
         .with_step(initialize_secret_regexes())
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleSafeMode,
-        )))
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleHideSecretsInBlockList,
-        )))
+        .with_step(toggle_safe_mode_setting())
+        .with_step(toggle_hide_secrets_in_block_list_setting())
         .with_step(execute_command_for_single_terminal_in_tab(
             0,
             format!("echo {phone_number}"),
             ExpectedExitStatus::Success,
             phone_number,
         ))
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleSafeMode,
-        )))
+        .with_step(toggle_safe_mode_setting())
         .with_step(
             new_step_with_default_assertions("Select block")
                 .with_keystrokes(&["cmdorctrl-up"])
@@ -166,12 +145,8 @@ pub fn test_alt_screen_secret_detection() -> Builder {
         .set_should_run_test(skip_if_powershell_core_2303)
         .with_step(initialize_secret_regexes())
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleSafeMode,
-        )))
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleHideSecretsInBlockList,
-        )))
+        .with_step(toggle_safe_mode_setting())
+        .with_step(toggle_hide_secrets_in_block_list_setting())
         .with_steps(run_alt_grid_program(
             "vim",
             0,
@@ -211,12 +186,8 @@ pub fn test_secret_case_sensitivity() -> Builder {
     new_builder()
         .with_step(initialize_secret_regexes())
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleSafeMode,
-        )))
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleHideSecretsInBlockList,
-        )))
+        .with_step(toggle_safe_mode_setting())
+        .with_step(toggle_hide_secrets_in_block_list_setting())
         // AWS Access ID pattern is case-sensitive by default
         .with_step(execute_command_for_single_terminal_in_tab(
             0,
@@ -256,9 +227,7 @@ pub fn test_secrets_are_always_redacted_in_ai_inputs() -> Builder {
         .with_step(initialize_secret_regexes())
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
         // Test case 1: Strikethrough mode - secrets should be redacted from AI inputs
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleSafeMode,
-        ))) // Enable safe mode (strikethrough by default since hide_secrets_in_block_list defaults to false)
+        .with_step(toggle_safe_mode_setting()) // Enable safe mode (strikethrough by default since hide_secrets_in_block_list defaults to false)
         .with_step(execute_command_for_single_terminal_in_tab(
             0,
             test_command.to_string(),
@@ -277,9 +246,7 @@ pub fn test_secrets_are_always_redacted_in_ai_inputs() -> Builder {
             ),
         )
         // Test case 2: Full obfuscation mode - secrets should also be redacted
-        .with_step(toggle_setting(SettingsAction::PrivacyPageToggle(
-            PrivacyPageAction::ToggleHideSecretsInBlockList,
-        ))) // Enable full hiding (Yes mode)
+        .with_step(toggle_hide_secrets_in_block_list_setting()) // Enable full hiding (Yes mode)
         .with_step(
             new_step_with_default_assertions("Test full obfuscation mode redaction").add_assertion(
                 assert_secrets_redacted_for_ai(

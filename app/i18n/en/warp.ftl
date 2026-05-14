@@ -568,7 +568,6 @@ settings-section-billing-and-usage = Billing and usage
 settings-section-appearance = Appearance
 settings-section-features = Features
 settings-section-keybindings = Keyboard shortcuts
-settings-section-privacy = Privacy
 settings-section-referrals = Referrals
 settings-section-shared-blocks = Shared blocks
 settings-section-warp-drive = Warp Drive
@@ -1134,42 +1133,6 @@ settings-code-project-explorer = Project explorer
 settings-code-project-explorer-desc = Adds an IDE-style project explorer / file tree to the left side tools panel.
 settings-code-global-search = Global file search
 settings-code-global-search-desc = Adds global file search to the left side tools panel.
-
-# --- ANCHOR-SUB-PRIVACY (agent-settings-privacy) ---
-settings-privacy-page-title = Privacy
-settings-privacy-modal-add-regex-title = Add regex pattern
-settings-privacy-safe-mode-title = Secret redaction
-settings-privacy-safe-mode-description = When this setting is enabled, Warp will scan blocks, the contents of Warp Drive objects, and Oz prompts for potential sensitive information and prevent saving or sending this data to any servers. You can customize this list via regexes.
-settings-privacy-user-secret-regex-title = Custom secret redaction
-settings-privacy-user-secret-regex-description = Use regex to define additional secrets or data you'd like to redact. This will take effect when the next command runs. You can use the inline (?i) flag as a prefix to your regex to make it case-insensitive.
-settings-privacy-telemetry-title = Help improve Warp
-settings-privacy-telemetry-description = OpenWarp keeps diagnostics local by default. Local Agent features do not require remote collection.
-settings-privacy-telemetry-description-old = OpenWarp keeps diagnostics local by default. Console input and output stay local unless you configure an external provider.
-settings-privacy-telemetry-free-tier-note = Local Agent features do not require analytics.
-settings-privacy-telemetry-docs-link = Read more about Warp's use of data
-settings-privacy-policy-title = Privacy policy
-settings-privacy-policy-link = Read Warp's privacy policy
-settings-privacy-tab-personal = Personal
-settings-privacy-tab-enterprise = Enterprise
-settings-privacy-enterprise-readonly = Enterprise secret redaction cannot be modified.
-settings-privacy-enterprise-empty = No enterprise regexes have been configured by your organization.
-settings-privacy-recommended = Recommended
-settings-privacy-add-all = Add all
-settings-privacy-add-regex-button = Add regex
-settings-privacy-enterprise-enabled-by-org = Enabled by your organization.
-settings-privacy-zdr-badge = ZDR
-settings-privacy-zdr-tooltip = Your administrator has enabled zero data retention for your team. User generated content will never be collected.
-settings-privacy-secret-display-mode-title = Secret visual redaction mode
-settings-privacy-secret-display-mode-description = Choose how secrets are visually presented in the block list while keeping them searchable. This setting only affects what you see in the block list.
-settings-privacy-crash-reports-title = Send crash reports
-settings-privacy-crash-reports-description = Crash reports assist with debugging and stability improvements.
-settings-privacy-cloud-conv-title = Store AI conversations locally
-settings-privacy-cloud-conv-description-on = Agent conversations are stored on this machine for local product functionality.
-settings-privacy-cloud-conv-description-off = Agent conversations are stored locally on this machine and are removed when local data is cleared.
-settings-privacy-org-managed-tooltip = This setting is managed by your organization.
-settings-privacy-network-log-title = Network log console
-settings-privacy-network-log-description = We've built a native console that allows you to view all communications from Warp to external servers to ensure you feel comfortable that your work is always kept safe.
-settings-privacy-network-log-link = View network logging
 
 # --- ANCHOR-SUB-EXEC-MODAL-BLOCKS (agent-settings-misc) ---
 # ---- execution_profile_view ----
@@ -1777,7 +1740,6 @@ keybinding-desc-workspace-show-settings-keyboard-shortcuts = Open Settings: Keyb
 keybinding-desc-workspace-show-settings-keyboard-shortcuts-menu = Configure Keyboard Shortcuts...
 keybinding-desc-workspace-show-settings-about = Open Settings: About
 keybinding-desc-workspace-show-settings-about-menu = About Warp
-keybinding-desc-workspace-show-settings-privacy = Open Settings: Privacy
 keybinding-desc-workspace-show-settings-warpify = Open Settings: Warpify
 keybinding-desc-workspace-show-settings-warpify-menu = Configure Warpify...
 keybinding-desc-workspace-show-settings-ai = Open Settings: AI
@@ -2665,14 +2627,6 @@ workflow-enum-new = New
 workflow-alias-name-placeholder = alias name
 workflow-add-argument-tooltip = Add a workflow argument
 
-# --- ANCHOR-SUB-SETTINGS-PRIVACY-ADD-REGEX ---
-# Privacy settings add regex modal (app/src/settings_view/privacy/add_regex_modal.rs)
-settings-privacy-add-regex-name-placeholder = e.g. "Google API Key"
-settings-privacy-add-regex-name-label = Name (optional)
-settings-privacy-add-regex-pattern-label = Regex pattern
-settings-privacy-add-regex-invalid = Invalid regex
-settings-privacy-add-regex-cancel = Cancel
-
 # Workspace panels (app/src/workspace/view/*)
 workspace-conversation-list-search = Search
 workspace-conversation-list-active = ACTIVE
@@ -3434,7 +3388,6 @@ notifications-banner-allow-permissions-title = Don't forget to 'Allow' the permi
 notifications-banner-configure-notifications = Configure notifications
 notifications-banner-set-permissions = Set permissions
 ai-edit-api-keys = Edit API Keys
-ai-manage-privacy-settings = Manage privacy settings
 ai-block-manage-agent-permissions = Manage Agent permissions
 agent-zero-state-visit-docs = Visit docs
 ai-execution-profile-agent-decides = Agent decides

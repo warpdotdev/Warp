@@ -14,7 +14,6 @@ use super::{
     keybindings::KeybindingsView,
     main_page::MainSettingsPageView,
     mcp_servers_page::MCPServersSettingsPageView,
-    privacy_page::PrivacyPageView,
     warp_drive_page::WarpDriveSettingsPageView,
     warpify_page::WarpifyPageView,
     SettingsSection,
@@ -109,7 +108,6 @@ pub enum SettingsPageViewHandle {
     // OpenWarp Wave 6-8:`SharedBlocks` / `Referrals` variant 随 `ShowBlocksView` /
     // `ReferralsPageView` 与对应 ServerApi client trait 物理删。
     // OpenWarp Wave 7-3:`CloudEnvironments` variant 随 ambient-agent UI 子系统物理删。
-    Privacy(ViewHandle<PrivacyPageView>),
     Warpify(ViewHandle<WarpifyPageView>),
     AI(ViewHandle<AISettingsPageView>),
     MCPServers(ViewHandle<MCPServersSettingsPageView>),
@@ -129,7 +127,6 @@ impl SettingsPageViewHandle {
             // OpenWarp Wave 3-1:`OzCloudAPIKeys` arm 随 `platform_page` 一同物理删。
             // OpenWarp Wave 6-8:`SharedBlocks` / `Referrals` arm 随 variant 物理删。
             // OpenWarp Wave 7-3:`CloudEnvironments` arm 随 ambient-agent UI 一同物理删。
-            Privacy(view_handle) => ChildView::new(view_handle).finish(),
             Warpify(view_handle) => ChildView::new(view_handle).finish(),
             AI(view_handle) => ChildView::new(view_handle).finish(),
             MCPServers(view_handle) => ChildView::new(view_handle).finish(),
