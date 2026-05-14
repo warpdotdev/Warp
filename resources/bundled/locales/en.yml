@@ -512,6 +512,9 @@ en:
     remove_confirm_body: "This tab config will be permanently deleted. This action cannot be undone."
 
   tips:
+    skip_welcome_tips: "Skip Welcome Tips"
+    complete: "Complete!"
+    welcome_tips_complete_description: "Nice work on finishing the welcome tips!"
     close_welcome_tips: "Close Welcome Tips"
 
   auto_reload:

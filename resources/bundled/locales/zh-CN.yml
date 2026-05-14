@@ -512,6 +512,9 @@ zh-CN:
     remove_confirm_body: "此标签页配置将被永久删除。此操作无法撤销。"
 
   tips:
+    skip_welcome_tips: "跳过欢迎提示"
+    complete: "完成！"
+    welcome_tips_complete_description: "欢迎提示已全部完成，做得不错！"
     close_welcome_tips: "关闭欢迎提示"
 
   auto_reload:
