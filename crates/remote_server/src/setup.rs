@@ -429,13 +429,13 @@ fn pinned_version() -> &'static str {
 
 /// Returns the version key used to identify remote-server download artifacts.
 ///
-/// Local and Dev builds use the rolling/unpinned remote-server artifact, so they
-/// share a stable cache key instead of pretending a Cargo package version maps
-/// to a pinned CDN artifact.
+/// This must match the versioning used by [`download_tarball_url`] and
+/// [`install_script`], so versioned download URLs do not reuse stale tarballs
+/// from a previous client version.
 pub fn remote_server_artifact_version() -> &'static str {
     match ChannelState::channel() {
-        Channel::Local | Channel::Dev => REMOTE_SERVER_ARTIFACT_VERSION_UNPINNED,
-        Channel::Stable | Channel::Preview | Channel::Integration | Channel::Oss => {
+        Channel::Local | Channel::Oss => REMOTE_SERVER_ARTIFACT_VERSION_UNPINNED,
+        Channel::Stable | Channel::Preview | Channel::Dev | Channel::Integration => {
             pinned_version()
         }
     }
