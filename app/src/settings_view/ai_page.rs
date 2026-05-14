@@ -4591,9 +4591,11 @@ impl AgentsWidget {
             Some(&view.command_denylist_editor),
             appearance,
         );
+        let command_denylist_label = t!("settings.command_denylist").to_string();
+        let command_denylist_description = t!("settings.command_denylist_description").to_string();
         render_ai_list(
-            "Command denylist",
-            "Regular expressions to match commands that the Warp Agent should always ask permission to execute.",
+            &command_denylist_label,
+            &command_denylist_description,
             list,
             view,
             ai_settings,
@@ -4626,9 +4628,12 @@ impl AgentsWidget {
             appearance,
         );
 
+        let command_allowlist_label = t!("settings.command_allowlist").to_string();
+        let command_allowlist_description =
+            t!("settings.command_allowlist_description").to_string();
         render_ai_list(
-            "Command allowlist",
-            "Regular expressions to match commands that can be automatically executed by the Warp Agent.",
+            &command_allowlist_label,
+            &command_allowlist_description,
             list,
             view,
             ai_settings,
@@ -4664,9 +4669,12 @@ impl AgentsWidget {
             appearance,
         );
 
+        let directory_allowlist_label = t!("settings.directory_allowlist").to_string();
+        let directory_allowlist_description =
+            t!("settings.directory_allowlist_description").to_string();
         render_ai_list(
-            "Directory allowlist",
-            "Give the agent file access to certain directories.",
+            &directory_allowlist_label,
+            &directory_allowlist_description,
             list,
             view,
             ai_settings,
@@ -4726,12 +4734,12 @@ impl AgentsWidget {
             .finish()
         };
 
+        let base_model_label = t!("settings.base_model").to_string();
+        let base_model_description = t!("settings.base_model_description").to_string();
         render_dropdown_item(
             appearance,
-            "Base model",
-            Some(
-                "This model serves as the primary engine behind the Warp Agent. It powers most interactions and invokes other models for tasks like planning or code generation when necessary. Warp may automatically switch to alternate models based on model availability or for auxiliary tasks such as conversation summarization.",
-            ),
+            &base_model_label,
+            Some(&base_model_description),
             Some(show_in_prompt_checkbox),
             LocalOnlyIconState::Hidden,
             (!ai_settings.is_any_ai_enabled(app))
@@ -4750,7 +4758,7 @@ impl AgentsWidget {
     ) -> Box<dyn Element> {
         let code_settings = CodeSettings::as_ref(app);
         let toggle = render_ai_setting_toggle::<CodebaseContextEnabled>(
-            "Codebase Context",
+            t!("settings.codebase_context").to_string(),
             AISettingsPageAction::ToggleCodebaseContext,
             *code_settings.codebase_context_enabled,
             ai_settings.is_any_ai_enabled(app),
@@ -4760,11 +4768,9 @@ impl AgentsWidget {
         );
 
         let codebase_context_description = vec![
-            FormattedTextFragment::plain_text(
-                "Allow the Warp Agent to generate an outline of your codebase that can be used for context. No code is ever stored on our servers. ",
-            ),
+            FormattedTextFragment::plain_text(t!("settings.codebase_context_description")),
             FormattedTextFragment::hyperlink(
-                "Learn more",
+                t!("settings.learn_more"),
                 "https://docs.warp.dev/agent-platform/capabilities/codebase-context",
             ),
         ];
@@ -4817,7 +4823,7 @@ impl AgentsWidget {
         app: &AppContext,
     ) -> Box<dyn Element> {
         let header = Container::new(render_body_item_label_with_icon::<AISettingsPageAction>(
-            "Call MCP servers".into(),
+            t!("settings.call_mcp_servers").to_string(),
             Icon::Dataflow,
             Some(styles::header_font_color(
                 ai_settings.is_any_ai_enabled(app),
@@ -4900,7 +4906,7 @@ impl AgentsWidget {
             BlocklistAIPermissions::as_ref(app).get_mcp_permissions_setting(app, None);
 
         let permission_setting = self.render_execution_profile_dropdown(
-            "Call MCP servers",
+            &t!("settings.call_mcp_servers").to_string(),
             Icon::Dataflow,
             current_mcp_setting.description(),
             &view.mcp_permissions_dropdown_menu,
@@ -4913,9 +4919,11 @@ impl AgentsWidget {
         if current_mcp_setting == ActionPermission::AlwaysAsk
             || current_mcp_setting == ActionPermission::AgentDecides
         {
+            let mcp_allowlist_label = t!("settings.mcp_allowlist").to_string();
+            let mcp_allowlist_description = t!("settings.mcp_allowlist_description").to_string();
             let allowlist = self.render_mcp_list(
-                "MCP allowlist",
-                "Allow the Warp Agent to call these MCP servers.",
+                &mcp_allowlist_label,
+                &mcp_allowlist_description,
                 &view.mcp_allowlist_dropdown,
                 BlocklistAIPermissions::as_ref(app).get_mcp_allowlist(app, None),
                 view.mcp_allowlist_mouse_state_handles.clone(),
@@ -4930,9 +4938,11 @@ impl AgentsWidget {
         if current_mcp_setting == ActionPermission::AlwaysAllow
             || current_mcp_setting == ActionPermission::AgentDecides
         {
+            let mcp_denylist_label = t!("settings.mcp_denylist").to_string();
+            let mcp_denylist_description = t!("settings.mcp_denylist_description").to_string();
             let denylist = self.render_mcp_list(
-                "MCP denylist",
-                "The Warp Agent will always ask for permission before calling any MCP servers on this list.",
+                &mcp_denylist_label,
+                &mcp_denylist_description,
                 &view.mcp_denylist_dropdown,
                 BlocklistAIPermissions::as_ref(app).get_mcp_denylist(app, None),
                 view.mcp_denylist_mouse_state_handles.clone(),
