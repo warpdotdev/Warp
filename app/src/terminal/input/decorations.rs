@@ -152,6 +152,49 @@ impl Input {
         true
     }
 
+    /// 高亮已登记的 @ 上下文引用，让它们和 slash command 一样有可识别的样式。
+    fn apply_at_context_reference_highlighting(
+        &mut self,
+        buffer_text: &str,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        let references = self
+            .ai_context_model
+            .as_ref(ctx)
+            .pending_at_context_attachments()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut ranges = Vec::new();
+
+        for reference in references {
+            let mut search_start = 0;
+            while let Some(relative_start) = buffer_text[search_start..].find(&reference) {
+                let start_byte = search_start + relative_start;
+                let end_byte = start_byte + reference.len();
+                let start_char = buffer_text[..start_byte].chars().count();
+                let end_char = start_char + reference.chars().count();
+                ranges.push(CharOffset::from(start_char)..CharOffset::from(end_char));
+                search_start = end_byte;
+            }
+        }
+
+        if ranges.is_empty() {
+            return false;
+        }
+
+        let theme = Appearance::as_ref(ctx).theme();
+        let color = theme.ansi_fg_magenta();
+        self.editor.update(ctx, |editor, ctx| {
+            editor.update_buffer_styles(
+                ranges,
+                TextStyleOperation::default().set_syntax_color(color),
+                ctx,
+            )
+        });
+        true
+    }
+
     /// Computes information about the currently-entered command in a background
     /// task and then uses it to decorate the input, specifically applying
     /// styles for syntax highlighting and error underlining.
@@ -179,6 +222,7 @@ impl Input {
         {
             self.clear_decorations(ctx);
             self.apply_slash_command_prefix_highlighting(&buffer_text, ctx);
+            self.apply_at_context_reference_highlighting(&buffer_text, ctx);
             mode.command_decoration = false;
 
             // Return early because there are no input background jobs to run.

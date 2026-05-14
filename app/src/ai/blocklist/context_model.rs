@@ -361,6 +361,9 @@ pub struct BlocklistAIContextModel {
     /// Storage for diff hunk attachments that can be referenced in queries
     pending_inline_diff_hunk_attachments: HashMap<String, AIAgentAttachment>,
 
+    /// 输入框中以可见 @名称 展示的上下文附件。
+    pending_inline_at_context_attachments: HashMap<String, AIAgentAttachment>,
+
     /// The pending query could be new, which means it starts a new conversation, or follow-up, which means
     /// it continues the selected conversation.
     ///
@@ -550,6 +553,7 @@ impl BlocklistAIContextModel {
             terminal_view_id,
             agent_view_controller,
             pending_inline_diff_hunk_attachments: Default::default(),
+            pending_inline_at_context_attachments: Default::default(),
             pending_document_id: None,
             auto_attached_agent_view_user_block_ids: Vec::new(),
             queue_next_prompt_enabled: false,
@@ -578,6 +582,7 @@ impl BlocklistAIContextModel {
             terminal_view_id,
             agent_view_controller,
             pending_inline_diff_hunk_attachments: Default::default(),
+            pending_inline_at_context_attachments: Default::default(),
             pending_document_id: None,
             auto_attached_agent_view_user_block_ids: Vec::new(),
             queue_next_prompt_enabled: false,
@@ -591,6 +596,7 @@ impl BlocklistAIContextModel {
         self.set_pending_context_selected_text(None, true, ctx);
         self.clear_pending_attachments(ctx);
         self.clear_diff_hunk_attachments();
+        self.clear_at_context_attachments();
         self.set_pending_document(None, ctx);
         self.auto_attached_agent_view_user_block_ids.clear();
     }
@@ -598,7 +604,9 @@ impl BlocklistAIContextModel {
     /// Returns `true` if the next AI query has any context that should force the input to be
     /// locked in AI mode (skipping NLD): a pending image or file attachment, or a pending block.
     pub fn has_locking_attachment(&self) -> bool {
-        !self.pending_context_block_ids.is_empty() || !self.pending_attachments.is_empty()
+        !self.pending_context_block_ids.is_empty()
+            || !self.pending_attachments.is_empty()
+            || !self.pending_inline_at_context_attachments.is_empty()
     }
 
     /// Returns the set `BlockId`s corresponding to blocks to be included as context with the next
@@ -1214,6 +1222,84 @@ impl BlocklistAIContextModel {
     /// Clear all diff hunk attachments (should be called after each request)
     pub fn clear_diff_hunk_attachments(&mut self) {
         self.pending_inline_diff_hunk_attachments.clear();
+    }
+
+    /// 登记一个可在后续 query 中按 @名称 引用的上下文附件。
+    pub fn register_at_context_attachment(
+        &mut self,
+        reference: String,
+        attachment: AIAgentAttachment,
+    ) {
+        self.pending_inline_at_context_attachments
+            .insert(reference, attachment);
+    }
+
+    /// 返回按可见引用字符串索引的 @ 上下文附件。
+    pub fn pending_at_context_attachments(&self) -> &HashMap<String, AIAgentAttachment> {
+        &self.pending_inline_at_context_attachments
+    }
+
+    fn at_context_references_in_query(&self, query: &str) -> HashSet<String> {
+        let mut references = self
+            .pending_inline_at_context_attachments
+            .keys()
+            .collect::<Vec<_>>();
+        references
+            .sort_by(|left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)));
+
+        let mut used_ranges = Vec::new();
+        let mut matched_references = HashSet::new();
+
+        for reference in references {
+            let mut search_start = 0;
+            while search_start <= query.len() {
+                let Some(index) = query[search_start..].find(reference.as_str()) else {
+                    break;
+                };
+                let start = search_start + index;
+                let end = start + reference.len();
+                let overlaps_used_range = used_ranges
+                    .iter()
+                    .any(|range: &std::ops::Range<usize>| start < range.end && end > range.start);
+
+                if !overlaps_used_range {
+                    used_ranges.push(start..end);
+                    matched_references.insert(reference.clone());
+                }
+
+                search_start = end;
+            }
+        }
+
+        matched_references
+    }
+
+    /// 返回当前 query 中仍然存在的 @ 上下文附件。
+    pub fn referenced_at_context_attachments(
+        &self,
+        query: &str,
+    ) -> HashMap<String, AIAgentAttachment> {
+        self.at_context_references_in_query(query)
+            .into_iter()
+            .filter_map(|reference| {
+                self.pending_inline_at_context_attachments
+                    .get(&reference)
+                    .cloned()
+                    .map(|attachment| (reference, attachment))
+            })
+            .collect()
+    }
+
+    /// 删除输入框中已经不存在的 @ 上下文附件。
+    pub fn retain_at_context_attachments_in_query(&mut self, query: &str) {
+        let references = self.at_context_references_in_query(query);
+        self.pending_inline_at_context_attachments
+            .retain(|reference, _attachment| references.contains(reference));
+    }
+
+    /// 清空所有 @ 上下文附件。
+    pub fn clear_at_context_attachments(&mut self) {
+        self.pending_inline_at_context_attachments.clear();
     }
 
     /// Appends attachments to the pending list.

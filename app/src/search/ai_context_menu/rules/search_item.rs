@@ -217,6 +217,12 @@ impl SearchItem for RuleSearchItem {
                 JsonObjectType::AIFact,
             )),
             object_uid: self.rule_uid.clone(),
+            display_name: self
+                .rule_name
+                .as_deref()
+                .filter(|name| !name.trim().is_empty())
+                .unwrap_or(&self.rule_content)
+                .to_string(),
         }
     }
 

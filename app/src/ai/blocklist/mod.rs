@@ -69,6 +69,9 @@ pub(crate) use view_util::format_credits;
 pub use crate::ai::blocklist::block::{secret_redaction, TextLocation};
 pub use block::keyboard_navigable_buttons;
 pub use block::toggleable_items;
+pub(crate) use controller::input_context::{
+    drive_object_attachment_for_reference, plan_attachment_for_reference,
+};
 pub use controller::input_context::{
     BLOCK_CONTEXT_ATTACHMENT_REGEX, DIFF_HUNK_ATTACHMENT_REGEX, DRIVE_OBJECT_ATTACHMENT_REGEX,
 };

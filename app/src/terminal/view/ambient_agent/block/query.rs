@@ -81,6 +81,7 @@ fn render_user_query(
             false,
             true,
             &[],
+            &[],
             None,
             app,
         )

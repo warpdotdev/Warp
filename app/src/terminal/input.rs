@@ -24,8 +24,10 @@ mod terminal_message_bar;
 mod universal;
 pub mod user_query;
 
+use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent::{AIAgentExchangeId, CancellationReason};
+use crate::ai::agent::{AIAgentAttachment, AIAgentExchangeId, CancellationReason};
+use crate::ai::agent_conversations_model::AgentConversationsModel;
 use crate::ai::blocklist::agent_view::shortcuts::AgentShortcutViewModel;
 use crate::ai::blocklist::agent_view::{AgentViewEntryOrigin, EphemeralMessageModel};
 use crate::ai::blocklist::block::cli_controller::CLISubagentController;
@@ -103,6 +105,7 @@ use crate::{
     ai::{
         agent::{AIAgentContext, EntrypointType},
         blocklist::{
+            drive_object_attachment_for_reference, plan_attachment_for_reference,
             prompt::prompt_alert::PromptAlertView, render_ai_agent_mode_icon,
             render_ai_follow_up_icon, telemetry_banner::should_collect_ai_ugc_telemetry,
             BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIController,
@@ -8356,6 +8359,113 @@ impl Input {
         }
     }
 
+    fn enter_ai_mode_for_ai_context_menu_selection(&mut self, ctx: &mut ViewContext<Self>) {
+        if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
+            self.ensure_agent_mode_for_ai_features(false, ctx);
+        }
+    }
+
+    fn at_context_reference_for_display_name(
+        &self,
+        display_name: &str,
+        fallback: &str,
+        ctx: &ViewContext<Self>,
+    ) -> String {
+        let normalized_name = display_name
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let name = if normalized_name.is_empty() {
+            fallback.to_string()
+        } else {
+            normalized_name
+        };
+        let base_reference = format!("@{name}");
+        let mut reference = base_reference.clone();
+        let mut suffix = 2;
+
+        while self
+            .ai_context_model
+            .as_ref(ctx)
+            .pending_at_context_attachments()
+            .contains_key(&reference)
+        {
+            reference = format!("{base_reference} ({suffix})");
+            suffix += 1;
+        }
+
+        reference
+    }
+
+    fn prune_stale_at_context_attachments(&mut self, ctx: &mut ViewContext<Self>) {
+        let mut query = self.buffer_text(ctx);
+        if let InputSuggestionsMode::AIContextMenu {
+            at_symbol_position, ..
+        } = self.suggestions_mode_model.as_ref(ctx).mode()
+        {
+            let cursor_position = self.editor.read(ctx, |editor, ctx| {
+                editor.start_byte_index_of_last_selection(ctx)
+            });
+            let at_symbol_position = *at_symbol_position;
+            let cursor_position = cursor_position.as_usize();
+            if at_symbol_position <= cursor_position && cursor_position <= query.len() {
+                query.replace_range(at_symbol_position..cursor_position, "");
+            }
+        }
+
+        self.ai_context_model.update(ctx, |model, _ctx| {
+            model.retain_at_context_attachments_in_query(&query);
+        });
+    }
+
+    fn insert_ai_context_menu_attachment_reference(
+        &mut self,
+        reference: String,
+        attachment: AIAgentAttachment,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.enter_ai_mode_for_ai_context_menu_selection(ctx);
+        self.ai_context_model.update(ctx, |model, _ctx| {
+            model.register_at_context_attachment(reference.clone(), attachment);
+        });
+        self.replace_at_symbol_with_text(&reference, ctx);
+    }
+
+    fn conversation_attachment_for_ai_context_menu(
+        &self,
+        conversation_id: &str,
+        title: &str,
+        ctx: &ViewContext<Self>,
+    ) -> AIAgentAttachment {
+        let conversation_token = ServerConversationToken::new(conversation_id.to_string());
+        let history_model = BlocklistAIHistoryModel::as_ref(ctx);
+        if let Some(local_conversation_id) =
+            history_model.find_conversation_id_by_server_token(&conversation_token)
+        {
+            if let Some(conversation) = history_model.conversation(&local_conversation_id) {
+                let content =
+                    conversation.export_to_markdown(Some(self.ai_action_model.as_ref(ctx)));
+                if !content.trim().is_empty() {
+                    return AIAgentAttachment::PlainText(content);
+                }
+            }
+        }
+
+        if let Some(task) = AgentConversationsModel::as_ref(ctx)
+            .tasks_iter()
+            .find(|task| task.conversation_id.as_deref() == Some(conversation_id))
+        {
+            return AIAgentAttachment::PlainText(format!(
+                "Conversation: {}\n\nPrompt:\n{}",
+                task.title, task.prompt
+            ));
+        }
+
+        AIAgentAttachment::PlainText(format!(
+            "Conversation: {title}\n\nConversation token: {conversation_id}"
+        ))
+    }
+
     fn handle_editor_event(&mut self, event: &EditorEvent, ctx: &mut ViewContext<Self>) {
         // We want to clear the token description hover on any editor action
         self.hide_x_ray(ctx);
@@ -9399,6 +9509,7 @@ impl Input {
                 }
             }
             EditorEvent::AcceptAIContextMenuItem(action) => {
+                self.prune_stale_at_context_attachments(ctx);
                 // Handle different action types
                 match action {
                     AIContextMenuSearchableAction::InsertText { text } => {
@@ -9468,19 +9579,53 @@ impl Input {
                     AIContextMenuSearchableAction::InsertDriveObject {
                         object_type,
                         object_uid,
+                        display_name,
                     } => {
-                        // For InsertDriveObject, format as <object_type:uid> and replace the "@" and any filter text
-                        let drive_object_text = format!("<{object_type}:{object_uid}>");
-                        self.replace_at_symbol_with_text(&drive_object_text, ctx);
+                        let reference = self.at_context_reference_for_display_name(
+                            display_name,
+                            object_uid,
+                            ctx,
+                        );
+                        let attachment = drive_object_attachment_for_reference(
+                            object_uid,
+                            object_type.clone(),
+                            ctx,
+                        );
+                        self.insert_ai_context_menu_attachment_reference(
+                            reference, attachment, ctx,
+                        );
                     }
-                    AIContextMenuSearchableAction::InsertPlan { ai_document_uid } => {
-                        // For InsertPlan, format as <plan:uid> and replace the "@" and any filter text
-                        let ai_document_text = format!("<plan:{ai_document_uid}>");
-                        self.replace_at_symbol_with_text(&ai_document_text, ctx);
+                    AIContextMenuSearchableAction::InsertPlan {
+                        ai_document_uid,
+                        display_name,
+                    } => {
+                        if let Some(attachment) =
+                            plan_attachment_for_reference(ai_document_uid, ctx)
+                        {
+                            let reference = self.at_context_reference_for_display_name(
+                                display_name,
+                                ai_document_uid,
+                                ctx,
+                            );
+                            self.insert_ai_context_menu_attachment_reference(
+                                reference, attachment, ctx,
+                            );
+                        }
                     }
-                    AIContextMenuSearchableAction::InsertConversation { conversation_id } => {
-                        let conversation_text = format!("<convo:{conversation_id}>");
-                        self.replace_at_symbol_with_text(&conversation_text, ctx);
+                    AIContextMenuSearchableAction::InsertConversation {
+                        conversation_id,
+                        title,
+                    } => {
+                        let reference =
+                            self.at_context_reference_for_display_name(title, conversation_id, ctx);
+                        let attachment = self.conversation_attachment_for_ai_context_menu(
+                            conversation_id,
+                            title,
+                            ctx,
+                        );
+                        self.insert_ai_context_menu_attachment_reference(
+                            reference, attachment, ctx,
+                        );
                     }
                     AIContextMenuSearchableAction::InsertDiffSet { diff_mode } => {
                         // Emit event to the TerminalView to attach the diff set
@@ -9489,6 +9634,7 @@ impl Input {
                         });
                     }
                     AIContextMenuSearchableAction::InsertSkill { name } => {
+                        self.enter_ai_mode_for_ai_context_menu_selection(ctx);
                         self.replace_at_symbol_with_text(&format!("/{name}"), ctx);
                     }
                 }
@@ -12197,6 +12343,7 @@ impl Input {
             });
         }
 
+        self.prune_stale_at_context_attachments(ctx);
         let ai_query = self.editor.as_ref(ctx).buffer_text(ctx);
         // We don't send AI requests with empty queries, even if the context is non-empty. We
         // also don't send a query when the input (query plus context) is over the length limit.

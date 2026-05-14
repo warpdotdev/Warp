@@ -10,17 +10,20 @@ use warpui::App;
 use super::{blocklist_image_asset_source, ResolvedBlocklistImageSources};
 use super::{
     collect_visual_markdown_lightbox_collection, compute_visual_section_width,
-    inline_image_source_label, is_supported_blocklist_image_source, lightbox_trigger_for_section,
+    display_query_without_context_references, inline_image_source_label,
+    is_supported_blocklist_image_source, lightbox_trigger_for_section, query_context_references,
     query_prefix_highlight_len, render_scrollable_collapsible_content, text_sections_with_indices,
-    CollapsibleElementState, CollapsibleExpansionState, VisualMarkdownLightboxCollection,
+    CollapsibleElementState, CollapsibleExpansionState, QueryContextReference,
+    VisualMarkdownLightboxCollection,
 };
 use crate::{
     ai::agent::{
-        AIAgentInput, AIAgentTextSection, AgentOutputImage, AgentOutputImageLayout,
-        AgentOutputMermaidDiagram, MessageId, UserQueryMode,
+        AIAgentAttachment, AIAgentInput, AIAgentTextSection, AgentOutputImage,
+        AgentOutputImageLayout, AgentOutputMermaidDiagram, MessageId, UserQueryMode,
     },
     features::FeatureFlag,
     search::slash_command_menu::static_commands::commands,
+    ui_components::icons::Icon,
 };
 use ui_components::lightbox::{LightboxImage, LightboxImageSource};
 use warpui::{elements::Empty, Element};
@@ -80,6 +83,58 @@ fn query_prefix_highlight_len_keeps_existing_plan_highlighting() {
     assert_eq!(
         query_prefix_highlight_len(&input, "/plan write tests"),
         Some(commands::PLAN.name.len())
+    );
+}
+
+#[test]
+fn query_context_references_only_returns_real_at_attachments() {
+    let input = AIAgentInput::UserQuery {
+        query: "@base 输出提示词".to_string(),
+        context: Arc::new([]),
+        static_query_type: None,
+        referenced_attachments: HashMap::from([
+            (
+                "@base".to_string(),
+                AIAgentAttachment::PlainText("12".to_string()),
+            ),
+            (
+                "manual.txt".to_string(),
+                AIAgentAttachment::PlainText("ignored".to_string()),
+            ),
+        ]),
+        user_query_mode: UserQueryMode::Normal,
+        running_command: None,
+        intended_agent: None,
+    };
+
+    assert_eq!(
+        query_context_references(&input, "/agent @base 输出提示词"),
+        vec![QueryContextReference {
+            label: "@base".to_string(),
+            icon: Icon::AtSign,
+        }]
+    );
+}
+
+#[test]
+fn display_query_without_context_references_removes_chip_text() {
+    let references = vec![
+        QueryContextReference {
+            label: "@base".to_string(),
+            icon: Icon::AtSign,
+        },
+        QueryContextReference {
+            label: "@Plan Context".to_string(),
+            icon: Icon::Notebook,
+        },
+    ];
+
+    assert_eq!(
+        display_query_without_context_references(
+            "/agent @base compare with @Plan Context now",
+            &references,
+        ),
+        "/agent compare with now"
     );
 }
 

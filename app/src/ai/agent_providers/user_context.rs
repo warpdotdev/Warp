@@ -20,16 +20,19 @@
 //!
 //! ## 作用域:per-input,不影响 system prompt
 //!
-//! - 这些附件只注入**当前 UserQuery** 对应的 user message,不进 system prompt
-//! - 历史轮的附件不重发(warp 自家也不重发,InputContext 是单 Request 级 payload)
+//! - 这些附件只注入 user message,不进 system prompt
+//! - 历史轮的 `referenced_attachments` 会从持久化 message 重新渲染,避免 BYOP 多轮丢上下文
 //! - env / git / skills / project_rules / codebase / current_time 这些**环境型** context
 //!   仍由 `prompt_renderer` 渲染进 system,与本模块互不重叠
 
+use std::collections::HashMap;
+
 use base64::Engine;
 
-use crate::ai::agent::{AIAgentContext, ImageContext};
+use crate::ai::agent::{AIAgentAttachment, AIAgentContext, DriveObjectPayload, ImageContext};
 use crate::ai::block_context::BlockContext;
 use ai::agent::action_result::{AnyFileContent, FileContext};
+use warp_multi_agent_api as api;
 
 /// `collect_user_attachments` 返回的双通道结果。
 ///
@@ -155,6 +158,44 @@ pub fn collect_user_attachments(ctx: &[AIAgentContext]) -> UserAttachments {
     out
 }
 
+pub fn render_referenced_attachments(
+    referenced_attachments: &HashMap<String, AIAgentAttachment>,
+) -> Option<String> {
+    if referenced_attachments.is_empty() {
+        return None;
+    }
+
+    let mut refs = referenced_attachments.iter().collect::<Vec<_>>();
+    refs.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+    let mut out = String::with_capacity(256);
+    out.push_str("<attached_context>\n");
+    for (reference, attachment) in refs {
+        render_attachment(&mut out, reference, attachment);
+    }
+    out.push_str("</attached_context>");
+    Some(out)
+}
+
+pub fn render_api_referenced_attachments(
+    referenced_attachments: &HashMap<String, api::Attachment>,
+) -> Option<String> {
+    if referenced_attachments.is_empty() {
+        return None;
+    }
+
+    let mut refs = referenced_attachments.iter().collect::<Vec<_>>();
+    refs.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+    let mut out = String::with_capacity(256);
+    out.push_str("<attached_context>\n");
+    for (reference, attachment) in refs {
+        render_api_attachment(&mut out, reference, attachment);
+    }
+    out.push_str("</attached_context>");
+    Some(out)
+}
+
 /// 兼容旧调用方:仅取 prefix 文本。新代码请用 `collect_user_attachments`。
 #[cfg(test)]
 pub fn render_user_attachments(ctx: &[AIAgentContext]) -> Option<String> {
@@ -188,6 +229,284 @@ fn render_block(out: &mut String, b: &BlockContext) {
     out.push_str(&xml_text(&b.output));
     out.push_str("</output>\n");
     out.push_str("  </executed_shell_command>\n");
+}
+
+fn render_attachment(out: &mut String, reference: &str, attachment: &AIAgentAttachment) {
+    match attachment {
+        AIAgentAttachment::PlainText(text) => {
+            render_plain_text_attachment(out, reference, text);
+        }
+        AIAgentAttachment::DocumentContent {
+            document_id,
+            content,
+            line_range,
+            ..
+        } => {
+            let line_range = line_range
+                .as_ref()
+                .map(|range| (range.start.as_usize(), range.end.as_usize()));
+            render_document_content(out, reference, document_id, content, line_range);
+        }
+        AIAgentAttachment::DriveObject { uid, payload } => {
+            render_drive_object(out, reference, uid, payload.as_ref());
+        }
+        AIAgentAttachment::DiffHunk {
+            file_path,
+            line_range,
+            diff_content,
+            lines_added,
+            lines_removed,
+            ..
+        } => {
+            use std::fmt::Write;
+            let _ = writeln!(
+                out,
+                "  <diff_hunk reference=\"{}\" file_path=\"{}\" line_start=\"{}\" line_end=\"{}\" lines_added=\"{}\" lines_removed=\"{}\">",
+                xml_attr(reference),
+                xml_attr(file_path),
+                line_range.start.as_usize(),
+                line_range.end.as_usize(),
+                lines_added,
+                lines_removed,
+            );
+            out.push_str(&xml_text(diff_content));
+            if !diff_content.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push_str("  </diff_hunk>\n");
+        }
+        AIAgentAttachment::DiffSet { file_diffs, .. } => {
+            use std::fmt::Write;
+            let _ = writeln!(out, "  <diff_set reference=\"{}\">", xml_attr(reference));
+            for (file_path, hunks) in file_diffs {
+                let _ = writeln!(out, "    <file path=\"{}\">", xml_attr(file_path));
+                for hunk in hunks {
+                    let _ = writeln!(
+                        out,
+                        "      <hunk line_start=\"{}\" line_end=\"{}\" lines_added=\"{}\" lines_removed=\"{}\">",
+                        hunk.line_range.start.as_usize(),
+                        hunk.line_range.end.as_usize(),
+                        hunk.lines_added,
+                        hunk.lines_removed,
+                    );
+                    out.push_str(&xml_text(&hunk.diff_content));
+                    if !hunk.diff_content.ends_with('\n') {
+                        out.push('\n');
+                    }
+                    out.push_str("      </hunk>\n");
+                }
+                out.push_str("    </file>\n");
+            }
+            out.push_str("  </diff_set>\n");
+        }
+        AIAgentAttachment::FilePathReference { file_path, .. } => {
+            use std::fmt::Write;
+            let _ = writeln!(
+                out,
+                "  <file_path_reference reference=\"{}\" path=\"{}\" />",
+                xml_attr(reference),
+                xml_attr(file_path),
+            );
+        }
+        AIAgentAttachment::Block(block) => {
+            render_block(out, block);
+        }
+    }
+}
+
+fn render_api_attachment(out: &mut String, reference: &str, attachment: &api::Attachment) {
+    match attachment.value.as_ref() {
+        Some(api::attachment::Value::PlainText(text)) => {
+            render_plain_text_attachment(out, reference, text);
+        }
+        Some(api::attachment::Value::DocumentContent(document)) => {
+            let line_range = document
+                .line_range
+                .as_ref()
+                .map(|range| (range.start as usize, range.end as usize));
+            render_document_content(
+                out,
+                reference,
+                &document.document_id,
+                &document.content,
+                line_range,
+            );
+        }
+        Some(api::attachment::Value::DriveObject(object)) => {
+            render_api_drive_object(out, reference, object);
+        }
+        Some(api::attachment::Value::ExecutedShellCommand(block)) => {
+            let block: BlockContext = block.clone().into();
+            render_block(out, &block);
+        }
+        Some(api::attachment::Value::FilePathReference(file)) => {
+            use std::fmt::Write;
+            let _ = writeln!(
+                out,
+                "  <file_path_reference reference=\"{}\" path=\"{}\" />",
+                xml_attr(reference),
+                xml_attr(&file.file_path),
+            );
+        }
+        _ => {}
+    }
+}
+
+fn render_plain_text_attachment(out: &mut String, reference: &str, text: &str) {
+    use std::fmt::Write;
+    let _ = writeln!(out, "  <plain_text reference=\"{}\">", xml_attr(reference),);
+    out.push_str(&xml_text(text));
+    if !text.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str("  </plain_text>\n");
+}
+
+fn render_document_content(
+    out: &mut String,
+    reference: &str,
+    document_id: &str,
+    content: &str,
+    line_range: Option<(usize, usize)>,
+) {
+    use std::fmt::Write;
+    let _ = write!(
+        out,
+        "  <document_content reference=\"{}\" document_id=\"{}\"",
+        xml_attr(reference),
+        xml_attr(document_id),
+    );
+    if let Some((line_start, line_end)) = line_range {
+        let _ = write!(
+            out,
+            " line_start=\"{}\" line_end=\"{}\"",
+            line_start, line_end,
+        );
+    }
+    out.push_str(">\n");
+    out.push_str(&xml_text(content));
+    if !content.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str("  </document_content>\n");
+}
+
+fn render_drive_object(
+    out: &mut String,
+    reference: &str,
+    uid: &str,
+    payload: Option<&DriveObjectPayload>,
+) {
+    use std::fmt::Write;
+    match payload {
+        Some(DriveObjectPayload::Workflow {
+            name,
+            description,
+            command,
+        }) => {
+            let _ = writeln!(
+                out,
+                "  <drive_object reference=\"{}\" uid=\"{}\" type=\"workflow\">",
+                xml_attr(reference),
+                xml_attr(uid),
+            );
+            render_named_text(out, "name", name);
+            render_named_text(out, "description", description);
+            render_named_text(out, "command", command);
+            out.push_str("  </drive_object>\n");
+        }
+        Some(DriveObjectPayload::Notebook { title, content }) => {
+            let _ = writeln!(
+                out,
+                "  <drive_object reference=\"{}\" uid=\"{}\" type=\"notebook\">",
+                xml_attr(reference),
+                xml_attr(uid),
+            );
+            render_named_text(out, "title", title);
+            render_named_text(out, "content", content);
+            out.push_str("  </drive_object>\n");
+        }
+        Some(DriveObjectPayload::GenericStringObject {
+            payload,
+            object_type,
+        }) => {
+            let _ = writeln!(
+                out,
+                "  <drive_object reference=\"{}\" uid=\"{}\" type=\"{}\">",
+                xml_attr(reference),
+                xml_attr(uid),
+                xml_attr(object_type),
+            );
+            render_named_text(out, "payload", payload);
+            out.push_str("  </drive_object>\n");
+        }
+        None => {
+            let _ = writeln!(
+                out,
+                "  <drive_object reference=\"{}\" uid=\"{}\" />",
+                xml_attr(reference),
+                xml_attr(uid),
+            );
+        }
+    }
+}
+
+fn render_api_drive_object(out: &mut String, reference: &str, object: &api::DriveObject) {
+    use std::fmt::Write;
+    match object.object_payload.as_ref() {
+        Some(api::drive_object::ObjectPayload::Workflow(workflow)) => {
+            let _ = writeln!(
+                out,
+                "  <drive_object reference=\"{}\" uid=\"{}\" type=\"workflow\">",
+                xml_attr(reference),
+                xml_attr(&object.uid),
+            );
+            render_named_text(out, "name", &workflow.name);
+            render_named_text(out, "description", &workflow.description);
+            render_named_text(out, "command", &workflow.command);
+            out.push_str("  </drive_object>\n");
+        }
+        Some(api::drive_object::ObjectPayload::Notebook(notebook)) => {
+            let _ = writeln!(
+                out,
+                "  <drive_object reference=\"{}\" uid=\"{}\" type=\"notebook\">",
+                xml_attr(reference),
+                xml_attr(&object.uid),
+            );
+            render_named_text(out, "title", &notebook.title);
+            render_named_text(out, "content", &notebook.content);
+            out.push_str("  </drive_object>\n");
+        }
+        Some(api::drive_object::ObjectPayload::GenericStringObject(generic)) => {
+            let _ = writeln!(
+                out,
+                "  <drive_object reference=\"{}\" uid=\"{}\" type=\"{}\">",
+                xml_attr(reference),
+                xml_attr(&object.uid),
+                xml_attr(&generic.object_type),
+            );
+            render_named_text(out, "payload", &generic.payload);
+            out.push_str("  </drive_object>\n");
+        }
+        None => {
+            let _ = writeln!(
+                out,
+                "  <drive_object reference=\"{}\" uid=\"{}\" />",
+                xml_attr(reference),
+                xml_attr(&object.uid),
+            );
+        }
+    }
+}
+
+fn render_named_text(out: &mut String, tag_name: &str, text: &str) {
+    use std::fmt::Write;
+    let _ = writeln!(out, "    <{tag_name}>");
+    out.push_str(&xml_text(text));
+    if !text.ends_with('\n') {
+        out.push('\n');
+    }
+    let _ = writeln!(out, "    </{tag_name}>");
 }
 
 fn render_selected_text(out: &mut String, t: &str) {

@@ -1,9 +1,11 @@
 use std::collections::HashSet;
 
 use super::*;
+use crate::ai::agent::DriveObjectPayload;
 use crate::ai::agent_conversations_model::AgentConversationsModel;
 use crate::ai::blocklist::{AIQueryHistory, BlocklistAIPermissions};
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
+use crate::ai::facts::{AIFact, AIFactObject, AIFactObjectModel, AIMemory};
 use crate::ai::llms::LLMPreferences;
 use crate::ai::mcp::gallery::MCPGalleryManager;
 use crate::ai::mcp::templatable_manager::TemplatableMCPServerManager;
@@ -13,9 +15,13 @@ use crate::ai::AIRequestUsageModel;
 use crate::auth::AuthManager;
 use crate::auth::AuthStateProvider;
 use crate::changelog_model::ChangelogModel;
-use crate::cloud_object::model::persistence::ObjectStoreModel;
+use crate::cloud_object::{
+    model::persistence::ObjectStoreModel, GenericStringObjectFormat, JsonObjectType, ObjectType,
+    Owner,
+};
 use crate::pricing::PricingInfoModel;
 use crate::search::files::model::FileSearchModel;
+use crate::server::ids::ClientId;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::input::slash_command_model::SlashCommandEntryState;
 use crate::terminal::input::slash_commands::SlashCommandsEvent;
@@ -29,6 +35,7 @@ use crate::cloud_object::update_manager::UpdateManager;
 use crate::editor::{EditorAction, TextStyleOperation};
 use crate::input_suggestions::{HistoryOrder, Item};
 use crate::network::NetworkStatus;
+use crate::notebooks::{NotebookObject, NotebookObjectModel};
 
 use crate::settings::import::model::ImportedConfigModel;
 use crate::settings::{AliasExpansionSettings, AppEditorSettings, InputBoxType, PrivacySettings};
@@ -83,13 +90,17 @@ use warpui::{App, ReadModel, UpdateView, WindowId};
 use crate::terminal::universal_developer_input::UniversalDeveloperInputButtonBarEvent;
 
 use warp_util::user_input::UserInput;
-use workflows::workflow::{Argument, ArgumentType, Workflow};
+use workflows::{
+    workflow::{Argument, ArgumentType, Workflow},
+    WorkflowObject, WorkflowObjectModel,
+};
 
 use crate::context_chips::prompt::Prompt;
 use crate::terminal::general_settings::UserDefaultShellUnsupportedBannerState;
 use crate::terminal::resizable_data::ResizableData;
 use crate::terminal::view::inline_banner::ByoLlmAuthBannerSessionState;
 use crate::terminal::writeable_pty::command_history::update_command_history;
+use crate::workspaces::user_profiles::UserProfiles;
 use crate::{GlobalResourceHandles, GlobalResourceHandlesProvider};
 
 pub fn initialize_app(app: &mut App) {
@@ -106,6 +117,9 @@ pub fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(|_| Prompt::mock());
     app.add_singleton_model(ObjectStoreModel::mock);
+    app.add_singleton_model(
+        |_| crate::cloud_object::model::actions::ObjectActions::new(Vec::new()),
+    );
     app.add_singleton_model(ImportedConfigModel::new);
     app.add_singleton_model(UserWorkspaces::default_mock);
     app.add_singleton_model(UpdateManager::mock);
@@ -125,9 +139,11 @@ pub fn initialize_app(app: &mut App) {
     app.add_singleton_model(BlocklistAIPermissions::new);
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(AuthManager::new_for_test);
+    app.add_singleton_model(crate::ai::agent_providers::AgentProviderSecrets::new);
     app.add_singleton_model(LLMPreferences::new);
     app.add_singleton_model(DirectoryWatcher::new);
     app.add_singleton_model(|_| DetectedRepositories::default());
+    app.add_singleton_model(|_| UserProfiles::new(Vec::new()));
     app.add_singleton_model(|_| crate::code_review::git_status_update::GitStatusUpdateModel::new());
     app.add_singleton_model(RepoMetadataModel::new);
     app.add_singleton_model(FileSearchModel::new);
@@ -230,6 +246,75 @@ fn enable_vim_mode(app: &mut App) {
             .set_value(true, ctx)
             .expect("set value must succeed");
     });
+}
+
+fn create_cloud_workflow(app: &mut App, workflow: Workflow) -> SyncId {
+    ObjectStoreModel::handle(app).update(app, |object_store_model, ctx| {
+        let client_id = ClientId::new();
+        let sync_id = SyncId::ClientId(client_id);
+        object_store_model.create_object(
+            sync_id,
+            WorkflowObject::new_local(
+                WorkflowObjectModel::new(workflow),
+                Owner::mock_current_user(),
+                None,
+                client_id,
+            ),
+            ctx,
+        );
+        sync_id
+    })
+}
+
+fn create_cloud_notebook(
+    app: &mut App,
+    title: impl Into<String>,
+    data: impl Into<String>,
+    ai_document_id: Option<AIDocumentId>,
+) -> SyncId {
+    ObjectStoreModel::handle(app).update(app, |object_store_model, ctx| {
+        let client_id = ClientId::new();
+        let sync_id = SyncId::ClientId(client_id);
+        object_store_model.create_object(
+            sync_id,
+            NotebookObject::new_local(
+                NotebookObjectModel {
+                    title: title.into(),
+                    data: data.into(),
+                    ai_document_id,
+                    conversation_id: None,
+                },
+                Owner::mock_current_user(),
+                None,
+                client_id,
+            ),
+            ctx,
+        );
+        sync_id
+    })
+}
+
+fn create_cloud_rule(app: &mut App, name: impl Into<String>, content: impl Into<String>) -> SyncId {
+    ObjectStoreModel::handle(app).update(app, |object_store_model, ctx| {
+        let client_id = ClientId::new();
+        let sync_id = SyncId::ClientId(client_id);
+        object_store_model.create_object(
+            sync_id,
+            AIFactObject::new_local(
+                AIFactObjectModel::new(AIFact::Memory(AIMemory {
+                    name: Some(name.into()),
+                    content: content.into(),
+                    is_autogenerated: false,
+                    suggested_logging_id: None,
+                })),
+                Owner::mock_current_user(),
+                None,
+                client_id,
+            ),
+            ctx,
+        );
+        sync_id
+    })
 }
 
 pub async fn add_window_with_bootstrapped_terminal(
@@ -5896,6 +5981,350 @@ fn test_ai_context_menu_preserves_lock_state() {
         });
         assert_eq!(config_after_close.input_type, InputType::Shell);
         assert!(!config_after_close.is_locked);
+    });
+}
+
+#[test]
+fn test_ai_context_menu_keeps_workflow_reference_in_shell_input() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let workflow_id = create_cloud_workflow(
+            &mut app,
+            Workflow::new("proxy", "export http_proxy=127.0.0.1"),
+        );
+        let terminal = add_window_with_bootstrapped_terminal(&mut app, None, None).await;
+        let input = terminal.read(&app, |terminal, _| terminal.input().clone());
+
+        input.update(&mut app, |input, ctx| {
+            input.replace_buffer_content("@proxy", ctx);
+            input.suggestions_mode_model().update(ctx, |model, ctx| {
+                model.set_mode(
+                    InputSuggestionsMode::AIContextMenu {
+                        filter_text: "proxy".to_string(),
+                        at_symbol_position: 0,
+                    },
+                    ctx,
+                );
+            });
+
+            input.handle_editor_event(
+                &EditorEvent::AcceptAIContextMenuItem(
+                    AIContextMenuSearchableAction::InsertDriveObject {
+                        object_type: ObjectType::Workflow,
+                        object_uid: workflow_id.uid(),
+                        display_name: "proxy".to_string(),
+                    },
+                ),
+                ctx,
+            );
+        });
+
+        input.read(&app, |input, ctx| {
+            assert_eq!(input.buffer_text(ctx), "@proxy ");
+            assert!(!input.is_workflows_info_box_open());
+            assert!(input.ai_input_model.as_ref(ctx).is_ai_input_enabled());
+            assert_eq!(
+                input
+                    .ai_context_model
+                    .as_ref(ctx)
+                    .pending_at_context_attachments()
+                    .get("@proxy"),
+                Some(&AIAgentAttachment::DriveObject {
+                    uid: workflow_id.uid(),
+                    payload: Some(DriveObjectPayload::Workflow {
+                        name: "proxy".to_string(),
+                        description: String::new(),
+                        command: "export http_proxy=127.0.0.1".to_string(),
+                    }),
+                })
+            );
+        });
+    });
+}
+
+#[test]
+fn test_ai_context_menu_keeps_workflow_reference_in_ai_input() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let workflow_id = create_cloud_workflow(
+            &mut app,
+            Workflow::new("proxy", "export http_proxy=127.0.0.1"),
+        );
+        let terminal = add_window_with_bootstrapped_terminal(&mut app, None, None).await;
+        let input = terminal.read(&app, |terminal, _| terminal.input().clone());
+
+        input.update(&mut app, |input, ctx| {
+            input.set_input_mode_agent(false, ctx);
+            input.replace_buffer_content("@proxy", ctx);
+            input.suggestions_mode_model().update(ctx, |model, ctx| {
+                model.set_mode(
+                    InputSuggestionsMode::AIContextMenu {
+                        filter_text: "proxy".to_string(),
+                        at_symbol_position: 0,
+                    },
+                    ctx,
+                );
+            });
+
+            input.handle_editor_event(
+                &EditorEvent::AcceptAIContextMenuItem(
+                    AIContextMenuSearchableAction::InsertDriveObject {
+                        object_type: ObjectType::Workflow,
+                        object_uid: workflow_id.uid(),
+                        display_name: "proxy".to_string(),
+                    },
+                ),
+                ctx,
+            );
+        });
+
+        input.read(&app, |input, ctx| {
+            assert_eq!(input.buffer_text(ctx), "@proxy ");
+            assert!(!input.is_workflows_info_box_open());
+            assert!(input
+                .ai_context_model
+                .as_ref(ctx)
+                .pending_at_context_attachments()
+                .contains_key("@proxy"));
+            assert_eq!(
+                input
+                    .ai_context_model
+                    .as_ref(ctx)
+                    .pending_at_context_attachments()
+                    .get("@proxy"),
+                Some(&AIAgentAttachment::DriveObject {
+                    uid: workflow_id.uid(),
+                    payload: Some(DriveObjectPayload::Workflow {
+                        name: "proxy".to_string(),
+                        description: String::new(),
+                        command: "export http_proxy=127.0.0.1".to_string(),
+                    }),
+                })
+            );
+        });
+    });
+}
+
+#[test]
+fn test_ai_context_menu_enters_ai_mode_for_ai_only_context_items() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let terminal = add_window_with_bootstrapped_terminal(&mut app, None, None).await;
+        let input = terminal.read(&app, |terminal, _| terminal.input().clone());
+        let notebook_id = create_cloud_notebook(&mut app, "Notebook", "notebook context", None);
+        let rule_id = create_cloud_rule(&mut app, "Rule", "rule context");
+        let plan_document_id = AIDocumentId::new();
+        create_cloud_notebook(
+            &mut app,
+            "Plan",
+            "plan context",
+            Some(plan_document_id.clone()),
+        );
+        let cases = vec![
+            (
+                AIContextMenuSearchableAction::InsertDriveObject {
+                    object_type: ObjectType::Notebook,
+                    object_uid: notebook_id.uid(),
+                    display_name: "Notebook".to_string(),
+                },
+                "@Notebook ".to_string(),
+            ),
+            (
+                AIContextMenuSearchableAction::InsertDriveObject {
+                    object_type: ObjectType::GenericStringObject(GenericStringObjectFormat::Json(
+                        JsonObjectType::AIFact,
+                    )),
+                    object_uid: rule_id.uid(),
+                    display_name: "Rule".to_string(),
+                },
+                "@Rule ".to_string(),
+            ),
+            (
+                AIContextMenuSearchableAction::InsertPlan {
+                    ai_document_uid: plan_document_id.to_string(),
+                    display_name: "Plan".to_string(),
+                },
+                "@Plan ".to_string(),
+            ),
+            (
+                AIContextMenuSearchableAction::InsertConversation {
+                    conversation_id: "conversation-token".to_string(),
+                    title: "Conversation".to_string(),
+                },
+                "@Conversation ".to_string(),
+            ),
+            (
+                AIContextMenuSearchableAction::InsertSkill {
+                    name: "summarize".to_string(),
+                },
+                "/summarize ".to_string(),
+            ),
+        ];
+
+        for (action, expected_buffer) in cases {
+            input.update(&mut app, |input, ctx| {
+                input.clear_buffer_and_reset_undo_stack(ctx);
+                input.ai_input_model().update(ctx, |ai_input, ctx| {
+                    ai_input.enable_autodetection(InputType::Shell, ctx);
+                });
+                input.replace_buffer_content("@context", ctx);
+                input.suggestions_mode_model().update(ctx, |model, ctx| {
+                    model.set_mode(
+                        InputSuggestionsMode::AIContextMenu {
+                            filter_text: "context".to_string(),
+                            at_symbol_position: 0,
+                        },
+                        ctx,
+                    );
+                });
+
+                input.handle_editor_event(&EditorEvent::AcceptAIContextMenuItem(action), ctx);
+            });
+
+            input.read(&app, |input, ctx| {
+                assert_eq!(input.buffer_text(ctx), expected_buffer);
+                assert!(input.ai_input_model.as_ref(ctx).is_ai_input_enabled());
+                if let Some(reference) = expected_buffer.strip_suffix(' ') {
+                    if reference.starts_with('@') {
+                        assert!(input
+                            .ai_context_model
+                            .as_ref(ctx)
+                            .pending_at_context_attachments()
+                            .contains_key(reference));
+                        let attachment = input
+                            .ai_context_model
+                            .as_ref(ctx)
+                            .pending_at_context_attachments()
+                            .get(reference)
+                            .expect("reference should be registered");
+                        match reference {
+                            "@Notebook" => {
+                                assert_eq!(
+                                    attachment,
+                                    &AIAgentAttachment::DriveObject {
+                                        uid: notebook_id.uid(),
+                                        payload: Some(DriveObjectPayload::Notebook {
+                                            title: "Notebook".to_string(),
+                                            content: "notebook context".to_string(),
+                                        }),
+                                    }
+                                );
+                            }
+                            "@Rule" => {
+                                assert!(matches!(
+                                    attachment,
+                                    AIAgentAttachment::DriveObject {
+                                        uid,
+                                        payload: Some(DriveObjectPayload::GenericStringObject {
+                                            payload,
+                                            object_type,
+                                        }),
+                                    } if uid == &rule_id.uid()
+                                        && payload.contains("rule context")
+                                        && object_type == "JsonAIFact"
+                                ));
+                            }
+                            "@Plan" => {
+                                assert!(matches!(
+                                    attachment,
+                                    AIAgentAttachment::DocumentContent {
+                                        document_id,
+                                        content,
+                                        ..
+                                    } if document_id == &plan_document_id.to_string()
+                                        && content == "plan context"
+                                ));
+                            }
+                            "@Conversation" => {
+                                assert!(matches!(
+                                    attachment,
+                                    AIAgentAttachment::PlainText(text)
+                                        if text.contains("Conversation")
+                                            && text.contains("conversation-token")
+                                ));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            });
+        }
+    });
+}
+
+#[test]
+fn test_ai_context_menu_reuses_reference_after_deleted_text() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let terminal = add_window_with_bootstrapped_terminal(&mut app, None, None).await;
+        let input = terminal.read(&app, |terminal, _| terminal.input().clone());
+        let rule_id = create_cloud_rule(&mut app, "commit", "commit context");
+
+        input.update(&mut app, |input, ctx| {
+            input.set_input_mode_agent(false, ctx);
+            input.replace_buffer_content("@commit", ctx);
+            input.suggestions_mode_model().update(ctx, |model, ctx| {
+                model.set_mode(
+                    InputSuggestionsMode::AIContextMenu {
+                        filter_text: "commit".to_string(),
+                        at_symbol_position: 0,
+                    },
+                    ctx,
+                );
+            });
+
+            input.handle_editor_event(
+                &EditorEvent::AcceptAIContextMenuItem(
+                    AIContextMenuSearchableAction::InsertDriveObject {
+                        object_type: ObjectType::GenericStringObject(
+                            GenericStringObjectFormat::Json(JsonObjectType::AIFact),
+                        ),
+                        object_uid: rule_id.uid(),
+                        display_name: "commit".to_string(),
+                    },
+                ),
+                ctx,
+            );
+
+            input.replace_buffer_content("hi @commit", ctx);
+            input.suggestions_mode_model().update(ctx, |model, ctx| {
+                model.set_mode(
+                    InputSuggestionsMode::AIContextMenu {
+                        filter_text: "commit".to_string(),
+                        at_symbol_position: 3,
+                    },
+                    ctx,
+                );
+            });
+
+            input.handle_editor_event(
+                &EditorEvent::AcceptAIContextMenuItem(
+                    AIContextMenuSearchableAction::InsertDriveObject {
+                        object_type: ObjectType::GenericStringObject(
+                            GenericStringObjectFormat::Json(JsonObjectType::AIFact),
+                        ),
+                        object_uid: rule_id.uid(),
+                        display_name: "commit".to_string(),
+                    },
+                ),
+                ctx,
+            );
+        });
+
+        input.read(&app, |input, ctx| {
+            let pending_attachments = input
+                .ai_context_model
+                .as_ref(ctx)
+                .pending_at_context_attachments();
+            assert_eq!(input.buffer_text(ctx), "hi @commit ");
+            assert_eq!(pending_attachments.len(), 1);
+            assert!(pending_attachments.contains_key("@commit"));
+            assert!(!pending_attachments.contains_key("@commit (2)"));
+        });
     });
 }
 

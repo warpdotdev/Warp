@@ -116,6 +116,7 @@ impl SearchItem for ConversationSearchItem {
     fn accept_result(&self) -> Self::Action {
         AIContextMenuSearchableAction::InsertConversation {
             conversation_id: self.item.server_conversation_token.clone(),
+            title: self.item.title.clone(),
         }
     }
 

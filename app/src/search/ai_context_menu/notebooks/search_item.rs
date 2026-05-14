@@ -174,11 +174,13 @@ impl SearchItem for NotebookSearchItem {
         if let Some(ai_document_uid) = &self.ai_document_uid {
             return AIContextMenuSearchableAction::InsertPlan {
                 ai_document_uid: ai_document_uid.clone(),
+                display_name: self.notebook_name.clone(),
             };
         }
         AIContextMenuSearchableAction::InsertDriveObject {
             object_type: ObjectType::Notebook,
             object_uid: self.notebook_uid.clone(),
+            display_name: self.notebook_name.clone(),
         }
     }
 

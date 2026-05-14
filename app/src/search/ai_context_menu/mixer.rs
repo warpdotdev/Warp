@@ -18,22 +18,28 @@ pub enum AIContextMenuSearchableAction {
         text: String,
     },
     InsertDriveObject {
-        /// The type of the drive object (Workflow, Notebook, etc.)
+        /// Drive 对象类型(Workflow、Notebook 等)。
         object_type: ObjectType,
-        /// The UID of the drive object to insert as <object_type:{uid}>
+        /// 要附加的 Drive 对象 UID。
         object_uid: String,
+        /// Agent Mode 输入框中展示的 @名称。
+        display_name: String,
     },
     InsertPlan {
-        /// The UID of the AI document to insert as <plan:{uid}>
+        /// 要附加的 AI 文档 UID。
         ai_document_uid: String,
+        /// Agent Mode 输入框中展示的 @名称。
+        display_name: String,
     },
     InsertDiffSet {
         /// The diff mode indicating what base to compare against
         diff_mode: DiffMode,
     },
     InsertConversation {
-        /// The conversation identifier to insert as <convo:{id}>.
+        /// 要附加的 conversation 标识。
         conversation_id: String,
+        /// Agent Mode 输入框中展示的 @标题。
+        title: String,
     },
     InsertSkill {
         /// The skill name to insert as /{name} into the buffer.

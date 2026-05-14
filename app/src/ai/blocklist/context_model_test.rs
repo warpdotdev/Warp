@@ -13,7 +13,7 @@ use warpui::r#async::executor::Background;
 use warpui::{App, EntityId, ModelHandle};
 
 use super::{BlocklistAIContextModel, PendingAttachment, PendingFile};
-use crate::ai::agent::ImageContext;
+use crate::ai::agent::{AIAgentAttachment, ImageContext};
 use crate::ai::blocklist::agent_view::{AgentViewController, EphemeralMessageModel};
 use crate::cloud_object::model::persistence::ObjectStoreModel;
 use crate::cloud_object::update_manager::UpdateManager;
@@ -182,5 +182,58 @@ fn has_locking_attachment_is_true_with_mixed_image_and_file_attachments() {
         });
 
         model.read(&app, |m, _| assert!(m.has_locking_attachment()));
+    });
+}
+
+#[test]
+fn referenced_at_context_attachments_prefers_longest_visible_reference() {
+    App::test((), |mut app| async move {
+        let model = build_test_context_model(&mut app);
+
+        model.update(&mut app, |m, _| {
+            m.register_at_context_attachment(
+                "@commit".to_owned(),
+                AIAgentAttachment::PlainText("old".to_owned()),
+            );
+            m.register_at_context_attachment(
+                "@commit (4)".to_owned(),
+                AIAgentAttachment::PlainText("new".to_owned()),
+            );
+        });
+
+        model.read(&app, |m, _| {
+            let attachments = m.referenced_at_context_attachments("@commit (4) hi");
+            assert_eq!(attachments.len(), 1);
+            assert_eq!(
+                attachments.get("@commit (4)"),
+                Some(&AIAgentAttachment::PlainText("new".to_owned()))
+            );
+        });
+    });
+}
+
+#[test]
+fn retain_at_context_attachments_in_query_drops_deleted_prefix_reference() {
+    App::test((), |mut app| async move {
+        let model = build_test_context_model(&mut app);
+
+        model.update(&mut app, |m, _| {
+            m.register_at_context_attachment(
+                "@commit".to_owned(),
+                AIAgentAttachment::PlainText("old".to_owned()),
+            );
+            m.register_at_context_attachment(
+                "@commit (4)".to_owned(),
+                AIAgentAttachment::PlainText("new".to_owned()),
+            );
+            m.retain_at_context_attachments_in_query("@commit (4) hi");
+        });
+
+        model.read(&app, |m, _| {
+            assert!(!m.pending_at_context_attachments().contains_key("@commit"));
+            assert!(m
+                .pending_at_context_attachments()
+                .contains_key("@commit (4)"));
+        });
     });
 }

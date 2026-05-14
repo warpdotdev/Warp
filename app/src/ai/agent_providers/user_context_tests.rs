@@ -2,6 +2,7 @@ use super::*;
 use crate::ai::agent::ImageContext;
 use crate::ai::block_context::BlockContext;
 use ai::agent::action_result::{AnyFileContent, FileContext};
+use std::collections::HashMap;
 
 fn block(id: &str, command: &str, output: &str, exit_code: i32, auto: bool) -> BlockContext {
     BlockContext {
@@ -191,4 +192,47 @@ fn image_renders_placeholder_only() {
         !out.contains("BASE64DATA"),
         "首版不应内联 base64,避免上下文被填爆"
     );
+}
+
+#[test]
+fn referenced_notebook_renders_full_payload() {
+    let mut attachments = HashMap::new();
+    attachments.insert(
+        "@base".to_string(),
+        AIAgentAttachment::DriveObject {
+            uid: "Client-1".to_string(),
+            payload: Some(DriveObjectPayload::Notebook {
+                title: "base".to_string(),
+                content: "base prompt 内容".to_string(),
+            }),
+        },
+    );
+
+    let out = render_referenced_attachments(&attachments).expect("应当渲染");
+    assert!(out.contains("<attached_context>"));
+    assert!(out.contains("reference=\"@base\""));
+    assert!(out.contains("uid=\"Client-1\""));
+    assert!(out.contains("type=\"notebook\""));
+    assert!(out.contains("<title>\nbase\n    </title>"));
+    assert!(out.contains("base prompt 内容"));
+}
+
+#[test]
+fn referenced_document_content_renders_full_payload() {
+    let mut attachments = HashMap::new();
+    attachments.insert(
+        "@plan".to_string(),
+        AIAgentAttachment::DocumentContent {
+            document_id: "doc-1".to_string(),
+            content: "plan body".to_string(),
+            source: crate::ai::agent::DocumentContentAttachmentSource::UserAttached,
+            line_range: None,
+        },
+    );
+
+    let out = render_referenced_attachments(&attachments).expect("应当渲染");
+    assert!(out.contains("<document_content"));
+    assert!(out.contains("reference=\"@plan\""));
+    assert!(out.contains("document_id=\"doc-1\""));
+    assert!(out.contains("plan body"));
 }

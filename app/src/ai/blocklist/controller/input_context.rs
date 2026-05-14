@@ -120,37 +120,8 @@ pub(super) fn parse_context_attachments(
             let id_str = object_id_match.as_str();
 
             if object_type_str == "plan" {
-                // For plans, id_str is ai_document_id
-                let ai_doc_id = match AIDocumentId::try_from(id_str) {
-                    Ok(id) => id,
-                    Err(_) => {
-                        log::warn!("Invalid ai_document_id in plan reference: {id_str}");
-                        continue;
-                    }
-                };
-
-                // Prefer live editor content from AIDocumentModel (picks up unsaved user edits).
-                // Fall back to the synced ObjectStoreModel notebook if the document isn't loaded in
-                // the current session.
-                let content = AIDocumentModel::as_ref(ctx)
-                    .get_document_content(&ai_doc_id, ctx)
-                    .or_else(|| {
-                        ObjectStoreModel::as_ref(ctx)
-                            .get_all_active_notebooks()
-                            .find(|nb| nb.model().ai_document_id.as_ref() == Some(&ai_doc_id))
-                            .map(|nb| nb.model().data.clone())
-                    });
-
-                if let Some(content) = content {
-                    let attachment = AIAgentAttachment::DocumentContent {
-                        document_id: id_str.to_string(),
-                        content,
-                        source: DocumentContentAttachmentSource::UserAttached,
-                        line_range: None,
-                    };
+                if let Some(attachment) = plan_attachment_for_reference(id_str, ctx) {
                     referenced_attachments.insert(reference_string, attachment);
-                } else {
-                    log::warn!("Plan not found for ai_document_id: {ai_doc_id}");
                 }
             } else {
                 let object_type = match object_type_str {
@@ -162,14 +133,7 @@ pub(super) fn parse_context_attachments(
                     _ => continue, // Skip unknown object types
                 };
 
-                // Try to get the object data from ObjectStoreModel
-                let payload = get_object_attachment_payload(id_str, object_type, ctx);
-
-                // Create a DriveObject attachment with the object UID and payload
-                let attachment = AIAgentAttachment::DriveObject {
-                    uid: id_str.to_string(),
-                    payload,
-                };
+                let attachment = drive_object_attachment_for_reference(id_str, object_type, ctx);
                 referenced_attachments.insert(reference_string, attachment);
             }
         }
@@ -187,6 +151,8 @@ pub(super) fn parse_context_attachments(
             }
         }
     }
+
+    referenced_attachments.extend(context_model.referenced_at_context_attachments(query));
 
     // Add pending file attachments as FilePathReference.
     // Duplicate basenames get a (1), (2), ... suffix to avoid collisions,
@@ -272,8 +238,53 @@ fn find_block_attachment_in_all_terminals(
     None
 }
 
-/// Gets the object payload from ObjectStoreModel for the given UID and object type.
-/// Returns None if the object is not found.
+pub(crate) fn drive_object_attachment_for_reference(
+    uid: &str,
+    object_type: ObjectType,
+    ctx: &AppContext,
+) -> AIAgentAttachment {
+    AIAgentAttachment::DriveObject {
+        uid: uid.to_string(),
+        payload: get_object_attachment_payload(uid, object_type, ctx),
+    }
+}
+
+pub(crate) fn plan_attachment_for_reference(
+    ai_document_uid: &str,
+    ctx: &AppContext,
+) -> Option<AIAgentAttachment> {
+    let ai_doc_id = match AIDocumentId::try_from(ai_document_uid) {
+        Ok(id) => id,
+        Err(_) => {
+            log::warn!("Invalid ai_document_id in plan reference: {ai_document_uid}");
+            return None;
+        }
+    };
+
+    let content = AIDocumentModel::as_ref(ctx)
+        .get_document_content(&ai_doc_id, ctx)
+        .or_else(|| {
+            ObjectStoreModel::as_ref(ctx)
+                .get_all_active_notebooks()
+                .find(|nb| nb.model().ai_document_id.as_ref() == Some(&ai_doc_id))
+                .map(|nb| nb.model().data.clone())
+        });
+
+    if let Some(content) = content {
+        return Some(AIAgentAttachment::DocumentContent {
+            document_id: ai_document_uid.to_string(),
+            content,
+            source: DocumentContentAttachmentSource::UserAttached,
+            line_range: None,
+        });
+    }
+
+    log::warn!("Plan not found for ai_document_id: {ai_doc_id}");
+    None
+}
+
+/// 从 ObjectStoreModel 中按 UID 和类型取对象 payload。
+/// 找不到对象时返回 None。
 fn get_object_attachment_payload(
     uid: &str,
     object_type: ObjectType,

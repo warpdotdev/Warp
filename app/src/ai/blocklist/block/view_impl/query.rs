@@ -25,7 +25,7 @@ use crate::{
 };
 use pathfinder_color::ColorU;
 
-use super::common::{render_query_text, render_user_avatar, FindContext};
+use super::common::{render_query_text, render_user_avatar, FindContext, QueryContextReference};
 
 /// Data required to render the AI block query component.
 #[derive(Copy, Clone, Debug)]
@@ -40,6 +40,7 @@ pub(super) struct Props<'a> {
     pub(super) is_selecting_text: bool,
     pub(super) is_ai_input_enabled: bool,
     pub(super) attachments: &'a [(AttachmentType, String)],
+    pub(super) context_references: &'a [QueryContextReference],
     pub(super) find_context: Option<FindContext<'a>>,
 }
 
@@ -57,6 +58,7 @@ pub(super) fn maybe_render(props: Props, app: &AppContext) -> Option<Box<dyn Ele
             props.is_selecting_text,
             props.is_ai_input_enabled,
             props.attachments,
+            props.context_references,
             props.find_context,
             app,
         )
@@ -76,6 +78,7 @@ pub(crate) fn render_query(
     is_selecting: bool,
     is_ai_input_enabled: bool,
     attachments: &[(AttachmentType, String)],
+    context_references: &[QueryContextReference],
     find_context: Option<FindContext>,
     app: &AppContext,
 ) -> Box<dyn Element> {
@@ -111,6 +114,10 @@ pub(crate) fn render_query(
     let appearance = Appearance::as_ref(app);
     let mut query = Flex::column().with_child(text_element.finish());
 
+    if !context_references.is_empty() {
+        query = query.with_child(render_context_references(context_references, appearance));
+    }
+
     if FeatureFlag::ImageAsContext.is_enabled() {
         query = query.with_child(render_attachments(attachments, appearance));
     }
@@ -120,6 +127,57 @@ pub(crate) fn render_query(
         .with_child(avatar)
         .with_child(Shrinkable::new(1., query.finish()).finish())
         .finish()
+}
+
+fn render_context_references(
+    context_references: &[QueryContextReference],
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let chip_color = blended_colors::text_sub(theme, theme.background());
+    let chips = context_references.iter().map(|reference| {
+        let label = reference
+            .label
+            .strip_prefix('@')
+            .unwrap_or(&reference.label)
+            .to_string();
+        Chip::new(
+            label,
+            UiComponentStyles {
+                margin: Some(Coords {
+                    top: 0.,
+                    bottom: 0.,
+                    left: 0.,
+                    right: 6.,
+                }),
+                font_family_id: Some(appearance.ui_font_family()),
+                font_size: Some(appearance.monospace_font_size()),
+                font_color: Some(chip_color),
+                background: Some(internal_colors::neutral_2(theme).into()),
+                border_width: Some(1.),
+                border_color: Some(internal_colors::neutral_4(theme).into()),
+                border_radius: Some(CornerRadius::with_all(Radius::Pixels(5.))),
+                ..Default::default()
+            },
+        )
+        .with_icon(reference.icon.to_warpui_icon(chip_color.into()))
+        .build()
+        .finish()
+    });
+
+    if context_references.is_empty() {
+        Flex::row().finish()
+    } else {
+        let wrapping_section = Wrap::row()
+            .with_run_spacing(8.)
+            .with_main_axis_alignment(MainAxisAlignment::Start)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_children(chips)
+            .finish();
+        Container::new(wrapping_section)
+            .with_padding_top(7.)
+            .finish()
+    }
 }
 
 fn render_attachments(

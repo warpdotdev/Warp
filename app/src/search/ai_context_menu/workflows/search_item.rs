@@ -169,6 +169,7 @@ impl SearchItem for WorkflowSearchItem {
         AIContextMenuSearchableAction::InsertDriveObject {
             object_type: ObjectType::Workflow,
             object_uid: self.workflow_uid.clone(),
+            display_name: self.workflow_name.clone(),
         }
     }
 

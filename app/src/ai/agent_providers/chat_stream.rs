@@ -598,11 +598,22 @@ fn build_chat_request(
                             .collect()
                     })
                     .unwrap_or_default();
+                let mut history_prefixes: Vec<String> = Vec::new();
+                if let Some(prefix) =
+                    user_context::render_api_referenced_attachments(&u.referenced_attachments)
+                {
+                    history_prefixes.push(prefix);
+                }
+                let history_text = if history_prefixes.is_empty() {
+                    u.query.clone()
+                } else {
+                    format!("{}\n\n{}", history_prefixes.join("\n\n"), u.query)
+                };
                 if history_binaries.is_empty() {
-                    messages.push(ChatMessage::user(u.query.clone()));
+                    messages.push(ChatMessage::user(history_text));
                 } else {
                     messages.push(build_user_message_with_binaries(
-                        u.query.clone(),
+                        history_text,
                         history_binaries,
                         api_type,
                         model_id,
@@ -692,6 +703,7 @@ fn build_chat_request(
             AIAgentInput::UserQuery {
                 query,
                 context,
+                referenced_attachments,
                 running_command,
                 ..
             } => {
@@ -730,6 +742,10 @@ fn build_chat_request(
                 let user_attachments = user_context::collect_user_attachments(context);
                 if let Some(p) = &user_attachments.prefix {
                     prefixes.push(p.clone());
+                }
+                if let Some(p) = user_context::render_referenced_attachments(referenced_attachments)
+                {
+                    prefixes.push(p);
                 }
                 let full_text = match (prefixes.is_empty(), suffixes.is_empty()) {
                     (true, true) => query.clone(),

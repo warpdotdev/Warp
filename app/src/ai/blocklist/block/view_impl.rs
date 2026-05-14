@@ -880,7 +880,15 @@ impl View for AIBlock {
             .enumerate()
             .find_map(|(input_index, input)| {
                 let element_below_user_query = input.element_below_user_query(input_props, app);
-                let user_query = input.display_user_query(initial_conversation_query.as_ref())?;
+                let mut user_query =
+                    input.display_user_query(initial_conversation_query.as_ref())?;
+                let context_references = common::query_context_references(input, &user_query);
+                if !context_references.is_empty() {
+                    user_query = common::display_query_without_context_references(
+                        &user_query,
+                        &context_references,
+                    );
+                }
                 let query_prefix_highlight_len =
                     common::query_prefix_highlight_len(input, &user_query);
 
@@ -889,6 +897,7 @@ impl View for AIBlock {
                     input_index,
                     query_prefix_highlight_len,
                     element_below_user_query,
+                    context_references,
                 ))
             });
         let query_and_index_is_some =
@@ -905,6 +914,7 @@ impl View for AIBlock {
                 input_index,
                 query_prefix_highlight_len,
                 elements_below_query,
+                context_references,
             )) = query_and_index
             {
                 let mut did_render_header = false;
@@ -988,6 +998,7 @@ impl View for AIBlock {
                             .pending_context_selected_text()
                             .is_some(),
                         attachments: &attachment_name_list,
+                        context_references: &context_references,
                         find_context: self.find_model.as_ref(app).is_find_bar_open().then_some(
                             FindContext {
                                 model: self.find_model.as_ref(app),
