@@ -7,10 +7,11 @@
 //!     · 模型列表区: 表头 `显示名 | 模型 ID`,每行两个输入框 + `×` 删除按钮
 //!     · 底部按钮行: `+ 添加模型` `Fetch from API` `保存` `Remove` (provider)
 //!
-//! **保存行为**: 只有点"保存"按钮才会把表单状态一次性下发到 `AISettings`
+//! **保存行为**: 点"保存"按钮会把表单状态一次性下发到 `AISettings`
 //! 与 `AgentProviderSecrets`。输入框失焦/按 Enter 不会保存 —— 这是为了
-//! 避免用户边改边被“隐式提交”。添加/删除模型行、添加/删除 header 行、
-//! API 协议 chip、模型能力 chip 仍然即时生效(它们不是“表单输入”)。
+//! 避免用户边改边被“隐式提交”。会重建页面的结构性操作(添加/删除模型行、
+//! 添加/删除 header 行、API 协议 chip、模型能力 chip)会先提交当前卡片草稿,
+//! 再执行原操作,避免重建时丢失未保存输入。
 //!
 //! 当 provider 列表大小或某条 provider 的 models 数量变化时,
 //! `AISettingsPageView::rebuild_current_page` 会被触发以重建整个 widget,
@@ -93,8 +94,10 @@ struct ModelRow {
     id_editor: ViewHandle<EditorView>,
     context_editor: ViewHandle<EditorView>,
     output_editor: ViewHandle<EditorView>,
-    /// 删除按钮 — 折叠态藏起来,展开后在 detail panel 末尾出现。
+    /// detail panel 内的删除按钮。
     remove_button_state: MouseStateHandle,
+    /// row 末尾 chevron 右侧的快速删除按钮。
+    quick_remove_button_state: MouseStateHandle,
     /// row 末尾的展开/折叠 chevron。
     expand_button_state: MouseStateHandle,
     /// detail panel 内 image/pdf/audio 三态 chip 的鼠标状态。
@@ -127,6 +130,136 @@ struct ProviderRow {
     /// 5 个 ApiType chip 各自的鼠标状态。HashMap 由 chip 显示名映射。
     api_type_chip_states: RefCell<HashMap<AgentProviderApiType, MouseStateHandle>>,
     model_rows: Vec<ModelRow>,
+}
+
+#[derive(Clone)]
+struct ProviderDraftEditors {
+    provider_id: String,
+    name_editor: ViewHandle<EditorView>,
+    base_url_editor: ViewHandle<EditorView>,
+    api_key_editor: ViewHandle<EditorView>,
+    header_editors: Vec<(ViewHandle<EditorView>, ViewHandle<EditorView>)>,
+    model_editors: Vec<(
+        usize,
+        ViewHandle<EditorView>,
+        ViewHandle<EditorView>,
+        ViewHandle<EditorView>,
+        ViewHandle<EditorView>,
+    )>,
+}
+
+impl ProviderDraftEditors {
+    fn from_row(provider_id: String, row: &ProviderRow) -> Self {
+        Self {
+            provider_id,
+            name_editor: row.name_editor.clone(),
+            base_url_editor: row.base_url_editor.clone(),
+            api_key_editor: row.api_key_editor.clone(),
+            header_editors: row
+                .header_rows
+                .iter()
+                .map(|h| (h.key_editor.clone(), h.val_editor.clone()))
+                .collect(),
+            model_editors: row
+                .model_rows
+                .iter()
+                .enumerate()
+                .map(|(idx, m)| {
+                    (
+                        idx,
+                        m.name_editor.clone(),
+                        m.id_editor.clone(),
+                        m.context_editor.clone(),
+                        m.output_editor.clone(),
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    fn to_save_action(&self, app: &AppContext) -> AISettingsPageAction {
+        self.to_save_action_with(
+            app,
+            |provider_id, name, base_url, api_key, headers, models| {
+                AISettingsPageAction::SaveAgentProviderEdits {
+                    provider_id,
+                    name,
+                    base_url,
+                    api_key,
+                    headers,
+                    models,
+                }
+            },
+        )
+    }
+
+    fn to_save_then_action(
+        &self,
+        app: &AppContext,
+        action: AISettingsPageAction,
+    ) -> AISettingsPageAction {
+        self.to_save_action_with(
+            app,
+            |provider_id, name, base_url, api_key, headers, models| {
+                AISettingsPageAction::SaveAgentProviderEditsThen {
+                    provider_id,
+                    name,
+                    base_url,
+                    api_key,
+                    headers,
+                    models,
+                    action: Box::new(action),
+                }
+            },
+        )
+    }
+
+    fn to_save_action_with(
+        &self,
+        app: &AppContext,
+        build: impl FnOnce(
+            String,
+            String,
+            String,
+            String,
+            Vec<(String, String)>,
+            Vec<(usize, String, String, u32, u32)>,
+        ) -> AISettingsPageAction,
+    ) -> AISettingsPageAction {
+        let name = self.name_editor.as_ref(app).buffer_text(app);
+        let base_url = self.base_url_editor.as_ref(app).buffer_text(app);
+        let api_key = self.api_key_editor.as_ref(app).buffer_text(app);
+        let headers: Vec<(String, String)> = self
+            .header_editors
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.as_ref(app).buffer_text(app),
+                    v.as_ref(app).buffer_text(app),
+                )
+            })
+            .collect();
+        let models: Vec<(usize, String, String, u32, u32)> = self
+            .model_editors
+            .iter()
+            .map(|(idx, name_e, id_e, ctx_e, out_e)| {
+                let m_name = name_e.as_ref(app).buffer_text(app);
+                let m_id = id_e.as_ref(app).buffer_text(app);
+                let context_window = parse_token_count(&ctx_e.as_ref(app).buffer_text(app));
+                let max_output_tokens = parse_token_count(&out_e.as_ref(app).buffer_text(app));
+                (*idx, m_name, m_id, context_window, max_output_tokens)
+            })
+            .collect();
+
+        build(
+            self.provider_id.clone(),
+            name,
+            base_url,
+            api_key,
+            headers,
+            models,
+        )
+    }
 }
 
 /// 自定义 Agent Provider 设置 widget。
@@ -283,6 +416,7 @@ impl AgentProvidersWidget {
             context_editor,
             output_editor,
             remove_button_state: MouseStateHandle::default(),
+            quick_remove_button_state: MouseStateHandle::default(),
             expand_button_state: MouseStateHandle::default(),
             image_chip_state: MouseStateHandle::default(),
             pdf_chip_state: MouseStateHandle::default(),
@@ -440,6 +574,7 @@ impl AgentProvidersWidget {
         &self,
         provider: &AgentProvider,
         row: &ProviderRow,
+        draft_editors: ProviderDraftEditors,
         label_color: warp_core::ui::theme::Fill,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
@@ -470,9 +605,10 @@ impl AgentProvidersWidget {
                 } else {
                     variant.display_name().to_owned()
                 };
-                let chip = Self::render_card_button(
+                let chip = Self::render_card_button_preserving_draft(
                     label,
                     state,
+                    draft_editors.clone(),
                     AISettingsPageAction::SetAgentProviderApiType {
                         provider_id: provider.id.clone(),
                         api_type: variant,
@@ -529,11 +665,35 @@ impl AgentProvidersWidget {
             .finish()
     }
 
+    fn render_card_button_preserving_draft(
+        label: impl Into<String>,
+        mouse_state: MouseStateHandle,
+        draft_editors: ProviderDraftEditors,
+        action: AISettingsPageAction,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        appearance
+            .ui_builder()
+            .button(ButtonVariant::Secondary, mouse_state)
+            .with_style(UiComponentStyles {
+                font_size: Some(CARD_BUTTON_FONT_SIZE),
+                padding: Some(Coords::uniform(CARD_BUTTON_PADDING)),
+                ..Default::default()
+            })
+            .with_centered_text_label(label.into())
+            .build()
+            .on_click(move |ctx, app, _| {
+                ctx.dispatch_typed_action(draft_editors.to_save_then_action(app, action.clone()));
+            })
+            .finish()
+    }
+
     fn render_model_row(
         provider: &AgentProvider,
         index: usize,
         model: &AgentProviderModel,
         row: &ModelRow,
+        draft_editors: ProviderDraftEditors,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         let provider_id = provider.id.as_str();
@@ -541,15 +701,35 @@ impl AgentProvidersWidget {
 
         // chevron:展开 ▾ / 折叠 ▸。复用 render_card_button 的视觉风格。
         let chevron_label = if is_expanded { "▾" } else { "▸" };
-        let chevron_button = Self::render_card_button(
+        let chevron_button = Self::render_card_button_preserving_draft(
             chevron_label,
             row.expand_button_state.clone(),
+            draft_editors.clone(),
             AISettingsPageAction::ToggleAgentProviderModelExpanded {
                 provider_id: provider.id.clone(),
                 model_index: index,
             },
             appearance,
         );
+        let quick_remove_button = Self::render_card_button_preserving_draft(
+            "×",
+            row.quick_remove_button_state.clone(),
+            draft_editors.clone(),
+            AISettingsPageAction::RemoveAgentProviderModel {
+                provider_id: provider.id.clone(),
+                model_index: index,
+            },
+            appearance,
+        );
+        let row_controls = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(
+                Container::new(chevron_button)
+                    .with_margin_right(MODEL_ROW_GAP)
+                    .finish(),
+            )
+            .with_child(quick_remove_button)
+            .finish();
 
         let cell = |flex: f32, view: &ViewHandle<EditorView>| -> Box<dyn Element> {
             Expanded::new(
@@ -567,7 +747,7 @@ impl AgentProvidersWidget {
             .with_child(cell(2., &row.id_editor))
             .with_child(cell(1., &row.context_editor))
             .with_child(cell(1., &row.output_editor))
-            .with_child(chevron_button)
+            .with_child(row_controls)
             .finish();
 
         let mut col = Flex::column()
@@ -576,7 +756,12 @@ impl AgentProvidersWidget {
 
         if is_expanded {
             col = col.with_child(Self::render_model_detail_panel(
-                provider, index, model, row, appearance,
+                provider,
+                index,
+                model,
+                row,
+                draft_editors,
+                appearance,
             ));
         }
 
@@ -594,6 +779,7 @@ impl AgentProvidersWidget {
         index: usize,
         model: &AgentProviderModel,
         row: &ModelRow,
+        draft_editors: ProviderDraftEditors,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         let theme = appearance.theme();
@@ -626,9 +812,10 @@ impl AgentProvidersWidget {
                 Some(true) => format!("● {label}"),
                 Some(false) => format!("○ {label}"),
             };
-            Self::render_card_button(
+            Self::render_card_button_preserving_draft(
                 chip_label,
                 state,
+                draft_editors.clone(),
                 AISettingsPageAction::CycleAgentProviderModelCapability {
                     provider_id: provider.id.clone(),
                     model_index: index,
@@ -686,7 +873,13 @@ impl AgentProvidersWidget {
             } else {
                 format!("○ {label}")
             };
-            Self::render_card_button(chip_label, state, action, appearance)
+            Self::render_card_button_preserving_draft(
+                chip_label,
+                state,
+                draft_editors.clone(),
+                action,
+                appearance,
+            )
         };
 
         let capabilities_row = Wrap::row()
@@ -714,9 +907,10 @@ impl AgentProvidersWidget {
             .finish();
 
         // ---- Remove 按钮(展开后才出现,避免折叠态误删)----
-        let remove_button = Self::render_card_button(
+        let remove_button = Self::render_card_button_preserving_draft(
             "Remove model",
             row.remove_button_state.clone(),
+            draft_editors,
             AISettingsPageAction::RemoveAgentProviderModel {
                 provider_id: provider.id.clone(),
                 model_index: index,
@@ -788,6 +982,7 @@ impl AgentProvidersWidget {
                 .finish();
             }
         };
+        let draft_editors = ProviderDraftEditors::from_row(provider.id.clone(), row);
 
         let name_field = field_block(
             &crate::t!("settings-agent-providers-field-name"),
@@ -795,7 +990,13 @@ impl AgentProvidersWidget {
             label_color,
             appearance,
         );
-        let api_type_field = self.render_api_type_field(provider, row, label_color, appearance);
+        let api_type_field = self.render_api_type_field(
+            provider,
+            row,
+            draft_editors.clone(),
+            label_color,
+            appearance,
+        );
         let base_url_field = field_block(
             &crate::t!("settings-agent-providers-field-base-url"),
             ChildView::new(&row.base_url_editor).finish(),
@@ -826,9 +1027,10 @@ impl AgentProvidersWidget {
             .with_child(headers_label);
 
         for (idx, h_row) in row.header_rows.iter().enumerate() {
-            let remove_header_button = Self::render_card_button(
+            let remove_header_button = Self::render_card_button_preserving_draft(
                 "×",
                 h_row.remove_button_state.clone(),
+                draft_editors.clone(),
                 AISettingsPageAction::RemoveAgentProviderHeader {
                     provider_id: provider.id.clone(),
                     header_index: idx,
@@ -864,9 +1066,10 @@ impl AgentProvidersWidget {
             );
         }
 
-        let add_header_button = Self::render_card_button(
+        let add_header_button = Self::render_card_button_preserving_draft(
             "+ Add Header",
             row.add_header_button_state.clone(),
+            draft_editors.clone(),
             AISettingsPageAction::AddAgentProviderHeader {
                 provider_id: provider.id.clone(),
             },
@@ -948,15 +1151,33 @@ impl AgentProvidersWidget {
                         1.,
                         &crate::t!("settings-agent-providers-models-header-output"),
                     ))
-                    // 占位,与下方 × 按钮对齐
+                    // 占位,与下方展开/删除两个按钮对齐。
                     .with_child(
-                        Text::new(
-                            "  ".to_string(),
-                            appearance.ui_font_family(),
-                            appearance.ui_font_size(),
-                        )
-                        .with_color(dim.into())
-                        .finish(),
+                        Flex::row()
+                            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                            .with_child(
+                                Container::new(
+                                    Text::new(
+                                        "  ".to_string(),
+                                        appearance.ui_font_family(),
+                                        appearance.ui_font_size(),
+                                    )
+                                    .with_color(dim.into())
+                                    .finish(),
+                                )
+                                .with_margin_right(MODEL_ROW_GAP)
+                                .finish(),
+                            )
+                            .with_child(
+                                Text::new(
+                                    "  ".to_string(),
+                                    appearance.ui_font_family(),
+                                    appearance.ui_font_size(),
+                                )
+                                .with_color(dim.into())
+                                .finish(),
+                            )
+                            .finish(),
                     )
                     .finish(),
             )
@@ -972,31 +1193,39 @@ impl AgentProvidersWidget {
                     None => continue,
                 };
                 models_column.add_child(Self::render_model_row(
-                    provider, idx, model, m_row, appearance,
+                    provider,
+                    idx,
+                    model,
+                    m_row,
+                    draft_editors.clone(),
+                    appearance,
                 ));
             }
         }
 
         // ---- 底部按钮行 ----
-        let add_model_button = Self::render_card_button(
+        let add_model_button = Self::render_card_button_preserving_draft(
             crate::t!("settings-agent-providers-add-model"),
             row.add_model_button_state.clone(),
+            draft_editors.clone(),
             AISettingsPageAction::AddAgentProviderModel {
                 provider_id: provider.id.clone(),
             },
             appearance,
         );
-        let fetch_button = Self::render_card_button(
+        let fetch_button = Self::render_card_button_preserving_draft(
             crate::t!("settings-agent-providers-fetch-from-api"),
             row.fetch_button_state.clone(),
+            draft_editors.clone(),
             AISettingsPageAction::FetchAgentProviderModels {
                 provider_id: provider.id.clone(),
             },
             appearance,
         );
-        let sync_models_dev_button = Self::render_card_button(
+        let sync_models_dev_button = Self::render_card_button_preserving_draft(
             crate::t!("settings-agent-providers-sync-models-dev"),
             row.sync_models_dev_button_state.clone(),
+            draft_editors.clone(),
             AISettingsPageAction::SyncProviderModelsFromModelsDev {
                 provider_id: provider.id.clone(),
             },
@@ -1012,40 +1241,10 @@ impl AgentProvidersWidget {
         );
 
         // ---- 保存按钮:在 on_click 闭包里现场读取所有表单 buffer。
-        // 这里不能预先 build action(表单值随输入变化),所以过 clone editor handle
+        // 这里不能预先 build action(表单值随输入变化),所以过 draft editor handle
         // 随闭包走,点击时一起 dispatch SaveAgentProviderEdits。
         let save_button = {
-            let provider_id = provider.id.clone();
-            let name_editor = row.name_editor.clone();
-            let base_url_editor = row.base_url_editor.clone();
-            let api_key_editor = row.api_key_editor.clone();
-            // header_rows / model_rows 跟随列表 enumerate 顺序，与
-            // settings.agent_providers[provider].extra_headers / .models 对齐。
-            let header_editors: Vec<(ViewHandle<EditorView>, ViewHandle<EditorView>)> = row
-                .header_rows
-                .iter()
-                .map(|h| (h.key_editor.clone(), h.val_editor.clone()))
-                .collect();
-            let model_editors: Vec<(
-                usize,
-                ViewHandle<EditorView>,
-                ViewHandle<EditorView>,
-                ViewHandle<EditorView>,
-                ViewHandle<EditorView>,
-            )> = row
-                .model_rows
-                .iter()
-                .enumerate()
-                .map(|(idx, m)| {
-                    (
-                        idx,
-                        m.name_editor.clone(),
-                        m.id_editor.clone(),
-                        m.context_editor.clone(),
-                        m.output_editor.clone(),
-                    )
-                })
-                .collect();
+            let draft_editors = draft_editors.clone();
 
             appearance
                 .ui_builder()
@@ -1058,38 +1257,7 @@ impl AgentProvidersWidget {
                 .with_centered_text_label(crate::t!("settings-agent-providers-save"))
                 .build()
                 .on_click(move |ctx, app, _| {
-                    let name = name_editor.as_ref(app).buffer_text(app);
-                    let base_url = base_url_editor.as_ref(app).buffer_text(app);
-                    let api_key = api_key_editor.as_ref(app).buffer_text(app);
-                    let headers: Vec<(String, String)> = header_editors
-                        .iter()
-                        .map(|(k, v)| {
-                            (
-                                k.as_ref(app).buffer_text(app),
-                                v.as_ref(app).buffer_text(app),
-                            )
-                        })
-                        .collect();
-                    let models: Vec<(usize, String, String, u32, u32)> = model_editors
-                        .iter()
-                        .map(|(idx, name_e, id_e, ctx_e, out_e)| {
-                            let m_name = name_e.as_ref(app).buffer_text(app);
-                            let m_id = id_e.as_ref(app).buffer_text(app);
-                            let context_window =
-                                parse_token_count(&ctx_e.as_ref(app).buffer_text(app));
-                            let max_output_tokens =
-                                parse_token_count(&out_e.as_ref(app).buffer_text(app));
-                            (*idx, m_name, m_id, context_window, max_output_tokens)
-                        })
-                        .collect();
-                    ctx.dispatch_typed_action(AISettingsPageAction::SaveAgentProviderEdits {
-                        provider_id: provider_id.clone(),
-                        name,
-                        base_url,
-                        api_key,
-                        headers,
-                        models,
-                    });
+                    ctx.dispatch_typed_action(draft_editors.to_save_action(app));
                 })
                 .finish()
         };
