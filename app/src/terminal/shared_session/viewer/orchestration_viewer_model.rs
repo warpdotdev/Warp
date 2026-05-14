@@ -32,6 +32,7 @@ use warpui::{Entity, EntityId, ModelContext, SingletonEntity, WeakViewHandle};
 
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskId, AmbientAgentTaskState};
+use crate::ai::blocklist::history_model::BlocklistAIHistoryEvent;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::server::server_api::ai::TaskListFilter;
 use crate::server::server_api::ServerApiProvider;
@@ -43,9 +44,18 @@ use crate::terminal::{Event as TerminalViewEvent, TerminalView};
 /// growth without paginating.
 const CHILD_DISCOVERY_FETCH_LIMIT: i32 = 100;
 /// How often we re-poll the children list while at least one child is still
-/// in a non-terminal state. Polling halts once every known child reaches a
-/// terminal [`AmbientAgentTaskState`] so we don't burn requests indefinitely.
+/// in a non-terminal state.
 const STATUS_POLL_INTERVAL: Duration = Duration::from_secs(5);
+/// Slower polling cadence used once every known child has reached a
+/// terminal [`AmbientAgentTaskState`]. We don't stop polling entirely
+/// because the orchestrator can spawn new children or re-activate existing
+/// ones via follow-up messages (including viewer-sent input), and we want
+/// those to surface in the pill bar without forcing the user to reload.
+/// Polling tightens back to [`STATUS_POLL_INTERVAL`] automatically the next
+/// time a fetch surfaces a non-terminal child, and is kicked immediately on
+/// any [`BlocklistAIHistoryEvent::AppendedExchange`] for a tracked
+/// conversation.
+const STATUS_POLL_INTERVAL_IDLE: Duration = Duration::from_secs(30);
 
 /// Per-child orchestration metadata tracked by the viewer model. Keyed by
 /// `AmbientAgentTaskId` in [`OrchestrationViewerModel::children`].
@@ -86,8 +96,13 @@ pub struct OrchestrationViewerModel {
     terminal_view: WeakViewHandle<TerminalView>,
     /// Known child agents indexed by server-side task id.
     children: HashMap<AmbientAgentTaskId, ChildAgentEntry>,
-    /// Handle for the next scheduled poll. Cleared once every child reaches
-    /// a terminal state so the timer chain doesn't keep firing.
+    /// Handle for the next scheduled poll. Replaced (and implicitly
+    /// cancelled) by every [`Self::schedule_next_poll`] call, and cleared
+    /// while a kick-induced fetch is in flight — the fetch's response
+    /// callback schedules a fresh timer using the freshest child state.
+    /// The timer chain itself runs for the lifetime of this model; the
+    /// model is dropped when the parent pane's `TerminalManager` is torn
+    /// down (closing the orchestrator's shared session).
     polling_handle: Option<SpawnedFutureHandle>,
 }
 
@@ -108,7 +123,19 @@ impl OrchestrationViewerModel {
         log::info!(
             "[orch-viewer] new: parent_task_id={parent_task_id} terminal_view_id={terminal_view_id:?}"
         );
-        let mut model = Self {
+
+        // Kick polling back to fast cadence (and trigger an immediate
+        // fetch) any time a new exchange lands on the orchestrator or one
+        // of its tracked children. This catches the case where polling has
+        // dropped to idle (all children terminal) and then the viewer (or
+        // the agent) sends a follow-up that spawns new children or
+        // re-activates existing ones; without the kick the pill bar would
+        // not update until the next 30s idle poll.
+        ctx.subscribe_to_model(&BlocklistAIHistoryModel::handle(ctx), |me, event, ctx| {
+            me.maybe_kick_polling(event, ctx);
+        });
+
+        let model = Self {
             parent_task_id,
             terminal_view_id,
             terminal_view,
@@ -116,36 +143,105 @@ impl OrchestrationViewerModel {
             polling_handle: None,
         };
 
+        // Kick off the recurring poll. `fetch_children`'s response
+        // callback schedules the next poll, which in turn fires another
+        // fetch, creating a self-perpetuating cycle that adapts its
+        // interval to the latest known child state.
         model.fetch_children(ctx);
-        model.schedule_next_poll(ctx);
         model
     }
 
-    /// Schedules the next poll iff at least one known child is still in a
-    /// non-terminal state. When the model has not yet seen any children we
-    /// keep polling so live orchestrations whose `run_agents` call hasn't
-    /// settled yet can still surface their first child.
+    /// Schedules the next poll. The interval is [`STATUS_POLL_INTERVAL`]
+    /// while at least one known child is still in a non-terminal state (or
+    /// before any children have been seen), and drops to
+    /// [`STATUS_POLL_INTERVAL_IDLE`] once every known child has reached a
+    /// terminal state. Polling never stops on its own — see the field doc
+    /// on [`Self::polling_handle`] for the lifecycle.
     fn schedule_next_poll(&mut self, ctx: &mut ModelContext<Self>) {
-        let should_stop = !self.children.is_empty()
+        let all_terminal = !self.children.is_empty()
             && self
                 .children
                 .values()
                 .all(|child| child.last_state.is_terminal());
-        if should_stop {
-            self.polling_handle = None;
-            return;
-        }
+        let interval = if all_terminal {
+            STATUS_POLL_INTERVAL_IDLE
+        } else {
+            STATUS_POLL_INTERVAL
+        };
 
         let handle = ctx.spawn(
-            async {
-                Timer::after(STATUS_POLL_INTERVAL).await;
+            async move {
+                Timer::after(interval).await;
             },
             |me, _, ctx| {
+                // The next reschedule is driven by `fetch_children`'s
+                // response callback so the interval is picked using the
+                // freshest state.
                 me.fetch_children(ctx);
-                me.schedule_next_poll(ctx);
             },
         );
         self.polling_handle = Some(handle);
+    }
+
+    /// Kicks polling back to fast cadence on `AppendedExchange` for a
+    /// conversation we track — but only during the idle→active
+    /// transition. While we're already polling at
+    /// [`STATUS_POLL_INTERVAL`] (5s) every received exchange would
+    /// otherwise drive an extra REST request even though the next
+    /// scheduled poll is imminent. Narrowing the kick to idle
+    /// transitions keeps the request load bounded for active sessions
+    /// while still surfacing newly spawned / re-activated children
+    /// within seconds of follow-up input. See the subscription wired up
+    /// in [`Self::new`] for context.
+    fn maybe_kick_polling(
+        &mut self,
+        event: &BlocklistAIHistoryEvent,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let BlocklistAIHistoryEvent::AppendedExchange {
+            conversation_id, ..
+        } = event
+        else {
+            return;
+        };
+        // While we're polling at the fast cadence the next poll is
+        // already imminent; kicking would just double the request load on
+        // every streamed exchange. Skip unless every known child is
+        // terminal (we're polling at the 30s idle cadence).
+        let all_terminal = !self.children.is_empty()
+            && self
+                .children
+                .values()
+                .all(|child| child.last_state.is_terminal());
+        if !all_terminal {
+            return;
+        }
+        // `polling_handle = None` is the sentinel that a kick fetch is
+        // already in flight (cleared below before dispatching the fetch,
+        // re-armed by the fetch's response callback). Skipping here
+        // prevents pile-up when several exchanges land in quick
+        // succession during the idle→active transition.
+        if self.polling_handle.is_none() {
+            return;
+        }
+        let conversation_id = *conversation_id;
+        let is_orchestrator = self.find_parent_conversation_id(ctx) == Some(conversation_id);
+        let is_tracked_child = self
+            .children
+            .values()
+            .any(|child| child.conversation_id == conversation_id);
+        if !is_orchestrator && !is_tracked_child {
+            return;
+        }
+        log::info!(
+            "[orch-viewer] kick polling: AppendedExchange for tracked conv={conversation_id:?}"
+        );
+        // Cancel the pending timer; `fetch_children`'s response callback
+        // will queue a fresh one using the post-fetch state, so a kick
+        // landing during the idle (30s) interval correctly tightens back
+        // to the fast (5s) interval as soon as the new child surfaces.
+        self.polling_handle = None;
+        self.fetch_children(ctx);
     }
 
     /// Issues a `GET /agent/runs?ancestor_run_id={parent_task_id}` request
@@ -169,13 +265,19 @@ impl OrchestrationViewerModel {
                     .list_ambient_agent_tasks(CHILD_DISCOVERY_FETCH_LIMIT, filter)
                     .await
             },
-            move |me, result, ctx| match result {
-                Ok(tasks) => me.apply_children_fetch(tasks, ctx),
-                Err(err) => {
-                    log::warn!(
-                        "OrchestrationViewerModel: failed to fetch children for {parent_task_id}: {err:#}"
-                    );
+            move |me, result, ctx| {
+                match result {
+                    Ok(tasks) => me.apply_children_fetch(tasks, ctx),
+                    Err(err) => {
+                        log::warn!(
+                            "OrchestrationViewerModel: failed to fetch children for {parent_task_id}: {err:#}"
+                        );
+                    }
                 }
+                // Always reschedule — even on error so transient network
+                // failures don't break the polling loop — using the
+                // freshest child state to pick the interval.
+                me.schedule_next_poll(ctx);
             },
         );
     }
