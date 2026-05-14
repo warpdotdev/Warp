@@ -19463,6 +19463,7 @@ impl TypedActionView for Workspace {
             FileDeleted { path } => {
                 self.close_tabs_with_file_path(path, ctx);
             }
+            #[cfg(debug_assertions)]
             DebugResetAwsBedrockLoginBannerDismissed => {
                 // Reset the AWS Bedrock login banner dismissed state for debugging
                 AISettings::handle(ctx).update(ctx, |ai_settings, ctx| {
