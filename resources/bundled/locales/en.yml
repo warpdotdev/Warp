@@ -544,6 +544,9 @@ en:
     edit_prompt: "Edit prompt"
     warp_terminal_prompt: "Warp terminal prompt"
     shell_prompt: "Shell prompt (PS1)"
+    same_line_prompt: "Same line prompt"
+    separator: "Separator"
+    save_changes: "Save changes"
     restore_default: "Restore default"
 
   appearance:

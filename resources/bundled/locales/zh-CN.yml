@@ -544,6 +544,9 @@ zh-CN:
     edit_prompt: "编辑提示词"
     warp_terminal_prompt: "Warp 终端提示符"
     shell_prompt: "Shell 提示符 (PS1)"
+    same_line_prompt: "单行提示符"
+    separator: "分隔符"
+    save_changes: "保存更改"
     restore_default: "恢复默认"
 
   appearance:
