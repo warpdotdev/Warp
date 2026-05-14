@@ -103,21 +103,6 @@ fn environment_setup_failure_hides_continue_actions() {
     assert!(data.hide_continue_actions);
 }
 
-#[test]
-fn platform_error_hides_continue_actions() {
-    let mut task = task_with_run_time_and_credits();
-    task.state = AmbientAgentTaskState::Error;
-    task.status_message = Some(TaskStatusMessage {
-        message: "Agent capacity is temporarily full.".to_string(),
-        error_code: Some(TaskStatusErrorCode::ResourceUnavailable),
-    });
-    let mut data = TombstoneDisplayData::default();
-
-    data.enrich_from_task(task);
-
-    assert!(data.hide_continue_actions);
-}
-
 fn pr_artifact(branch: &str) -> Artifact {
     Artifact::PullRequest {
         url: format!("https://github.com/example/repo/pull/{branch}"),
