@@ -74,7 +74,7 @@ use input_classifier::{OnnxClassifier, OnnxModel};
 // Pick the ONNX model whose bytes are actually embedded in the binary
 #[cfg(feature = "nld_classifier_v1")]
 const DEFAULT_ONNX_MODEL: OnnxModel = OnnxModel::BertTinyV1;
-#[cfg(feature = "nld_classifier_v2")]
+#[cfg(all(not(feature = "nld_classifier_v1"), feature = "nld_classifier_v2"))]
 const DEFAULT_ONNX_MODEL: OnnxModel = OnnxModel::BertTinyV2;
 
 #[derive(Parser)]
