@@ -805,6 +805,11 @@ en:
     shared_by_creator: "Shared by: {creator}"
     shared_by_team_member: "Shared by a team member"
     from_another_device: "From another device"
+    logged_out_server_name: "Successfully logged out of {name} MCP server"
+    logged_out_server: "Successfully logged out of MCP server"
+    finish_current_install_before_link: "Finish the current MCP install before opening another install link."
+    unknown_server: "Unknown MCP server '{server}'"
+    server_cannot_install_from_link: "MCP server '{server}' cannot be installed from this link."
 
   platform:
     api_key_deleted: "API key deleted"

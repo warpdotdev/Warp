@@ -146,8 +146,8 @@ impl MCPServersSettingsPageView {
         ctx: &mut ViewContext<Self>,
     ) {
         let message = match server_name {
-            Some(name) => format!("Successfully logged out of {name} MCP server"),
-            None => "Successfully logged out of MCP server".to_string(),
+            Some(name) => t!("mcp.logged_out_server_name", name = name).to_string(),
+            None => t!("mcp.logged_out_server").to_string(),
         };
         match item_id {
             ServerCardItemId::TemplatableMCP(_) => {
@@ -314,7 +314,7 @@ impl MCPServersSettingsPageView {
                 "Ignoring MCP deeplink autoinstall for '{autoinstall_param}': installation modal already open"
             );
             self.add_error_toast(
-                "Finish the current MCP install before opening another install link.".to_string(),
+                t!("mcp.finish_current_install_before_link").to_string(),
                 ctx,
             );
             return;
@@ -329,7 +329,10 @@ impl MCPServersSettingsPageView {
             log::warn!(
                 "Unrecognized autoinstall value '{autoinstall_param}': no matching gallery item found"
             );
-            self.add_error_toast(format!("Unknown MCP server '{autoinstall_param}'"), ctx);
+            self.add_error_toast(
+                t!("mcp.unknown_server", server = autoinstall_param).to_string(),
+                ctx,
+            );
             return;
         };
 
@@ -357,7 +360,11 @@ impl MCPServersSettingsPageView {
             // gallery entry cannot be turned into a valid template. Surface the
             // failure to the user rather than silently returning.
             self.add_error_toast(
-                format!("MCP server '{gallery_title}' cannot be installed from this link."),
+                t!(
+                    "mcp.server_cannot_install_from_link",
+                    server = gallery_title
+                )
+                .to_string(),
                 ctx,
             );
             return;

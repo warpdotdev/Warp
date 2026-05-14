@@ -805,6 +805,11 @@ zh-CN:
     shared_by_creator: "共享者：{creator}"
     shared_by_team_member: "由团队成员共享"
     from_another_device: "来自另一台设备"
+    logged_out_server_name: "已成功从 {name} MCP server 登出"
+    logged_out_server: "已成功从 MCP server 登出"
+    finish_current_install_before_link: "请先完成当前 MCP 安装，再打开其他安装链接。"
+    unknown_server: "未知 MCP server：'{server}'"
+    server_cannot_install_from_link: "无法通过此链接安装 MCP server '{server}'。"
 
   platform:
     api_key_deleted: "API key 已删除"
