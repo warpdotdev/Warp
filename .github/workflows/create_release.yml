@@ -1619,7 +1619,7 @@ jobs:
 
   generate_changelogs:
     name: Generate Changelogs
-    if: ${{ needs.prepare_release.outputs.should_publish == 'true' && inputs.channel == 'stable' }}
+    if: ${{ needs.prepare_release.outputs.should_publish == 'true' }}
     runs-on: ubuntu-latest
     needs:
       - prepare_release
