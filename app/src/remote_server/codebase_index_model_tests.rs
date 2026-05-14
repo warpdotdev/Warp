@@ -86,6 +86,56 @@ fn availability_falls_back_to_longest_status_prefix() {
     assert!(availability.is_ready());
     assert_eq!(availability.repo_path(), Some("/repo/nested"));
 }
+#[test]
+fn availability_ignores_unmatched_explicit_local_path_in_remote_session() {
+    let mut model = RemoteCodebaseIndexModel::default();
+    let host = host();
+    model.record_navigated_directory(&remote_path("/workspaces/warp"));
+    model.apply_status_update(remote_path("/workspaces/warp"), ready_status("/workspaces/warp"));
+
+    let availability = model.availability_for_remote(
+        &host,
+        Some("/workspaces/warp"),
+        Some("/Users/moirahuang/code/warp"),
+    );
+
+    assert!(availability.is_ready());
+    assert_eq!(availability.repo_path(), Some("/workspaces/warp"));
+}
+
+#[test]
+fn availability_uses_explicit_path_when_it_matches_known_remote_repo() {
+    let mut model = RemoteCodebaseIndexModel::default();
+    let host = host();
+    model.record_navigated_directory(&remote_path("/workspaces/other"));
+    model.apply_status_update(
+        remote_path("/workspaces/other"),
+        ready_status("/workspaces/other"),
+    );
+    model.apply_status_update(remote_path("/workspaces/warp"), ready_status("/workspaces/warp"));
+
+    let availability = model.availability_for_remote(
+        &host,
+        Some("/workspaces/other"),
+        Some("/workspaces/warp/app"),
+    );
+
+    assert!(availability.is_ready());
+    assert_eq!(availability.repo_path(), Some("/workspaces/warp"));
+}
+
+#[test]
+fn resolve_remote_repo_path_falls_back_to_current_remote_cwd_when_no_repo_is_known() {
+    let model = RemoteCodebaseIndexModel::default();
+    let host = host();
+
+    let remote_path = model.resolve_remote_repo_path(&host, Some("/workspaces/new"), None);
+
+    assert_eq!(
+        remote_path.map(|remote_path| remote_path.path.as_str().to_string()),
+        Some("/workspaces/new".to_string())
+    );
+}
 
 #[test]
 fn indexing_state_is_not_ready() {
