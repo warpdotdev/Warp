@@ -961,6 +961,7 @@ pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::Orchestration,
     FeatureFlag::OrchestrationV2,
     FeatureFlag::OrchestrationPillBar,
+    FeatureFlag::OrchestrationViewerPillBar,
     FeatureFlag::RunAgentsTool,
     FeatureFlag::BlocklistMarkdownTableRendering,
     FeatureFlag::MarkdownTables,

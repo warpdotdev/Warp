@@ -26005,12 +26005,7 @@ impl TypedActionView for TerminalView {
                 });
             }
             SwitchAgentViewToConversation { conversation_id } => {
-                // Pill-bar nav: swap visibility instead of cloning the
-                // conversation into this pane. The shared-session viewer's
-                // orchestration pill bar relies on a hidden child pane (per
-                // child) holding the child's transcript, so the swap path
-                // is the right destination for both local and shared-session
-                // children.
+                // Pill-bar nav: every child has a hidden pane, so swap to it.
                 ctx.emit(Event::SwapPaneToConversation {
                     conversation_id: *conversation_id,
                 });

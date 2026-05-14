@@ -135,68 +135,63 @@ This covers the two common cases:
 External users with only a session link who are not on the owning team would not have access to child tasks. This is an edge case that can be addressed later if link-shared orchestrated sessions become common.
 
 ### Layer 2: warp client — children poller + per-child hidden shared-session panes
-
 Split the responsibilities cleanly:
-
-- A new `OrchestrationViewerModel` *only* discovers children via REST, registers them in `BlocklistAIHistoryModel`, and emits a signal to the pane group when a child first becomes joinable (i.e. has a `session_id`). It owns **no** `Network`s.
-- The pane group materializes a hidden shared-session viewer pane per child once that child has a `session_id`. Each hidden pane is created via the existing `create_shared_session_viewer(session_id, …)` helper (`pane_group/mod.rs:6109-6133`), giving the child its own `TerminalView`, `TerminalManager`, `BlocklistAIController`, and viewer-side `Network`. The pane is held off-tree in `child_agent_panes`, exactly like local-orchestration remote children.
-- Pill clicks dispatch the existing `SwapPaneToConversation` action; `TerminalPane::handle_view_event` calls `ensure_hidden_child_agent_pane_for_conversation` and `swap_active_pane_to_conversation` (`pane_group/pane/terminal_pane.rs:1434-1444`). The user sees the child pane.
-
-**Initialization:**
-`TerminalManager` creates and stores an `OrchestrationViewerModel` handle after `JoinedSuccessfully` when `task_id` is available (`terminal_manager.rs:730-750`). The model captures a `WeakViewHandle<TerminalView>` for the parent viewer so it can find the host pane group when emitting child-discovery events.
-
-**a) Discover children on session join:**
-
-On construction, the model calls `GET /agent/runs?ancestor_run_id={taskId}` via `ServerApiProvider` (the same HTTP client used in `wasm_view.rs:186-196`). For each `RunItem` in the response:
-- Create a child conversation via `start_new_child_conversation()` and call `set_viewing_shared_session_for_conversation(true)`. The `is_viewing_shared_session` flag suppresses `TaskStatusSyncModel` round-tripping (`task_status_sync_model.rs:125-137`).
+- A new `OrchestrationViewerModel` *only* discovers children via REST, registers them in `BlocklistAIHistoryModel`, and emits `TerminalViewEvent::EnsureSharedSessionViewerChildPane` on the parent's `TerminalView` once a child first reports a `session_id`. It owns **no** `Network`s.
+- The pane group's `ensure_shared_session_viewer_child_pane` handler materializes a hidden shared-session viewer pane per child. Each hidden pane is created via `create_shared_session_viewer(child_session_id, resources, view_size, /* enable_orchestration_polling */ false, ctx)`, giving the child its own `TerminalView`, `TerminalManager`, `BlocklistAIController`, and viewer-side `Network`. The pane is held off-tree in `child_agent_panes`, exactly like local-orchestration remote children.
+- Pill clicks dispatch `TerminalAction::SwitchAgentViewToConversation`, which `TerminalView::handle_action` translates to `Event::SwapPaneToConversation`. `TerminalPane::handle_view_event` then calls `ensure_hidden_child_agent_pane_for_conversation` + `swap_active_pane_to_conversation` (`pane_group/pane/terminal_pane.rs`).
+#### Initialization
+The viewer `TerminalManager` owns the `OrchestrationViewerModel` slot:
+```rust
+orchestration_viewer_model: Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>
+```
+The `Arc<FairMutex<Option<...>>>` matches the existing `current_network` storage pattern so the network-event closure can write into the slot without `&mut self`. Lazily created in the `JoinedSuccessfully` arm of the network-event subscription, only when:
+1. `enable_orchestration_polling == true` on this `TerminalManager` (root viewer pane), AND
+2. `FeatureFlag::OrchestrationViewerPillBar.is_enabled()`, AND
+3. The slot is currently `None` (`is_none()` guards against reconnect dupes), AND
+4. The session source is `SessionSourceType::AmbientAgent { task_id }`.
+The model captures the parent `WeakViewHandle<TerminalView>` so it can emit `EnsureSharedSessionViewerChildPane` on the host view.
+#### `enable_orchestration_polling` flag
+A single bool plumbed through `viewer::TerminalManager::new`/`new_deferred`, `ambient_agent::create_cloud_mode_view`, `PaneGroup::create_cloud_mode_terminal`, and `PaneGroup::create_shared_session_viewer`. `true` for the root viewer pane of an orchestrator, `false` for per-child viewer panes. Skipping polling on children avoids both duplicated REST traffic and grandchild double-registration via the transitive `ancestor_run_id` filter.
+Callers passing `true` (root viewers): `create_ambient_agent_terminal`, `replace_loading_pane_with_restored_ambient_cloud_mode_pane`, the restored-shared-session-viewer path in `restore_pane_leaf`, the `new_for_shared_session_viewer` constructor, the pending-restoration path in `register_pending_ambient_restorations`, and `view_impl.rs::start_cloud_mode`.
+Callers passing `false` (per-child viewers): `ensure_shared_session_viewer_child_pane`, `insert_ambient_agent_pane_hidden_for_child_agent`.
+#### a) Discover children on session join
+On construction, the model calls `GET /agent/runs?ancestor_run_id={taskId}` via `ServerApiProvider` (same HTTP client used in `wasm_view.rs`). For each `RunItem` in the response:
+- Create a child conversation via `start_new_child_conversation()` and call `set_viewing_shared_session_for_conversation(true)`. The `is_viewing_shared_session` flag suppresses `TaskStatusSyncModel` round-tripping.
 - Call `conversation.set_task_id(task_id)` so the pane group can look the task up later when it materializes the hidden pane.
 - Set `agent_name` from `RunItem.Title`.
 - Map `RunItem.State` → `ConversationStatus` and set it on the conversation.
-- Populate hover card fields from available `RunItem` data:
-  - Full name: `RunItem.Title`
-  - Task description: `RunItem.Prompt`
-  - Harness type: `RunItem.AgentConfig.harness` (if non-Oz)
-  - PR branch/number: derivable from `RunItem.Artifacts` (filter for PR artifact type)
-  - Working directory: not available in the current API response — omitted per product invariant 20
-
-The model does **not** subscribe to `BlocklistAIHistoryEvent::SetActiveConversation`. It does not own `Network`s. It does not call `find_existing_conversation_by_server_token`. Its only side effect on top of REST polling is updating the history model and asking the pane group to ensure a hidden pane.
-
-**b) Poll for status updates:**
-
-The model owns a polling timer (`Option<SpawnedFutureHandle>`, following the pattern in `ambient_agent/model.rs:192`). Every ~5 seconds, it re-fetches `GET /agent/runs?ancestor_run_id={taskId}`. On each response:
-- New children discovered → create local conversation as above.
-- Existing child whose `State` changed → call `update_conversation_status()` which emits `UpdatedConversationStatus` (pill bar already subscribes).
-- Existing child whose `session_id` transitioned from `None` to `Some` → ask the pane group to materialize the hidden shared-session pane now.
-
-Polling starts on model construction and stops once all children reach a terminal state (Succeeded, Failed, Cancelled, Errored) or the parent session ends.
-
-Do **not** use `get_or_async_fetch_task_data()` — it caches on first fetch and won't re-hit the server (`agent_conversations_model.rs:1409-1417`).
-
-**c) Materialize hidden shared-session panes for joinable children:**
-
-When a child's `session_id` is first known, the `OrchestrationViewerModel` calls a small helper on `PaneGroup` — `ensure_shared_session_viewer_child_pane(parent_pane_id, child_conversation_id, child_session_id)` — which:
-1. Returns immediately if `child_agent_panes` already has an entry for `child_conversation_id`.
-2. Calls `create_shared_session_viewer(child_session_id, resources, view_bounds_size, ctx)` to mint a fully-equipped `(TerminalView, TerminalManager)` that begins joining the child's shared session.
-3. Wraps them in a `TerminalPane`, attaches it off-tree via `attach_child_pane_off_tree`, and stores the resulting `PaneId` in `child_agent_panes` keyed by the child conversation id.
-4. Restores/aligns the new pane's terminal view with the existing child conversation (sets `is_shared_ambient_agent_session`, attaches the conversation id to the pane's terminal view, etc.) so that when the child pane's controller receives its first `Init` it can reuse the local conversation via `find_existing_conversation_by_server_token` or the empty-selected-conversation reuse path.
-
-While a child does not yet have a `session_id` (e.g. it's still `Queued` or `Claimed`), the pill is rendered but no hidden pane exists. Clicking such a pill currently lands on the existing in-place "new conversation" zero state of the parent view (since `ensure_hidden_child_agent_pane_for_conversation` returns false); we accept this for V1 and surface a clearer loading state in a follow-up.
-
-**d) Per-pane network lifecycle (already provided by `create_shared_session_viewer`):**
-
-Each hidden child pane's `viewer::TerminalManager` is responsible for its own `Network`. The events flow `Network → channel_event_proxy → BlocklistAIController` *inside that pane*, with no cross-talk into the parent viewer's controller. `current_response_id` is therefore scoped to a single shared session per controller, the model's existing single-stream invariant. When the parent viewer's pane group is torn down, the hidden child panes are dropped along with it (via `detach_panes_for_close` / `discard_pane`), which closes their networks.
-
-**e) Click path:**
-
-The action flow becomes the same as local orchestration:
+The model does **not** subscribe to `BlocklistAIHistoryEvent::SetActiveConversation`. It does not own `Network`s. It does not call `find_existing_conversation_by_server_token`. Its only side effects are updating the history model and emitting `EnsureSharedSessionViewerChildPane`.
+#### b) Polling state machine
+The model owns a single polling timer (`Option<SpawnedFutureHandle>`). `SpawnedFutureHandle` does **not** abort on drop, so `schedule_next_poll` explicitly calls `prior.abort()` before installing the next handle to prevent stacked timer chains.
+Two cadences:
+- **Active** (`STATUS_POLL_INTERVAL = 5s`): at least one tracked child is non-terminal.
+- **Idle** (`STATUS_POLL_INTERVAL_IDLE = 30s`): every known child is terminal. We don't stop polling entirely because follow-up user input on the orchestrator can spawn new children.
+The model **also subscribes to `BlocklistAIHistoryEvent::AppendedExchange`** and kicks the polling cadence back to fast whenever a new exchange arrives on the orchestrator or a tracked child (only during the idle→active transition, to avoid REST pile-up while already polling at the active cadence).
+#### c) Generation guard for stale fetches
+The model holds a `fetch_generation: u64` counter that is incremented immediately before each fetch dispatch. The response callback checks the captured generation against the live counter and silently drops responses from earlier generations. This guards against a slow timer-fired fetch clobbering a fresher kick fetch (e.g. timer-fired fetch starts, user types and triggers an AppendedExchange kick which aborts the timer and dispatches a fresh fetch — both responses now race, and only the freshest one should apply).
+#### d) Stop conditions
+`stop_orchestration_polling` aborts the polling handle and clears the model slot. Called from:
+- `NetworkEvent::SessionEnded` (non-ambient session) — viewer leaves a regular shared session.
+- `NetworkEvent::SessionEnded` (ambient session, **non-owner viewers only**) — owners may handoff via `attach_followup_session` (same `TerminalManager`, same orchestrator `task_id`), so their model is preserved. Non-owners (read-only viewers) won't get a follow-up session and should stop polling.
+- `NetworkEvent::ViewerRemoved` — viewer was removed and will not re-attach.
+- `NetworkEvent::FailedToReconnect` — terminal failure.
+#### e) Materialize hidden shared-session panes for joinable children
+`OrchestrationViewerModel` tracks each child in a `ChildAgentEntry` with a `pane_materialization_requested: bool` gate. When a child's `session_id` first transitions from `None` to `Some`, the model emits `Event::EnsureSharedSessionViewerChildPane { conversation_id, session_id }` on the parent's `TerminalView` exactly once per child (the gate prevents re-emission on subsequent polls).
+The parent `TerminalPane::handle_view_event` forwards the event to `PaneGroup::ensure_shared_session_viewer_child_pane`, which:
+1. **Race recovery**: if the user clicked a pill before this helper ran, `create_hidden_child_agent_pane`'s viewer-side branch will have already created a loading-placeholder pane (visible as a spinner with the pill bar) and registered it in `child_agent_panes`. The emission gate guarantees this helper runs at most once per child per model lifetime, so any existing entry must be that fallback — safe to discard. The helper captures the discarded pane's tree anchor (via `original_pane_for_replacement`) and re-swaps to the new pane after attaching it.
+2. Calls `create_shared_session_viewer(child_session_id, resources, view_size, /* enable_orchestration_polling */ false, ctx)` to mint a fully-equipped `(TerminalView, TerminalManager)` that begins joining the child's shared session.
+3. Wraps them in a `TerminalPane`, attaches off-tree via `attach_child_pane_off_tree`, stores the new `PaneId` in `child_agent_panes` keyed by the child conversation id.
+4. Restores the local child conversation into the new view (`restore_conversation_after_view_creation`), enters agent view, and opportunistically updates `ambient_agent_view_model` if the child happens to expose one.
+While a child does not yet have a `session_id`, clicking the pill renders a loading-placeholder pane (with the pill bar visible so the user can navigate back) instead of a stale empty agent view. The placeholder is replaced once the next poll surfaces the `session_id` and triggers this helper.
+#### f) Per-pane network lifecycle
+Each hidden child pane's `viewer::TerminalManager` owns its own `Network`. Events flow `Network → channel_event_proxy → BlocklistAIController` *inside that pane*, with no cross-talk into the parent viewer's controller. `current_response_id` is scoped to a single shared session per controller (the controller's existing single-stream invariant). When the parent viewer's pane group is torn down, the hidden child panes are dropped along with it (via `detach_panes_for_close` / `discard_pane`), which closes their networks.
+#### g) Click path
 1. User clicks child pill → `OrchestrationPillBar` dispatches `TerminalAction::SwitchAgentViewToConversation`.
-2. `TerminalView::handle_action` emits `Event::SwapPaneToConversation { conversation_id }` (no in-place branch, no shared-session-specific guards).
-3. `TerminalPane::handle_view_event` calls `ensure_hidden_child_agent_pane_for_conversation` (which now succeeds because step (c) created the pane) and then `swap_active_pane_to_conversation`.
+2. `TerminalView::handle_action` emits `Event::SwapPaneToConversation { conversation_id }` (no in-place branch — every child has a hidden pane, so swap to it).
+3. `TerminalPane::handle_view_event` calls `ensure_hidden_child_agent_pane_for_conversation` and `swap_active_pane_to_conversation`.
 4. The pane swap makes the child pane visible. Its agent view renders the child conversation that the child's own `BlocklistAIController` has been populating.
-
-**f) Re-Inits don't disrupt user focus:**
-
-The parent's `BlocklistAIController` continues to receive `Init`s for the parent's own request streams. Those `Init`s only affect the parent's pane, not the child panes — each pane has its own controller and its own agent view state. No further changes to `on_shared_init` are required.
+#### h) Re-Inits don't disrupt user focus
+The per-child-pane architecture eliminates the cross-stream interference described in §V1 lessons. The parent's `BlocklistAIController` continues to receive `Init`s for the parent's own request streams; those `Init`s only affect the parent's pane because each child pane has its own controller, its own agent view state, and its own selected-conversation tracking. No changes to `on_shared_init` are required.
 
 ### Layer 3: warp client — make pill bar WASM-compatible
 

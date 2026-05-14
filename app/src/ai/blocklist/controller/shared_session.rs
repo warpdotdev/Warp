@@ -124,36 +124,45 @@ impl BlocklistAIController {
         // This preserves block visibility for terminal blocks created in the given agent view.
         let existing_conversation_id =
             self.find_existing_conversation_by_server_token(&init_event.conversation_id, ctx);
-        let conversation_id = if let Some(existing_id) = existing_conversation_id {
-            existing_id
-        } else {
-            let selected_conversation_id =
-                self.context_model.as_ref(ctx).selected_conversation_id(ctx);
-            let reuse = selected_conversation_id.and_then(|selected_id| {
-                let selected_state = history
+        let conversation_id = existing_conversation_id
+            .or_else(|| {
+                let selected_conversation_id = self
+                    .context_model
                     .as_ref(ctx)
-                    .conversation(&selected_id)
-                    .map(|c| (c.exchange_count(), c.server_conversation_token().is_some()));
-                let should_reuse_selected_conversation = selected_state == Some((0, false));
+                    .selected_conversation_id(ctx)?;
+
+                // If the current agent view's conversation is completely empty,
+                // we should just associate it with the incoming request/token.
+                let should_reuse_selected_conversation = history
+                    .as_ref(ctx)
+                    .conversation(&selected_conversation_id)
+                    .is_some_and(|conversation| {
+                        conversation.exchange_count() == 0
+                            && conversation.server_conversation_token().is_none()
+                    });
                 if !should_reuse_selected_conversation {
                     return None;
                 }
+
                 history.update(ctx, |history, ctx| {
                     history.set_server_conversation_token_for_conversation(
-                        selected_id,
+                        selected_conversation_id,
                         init_event.conversation_id.clone(),
                     );
-                    history.set_viewing_shared_session_for_conversation(selected_id, true);
+                    history.set_viewing_shared_session_for_conversation(
+                        selected_conversation_id,
+                        true,
+                    );
                     ctx.notify();
                 });
-                Some(selected_id)
-            });
-            reuse.unwrap_or_else(|| {
+
+                Some(selected_conversation_id)
+            })
+            .unwrap_or_else(|| {
                 history.update(ctx, |h, ctx| {
                     h.start_new_conversation(terminal_view_id, false, true, false, ctx)
                 })
-            })
-        };
+            });
         if self.should_skip_replayed_response_for_existing_conversation(
             existing_conversation_id,
             &init_event.request_id,

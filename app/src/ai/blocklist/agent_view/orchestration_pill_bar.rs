@@ -1728,9 +1728,6 @@ fn render_pill(
     })
     .on_click(move |ctx, app, _| {
         if is_selected {
-            log::info!(
-                "[orch-pill] click ignored (already selected): conv={conversation_id:?} kind={kind:?}"
-            );
             return;
         }
         // Single source of truth: if the conversation is currently owned
@@ -1747,9 +1744,6 @@ fn render_pill(
             is_conversation_open_in_other_visible_view(conversation_id, self_terminal_view_id, app);
 
         if is_open_elsewhere {
-            log::info!(
-                "[orch-pill] dispatching FocusOpenedConversation: conv={conversation_id:?}"
-            );
             ctx.dispatch_typed_action(OrchestrationPillBarAction::FocusOpenedConversation(
                 conversation_id,
             ));
@@ -1763,9 +1757,6 @@ fn render_pill(
         // `session_id` is known). In both cases the swap-based navigation is
         // the correct destination.
         let action = navigation_action_for_pill(kind, conversation_id);
-        log::info!(
-            "[orch-pill] dispatching action: conv={conversation_id:?} action={action:?}"
-        );
         ctx.dispatch_typed_action(
             PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(action),
         );
