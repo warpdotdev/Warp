@@ -184,7 +184,7 @@ use super::{
     GlobalCodeReviewEvent, GlobalCodeReviewModel,
 };
 #[cfg(not(target_family = "wasm"))]
-use crate::code::buffer_location::FileLocation;
+use crate::code::buffer_location::LocalOrRemotePath;
 use crate::code::ShowCommentEditorProvider;
 #[cfg(not(target_family = "wasm"))]
 use crate::code::ShowFindReferencesCard;
@@ -2954,7 +2954,7 @@ impl CodeReviewView {
 
             let local_code_view = ctx.add_typed_action_view(|ctx| {
                 let editor = LocalCodeEditorView::new_with_global_buffer(
-                    FileLocation::Local(full_file_path.clone()),
+                    LocalOrRemotePath::Local(full_file_path.clone()),
                     |buffer_state, ctx| {
                         ctx.add_typed_action_view(|ctx| {
                             let mut editor_view = CodeEditorView::new(
