@@ -3616,6 +3616,7 @@ impl PaneGroup {
     fn create_cloud_mode_terminal(
         resources: TerminalViewResources,
         view_bounds_size: Vector2F,
+        enable_orchestration_polling: bool,
         ctx: &mut ViewContext<Self>,
     ) -> (
         ViewHandle<TerminalView>,
@@ -3626,6 +3627,7 @@ impl PaneGroup {
             resources,
             view_bounds_size,
             window_id,
+            enable_orchestration_polling,
             ctx,
         )
     }
@@ -3639,8 +3641,10 @@ impl PaneGroup {
         ViewHandle<TerminalView>,
         ModelHandle<Box<dyn TerminalManager>>,
     ) {
+        // Root cloud-mode orchestrator pane: enable children polling so the
+        // pill bar populates once the session is joined.
         let (terminal_view, terminal_manager) =
-            Self::create_cloud_mode_terminal(resources, view_bounds_size, ctx);
+            Self::create_cloud_mode_terminal(resources, view_bounds_size, true, ctx);
 
         terminal_view.update(ctx, |view, ctx| {
             view.enter_ambient_agent_setup(None, ctx);
@@ -4483,8 +4487,15 @@ impl PaneGroup {
             model_event_sender: self.model_event_sender.clone(),
         };
         let view_bounds = Self::estimated_view_bounds(ctx);
+        // Per-child cloud-mode viewer pane (remote child of a local
+        // orchestrator): the parent already polls for the orchestrator's
+        // descendants via `OrchestrationViewerModel`, so spinning up
+        // another model keyed on the child's task_id would just duplicate
+        // REST traffic and risk registering grandchildren under the wrong
+        // parent. See the field doc on
+        // `shared_session::viewer::TerminalManager::enable_orchestration_polling`.
         let (view, terminal_manager) =
-            Self::create_cloud_mode_terminal(resources, view_bounds.size(), ctx);
+            Self::create_cloud_mode_terminal(resources, view_bounds.size(), false, ctx);
         let pane_data = TerminalPane::new(
             uuid.as_bytes().to_vec(),
             terminal_manager,
@@ -5650,8 +5661,11 @@ impl PaneGroup {
             model_event_sender: self.model_event_sender.clone(),
         };
         let view_bounds = Self::estimated_view_bounds(ctx);
+        // Restored ambient agent pane is reopening as a root cloud-mode
+        // viewer of an orchestrator; enable children polling so the pill
+        // bar repopulates on rejoin.
         let (terminal_view, terminal_manager) =
-            Self::create_cloud_mode_terminal(resources, view_bounds.size(), ctx);
+            Self::create_cloud_mode_terminal(resources, view_bounds.size(), true, ctx);
         let terminal_view_id = terminal_view.id();
 
         Self::load_data_into_restored_ambient_cloud_mode_view(

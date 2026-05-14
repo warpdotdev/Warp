@@ -54,10 +54,16 @@ use crate::terminal::TerminalView;
 ///
 /// This is used when pushing a new ambient agent view onto an existing pane's navigation stack,
 /// or when creating a standalone ambient agent pane.
+///
+/// `enable_orchestration_polling` should be `true` for root cloud-mode panes
+/// (the pill bar surfaces the orchestrator's children once joined) and
+/// `false` for cloud-mode panes that represent a single child of a local
+/// orchestration, where the parent already discovers grandchildren.
 pub fn create_cloud_mode_view(
     resources: TerminalViewResources,
     view_bounds_size: Vector2F,
     window_id: WindowId,
+    enable_orchestration_polling: bool,
     ctx: &mut AppContext,
 ) -> (
     ViewHandle<TerminalView>,
@@ -71,6 +77,7 @@ pub fn create_cloud_mode_view(
             resources,
             view_bounds_size,
             window_id,
+            enable_orchestration_polling,
             ctx,
         )) as Box<dyn TerminalManager>
     });

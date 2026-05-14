@@ -728,8 +728,12 @@ impl TerminalView {
         };
 
         // TODO: Use self.size_info
+        //
+        // Local-session-initiated cloud mode (including local-to-cloud
+        // handoff): the new pane is a root cloud-mode orchestrator view,
+        // so enable children polling.
         let (terminal_view, terminal_manager) =
-            super::create_cloud_mode_view(resources, Vector2F::zero(), ctx.window_id(), ctx);
+            super::create_cloud_mode_view(resources, Vector2F::zero(), ctx.window_id(), true, ctx);
 
         // Only insert an ambient agent entry block once the agent is actually dispatched.
         // This avoids persisting an empty "New cloud agent" entry when the user enters cloud mode

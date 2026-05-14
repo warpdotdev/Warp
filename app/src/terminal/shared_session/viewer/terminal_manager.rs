@@ -345,17 +345,27 @@ impl TerminalManager {
 
     /// Create a new terminal manager for eventually viewing a cloud mode shared session that is
     /// not yet available.
+    ///
+    /// `enable_orchestration_polling` should be `true` for root cloud-mode
+    /// orchestrator panes (so the pill bar populates once the session is
+    /// joined) and `false` for per-child cloud-mode viewer panes (e.g.
+    /// hidden remote-child panes spawned by a local orchestrator) — see
+    /// the field doc on [`Self::enable_orchestration_polling`].
     pub fn new_deferred(
         resources: TerminalViewResources,
         initial_size: Vector2F,
         window_id: WindowId,
+        enable_orchestration_polling: bool,
         ctx: &mut AppContext,
     ) -> Self {
-        // Cloud-mode deferred viewers are owner panes that may later attach
-        // to an orchestrator's shared session via `attach_followup_session`;
-        // enable orchestration polling so the pill bar surfaces children
-        // once the session is joined.
-        Self::new_internal(resources, initial_size, window_id, true, true, ctx)
+        Self::new_internal(
+            resources,
+            initial_size,
+            window_id,
+            true,
+            enable_orchestration_polling,
+            ctx,
+        )
     }
 
     /// Connects a deferred terminal manager to a shared session.
@@ -879,6 +889,21 @@ impl TerminalManager {
                         ctx,
                     ) {
                         return;
+                    }
+                    // The ambient shared session for this viewer has ended.
+                    // Non-owner viewers (read-only) won't get a follow-up
+                    // session and shouldn't keep polling `GET /agent/runs`
+                    // for the rest of the pane's lifetime; owners may
+                    // trigger a cloud-cloud handoff via
+                    // `attach_followup_session`, which reuses the same
+                    // `TerminalManager` and orchestrator `task_id`, so we
+                    // keep their model alive and let it reconcile state on
+                    // the new session's `JoinedSuccessfully`.
+                    let is_owner = view.read(ctx, |terminal_view, app| {
+                        terminal_view.owned_ambient_agent_task_id(app).is_some()
+                    });
+                    if !is_owner {
+                        Self::stop_orchestration_polling(&orchestration_viewer_model);
                     }
                 } else {
                     // Non-ambient SessionEnded path can't carry an
@@ -1629,14 +1654,14 @@ impl TerminalManager {
     /// Drops the [`OrchestrationViewerModel`] from the shared slot if one
     /// exists. Called from terminal session-end paths so we don't keep
     /// polling `GET /agent/runs` after the viewer has been removed,
-    /// reconnection has been abandoned, or a non-ambient session ends.
-    /// `SpawnedFutureHandle` does not abort on drop, but the model's
-    /// timer + REST continuations are dispatched via `ctx.spawn` with
-    /// entity-scoped callbacks; once the entity is dropped here those
-    /// callbacks become no-ops, so the polling loop terminates naturally.
-    /// Ambient `SessionEnded` keeps polling because it can be the front
-    /// half of a cloud-cloud handoff routed through
-    /// `end_current_ambient_session`.
+    /// reconnection has been abandoned, a non-ambient session ends, or a
+    /// non-owner ambient viewer's session ends. `SpawnedFutureHandle` does
+    /// not abort on drop, but the model's timer + REST continuations are
+    /// dispatched via `ctx.spawn` with entity-scoped callbacks; once the
+    /// entity is dropped here those callbacks become no-ops, so the
+    /// polling loop terminates naturally. Owner-side ambient
+    /// `SessionEnded` keeps polling because it can be the front half of a
+    /// cloud-cloud handoff routed through `end_current_ambient_session`.
     fn stop_orchestration_polling(
         orchestration_viewer_model: &Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
     ) {
