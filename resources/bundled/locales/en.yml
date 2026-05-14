@@ -469,6 +469,11 @@ en:
     empty_subtitle: "Choose how you’d like to set up your environment:"
 
   themes:
+    title: "Themes"
+    change_current_theme: "Change your current theme."
+    pick_light_theme: "Pick a theme for when your system is in light mode."
+    pick_dark_theme: "Pick a theme for when your system is in dark mode."
+    no_matching_themes: "No matching themes!"
     auto_generate_theme_description: "Automatically generate a theme based on extracted colors from an image (.png, .jpg)."
     select_image: "Select an image"
     selecting_image: "Selecting image..."

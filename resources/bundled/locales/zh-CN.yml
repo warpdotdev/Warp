@@ -469,6 +469,11 @@ zh-CN:
     empty_subtitle: "选择环境设置方式："
 
   themes:
+    title: "主题"
+    change_current_theme: "更改当前主题。"
+    pick_light_theme: "选择系统浅色模式下使用的主题。"
+    pick_dark_theme: "选择系统深色模式下使用的主题。"
+    no_matching_themes: "没有匹配的主题！"
     auto_generate_theme_description: "根据图片（.png、.jpg）中提取的颜色自动生成主题。"
     select_image: "选择图片"
     selecting_image: "正在选择图片..."
