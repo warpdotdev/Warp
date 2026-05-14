@@ -13590,18 +13590,6 @@ impl Workspace {
             Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
             return;
         };
-        // Register the fork in the live list for the new pane's terminal view
-        // so that `set_active_conversation_id`, `enter_agent_view_for_conversation`,
-        // and the shared-session replay skip logic can all find it synchronously.
-        // The conversation data is already fully in `conversations_by_id` from
-        // `insert_forked_conversation_from_tasks` — without this the view falls
-        // into an async server fetch that races with incoming replay events.
-        let new_terminal_view_id = new_pane_view.id();
-        history_model.update(ctx, |history_model, _| {
-            history_model
-                .register_conversation_for_terminal_view(local_fork_id, new_terminal_view_id);
-        });
-
         // Restore the forked conversation into the newly-created pane.
         new_pane_view.update(ctx, |terminal_view, view_ctx| {
             terminal_view.restore_conversation_after_view_creation(
