@@ -1875,6 +1875,12 @@ en:
   # ── Terminal Banner ──
   terminal_banner:
     slow_bootstrap: "Seems like your shell is taking a while to start...  "
+    shell_process_exited: "Shell process exited"
+    shell_process_could_not_start: "Shell process could not start!"
+    shell_process_exited_prematurely: "Shell process exited prematurely!"
+    premature_shell_subtext: "Something went wrong while starting {shell} and Warpifying it, causing the process to terminate. Warpify script output is displayed here, which may point at a cause."
+    file_issue: "File issue"
+    copy_error: "Copy error"
     more_info: "More info"
     more_info_lower: "more info"
     show_initialization_block: "Show initialization block"

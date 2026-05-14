@@ -1875,6 +1875,12 @@ zh-CN:
   # ── 终端横幅 ──
   terminal_banner:
     slow_bootstrap: "看起来你的 shell 启动有点慢...  "
+    shell_process_exited: "Shell 进程已退出"
+    shell_process_could_not_start: "Shell 进程无法启动！"
+    shell_process_exited_prematurely: "Shell 进程过早退出！"
+    premature_shell_subtext: "启动 {shell} 并对其进行 Warpify 时出了问题，导致进程终止。这里会显示 Warpify 脚本输出，可能指向原因。"
+    file_issue: "提交问题"
+    copy_error: "复制错误"
     more_info: "更多信息"
     more_info_lower: "更多信息"
     show_initialization_block: "显示初始化区块"
