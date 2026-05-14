@@ -1364,7 +1364,10 @@ impl NewScrollable {
                 } else {
                     // When opted in on a single-axis scrollable, swap a
                     // pure cross-axis wheel delta onto the main axis so
-                    // the existing mousewheel path can consume it.
+                    // the existing mousewheel path can consume it. Exact
+                    // `== 0.0` is intentional: discrete mouse wheels emit
+                    // 0 on the cross axis, trackpads always carry a tiny
+                    // drift on both axes and shouldn't be remapped.
                     let delta = if self.remap_cross_axis_wheel_to_main_axis {
                         if let ScrollableState::SingleAxis { axis, .. } = &self.state {
                             let main = delta.along(*axis);

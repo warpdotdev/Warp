@@ -343,7 +343,8 @@ impl OrchestrationPillBar {
                 this.pin_button_mouse_states
                     .borrow_mut()
                     .remove(conversation_id);
-                // Pin set pruning lives in the pin-state singleton.
+                // Pin set + scroll handle pruning live in the pill bar
+                // model singleton.
                 // If the menu was open for a child that just disappeared,
                 // close it so we don't leave a dangling menu pointing at a
                 // dead conversation id.

@@ -53,9 +53,8 @@ impl OrchestrationPillBarModel {
             | BlocklistAIHistoryEvent::DeletedConversation {
                 conversation_id, ..
             } => {
-                let mut emitted = false;
                 if this.pinned.remove(conversation_id) {
-                    emitted = true;
+                    ctx.emit(OrchestrationPillBarEvent::PinSetChanged);
                 }
                 // Drop the matching scroll handle so deleted orchestrators
                 // don't leak entries. No event needed — nothing subscribes
@@ -63,9 +62,6 @@ impl OrchestrationPillBarModel {
                 this.horizontal_scroll_states
                     .borrow_mut()
                     .remove(conversation_id);
-                if emitted {
-                    ctx.emit(OrchestrationPillBarEvent::PinSetChanged);
-                }
             }
             _ => {}
         });
