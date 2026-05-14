@@ -646,6 +646,11 @@ en:
     search_placeholder: "Search by name or by keys (ex. \"cmd d\")"
     shortcut_conflict_warning: "This shortcut conflicts with other keybinds"
     default: "Default"
+    custom_keybindings_description: "Add your own custom keybindings to existing actions below."
+    reference_shortcut_prefix: "Use"
+    reference_shortcut_suffix: "to reference these keybindings in a side pane at anytime."
+    not_synced_tooltip: "Keyboard shortcuts are not synced to the cloud"
+    configure_keyboard_shortcuts: "Configure keyboard shortcuts"
 
   telemetry_banner:
     updated_policy: "We've updated our telemetry policy."

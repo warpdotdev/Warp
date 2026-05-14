@@ -646,6 +646,11 @@ zh-CN:
     search_placeholder: "按名称或按键搜索（例如 \"cmd d\"）"
     shortcut_conflict_warning: "此快捷键与其他快捷键冲突"
     default: "默认"
+    custom_keybindings_description: "为下方已有操作添加你自己的自定义快捷键。"
+    reference_shortcut_prefix: "使用"
+    reference_shortcut_suffix: "可随时在侧边面板中查看这些快捷键。"
+    not_synced_tooltip: "键盘快捷键不会同步到云端"
+    configure_keyboard_shortcuts: "配置键盘快捷键"
 
   telemetry_banner:
     updated_policy: "我们已更新遥测政策。"
