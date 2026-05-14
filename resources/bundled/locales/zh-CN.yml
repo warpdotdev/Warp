@@ -1120,6 +1120,12 @@ zh-CN:
       title: "选择主题"
       subtitle: "点击或使用方向键选择，按 Enter 确认。"
       sync_with_os: "跟随系统切换浅色/深色主题"
+    project:
+      title: "打开项目"
+      subtitle: "设置项目，以便在 Warp 中优化编码体验。"
+      open_local_folder: "打开本地文件夹"
+      initialize_automatically: "自动初始化项目"
+      initialize_description: "准备项目环境、为代码构建索引并生成项目规则，让 Agent 更深入理解项目并获得更好表现。"
 
   # ── 设置 ──
   settings:

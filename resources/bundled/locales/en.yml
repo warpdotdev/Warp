@@ -1120,6 +1120,12 @@ en:
       title: "Choose a theme"
       subtitle: "Click or use arrow keys to select, Enter to confirm."
       sync_with_os: "Sync light/dark theme with OS"
+    project:
+      title: "Open a project"
+      subtitle: "Set up a project to optimize it for coding in Warp."
+      open_local_folder: "Open local folder"
+      initialize_automatically: "Initialize project automatically"
+      initialize_description: "Prepares the project environment, builds an index of your code, and generates project rules—giving the agent deeper understanding and better performance."
 
   # ── Settings ──
   settings:
