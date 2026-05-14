@@ -1126,6 +1126,23 @@ zh-CN:
       open_local_folder: "打开本地文件夹"
       initialize_automatically: "自动初始化项目"
       initialize_description: "准备项目环境、为代码构建索引并生成项目规则，让 Agent 更深入理解项目并获得更好表现。"
+    free_user_no_ai:
+      title: "开始吧。"
+      agent_title: "使用 Warp 内置 Agent 进行智能体驱动开发"
+      agent_description: "使用 Oz（Warp 内置 Agent）进行迭代、规划和构建。可在本地或云端使用。"
+      terminal_title: "经典终端与第三方 Agent"
+      terminal_description: "支持第三方 Agent（Claude Code、Codex、Gemini CLI）和经典终端工作流的现代终端。"
+      free_badge: "免费"
+      subscribe: "订阅"
+      subscribe_title: "订阅以在 Warp 中使用 Agent 驱动开发。"
+      subscribe_item_credits: "每月 1,500 credits"
+      subscribe_item_models: "使用 OpenAI、Anthropic 和 Google 的前沿模型"
+      subscribe_item_reload: "使用 Reload credits 和基于用量的折扣"
+      subscribe_item_cloud_agents: "更长的云端 Agent 使用额度"
+      subscribe_item_indexing: "最高代码库索引上限"
+      subscribe_item_drive: "无限 Warp Drive 对象和协作"
+      subscribe_item_email: "私密邮件支持"
+      subscribe_item_cloud_storage: "无限云端会话存储"
 
   # ── 设置 ──
   settings:

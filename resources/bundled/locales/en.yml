@@ -1126,6 +1126,23 @@ en:
       open_local_folder: "Open local folder"
       initialize_automatically: "Initialize project automatically"
       initialize_description: "Prepares the project environment, builds an index of your code, and generates project rules—giving the agent deeper understanding and better performance."
+    free_user_no_ai:
+      title: "Let's get started."
+      agent_title: "Agent driven development with Warp's built-in agent"
+      agent_description: "Iterate, plan, and build with Oz: Warp's built-in agent. Available locally or in the cloud."
+      terminal_title: "Classic terminal with third-party agents"
+      terminal_description: "A modern terminal that supports third-party agents (Claude Code, Codex, Gemini CLI) and classic terminal workflows."
+      free_badge: "Free"
+      subscribe: "Subscribe"
+      subscribe_title: "Subscribe to access agent driven development in Warp."
+      subscribe_item_credits: "1,500 credits per month"
+      subscribe_item_models: "Access to frontier OpenAI, Anthropic, and Google models"
+      subscribe_item_reload: "Access to Reload credits and volume-based discounts"
+      subscribe_item_cloud_agents: "Extended cloud agents access"
+      subscribe_item_indexing: "Highest codebase indexing limits"
+      subscribe_item_drive: "Unlimited Warp Drive objects and collaboration"
+      subscribe_item_email: "Private email support"
+      subscribe_item_cloud_storage: "Unlimited cloud conversation storage"
 
   # ── Settings ──
   settings:
