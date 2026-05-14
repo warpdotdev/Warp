@@ -1869,6 +1869,9 @@ en:
     hide_input_hint_text: "Hide input hint text"
 
   init_project:
+    onboarding_text: "Great - let's begin setting up this project! Would you like to give me permission to index this codebase? It allows me to quickly understand context and provide more targeted solutions when working in this codebase. No code is stored on Warp servers."
+    already_setup_text: "It looks like this project has already been initialized. You can re-generate the AGENTS.md for this codebase by clicking the button below."
+    index_codebase_prompt: "Would you like the Agent to index this codebase? This will lead to more efficient and tailored help."
     skip_for_now: "Skip for now"
     skip_for_now_period: "Skip for now."
     yes_index_codebase: "Yes, index this codebase."
@@ -1877,7 +1880,23 @@ en:
     create_environment: "Create an environment"
     regenerate_agents_file: "Re-generate AGENTS.md file"
     codebase_index_started: "Codebase index started"
+    codebase_index_cancelled: "Codebase index cancelled"
     view_index_status: "View index status"
+    enable_language_support_prompt: "Enable {language} support for this codebase? This will give you smarter code navigation, inline error checking, and more."
+    started_language_support_install: "Started installation for language support"
+    language_support_enabled_for: "{language} language support enabled"
+    language_support_enabled: "Language support enabled"
+    language_support_skipped: "Language support skipped"
+    create_agents_prompt: "Would you like to create an AGENTS.md file? Warp can create one for you with project specific rules, context, and conventions inferred from your codebase. The agent will use this context as it codes."
+    generating_agents: "Generating AGENTS.md..."
+    create_environment_prompt: "Would you like to create an environment for this project so you can run cloud agents in it? The agent will guide you through choosing GitHub repos, configuring a Docker image, and specifying startup commands."
+    creating_environment: "Creating environment..."
+    environment_created: "Environment created"
+    environment_creation_skipped: "Environment creation skipped"
+    project_rules_linked_from: "Project rules linked from {path}"
+    project_rules_configured: "Project rules configured"
+    project_rules_already_configured: "Project rules already configured"
+    project_rules_skipped: "Project rules skipped"
 
   # ── Find / Filter ──
   find:

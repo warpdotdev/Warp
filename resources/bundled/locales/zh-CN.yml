@@ -1869,6 +1869,9 @@ zh-CN:
     hide_input_hint_text: "隐藏输入提示文本"
 
   init_project:
+    onboarding_text: "很好，我们开始设置这个项目。是否允许 Agent 索引此代码库？这样我在这个代码库中工作时能快速理解上下文，并提供更有针对性的解决方案。代码不会存储在 Warp 服务器上。"
+    already_setup_text: "这个项目似乎已经初始化。你可以点击下面的按钮，为此代码库重新生成 AGENTS.md。"
+    index_codebase_prompt: "是否让 Agent 索引此代码库？这会带来更高效、更贴合上下文的帮助。"
     skip_for_now: "暂时跳过"
     skip_for_now_period: "暂时跳过。"
     yes_index_codebase: "是，索引此代码库。"
@@ -1877,7 +1880,23 @@ zh-CN:
     create_environment: "创建环境"
     regenerate_agents_file: "重新生成 AGENTS.md 文件"
     codebase_index_started: "代码库索引已开始"
+    codebase_index_cancelled: "代码库索引已取消"
     view_index_status: "查看索引状态"
+    enable_language_support_prompt: "为此代码库启用 {language} 支持？这会提供更智能的代码导航、内联错误检查等能力。"
+    started_language_support_install: "已开始安装语言支持"
+    language_support_enabled_for: "{language} 语言支持已启用"
+    language_support_enabled: "语言支持已启用"
+    language_support_skipped: "已跳过语言支持"
+    create_agents_prompt: "是否创建 AGENTS.md 文件？Warp 可以根据你的代码库推断项目规则、上下文和约定，并为你创建该文件。Agent 编写代码时会使用这些上下文。"
+    generating_agents: "正在生成 AGENTS.md..."
+    create_environment_prompt: "是否为此项目创建一个环境，以便在其中运行云端 Agent？Agent 会引导你选择 GitHub 仓库、配置 Docker 镜像并指定启动命令。"
+    creating_environment: "正在创建环境..."
+    environment_created: "环境已创建"
+    environment_creation_skipped: "已跳过环境创建"
+    project_rules_linked_from: "项目规则已从 {path} 链接"
+    project_rules_configured: "项目规则已配置"
+    project_rules_already_configured: "项目规则已配置"
+    project_rules_skipped: "已跳过项目规则"
 
   # ── 查找 / 过滤 ──
   find:
