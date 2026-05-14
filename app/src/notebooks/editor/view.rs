@@ -2438,7 +2438,7 @@ impl RichTextEditorView {
                             ButtonVariant::Text,
                             self.mouse_states.edit_link_mouse_handle.clone(),
                         )
-                        .with_text_label("Edit".to_string())
+                        .with_text_label(t!("common.edit").to_string())
                         .build()
                         .on_click(|ctx, _, _| ctx.dispatch_typed_action(EditorViewAction::EditLink))
                         .finish(),

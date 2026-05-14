@@ -270,7 +270,7 @@ impl EnableAutoReloadModalBody {
                 }),
                 ..Default::default()
             })
-            .with_text_label("Cancel".to_string())
+            .with_text_label(t!("common.cancel").to_string())
             .build()
             .on_click(|ctx, _, _| {
                 ctx.dispatch_typed_action(Action::Cancel);
@@ -278,9 +278,9 @@ impl EnableAutoReloadModalBody {
             .finish();
 
         let button_text = if self.update_workspace_settings_loading {
-            "Saving...".to_string()
+            t!("common.saving").to_string()
         } else {
-            "Enable".to_string()
+            t!("common.enable").to_string()
         };
 
         let mut enable_button = appearance
