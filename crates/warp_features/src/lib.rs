@@ -165,9 +165,6 @@ pub enum FeatureFlag {
     /// completion specs.
     NativeShellCompletions,
 
-    /// Adds avatar to the tab bar.
-    AvatarInTabBar,
-
     /// Adds aliases for executing Warp Drive workflows.
     WorkflowAliases,
 

@@ -507,24 +507,8 @@ impl View for ResourceCenterMainView {
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let body = self.render_body(appearance);
-        let invite_button = self.render_invite_button(appearance);
-        let skip_tips = self.render_skip_tips_button(appearance);
 
         let mut main_page = Flex::column();
-
-        if !AuthStateProvider::as_ref(app)
-            .get()
-            .is_anonymous_or_logged_out()
-            && !FeatureFlag::AvatarInTabBar.is_enabled()
-        {
-            main_page = main_page.with_child(invite_button);
-        }
-
-        if !self.tips_completed.as_ref(app).skipped_or_completed
-            && !FeatureFlag::AvatarInTabBar.is_enabled()
-        {
-            main_page.add_child(skip_tips);
-        }
 
         main_page = main_page
             .with_child(Shrinkable::new(20., body).finish())

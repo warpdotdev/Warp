@@ -471,7 +471,6 @@ default = [
     "external_agent_mode_context",
     "shell_selector",
     "minimalist_ui",
-    "avatar_in_tab_bar",
     "full_screen_zen_mode",
     "workflow_aliases",
     "ligatures",
@@ -793,7 +792,6 @@ blocklist_markdown_images = []
 minimalist_ui = []
 loginless_conversion = []
 external_agent_mode_context = []
-avatar_in_tab_bar = []
 ssh_drag_and_drop = []
 permanent_autosuggestion_hint = []
 cycle_next_command_suggestion = []

@@ -142,13 +142,6 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
         ctx,
     )];
 
-    if !FeatureFlag::AvatarInTabBar.is_enabled() {
-        menu_items.push(updateable_custom_item_without_checkmark(
-            CustomAction::ToggleResourceCenter,
-            ctx,
-        ))
-    }
-
     menu_items.extend([
         MenuItem::Separator,
         updateable_custom_item_without_checkmark(CustomAction::ReferAFriend, ctx),
