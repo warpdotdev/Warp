@@ -7,7 +7,7 @@ use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use warpui::r#async::executor;
@@ -31,6 +31,7 @@ use remote_server::transport::{Connection, Error, InstallOutcome, InstallSource,
 pub struct SshTransport {
     socket_path: PathBuf,
     auth_context: Arc<RemoteServerAuthContext>,
+    detected_platform: Arc<Mutex<Option<RemotePlatform>>>,
 }
 
 impl fmt::Debug for SshTransport {
@@ -46,6 +47,7 @@ impl SshTransport {
         Self {
             socket_path,
             auth_context,
+            detected_platform: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -75,6 +77,23 @@ impl SshTransport {
         let quoted_identity_key = shell_words::quote(&identity_key);
         format!("{binary} remote-server-proxy --identity-key {quoted_identity_key}")
     }
+
+    fn cache_detected_platform(&self, platform: RemotePlatform) {
+        match self.detected_platform.lock() {
+            Ok(mut cached) => *cached = Some(platform),
+            Err(e) => log::warn!("Failed to cache detected remote platform: {e}"),
+        }
+    }
+
+    fn cached_detected_platform(&self) -> Option<RemotePlatform> {
+        match self.detected_platform.lock() {
+            Ok(cached) => cached.clone(),
+            Err(e) => {
+                log::warn!("Failed to read cached remote platform: {e}");
+                None
+            }
+        }
+    }
 }
 
 /// Runs `uname -sm` on the remote host via the ControlMaster socket and
@@ -103,7 +122,12 @@ impl RemoteTransport for SshTransport {
         &self,
     ) -> Pin<Box<dyn Future<Output = Result<RemotePlatform, Error>> + Send>> {
         let socket_path = self.socket_path.clone();
-        Box::pin(async move { detect_remote_platform(&socket_path).await })
+        let transport = self.clone();
+        Box::pin(async move {
+            let platform = detect_remote_platform(&socket_path).await?;
+            transport.cache_detected_platform(platform.clone());
+            Ok(platform)
+        })
     }
 
     fn run_preinstall_check(
@@ -202,6 +226,7 @@ impl RemoteTransport for SshTransport {
 
     fn install_binary(&self) -> Pin<Box<dyn Future<Output = InstallOutcome> + Send>> {
         let socket_path = self.socket_path.clone();
+        let cached_platform = self.cached_detected_platform();
         Box::pin(async move {
             let binary_path = remote_server::setup::remote_server_binary();
             log::info!("Installing remote server binary to {binary_path}");
@@ -215,7 +240,7 @@ impl RemoteTransport for SshTransport {
 
                     if should_try_scp {
                         log::info!("Remote server has no curl/wget, falling back to SCP upload");
-                        match scp_install_fallback(&socket_path).await {
+                        match scp_install_fallback(&socket_path, cached_platform).await {
                             Ok(()) => InstallOutcome {
                                 source: Some(InstallSource::Client),
                                 result: Ok(()),
@@ -386,16 +411,13 @@ async fn install_on_server(socket_path: &Path) -> Result<(), Error> {
 /// SCP install fallback: downloads the tarball locally, uploads it to
 /// the remote via SCP, then re-invokes the install script with the
 /// staging path baked in so the shared extraction tail runs.
-async fn scp_install_fallback(socket_path: &Path) -> anyhow::Result<()> {
+async fn scp_install_fallback(
+    socket_path: &Path,
+    cached_platform: Option<RemotePlatform>,
+) -> anyhow::Result<()> {
     use std::process::Stdio;
 
-    // Detect the remote platform so we can construct the correct download URL.
-    // This is a redundant uname call (the manager already ran detect_platform
-    // earlier), but it only happens on the rare SCP fallback path and avoids
-    // threading the platform through the trait.
-    let platform = detect_remote_platform(socket_path)
-        .await
-        .map_err(|e| anyhow::anyhow!("SCP fallback: {e:#}"))?;
+    let platform = platform_for_scp_fallback(socket_path, cached_platform).await?;
 
     let url = remote_server::setup::download_tarball_url(&platform);
     let remote_tarball_path = format!(
@@ -461,6 +483,23 @@ async fn scp_install_fallback(socket_path: &Path) -> anyhow::Result<()> {
             "Extraction script failed (exit {code}): {stderr}"
         ))
     }
+}
+
+async fn platform_for_scp_fallback(
+    socket_path: &Path,
+    cached_platform: Option<RemotePlatform>,
+) -> anyhow::Result<RemotePlatform> {
+    if let Some(platform) = cached_platform {
+        return Ok(platform);
+    }
+
+    // Fall back to probing when install_binary is invoked without a prior
+    // detect_platform call. The normal setup flow detects the platform before
+    // install, and reusing that result avoids an extra ControlMaster session
+    // while recovering from a server-side install failure.
+    detect_remote_platform(socket_path)
+        .await
+        .map_err(|e| anyhow::anyhow!("SCP fallback: {e:#}"))
 }
 
 #[cfg(test)]
