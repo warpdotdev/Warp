@@ -28,9 +28,11 @@ pub mod user_query;
 
 pub use self::handoff_compose::{HandoffComposeState, HandoffComposeStateEvent};
 
-use crate::ai::active_agent_views_model::{ActiveAgentViewsModel, ConversationOrTaskId};
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::{AIAgentExchangeId, CancellationReason};
+use crate::ai::agent_conversations_model::{
+    AgentConversationNavigationSubject, AgentConversationsModel,
+};
 use crate::ai::ambient_agents::telemetry::HandoffEntryPoint;
 use crate::ai::blocklist::agent_view::shortcuts::AgentShortcutViewModel;
 use crate::ai::blocklist::agent_view::{AgentViewEntryOrigin, EphemeralMessageModel};
@@ -4337,21 +4339,13 @@ impl Input {
         ctx: &mut ViewContext<Self>,
     ) {
         match event {
-            InlineConversationMenuEvent::NavigateToConversation {
-                conversation_navigation_data,
-            } => {
+            InlineConversationMenuEvent::NavigateToConversation { item_id } => {
                 let is_in_agent_view = FeatureFlag::AgentView.is_enabled()
                     && self.agent_view_controller.as_ref(ctx).is_fullscreen();
                 send_telemetry_from_ctx!(
                     TelemetryEvent::InlineConversationMenuItemSelected { is_in_agent_view },
                     ctx
                 );
-
-                let conversation_id = conversation_navigation_data.id;
-                let active_ids =
-                    ActiveAgentViewsModel::as_ref(ctx).get_all_active_conversation_ids(ctx);
-                let is_active =
-                    active_ids.contains(&ConversationOrTaskId::ConversationId(conversation_id));
 
                 if self
                     .suggestions_mode_model
@@ -4364,37 +4358,16 @@ impl Input {
                     ctx.notify();
                 }
                 self.clear_buffer_and_reset_undo_stack(ctx);
-
-                if is_active {
-                    let (Some(window_id), Some(pane_view_locator), Some(terminal_view_id)) = (
-                        conversation_navigation_data.window_id,
-                        conversation_navigation_data.pane_view_locator,
-                        conversation_navigation_data.terminal_view_id,
-                    ) else {
-                        log::error!(
-                            "Inline conversation menu: active conversation missing navigation data: {conversation_navigation_data:?}"
-                        );
-                        ctx.emit(Event::ShowToast {
-                            message: "Couldn't navigate to conversation.".to_string(),
-                            flavor: ToastFlavor::Error,
-                        });
-                        return;
-                    };
-
-                    ctx.dispatch_typed_action_deferred(
-                        WorkspaceAction::RestoreOrNavigateToConversation {
-                            pane_view_locator: Some(pane_view_locator),
-                            window_id: Some(window_id),
-                            conversation_id,
-                            terminal_view_id: Some(terminal_view_id),
-                            restore_layout: Some(RestoreConversationLayout::ActivePane),
-                        },
-                    );
+                if let Some(action) = AgentConversationsModel::resolve_open_action(
+                    AgentConversationNavigationSubject::Entry(*item_id),
+                    Some(RestoreConversationLayout::ActivePane),
+                    ctx,
+                ) {
+                    ctx.dispatch_typed_action_deferred(action);
                 } else {
-                    ctx.emit(Event::EnterAgentView {
-                        initial_prompt: None,
-                        conversation_id: Some(conversation_id),
-                        origin: AgentViewEntryOrigin::InlineConversationMenu,
+                    ctx.emit(Event::ShowToast {
+                        message: "Couldn't navigate to conversation.".to_string(),
+                        flavor: ToastFlavor::Error,
                     });
                 }
             }
