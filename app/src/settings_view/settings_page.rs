@@ -620,9 +620,7 @@ pub fn render_local_only_icon(
         )
         .finish();
 
-    Container::new(info_button)
-        .with_margin_left(4.)
-        .finish()
+    Container::new(info_button).with_margin_left(4.).finish()
 }
 
 pub fn render_body_item_label<T: Clone + Action>(

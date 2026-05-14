@@ -1,4 +1,4 @@
-use super::{AgentAttributionToggleState, derive_agent_attribution_toggle_state};
+use super::{derive_agent_attribution_toggle_state, AgentAttributionToggleState};
 use crate::workspaces::workspace::AdminEnablementSetting;
 
 #[test]

@@ -172,30 +172,27 @@ pub(super) fn render_model_chips(
     appearance: &Appearance,
     text_color: warp_core::ui::theme::Fill,
 ) -> Box<dyn Element> {
-    use warpui::elements::{Border, Container, CornerRadius, Flex, ParentElement, Radius, Text};
+    use warpui::ui_components::{
+        chip::Chip,
+        components::{UiComponent, UiComponentStyles},
+    };
 
     let theme = appearance.theme();
-    let chip_bg = internal_colors::fg_overlay_2(theme);
-    let chip_border = internal_colors::fg_overlay_3(theme);
+    let chip_border = internal_colors::neutral_4(theme).into();
+    let chip_style = UiComponentStyles {
+        background: None,
+        border_color: Some(chip_border),
+        border_width: Some(1.),
+        border_radius: Some(CornerRadius::with_all(Radius::Pixels(5.))),
+        font_family_id: Some(appearance.ui_font_family()),
+        font_size: Some(appearance.ui_font_size()),
+        font_color: Some(text_color.into_solid()),
+        ..Default::default()
+    };
 
     let mut chips = Flex::row().with_spacing(8.);
     for label in labels {
-        chips.add_child(
-            Container::new(
-                Text::new_inline(
-                    label,
-                    appearance.ui_font_family(),
-                    appearance.ui_font_size(),
-                )
-                .with_color(text_color.into())
-                .finish(),
-            )
-            .with_uniform_padding(6.)
-            .with_background(chip_bg)
-            .with_border(Border::all(1.).with_border_fill(chip_border))
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(999.)))
-            .finish(),
-        );
+        chips.add_child(Chip::new(label, chip_style).build().finish());
     }
     chips.finish()
 }

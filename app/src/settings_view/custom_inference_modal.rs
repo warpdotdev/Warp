@@ -3,12 +3,15 @@ use crate::modal::{Modal, ModalViewState};
 use crate::{
     appearance::Appearance,
     editor::{EditorView, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions},
+    ui_components::icons::Icon,
+    view_components::action_button::{ActionButton, DangerSecondaryTheme},
 };
 use warp_editor::editor::NavigationKey;
 use warpui::elements::{ConstrainedBox, CrossAxisAlignment, Expanded, MainAxisSize};
 use warpui::{
     elements::{
-        Border, Container, CornerRadius, Empty, Flex, MouseStateHandle, ParentElement, Radius, Text,
+        Border, ChildView, Container, CornerRadius, Empty, Flex, MouseStateHandle, ParentElement,
+        Radius, Text,
     },
     fonts::FamilyId,
     ui_components::{
@@ -27,8 +30,7 @@ const INPUT_WIDTH: f32 = 480.;
 
 const MODEL_ROW_SPACING: f32 = 16.;
 const REMOVE_MODEL_BUTTON_COL_WIDTH: f32 = 32.;
-const MODEL_INPUT_WIDTH: f32 =
-    (INPUT_WIDTH - MODEL_ROW_SPACING - REMOVE_MODEL_BUTTON_COL_WIDTH) / 2.;
+const MODEL_INPUT_WIDTH: f32 = (INPUT_WIDTH - MODEL_ROW_SPACING) / 2.;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CustomEndpointModalEvent {
@@ -75,7 +77,7 @@ pub struct CustomEndpointModal {
     cancel_button_mouse_state: MouseStateHandle,
     save_button_mouse_state: MouseStateHandle,
     add_model_button_mouse_state: MouseStateHandle,
-    remove_endpoint_button_mouse_state: MouseStateHandle,
+    remove_endpoint_button: ViewHandle<ActionButton>,
     editing_index: Option<usize>,
     url_has_error: bool,
 }
@@ -196,6 +198,13 @@ impl CustomEndpointModal {
                 me.handle_model_editor_event(&editor, event, ctx);
             });
         }
+        let remove_endpoint_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Remove", DangerSecondaryTheme)
+                .with_icon(Icon::Trash)
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(CustomEndpointModalAction::RemoveEndpoint);
+                })
+        });
 
         Self {
             endpoint_name_editor,
@@ -205,7 +214,7 @@ impl CustomEndpointModal {
             cancel_button_mouse_state: Default::default(),
             save_button_mouse_state: Default::default(),
             add_model_button_mouse_state: Default::default(),
-            remove_endpoint_button_mouse_state: Default::default(),
+            remove_endpoint_button,
             editing_index,
             url_has_error,
         }
@@ -685,31 +694,33 @@ impl View for CustomEndpointModal {
         );
 
         // Model rows
-        column.add_child(
-            Container::new(
-                Flex::row()
-                    .with_main_axis_size(MainAxisSize::Max)
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_spacing(MODEL_ROW_SPACING)
-                    .with_child(
-                        ConstrainedBox::new(label("Model name"))
-                            .with_width(MODEL_INPUT_WIDTH)
-                            .finish(),
-                    )
-                    .with_child(
-                        ConstrainedBox::new(label("Model alias (optional)"))
-                            .with_width(MODEL_INPUT_WIDTH)
-                            .finish(),
-                    )
-                    .with_child(
-                        ConstrainedBox::new(Empty::new().finish())
-                            .with_width(REMOVE_MODEL_BUTTON_COL_WIDTH)
-                            .finish(),
-                    )
+        let has_remove_model_button = self.model_rows.len() > 1;
+        let mut model_labels = Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(MODEL_ROW_SPACING)
+            .with_child(
+                ConstrainedBox::new(label("Model name"))
+                    .with_width(MODEL_INPUT_WIDTH)
                     .finish(),
             )
-            .with_margin_bottom(4.)
-            .finish(),
+            .with_child(
+                ConstrainedBox::new(label("Model alias (optional)"))
+                    .with_width(MODEL_INPUT_WIDTH)
+                    .finish(),
+            );
+        if has_remove_model_button {
+            model_labels.add_child(
+                ConstrainedBox::new(Empty::new().finish())
+                    .with_width(REMOVE_MODEL_BUTTON_COL_WIDTH)
+                    .finish(),
+            );
+        }
+
+        column.add_child(
+            Container::new(model_labels.finish())
+                .with_margin_bottom(4.)
+                .finish(),
         );
 
         for (i, row) in self.model_rows.iter().enumerate() {
@@ -746,18 +757,20 @@ impl View for CustomEndpointModal {
                 Empty::new().finish()
             };
 
-            let row = Flex::row()
+            let mut row = Flex::row()
                 .with_main_axis_size(MainAxisSize::Max)
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_spacing(MODEL_ROW_SPACING)
                 .with_child(name_input)
-                .with_child(alias_input)
-                .with_child(
+                .with_child(alias_input);
+            if has_remove_model_button {
+                row.add_child(
                     ConstrainedBox::new(remove_button)
                         .with_width(REMOVE_MODEL_BUTTON_COL_WIDTH)
                         .finish(),
-                )
-                .finish();
+                );
+            }
+            let row = row.finish();
 
             column.add_child(Container::new(row).with_margin_bottom(12.).finish());
         }
@@ -794,25 +807,7 @@ impl View for CustomEndpointModal {
 
         // Remove button (only when editing)
         if is_editing {
-            buttons_row.add_child(
-                appearance
-                    .ui_builder()
-                    .button(
-                        ButtonVariant::Error,
-                        self.remove_endpoint_button_mouse_state.clone(),
-                    )
-                    .with_text_label("Remove".to_string())
-                    .with_style(UiComponentStyles {
-                        font_size: Some(14.),
-                        padding: Some(Coords::uniform(8.).left(12.).right(12.)),
-                        ..Default::default()
-                    })
-                    .build()
-                    .on_click(move |ctx, _, _| {
-                        ctx.dispatch_typed_action(CustomEndpointModalAction::RemoveEndpoint);
-                    })
-                    .finish(),
-            );
+            buttons_row.add_child(ChildView::new(&self.remove_endpoint_button).finish());
         }
 
         buttons_row.add_child(Expanded::new(1., Empty::new().finish()).finish());

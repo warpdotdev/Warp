@@ -17,6 +17,7 @@ use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::{AppContext, Element, Entity, EntityId, SingletonEntity as _};
 
+use crate::ai::execution_profiles::model_menu_items::is_auto;
 use crate::ai::llms::{
     is_using_api_key_for_provider, DisableReason, LLMId, LLMInfo, LLMPreferences, LLMProvider,
     LLMSpec,
@@ -136,6 +137,31 @@ impl ModelSelectorDataSource {
     pub fn new(terminal_view_id: EntityId) -> Self {
         Self { terminal_view_id }
     }
+
+    fn order_model_choices<'a>(
+        llm_preferences: &LLMPreferences,
+        choices: Vec<&'a LLMInfo>,
+    ) -> Vec<&'a LLMInfo> {
+        let mut auto_choices = Vec::new();
+        let mut custom_choices = Vec::new();
+        let mut other_choices = Vec::new();
+
+        for llm in choices {
+            if is_auto(llm) {
+                auto_choices.push(llm);
+            } else if llm_preferences.custom_llm_info_for_id(&llm.id).is_some() {
+                custom_choices.push(llm);
+            } else {
+                other_choices.push(llm);
+            }
+        }
+
+        auto_choices
+            .into_iter()
+            .chain(custom_choices)
+            .chain(other_choices)
+            .collect()
+    }
 }
 
 impl SyncDataSource for ModelSelectorDataSource {
@@ -161,13 +187,14 @@ impl SyncDataSource for ModelSelectorDataSource {
                 .clone()
         };
 
-        let choices: Vec<&LLMInfo> = if is_full_terminal {
+        let choices = if is_full_terminal {
             llm_preferences.get_cli_agent_llm_choices(app).collect_vec()
         } else {
             llm_preferences
                 .get_base_llm_choices_for_agent_mode(app)
                 .collect_vec()
         };
+        let choices = Self::order_model_choices(llm_preferences, choices);
 
         let query_text = query.text.trim().to_lowercase();
 

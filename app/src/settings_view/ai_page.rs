@@ -46,6 +46,7 @@ use crate::workspaces::user_workspaces::UserWorkspacesEvent;
 use ::ai::api_keys::{ApiKeyManager, ApiKeys};
 use enum_iterator::all;
 use itertools::Itertools;
+use pathfinder_geometry::vector::vec2f;
 use regex::Regex;
 use settings::{Setting, ToggleableSetting};
 use strum::IntoEnumIterator;
@@ -54,13 +55,15 @@ use warp_core::context_flag::ContextFlag;
 use warp_core::features::FeatureFlag;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
-    Border, ChildView, ConstrainedBox, CornerRadius, CrossAxisAlignment, Dismiss, Empty, Expanded,
-    Fill, HyperlinkLens, MainAxisAlignment, MainAxisSize, MouseStateHandle, Radius, Shrinkable,
-    Text,
+    Border, ChildAnchor, ChildView, ConstrainedBox, CornerRadius, CrossAxisAlignment, Dismiss,
+    Empty, Expanded, Fill, Hoverable, HyperlinkLens, MainAxisAlignment, MainAxisSize,
+    MouseStateHandle, OffsetPositioning, ParentAnchor, ParentOffsetBounds, Radius, Shrinkable,
+    Stack, Text,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::id;
 use warpui::keymap::{ContextPredicate, Keystroke};
+use warpui::platform::Cursor;
 use warpui::ui_components::slider::SliderStateHandle;
 use warpui::{
     Action, AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext,
@@ -87,11 +90,11 @@ use super::{
     SettingActionPairContexts, SettingActionPairDescriptions, SettingsAction, SettingsSection,
     ToggleSettingActionPair, flags,
     settings_page::{
-        AdditionalInfo, HEADER_PADDING, InputListItem, LocalOnlyIconState, MatchData, PageType,
+        HEADER_PADDING, InputListItem, LocalOnlyIconState, MatchData, PageType,
         SettingsPageMeta, SettingsPageViewHandle, SettingsWidget, TOGGLE_BUTTON_RIGHT_PADDING,
         ToggleState, build_sub_header, build_toggle_element, render_body_item_label,
         render_body_item_label_with_icon, render_dropdown_item, render_dropdown_item_label,
-        render_full_pane_width_ai_button, render_info_icon, render_input_list, render_separator,
+        render_full_pane_width_ai_button, render_input_list, render_separator,
     },
 };
 
@@ -167,6 +170,10 @@ const SHARED_BLOCK_TITLE_GENERATION_DESCRIPTION: &str =
 const GIT_OPERATIONS_AUTOGEN_DESCRIPTION: &str =
     "Let AI generate commit messages and pull request titles and descriptions.";
 const WISPR_FLOW_URL: &str = "https://wisprflow.ai/";
+const CUSTOM_INFERENCE_LEARN_MORE_URL: &str =
+    "https://docs.warp.dev/support-and-community/plans-and-billing/bring-your-own-api-key/";
+const CUSTOM_INFERENCE_TERMS_URL: &str = "https://www.warp.dev/legal/terms-of-service";
+const CUSTOM_INFERENCE_INFO_TOOLTIP_MAX_WIDTH: f32 = 320.;
 
 pub fn init_actions_from_parent_view<T: Action + Clone>(
     app: &mut AppContext,
@@ -6928,6 +6935,7 @@ struct ApiKeysWidget {
     upgrade_highlight_index: HighlightedHyperlink,
 
     custom_inference_info_tooltip: MouseStateHandle,
+    custom_inference_terms_index: HighlightedHyperlink,
     description_learn_more_index: HighlightedHyperlink,
 }
 
@@ -7039,6 +7047,7 @@ impl ApiKeysWidget {
             upgrade_highlight_index: Default::default(),
 
             custom_inference_info_tooltip: Default::default(),
+            custom_inference_terms_index: Default::default(),
             description_learn_more_index: Default::default(),
         }
     }
@@ -7120,7 +7129,7 @@ impl ApiKeysWidget {
             ),
             FormattedTextFragment::hyperlink(
                 "Learn more",
-                "https://docs.warp.dev/agents/custom-inference",
+                CUSTOM_INFERENCE_LEARN_MORE_URL,
             ),
         ];
         let description = FormattedTextElement::new(
@@ -7139,6 +7148,79 @@ impl ApiKeysWidget {
             .with_margin_top(styles::DESCRIPTION_NEGATIVE_MARGIN_OFFSET)
             .with_margin_bottom(styles::DESCRIPTION_MARGIN_BOTTOM)
             .with_margin_right(styles::TOGGLE_WIDTH_MARGIN)
+            .finish()
+    }
+
+    fn render_custom_inference_info_icon(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let icon = Container::new(
+            ConstrainedBox::new(
+                Icon::Info
+                    .to_warpui_icon(appearance.theme().active_ui_text_color())
+                    .finish(),
+            )
+            .with_width(13.)
+            .with_height(13.)
+            .finish(),
+        )
+        .finish();
+
+        let tooltip_text = FormattedText::new([FormattedTextLine::Line(vec![
+            FormattedTextFragment::plain_text(
+                "By using BYOK or custom endpoints, you agree to use them only as permitted by ",
+            ),
+            FormattedTextFragment::hyperlink(
+                "Warp's Terms of Service",
+                CUSTOM_INFERENCE_TERMS_URL,
+            ),
+            FormattedTextFragment::plain_text(
+                ". BYOK and custom endpoints are intended for individual use and small teams. Companies or organizations with more than 10 employees should use Warp Business or Enterprise.",
+            ),
+        ])]);
+
+        let info_button = Hoverable::new(self.custom_inference_info_tooltip.clone(), move |state| {
+            let mut stack = Stack::new().with_child(icon);
+            if state.is_hovered() {
+                let tool_tip = ConstrainedBox::new(
+                    Container::new(
+                        FormattedTextElement::new(
+                            tooltip_text.clone(),
+                            10.,
+                            appearance.ui_font_family(),
+                            appearance.ui_font_family(),
+                            appearance.theme().background().into_solid(),
+                            self.custom_inference_terms_index.clone(),
+                        )
+                        .with_hyperlink_font_color(appearance.theme().accent().into_solid())
+                        .register_default_click_handlers(|url, ctx, _| {
+                            ctx.dispatch_typed_action(AISettingsPageAction::HyperlinkClick(url));
+                        })
+                        .finish(),
+                    )
+                    .with_background_color(appearance.theme().tooltip_background().into())
+                    .with_vertical_padding(4.)
+                    .with_horizontal_padding(8.)
+                    .with_border(Border::all(1.).with_border_fill(appearance.theme().outline()))
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                    .finish(),
+                )
+                .with_max_width(CUSTOM_INFERENCE_INFO_TOOLTIP_MAX_WIDTH)
+                .finish();
+                stack.add_positioned_child(
+                    tool_tip,
+                    OffsetPositioning::offset_from_parent(
+                        vec2f(0., -3.),
+                        ParentOffsetBounds::WindowByPosition,
+                        ParentAnchor::TopMiddle,
+                        ChildAnchor::BottomMiddle,
+                    ),
+                );
+            }
+            stack.finish()
+        })
+        .with_cursor(Cursor::PointingHand);
+
+        Container::new(Box::new(info_button))
+            .with_margin_left(4.)
             .finish()
     }
 
@@ -7276,18 +7358,7 @@ impl SettingsWidget for ApiKeysWidget {
                     .with_margin_bottom(0.)
                     .finish(),
                 )
-                .with_child(render_info_icon(
-                    appearance,
-                    AdditionalInfo::<AISettingsPageAction> {
-                        mouse_state: self.custom_inference_info_tooltip.clone(),
-                        on_click_action: None,
-                        secondary_text: None,
-                        // TODO: hyperlink "Warp's Terms of Service" to https://warp.dev/terms
-                        tooltip_override_text: Some(
-                            "By using BYOK or custom endpoints, you agree to use them only as permitted by Warp's Terms of Service. BYOK and custom endpoints are intended for individual use and small teams. Companies or organizations with more than 10 employees should use Warp Business or Enterprise.".to_string(),
-                        ),
-                    },
-                ))
+                .with_child(self.render_custom_inference_info_icon(appearance))
                 .finish();
 
             let header_row = Flex::row()
