@@ -3796,9 +3796,10 @@ impl Workspace {
             NewWorkspaceSource::Restored {
                 window_snapshot, ..
             } => {
-                if should_default_open
-                    && *TabSettings::as_ref(ctx).show_vertical_tab_panel_in_restored_windows
-                {
+                if !should_default_open {
+                    // Stale "panel open" snapshot would leave a click-eating dismiss underlay (#9505).
+                    false
+                } else if *TabSettings::as_ref(ctx).show_vertical_tab_panel_in_restored_windows {
                     true
                 } else {
                     window_snapshot.vertical_tabs_panel_open
@@ -7441,16 +7442,24 @@ impl Workspace {
                         .is_pane_hidden_for_close(*pane_id)
                 });
             // If the tabbed editor view is enabled and there is an existing CodeView, we should group the newly opened file into this view.
-            if let (Some(path), Some((pane_id, code_view))) = (source.path(), code_view) {
+            if let (Some(location), Some((pane_id, code_view))) = (source.location(), code_view) {
                 code_view.update(ctx, |code_view, ctx| {
+                    // Preview (single-click = light open, double-click = promote to
+                    // full tab) is only supported for local files because it relies
+                    // on `open_in_preview_or_promote` which takes a local `PathBuf`.
+                    // Remote files skip preview and open normally.
                     if preview {
-                        code_view.open_in_preview_or_promote_and_jump(path, line_col, ctx);
+                        if let Some(path) = location.to_local_path() {
+                            code_view.open_in_preview_or_promote_and_jump(
+                                path.to_path_buf(),
+                                line_col,
+                                ctx,
+                            );
+                        } else {
+                            code_view.open_or_focus_existing(Some(location.clone()), line_col, ctx);
+                        }
                     } else {
-                        code_view.open_or_focus_existing(
-                            Some(FileLocation::Local(path)),
-                            line_col,
-                            ctx,
-                        );
+                        code_view.open_or_focus_existing(Some(location.clone()), line_col, ctx);
                     }
                     for extra in additional_paths {
                         code_view.open_or_focus_existing(
@@ -7471,10 +7480,10 @@ impl Workspace {
         } else {
             // When grouping is off, avoid opening duplicate code panes for the same file in the
             // current pane group. Instead, focus the existing pane and jump.
-            if let Some(path) = source.path() {
+            if let Some(location) = source.location() {
                 let pane_group_id = self.active_tab_pane_group().id();
                 let existing_locator = CodeManager::handle(ctx).read(ctx, |manager, _| {
-                    manager.get_locator_for_path_in_tab(pane_group_id, path.as_path())
+                    manager.get_locator_for_location_in_tab(pane_group_id, &location)
                 });
 
                 if let Some(locator) = existing_locator {
@@ -7485,15 +7494,24 @@ impl Workspace {
                             pane_group.code_view_from_pane_id(locator.pane_id, ctx)
                         {
                             code_view.update(ctx, |code_view, ctx| {
+                                // Preview is local-only (see comment above).
                                 if preview {
-                                    code_view.open_in_preview_or_promote_and_jump(
-                                        path.clone(),
-                                        line_col,
-                                        ctx,
-                                    );
+                                    if let Some(path) = location.to_local_path() {
+                                        code_view.open_in_preview_or_promote_and_jump(
+                                            path.to_path_buf(),
+                                            line_col,
+                                            ctx,
+                                        );
+                                    } else {
+                                        code_view.open_or_focus_existing(
+                                            Some(location.clone()),
+                                            line_col,
+                                            ctx,
+                                        );
+                                    }
                                 } else {
                                     code_view.open_or_focus_existing(
-                                        Some(FileLocation::Local(path.clone())),
+                                        Some(location.clone()),
                                         line_col,
                                         ctx,
                                     );
@@ -14222,7 +14240,7 @@ impl Workspace {
                                                             |file_view, ctx| {
                                                                 let moved_file_path = file_view
                                                                     .tab_at(*editor_tab_index)
-                                                                    .and_then(|t| t.path());
+                                                                    .and_then(|t| t.local_path());
 
                                                                 file_view.remove_tab_for_move(
                                                                     *editor_tab_index,

@@ -35,8 +35,7 @@ use warpui::r#async::FutureExt as _;
 use warpui::{Entity, ModelContext, ModelSpawner, SingletonEntity};
 
 /// Maximum number of reconnection attempts after a spontaneous disconnect.
-#[cfg(not(target_family = "wasm"))]
-const MAX_RECONNECT_ATTEMPTS: u32 = 2;
+pub const MAX_RECONNECT_ATTEMPTS: u32 = 2;
 /// Delay between reconnection attempts.
 #[cfg(not(target_family = "wasm"))]
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
@@ -61,6 +60,7 @@ struct ReconnectParams {
 struct InitializeHandshake {
     host_id: HostId,
     event_rx: async_channel::Receiver<ClientEvent>,
+    failure_rx: async_channel::Receiver<crate::client::RequestFailedEvent>,
 }
 
 /// Error from [`RemoteServerManager::run_connect_and_handshake`] that
@@ -105,6 +105,13 @@ pub enum RemoteServerOperation {
     LoadRepoMetadataDirectory,
     IndexCodebase,
     DropCodebaseIndex,
+    OpenBuffer,
+    SaveBuffer,
+    WriteFile,
+    ReadFileContext,
+    DeleteFile,
+    RunCommand,
+    GetFragmentMetadataFromHash,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -354,6 +361,11 @@ pub enum RemoteServerManagerEvent {
         /// `None` when the session was explicitly deregistered or when
         /// the exit status could not be determined.
         exit_status: Option<RemoteServerExitStatus>,
+        /// `true` when this disconnect follows exhausted reconnection
+        /// attempts. `false` for first-time disconnects and explicit
+        /// deregistrations. Used by the view layer to distinguish
+        /// reconnect-exhausted telemetry from regular disconnections.
+        was_reconnect_attempt: bool,
     },
     /// A reconnection attempt succeeded. Downstream owners (e.g.
     /// `RemoteServerCommandExecutor`) should swap their client reference
@@ -989,6 +1001,7 @@ impl RemoteServerManager {
         let Connection {
             client,
             event_rx,
+            failure_rx,
             child,
             control_path,
         } = transport
@@ -1087,6 +1100,7 @@ impl RemoteServerManager {
         Ok(InitializeHandshake {
             host_id: HostId::new(resp.host_id),
             event_rx,
+            failure_rx,
         })
     }
 
@@ -1166,6 +1180,7 @@ impl RemoteServerManager {
                 session_id,
                 host_id: host_id.clone(),
                 exit_status: None,
+                was_reconnect_attempt: false,
             });
             if !self.host_to_sessions.contains_key(&host_id) {
                 ctx.emit(RemoteServerManagerEvent::HostDisconnected { host_id });
@@ -1395,16 +1410,8 @@ impl RemoteServerManager {
                              operation={operation:?} host={host_id} session={session_id:?} \
                              repo_path={repo_path_for_log} error={e}"
                         );
-                        let error_kind = RemoteServerErrorKind::from_client_error(&e);
-                        let _ = spawner
-                            .spawn(move |_me, ctx| {
-                                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
-                                    session_id,
-                                    operation,
-                                    error_kind,
-                                });
-                            })
-                            .await;
+                        // Transport-level telemetry is emitted automatically
+                        // by send_tracked_request via ClientEvent::RequestFailed.
                     }
                 }
             })
@@ -1470,16 +1477,8 @@ impl RemoteServerManager {
                     }
                     Err(e) => {
                         log::warn!("Remote server navigate_to_directory failed: session={session_id:?} error={e}");
-                        let error_kind = RemoteServerErrorKind::from_client_error(&e);
-                        let _ = spawner
-                            .spawn(move |_me, ctx| {
-                                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
-                                    session_id,
-                                    operation: RemoteServerOperation::NavigateToDirectory,
-                                    error_kind,
-                                });
-                            })
-                            .await;
+                        // Transport-level telemetry is emitted automatically
+                        // by send_tracked_request via ClientEvent::RequestFailed.
                     }
                 }
             })
@@ -1565,16 +1564,8 @@ impl RemoteServerManager {
                         log::warn!(
                             "Remote server load_repo_metadata_directory failed: session={session_id:?} error={e}"
                         );
-                        let error_kind = RemoteServerErrorKind::from_client_error(&e);
-                        let _ = spawner
-                            .spawn(move |_me, ctx| {
-                                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
-                                    session_id,
-                                    operation: RemoteServerOperation::LoadRepoMetadataDirectory,
-                                    error_kind,
-                                });
-                            })
-                            .await;
+                        // Transport-level telemetry is emitted automatically
+                        // by send_tracked_request via ClientEvent::RequestFailed.
                     }
                 }
             })
@@ -1694,7 +1685,11 @@ impl RemoteServerManager {
         transport: Arc<dyn RemoteTransport>,
         ctx: &mut ModelContext<Self>,
     ) {
-        let InitializeHandshake { host_id, event_rx } = handshake;
+        let InitializeHandshake {
+            host_id,
+            event_rx,
+            failure_rx,
+        } = handshake;
         log::info!("Remote server connected: session={session_id:?} host={host_id}");
 
         // Only transition if the session is still in Initializing state.
@@ -1731,6 +1726,20 @@ impl RemoteServerManager {
             move |me, ctx| {
                 me.mark_session_disconnected(session_id, ctx);
             },
+        );
+        // Drain the separate failure channel for request-failed telemetry.
+        // This stream is independent of the lifecycle stream above, so
+        // holding its sender on the client does not block disconnect.
+        ctx.spawn_stream_local(
+            failure_rx,
+            move |_me, event, ctx| {
+                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
+                    session_id,
+                    operation: event.operation,
+                    error_kind: event.error_kind,
+                });
+            },
+            |_, _| {}, // no-op on done
         );
         if is_first_session {
             ctx.emit(RemoteServerManagerEvent::HostConnected {
@@ -2089,6 +2098,7 @@ impl RemoteServerManager {
                 session_id,
                 host_id: params.host_id,
                 exit_status: params.exit_status,
+                was_reconnect_attempt: true,
             });
             // Note: HostDisconnected was already emitted by
             // mark_session_disconnected when entering the reconnect flow.
@@ -2118,6 +2128,7 @@ impl RemoteServerManager {
             session_id,
             host_id: host_id.clone(),
             exit_status,
+            was_reconnect_attempt: false,
         });
         if !self.host_to_sessions.contains_key(&host_id) {
             ctx.emit(RemoteServerManagerEvent::HostDisconnected { host_id });

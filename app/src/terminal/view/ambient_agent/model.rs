@@ -964,12 +964,15 @@ impl AmbientAgentViewModel {
     /// and harness. Shared by `spawn_agent` and the local-to-cloud handoff path so
     /// both flows route to the same worker host and inherit the same defaults.
     pub(crate) fn build_default_spawn_config(&self, ctx: &AppContext) -> AgentConfigSnapshot {
-        // Determine computer_use_enabled based on workspace AI autonomy settings
-        let CloudAgentComputerUseState { enabled, .. } =
-            ComputerUsePermission::resolve_cloud_agent_state(ctx);
-        let computer_use_enabled = Some(enabled);
-
         let selected_harness = self.selected_harness();
+        let computer_use_enabled = if selected_harness == Harness::Oz {
+            // If the harness is Oz, determine computer use based on workspace AI autonomy settings.
+            let CloudAgentComputerUseState { enabled, .. } =
+                ComputerUsePermission::resolve_cloud_agent_state(ctx);
+            Some(enabled)
+        } else {
+            None
+        };
 
         let oz_model = (selected_harness == Harness::Oz).then(|| {
             LLMPreferences::as_ref(ctx)

@@ -11,7 +11,7 @@ use lsp::types::TextDocumentContentChangeEvent;
 use lsp::{LspManagerModel, LspServerLogLevel, LspServerModel};
 use string_offset::{ByteOffset, CharOffset};
 use vec1::vec1;
-use warp_core::features::FeatureFlag;
+use warp_core::{features::FeatureFlag, safe_error};
 use warp_editor::content::buffer::{Buffer, ToBufferCharOffset};
 use warp_editor::content::diff::{text_diff, TextDiff};
 use warp_editor::content::edit::PreciseDelta;
@@ -652,14 +652,20 @@ impl GlobalBufferModel {
         state.set_base_content_version(new_version);
 
         if let Some(char_offset_edits) = char_offset_edits {
-            if let BufferSource::ServerLocal { sync_clock, .. } = &mut state.source {
-                let new_sv = sync_clock.bump_server();
-                ctx.emit(GlobalBufferModelEvent::ServerLocalBufferUpdated {
-                    file_id,
-                    edits: char_offset_edits,
-                    new_server_version: new_sv,
-                    expected_client_version: sync_clock.client_version,
-                });
+            // Skip broadcasting empty edits — the file-watcher detected a write
+            // but the content is identical (e.g. after a save). Sending an empty
+            // BufferUpdatedPush would cause clients to advance base_content_version
+            // without updating the buffer version, creating a spurious mismatch.
+            if !char_offset_edits.is_empty() {
+                if let BufferSource::ServerLocal { sync_clock, .. } = &mut state.source {
+                    let new_sv = sync_clock.bump_server();
+                    ctx.emit(GlobalBufferModelEvent::ServerLocalBufferUpdated {
+                        file_id,
+                        edits: char_offset_edits,
+                        new_server_version: new_sv,
+                        expected_client_version: sync_clock.client_version,
+                    });
+                }
             }
         } else {
             ctx.emit(GlobalBufferModelEvent::BufferUpdatedFromFileEvent {
@@ -808,6 +814,10 @@ impl GlobalBufferModel {
                 let path = remote_path.path.as_str().to_string();
                 let manager = RemoteServerManager::handle(ctx);
                 let Some(client) = manager.as_ref(ctx).client_for_host(&host_id).cloned() else {
+                    safe_error!(
+                        safe: ("[remote-buffer] No remote server client at buffer save time"),
+                        full: ("[remote-buffer] No remote server client for save: host={host_id:?}")
+                    );
                     return Err(FileSaveError::RemoteError(
                         "No remote server client available".to_string(),
                     ));
@@ -1755,7 +1765,10 @@ impl GlobalBufferModel {
 
         // Look up the client on the main thread, then send OpenBuffer asynchronously.
         let Some(client) = client_for_sub else {
-            log::warn!("[remote-buffer] No remote server client for host {host_id:?}");
+            safe_error!(
+                safe: ("[remote-buffer] No remote server client at buffer open time"),
+                full: ("[remote-buffer] No remote server client for host {host_id:?}")
+            );
             ctx.emit(GlobalBufferModelEvent::FailedToLoad {
                 file_id,
                 error: Rc::new(FileLoadError::DoesNotExist),
@@ -1791,8 +1804,13 @@ impl GlobalBufferModel {
         ctx: &mut ModelContext<Self>,
     ) {
         let res = result.and_then(|res| {
-            res.result
-                .ok_or("No result in OpenBuffer response".to_string())
+            res.result.ok_or_else(|| {
+                safe_error!(
+                    safe: ("[remote-buffer] No result in OpenBuffer response"),
+                    full: ("[remote-buffer] No result in OpenBuffer response for file_id={file_id:?}")
+                );
+                "No result in OpenBuffer response".to_string()
+            })
         });
         match res {
             Ok(remote_server::proto::open_buffer_response::Result::Success(
@@ -1807,7 +1825,10 @@ impl GlobalBufferModel {
                     server_version,
                 );
                 let Some(state) = self.buffers.get_mut(&file_id) else {
-                    log::warn!("[remote-buffer] Buffer state missing for file_id={file_id:?}");
+                    safe_error!(
+                        safe: ("[remote-buffer] Buffer state missing after OpenBuffer response"),
+                        full: ("[remote-buffer] Buffer state missing for file_id={file_id:?}")
+                    );
                     return;
                 };
                 if let BufferSource::Remote {
@@ -1824,7 +1845,10 @@ impl GlobalBufferModel {
                     }
                 }
                 let Some(buffer) = state.buffer.upgrade(ctx) else {
-                    log::warn!("[remote-buffer] Buffer handle deallocated for file_id={file_id:?}");
+                    safe_error!(
+                        safe: ("[remote-buffer] Buffer handle deallocated before OpenBuffer response"),
+                        full: ("[remote-buffer] Buffer handle deallocated for file_id={file_id:?}")
+                    );
                     return;
                 };
                 let version = ContentVersion::new();
@@ -1871,6 +1895,15 @@ impl GlobalBufferModel {
     /// the edits are applied to the in-memory buffer (no disk write) and the
     /// client version is updated. Returns `true` if accepted, `false` if rejected
     /// (stale edit — silently discarded).
+    ///
+    /// **Coordinate convention:** Each `TextEdit` in `edits` uses sequential
+    /// coordinates — its offsets reference the buffer state *after* all
+    /// preceding edits in the slice have been applied. This matches how the
+    /// client constructs edits from `PreciseDelta.replaced_range`, which is
+    /// resolved via anchors in intermediate buffer states. Edits are therefore
+    /// applied one at a time rather than in a single batch call to
+    /// `insert_at_char_offset_ranges` (which expects all offsets in the
+    /// original-buffer coordinate space).
     #[cfg(feature = "local_fs")]
     pub fn apply_client_edit(
         &mut self,
@@ -1903,24 +1936,25 @@ impl GlobalBufferModel {
             return false;
         };
 
-        // Wire offsets are 1-indexed (matching CharOffset), so no conversion needed.
-        let new_version = ContentVersion::new();
+        // Apply each edit sequentially: offsets are in sequential coordinates
+        // (each relative to the buffer after all preceding edits), so we must
+        // apply one at a time and recompute max_offset for each.
         buffer.update(ctx, |buffer, ctx| {
-            let max_offset = buffer.max_charoffset();
-            let char_edits: Vec<(std::ops::Range<CharOffset>, String)> = edits
-                .iter()
-                .map(|edit| {
-                    let start =
-                        CharOffset::from((edit.start_offset as usize).min(max_offset.as_usize()));
-                    let end =
-                        CharOffset::from((edit.end_offset as usize).min(max_offset.as_usize()));
-                    (start..end, edit.text.clone())
-                })
-                .collect();
-
-            buffer.insert_at_char_offset_ranges(char_edits, new_version, ctx);
+            for edit in edits {
+                let max_offset = buffer.max_charoffset();
+                let start =
+                    CharOffset::from((edit.start_offset as usize).min(max_offset.as_usize()));
+                let end = CharOffset::from((edit.end_offset as usize).min(max_offset.as_usize()));
+                buffer.insert_at_char_offset_ranges(
+                    vec![(start..end, edit.text.clone())],
+                    ContentVersion::new(),
+                    ctx,
+                );
+            }
+            // Allocate the final version after all per-edit versions so the
+            // monotonic ContentVersion counter moves forward.
+            buffer.set_version(ContentVersion::new());
         });
-
         true
     }
 
@@ -2202,7 +2236,10 @@ impl GlobalBufferModel {
         log::debug!("[remote-buffer] BufferConflictDetected: host={host_id} path={path}");
 
         let Some(file_id) = self.find_remote_file_id(host_id, path) else {
-            log::warn!("[remote-buffer] BufferConflictDetected for unknown buffer: {path}");
+            safe_error!(
+                safe: ("[remote-buffer] BufferConflictDetected for unknown buffer"),
+                full: ("[remote-buffer] BufferConflictDetected for unknown buffer: {path}")
+            );
             return;
         };
 
@@ -2240,7 +2277,10 @@ impl GlobalBufferModel {
         );
 
         let Some(file_id) = self.find_remote_file_id(host_id, path) else {
-            log::warn!("[remote-buffer] BufferUpdatedPush for unknown remote buffer: {path}");
+            safe_error!(
+                safe: ("[remote-buffer] BufferUpdatedPush for unknown remote buffer"),
+                full: ("[remote-buffer] BufferUpdatedPush for unknown remote buffer: {path}")
+            );
             return;
         };
 

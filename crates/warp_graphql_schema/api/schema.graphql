@@ -1881,6 +1881,7 @@ Add self-hosted and other cloud providers here as needed.
 """
 enum LlmModelHost {
   AWS_BEDROCK
+  CUSTOM_ENDPOINT
   DIRECT_API
 }
 
