@@ -1926,6 +1926,7 @@ zh-CN:
     share_session: "共享会话..."
     stop_sharing: "停止共享"
     copy_session_sharing_link: "复制会话共享链接"
+    request_edit_access: "请求编辑权限"
     offline_reconnecting: "离线，正在尝试重新连接..."
     continue_in_cloud_tooltip: "在 Cloud Mode 中继续此任务"
     fork_conversation_locally: "在本地 fork 此会话"

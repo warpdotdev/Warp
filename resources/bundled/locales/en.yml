@@ -1926,6 +1926,7 @@ en:
     share_session: "Share session..."
     stop_sharing: "Stop sharing"
     copy_session_sharing_link: "Copy session sharing link"
+    request_edit_access: "Request edit access"
     offline_reconnecting: "Offline, trying to reconnect..."
     continue_in_cloud_tooltip: "Continue this task in Cloud Mode"
     fork_conversation_locally: "Fork this conversation locally"
