@@ -3381,16 +3381,36 @@ impl PaneGroup {
         child_session_id: SessionId,
         ctx: &mut ViewContext<Self>,
     ) {
-        if self
+        // Race recovery: if the user clicked the pill before this helper had
+        // a chance to run (i.e. before [`OrchestrationViewerModel`] surfaced
+        // a `session_id` for the child), the click path falls through to
+        // [`Self::create_hidden_child_agent_pane`]'s local branch and creates
+        // a PTY-backed fallback pane that never joins the child's session.
+        // That fallback gets registered in `child_agent_panes`, and without
+        // this branch our subsequent materialization would idempotently bail,
+        // leaving the user stuck on an empty agent view.
+        //
+        // `OrchestrationViewerModel::ChildAgentEntry::pane_materialization_requested`
+        // gates the emission of `Event::EnsureSharedSessionViewerChildPane`,
+        // so this helper runs at most once per child per model lifetime. Any
+        // existing entry at this point is necessarily a fallback pane;
+        // discarding it and re-materializing is safe.
+        let fallback_was_swapped_anchor = if let Some(prior_pane_id) = self
             .child_agent_panes
             .get(&child_conversation_id)
-            .is_some_and(|pane_id| self.has_pane_id(*pane_id))
+            .copied()
+            .filter(|pane_id| self.has_pane_id(*pane_id))
         {
-            log::debug!(
-                "[orch-viewer] ensure_shared_session_viewer_child_pane: pane already exists for conv={child_conversation_id:?}"
+            let anchor = self.panes.original_pane_for_replacement(prior_pane_id);
+            log::info!(
+                "[orch-viewer] discarding fallback pane for conv={child_conversation_id:?} \
+                 prior_pane={prior_pane_id:?} swapped_in_for={anchor:?}"
             );
-            return;
-        }
+            self.discard_child_agent_pane_for_conversation(child_conversation_id, ctx);
+            anchor
+        } else {
+            None
+        };
 
         let Some(child_conversation) = BlocklistAIHistoryModel::as_ref(ctx)
             .conversation(&child_conversation_id)
@@ -3470,6 +3490,14 @@ impl PaneGroup {
         );
         self.child_agent_panes
             .insert(child_conversation_id, new_pane_id.into());
+
+        // If the discarded fallback pane was occupying a tree slot via
+        // temporary replacement, re-swap so the user lands on the freshly
+        // materialized pane instead of getting kicked back to the
+        // orchestrator pane after the discard reverted the swap.
+        if let Some(anchor) = fallback_was_swapped_anchor {
+            self.swap_active_pane_to_conversation(anchor, child_conversation_id, ctx);
+        }
     }
 
     /// Helper that creates the initial [`PaneData`] and [`InitialFocus`] given a terminal view.
