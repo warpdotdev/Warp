@@ -5513,7 +5513,7 @@ impl SettingsWidget for AutocompleteSymbolsWidget {
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         render_body_item::<FeaturesPageAction>(
-            "Autocomplete quotes, parentheses, and brackets".into(),
+            t!("features.autocomplete_symbols").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 AutocompleteSymbols::storage_key(),
@@ -5559,7 +5559,7 @@ impl SettingsWidget for ErrorUnderliningWidget {
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         render_body_item::<FeaturesPageAction>(
-            "Error underlining for commands".into(),
+            t!("features.error_underlining_commands").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 ErrorUnderliningEnabled::storage_key(),
@@ -5605,7 +5605,7 @@ impl SettingsWidget for SyntaxHighlightingWidget {
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         render_body_item::<FeaturesPageAction>(
-            "Syntax highlighting for commands".into(),
+            t!("features.syntax_highlighting_commands").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 SyntaxHighlighting::storage_key(),
@@ -5651,7 +5651,7 @@ impl SettingsWidget for CompletionsMenuWhileTypingWidget {
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         render_body_item::<FeaturesPageAction>(
-            "Open completions menu as you type".into(),
+            t!("features.open_completions_menu_typing").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 CompletionsOpenWhileTyping::storage_key(),
@@ -5701,7 +5701,7 @@ impl SettingsWidget for CommandCorrectionsWidget {
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         render_body_item::<FeaturesPageAction>(
-            "Suggest corrected commands".into(),
+            t!("features.suggest_corrected_commands").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 CommandCorrections::storage_key(),
@@ -5748,7 +5748,7 @@ impl SettingsWidget for AliasExpansionWidget {
         let alias_expansion_settings = AliasExpansionSettings::as_ref(app);
         let ui_builder = appearance.ui_builder();
         render_body_item::<FeaturesPageAction>(
-            "Expand aliases as you type".into(),
+            t!("features.expand_aliases_typing").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 AliasExpansionEnabled::storage_key(),
@@ -5795,7 +5795,7 @@ impl SettingsWidget for MiddleClickPasteWidget {
         let ui_builder = appearance.ui_builder();
         let selection_settings = SelectionSettings::as_ref(app);
         render_body_item::<FeaturesPageAction>(
-            "Middle-click to paste".into(),
+            t!("features.middle_click_to_paste").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 MiddleClickPasteEnabled::storage_key(),
@@ -5847,7 +5847,7 @@ impl SettingsWidget for VimModeWidget {
         let app_editor_settings = AppEditorSettings::as_ref(app);
         let vim_mode_enabled = *app_editor_settings.vim_mode.value();
         column.add_child(render_body_item::<FeaturesPageAction>(
-            "Edit code and commands with Vim keybindings".into(),
+            t!("features.vim_keybindings").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 VimModeEnabled::storage_key(),
@@ -5895,7 +5895,7 @@ impl SettingsWidget for VimModeWidget {
                     app,
                 ),
                 clipboard_switch,
-                "Set unnamed register as system clipboard".into(),
+                t!("features.vim_unnamed_register_clipboard").to_string(),
             );
 
             let vim_status_bar = *app_editor_settings.vim_status_bar.value();
@@ -5919,7 +5919,7 @@ impl SettingsWidget for VimModeWidget {
                     app,
                 ),
                 status_bar_switch,
-                "Show Vim status bar".into(),
+                t!("features.show_vim_status_bar").to_string(),
             );
 
             column.add_child(render_group(
@@ -5952,7 +5952,7 @@ impl SettingsWidget for AtContextMenuInTerminalModeWidget {
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         render_body_item::<FeaturesPageAction>(
-            "Enable '@' context menu in terminal mode".into(),
+            t!("features.enable_at_context_menu_terminal").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 AtContextMenuInTerminalMode::storage_key(),
@@ -6008,7 +6008,7 @@ impl SettingsWidget for SlashCommandsInTerminalModeWidget {
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         render_body_item::<FeaturesPageAction>(
-            "Enable slash commands in terminal mode".into(),
+            t!("features.enable_slash_commands_terminal").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 EnableSlashCommandsInTerminal::storage_key(),
@@ -6060,7 +6060,7 @@ impl SettingsWidget for OutlineCodebaseSymbolsForAtContextMenuWidget {
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         render_body_item::<FeaturesPageAction>(
-            "Outline codebase symbols for '@' context menu".into(),
+            t!("features.outline_codebase_symbols_at_menu").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 OutlineCodebaseSymbolsForAtContextMenu::storage_key(),
@@ -6112,7 +6112,7 @@ impl SettingsWidget for ShowTerminalInputMessageLineWidget {
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         render_body_item::<FeaturesPageAction>(
-            "Show terminal input message line".into(),
+            t!("features.show_terminal_input_message_line").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 ShowTerminalInputMessageBar::storage_key(),
@@ -6165,7 +6165,7 @@ impl SettingsWidget for AutosuggestionKeybindingHintWidget {
         let autosuggestion_keybinding_hint =
             *app_editor_settings.autosuggestion_keybinding_hint.value();
         column.add_child(render_body_item::<FeaturesPageAction>(
-            "Show autosuggestion keybinding hint".into(),
+            t!("features.show_autosuggestion_keybinding_hint").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 AutosuggestionKeybindingHint::storage_key(),
@@ -6221,7 +6221,7 @@ impl SettingsWidget for AutosuggestionIgnoreButtonWidget {
             .show_autosuggestion_ignore_button
             .value();
         column.add_child(render_body_item::<FeaturesPageAction>(
-            "Show autosuggestion ignore button".into(),
+            t!("features.show_autosuggestion_ignore_button").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 ShowAutosuggestionIgnoreButton::storage_key(),
