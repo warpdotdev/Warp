@@ -726,6 +726,13 @@ en:
   command_search:
     placeholder: "Search your history, workflows, and more"
     current: "Current"
+    running: "Running..."
+    completed: "Completed"
+    completed_over_hour_ago: "Completed over 1 hour ago"
+    completed_minute_ago: "Completed {mins} minute ago"
+    completed_minutes_ago: "Completed {mins} minutes ago"
+    no_timestamp: "No timestamp found"
+    empty_session: "Empty Session"
     result_executed: "Result executed"
     result_executed_help: "Press Cmd-Up to navigate to the command's output."
     result_accepted: "Result accepted."

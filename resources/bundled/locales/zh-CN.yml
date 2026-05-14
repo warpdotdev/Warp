@@ -726,6 +726,13 @@ zh-CN:
   command_search:
     placeholder: "搜索历史记录、工作流等"
     current: "当前"
+    running: "运行中..."
+    completed: "已完成"
+    completed_over_hour_ago: "已于 1 小时前完成"
+    completed_minute_ago: "已于 {mins} 分钟前完成"
+    completed_minutes_ago: "已于 {mins} 分钟前完成"
+    no_timestamp: "未找到时间戳"
+    empty_session: "空会话"
     result_executed: "结果已执行"
     result_executed_help: "按 Cmd-Up 跳转到命令输出。"
     result_accepted: "结果已接受。"
