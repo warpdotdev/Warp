@@ -106,6 +106,10 @@ pub async fn generate_multi_agent_output(
             supports_research_agent: params.research_agent_enabled,
             supports_orchestration_v2: FeatureFlag::OrchestrationV2.is_enabled(),
             custom_model_providers: params.custom_model_providers,
+            // Local non-Oz harness orchestration is being phased out. The
+            // server treats this as the canonical capability bit; older
+            // clients that omit the field are also treated as unsupported.
+            supports_local_non_oz_harness_orchestration: false,
         }),
         metadata: Some(api::request::Metadata {
             logging: logging_metadata,

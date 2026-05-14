@@ -282,7 +282,12 @@ impl OrchestrationConfigBlockView {
 
         let harness_handle = oc::new_standard_picker_dropdown(&colors, ctx);
         harness_handle.update(ctx, |d, c| d.set_use_overlay_layer(true, c));
-        oc::populate_harness_picker(&harness_handle, &self.edit_state.harness_type, ctx);
+        oc::populate_harness_picker(
+            &harness_handle,
+            &self.edit_state.harness_type,
+            is_local,
+            ctx,
+        );
         self.pickers.harness_picker = Some(harness_handle);
 
         // When restoring a Remote config with empty host or
