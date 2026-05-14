@@ -2022,6 +2022,7 @@ zh-CN:
     new_badge: "新功能"
     period: "。"
     search: "搜索"
+    no_matches_found: "未找到匹配项。"
     accept: "接受"
     expand: "展开"
     collapse: "折叠"

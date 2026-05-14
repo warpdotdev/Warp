@@ -2022,6 +2022,7 @@ en:
     new_badge: "New"
     period: "."
     search: "Search"
+    no_matches_found: "No matches found."
     accept: "Accept"
     expand: "Expand"
     collapse: "Collapse"
