@@ -776,6 +776,11 @@ zh-CN:
     docs: "文档"
     slack: "Slack"
     feedback: "反馈"
+    keybindings_essentials: "基础"
+    keybindings_blocks: "区块"
+    keybindings_input_editor: "输入编辑器"
+    keybindings_terminal: "终端"
+    keybindings_fundamentals: "通用操作"
 
   ai_context_menu:
     files_and_folders: "文件和文件夹"

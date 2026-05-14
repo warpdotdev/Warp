@@ -776,6 +776,11 @@ en:
     docs: "Docs"
     slack: "Slack"
     feedback: "Feedback"
+    keybindings_essentials: "Essentials"
+    keybindings_blocks: "Blocks"
+    keybindings_input_editor: "Input Editor"
+    keybindings_terminal: "Terminal"
+    keybindings_fundamentals: "Fundamentals"
 
   ai_context_menu:
     files_and_folders: "Files and folders"
