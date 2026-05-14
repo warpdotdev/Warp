@@ -1116,6 +1116,10 @@ zh-CN:
       subtitle: "选择 Claude Code、Codex 和 Gemini 等 Agent 的默认使用方式。"
       cli_agent_toolbar: "CLI Agent 工具栏"
       notifications: "通知"
+    theme_picker:
+      title: "选择主题"
+      subtitle: "点击或使用方向键选择，按 Enter 确认。"
+      sync_with_os: "跟随系统切换浅色/深色主题"
 
   # ── 设置 ──
   settings:

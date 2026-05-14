@@ -1116,6 +1116,10 @@ en:
       subtitle: "Select defaults for using agents like Claude Code, Codex, and Gemini."
       cli_agent_toolbar: "CLI agent toolbar"
       notifications: "Notifications"
+    theme_picker:
+      title: "Choose a theme"
+      subtitle: "Click or use arrow keys to select, Enter to confirm."
+      sync_with_os: "Sync light/dark theme with OS"
 
   # ── Settings ──
   settings:
