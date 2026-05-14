@@ -180,9 +180,8 @@ pub struct BlocklistAIHistoryModel {
 
     /// Reverse index from server-side agent identifier to local conversation ID.
     ///
-    /// Keyed by `run_id` when OrchestrationV2 is enabled, otherwise by
-    /// `server_conversation_token`. Only the identifier relevant to the
-    /// active orchestration version is stored.
+    /// Keyed by the conversation run id when available, falling back to the
+    /// server conversation token for restored legacy conversations.
     agent_id_to_conversation_id: HashMap<String, AIConversationId>,
 
     /// Reverse index from [`ServerConversationToken`] to local [`AIConversationId`].
@@ -350,7 +349,7 @@ impl BlocklistAIHistoryModel {
     ) -> AIConversationId {
         let parent_agent_id = self
             .conversation(&parent_conversation_id)
-            .and_then(|c| c.orchestration_agent_id());
+            .and_then(|c| c.agent_link_id());
         if parent_agent_id.is_none() {
             log::warn!(
                 "No agent identifier for parent conversation {parent_conversation_id:?}; \
@@ -399,23 +398,6 @@ impl BlocklistAIHistoryModel {
             .get(parent_id)
             .map(|v| v.as_slice())
             .unwrap_or_default()
-    }
-
-    /// Updates the persisted `last_event_sequence` for a conversation and
-    /// writes the updated conversation state to SQLite. Used by the
-    /// orchestration event poller after draining an event batch to keep the
-    /// cursor durable across restarts.
-    pub fn update_event_sequence(
-        &mut self,
-        conversation_id: AIConversationId,
-        sequence: i64,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) else {
-            return;
-        };
-        conversation.set_last_event_sequence(sequence);
-        conversation.write_updated_conversation_state(ctx);
     }
 
     /// Sets a live conversation's server token, and updates the mapping in the history
@@ -869,8 +851,7 @@ impl BlocklistAIHistoryModel {
 
     /// Assigns a `run_id` to a conversation that was spawned as a remote child
     /// agent. Updates the `agent_id_to_conversation_id` index and emits
-    /// `ConversationAgentIdAssigned` so the `StartAgentExecutor` can
-    /// complete the pending `start_agent` tool call.
+    /// `ConversationAgentIdAssigned` so restored child-agent links can resolve.
     pub fn assign_run_id_for_conversation(
         &mut self,
         conversation_id: AIConversationId,
@@ -1929,7 +1910,7 @@ impl BlocklistAIHistoryModel {
 /// Returns the key to use in `agent_id_to_conversation_id` for the given
 /// conversation.
 fn agent_id_key(conversation: &AIConversation) -> Option<String> {
-    conversation.orchestration_agent_id()
+    conversation.agent_link_id()
 }
 
 #[derive(Clone, Debug)]
@@ -2055,8 +2036,7 @@ pub enum BlocklistAIHistoryEvent {
     },
 
     /// Emitted when a conversation first receives its server-assigned conversation token
-    /// (during StreamInit). Used by the StartAgentExecutor to resolve pending StartAgent
-    /// actions for child agent conversations.
+    /// during StreamInit. Retained for child-agent and restored conversation linking.
     ConversationAgentIdAssigned {
         conversation_id: AIConversationId,
         terminal_view_id: EntityId,

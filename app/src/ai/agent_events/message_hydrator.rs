@@ -2,7 +2,7 @@ use crate::ai::agent::ReceivedMessageInput;
 use crate::ai::agent_events::AgentRunEvent;
 
 /// OpenWarp 本地构建不再从云端 mailbox 拉取消息正文或发送 delivered 回执。
-/// 该类型保留 orchestration 调用面的无副作用兼容语义。
+/// 该类型保留本地 harness 桥接调用面的无副作用兼容语义。
 #[derive(Clone)]
 pub(crate) struct MessageHydrator;
 

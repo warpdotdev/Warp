@@ -782,8 +782,7 @@ impl AgentConversationsModel {
     /// Returns the local conversation ID represented by the given task, if this task and a
     /// conversation entry both point at the same underlying local run.
     ///
-    /// We first match using the orchestration agent ID (task ID / run ID under v2), and fall back
-    /// to the legacy conversation token for cases where the task only carries conversation identity
+    /// We first match using the run ID, and fall back to the legacy conversation token for cases where the task only carries conversation identity
     /// through `conversation_id`.
     fn conversation_id_shadowed_by_task(
         task: &AmbientAgentTask,

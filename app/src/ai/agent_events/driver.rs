@@ -35,8 +35,7 @@ pub(crate) struct AgentEventDriverConfig {
 }
 
 impl AgentEventDriverConfig {
-    /// Build the production reconnecting configuration used by long-lived
-    /// orchestration and harness listeners.
+    /// Build the production reconnecting configuration used by long-lived harness listeners.
     pub(crate) fn retry_forever(run_ids: Vec<String>, since_sequence: i64) -> Self {
         Self {
             run_ids,

@@ -152,7 +152,7 @@ pub struct AIConversation {
     server_conversation_token: Option<ServerConversationToken>,
 
     /// The server-assigned task/run identifier (`ai_tasks.id`) for this
-    /// conversation, used for v2 orchestration.
+    /// conversation, used for local run and restored task identity.
     ///
     /// For local conversations, parsed from `StreamInit.run_id` on the first
     /// response. For remote child agents spawned via `POST /agent/run`, set
@@ -202,8 +202,8 @@ pub struct AIConversation {
     artifacts: Vec<Artifact>,
 
     /// Server-side identifier of the parent agent that spawned this child, if any.
-    /// In v1 this holds the parent's `server_conversation_token`; in v2 (OrchestrationV2)
-    /// it holds the parent's `run_id`. Persisted as `parent_agent_id` for serde compat.
+    /// Restored legacy conversations may store a server conversation token here;
+    /// newer local child-agent paths use the parent run id.
     parent_agent_id: Option<String>,
     /// The display name for this agent (e.g. "Agent 1"), assigned by the orchestrator.
     agent_name: Option<String>,
@@ -215,9 +215,7 @@ pub struct AIConversation {
     /// reporting. TaskStatusSyncModel skips status updates for these.
     is_remote_child: bool,
 
-    /// The last event sequence number observed from the v2 orchestration
-    /// event log. Used on restore to resume event delivery without
-    /// re-delivering already-processed events.
+    /// Legacy cloud event cursor retained only for deserializing older conversations.
     last_event_sequence: Option<i64>,
 
     /// OpenWarp BYOP 本地会话压缩 sidecar — 与 warp protobuf message 解耦,
@@ -732,17 +730,13 @@ impl AIConversation {
         self.task_id = Some(id);
     }
 
-    /// Returns the server-side agent identifier appropriate for the active
-    /// orchestration version: `task_id` (as string) under v2,
-    /// `server_conversation_token` under v1.
-    pub fn orchestration_agent_id(&self) -> Option<String> {
-        if FeatureFlag::OrchestrationV2.is_enabled() {
-            self.run_id()
-        } else {
+    /// Returns the best available server-side agent identifier for parent/child linking.
+    pub fn agent_link_id(&self) -> Option<String> {
+        self.run_id().or_else(|| {
             self.server_conversation_token
                 .as_ref()
                 .map(|t| t.as_str().to_string())
-        }
+        })
     }
 
     /// Updates the server conversation token for this conversation.
@@ -789,16 +783,6 @@ impl AIConversation {
 
     pub fn set_parent_conversation_id(&mut self, id: AIConversationId) {
         self.parent_conversation_id = Some(id);
-    }
-
-    /// Returns the last observed v2 orchestration event sequence number, if any.
-    pub fn last_event_sequence(&self) -> Option<i64> {
-        self.last_event_sequence
-    }
-
-    /// Updates the last observed v2 orchestration event sequence number.
-    pub fn set_last_event_sequence(&mut self, sequence: i64) {
-        self.last_event_sequence = Some(sequence);
     }
 
     /// Returns true if this conversation was spawned by a parent orchestrator agent.
@@ -2724,10 +2708,7 @@ impl AIConversation {
     /// Returns true if any subagent task is currently active (not yet finished).
     ///
     /// This covers both optimistic CLI subagent tasks (created before server
-    /// confirmation) and server-backed subagent tasks. Used to prevent
-    /// piggybacking orchestration events onto followup requests while a
-    /// subagent is active, since subagents cannot interpret those events and
-    /// inserting them breaks tool_use/tool_result ordering requirements.
+    /// confirmation) and server-backed subagent tasks.
     pub fn has_active_subagent(&self) -> bool {
         if self.optimistic_cli_subagent_subtask_id.is_some() {
             return true;

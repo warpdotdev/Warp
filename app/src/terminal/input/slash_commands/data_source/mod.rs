@@ -35,8 +35,7 @@ use crate::{
     },
     search::{
         slash_command_menu::{
-            static_commands::commands::{self, COMMAND_REGISTRY},
-            SlashCommandId, StaticCommand,
+            static_commands::commands::COMMAND_REGISTRY, SlashCommandId, StaticCommand,
         },
         SyncDataSource,
     },
@@ -89,11 +88,7 @@ impl SlashCommandDataSource {
             _ => (),
         });
         ctx.subscribe_to_model(&AISettings::handle(ctx), |me, event, ctx| {
-            if matches!(
-                event,
-                AISettingsChangedEvent::IsAnyAIEnabled { .. }
-                    | AISettingsChangedEvent::OrchestrationEnabled { .. }
-            ) {
+            if matches!(event, AISettingsChangedEvent::IsAnyAIEnabled { .. }) {
                 me.recompute_active_commands(ctx);
             }
         });
@@ -192,16 +187,11 @@ impl SlashCommandDataSource {
             session_context |= Availability::AI_ENABLED;
         }
 
-        let is_orchestration_enabled = AISettings::as_ref(ctx).is_orchestration_enabled(ctx);
-
         let old_active_command_count = self.active_commands_by_id.len();
         self.active_commands_by_id = HashMap::from_iter(
             COMMAND_REGISTRY
                 .all_commands_by_id()
                 .filter(|(_, command)| command.is_active(session_context))
-                .filter(|(_, command)| {
-                    command.name != commands::ORCHESTRATE_NAME || is_orchestration_enabled
-                })
                 // When CLI agent input is open, restrict to the explicit allowlist.
                 .filter(|(_, command)| {
                     !is_cli_agent_input

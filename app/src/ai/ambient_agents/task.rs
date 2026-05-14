@@ -254,9 +254,8 @@ pub struct AmbientAgentTask {
     #[serde(default, deserialize_with = "deserialize_artifacts")]
     pub artifacts: Vec<Artifact>,
 
-    /// The last event sequence number recorded for this run.
-    /// Used by local orchestration event delivery to resume from the correct
-    /// cursor on restart. Older locally restored records may leave this unset.
+    /// Legacy cloud event cursor for restored task records. Older locally restored records may
+    /// leave this unset.
     #[serde(default)]
     pub last_event_sequence: Option<i64>,
 

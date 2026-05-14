@@ -2280,7 +2280,6 @@ pub enum UserQueryMode {
     #[default]
     Normal,
     Plan,
-    Orchestrate,
 }
 
 // TODO(zachbai): Refactor this to consolidate with `LongRunningCommandSnapshot` and `Snapshot`
@@ -2526,9 +2525,6 @@ impl AIAgentInput {
                 ..
             } => match user_query_mode {
                 UserQueryMode::Plan => Some(format!("{} {query}", commands::PLAN.name)),
-                UserQueryMode::Orchestrate => {
-                    Some(format!("{} {query}", commands::ORCHESTRATE.name))
-                }
                 UserQueryMode::Normal => Some(query.clone()),
             },
             Self::CreateNewProject { query, .. } => Some(query.clone()),

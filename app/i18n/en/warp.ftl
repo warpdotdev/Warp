@@ -960,8 +960,6 @@ settings-ai-coding-agent-select-header = Select coding agent
 # Experimental / Agent
 settings-ai-cloud-agent-computer-use = Computer use in agents
 settings-ai-cloud-agent-computer-use-description = Enable computer use in agent conversations started from the Warp app.
-settings-ai-orchestration-label = Orchestration
-settings-ai-orchestration-description = Enable multi-agent orchestration, allowing the agent to spawn and coordinate parallel sub-agents.
 
 # AWS Bedrock
 settings-ai-aws-bedrock-toggle = Use AWS Bedrock credentials
@@ -1724,7 +1722,6 @@ keybinding-desc-workspace-open-ai-fact-collection = Open AI Rules
 keybinding-desc-workspace-open-mcp-servers = Open MCP Servers
 keybinding-desc-workspace-jump-to-latest-toast = Jump to latest agent task
 keybinding-desc-workspace-toggle-notification-mailbox = Toggle notification mailbox
-keybinding-desc-workspace-toggle-agent-management-view = Toggle the agent management view
 
 # Settings pages
 keybinding-desc-workspace-show-settings = Open Settings
@@ -2100,8 +2097,6 @@ agent-toolbar-available-chips = Available chips
 agent-message-bar-get-figma-mcp = Get Figma MCP
 agent-message-bar-enable-figma-mcp = Enable Figma MCP
 agent-message-bar-enabling = Enabling...
-orchestration-parent-conversation = Parent conversation
-orchestration-back-to-parent-conversation = Back to parent conversation
 child-agent-default-name = Agent
 agent-zero-state-switch-model = switch model
 agent-zero-state-go-back-to-terminal = go back to terminal
@@ -2365,8 +2360,6 @@ slash-cmd-model-desc = Switch the base agent model
 slash-cmd-profile-desc = Switch the active execution profile
 slash-cmd-plan-desc = Prompt the agent to do some research and create a plan for a task
 slash-cmd-plan-hint = <describe your task>
-slash-cmd-orchestrate-desc = Break a task into subtasks and run them in parallel with multiple agents
-slash-cmd-orchestrate-hint = <describe your task>
 slash-cmd-compact-desc = Free up context by summarizing convo history
 slash-cmd-compact-hint = <optional custom summarization instructions>
 slash-cmd-compact-and-desc = Compact conversation and then send a follow-up prompt

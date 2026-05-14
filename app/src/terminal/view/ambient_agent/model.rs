@@ -419,9 +419,8 @@ impl AmbientAgentViewModel {
                                 return;
                             }
 
-                            // Wire the run_id to the associated conversation for
-                            // orchestration v2. This unblocks the parent agent's
-                            // pending start_agent tool call.
+                            // Wire the run_id to the associated conversation so parent/child
+                            // links can resolve after restore.
                             if let Some(conversation_id) = me.conversation_id {
                                 let terminal_view_id = me.terminal_view_id;
                                 let spawned_task_id = Some(task_id);

@@ -909,8 +909,6 @@ settings-ai-coding-agent-select-header = コーディングエージェントを
 # Experimental / Agent
 settings-ai-cloud-agent-computer-use = エージェントでのコンピュータ操作
 settings-ai-cloud-agent-computer-use-description = Warp アプリから開始したエージェント会話でコンピュータ操作を有効化します。
-settings-ai-orchestration-label = オーケストレーション
-settings-ai-orchestration-description = マルチエージェントオーケストレーションを有効化し、エージェントが並列のサブエージェントを起動・調整できるようにします。
 
 # AWS Bedrock
 settings-ai-aws-bedrock-toggle = AWS Bedrock の認証情報を使用
@@ -1656,7 +1654,6 @@ keybinding-desc-workspace-open-ai-fact-collection = AI ルールを開く
 keybinding-desc-workspace-open-mcp-servers = MCP サーバーを開く
 keybinding-desc-workspace-jump-to-latest-toast = 最新のエージェントタスクへジャンプ
 keybinding-desc-workspace-toggle-notification-mailbox = 通知メールボックスを切り替え
-keybinding-desc-workspace-toggle-agent-management-view = エージェント管理ビューを切り替え
 
 # Settings pages
 keybinding-desc-workspace-show-settings = 設定を開く
@@ -2281,8 +2278,6 @@ slash-cmd-model-desc = ベースエージェントモデルを切り替え
 slash-cmd-profile-desc = アクティブな実行プロファイルを切り替え
 slash-cmd-plan-desc = エージェントに調査させてタスクの計画を作成
 slash-cmd-plan-hint = <タスクを記述>
-slash-cmd-orchestrate-desc = タスクをサブタスクに分解し複数エージェントで並列実行
-slash-cmd-orchestrate-hint = <タスクを記述>
 slash-cmd-compact-desc = 会話履歴を要約してコンテキストを解放
 slash-cmd-compact-hint = <任意のカスタム要約指示>
 slash-cmd-compact-and-desc = 会話を圧縮した後に追加プロンプトを送信

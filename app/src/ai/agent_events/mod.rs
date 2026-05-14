@@ -1,5 +1,4 @@
-//! Shared agent-event stream utilities used by orchestration consumers and
-//! third-party harness bridges.
+//! Shared agent-event stream utilities used by third-party harness bridges.
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -15,7 +14,6 @@ pub(crate) use driver::{
 pub(crate) use driver::{
     run_agent_event_driver, AgentEventConsumer, AgentEventConsumerControlFlow,
     AgentEventDriverConfig, AgentEventSource, AgentEventSourceItem,
-    AgentEventStreamClientEventSource,
 };
 pub(crate) use message_hydrator::MessageHydrator;
 

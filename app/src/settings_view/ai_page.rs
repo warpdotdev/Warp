@@ -25,10 +25,9 @@ use crate::settings::{
     AgentModeCommandExecutionPredicate, AgentModeQuerySuggestionsEnabled, AwsBedrockAutoLogin,
     AwsBedrockCredentialsEnabled, FileBasedMcpEnabled, GitOperationsAutogenEnabled,
     IncludeAgentCommandsInHistory, IntelligentAutosuggestionsEnabled, MemoryEnabled,
-    NLDInTerminalEnabled, NaturalLanguageAutosuggestionsEnabled, OrchestrationEnabled,
-    RuleSuggestionsEnabled, ShouldRenderCLIAgentToolbar,
-    ShouldRenderUseAgentToolbarForUserCommands, ShowAgentTips, ShowConversationHistory,
-    ShowHintText, ThinkingDisplayMode, VoiceInputEnabled,
+    NLDInTerminalEnabled, NaturalLanguageAutosuggestionsEnabled, RuleSuggestionsEnabled,
+    ShouldRenderCLIAgentToolbar, ShouldRenderUseAgentToolbarForUserCommands, ShowAgentTips,
+    ShowConversationHistory, ShowHintText, ThinkingDisplayMode, VoiceInputEnabled,
 };
 use crate::terminal::session_settings::{SessionSettings, SessionSettingsChangedEvent};
 use crate::terminal::CLIAgent;
@@ -1458,9 +1457,6 @@ impl AISettingsPageView {
                 widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
                 widgets.push(Box::new(AgentProvidersWidget::new(ctx)));
                 widgets.push(Box::new(OtherAIWidget::default()));
-                if FeatureFlag::Orchestration.is_enabled() {
-                    widgets.push(Box::new(OrchestrationWidget::default()));
-                }
             }
             Some(AISubpage::WarpAgent) => {
                 // Oz page: header + Active AI + Input + Other
@@ -1492,9 +1488,6 @@ impl AISettingsPageView {
                 }
                 widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
                 widgets.push(Box::new(OtherAIWidget::default()));
-                if FeatureFlag::Orchestration.is_enabled() {
-                    widgets.push(Box::new(OrchestrationWidget::default()));
-                }
             }
             Some(AISubpage::Providers) => {
                 widgets.push(Box::new(AgentProvidersWidget::new(ctx)));
@@ -2240,7 +2233,6 @@ pub enum AISettingsPageAction {
     ToggleIncludeAgentCommandsInHistory,
     #[cfg(feature = "local_fs")]
     SetConversationLayout(crate::util::file::external_editor::settings::OpenConversationPreference),
-    ToggleOrchestration,
     ToggleShowConversationHistory,
     ToggleAutoToggleRichInput,
     ToggleAutoOpenRichInputOnCLIAgentStart,
@@ -3017,12 +3009,6 @@ impl TypedActionView for AISettingsPageView {
                     },
                     ctx
                 );
-                ctx.notify();
-            }
-            AISettingsPageAction::ToggleOrchestration => {
-                AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings.orchestration_enabled.toggle_and_save_value(ctx));
-                });
                 ctx.notify();
             }
             AISettingsPageAction::ToggleShowConversationHistory => {
@@ -6249,58 +6235,6 @@ impl SettingsWidget for CLIAgentWidget {
                 ));
             }
         }
-
-        column.finish()
-    }
-}
-
-#[derive(Default)]
-struct OrchestrationWidget {
-    orchestration_toggle: SwitchStateHandle,
-}
-
-impl SettingsWidget for OrchestrationWidget {
-    type View = AISettingsPageView;
-
-    fn search_terms(&self) -> &str {
-        "oz orchestration multi-agent"
-    }
-
-    fn render(
-        &self,
-        view: &Self::View,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let is_any_ai_enabled = AISettings::as_ref(app).is_any_ai_enabled(app);
-        let ai_settings = AISettings::as_ref(app);
-
-        let mut column = Flex::column()
-            .with_child(render_separator(appearance))
-            .with_child(
-                build_sub_header(
-                    appearance,
-                    crate::t!("settings-ai-experimental-section"),
-                    Some(styles::header_font_color(is_any_ai_enabled, app)),
-                )
-                .with_padding_bottom(HEADER_PADDING)
-                .finish(),
-            );
-
-        column.add_child(render_ai_setting_toggle::<OrchestrationEnabled>(
-            crate::t!("settings-ai-orchestration-label"),
-            AISettingsPageAction::ToggleOrchestration,
-            *ai_settings.orchestration_enabled,
-            is_any_ai_enabled,
-            self.orchestration_toggle.clone(),
-            &view.local_only_icon_tooltip_states,
-            app,
-        ));
-        column.add_child(render_ai_setting_description(
-            crate::t!("settings-ai-orchestration-description"),
-            is_any_ai_enabled,
-            app,
-        ));
 
         column.finish()
     }

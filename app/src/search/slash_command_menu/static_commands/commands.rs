@@ -238,17 +238,6 @@ pub static PLAN: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
     argument: Some(Argument::optional().with_hint_text(t_static!("slash-cmd-plan-hint"))),
 });
 
-pub const ORCHESTRATE_NAME: &str = "/orchestrate";
-
-pub static ORCHESTRATE: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
-    name: ORCHESTRATE_NAME,
-    description: t_static!("slash-cmd-orchestrate-desc"),
-    icon_path: "bundled/svg/oz.svg",
-    availability: Availability::LOCAL | Availability::AI_ENABLED,
-    auto_enter_ai_mode: true,
-    argument: Some(Argument::optional().with_hint_text(t_static!("slash-cmd-orchestrate-hint"))),
-});
-
 /// If `query` starts with the given command `name` followed by a space,
 /// returns the remainder of the query. Otherwise returns `None`.
 pub fn strip_command_prefix(query: &str, name: &str) -> Option<String> {
@@ -514,10 +503,6 @@ fn all_commands() -> Vec<StaticCommand> {
         commands.push(OPEN_REPO.clone());
     }
 
-    if FeatureFlag::Orchestration.is_enabled() {
-        commands.push(ORCHESTRATE.clone());
-    }
-
     if FeatureFlag::SettingsFile.is_enabled() && cfg!(feature = "local_fs") {
         commands.push(OPEN_SETTINGS_FILE.clone());
     }
@@ -555,12 +540,6 @@ mod tests {
         assert!(!argument.is_optional);
         assert!(!argument.should_execute_on_selection);
         assert_eq!(argument.hint_text, Some("<tab name>"));
-    }
-
-    #[test]
-    fn strip_command_prefix_matches_orchestrate() {
-        let result = strip_command_prefix("/orchestrate deploy services", "/orchestrate");
-        assert_eq!(result, Some("deploy services".to_string()));
     }
 
     #[test]

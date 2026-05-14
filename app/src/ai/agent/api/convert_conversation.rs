@@ -394,8 +394,8 @@ impl ConvertToExchanges for &api::Task {
 
                     true
                 }
-                // Preserve EventsFromAgents as an explicit input in restored conversations
-                // so orchestration state (including lifecycle timestamps) survives roundtrip.
+                // Preserve EventsFromAgents as an explicit input in restored conversations so
+                // legacy lifecycle timestamps survive roundtrip.
                 api::message::Message::EventsFromAgents(events) => {
                     current_inputs.push(AIAgentInput::EventsFromAgents {
                         events: events.agent_events.clone(),

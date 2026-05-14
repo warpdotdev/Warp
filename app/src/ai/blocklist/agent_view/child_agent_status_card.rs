@@ -10,7 +10,7 @@ use warpui::{
 
 use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
 use crate::ai::agent::AIAgentOutputMessageType;
-use crate::ai::blocklist::agent_view::orchestration_conversation_links::conversation_navigation_card_with_icon;
+use crate::ai::blocklist::agent_view::conversation_navigation_links::conversation_navigation_card_with_icon;
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
 use crate::ai::blocklist::BlocklistAIHistoryEvent;
 use crate::appearance::Appearance;
@@ -122,9 +122,7 @@ impl ChildAgentStatusCard {
     }
 
     /// Checks whether a child conversation transitioned to `InProgress` from a
-    /// non-`InProgress` state, mirroring the Started/Restarted lifecycle event
-    /// logic in `OrchestrationEventService::on_conversation_status_updated`.
-    /// If so, restores any dismissed card for that conversation.
+    /// non-`InProgress` state. If so, restores any dismissed card for that conversation.
     fn on_conversation_status_updated(
         &mut self,
         conversation_id: AIConversationId,

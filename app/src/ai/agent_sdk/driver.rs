@@ -177,7 +177,7 @@ pub struct AgentDriverOptions {
     pub secrets: HashMap<String, ManagedSecretValue>,
     /// ID of the task being executed.
     pub task_id: Option<AmbientAgentTaskId>,
-    /// Parent run ID for child orchestration flows, if this task was spawned by another run.
+    /// Parent run ID for child-agent flows, if this task was spawned by another run.
     pub parent_run_id: Option<String>,
     /// Whether the agent run should share its session.
     pub should_share: bool,

@@ -58,7 +58,7 @@ pub(crate) fn convert_user_query_mode(mode: Option<&api::UserQueryMode>) -> User
 
     match &mode.r#type {
         Some(api::user_query_mode::Type::Plan(_)) => UserQueryMode::Plan,
-        Some(api::user_query_mode::Type::Orchestrate(_)) => UserQueryMode::Orchestrate,
+        Some(api::user_query_mode::Type::Orchestrate(_)) => UserQueryMode::Normal,
         None => UserQueryMode::Normal,
     }
 }

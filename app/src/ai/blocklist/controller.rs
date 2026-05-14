@@ -77,7 +77,6 @@ use warp_multi_agent_api::{
 };
 use warpui::r#async::SpawnedFutureHandle;
 
-use super::orchestration_events::{OrchestrationEventService, OrchestrationEventServiceEvent};
 use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
 #[derive(Debug, Clone)]
@@ -555,15 +554,6 @@ impl BlocklistAIController {
             }
         });
 
-        // Subscribe to the orchestration event service to inject events
-        // (e.g. MessagesReceivedFromAgents) into conversations that receive inter-agent messages.
-        if FeatureFlag::Orchestration.is_enabled() {
-            let svc = OrchestrationEventService::handle(ctx);
-            ctx.subscribe_to_model(&svc, move |me, event, ctx| {
-                let OrchestrationEventServiceEvent::EventsReady { conversation_id } = event;
-                me.handle_pending_events_ready(*conversation_id, ctx);
-            });
-        }
         Self {
             input_model,
             context_model,
@@ -633,15 +623,12 @@ impl BlocklistAIController {
             return;
         }
 
-        let (query, user_query_mode) = if let Some(q) =
-            commands::strip_command_prefix(&query, commands::PLAN_NAME)
-        {
-            (q, UserQueryMode::Plan)
-        } else if let Some(q) = commands::strip_command_prefix(&query, commands::ORCHESTRATE_NAME) {
-            (q, UserQueryMode::Orchestrate)
-        } else {
-            (query, UserQueryMode::Normal)
-        };
+        let (query, user_query_mode) =
+            if let Some(q) = commands::strip_command_prefix(&query, commands::PLAN_NAME) {
+                (q, UserQueryMode::Plan)
+            } else {
+                (query, UserQueryMode::Normal)
+            };
 
         let should_prepend_finished_action_results = matches!(
             input_query.input_query,
@@ -1432,17 +1419,6 @@ impl BlocklistAIController {
             return;
         }
 
-        // Check whether any result will trigger a server-side subagent (e.g. CLI
-        // subagent for LRC), or if one is already active. If so, we must not
-        // piggyback orchestration events because the subagent cannot interpret
-        // them and inserting events breaks tool_use/tool_result ordering.
-        let will_trigger_server_subagent = finished_results
-            .iter()
-            .any(|r| r.result.triggers_server_subagent());
-        let has_active_subagent = BlocklistAIHistoryModel::as_ref(ctx)
-            .conversation(&conversation_id)
-            .is_some_and(|c| c.has_active_subagent());
-
         let context = input_context_for_request(
             false,
             self.context_model.as_ref(ctx),
@@ -1451,7 +1427,7 @@ impl BlocklistAIController {
             vec![],
             ctx,
         );
-        let mut request_input = RequestInput::for_actions_results(
+        let request_input = RequestInput::for_actions_results(
             finished_results,
             context,
             &self.active_session,
@@ -1461,37 +1437,7 @@ impl BlocklistAIController {
             ctx,
         );
 
-        // Include any pending orchestration events in this follow-up rather
-        // than waiting for a separate idle injection turn. Skip when a server
-        // subagent is or will be active — events will be delivered via the idle
-        // path once the subagent session ends.
-        let mut has_piggybacked_events = false;
-        if FeatureFlag::Orchestration.is_enabled() {
-            if will_trigger_server_subagent || has_active_subagent {
-                log::debug!(
-                    "Skipping event piggyback for conversation {conversation_id:?}: \
-                     {}",
-                    if will_trigger_server_subagent {
-                        "results will trigger a server-side subagent"
-                    } else {
-                        "a subagent is currently active"
-                    }
-                );
-            } else if let Some((event_inputs, task_id)) = OrchestrationEventService::handle(ctx)
-                .update(ctx, |svc, ctx| {
-                    svc.drain_events_for_request(conversation_id, ctx)
-                })
-            {
-                has_piggybacked_events = true;
-                request_input
-                    .input_messages
-                    .entry(task_id)
-                    .or_default()
-                    .extend(event_inputs);
-            }
-        }
-
-        let result = self.send_request_input(
+        let _ = self.send_request_input(
             request_input,
             None,
             /*default_to_follow_up_on_success*/ false,
@@ -1500,75 +1446,7 @@ impl BlocklistAIController {
             ctx,
         );
 
-        if has_piggybacked_events && result.is_err() {
-            OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
-                svc.requeue_awaiting_events(conversation_id, ctx);
-            });
-        }
-
         self.pending_passive_follow_ups.remove(&conversation_id);
-    }
-
-    /// Handles the EventsReady signal. Checks readiness, drains
-    /// pending events from the service, and injects them into the conversation.
-    fn handle_pending_events_ready(
-        &mut self,
-        conversation_id: AIConversationId,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let owns = BlocklistAIHistoryModel::as_ref(ctx)
-            .all_live_conversations_for_terminal_view(self.terminal_view_id)
-            .any(|c| c.id() == conversation_id);
-        if !owns {
-            return;
-        }
-
-        if self
-            .in_flight_response_streams
-            .has_active_stream_for_conversation(conversation_id, ctx)
-        {
-            return;
-        }
-
-        // Only drain when the conversation is actually idle.
-        let is_success = BlocklistAIHistoryModel::as_ref(ctx)
-            .conversation(&conversation_id)
-            .is_some_and(|c| matches!(c.status(), ConversationStatus::Success));
-        if !is_success {
-            return;
-        }
-
-        let Some((inputs, task_id)) = OrchestrationEventService::handle(ctx)
-            .update(ctx, |svc, ctx| {
-                svc.drain_events_for_request(conversation_id, ctx)
-            })
-        else {
-            return;
-        };
-
-        if self
-            .send_request_input(
-                RequestInput::for_task(
-                    inputs,
-                    task_id,
-                    &self.active_session,
-                    self.get_current_response_initiator(),
-                    conversation_id,
-                    self.terminal_view_id,
-                    ctx,
-                ),
-                None,
-                /*default_to_follow_up_on_success*/ true,
-                /*can_attempt_resume_on_error*/ true,
-                /*is_queued_prompt*/ false,
-                ctx,
-            )
-            .is_err()
-        {
-            OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
-                svc.requeue_awaiting_events(conversation_id, ctx);
-            });
-        }
     }
 
     pub fn resume_conversation(
@@ -2670,12 +2548,6 @@ impl BlocklistAIController {
                 // Cancelled streams will handle pending_response_stream updates synchronously.
                 if cancellation.is_none() {
                     self.in_flight_response_streams.cleanup_stream(&stream_id);
-
-                    // Now that the stream is cleaned up, re-check for pending
-                    // orchestration events that couldn't be drained earlier.
-                    if FeatureFlag::Orchestration.is_enabled() {
-                        self.handle_pending_events_ready(conversation_id, ctx);
-                    }
                 }
 
                 // Before cleaning up the response stream, check if we should attempt to resume.

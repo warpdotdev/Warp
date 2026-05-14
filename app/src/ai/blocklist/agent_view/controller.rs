@@ -165,7 +165,7 @@ pub enum AgentViewEntryOrigin {
     /// Entered agent view from the onboarding flow.
     Onboarding,
 
-    /// Entered agent view because a parent agent started this child agent via StartAgent.
+    /// Entered agent view because a parent agent started this child agent.
     ChildAgent,
 
     /// Entered agent view after opening project from OS directory picker.

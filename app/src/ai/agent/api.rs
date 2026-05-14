@@ -95,7 +95,6 @@ pub struct RequestParams {
     pub computer_use_enabled: bool,
     pub ask_user_question_enabled: bool,
     pub research_agent_enabled: bool,
-    pub orchestration_enabled: bool,
     pub supported_tools_override: Option<Vec<warp_multi_agent_api::ToolType>>,
     /// The conversation ID of the parent agent that spawned this child agent, if any.
     pub parent_agent_id: Option<String>,
@@ -268,12 +267,6 @@ impl RequestParams {
             .get_ask_user_question_setting(app, terminal_view_id)
             != crate::ai::execution_profiles::AskUserQuestionPermission::Never;
 
-        let orchestration_enabled = ai_settings.is_orchestration_enabled(app)
-            && session_context
-                .session_type()
-                .as_ref()
-                .is_none_or(|t| matches!(t, crate::terminal::model::session::SessionType::Local));
-
         let byop_target_task_id = if request_input.input_messages.len() == 1 {
             request_input
                 .input_messages
@@ -330,7 +323,6 @@ impl RequestParams {
             computer_use_enabled,
             ask_user_question_enabled,
             research_agent_enabled,
-            orchestration_enabled,
             supported_tools_override: request_input.supported_tools_override.clone(),
             parent_agent_id: None,
             agent_name: None,

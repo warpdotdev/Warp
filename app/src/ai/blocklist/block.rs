@@ -369,8 +369,6 @@ pub(super) struct AIBlockStateHandles {
     /// Mouse state handles per citation.
     /// A given citation should only appear once per block.
     footer_citation_chip_handles: HashMap<AIAgentCitation, MouseStateHandle>,
-    orchestration_navigation_card_handles: HashMap<AIAgentActionId, MouseStateHandle>,
-
     references_section_collapsible_handle: MouseStateHandle,
 
     autoread_files_speedbump_checkbox_handle: MouseStateHandle,
@@ -1919,13 +1917,10 @@ impl AIBlock {
                     });
             }
 
-            // Register collapsible state for orchestration action messages.
-            if FeatureFlag::Orchestration.is_enabled()
-                && matches!(
-                    &message.message,
-                    AIAgentOutputMessageType::MessagesReceivedFromAgents { .. }
-                )
-            {
+            if matches!(
+                &message.message,
+                AIAgentOutputMessageType::MessagesReceivedFromAgents { .. }
+            ) {
                 self.collapsible_block_states
                     .entry(message.id.clone())
                     .or_default();

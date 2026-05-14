@@ -3,10 +3,9 @@ mod agent_message_bar;
 mod agent_view_block;
 pub mod child_agent_status_card;
 mod controller;
+pub(crate) mod conversation_navigation_links;
 mod ephemeral_message_model;
 mod inline_agent_view_header;
-// TODO: Move orchestration_conversation_links module import elsewhere.
-pub(crate) mod orchestration_conversation_links;
 pub mod shortcuts;
 mod zero_state_block;
 

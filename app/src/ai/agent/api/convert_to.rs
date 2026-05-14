@@ -476,9 +476,6 @@ impl From<UserQueryMode> for warp_multi_agent_api::UserQueryMode {
             UserQueryMode::Plan => warp_multi_agent_api::UserQueryMode {
                 r#type: Some(warp_multi_agent_api::user_query_mode::Type::Plan(())),
             },
-            UserQueryMode::Orchestrate => warp_multi_agent_api::UserQueryMode {
-                r#type: Some(warp_multi_agent_api::user_query_mode::Type::Orchestrate(())),
-            },
         }
     }
 }

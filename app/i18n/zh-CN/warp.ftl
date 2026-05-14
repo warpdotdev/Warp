@@ -949,8 +949,6 @@ settings-ai-coding-agent-select-header = 选择编码智能体
 # 实验性 / 智能体
 settings-ai-cloud-agent-computer-use = 在智能体中启用计算机使用
 settings-ai-cloud-agent-computer-use-description = 在 Warp 应用中启动的智能体会话中启用计算机使用。
-settings-ai-orchestration-label = 编排
-settings-ai-orchestration-description = 启用多智能体编排，允许智能体派生并协调并行的子智能体。
 
 # AWS Bedrock
 settings-ai-aws-bedrock-toggle = 使用 AWS Bedrock 凭证
@@ -1654,7 +1652,6 @@ keybinding-desc-workspace-open-ai-fact-collection = 打开 AI Rules
 keybinding-desc-workspace-open-mcp-servers = 打开 MCP 服务器
 keybinding-desc-workspace-jump-to-latest-toast = 跳转到最新 agent 任务
 keybinding-desc-workspace-toggle-notification-mailbox = 切换通知邮箱
-keybinding-desc-workspace-toggle-agent-management-view = 切换 agent 管理视图
 
 # 设置页面
 keybinding-desc-workspace-show-settings = 打开设置
@@ -2032,8 +2029,6 @@ agent-toolbar-available-chips = 可用控件
 agent-message-bar-get-figma-mcp = 获取 Figma MCP
 agent-message-bar-enable-figma-mcp = 启用 Figma MCP
 agent-message-bar-enabling = 正在启用...
-orchestration-parent-conversation = 父对话
-orchestration-back-to-parent-conversation = 返回父对话
 child-agent-default-name = 智能体
 agent-zero-state-switch-model = 切换模型
 agent-zero-state-go-back-to-terminal = 返回终端
@@ -2298,8 +2293,6 @@ slash-cmd-model-desc = 切换基础智能体模型
 slash-cmd-profile-desc = 切换当前激活的执行配置
 slash-cmd-plan-desc = 让智能体调研并为任务创建计划
 slash-cmd-plan-hint = <描述你的任务>
-slash-cmd-orchestrate-desc = 将任务拆分为子任务并由多个智能体并行执行
-slash-cmd-orchestrate-hint = <描述你的任务>
 slash-cmd-compact-desc = 通过摘要对话历史来释放上下文
 slash-cmd-compact-hint = <可选：自定义摘要指令>
 slash-cmd-compact-and-desc = 压缩对话并随后发送一条后续提示词
