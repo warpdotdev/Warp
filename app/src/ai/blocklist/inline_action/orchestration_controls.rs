@@ -64,7 +64,7 @@ const DEFAULT_MODEL_LABEL: &str = "Default model";
 
 /// Label shown in the auth secret picker when no secret is selected
 /// (the child agent will inherit credentials from its environment).
-const AUTH_SECRET_INHERIT_LABEL: &str = "Inherit key from environment";
+const AUTH_SECRET_INHERIT_LABEL: &str = "Skip setting an API key";
 /// Label for the auth secret column.
 pub const AUTH_SECRET_COLUMN_LABEL: &str = "API key";
 
@@ -827,7 +827,7 @@ pub fn resolve_default_auth_secret_for_harness(
 }
 
 /// Populates the auth secret picker for the given harness. Items:
-///   1. "Inherit key from environment" (clears the selection)
+///   1. "Skip setting an API key" (clears the selection)
 ///   2. The loaded managed secrets for the harness
 ///
 /// Also kicks off a lazy fetch of the harness's auth secrets when the
@@ -855,7 +855,7 @@ pub fn populate_auth_secret_picker_for_harness<A: OrchestrationControlAction, V:
         let availability = HarnessAvailabilityModel::as_ref(ctx_dropdown);
         let mut items: Vec<MenuItem<DropdownAction<A>>> = Vec::new();
 
-        // "Inherit from environment" — always available, clears the selection.
+        // "Skip setting an API key" — always available, clears the selection.
         items.push(MenuItem::Item(
             MenuItemFields::new(AUTH_SECRET_INHERIT_LABEL).with_on_select_action(
                 DropdownAction::SelectActionAndClose(A::auth_secret_changed(None)),
