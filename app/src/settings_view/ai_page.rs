@@ -5298,19 +5298,16 @@ impl SettingsWidget for MCPServersWidget {
 
         let header = build_sub_header(
             appearance,
-            "MCP Servers",
+            t!("mcp.title").to_string(),
             Some(styles::header_font_color(is_any_ai_enabled, app)),
         )
         .with_padding_bottom(HEADER_PADDING)
         .finish();
 
         let mcp_description = vec![
-            FormattedTextFragment::plain_text(
-                "Add MCP servers to extend the Warp Agent's capabilities. \
-            MCP servers expose data sources or tools to agents through a standardized interface, essentially acting like plugins. ",
-            ),
+            FormattedTextFragment::plain_text(t!("mcp.settings_description")),
             FormattedTextFragment::hyperlink(
-                "Learn more",
+                t!("mcp.learn_more"),
                 "https://docs.warp.dev/agent-platform/capabilities/mcp",
             ),
         ];
@@ -5339,7 +5336,7 @@ impl SettingsWidget for MCPServersWidget {
             Some(
                 Flex::column()
                     .with_child(render_ai_setting_toggle::<FileBasedMcpEnabled>(
-                        "Auto-spawn servers from third-party agents",
+                        t!("mcp.file_based_label").to_string(),
                         AISettingsPageAction::ToggleFileBasedMcp,
                         *ai_settings.file_based_mcp_enabled,
                         is_any_ai_enabled,
@@ -5352,11 +5349,11 @@ impl SettingsWidget for MCPServersWidget {
                             Vec<FormattedTextFragment>,
                         > = LazyLock::new(|| {
                             vec![
-                                FormattedTextFragment::plain_text(
-                                    "Automatically detect and spawn MCP servers from globally-scoped third-party AI agent configuration files (e.g. in your home directory). Servers detected inside a repository are never spawned automatically and must be enabled individually from the MCP settings page. ",
-                                ),
+                                FormattedTextFragment::plain_text(t!(
+                                    "mcp.file_based_description_settings"
+                                )),
                                 FormattedTextFragment::hyperlink(
-                                    "See supported providers.",
+                                    t!("mcp.see_supported_providers"),
                                     "https://docs.warp.dev/agent-platform/capabilities/mcp#file-based-mcp-servers",
                                 ),
                             ]
@@ -5389,8 +5386,9 @@ impl SettingsWidget for MCPServersWidget {
             None
         };
 
+        let manage_mcp_servers_label = t!("mcp.manage_servers").to_string();
         let button = render_full_pane_width_ai_button(
-            "Manage MCP servers",
+            &manage_mcp_servers_label,
             is_any_ai_enabled,
             self.manage_mcp_servers_button.clone(),
             AISettingsPageAction::OpenMCPServerCollection,

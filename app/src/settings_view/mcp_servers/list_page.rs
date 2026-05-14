@@ -1104,7 +1104,7 @@ impl MCPServersListPageView {
         let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
 
         let label = render_body_item_label::<MCPServersListPageViewAction>(
-            "Auto-spawn servers from third-party agents".to_string(),
+            t!("mcp.file_based_label").to_string(),
             None,
             None,
             LocalOnlyIconState::Hidden,
@@ -1137,11 +1137,9 @@ impl MCPServersListPageView {
             Vec<FormattedTextFragment>,
         > = std::sync::LazyLock::new(|| {
             vec![
-                FormattedTextFragment::plain_text(
-                    "Automatically detect and spawn MCP servers from globally-scoped third-party AI agent configuration files (e.g. in your home directory). Servers detected inside a repository are never spawned automatically and must be enabled individually in the \"Detected from\" sections below. ",
-                ),
+                FormattedTextFragment::plain_text(t!("mcp.file_based_description_list")),
                 FormattedTextFragment::hyperlink(
-                    "See supported providers.",
+                    t!("mcp.see_supported_providers"),
                     "https://docs.warp.dev/agent-platform/capabilities/mcp#file-based-mcp-servers",
                 ),
             ]
@@ -1179,7 +1177,7 @@ impl MCPServersListPageView {
         let description_fragments = vec![
             FormattedTextFragment::plain_text(t!("mcp.list_description")),
             FormattedTextFragment::hyperlink(
-                "Learn more.",
+                t!("mcp.learn_more"),
                 "https://docs.warp.dev/agent-platform/capabilities/mcp",
             ),
         ];
