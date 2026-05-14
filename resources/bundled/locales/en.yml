@@ -682,6 +682,8 @@ en:
   workflows:
     command_edited: "Command edited."
     to_cycle_parameters: "to cycle parameters"
+    editing: "Editing"
+    viewing: "Viewing"
     new_enum: "New enum"
     edit_enum: "Edit enum"
     enum_name_placeholder: "Name"

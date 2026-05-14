@@ -1938,7 +1938,7 @@ impl WorkflowView {
             WorkflowViewMode::Edit => {
                 let mode_text = appearance
                     .ui_builder()
-                    .span("Editing")
+                    .span(t!("workflows.editing").to_string())
                     .with_style(base_text_styles)
                     .build();
                 let edit_button = accent_icon_button(
@@ -1953,7 +1953,7 @@ impl WorkflowView {
             WorkflowViewMode::View => {
                 let mode_text = appearance
                     .ui_builder()
-                    .span("Viewing")
+                    .span(t!("workflows.viewing").to_string())
                     .with_style(base_text_styles)
                     .build();
                 let edit_button = icon_button(

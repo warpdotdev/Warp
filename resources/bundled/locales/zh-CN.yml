@@ -682,6 +682,8 @@ zh-CN:
   workflows:
     command_edited: "命令已编辑。"
     to_cycle_parameters: "切换参数"
+    editing: "编辑中"
+    viewing: "查看中"
     new_enum: "新建枚举"
     edit_enum: "编辑枚举"
     enum_name_placeholder: "名称"
