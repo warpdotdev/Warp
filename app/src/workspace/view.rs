@@ -18931,7 +18931,7 @@ impl Workspace {
                 font_color: Some(theme.disabled_text_color(theme.background()).into()),
                 ..UiComponentStyles::default()
             });
-            button.build().disable()
+            button.build().disable().with_skip_synthetic_hover_out()
         } else {
             button
                 .with_tooltip(self.render_tab_bar_icon_button_tooltip(
@@ -18940,6 +18940,7 @@ impl Workspace {
                     tool_tip_sublabel_text,
                 ))
                 .build()
+                .with_skip_synthetic_hover_out()
                 .on_click(move |ctx, _, _| ctx.dispatch_typed_action(action.clone()))
         }
     }
