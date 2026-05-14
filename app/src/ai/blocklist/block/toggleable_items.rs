@@ -1,18 +1,18 @@
 use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
 use warpui::{
+    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext,
     elements::{
         Border, Container, CornerRadius, CrossAxisAlignment, Expanded, Flex, Hoverable,
         MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius,
     },
-    keymap::{macros::*, FixedBinding, Keystroke},
+    keymap::{FixedBinding, Keystroke, macros::*},
     platform::Cursor,
     ui_components::{
         components::{Coords, UiComponent, UiComponentStyles},
         keyboard_shortcut::KeyboardShortcut,
         text::Span,
     },
-    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext,
 };
 
 type ItemLabelFn<T> = Box<dyn Fn(&T, &AppContext) -> Span>;

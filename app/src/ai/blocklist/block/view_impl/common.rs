@@ -21,9 +21,9 @@ use warp_core::{
     ui::{appearance::Appearance, color::blend::Blend, theme::color::internal_colors},
 };
 use warpui::{
+    Action, AppContext, Element, EventContext, SingletonEntity, View, ViewHandle,
     assets::asset_cache::{AssetCache, AssetSource, AssetState},
     elements::{
-        new_scrollable::{ScrollableAppearance, SingleAxisConfig},
         Align, Axis, Border, ChildAnchor, ChildView, Clipped, ClippedScrollStateHandle,
         ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DispatchEventResult, Empty,
         EventHandler, Expanded, Fill, Flex, FormattedTextElement, HeadingFontSizeMultipliers,
@@ -31,6 +31,7 @@ use warpui::{
         NewScrollable, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius,
         SavePosition, ScrollTarget, ScrollToPositionMode, ScrollbarWidth, Shrinkable, Stack, Table,
         TableColumnWidth, TableConfig, TableHeader, TableVerticalSizing, Text, Wrap,
+        new_scrollable::{ScrollableAppearance, SingleAxisConfig},
     },
     fonts::{Properties, Weight},
     image_cache::{CacheOption, ImageType},
@@ -41,7 +42,6 @@ use warpui::{
         button::Button,
         components::{Coords, UiComponent, UiComponentStyles},
     },
-    Action, AppContext, Element, EventContext, SingletonEntity, View, ViewHandle,
 };
 
 use super::{add_highlights_to_rich_text, add_highlights_to_text, output::LinkActionConstructors};
@@ -50,35 +50,24 @@ use crate::terminal::find::BlockListMatch;
 use crate::terminal::grid_renderer::{FOCUSED_MATCH_COLOR, MATCH_COLOR};
 use crate::{
     ai::{
-        agent::{conversation::AIConversation, icons, ShellCommandDelay},
-        blocklist::{
-            block::status_bar::BlocklistAIStatusBarAction, history_model::BlocklistAIHistoryModel,
-            BlocklistAIActionModel, ShellCommandExecutor,
-        },
-        loading::shimmering_warp_loading_text,
-    },
-    terminal::{self, TerminalModel},
-    util::link_detection::{add_link_detection_mouse_interactions, DetectedLinksState},
-    workspaces::{user_workspaces::UserWorkspaces, workspace::CustomerType},
-};
-use crate::{
-    ai::{
+        AIRequestUsageModel,
         agent::{
-            icons::red_stop_icon, AIAgentAction, AIAgentActionType, AIAgentInput,
-            AIAgentOutputMessageType, AIAgentTextSection, AgentOutputImage, AgentOutputImageLayout,
+            AIAgentAction, AIAgentActionType, AIAgentInput, AIAgentOutputMessageType,
+            AIAgentTextSection, AgentOutputImage, AgentOutputImageLayout,
             AgentOutputMermaidDiagram, AgentOutputTable, AgentOutputTableRendering,
             ProgrammingLanguage, RenderableAIError, SummarizationType, UserQueryMode,
-            WebSearchStatus,
+            WebSearchStatus, icons::red_stop_icon,
         },
         blocklist::{
+            TextLocation,
             block::{
-                find::FindState, view_impl::CONTENT_HORIZONTAL_PADDING, AIBlockAction,
-                CollapsibleElementState, CollapsibleExpansionState, EmbeddedCodeEditorView,
-                TableSectionHandles,
+                AIBlockAction, CollapsibleElementState, CollapsibleExpansionState,
+                EmbeddedCodeEditorView, TableSectionHandles, find::FindState,
+                view_impl::CONTENT_HORIZONTAL_PADDING,
             },
             code_block::{
-                render_code_block_plain, render_code_block_with_warp_text, CodeBlockOptions,
-                CodeSnippetButtonHandles,
+                CodeBlockOptions, CodeSnippetButtonHandles, render_code_block_plain,
+                render_code_block_with_warp_text,
             },
             inline_action::{
                 aws_bedrock_credentials_error::AwsBedrockCredentialsErrorView,
@@ -89,18 +78,16 @@ use crate::{
                 requested_action::RenderableAction,
             },
             model::{AIBlockModel, AIBlockModelHelper},
-            secret_redaction::{redact_secrets_in_element, SecretRedactionState},
+            secret_redaction::{SecretRedactionState, redact_secrets_in_element},
             view_util::error_color,
-            TextLocation,
         },
-        AIRequestUsageModel,
     },
     code::{editor::view::CodeEditorView, editor_management::CodeSource},
     notebooks::editor::{markdown_table_appearance, rich_text_styles},
     settings_view::SettingsSection,
     terminal::{
-        find::TerminalFindModel, safe_mode_settings::get_secret_obfuscation_mode,
-        view::TerminalAction, ShellLaunchData,
+        ShellLaunchData, find::TerminalFindModel, safe_mode_settings::get_secret_obfuscation_mode,
+        view::TerminalAction,
     },
     ui_components::{
         avatar::{Avatar, AvatarContent},
@@ -109,6 +96,19 @@ use crate::{
         icons::Icon,
     },
     workspace::WorkspaceAction,
+};
+use crate::{
+    ai::{
+        agent::{ShellCommandDelay, conversation::AIConversation, icons},
+        blocklist::{
+            BlocklistAIActionModel, ShellCommandExecutor,
+            block::status_bar::BlocklistAIStatusBarAction, history_model::BlocklistAIHistoryModel,
+        },
+        loading::shimmering_warp_loading_text,
+    },
+    terminal::{self, TerminalModel},
+    util::link_detection::{DetectedLinksState, add_link_detection_mouse_interactions},
+    workspaces::{user_workspaces::UserWorkspaces, workspace::CustomerType},
 };
 use crate::{
     search::slash_command_menu::static_commands::commands,
@@ -2916,7 +2916,7 @@ pub(crate) fn resolve_absolute_file_path(
 ) -> Option<PathBuf> {
     use warp_util::path::CleanPathResult;
 
-    use crate::util::file::{absolute_path_if_valid, ShellPathType};
+    use crate::util::file::{ShellPathType, absolute_path_if_valid};
 
     let clean_path = CleanPathResult::with_line_and_column_number(&path.to_string_lossy());
 

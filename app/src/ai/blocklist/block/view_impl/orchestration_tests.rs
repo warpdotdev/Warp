@@ -1,6 +1,6 @@
+use crate::BlocklistAIHistoryModel;
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
 use crate::ai::agent::{StartAgentExecutionMode, StartAgentResult};
-use crate::BlocklistAIHistoryModel;
 use ai::agent::action_result::StartAgentVersion;
 use warp_cli::agent::Harness;
 use warp_core::ui::appearance::Appearance;
@@ -8,10 +8,11 @@ use warpui::elements::MouseStateHandle;
 use warpui::{App, EntityId};
 
 use super::{
+    ChildConversationCardData, OrchestrationAvatar, OrchestrationParticipant,
     agent_display_name_from_id, child_conversation_card_data_for_result, participant_for_agent_id,
     render_conversation_navigation_card_row, start_agent_cancelled_prefix,
     start_agent_error_prefix, start_agent_in_progress_prefix, start_agent_success_suffix,
-    transcript_metadata, ChildConversationCardData, OrchestrationAvatar, OrchestrationParticipant,
+    transcript_metadata,
 };
 
 #[test]

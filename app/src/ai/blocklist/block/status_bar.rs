@@ -4,9 +4,10 @@ use super::{
     cli_controller::{CLISubagentController, CLISubagentEvent, UserTakeOverReason},
     model::{AIBlockModel, AIBlockModelImpl, AIBlockOutputStatus},
     view_impl::common::{
+        ButtonProps, ForceRefreshButtonProps, LOAD_OUTPUT_MESSAGE, MaybeShimmeringText,
+        WAITING_FOR_USER_INPUT_MESSAGE, WarpingIndicatorProps, WarpingProps,
         render_switch_control_to_user_button, render_warping_indicator,
-        render_warping_indicator_base, ButtonProps, ForceRefreshButtonProps, MaybeShimmeringText,
-        WarpingIndicatorProps, WarpingProps, LOAD_OUTPUT_MESSAGE, WAITING_FOR_USER_INPUT_MESSAGE,
+        render_warping_indicator_base,
     },
 };
 use crate::{
@@ -18,73 +19,73 @@ use crate::{
 };
 use crate::{
     ai::blocklist::agent_view::{
-        agent_view_bg_fill, child_agent_status_card::ChildAgentStatusCard, AgentMessageBar,
-        AgentViewController, EphemeralMessageModel,
+        AgentMessageBar, AgentViewController, EphemeralMessageModel, agent_view_bg_fill,
+        child_agent_status_card::ChildAgentStatusCard,
     },
     terminal::input::{
+        HandoffComposeState,
         buffer_model::InputBufferModel,
         message_bar::common::render_standard_message_bar,
         message_bar::{Message, MessageItem},
         slash_command_model::SlashCommandModel,
         suggestions_mode_model::InputSuggestionsModeModel,
-        HandoffComposeState,
     },
 };
 use warp_multi_agent_api as api;
 
 use crate::{
+    BlocklistAIHistoryModel,
     ai::{
+        AgentTip,
         agent::{
-            conversation::AIConversationId, icons, AIAgentExchangeId, AIAgentOutput,
-            AIAgentOutputMessageType, CancellationReason, SummarizationType,
+            AIAgentExchangeId, AIAgentOutput, AIAgentOutputMessageType, CancellationReason,
+            SummarizationType, conversation::AIConversationId, icons,
         },
         blocklist::{
+            BlocklistAIActionEvent, BlocklistAIActionModel, BlocklistAIContextEvent,
+            BlocklistAIContextModel, BlocklistAIController, BlocklistAIHistoryEvent,
+            BlocklistAIInputEvent, BlocklistAIInputModel, ResponseStreamId,
             agent_view::shortcuts::AgentShortcutViewModel,
             ai_brand_color,
             model::AIBlockModelHelper,
             summarization_cancel_dialog::{
                 self, SummarizationCancelDialog, SummarizationCancelDialogEvent,
             },
-            BlocklistAIActionEvent, BlocklistAIActionModel, BlocklistAIContextEvent,
-            BlocklistAIContextModel, BlocklistAIController, BlocklistAIHistoryEvent,
-            BlocklistAIInputEvent, BlocklistAIInputModel, ResponseStreamId,
         },
         llms::LLMPreferences,
-        AgentTip,
     },
     send_telemetry_from_app_ctx,
     server::telemetry::TelemetryEvent,
     settings::{InputModeSettings, InputSettings},
     settings_view::keybindings::KeybindingChangedNotifier,
     terminal::{
+        CANCEL_COMMAND_KEYBINDING, TOGGLE_AUTOEXECUTE_MODE_KEYBINDING,
+        TOGGLE_HIDE_CLI_RESPONSES_KEYBINDING, TOGGLE_QUEUE_NEXT_PROMPT_KEYBINDING, TerminalModel,
         input::SET_INPUT_MODE_TERMINAL_ACTION_NAME,
         model::block::LONG_RUNNING_COMMAND_DURATION_MS,
         model_events::{ModelEvent, ModelEventDispatcher},
         view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent},
         warpify::render::LEFT_STRIPE_WIDTH,
-        TerminalModel, CANCEL_COMMAND_KEYBINDING, TOGGLE_AUTOEXECUTE_MODE_KEYBINDING,
-        TOGGLE_HIDE_CLI_RESPONSES_KEYBINDING, TOGGLE_QUEUE_NEXT_PROMPT_KEYBINDING,
     },
     util::bindings::keybinding_name_to_keystroke,
-    BlocklistAIHistoryModel,
 };
 use instant::Instant;
 use parking_lot::FairMutex;
 use pathfinder_color::ColorU;
 use warp_core::{
     features::FeatureFlag,
-    ui::{appearance::Appearance, theme::Fill, Icon as CoreIcon},
+    ui::{Icon as CoreIcon, appearance::Appearance, theme::Fill},
 };
 use warpui::elements::shimmering_text::ShimmeringTextStateHandle;
 use warpui::{
+    AppContext, Element, Entity, EntityId, ModelHandle, SingletonEntity, View, ViewContext,
+    ViewHandle,
+    r#async::SpawnedFutureHandle,
     elements::{Border, Container, Empty, Flex, MouseStateHandle, ParentElement, Text},
     keymap::Keystroke,
     presenter::ChildView,
-    r#async::SpawnedFutureHandle,
-    AppContext, Element, Entity, EntityId, ModelHandle, SingletonEntity, View, ViewContext,
-    ViewHandle,
 };
-use warpui::{r#async::Timer, TypedActionView};
+use warpui::{TypedActionView, r#async::Timer};
 
 pub fn init(app: &mut AppContext) {
     summarization_cancel_dialog::init(app);

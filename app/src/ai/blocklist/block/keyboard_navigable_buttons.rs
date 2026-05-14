@@ -1,6 +1,7 @@
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::{
+    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext,
     elements::{
         ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Flex,
         MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable, Text,
@@ -10,7 +11,6 @@ use warpui::{
         button::{Button, ButtonVariant},
         components::{UiComponent, UiComponentStyles},
     },
-    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext,
 };
 
 use crate::ui_components::icons::Icon;

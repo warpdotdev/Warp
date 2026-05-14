@@ -2,20 +2,20 @@
 //! when the query was submitted.
 use warp_core::features::FeatureFlag;
 use warp_util::path::user_friendly_path;
+use warpui::EntityId;
 use warpui::elements::MouseStateHandle;
 use warpui::elements::{ChildView, Hoverable, SavePosition};
 use warpui::platform::Cursor;
-use warpui::EntityId;
 use warpui::{
+    AppContext, Element, SingletonEntity, ViewHandle,
     elements::{
         ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, MainAxisAlignment,
         MainAxisSize, ParentElement, Radius, Text,
     },
-    AppContext, Element, SingletonEntity, ViewHandle,
 };
 
-use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::AIAgentExchangeId;
+use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::blocklist::block::DirectoryContext;
 use crate::ai::blocklist::{
     get_ai_block_overflow_menu_element_position_id, get_attached_blocks_chip_element_position_id,

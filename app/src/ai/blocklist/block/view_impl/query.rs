@@ -4,6 +4,7 @@
 
 use warp_core::{features::FeatureFlag, ui::theme::color::internal_colors};
 use warpui::{
+    AppContext, Element, SingletonEntity,
     elements::{
         Container, CornerRadius, Flex, MainAxisAlignment, MainAxisSize, ParentElement, Radius,
         Shrinkable, Wrap,
@@ -13,11 +14,10 @@ use warpui::{
         chip::Chip,
         components::{Coords, UiComponent, UiComponentStyles},
     },
-    AppContext, Element, SingletonEntity,
 };
 
-use crate::ai::blocklist::block::view_impl::common::UserQueryProps;
 use crate::ai::blocklist::AttachmentType;
+use crate::ai::blocklist::block::view_impl::common::UserQueryProps;
 use crate::appearance::Appearance;
 use crate::{
     ai::blocklist::block::{DetectedLinksState, SecretRedactionState},
@@ -25,7 +25,7 @@ use crate::{
 };
 use pathfinder_color::ColorU;
 
-use super::common::{render_query_text, render_user_avatar, FindContext};
+use super::common::{FindContext, render_query_text, render_user_avatar};
 
 /// Data required to render the AI block query component.
 #[derive(Copy, Clone, Debug)]

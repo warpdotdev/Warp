@@ -2,16 +2,16 @@ use crate::context_chips::spacing;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::{
+    AppContext, Element, SingletonEntity, ViewHandle,
     elements::{
-        Border, Container, CornerRadius, CrossAxisAlignment, Expanded, Flex, FormattedTextElement,
-        MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable, Text,
-        DEFAULT_UI_LINE_HEIGHT_RATIO,
+        Border, Container, CornerRadius, CrossAxisAlignment, DEFAULT_UI_LINE_HEIGHT_RATIO,
+        Expanded, Flex, FormattedTextElement, MainAxisSize, MouseStateHandle, ParentElement,
+        Radius, Shrinkable, Text,
     },
     ui_components::{
         button::{Button, ButtonVariant},
         components::{UiComponent, UiComponentStyles},
     },
-    AppContext, Element, SingletonEntity, ViewHandle,
 };
 
 use super::compact_agent_input::CompactAgentInput;
