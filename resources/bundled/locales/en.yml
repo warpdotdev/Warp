@@ -1787,6 +1787,12 @@ en:
     link_copied: "Link copied to clipboard"
     raw: "Raw"
     rendered: "Rendered"
+    block_type_text: "Text"
+    block_type_command: "Command"
+    block_type_bulleted_list: "Bulleted list"
+    block_type_numbered_list: "Numbered list"
+    block_type_code: "Code"
+    block_type_todo_list: "To-do list"
 
   # ── Onboarding ──
   onboarding:

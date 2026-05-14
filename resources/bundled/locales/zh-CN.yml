@@ -1787,6 +1787,12 @@ zh-CN:
     link_copied: "链接已复制到剪贴板"
     raw: "原始"
     rendered: "渲染"
+    block_type_text: "文本"
+    block_type_command: "命令"
+    block_type_bulleted_list: "项目符号列表"
+    block_type_numbered_list: "编号列表"
+    block_type_code: "代码"
+    block_type_todo_list: "待办列表"
 
   # ── 引导 ──
   onboarding:
