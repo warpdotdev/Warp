@@ -78,6 +78,10 @@ use crate::ai::agent::AIIdentifiers;
 use crate::ai::agent::MessageId;
 use crate::ai::agent::RequestFileEditsResult;
 use crate::ai::agent::SearchCodebaseResult;
+use crate::ai::agent::SubagentCall;
+use crate::ai::agent::SubagentType;
+use crate::ai::agent_conversations_model::{AgentConversationsModel, AgentConversationsModelEvent};
+use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::blocklist::action_model::NewConversationDecision;
 use crate::ai::blocklist::block::keyboard_navigable_buttons::KeyboardNavigableButtonBuilder;
 use crate::ai::blocklist::block::keyboard_navigable_buttons::KeyboardNavigableButtons;
@@ -1081,6 +1085,17 @@ impl AIBlock {
             },
         );
 
+        ctx.subscribe_to_model(
+            &AgentConversationsModel::handle(ctx),
+            |me, _, event, ctx| {
+                if matches!(event, AgentConversationsModelEvent::TasksUpdated)
+                    && me.output_references_agent_run_for_conversation_search(ctx)
+                {
+                    ctx.notify();
+                }
+            },
+        );
+
         let safe_mode_settings = SafeModeSettings::handle(ctx);
         ctx.subscribe_to_model(&safe_mode_settings, |me, _, event, ctx| {
             me.handle_safe_mode_settings_changed_event(event, ctx)
@@ -1840,6 +1855,8 @@ impl AIBlock {
             self.handle_web_fetch_messages(&output.messages, ctx);
         }
 
+        self.fetch_conversation_search_agent_run_titles(output, ctx);
+
         for action in output.actions() {
             let new_action_ids: HashSet<AIAgentActionId> =
                 output.actions().map(|action| action.id.clone()).collect();
@@ -2116,6 +2133,48 @@ impl AIBlock {
                     get_secret_obfuscation_mode(ctx).is_visually_obfuscated(),
                 );
         }
+    }
+
+    fn fetch_conversation_search_agent_run_titles(
+        &self,
+        output: &AIAgentOutput,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        for task_id in Self::conversation_search_agent_run_ids(output) {
+            AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
+                model.get_or_async_fetch_task_data(&task_id, ctx);
+            });
+        }
+    }
+
+    fn output_references_agent_run_for_conversation_search(&self, app: &AppContext) -> bool {
+        self.model
+            .status(app)
+            .output_to_render()
+            .is_some_and(|output| {
+                !Self::conversation_search_agent_run_ids(&output.get()).is_empty()
+            })
+    }
+
+    fn conversation_search_agent_run_ids(output: &AIAgentOutput) -> Vec<AmbientAgentTaskId> {
+        let mut task_ids = HashSet::new();
+        for message in &output.messages {
+            let AIAgentOutputMessageType::Subagent(SubagentCall {
+                subagent_type:
+                    SubagentType::ConversationSearch {
+                        agent_run_id: Some(agent_run_id),
+                        ..
+                    },
+                ..
+            }) = &message.message
+            else {
+                continue;
+            };
+            if let Ok(task_id) = agent_run_id.parse() {
+                task_ids.insert(task_id);
+            }
+        }
+        task_ids.into_iter().collect()
     }
 
     fn set_keyboard_navigable_buttons(

@@ -1520,9 +1520,10 @@ pub enum SubagentType {
     Summarization,
     ConversationSearch {
         query: Option<String>,
-        /// The ID of the conversation being searched. None when searching the
-        /// current conversation.
+        /// The ID of the conversation being searched.
         conversation_id: Option<String>,
+        /// The ID of the agent run being searched.
+        agent_run_id: Option<String>,
     },
     WarpDocumentationSearch,
     Unknown,

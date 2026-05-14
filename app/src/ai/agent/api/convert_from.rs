@@ -776,9 +776,15 @@ impl ConvertAPIToolCallToAIAgentAction for api::message::ToolCall {
                         } else {
                             Some(cs_meta.conversation_id)
                         };
+                        let agent_run_id = if cs_meta.agent_run_id.is_empty() {
+                            None
+                        } else {
+                            Some(cs_meta.agent_run_id)
+                        };
                         SubagentType::ConversationSearch {
                             query,
                             conversation_id,
+                            agent_run_id,
                         }
                     }
                     Some(Metadata::WarpDocumentationSearch(_)) => {
