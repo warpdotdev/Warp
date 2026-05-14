@@ -1,4 +1,5 @@
 use super::*;
+use crate::ai::blocklist::agent_view::orchestration_pin_model::OrchestrationPinModel;
 use crate::ai::blocklist::{BlocklistAIHistoryModel, BlocklistAIPermissions};
 use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
@@ -135,6 +136,7 @@ fn initialize_app(app: &mut App) {
         )
     });
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+    app.add_singleton_model(|ctx| OrchestrationPinModel::new(Default::default(), ctx));
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
     app.add_singleton_model(|_| ActiveAgentViewsModel::new());
     app.add_singleton_model(AgentNotificationsModel::new);
@@ -2588,7 +2590,7 @@ fn test_pointer_opened_tab_configs_menu_does_not_select_top_item() {
         let workspace = mock_workspace(&mut app);
 
         workspace.update(&mut app, |workspace, ctx| {
-            workspace.toggle_new_session_dropdown_menu(Vector2F::zero(), false, ctx);
+            workspace.toggle_new_session_dropdown_menu(Vector2F::zero(), ctx);
 
             assert!(workspace.show_new_session_dropdown_menu.is_some());
             assert_eq!(

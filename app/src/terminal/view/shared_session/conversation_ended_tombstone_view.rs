@@ -53,6 +53,7 @@ struct TombstoneDisplayData {
     working_directory: Option<String>,
     /// Artifacts from the conversation
     artifacts: Vec<Artifact>,
+    hide_continue_actions: bool,
     /// Execution harness for the task. None until the task is loaded.
     #[cfg(not(target_family = "wasm"))]
     harness: Option<Harness>,
@@ -117,6 +118,7 @@ impl TombstoneDisplayData {
             credits: Some(format_credits(conversation.credits_spent())),
             working_directory: conversation.initial_working_directory(),
             artifacts: conversation.artifacts().to_vec(),
+            hide_continue_actions: false,
             #[cfg(not(target_family = "wasm"))]
             harness: None,
         }
@@ -149,6 +151,9 @@ impl TombstoneDisplayData {
         if task.state.is_failure_like() {
             self.is_error = true;
             if let Some(status_message) = &task.status_message {
+                if status_message.is_environment_setup_failure() {
+                    self.hide_continue_actions = true;
+                }
                 self.error_message = Some(status_message.message.clone());
             }
         }
@@ -195,17 +200,23 @@ impl ConversationEndedTombstoneView {
             .all_live_conversations_for_terminal_view(terminal_view_id)
             .next()
             .map(|c| c.id());
-
-        let display_data = conversation_id
-            .map(|id| {
+        let mut display_data = conversation_id
+            .map(|conversation_id| {
                 TombstoneDisplayData::from_conversation(
-                    id,
+                    conversation_id,
                     terminal_view_id,
                     task_id.is_some(),
                     ctx,
                 )
             })
             .unwrap_or_default();
+        let failed_before_task_creation =
+            display_data.is_error && task_id.is_none() && !display_data.conversation_is_transcript;
+        if failed_before_task_creation {
+            display_data.title = Some("Cloud agent failed to start".to_string());
+            display_data.credits = None;
+            display_data.hide_continue_actions = true;
+        }
 
         let artifact_buttons_view =
             ctx.add_typed_action_view(|ctx| ArtifactButtonsRow::new(&display_data.artifacts, ctx));
@@ -225,17 +236,21 @@ impl ConversationEndedTombstoneView {
             });
 
         #[cfg(not(target_family = "wasm"))]
-        let continue_locally_button = conversation_id.map(|conv_id| {
-            ctx.add_typed_action_view(move |_| {
-                ActionButton::new("Continue locally", PrimaryTheme)
-                    .with_tooltip("Fork this conversation locally")
-                    .on_click(move |ctx| {
-                        ctx.dispatch_typed_action(
-                            ConversationEndedTombstoneAction::ContinueLocally(conv_id),
-                        );
-                    })
+        let continue_locally_button = if failed_before_task_creation {
+            None
+        } else {
+            conversation_id.map(|conv_id| {
+                ctx.add_typed_action_view(move |_| {
+                    ActionButton::new("Continue locally", PrimaryTheme)
+                        .with_tooltip("Fork this conversation locally")
+                        .on_click(move |ctx| {
+                            ctx.dispatch_typed_action(
+                                ConversationEndedTombstoneAction::ContinueLocally(conv_id),
+                            );
+                        })
+                })
             })
-        });
+        };
 
         // In wasm, continuing locally is impossible so we instead
         // offer to open the conversation in warp (where you can continue locally).
@@ -494,6 +509,9 @@ impl ConversationEndedTombstoneView {
             .with_spacing(8.);
 
         let mut has_button = false;
+        if self.display_data.hide_continue_actions {
+            return Empty::new().finish();
+        }
 
         #[cfg(not(target_family = "wasm"))]
         {
@@ -532,6 +550,29 @@ impl ConversationEndedTombstoneView {
             return Empty::new().finish();
         }
         row.finish()
+    }
+}
+
+#[cfg(test)]
+impl ConversationEndedTombstoneView {
+    pub(in crate::terminal::view) fn title_for_test(&self) -> Option<&str> {
+        self.display_data.title.as_deref()
+    }
+
+    pub(in crate::terminal::view) fn error_message_for_test(&self) -> Option<&str> {
+        self.display_data.error_message.as_deref()
+    }
+
+    pub(in crate::terminal::view) fn credits_for_test(&self) -> Option<&str> {
+        self.display_data.credits.as_deref()
+    }
+
+    pub(in crate::terminal::view) fn has_continue_locally_button_for_test(&self) -> bool {
+        !self.display_data.hide_continue_actions && self.continue_locally_button.is_some()
+    }
+
+    pub(in crate::terminal::view) fn has_continue_in_cloud_button_for_test(&self) -> bool {
+        !self.display_data.hide_continue_actions && self.continue_in_cloud_button.is_some()
     }
 }
 
