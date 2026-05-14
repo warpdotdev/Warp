@@ -9583,11 +9583,8 @@ impl Input {
                             object_uid,
                             ctx,
                         );
-                        let attachment = drive_object_attachment_for_reference(
-                            object_uid,
-                            object_type.clone(),
-                            ctx,
-                        );
+                        let attachment =
+                            drive_object_attachment_for_reference(object_uid, *object_type, ctx);
                         self.insert_ai_context_menu_attachment_reference(
                             reference, attachment, ctx,
                         );

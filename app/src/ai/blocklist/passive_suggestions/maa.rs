@@ -173,7 +173,7 @@ impl PassiveSuggestionsModel {
 
         let stream_handle = ctx.spawn(
             async move {
-                let _ = cancellation_rx;
+                std::mem::drop(cancellation_rx);
                 None
             },
             move |me, result, ctx| {

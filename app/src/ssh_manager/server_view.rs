@@ -517,7 +517,7 @@ impl SshServerView {
             .with_background(theme.surface_2())
             .with_border(
                 warpui::elements::Border::all(1.0)
-                    .with_border_color(internal_colors::neutral_3(theme).into()),
+                    .with_border_color(internal_colors::neutral_3(theme)),
             )
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.0)))
             .finish()

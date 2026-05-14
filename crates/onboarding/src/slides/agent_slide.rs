@@ -1020,15 +1020,12 @@ impl AgentSlide {
         if count == 0 {
             return None;
         }
-        for offset in 1..=count {
-            let idx = if forward {
-                (start + offset) % count
-            } else {
-                (start + count - offset) % count
-            };
-            return Some(idx);
-        }
-        None
+        let idx = if forward {
+            (start + 1) % count
+        } else {
+            (start + count - 1) % count
+        };
+        Some(idx)
     }
 
     /// Advances the highlight cursor to the next/previous model, wrapping.

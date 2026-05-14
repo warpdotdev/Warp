@@ -61,11 +61,10 @@ pub(crate) fn unique_skills(
             Entry::Occupied(mut e) => {
                 let new_rank = provider_rank(descriptor.provider);
                 let existing_rank = provider_rank(e.get().provider);
-                if new_rank < existing_rank {
-                    e.insert(descriptor);
-                } else if new_rank == existing_rank
-                    && skill_reference_key(&descriptor.reference).len()
-                        < skill_reference_key(&e.get().reference).len()
+                if new_rank < existing_rank
+                    || (new_rank == existing_rank
+                        && skill_reference_key(&descriptor.reference).len()
+                            < skill_reference_key(&e.get().reference).len())
                 {
                     e.insert(descriptor);
                 }

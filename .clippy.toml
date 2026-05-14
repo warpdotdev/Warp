@@ -6,7 +6,7 @@ disallowed-types = [
     { path = "std::time::Instant", reason = "std::time::Instant is not implemented for wasm targets. Use instant::Instant instead." },
     { path = "std::process::Command", reason = "std::process::Command by default flashes a terminal when invoked on Windows. Use command::blocking::Command instead." },
     { path = "async_process::Command", reason = "async_process::Command by default flashes a terminal when invoked on Windows. Use command::r#async::Command instead." },
-    { path = "tokio::process::Command", reason = "tokio::process::Command by default flashes a terminal when invoked on Windows. Use command::r#async::Command instead. (If a third-party API requires tokio::process::Command directly, set CREATE_NO_WINDOW manually via creation_flags on Windows.)" },
+    { path = "tokio::process::Command", reason = "tokio::process::Command by default flashes a terminal when invoked on Windows. Use command::r#async::Command instead. (If a third-party API requires tokio::process::Command directly, set CREATE_NO_WINDOW manually via creation_flags on Windows.)", allow-invalid = true },
 ]
 
 disallowed-methods = [

@@ -12,13 +12,12 @@ pub fn build_ssh_args(server: &SshServerInfo) -> Vec<String> {
         args.push("-p".into());
         args.push(server.port.to_string());
     }
-    if server.auth_type == AuthType::Key {
-        if let Some(path) = server.key_path.as_deref() {
-            if !path.is_empty() {
-                args.push("-i".into());
-                args.push(path.to_string());
-            }
-        }
+    if server.auth_type == AuthType::Key
+        && let Some(path) = server.key_path.as_deref()
+        && !path.is_empty()
+    {
+        args.push("-i".into());
+        args.push(path.to_string());
     }
     let target = if server.username.is_empty() {
         server.host.clone()

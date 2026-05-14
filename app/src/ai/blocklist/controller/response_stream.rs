@@ -249,20 +249,22 @@ impl ResponseStream {
             async move {
                 if let Some(byop) = byop_dispatch {
                     crate::ai::agent_providers::chat_stream::generate_byop_output(
-                        params_clone,
-                        byop.base_url,
-                        byop.api_key,
-                        byop.model_id,
-                        byop.api_type,
-                        byop.reasoning_effort,
-                        byop.extra_headers,
-                        byop.root_task_id,
-                        byop.target_task_id,
-                        byop.needs_create_task,
-                        byop.lrc_command_id,
-                        byop.lrc_should_spawn_subagent,
-                        byop.context_window,
-                        cancellation_rx,
+                        crate::ai::agent_providers::chat_stream::ByopOutputInput {
+                            params: params_clone,
+                            base_url: byop.base_url,
+                            api_key: byop.api_key,
+                            model_id: byop.model_id,
+                            api_type: byop.api_type,
+                            reasoning_effort: byop.reasoning_effort,
+                            extra_headers: byop.extra_headers,
+                            task_id: byop.root_task_id,
+                            target_task_id: byop.target_task_id,
+                            needs_create_task: byop.needs_create_task,
+                            lrc_command_id: byop.lrc_command_id,
+                            lrc_should_spawn_subagent: byop.lrc_should_spawn_subagent,
+                            context_window: byop.context_window,
+                            cancellation_rx,
+                        },
                     )
                     .await
                 } else {
@@ -354,20 +356,22 @@ impl ResponseStream {
             async move {
                 if let Some(byop) = byop_dispatch {
                     crate::ai::agent_providers::chat_stream::generate_byop_output(
-                        params,
-                        byop.base_url,
-                        byop.api_key,
-                        byop.model_id,
-                        byop.api_type,
-                        byop.reasoning_effort,
-                        byop.extra_headers,
-                        byop.root_task_id,
-                        byop.target_task_id,
-                        byop.needs_create_task,
-                        byop.lrc_command_id,
-                        byop.lrc_should_spawn_subagent,
-                        byop.context_window,
-                        cancellation_rx,
+                        crate::ai::agent_providers::chat_stream::ByopOutputInput {
+                            params,
+                            base_url: byop.base_url,
+                            api_key: byop.api_key,
+                            model_id: byop.model_id,
+                            api_type: byop.api_type,
+                            reasoning_effort: byop.reasoning_effort,
+                            extra_headers: byop.extra_headers,
+                            task_id: byop.root_task_id,
+                            target_task_id: byop.target_task_id,
+                            needs_create_task: byop.needs_create_task,
+                            lrc_command_id: byop.lrc_command_id,
+                            lrc_should_spawn_subagent: byop.lrc_should_spawn_subagent,
+                            context_window: byop.context_window,
+                            cancellation_rx,
+                        },
                     )
                     .await
                 } else {

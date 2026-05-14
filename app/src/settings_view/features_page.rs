@@ -4216,9 +4216,9 @@ impl SettingsWidget for NativeRedirectWidget {
                 mouse_state: self.additional_info_link.clone(),
                 on_click_action: None,
                 secondary_text: None,
-                tooltip_override_text: Some(
-                    crate::t!("settings-features-open-links-in-desktop-tooltip").into(),
-                ),
+                tooltip_override_text: Some(crate::t!(
+                    "settings-features-open-links-in-desktop-tooltip"
+                )),
             }),
             LocalOnlyIconState::for_setting(
                 UserNativeRedirectPreference::storage_key(),

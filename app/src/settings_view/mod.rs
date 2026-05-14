@@ -1441,9 +1441,8 @@ impl SettingsView {
         event: &MainSettingsPageEvent,
         ctx: &mut ViewContext<Self>,
     ) {
-        match event {
-            MainSettingsPageEvent::CheckForUpdate => ctx.emit(SettingsViewEvent::CheckForUpdate),
-            _ => (),
+        if let MainSettingsPageEvent::CheckForUpdate = event {
+            ctx.emit(SettingsViewEvent::CheckForUpdate)
         }
     }
 
@@ -1815,11 +1814,8 @@ impl SettingsView {
 
     fn input_tab(&mut self, ctx: &mut ViewContext<Self>) {
         if let Some(current_page) = self.current_settings_page() {
-            match &current_page.view_handle {
-                SettingsPageViewHandle::Keybindings(view_handle) => {
-                    view_handle.update(ctx, |view, ctx| view.on_tab_pressed(ctx));
-                }
-                _ => (),
+            if let SettingsPageViewHandle::Keybindings(view_handle) = &current_page.view_handle {
+                view_handle.update(ctx, |view, ctx| view.on_tab_pressed(ctx));
             };
         }
     }

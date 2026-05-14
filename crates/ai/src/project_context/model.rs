@@ -559,6 +559,7 @@ impl ProjectContextModel {
     /// 缓存失效检查。只 stat,不读文件内容。
     /// - 命中文件 mtime/size 不变 → 内容可复用
     /// - 遍历过的目录 mtime 不变 → 不会有新增/删除的规则文件
+    ///
     /// 带 `FAST_PATH_BUDGET` 预算,stat 期间超时即视为失效重扫。
     #[cfg(feature = "local_fs")]
     fn fast_path_entry_still_valid(entry: &FastPathEntry) -> bool {

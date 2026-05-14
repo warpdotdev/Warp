@@ -380,9 +380,11 @@ fn select_keeps_recent_turns_within_budget() {
         M::user(5, 100),
         M::assistant(6, 100), // turn3 size 200
     ];
-    let mut cfg = CompactionConfig::default();
-    cfg.tail_turns = 2;
-    cfg.preserve_recent_tokens = Some(500); // 足够装下最近 2 个 turn (各 200)
+    let cfg = CompactionConfig {
+        tail_turns: 2,
+        preserve_recent_tokens: Some(500), // 足够装下最近 2 个 turn (各 200)
+        ..Default::default()
+    };
     let model = ModelLimit::FALLBACK;
     let r = select(&msgs, &cfg, model, sum_size);
     // tail 起点是第 2 个 turn 的 user(idx=2),head_end=2
@@ -400,9 +402,11 @@ fn select_split_turn_when_over_budget() {
         M::assistant(5, 100),
         M::assistant(6, 100),
     ];
-    let mut cfg = CompactionConfig::default();
-    cfg.tail_turns = 1;
-    cfg.preserve_recent_tokens = Some(250); // 装不下 turn2 整体(500),触发 splitTurn
+    let cfg = CompactionConfig {
+        tail_turns: 1,
+        preserve_recent_tokens: Some(250), // 装不下 turn2 整体(500),触发 splitTurn
+        ..Default::default()
+    };
     let model = ModelLimit::FALLBACK;
     let r = select(&msgs, &cfg, model, sum_size);
     // splitTurn 从 turn2.start+1=2 开始找,messages[2..6]=400 > 250, [3..6]=300>250, [4..6]=200<=250 → start=4
@@ -422,8 +426,10 @@ fn select_returns_full_when_no_turns() {
 #[test]
 fn select_tail_turns_zero_keeps_full() {
     let msgs = vec![M::user(1, 100), M::assistant(2, 100)];
-    let mut cfg = CompactionConfig::default();
-    cfg.tail_turns = 0;
+    let cfg = CompactionConfig {
+        tail_turns: 0,
+        ..Default::default()
+    };
     let r = select(&msgs, &cfg, ModelLimit::FALLBACK, sum_size);
     assert_eq!(r.head_end, msgs.len());
     assert_eq!(r.tail_start_id, None);
@@ -610,9 +616,11 @@ fn commit_summarization_records_head_message_ids() {
         user_query("u3", "root", "r3", 5),
         agent_output("a3", "root", "r3", 6),
     ]);
-    let mut cfg = CompactionConfig::default();
-    cfg.tail_turns = 1;
-    cfg.preserve_recent_tokens = Some(1_000);
+    let cfg = CompactionConfig {
+        tail_turns: 1,
+        preserve_recent_tokens: Some(1_000),
+        ..Default::default()
+    };
 
     assert!(commit_summarization(&mut conversation, false, &cfg));
     let completed = conversation.compaction_state.completed().last().unwrap();

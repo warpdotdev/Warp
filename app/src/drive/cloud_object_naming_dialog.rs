@@ -235,7 +235,7 @@ impl ObjectNamingDialog {
                 Some(primary_hovered_and_clicked_styles),
                 Some(primary_disabled_styles),
             )
-            .with_text_label(primary_button_text.into());
+            .with_text_label(primary_button_text);
 
         if let Some(title) = self.title(app) {
             if title.is_empty() || !self.title_editor.as_ref(app).is_dirty(app) {

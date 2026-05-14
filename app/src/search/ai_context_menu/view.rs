@@ -476,13 +476,12 @@ impl AIContextMenu {
             // Terminal mode: show Files category only.
             // OpenWarp:原这里还会按 outline_codebase_symbols_for_at_context_menu push Code
             // 分类,现 outline 下线,Code 分类不再出现。
-            let categories = if is_active_dir_in_git_repo {
+
+            if is_active_dir_in_git_repo {
                 vec![AIContextMenuCategory::RepoFiles]
             } else {
                 vec![AIContextMenuCategory::CurrentFolderFiles]
-            };
-
-            categories
+            }
         } else {
             // File searching is not available in shared session viewers
             vec![]

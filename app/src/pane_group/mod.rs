@@ -2640,10 +2640,6 @@ impl PaneGroup {
         let (terminal_view, terminal_manager) =
             Self::create_ambient_agent_loading_terminal(resources, view_bounds_size, ctx);
 
-        terminal_view.update(ctx, |view, ctx| {
-            view.enter_ambient_agent_setup(None, ctx);
-        });
-
         (terminal_view, terminal_manager)
     }
 

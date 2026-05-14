@@ -56,7 +56,7 @@ impl SyncDataSource for EmbeddedWorkflowsDataSource {
                     let is_accessible =
                         is_embed_accessible(self.embedding_space, workflow.permissions.owner);
                     WorkflowSearchItem {
-                        workflow: workflow,
+                        workflow,
                         fuzzy_matched_workflow: match_result,
                         is_accessible,
                     }

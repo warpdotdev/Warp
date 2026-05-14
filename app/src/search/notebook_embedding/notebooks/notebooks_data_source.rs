@@ -56,7 +56,7 @@ impl SyncDataSource for EmbeddedNotebooksDataSource {
                     let is_accessible =
                         is_embed_accessible(self.embedding_space, notebook.permissions.owner);
                     NotebookSearchItem {
-                        notebook: notebook,
+                        notebook,
                         fuzzy_matched_notebook: match_result,
                         is_accessible,
                     }

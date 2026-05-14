@@ -24,6 +24,7 @@ use diesel::{
     OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper,
 };
 use diesel_migrations::MigrationHarness;
+use instant::Instant;
 use itertools::Itertools;
 use libsqlite3_sys as sqlite3;
 use num_traits::FromPrimitive;
@@ -178,7 +179,7 @@ pub fn prewarm_db_in_background() {
         let handle_result = std::thread::Builder::new()
             .name("warp-sqlite-prewarm".into())
             .spawn(|| {
-                let start = std::time::Instant::now();
+                let start = Instant::now();
                 unsafe {
                     init_logging();
                 }
@@ -218,7 +219,7 @@ pub fn prewarm_db_in_background() {
 /// 返回 `None` 表示从未发起预热,调用方走同步路径。
 fn take_prewarmed_db() -> Option<Result<SqliteConnection>> {
     let cell = PREWARMED_DB.get()?;
-    let take_start = std::time::Instant::now();
+    let take_start = Instant::now();
 
     // 先拿出 join handle(如果还在 Pending),转换为 Joining,join 完后再拿结果。
     // 这个两阶段设计避免主线程拿着锁跳,同时保证后台线程能写入结果。

@@ -515,7 +515,7 @@ pub fn test_restore_snapshot_with_code_file() -> Builder {
 ///
 /// The snapshot has a single window with one tab, containing:
 /// * A terminal pane
-/// * A settings pane (with page set to "Referrals")
+/// * 设置面板,保存的是已移除的旧 "Referrals" 页面。
 pub fn test_restore_snapshot_with_settings_page() -> Builder {
     new_builder()
         .with_setup(|_utils| {
@@ -530,7 +530,7 @@ pub fn test_restore_snapshot_with_settings_page() -> Builder {
             TestStep::new("Verify settings pane restoration")
                 .add_assertion(assert_pane_title(0, 1, "Settings"))
                 .add_assertion(move |app, window_id| {
-                    // Verify the settings view exists and is on the Referrals page.
+                    // 验证设置视图存在,并已回退到默认页面。
                     let settings_views: Vec<ViewHandle<SettingsView>> = app
                         .views_of_type(window_id)
                         .expect("Settings view must exist");
@@ -540,7 +540,7 @@ pub fn test_restore_snapshot_with_settings_page() -> Builder {
                     settings_view.read(app, |view, _| {
                         async_assert_eq!(
                             view.current_settings_section(),
-                            SettingsSection::Referrals
+                            SettingsSection::default()
                         )
                     })
                 }),

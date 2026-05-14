@@ -491,14 +491,12 @@ impl BackingView for TerminalView {
 
         // Shared-session related items.
         let shared_session_status = model.shared_session_status();
-        if shared_session_status.is_sharer_or_viewer() {
-            if shared_session_status.is_sharer() {
-                items.push(
-                    MenuItemFields::new(crate::t!("menu-pane-stop-sharing-session"))
-                        .with_on_select_action(TerminalAction::StopSharingCurrentSession { source })
-                        .into_item(),
-                );
-            }
+        if shared_session_status.is_sharer_or_viewer() && shared_session_status.is_sharer() {
+            items.push(
+                MenuItemFields::new(crate::t!("menu-pane-stop-sharing-session"))
+                    .with_on_select_action(TerminalAction::StopSharingCurrentSession { source })
+                    .into_item(),
+            );
         }
         // OpenWarp:删除 Pane 头部 "Share session" 入口(云端 shared session)
 

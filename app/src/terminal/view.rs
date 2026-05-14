@@ -6429,7 +6429,6 @@ impl TerminalView {
 
         let active_command_block = model.block_list().active_block();
         let is_active_and_long_running = active_command_block.is_active_and_long_running();
-        let is_oz_env_startup_command = active_command_block.is_oz_environment_startup_command();
         let is_running_in_band_command =
             model.block_list().is_writing_or_executing_in_band_command();
 
@@ -6438,7 +6437,6 @@ impl TerminalView {
 
         if (active_ai_block.is_none() || has_active_long_running_agent_interaction)
             && is_active_and_long_running
-            && (!false || !is_oz_env_startup_command)
             && !is_running_in_band_command
             && model.block_list().is_bootstrapped()
         {
@@ -18686,27 +18684,6 @@ impl TerminalView {
         }
     }
 
-    pub(crate) fn enter_ambient_agent_setup(
-        &mut self,
-        initial_prompt: Option<String>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if !false || !self.model.lock().shared_session_status().is_view_pending() {
-            // Ambient agent setup can only be done inside a shared session viewer; otherwise the backing terminal manager is incorrect.
-            return;
-        }
-
-        // Don't pass an initial prompt, which auto-sends the request.
-        self.enter_agent_view_for_new_conversation(None, AgentViewEntryOrigin::AmbientAgent, ctx);
-
-        if let Some(prompt) = initial_prompt {
-            self.input.update(ctx, |input, ctx| {
-                input.replace_buffer_content(&prompt, ctx);
-            });
-        }
-        self.focus_input_box(ctx);
-    }
-
     fn last_visible_item_is_agent_view_block_for_conversation(
         &self,
         conversation_id: AIConversationId,
@@ -23880,16 +23857,14 @@ impl View for TerminalView {
             self.render_grid_tooltip(&mut stack, &model, appearance, app);
         }
 
-        if !false {
-            // Show progress steps while waiting for an ambient agent to start.
-            if self
-                .ambient_agent_view_model
-                .as_ref(app)
-                .agent_progress()
-                .is_some()
-            {
-                stack.add_child(self.render_ambient_agent_progress(appearance, app));
-            }
+        // Show progress steps while waiting for an ambient agent to start.
+        if self
+            .ambient_agent_view_model
+            .as_ref(app)
+            .agent_progress()
+            .is_some()
+        {
+            stack.add_child(self.render_ambient_agent_progress(appearance, app));
         }
 
         self.maybe_render_onboarding_callout(
@@ -24156,9 +24131,6 @@ impl View for TerminalView {
                 stack.add_child(ChildView::new(sharer.inactivity_modal()).finish())
             }
         }
-
-        // First-time ambient-agent setup has been removed in OpenWarp.
-        if self.ambient_agent_view_model.as_ref(app).is_in_setup() {}
 
         if self.ssh_file_upload.as_ref(app).has_upload() {
             stack.add_child(

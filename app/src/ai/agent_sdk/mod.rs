@@ -163,7 +163,7 @@ fn run_agent(
                 ctx.spawn(
                     AgentDriverRunner::setup_and_run_driver(
                         spawner,
-                        args,
+                        *args,
                         global_options.output_format,
                     ),
                     |_, result, _ctx| {

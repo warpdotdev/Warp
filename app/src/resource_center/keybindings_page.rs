@@ -434,7 +434,7 @@ impl KeybindingsView {
         };
 
         let mut section_header = self.render_text(
-            title.into(),
+            title,
             Some(UiComponentStyles {
                 font_color: Some(appearance.theme().active_ui_text_color().into()),
                 font_size: Some(SECTION_HEADER_FONT_SIZE),

@@ -84,7 +84,7 @@ fn expand_raw_input_tokens(input: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(input.len());
     let mut rest = input;
     while let Some(start) = rest.find('<') {
-        out.extend_from_slice(rest[..start].as_bytes());
+        out.extend_from_slice(&rest.as_bytes()[..start]);
         let token_candidate = &rest[start..];
         if let Some(end) = token_candidate.find('>') {
             let token = &token_candidate[..=end];

@@ -174,7 +174,7 @@ impl SshRemoteServerChoiceView {
         let manage_settings_link = appearance
             .ui_builder()
             .link(
-                crate::t!("ssh-remote-choice-manage-warpify-settings").into(),
+                crate::t!("ssh-remote-choice-manage-warpify-settings"),
                 None,
                 Some(Box::new(|ctx| {
                     ctx.dispatch_typed_action(SshRemoteServerChoiceViewAction::OpenWarpifySettings);

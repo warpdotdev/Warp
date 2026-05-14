@@ -374,16 +374,6 @@ impl TerminalView {
     /// Clear the presence manager and handle any UI necessary on shared session end.
     /// Applies to both sharer and viewer when the session sharing ends.
     pub fn on_session_share_ended(&mut self, ctx: &mut ViewContext<Self>) {
-        let should_insert_tombstone = {
-            let model = self.model.lock();
-            false
-                && model.is_shared_ambient_agent_session()
-                && !self.has_inserted_conversation_ended_tombstone
-                && !model.is_receiving_agent_conversation_replay()
-        };
-        if should_insert_tombstone {
-            self.insert_conversation_ended_tombstone(ctx);
-        }
         // Ensure inactivity timer is aborted for sharer
         if let Some(sharer) = self.shared_session_sharer_mut() {
             if let Some(old_abort_handle) = sharer.inactivity_timer_abort_handle.take() {
@@ -766,8 +756,6 @@ impl TerminalView {
                 },
                 ctx,
             );
-        } else {
-            return;
         }
     }
 

@@ -260,7 +260,7 @@ impl OpenWarpLaunchModal {
             .unwrap_or((item.description.as_str(), ""));
 
         let link_fragment = FormattedTextFragment {
-            text: link.text.clone().into(),
+            text: link.text.clone(),
             styles: FormattedTextStyles {
                 underline: true,
                 hyperlink: Some(Hyperlink::Url(link.url.into())),

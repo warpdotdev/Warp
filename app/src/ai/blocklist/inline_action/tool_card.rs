@@ -140,7 +140,7 @@ pub fn render_inline_tool_card(spec: ToolCardSpec, app: &AppContext) -> Box<dyn 
                 spinner_handle.clone(),
             ))
         }
-        _ => spec.icon.clone().finish(),
+        _ => spec.icon.finish(),
     };
     let icon_box = ConstrainedBox::new(icon_element)
         .with_width(icon_size(app))

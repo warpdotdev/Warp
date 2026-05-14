@@ -2,8 +2,9 @@ use byte_unit::Byte;
 use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, Default)]
 pub enum Role {
+    #[default]
     Reader,
     Executor,
     Full,
@@ -18,12 +19,6 @@ impl Role {
         if *self == Role::Full {
             *self = Role::Executor;
         }
-    }
-}
-
-impl Default for Role {
-    fn default() -> Self {
-        Self::Reader
     }
 }
 
@@ -84,6 +79,12 @@ impl std::fmt::Display for ParticipantId {
 #[derive(Debug, Hash, Serialize, Deserialize, Eq, PartialEq, Clone, Copy)]
 #[serde(transparent)]
 pub struct SessionId(Uuid);
+
+impl Default for SessionId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SessionId {
     pub fn new() -> Self {

@@ -6144,12 +6144,7 @@ fn test_ai_context_menu_enters_ai_mode_for_ai_only_context_items() {
         let notebook_id = create_cloud_notebook(&mut app, "Notebook", "notebook context", None);
         let rule_id = create_cloud_rule(&mut app, "Rule", "rule context");
         let plan_document_id = AIDocumentId::new();
-        create_cloud_notebook(
-            &mut app,
-            "Plan",
-            "plan context",
-            Some(plan_document_id.clone()),
-        );
+        create_cloud_notebook(&mut app, "Plan", "plan context", Some(plan_document_id));
         let cases = vec![
             (
                 AIContextMenuSearchableAction::InsertDriveObject {

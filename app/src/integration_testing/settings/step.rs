@@ -1,4 +1,4 @@
-use settings::Setting;
+use settings::{Setting, ToggleableSetting};
 use warpui::{async_assert, integration::TestStep, windowing::WindowManager, SingletonEntity};
 
 use crate::{

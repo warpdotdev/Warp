@@ -304,21 +304,21 @@ impl Default for TextLayoutSystem {
     }
 }
 
-/// Rebuild the cosmic-text `FontSystem` in-place with a new locale, reusing the existing
-/// `fontdb::Database` so no font data is reloaded. `cosmic_text::FontSystem` exposes no public
-/// `set_locale`, so we swap the whole struct via `std::mem::replace` and reattach the db.
+/// 用新 locale 原地重建 cosmic-text `FontSystem`,复用现有 `fontdb::Database`,
+/// 因此不会重新加载字体数据。`cosmic_text::FontSystem` 没有公开的 `set_locale`,
+/// 所以这里通过 `std::mem::replace` 替换整个结构,再重新挂回 db。
 ///
-/// Cost: `into_locale_and_db` only carries `(locale, db)` across the swap. The new
-/// `FontSystem` rebuilds its per-instance caches from scratch — `font_cache`,
-/// `monospace_font_ids`, `per_script_monospace_font_ids`, `font_codepoint_support_info_cache`,
-/// `font_matches_cache`, `shape_plan_cache`, and (with the `shape-run-cache` feature)
-/// `shape_run_cache`. The constructor also re-runs `cache_fonts` over the monospace set,
-/// which on Windows-with-many-system-fonts can take a few hundred ms to ~1 s on the first
-/// post-rebuild render. The mmap-backed font *file data* itself is not reread.
+/// 成本:`into_locale_and_db` 只会跨替换保留 `(locale, db)`。新的 `FontSystem`
+/// 会从头重建实例级缓存:`font_cache`、`monospace_font_ids`、
+/// `per_script_monospace_font_ids`、`font_codepoint_support_info_cache`、
+/// `font_matches_cache`、`shape_plan_cache`,以及启用 `shape-run-cache` feature 时的
+/// `shape_run_cache`。构造函数还会对 monospace 字体集合重新运行 `cache_fonts`,
+/// 在系统字体很多的 Windows 上,首次重建后渲染可能耗时数百 ms 到约 1 s。
+/// mmap 支撑的字体文件数据本身不会被重新读取。
 ///
-/// This is acceptable because UI locale switches are rare (driven by Settings → Language
-/// + a "restart Warp" prompt today) and the user already expects a discontinuity. If
-/// hot-reload latency ever matters, the hook lives in `app::i18n::set_locale`.
+/// 这是可接受的,因为 UI locale 切换很少发生(目前由 Settings → Language 和
+/// "restart Warp" 提示驱动),用户已经预期会有一次中断。如果之后需要热重载低延迟,
+/// 钩子在 `app::i18n::set_locale`。
 fn rebuild_font_system_for_locale(
     store: &std::sync::Arc<RwLock<cosmic_text::FontSystem>>,
     locale: &str,

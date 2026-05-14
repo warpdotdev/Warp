@@ -189,7 +189,7 @@ pub enum AgentProfileCommand {
 #[derive(Debug, Clone, Subcommand)]
 pub enum AgentCommand {
     /// Run a new Oz agent.
-    Run(RunAgentArgs),
+    Run(Box<RunAgentArgs>),
     /// Manage agent profiles.
     #[command(subcommand)]
     Profile(AgentProfileCommand),

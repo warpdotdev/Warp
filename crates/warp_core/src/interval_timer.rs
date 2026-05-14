@@ -75,7 +75,7 @@ impl IntervalTimer {
         let stats = self.compute_stats();
         eprintln!();
         eprintln!("=== WARP_STARTUP_TRACE ===");
-        eprintln!("{:>8} {:>10}  {}", "step_ms", "total_ms", "name");
+        eprintln!("{:>8} {:>10}  name", "step_ms", "total_ms");
         for point in &stats {
             eprintln!(
                 "{:>8} {:>10}  {}",

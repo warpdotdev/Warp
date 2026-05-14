@@ -8,14 +8,14 @@ use warpui::{
 };
 
 use crate::{
-    cloud_object::{model::persistence::ObjectStoreModel, Space, StoredObjectEventEntrypoint},
+    cloud_object::{
+        model::persistence::ObjectStoreModel, update_manager::UpdateManager, Space,
+        StoredObjectEventEntrypoint,
+    },
     drive::OpenWarpDriveObjectSettings,
     integration_testing::view_getters::{notebook_view, workspace_view},
     notebooks::manager::NotebookSource,
-    server::{
-        cloud_object::update_manager::UpdateManager,
-        ids::{ClientId, SyncId},
-    },
+    server::ids::{ClientId, SyncId},
     workspaces::user_workspaces::UserWorkspaces,
 };
 

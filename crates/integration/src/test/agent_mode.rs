@@ -7,7 +7,7 @@ use super::new_builder;
 use crate::{util::skip_if_powershell_core_2303, Builder};
 use lazy_static::lazy_static;
 use pathfinder_geometry::vector::{vec2f, Vector2F};
-use settings::ToggleableSetting;
+use settings::{Setting, ToggleableSetting};
 use warp::{
     cmd_or_ctrl_shift,
     features::FeatureFlag,

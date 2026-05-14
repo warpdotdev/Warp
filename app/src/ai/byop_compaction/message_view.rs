@@ -171,7 +171,7 @@ pub fn project<'a>(
     state: &'a CompactionState,
     tool_names: &'a ToolNameLookup,
 ) -> Vec<WarpMessageView<'a>> {
-    let mut sorted: Vec<&api::Message> = messages.iter().copied().collect();
+    let mut sorted: Vec<&api::Message> = messages.to_vec();
     sorted.sort_by_key(|m| {
         m.timestamp
             .as_ref()

@@ -205,12 +205,8 @@ impl SshManagerPanel {
         self.row_drag_states
             .retain(|k, _| active_ids.contains(k.as_str()));
         for n in &self.nodes {
-            self.row_states
-                .entry(n.id.clone())
-                .or_insert_with(MouseStateHandle::default);
-            self.row_drag_states
-                .entry(n.id.clone())
-                .or_insert_with(DraggableState::default);
+            self.row_states.entry(n.id.clone()).or_default();
+            self.row_drag_states.entry(n.id.clone()).or_default();
         }
 
         ctx.notify();

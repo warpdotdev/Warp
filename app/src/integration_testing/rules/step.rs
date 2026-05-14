@@ -6,12 +6,9 @@ use warpui::{
 
 use crate::{
     ai::facts::{view::AIFactPage, AIMemory},
-    cloud_object::{model::persistence::ObjectStoreModel, Space},
+    cloud_object::{model::persistence::ObjectStoreModel, update_manager::UpdateManager, Space},
     integration_testing::view_getters::workspace_view,
-    server::{
-        cloud_object::update_manager::UpdateManager,
-        ids::{ClientId, SyncId},
-    },
+    server::ids::{ClientId, SyncId},
     workspaces::user_workspaces::UserWorkspaces,
 };
 

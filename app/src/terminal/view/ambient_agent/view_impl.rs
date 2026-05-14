@@ -204,13 +204,6 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::ShowAICreditModal => {
-                if false
-                    && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
-                    && !self.model.lock().is_shared_ambient_agent_session()
-                {
-                    self.show_out_of_credits_modal(ctx);
-                }
-
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::NeedsGithubAuth => {

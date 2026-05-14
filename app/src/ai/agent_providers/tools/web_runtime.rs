@@ -50,16 +50,12 @@ pub const FALLBACK_UA: &str = "OpenWarp";
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum FetchFormat {
+    #[default]
     Markdown,
     Text,
     Html,
-}
-
-impl Default for FetchFormat {
-    fn default() -> Self {
-        Self::Markdown
-    }
 }
 
 impl FetchFormat {
@@ -265,7 +261,7 @@ pub async fn run_webfetch(client: &reqwest::Client, args: FetchArgs) -> Result<F
     let timeout = Duration::from_secs(timeout_secs);
 
     let accept = format.accept_header();
-    let resp = match send_fetch(&client, &args.url, accept, CHROME_UA, timeout).await {
+    let resp = match send_fetch(client, &args.url, accept, CHROME_UA, timeout).await {
         Ok(r) => r,
         Err(e) => return Err(e),
     };
@@ -279,7 +275,7 @@ pub async fn run_webfetch(client: &reqwest::Client, args: FetchArgs) -> Result<F
             == Some("challenge")
     {
         log::info!("[webfetch] cloudflare challenge detected → retry with fallback UA");
-        send_fetch(&client, &args.url, accept, FALLBACK_UA, timeout).await?
+        send_fetch(client, &args.url, accept, FALLBACK_UA, timeout).await?
     } else {
         resp
     };
@@ -510,9 +506,7 @@ fn strip_markdown(md: &str) -> String {
         }
         let line = line.trim_start();
         // 列表 / 引用 / 水平线 prefix
-        let line = line
-            .trim_start_matches(|c: char| c == '-' || c == '*' || c == '>' || c == '+')
-            .trim_start();
+        let line = line.trim_start_matches(['-', '*', '>', '+']).trim_start();
         // ![alt](url) → 删整段
         let line = strip_pattern(line, "![", ")");
         // [text](url) → 保留 text

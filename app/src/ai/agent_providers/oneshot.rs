@@ -35,7 +35,7 @@ pub struct OneshotConfig {
 }
 
 /// One-shot 调用的可选参数。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct OneshotOptions {
     /// user message 字符截断上限(按 char,保护 CJK)。`None` = 默认 8000。
     pub max_chars: Option<usize>,
@@ -46,17 +46,6 @@ pub struct OneshotOptions {
     pub response_format_json: bool,
     /// 是否允许触发 reasoning。默认 `false`(主动 AI 都是低延迟轻量调用)。
     pub allow_reasoning: bool,
-}
-
-impl Default for OneshotOptions {
-    fn default() -> Self {
-        Self {
-            max_chars: None,
-            temperature: None,
-            response_format_json: false,
-            allow_reasoning: false,
-        }
-    }
 }
 
 const DEFAULT_MAX_CHARS: usize = 8000;

@@ -111,7 +111,7 @@ fn build_mcp_tool_defs_outputs_lexicographic_order() {
     let out = build_mcp_tool_defs(&ctx);
     let names: Vec<&str> = out.iter().map(|(n, _, _)| n.as_str()).collect();
     // 按 function_name 排序后:server-a/beta < server-a/gamma < server-b/alpha < server-b/zeta
-    let expected = vec![
+    let expected = [
         function_name(&mk_server("id-a", "server-a", vec![], vec![]), "beta"),
         function_name(&mk_server("id-a", "server-a", vec![], vec![]), "gamma"),
         function_name(&mk_server("id-b", "server-b", vec![], vec![]), "alpha"),

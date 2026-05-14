@@ -314,7 +314,7 @@ impl UpdateModalBody {
         let cancel_button = appearance
             .ui_builder()
             .button(ButtonVariant::Text, self.cancel_mouse_state.clone())
-            .with_text_label(crate::t!("settings-mcp-update-modal-cancel").into())
+            .with_text_label(crate::t!("settings-mcp-update-modal-cancel"))
             .with_style(UiComponentStyles {
                 font_weight: Some(Weight::Bold),
                 font_color: Some(appearance.theme().active_ui_text_color().into()),

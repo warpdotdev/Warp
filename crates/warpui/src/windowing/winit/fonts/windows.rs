@@ -342,10 +342,7 @@ fn load_font_from_handle(
 /// 用于精确判断主语言,避免 `starts_with("ko")` 这类前缀匹配把
 /// `kok-IN`(孔卡尼语)误判为韩文,或 `zha-CN`(壮语)误判为中文。
 fn primary_subtag(lower: &str) -> &str {
-    lower
-        .split(|c: char| c == '-' || c == '_')
-        .next()
-        .unwrap_or("")
+    lower.split(['-', '_']).next().unwrap_or("")
 }
 
 const SIMPLIFIED_CHINESE_CJK_FAMILIES: &[&str] =

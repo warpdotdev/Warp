@@ -101,10 +101,8 @@ impl MainSettingsPageView {
             Self::handle_autoupdate_state_change,
         );
 
-        let mut widgets: Vec<Box<dyn SettingsWidget<View = Self>>> = vec![
-            Box::new(AccountWidget::default()),
-            Box::new(DividerWidget {}),
-        ];
+        let mut widgets: Vec<Box<dyn SettingsWidget<View = Self>>> =
+            vec![Box::new(AccountWidget), Box::new(DividerWidget {})];
 
         if ChannelState::app_version().is_some() {
             widgets.push(Box::new(VersionInfoWidget::default()));
@@ -474,7 +472,7 @@ impl VersionInfoWidget {
                 appearance
                     .ui_builder()
                     .link(
-                        call_to_action_content.text.into(),
+                        call_to_action_content.text,
                         None,
                         Some(Box::new(move |ctx| {
                             ctx.dispatch_typed_action(call_to_action_content.action.clone());

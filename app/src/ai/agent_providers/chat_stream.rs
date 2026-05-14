@@ -43,6 +43,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use futures::StreamExt;
+use instant::Instant;
 use serde_json::{json, Value};
 use uuid::Uuid;
 use warp_multi_agent_api as api;
@@ -893,7 +894,7 @@ fn build_chat_request(
     //   里设置(请求级别),也来自 opencode 同一组规则的下游 fallback。
     let messages = if matches!(api_type, AgentProviderApiType::Anthropic) {
         let mut msgs: Vec<ChatMessage> = std::iter::once(ChatMessage::system(system_text.clone()))
-            .chain(messages.into_iter())
+            .chain(messages)
             .collect();
         apply_caching_anthropic(&mut msgs);
         msgs
@@ -1942,33 +1943,47 @@ pub struct TitleGenInput {
     pub reasoning_effort: crate::settings::ReasoningEffortSetting,
 }
 
+pub struct ByopOutputInput {
+    pub params: RequestParams,
+    pub base_url: String,
+    pub api_key: String,
+    pub model_id: String,
+    pub api_type: AgentProviderApiType,
+    pub reasoning_effort: crate::settings::ReasoningEffortSetting,
+    pub extra_headers: Vec<(String, String)>,
+    pub task_id: String,
+    pub target_task_id: String,
+    pub needs_create_task: bool,
+    pub lrc_command_id: Option<String>,
+    pub lrc_should_spawn_subagent: bool,
+    pub context_window: Option<u32>,
+    pub cancellation_rx: futures::channel::oneshot::Receiver<()>,
+}
+
 /// `task_id`: conversation 的 root task id(controller 端从 history model 取)。
 /// `target_task_id`: 本轮模型输出应该写入的 task id;普通对话等于 root,
 /// CLI subagent 后续轮为已有 subtask。
 /// `needs_create_task`: 仅首轮(root 还是 Optimistic)需要 emit `CreateTask`。
 pub async fn generate_byop_output(
-    params: RequestParams,
-    base_url: String,
-    api_key: String,
-    model_id: String,
-    api_type: AgentProviderApiType,
-    reasoning_effort: crate::settings::ReasoningEffortSetting,
-    extra_headers: Vec<(String, String)>,
-    task_id: String,
-    target_task_id: String,
-    needs_create_task: bool,
-    // LRC 场景绑定的 CLI subagent `command_id`(= LRC block id 字符串)。
-    lrc_command_id: Option<String>,
-    // 仅 tag-in 首轮为 true:流头会合成虚拟 `tool_call::Subagent` + CreateTask,
-    // 用 server subtask 升级 master 路径已经创建的 optimistic CLI subtask。
-    lrc_should_spawn_subagent: bool,
-    // 选中模型的 context window(tokens)。Some 时:流末用 genai captured_usage
-    // 计算 (prompt_tokens + completion_tokens) / context_window 写回
-    // ConversationUsageMetadata,驱动 footer 的 "X% context remaining" 实时更新。
-    // None ⇒ 跳过(用户未填 + catalog 无),UI 维持 100% 占位。
-    context_window: Option<u32>,
-    _cancellation_rx: futures::channel::oneshot::Receiver<()>,
+    input: ByopOutputInput,
 ) -> Result<ResponseStream, ConvertToAPITypeError> {
+    let ByopOutputInput {
+        params,
+        base_url,
+        api_key,
+        model_id,
+        api_type,
+        reasoning_effort,
+        extra_headers,
+        task_id,
+        target_task_id,
+        needs_create_task,
+        lrc_command_id,
+        lrc_should_spawn_subagent,
+        context_window,
+        cancellation_rx: _cancellation_rx,
+    } = input;
+
     let force_echo_reasoning = super::reasoning::model_requires_reasoning_echo(api_type, &model_id);
     let chat_req = build_chat_request(&params, force_echo_reasoning, api_type, &model_id);
     let conversation_id = params
@@ -2317,7 +2332,7 @@ pub async fn generate_byop_output(
         // call_id → 上次 update_message 增量刷新的时刻。
         // 长 args 工具(create_or_edit_document、长 grep query)args 跨多 chunk 累积时,
         // 节流 ≥ 200ms reparse + update,体感跟文本流一样连续而不是首帧定格到 End。
-        let mut tool_last_update: HashMap<String, std::time::Instant> = HashMap::new();
+        let mut tool_last_update: HashMap<String, Instant> = HashMap::new();
         // 增量刷新节流阈值:小于此值的连续 chunk 不再 update_message,避免频繁 UI 重排。
         // 注:SDK stream 每个 ChatStreamEvent 独立 await,多 tool 并发时本就是顺序到达,
         // 同 tick batch emit 在此层意义不大;真正降抖在节流上,这条注释提醒后续不要瞎引入 batch。
@@ -2436,7 +2451,7 @@ pub async fn generate_byop_output(
                     {
                         if let Some(msg_id) = tool_msg_ids.get(&call.call_id).cloned() {
                             // 已 emit 占位 → 节流增量刷新。
-                            let now = std::time::Instant::now();
+                            let now = Instant::now();
                             let last = tool_last_update.get(&call.call_id).copied();
                             let elapsed_ok = last
                                 .map(|t| now.duration_since(t).as_millis() as u64 >= TOOL_ARGS_UPDATE_THROTTLE_MS)
@@ -2480,7 +2495,7 @@ pub async fn generate_byop_output(
                             tool_msg_ids.insert(call.call_id.clone(), msg_id);
                             tool_last_update.insert(
                                 call.call_id.clone(),
-                                std::time::Instant::now(),
+                                Instant::now(),
                             );
                             yield Ok(make_add_messages_event(
                                 &current_task_id,
@@ -4193,10 +4208,7 @@ mod cache_boundary_stability_tests {
     fn anthropic_cache_uses_1h_ttl() {
         let mut msgs = build_three_turn_conversation();
         apply_caching_anthropic(&mut msgs);
-        let tagged: Vec<_> = msgs
-            .iter()
-            .filter_map(|m| extract_cache_control(m))
-            .collect();
+        let tagged: Vec<_> = msgs.iter().filter_map(extract_cache_control).collect();
         assert!(!tagged.is_empty(), "必须至少打一个 breakpoint");
         for cc in &tagged {
             assert!(

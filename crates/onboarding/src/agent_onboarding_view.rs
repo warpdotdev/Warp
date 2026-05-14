@@ -104,11 +104,8 @@ impl AgentOnboardingView {
             }
             ctx.notify();
 
-            match event {
-                OnboardingStateEvent::Completed => {
-                    me.handle_onboarding_completed(ctx);
-                }
-                _ => {}
+            if let OnboardingStateEvent::Completed = event {
+                me.handle_onboarding_completed(ctx);
             }
         });
 

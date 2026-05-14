@@ -3,9 +3,9 @@
 //! UI 形态:
 //! - Sub-header (标题左 + 右上角 `+ 添加提供商` 小按钮) + 简短说明
 //! - 每条 provider 一张卡片,卡片内含:
-//!     · `Name` / `Base URL` / `API Key` 三个输入框(仅编辑,不自动保存)
-//!     · 模型列表区: 表头 `显示名 | 模型 ID`,每行两个输入框 + `×` 删除按钮
-//!     · 底部按钮行: `+ 添加模型` `Fetch from API` `保存` `Remove` (provider)
+//!   · `Name` / `Base URL` / `API Key` 三个输入框(仅编辑,不自动保存)
+//!   · 模型列表区: 表头 `显示名 | 模型 ID`,每行两个输入框 + `×` 删除按钮
+//!   · 底部按钮行: `+ 添加模型` `Fetch from API` `保存` `Remove` (provider)
 //!
 //! **保存行为**: 点"保存"按钮会把表单状态一次性下发到 `AISettings`
 //! 与 `AgentProviderSecrets`。输入框失焦/按 Enter 不会保存 —— 这是为了
@@ -67,7 +67,7 @@ pub(super) fn is_model_expanded(provider_id: &str, model_index: usize) -> bool {
     EXPANDED_MODELS.with(|m| {
         m.borrow()
             .get(provider_id)
-            .map_or(false, |set| set.contains(&model_index))
+            .is_some_and(|set| set.contains(&model_index))
     })
 }
 
@@ -132,6 +132,14 @@ struct ProviderRow {
     model_rows: Vec<ModelRow>,
 }
 
+type ModelDraftEditorHandles = (
+    usize,
+    ViewHandle<EditorView>,
+    ViewHandle<EditorView>,
+    ViewHandle<EditorView>,
+    ViewHandle<EditorView>,
+);
+
 #[derive(Clone)]
 struct ProviderDraftEditors {
     provider_id: String,
@@ -139,13 +147,7 @@ struct ProviderDraftEditors {
     base_url_editor: ViewHandle<EditorView>,
     api_key_editor: ViewHandle<EditorView>,
     header_editors: Vec<(ViewHandle<EditorView>, ViewHandle<EditorView>)>,
-    model_editors: Vec<(
-        usize,
-        ViewHandle<EditorView>,
-        ViewHandle<EditorView>,
-        ViewHandle<EditorView>,
-        ViewHandle<EditorView>,
-    )>,
+    model_editors: Vec<ModelDraftEditorHandles>,
 }
 
 impl ProviderDraftEditors {
@@ -290,7 +292,7 @@ impl AgentProvidersWidget {
         let initial_query = crate::ai::agent_providers::models_dev::search_query();
         let search_editor = ctx.add_typed_action_view(move |ctx| {
             let appearance = Appearance::handle(ctx).as_ref(ctx);
-            let options = single_line_editor_options(&appearance, false);
+            let options = single_line_editor_options(appearance, false);
             let mut editor = EditorView::single_line(options, ctx);
             editor.set_placeholder_text(
                 crate::t!("settings-agent-providers-search-placeholder"),
@@ -329,7 +331,7 @@ impl AgentProvidersWidget {
         let initial_name = model.name.clone();
         let name_editor = ctx.add_typed_action_view(move |ctx| {
             let appearance = Appearance::handle(ctx).as_ref(ctx);
-            let options = single_line_editor_options(&appearance, false);
+            let options = single_line_editor_options(appearance, false);
             let mut editor = EditorView::single_line(options, ctx);
             editor.set_placeholder_text(
                 crate::t!("settings-agent-providers-model-name-placeholder"),
@@ -349,7 +351,7 @@ impl AgentProvidersWidget {
         let initial_id = model.id.clone();
         let id_editor = ctx.add_typed_action_view(move |ctx| {
             let appearance = Appearance::handle(ctx).as_ref(ctx);
-            let options = single_line_editor_options(&appearance, false);
+            let options = single_line_editor_options(appearance, false);
             let mut editor = EditorView::single_line(options, ctx);
             editor.set_placeholder_text(
                 crate::t!("settings-agent-providers-model-id-placeholder"),
@@ -372,7 +374,7 @@ impl AgentProvidersWidget {
         };
         let context_editor = ctx.add_typed_action_view(move |ctx| {
             let appearance = Appearance::handle(ctx).as_ref(ctx);
-            let options = single_line_editor_options(&appearance, false);
+            let options = single_line_editor_options(appearance, false);
             let mut editor = EditorView::single_line(options, ctx);
             editor.set_placeholder_text(
                 crate::t!("settings-agent-providers-model-context-placeholder"),
@@ -395,7 +397,7 @@ impl AgentProvidersWidget {
         };
         let output_editor = ctx.add_typed_action_view(move |ctx| {
             let appearance = Appearance::handle(ctx).as_ref(ctx);
-            let options = single_line_editor_options(&appearance, false);
+            let options = single_line_editor_options(appearance, false);
             let mut editor = EditorView::single_line(options, ctx);
             editor.set_placeholder_text(
                 crate::t!("settings-agent-providers-model-output-placeholder"),
@@ -434,7 +436,7 @@ impl AgentProvidersWidget {
         let initial_key = key.to_owned();
         let key_editor = ctx.add_typed_action_view(move |ctx| {
             let appearance = Appearance::handle(ctx).as_ref(ctx);
-            let options = single_line_editor_options(&appearance, false);
+            let options = single_line_editor_options(appearance, false);
             let mut editor = EditorView::single_line(options, ctx);
             editor.set_placeholder_text("x-portkey-provider", ctx);
             if !initial_key.is_empty() {
@@ -446,7 +448,7 @@ impl AgentProvidersWidget {
         let initial_value = value.to_owned();
         let val_editor = ctx.add_typed_action_view(move |ctx| {
             let appearance = Appearance::handle(ctx).as_ref(ctx);
-            let options = single_line_editor_options(&appearance, false);
+            let options = single_line_editor_options(appearance, false);
             let mut editor = EditorView::single_line(options, ctx);
             editor.set_placeholder_text("openai", ctx);
             if !initial_value.is_empty() {
@@ -483,7 +485,7 @@ impl AgentProvidersWidget {
         let initial_name = provider.name.clone();
         let name_editor = ctx.add_typed_action_view(move |ctx| {
             let appearance = Appearance::handle(ctx).as_ref(ctx);
-            let options = single_line_editor_options(&appearance, false);
+            let options = single_line_editor_options(appearance, false);
             let mut editor = EditorView::single_line(options, ctx);
             editor
                 .set_placeholder_text(crate::t!("settings-agent-providers-name-placeholder"), ctx);
@@ -501,7 +503,7 @@ impl AgentProvidersWidget {
         let initial_base_url = provider.base_url.clone();
         let base_url_editor = ctx.add_typed_action_view(move |ctx| {
             let appearance = Appearance::handle(ctx).as_ref(ctx);
-            let options = single_line_editor_options(&appearance, false);
+            let options = single_line_editor_options(appearance, false);
             let mut editor = EditorView::single_line(options, ctx);
             editor.set_placeholder_text(
                 crate::t!("settings-agent-providers-base-url-placeholder"),
@@ -523,7 +525,7 @@ impl AgentProvidersWidget {
             .unwrap_or_default();
         let api_key_editor = ctx.add_typed_action_view(move |ctx| {
             let appearance = Appearance::handle(ctx).as_ref(ctx);
-            let options = single_line_editor_options(&appearance, true);
+            let options = single_line_editor_options(appearance, true);
             let mut editor = EditorView::single_line(options, ctx);
             editor.set_placeholder_text(
                 crate::t!("settings-agent-providers-api-key-placeholder"),
@@ -595,10 +597,7 @@ impl AgentProvidersWidget {
         {
             let mut states = row.api_type_chip_states.borrow_mut();
             for variant in AgentProviderApiType::iter() {
-                let state = states
-                    .entry(variant)
-                    .or_insert_with(MouseStateHandle::default)
-                    .clone();
+                let state = states.entry(variant).or_default().clone();
                 let is_selected = provider.api_type == variant;
                 let label = if is_selected {
                     format!("● {}", variant.display_name())
@@ -1518,10 +1517,7 @@ impl AgentProvidersWidget {
                         } else {
                             cat_provider.name.clone()
                         };
-                        let state = states
-                            .entry(cat_id.clone())
-                            .or_insert_with(MouseStateHandle::default)
-                            .clone();
+                        let state = states.entry(cat_id.clone()).or_default().clone();
                         let model_count = cat_provider.models.len();
                         let display_label = format!("+ {label} ({model_count})");
                         let chip = Self::render_card_button(

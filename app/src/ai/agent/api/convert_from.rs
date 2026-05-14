@@ -619,7 +619,7 @@ impl ConvertAPIToolCallToAIAgentAction for api::message::ToolCall {
             api::message::tool_call::Tool::UseComputer(_)
             | api::message::tool_call::Tool::RequestComputerUse(_) => {
                 // Computer Use 已被移除,模型即便发起这两类调用也不 dispatch。
-                return Err(ToolToAIAgentActionError::UnexpectedTool);
+                Err(ToolToAIAgentActionError::UnexpectedTool)
             }
             api::message::tool_call::Tool::Subagent(subagent) => {
                 use api::message::tool_call::subagent::Metadata;
