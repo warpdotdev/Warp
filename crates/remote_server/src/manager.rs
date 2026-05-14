@@ -698,7 +698,7 @@ impl RemoteServerManager {
                         Err(e) => {
                             if let Some(reason) = UnsupportedReason::from_transport_error(&e) {
                                 log::info!(
-                                    "Remote server platform is unsupported, falling back to legacy SSH: session={session_id:?} error={e}"
+                                    "Remote server platform is unsupported, falling back to legacy SSH: session={session_id:?}"
                                 );
                                 Self::emit_unsupported_preinstall_check(
                                     &spawner,
@@ -734,28 +734,29 @@ impl RemoteServerManager {
                         }
                         _ => None,
                     };
-                    if let Some(PreinstallCheckResult {
-                        status: PreinstallStatus::Unsupported { reason },
-                        ..
-                    }) = &preinstall
-                    {
-                        let reason = reason.clone();
-                        log::info!(
-                            "Remote server preinstall check classified as unsupported, falling back to legacy SSH: session={session_id:?} reason={reason:?}"
-                        );
-                        Self::emit_unsupported_preinstall_check(
-                            &spawner,
-                            session_id,
-                            platform,
-                            preinstall.expect("just matched Some above"),
-                        )
-                        .await;
-                        return;
+                    match preinstall {
+                        Some(
+                            preinstall @ PreinstallCheckResult {
+                                status: PreinstallStatus::Unsupported { .. },
+                                ..
+                            },
+                        ) => {
+                            log::info!(
+                                "Remote server preinstall check classified as unsupported, falling back to legacy SSH: session={session_id:?}"
+                            );
+                            Self::emit_unsupported_preinstall_check(
+                                &spawner, session_id, platform, preinstall,
+                            )
+                            .await;
+                            return;
+                        }
+                        preinstall => {
+                            Self::check_if_binary_is_installed(
+                                &spawner, session_id, transport, platform, preinstall,
+                            )
+                            .await;
+                        }
                     }
-                    Self::check_if_binary_is_installed(
-                        &spawner, session_id, transport, platform, preinstall,
-                    )
-                    .await;
                 })
                 .detach();
         }
