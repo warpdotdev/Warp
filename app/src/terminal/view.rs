@@ -13640,7 +13640,9 @@ impl TerminalView {
                 Some(RichContentMetadata::PendingUserQuery {
                     pending_user_query_block_handle,
                 }) if pending_user_query_block_handle.id() == view_id => {
-                    pending_user_query_block_handle.as_ref(ctx).selected_text(ctx)
+                    pending_user_query_block_handle
+                        .as_ref(ctx)
+                        .selected_text(ctx)
                 }
                 _ => None,
             })
