@@ -1453,11 +1453,7 @@ fn handle_terminal_view_event(
                 // shared-session viewer pane for the child so subsequent pill
                 // clicks land on a populated agent view rather than an empty
                 // cloud-mode shell.
-                group.ensure_shared_session_viewer_child_pane(
-                    *conversation_id,
-                    *session_id,
-                    ctx,
-                );
+                group.ensure_shared_session_viewer_child_pane(*conversation_id, *session_id, ctx);
             }
             Event::OpenChildAgentInNewTab { conversation_id } => {
                 // Pane group can't add tabs; forward to the workspace.

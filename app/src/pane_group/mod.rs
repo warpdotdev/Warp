@@ -3291,7 +3291,7 @@ impl PaneGroup {
             let pane_data = TerminalPane::new(
                 Uuid::new_v4().as_bytes().to_vec(),
                 loading_manager,
-                loading_view,
+                loading_view.clone(),
                 self.model_event_sender.clone(),
                 ctx,
             );
@@ -3306,6 +3306,34 @@ impl PaneGroup {
                 );
                 return;
             }
+
+            // Restore the child conversation into the loading view and
+            // enter agent view so the orchestration pill bar gate in
+            // `maybe_add_parent_navigation_card` (`is_fullscreen()`) passes
+            // and the user can navigate back to the orchestrator (or to
+            // sibling children) while we wait for the child's `session_id`
+            // to arrive. The output area still renders the loading spinner
+            // because the loading view's terminal model has
+            // `ConversationTranscriptViewerStatus::Loading`, which
+            // short-circuits the block list render in `TerminalView::render`
+            // before any restored blocks or the agent view zero state get
+            // a chance to draw. `ensure_shared_session_viewer_child_pane`
+            // will discard and replace this pane once the real shared-
+            // session viewer pane is ready.
+            loading_view.update(ctx, |terminal_view, ctx| {
+                terminal_view.restore_conversation_after_view_creation(
+                    RestoredAIConversation::new(child_conversation),
+                    true,
+                    ctx,
+                );
+                terminal_view.enter_agent_view(
+                    None,
+                    Some(child_id),
+                    AgentViewEntryOrigin::SharedSessionSelection,
+                    ctx,
+                );
+            });
+
             log::info!(
                 "[orch-viewer] created loading placeholder pane for viewer-side child \
                  conv={child_id:?} pane={new_pane_id:?}"
