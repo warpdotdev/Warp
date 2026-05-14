@@ -119,6 +119,7 @@ impl RunAgentsExecutor {
             skills,
             agent_run_configs,
             base_prompt,
+            harness_auth_secret_name,
             ..
         } = request;
 
@@ -130,6 +131,7 @@ impl RunAgentsExecutor {
                 &harness_type,
                 &model_id,
                 &skills,
+                harness_auth_secret_name.as_deref(),
                 cfg,
             ) {
                 Ok(mode) => mode,
@@ -368,11 +370,16 @@ pub fn compose_run_agents_child_prompt(base_prompt: &str, per_agent_prompt: &str
 /// Translates run-wide config into a per-child
 /// [`StartAgentExecutionMode`]. Returns `Err` for rejected
 /// combinations (e.g. OpenCode+Remote).
+///
+/// `run_auth_secret_name` is the managed-secret name the orchestration UI
+/// resolved for the run-wide harness; only Remote mode currently consumes
+/// it (Local children inherit auth from the user's shell environment).
 pub fn run_agents_to_start_agent_mode(
     run_execution_mode: &RunAgentsExecutionMode,
     run_harness_type: &str,
     run_model_id: &str,
     run_skills: &[SkillReference],
+    run_auth_secret_name: Option<&str>,
     cfg: &RunAgentsAgentRunConfig,
 ) -> Result<StartAgentExecutionMode, String> {
     match run_execution_mode {
@@ -412,6 +419,9 @@ pub fn run_agents_to_start_agent_mode(
                 worker_host: worker_host.clone(),
                 harness_type: run_harness_type.to_string(),
                 title: cfg.title.clone(),
+                auth_secret_name: run_auth_secret_name
+                    .map(str::to_string)
+                    .filter(|s| !s.trim().is_empty()),
             })
         }
     }

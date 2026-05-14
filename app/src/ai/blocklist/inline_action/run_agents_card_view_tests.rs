@@ -30,6 +30,7 @@ fn make_request_with_skills(
             title: "Child agent".to_string(),
         }],
         plan_id: String::new(),
+        harness_auth_secret_name: None,
     }
 }
 

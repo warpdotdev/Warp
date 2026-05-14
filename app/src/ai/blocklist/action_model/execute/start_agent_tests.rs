@@ -643,6 +643,7 @@ fn execute_returns_error_when_remote_opencode_harness_is_requested() {
                 worker_host: String::new(),
                 harness_type: "opencode".to_string(),
                 title: String::new(),
+                auth_secret_name: None,
             },
         );
 

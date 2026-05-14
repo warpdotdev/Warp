@@ -83,6 +83,7 @@ pub enum OrchestrationConfigBlockAction {
     HarnessChanged { harness_type: String },
     EnvironmentChanged { environment_id: String },
     WorkerHostChanged { worker_host: String },
+    AuthSecretChanged { auth_secret_name: Option<String> },
 }
 
 impl OrchestrationControlAction for OrchestrationConfigBlockAction {
@@ -100,6 +101,9 @@ impl OrchestrationControlAction for OrchestrationConfigBlockAction {
     }
     fn worker_host_changed(worker_host: String) -> Self {
         Self::WorkerHostChanged { worker_host }
+    }
+    fn auth_secret_changed(auth_secret_name: Option<String>) -> Self {
+        Self::AuthSecretChanged { auth_secret_name }
     }
 }
 
@@ -185,17 +189,22 @@ impl OrchestrationConfigBlockView {
             }
         });
 
-        // Repopulate harness and model pickers when the server-provided
-        // harness list or harness model catalogs change.
+        // Repopulate pickers when the server-provided harness list,
+        // harness model catalogs, or per-harness auth secrets change.
+        // Without an `AuthSecretsLoaded` handler the picker stays on
+        // "Loading…" forever after the lazy fetch completes.
         ctx.subscribe_to_model(
             &HarnessAvailabilityModel::handle(ctx),
-            |me, _, event, ctx| {
-                if let HarnessAvailabilityEvent::Changed = event {
+            |me, _, event, ctx| match event {
+                HarnessAvailabilityEvent::Changed
+                | HarnessAvailabilityEvent::AuthSecretsLoaded
+                | HarnessAvailabilityEvent::AuthSecretCreated { .. } => {
                     if me.pickers_initialized {
                         oc::repopulate_all_pickers(&mut me.edit_state, &me.pickers, ctx);
                     }
                     ctx.notify();
                 }
+                HarnessAvailabilityEvent::AuthSecretCreationFailed { .. } => {}
             },
         );
 
@@ -315,6 +324,22 @@ impl OrchestrationConfigBlockView {
         host_handle.update(ctx, |d, c| d.set_use_overlay_layer(true, c));
         oc::populate_host_picker(&host_handle, initial_host, ctx);
         self.pickers.host_picker = Some(host_handle);
+
+        // Seed the auth secret from persisted per-harness settings before
+        // building the picker so the dropdown shows the last selection.
+        if self.edit_state.auth_secret_name.is_none() {
+            self.edit_state.auth_secret_name =
+                oc::resolve_default_auth_secret_for_harness(&self.edit_state.harness_type, ctx);
+        }
+        let auth_secret_handle = oc::new_standard_picker_dropdown(&colors, ctx);
+        auth_secret_handle.update(ctx, |d, c| d.set_use_overlay_layer(true, c));
+        oc::populate_auth_secret_picker_for_harness(
+            &auth_secret_handle,
+            self.edit_state.auth_secret_name.as_deref(),
+            &self.edit_state.harness_type,
+            ctx,
+        );
+        self.pickers.auth_secret_picker = Some(auth_secret_handle);
 
         self.pickers_initialized = true;
         oc::sync_picker_selections(&self.edit_state, &self.pickers, ctx);
@@ -575,6 +600,18 @@ impl TypedActionView for OrchestrationConfigBlockView {
             OrchestrationConfigBlockAction::WorkerHostChanged { worker_host } => {
                 self.edit_state.set_worker_host(worker_host.clone());
                 self.apply_field_change(ctx);
+                ctx.notify();
+            }
+            OrchestrationConfigBlockAction::AuthSecretChanged { auth_secret_name } => {
+                // No `apply_field_change` here: the secret name is persisted
+                // side-channel via `CloudAgentSettings.last_selected_auth_secret`
+                // and never round-trips through `OrchestrationConfig`.
+                oc::apply_auth_secret_change(
+                    &mut self.edit_state,
+                    &self.pickers,
+                    auth_secret_name.clone(),
+                    ctx,
+                );
                 ctx.notify();
             }
         }

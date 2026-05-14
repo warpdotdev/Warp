@@ -374,6 +374,7 @@ impl StartAgentExecutor {
                 worker_host,
                 harness_type,
                 title,
+                auth_secret_name,
             } => {
                 if !FeatureFlag::OrchestrationV2.is_enabled() {
                     return ActionExecution::Sync(AIAgentActionResultType::StartAgent(
@@ -430,6 +431,7 @@ impl StartAgentExecutor {
                         worker_host,
                         harness_type,
                         title,
+                        auth_secret_name,
                     },
                     Some(parent_run_id),
                 )

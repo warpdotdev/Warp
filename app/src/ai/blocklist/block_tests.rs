@@ -156,6 +156,7 @@ fn remote_arm_propagates_skills_into_skill_references() {
         "oz",
         "auto",
         &skills,
+        None,
         &agent_cfg(),
     )
     .expect("Remote+oz must convert");
@@ -167,6 +168,7 @@ fn remote_arm_propagates_skills_into_skill_references() {
         model_id,
         computer_use_enabled,
         title,
+        auth_secret_name,
     } = mode
     else {
         panic!("expected Remote start-agent mode");
@@ -178,6 +180,7 @@ fn remote_arm_propagates_skills_into_skill_references() {
     assert_eq!(model_id, "auto");
     assert!(computer_use_enabled);
     assert_eq!(title, "Child");
+    assert_eq!(auth_secret_name, None);
 }
 
 #[test]
@@ -191,6 +194,7 @@ fn remote_arm_with_empty_skills_propagates_empty_vec() {
         "claude",
         "auto",
         &[],
+        None,
         &agent_cfg(),
     )
     .expect("Remote+claude must convert");
@@ -214,10 +218,74 @@ fn remote_arm_rejects_opencode() {
         "opencode",
         "auto",
         &[],
+        None,
         &agent_cfg(),
     )
     .expect_err("Remote+opencode must be rejected");
     assert!(err.to_lowercase().contains("opencode"));
+}
+
+#[test]
+fn remote_arm_propagates_claude_auth_secret_into_mode() {
+    let mode = run_agents_to_start_agent_mode(
+        &RunAgentsExecutionMode::Remote {
+            environment_id: "env-1".to_string(),
+            worker_host: "warp".to_string(),
+            computer_use_enabled: false,
+        },
+        "claude",
+        "auto",
+        &[],
+        Some("my-claude-key"),
+        &agent_cfg(),
+    )
+    .expect("Remote+claude must convert");
+    let StartAgentExecutionMode::Remote {
+        auth_secret_name, ..
+    } = mode
+    else {
+        panic!("expected Remote start-agent mode");
+    };
+    assert_eq!(auth_secret_name.as_deref(), Some("my-claude-key"));
+}
+
+#[test]
+fn remote_arm_filters_whitespace_auth_secret_name_to_none() {
+    let mode = run_agents_to_start_agent_mode(
+        &RunAgentsExecutionMode::Remote {
+            environment_id: "env-1".to_string(),
+            worker_host: "warp".to_string(),
+            computer_use_enabled: false,
+        },
+        "codex",
+        "auto",
+        &[],
+        Some("   "),
+        &agent_cfg(),
+    )
+    .expect("Remote+codex must convert");
+    let StartAgentExecutionMode::Remote {
+        auth_secret_name, ..
+    } = mode
+    else {
+        panic!("expected Remote start-agent mode");
+    };
+    assert_eq!(auth_secret_name, None);
+}
+
+#[test]
+fn local_arm_ignores_auth_secret_name() {
+    let mode = run_agents_to_start_agent_mode(
+        &RunAgentsExecutionMode::Local,
+        "claude",
+        "auto",
+        &[],
+        Some("my-claude-key"),
+        &agent_cfg(),
+    )
+    .expect("Local+claude must convert");
+    // Local children don't carry an auth_secret_name field.
+    assert!(matches!(mode, StartAgentExecutionMode::Local { .. }));
 }
 
 #[test]

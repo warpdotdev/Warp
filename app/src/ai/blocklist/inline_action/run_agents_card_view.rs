@@ -97,12 +97,16 @@ pub struct RunAgentsEditState {
 
 impl RunAgentsEditState {
     pub fn from_request(req: &RunAgentsRequest) -> Self {
+        let mut orch = oc::OrchestrationEditState::from_run_agents_fields(
+            &req.model_id,
+            &req.harness_type,
+            &req.execution_mode,
+        );
+        // Carry the request's auth secret onto the edit state so an
+        // explicit value from a previous dispatch survives the round trip.
+        orch.auth_secret_name = req.harness_auth_secret_name.clone();
         Self {
-            orch: oc::OrchestrationEditState::from_run_agents_fields(
-                &req.model_id,
-                &req.harness_type,
-                &req.execution_mode,
-            ),
+            orch,
             agent_run_configs: req.agent_run_configs.clone(),
             base_prompt: req.base_prompt.clone(),
             summary: req.summary.clone(),
@@ -121,6 +125,7 @@ impl RunAgentsEditState {
             execution_mode: self.orch.execution_mode.clone(),
             agent_run_configs: self.agent_run_configs.clone(),
             plan_id: self.plan_id.clone(),
+            harness_auth_secret_name: self.orch.auth_secret_name.clone(),
         }
     }
 }
@@ -140,6 +145,9 @@ impl OrchestrationControlAction for RunAgentsCardViewAction {
     }
     fn worker_host_changed(worker_host: String) -> Self {
         Self::WorkerHostChanged { worker_host }
+    }
+    fn auth_secret_changed(auth_secret_name: Option<String>) -> Self {
+        Self::AuthSecretChanged { auth_secret_name }
     }
 }
 
@@ -162,6 +170,7 @@ pub enum RunAgentsCardViewAction {
     HarnessChanged { harness_type: String },
     EnvironmentChanged { environment_id: String },
     WorkerHostChanged { worker_host: String },
+    AuthSecretChanged { auth_secret_name: Option<String> },
 }
 
 #[derive(Clone, Debug)]
@@ -416,15 +425,20 @@ impl RunAgentsCardView {
             }
         });
 
-        // Repopulate harness and model pickers when the server-provided
-        // harness list or harness model catalogs change.
+        // Repopulate pickers when the server-provided harness list,
+        // harness model catalogs, or per-harness auth secrets change.
+        // Without an `AuthSecretsLoaded` handler the picker stays on
+        // "Loading…" forever after the lazy fetch completes.
         ctx.subscribe_to_model(
             &HarnessAvailabilityModel::handle(ctx),
-            |me, _, event, ctx| {
-                if let HarnessAvailabilityEvent::Changed = event {
+            |me, _, event, ctx| match event {
+                HarnessAvailabilityEvent::Changed
+                | HarnessAvailabilityEvent::AuthSecretsLoaded
+                | HarnessAvailabilityEvent::AuthSecretCreated { .. } => {
                     oc::repopulate_all_pickers(&mut me.state.orch, &me.handles.pickers, ctx);
                     ctx.notify();
                 }
+                HarnessAvailabilityEvent::AuthSecretCreationFailed { .. } => {}
             },
         );
 
@@ -479,6 +493,14 @@ impl RunAgentsCardView {
                 }
             }
         }
+        // The proto-derived state never has an auth secret. Re-seed from
+        // the persisted per-harness setting so a plan-card selection (or
+        // a previous confirmation-card pick) is honored at dispatch time,
+        // even if the user never touches the picker on this card.
+        if new_state.orch.auth_secret_name.is_none() {
+            new_state.orch.auth_secret_name =
+                oc::resolve_default_auth_secret_for_harness(&new_state.orch.harness_type, ctx);
+        }
         if self.state != new_state {
             let harness_or_model_changed = self.state.orch.harness_type
                 != new_state.orch.harness_type
@@ -530,6 +552,18 @@ impl RunAgentsCardView {
                 && !self.state.agent_run_configs.is_empty()
             {
                 self.state.orch.override_from_approved_config(config);
+
+                // `override_from_approved_config` may have changed the
+                // harness; re-resolve the auth secret from settings so
+                // the auto-launched dispatch carries the user's
+                // plan-card pick instead of `None`.
+                if self.state.orch.auth_secret_name.is_none() {
+                    self.state.orch.auth_secret_name =
+                        oc::resolve_default_auth_secret_for_harness(
+                            &self.state.orch.harness_type,
+                            ctx,
+                        );
+                }
 
                 self.auto_launched = true;
                 ctx.notify();
@@ -638,6 +672,28 @@ impl RunAgentsCardView {
             oc::populate_host_picker(&handle, initial_host, ctx);
             Self::subscribe_picker_close(&handle, ctx);
             self.handles.pickers.host_picker = Some(handle);
+        }
+
+        if self.handles.pickers.auth_secret_picker.is_none() {
+            // Seed from the request's secret name first; otherwise fall
+            // back to the persisted per-harness selection so the picker
+            // matches what cloud-mode would show.
+            if self.state.orch.auth_secret_name.is_none() {
+                self.state.orch.auth_secret_name =
+                    oc::resolve_default_auth_secret_for_harness(&self.state.orch.harness_type, ctx);
+            }
+            let initial_secret = self.state.orch.auth_secret_name.clone();
+            let harness_type = self.state.orch.harness_type.clone();
+            let handle = oc::new_standard_picker_dropdown(&colors, ctx);
+            Self::set_upward_menu_position(&handle, ctx);
+            oc::populate_auth_secret_picker_for_harness(
+                &handle,
+                initial_secret.as_deref(),
+                &harness_type,
+                ctx,
+            );
+            Self::subscribe_picker_close(&handle, ctx);
+            self.handles.pickers.auth_secret_picker = Some(handle);
         }
 
         self.sync_picker_selections(ctx);
@@ -863,6 +919,15 @@ impl TypedActionView for RunAgentsCardView {
             }
             RunAgentsCardViewAction::WorkerHostChanged { worker_host } => {
                 self.state.orch.set_worker_host(worker_host.clone());
+                ctx.notify();
+            }
+            RunAgentsCardViewAction::AuthSecretChanged { auth_secret_name } => {
+                oc::apply_auth_secret_change(
+                    &mut self.state.orch,
+                    &self.handles.pickers,
+                    auth_secret_name.clone(),
+                    ctx,
+                );
                 ctx.notify();
             }
         }
