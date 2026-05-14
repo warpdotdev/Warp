@@ -434,12 +434,12 @@ impl AgentAssistedEnvironmentModal {
         if self.available_repos.is_empty() {
             let text = if cfg!(all(feature = "local_fs", not(target_family = "wasm"))) {
                 if self.available_repos_loading {
-                    "Loading locally indexed repos…"
+                    t!("settings.loading_locally_indexed_repos").to_string()
                 } else {
-                    "No locally indexed repos found yet. Index a repo, then try again."
+                    t!("settings.no_locally_indexed_repos").to_string()
                 }
             } else {
-                "Local repo selection is unavailable in this build."
+                t!("settings.local_repo_selection_unavailable").to_string()
             };
 
             col.add_child(
@@ -596,7 +596,9 @@ impl AgentAssistedEnvironmentModal {
             move |paths_result, ctx| {
                 let result = paths_result.and_then(|paths| {
                     paths.into_iter().next().map(PathBuf::from).ok_or_else(|| {
-                        FilePickerError::DialogFailed(t!("settings.no_directory_selected").to_string())
+                        FilePickerError::DialogFailed(
+                            t!("settings.no_directory_selected").to_string(),
+                        )
                     })
                 });
 
