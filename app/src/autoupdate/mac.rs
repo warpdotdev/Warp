@@ -6,7 +6,7 @@ use futures_lite::future;
 use instant::Instant;
 use std::{
     env,
-    ffi::{CString, OsString},
+    ffi::CString,
     fs,
     os::unix::{ffi::OsStrExt as _, fs::MetadataExt, io::AsRawFd as _},
     path::{Path, PathBuf},
@@ -136,38 +136,36 @@ where
 
 pub(super) fn relaunch() -> Result<()> {
     let bundle_path = PathBuf::from(get_bundle_path()?);
-    // Set the -n option to open a new instance of the app even if one is
-    // running so we still launch the new version even if the user was running
-    // multiple instances of Warp.
-    let mut launch_command = OsString::from("/usr/bin/open -n ");
-    launch_command.push(bundle_path.as_os_str());
-    // Pass a flag to the app to let it know it was restarted as part of the
-    // autoupdate process.
-    launch_command.push(format!(" --args {}", warp_cli::finish_update_flag()));
+
+    // 启动新版 Warp 前先等待当前进程退出，避免 Dock 中短暂出现多个图标。
+    // 这里用一个中间 shell 进程轮询当前 PID，进程退出后再启动新版应用。
+    //
+    // 每 200ms 检查一次当前进程是否仍在运行；进程退出后启动新版。
+    //
+    // shell 命令需要谨慎拼接：`pid` 来自当前进程且是数字，bundle 路径和
+    // 环境变量值必须 shell 转义，避免路径中的元字符造成注入。
+    let pid = std::process::id();
+    let quoted_bundle = shell_escape::escape(bundle_path.to_string_lossy());
+
+    let mut open_args = format!(
+        "/usr/bin/open -n {} --args {}",
+        quoted_bundle,
+        warp_cli::finish_update_flag(),
+    );
     // 测试本地通道版本 JSON 时，让新启动的二进制继续引用同一个文件，
     // 以便验证自动更新后的 changelog 展示。
     if let Ok(path) = env::var("WARP_CHANNEL_VERSIONS_PATH") {
-        launch_command.push(format!(" --env WARP_CHANNEL_VERSIONS_PATH={path}"));
+        let quoted_path = shell_escape::escape(path.into());
+        open_args.push_str(&format!(" --env WARP_CHANNEL_VERSIONS_PATH={quoted_path}"));
     }
 
-    // We need to make sure that the current Warp process is no longer running
-    // before we spawn the new one, otherwise we can end up showing multiple
-    // icons in the macOS dock.  To do this, we use an intermediary /bin/sh
-    // process that watches for this process to terminate, and then spawns a
-    // new Warp process.
-    //
-    // Wait until the current process is no longer running, checking every
-    // 200ms.  Once the current process has terminated, launch the new one.
-    let pid = std::process::id();
-    let mut relaunch_command = OsString::from(format!(
-        "while ps -p {pid} >/dev/null 2>&1; do sleep 0.2; done; "
-    ));
-    relaunch_command.push(launch_command);
+    let relaunch_script =
+        format!("while ps -p {pid} >/dev/null 2>&1; do sleep 0.2; done; {open_args}");
 
-    log::info!("Executing relaunch command {relaunch_command:?}");
+    log::info!("Executing relaunch command {relaunch_script:?}");
     blocking::Command::new("sh")
         .arg("-c")
-        .arg(relaunch_command)
+        .arg(relaunch_script)
         .spawn()?;
     Ok(())
 }

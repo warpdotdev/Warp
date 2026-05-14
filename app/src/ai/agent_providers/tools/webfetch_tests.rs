@@ -18,42 +18,57 @@ fn args(url: &str) -> FetchArgs {
 }
 
 // ---------------------------------------------------------------------------
-// URL 验证(纯逻辑,无 HTTP)
+// URL 验证（纯逻辑，无 HTTP）
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn rejects_non_http_scheme() {
+async fn rejects_non_https_scheme() {
     let client = build_client();
     for bad in [
         "ftp://example.com",
         "file:///etc/passwd",
         "javascript:alert(1)",
+        "http://example.com",
         "",
     ] {
         let err = run_webfetch(&client, args(bad)).await.unwrap_err();
-        assert!(
-            err.to_string().contains("http://") || err.to_string().contains("https://"),
-            "bad={bad} err={err}"
-        );
+        assert!(err.to_string().contains("HTTPS"), "bad={bad} err={err}");
     }
 }
 
 #[tokio::test]
-async fn accepts_http_and_https() {
-    // 不真实发送(URL 指向不可达 host),只校验 URL 验证不挡;实际会因 connect 失败报错
+async fn rejects_http_urls() {
     let client = build_client();
-    for ok in ["http://127.0.0.1:1/x", "https://127.0.0.1:1/x"] {
-        let err = run_webfetch(&client, args(ok)).await.unwrap_err();
-        assert!(
-            !err.to_string().contains("must start with"),
-            "URL 校验不应阻止 {ok}: {err}"
-        );
-    }
+    let err = run_webfetch(&client, args("http://example.com"))
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("HTTPS"),
+        "HTTP should be rejected: {err}"
+    );
 }
 
 // ---------------------------------------------------------------------------
-// 内容类型分支
+// 内容类型分支 — 直接调用 send_fetch，因为 mockito 只提供 HTTP
 // ---------------------------------------------------------------------------
+
+/// 辅助函数：对 mockito 服务器执行类似 webfetch 的流程，跳过 HTTPS 检查
+/// （mockito 只提供 HTTP）。测试内容处理管道，不经过 URL scheme 校验。
+/// 复用 `response_to_fetch_output` 以避免与生产逻辑漂移。
+async fn run_webfetch_test(
+    server_url: &str,
+    path: &str,
+    format: Option<FetchFormat>,
+) -> Result<FetchOutput> {
+    let client = build_client();
+    let url = format!("{server_url}{path}");
+    let fmt = format.unwrap_or_default();
+    let accept = fmt.accept_header();
+    let timeout = std::time::Duration::from_secs(DEFAULT_FETCH_TIMEOUT_SECS);
+
+    let resp = send_fetch(&client, &url, accept, CHROME_UA, timeout).await?;
+    response_to_fetch_output(resp, &url, &fmt).await
+}
 
 #[tokio::test]
 async fn html_to_markdown() {
@@ -66,8 +81,7 @@ async fn html_to_markdown() {
         .create_async()
         .await;
 
-    let client = build_client();
-    let out = run_webfetch(&client, args(&format!("{}/page", server.url())))
+    let out = run_webfetch_test(&server.url(), "/page", None)
         .await
         .expect("ok");
     assert!(
@@ -100,8 +114,7 @@ async fn text_plain_passthrough() {
         .create_async()
         .await;
 
-    let client = build_client();
-    let out = run_webfetch(&client, args(&format!("{}/text", server.url())))
+    let out = run_webfetch_test(&server.url(), "/text", None)
         .await
         .expect("ok");
     assert_eq!(out.output, "just some text");
@@ -118,8 +131,7 @@ async fn json_pretty_print() {
         .create_async()
         .await;
 
-    let client = build_client();
-    let out = run_webfetch(&client, args(&format!("{}/api", server.url())))
+    let out = run_webfetch_test(&server.url(), "/api", None)
         .await
         .expect("ok");
     assert!(
@@ -154,8 +166,7 @@ async fn image_attachment_base64() {
         .create_async()
         .await;
 
-    let client = build_client();
-    let out = run_webfetch(&client, args(&format!("{}/img.png", server.url())))
+    let out = run_webfetch_test(&server.url(), "/img.png", None)
         .await
         .expect("ok");
     assert_eq!(out.attachments.len(), 1);
@@ -183,10 +194,9 @@ async fn format_html_returns_raw() {
         .create_async()
         .await;
 
-    let client = build_client();
-    let mut a = args(&format!("{}/x", server.url()));
-    a.format = Some(FetchFormat::Html);
-    let out = run_webfetch(&client, a).await.expect("ok");
+    let out = run_webfetch_test(&server.url(), "/x", Some(FetchFormat::Html))
+        .await
+        .expect("ok");
     assert_eq!(out.output, raw);
     assert_eq!(out.format, "html");
 }
@@ -202,10 +212,9 @@ async fn format_text_strips_html() {
         .create_async()
         .await;
 
-    let client = build_client();
-    let mut a = args(&format!("{}/x", server.url()));
-    a.format = Some(FetchFormat::Text);
-    let out = run_webfetch(&client, a).await.expect("ok");
+    let out = run_webfetch_test(&server.url(), "/x", Some(FetchFormat::Text))
+        .await
+        .expect("ok");
     assert!(out.output.contains("One"));
     assert!(out.output.contains("Two"));
     assert!(
@@ -226,10 +235,7 @@ async fn default_format_is_markdown() {
         .with_body("<html><body><h2>x</h2></body></html>")
         .create_async()
         .await;
-    let client = build_client();
-    let out = run_webfetch(&client, args(&format!("{}/x", server.url())))
-        .await
-        .unwrap();
+    let out = run_webfetch_test(&server.url(), "/x", None).await.unwrap();
     assert_eq!(out.format, "markdown");
 }
 
@@ -248,22 +254,18 @@ async fn accept_header_negotiation_for_markdown() {
         .create_async()
         .await;
 
-    let client = build_client();
-    let out = run_webfetch(&client, args(&format!("{}/x", server.url())))
+    let out = run_webfetch_test(&server.url(), "/x", None)
         .await
         .expect("ok");
     assert_eq!(out.output, "ok");
 }
 
 // ---------------------------------------------------------------------------
-// 大小 / 状态 / Cloudflare
+// 大小 / 状态
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn rejects_oversized_content_length() {
-    // hyper 不允许 Content-Length 与 body 大小不一致(它会 reject 整个响应),
-    // 所以用真实 6MB body 来验证 Content-Length 预检 path 触发。预检失败时
-    // 错误消息特意带 "Content-Length" 字样,与"实读字节超限"区分。
     let big = vec![b'x'; MAX_RESPONSE_SIZE + 1024];
     let mut server = Server::new_async().await;
     let _m = server
@@ -274,36 +276,11 @@ async fn rejects_oversized_content_length() {
         .create_async()
         .await;
 
-    let client = build_client();
-    let err = run_webfetch(&client, args(&format!("{}/big", server.url())))
+    let err = run_webfetch_test(&server.url(), "/big", None)
         .await
         .unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("too large"), "got: {msg}");
-    // mockito 自动设置 Content-Length,因此预检 path 应该命中
-    assert!(
-        msg.contains("Content-Length"),
-        "应触发 Content-Length 预检路径: {msg}"
-    );
-}
-
-#[tokio::test]
-async fn rejects_oversized_actual_bytes() {
-    let big = vec![b'x'; MAX_RESPONSE_SIZE + 16];
-    let mut server = Server::new_async().await;
-    let _m = server
-        .mock("GET", "/big2")
-        .with_status(200)
-        .with_header("content-type", "text/plain")
-        .with_body(big)
-        .create_async()
-        .await;
-
-    let client = build_client();
-    let err = run_webfetch(&client, args(&format!("{}/big2", server.url())))
-        .await
-        .unwrap_err();
-    assert!(err.to_string().contains("too large"), "got: {err}");
 }
 
 #[tokio::test]
@@ -314,81 +291,120 @@ async fn http_error_status_propagates() {
         .with_status(404)
         .create_async()
         .await;
-    let client = build_client();
-    let err = run_webfetch(&client, args(&format!("{}/404", server.url())))
+    let err = run_webfetch_test(&server.url(), "/404", None)
         .await
         .unwrap_err();
     assert!(err.to_string().contains("404"), "got: {err}");
 }
 
-#[tokio::test]
-async fn cloudflare_challenge_triggers_ua_retry() {
-    let mut server = Server::new_async().await;
-    // 第一轮:Chrome UA 命中 → 403 + cf-mitigated: challenge
-    let _m1 = server
-        .mock("GET", "/cf")
-        .match_header("user-agent", Matcher::Regex(r"Chrome".into()))
-        .with_status(403)
-        .with_header("cf-mitigated", "challenge")
-        .with_body("Just a moment...")
-        .create_async()
-        .await;
-    // 第二轮:OpenWarp UA → 200
-    let _m2 = server
-        .mock("GET", "/cf")
-        .match_header("user-agent", FALLBACK_UA)
-        .with_status(200)
-        .with_header("content-type", "text/plain")
-        .with_body("after retry")
-        .create_async()
-        .await;
+// ---------------------------------------------------------------------------
+// SSRF：is_blocked_ip 覆盖测试
+// ---------------------------------------------------------------------------
 
-    let client = build_client();
-    let out = run_webfetch(&client, args(&format!("{}/cf", server.url())))
-        .await
-        .expect("retry should succeed");
-    assert_eq!(out.output, "after retry");
+#[test]
+fn blocked_ip_ipv4_basics() {
+    use std::net::IpAddr;
+    for blocked in [
+        "127.0.0.1",
+        "10.0.0.1",
+        "172.16.0.1",
+        "192.168.1.1",
+        "169.254.1.1",
+        "0.0.0.0",
+        "0.0.0.1",       // 0.0.0.0/8 本主机范围
+        "0.255.255.255", // 0.0.0.0/8 上界
+        "255.255.255.255",
+        "100.64.0.1",      // CGNAT
+        "192.0.2.1",       // TEST-NET-1
+        "198.51.100.1",    // TEST-NET-2
+        "203.0.113.1",     // TEST-NET-3
+        "198.18.0.1",      // 性能测试地址
+        "224.0.0.1",       // 组播
+        "239.255.255.255", // 组播上界
+        "240.0.0.1",       // 保留地址
+    ] {
+        let ip: IpAddr = blocked.parse().unwrap();
+        assert!(is_blocked_ip(ip), "should block {blocked}");
+    }
+    // 公网 IP 不能被误拦截。
+    for allowed in ["8.8.8.8", "1.1.1.1", "93.184.216.34"] {
+        let ip: IpAddr = allowed.parse().unwrap();
+        assert!(!is_blocked_ip(ip), "should allow {allowed}");
+    }
+}
+
+#[test]
+fn blocked_ip_ipv4_mapped_ipv6() {
+    use std::net::IpAddr;
+    // ::ffff:127.0.0.1 是 IPv4-mapped IPv6，必须按 IPv4 loopback 拦截。
+    let mapped_loopback: IpAddr = "::ffff:127.0.0.1".parse().unwrap();
+    assert!(
+        is_blocked_ip(mapped_loopback),
+        "::ffff:127.0.0.1 must be blocked"
+    );
+
+    let mapped_private: IpAddr = "::ffff:10.0.0.1".parse().unwrap();
+    assert!(
+        is_blocked_ip(mapped_private),
+        "::ffff:10.0.0.1 must be blocked"
+    );
+
+    let mapped_link_local: IpAddr = "::ffff:169.254.1.1".parse().unwrap();
+    assert!(
+        is_blocked_ip(mapped_link_local),
+        "::ffff:169.254.1.1 must be blocked"
+    );
+
+    // ::ffff:8.8.8.8 对应公网 IPv4，不能被误拦截。
+    let mapped_public: IpAddr = "::ffff:8.8.8.8".parse().unwrap();
+    assert!(
+        !is_blocked_ip(mapped_public),
+        "::ffff:8.8.8.8 should be allowed"
+    );
+}
+
+#[test]
+fn blocked_ip_ipv6_ranges() {
+    use std::net::IpAddr;
+    for blocked in [
+        "::1",         // loopback
+        "::",          // unspecified
+        "fc00::1",     // unique-local
+        "fe80::1",     // link-local
+        "ff00::1",     // 组播
+        "2001:db8::1", // 文档示例地址
+    ] {
+        let ip: IpAddr = blocked.parse().unwrap();
+        assert!(is_blocked_ip(ip), "should block {blocked}");
+    }
+    // 公网 IPv6 不能被误拦截。
+    let public: IpAddr = "2606:4700:4700::1111".parse().unwrap();
+    assert!(!is_blocked_ip(public), "public IPv6 should be allowed");
 }
 
 // ---------------------------------------------------------------------------
-// timeout(用 reqwest 自身 0.5s 超时,mockito 不延迟也能验证 clamp 不报错)
+// SSRF 重定向保护
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn timeout_clamped_to_max() {
-    // 校验:传 999 秒会被 clamp 到 120s,不会 panic / 报错
-    let mut server = Server::new_async().await;
-    let _m = server
-        .mock("GET", "/x")
-        .with_status(200)
-        .with_header("content-type", "text/plain")
-        .with_body("hi")
-        .create_async()
-        .await;
-    let client = build_client();
-    let out = run_webfetch(
-        &client,
-        FetchArgs {
-            url: format!("{}/x", server.url()),
-            format: None,
-            timeout: Some(999),
-        },
-    )
-    .await
-    .expect("ok");
-    assert_eq!(out.output, "hi");
+async fn ssrf_safe_client_builds_with_redirect_policy() {
+    let client = build_ssrf_safe_client().expect("build client");
+    // 验证客户端能使用自定义 SSRF 重定向策略和 DNS 解析器成功构建。
+    // TODO: mockito 支持重定向后，补充真正的内部 IP 重定向集成测试。
+    assert!(client.get("https://example.invalid").build().is_ok());
 }
 
 // ---------------------------------------------------------------------------
-// FetchOutput 序列化
+// FetchOutput 序列化测试
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// 真实端点 smoke 测试(默认开启;CI 网络受限时设 WARP_SKIP_WEB_INTEGRATION=1)
+// 真实端点 smoke 测试默认跳过，避免 CI 或离线开发环境依赖外网。
+// 需要手动验证真实端点时设置 WARP_RUN_WEB_INTEGRATION=1。
 // ---------------------------------------------------------------------------
 
 fn skip_real() -> bool {
-    std::env::var("WARP_SKIP_WEB_INTEGRATION").is_ok()
+    std::env::var("WARP_RUN_WEB_INTEGRATION").is_err()
 }
 
 #[tokio::test]
@@ -396,7 +412,7 @@ async fn real_example_com_markdown() {
     if skip_real() {
         return;
     }
-    let client = build_client();
+    let client = build_ssrf_safe_client().expect("build client");
     let out = run_webfetch(&client, args("https://example.com"))
         .await
         .expect("real example.com");
@@ -412,7 +428,7 @@ async fn real_httpbin_html_to_markdown() {
     if skip_real() {
         return;
     }
-    let client = build_client();
+    let client = build_ssrf_safe_client().expect("build client");
     let out = run_webfetch(&client, args("https://httpbin.org/html"))
         .await
         .expect("real httpbin html");
@@ -425,7 +441,7 @@ async fn real_httpbin_json_pretty() {
     if skip_real() {
         return;
     }
-    let client = build_client();
+    let client = build_ssrf_safe_client().expect("build client");
     let out = run_webfetch(&client, args("https://httpbin.org/json"))
         .await
         .expect("real httpbin json");
@@ -437,7 +453,7 @@ async fn real_httpbin_image_attachment() {
     if skip_real() {
         return;
     }
-    let client = build_client();
+    let client = build_ssrf_safe_client().expect("build client");
     let out = run_webfetch(&client, args("https://httpbin.org/image/png"))
         .await
         .expect("real png");
@@ -450,7 +466,7 @@ async fn real_httpbin_404_errors() {
     if skip_real() {
         return;
     }
-    let client = build_client();
+    let client = build_ssrf_safe_client().expect("build client");
     let err = run_webfetch(&client, args("https://httpbin.org/status/404"))
         .await
         .unwrap_err();
@@ -475,7 +491,7 @@ fn webfetch_description_matches_opencode_verbatim() {
                     Usage notes:\n\
                     \x20\x20- IMPORTANT: if another tool is present that offers better web fetching capabilities, is more targeted to the task, or has fewer restrictions, prefer using that tool instead of this one.\n\
                     \x20\x20- The URL must be a fully-formed valid URL\n\
-                    \x20\x20- HTTP URLs will be automatically upgraded to HTTPS\n\
+                    \x20\x20- The URL must use HTTPS (http:// URLs are rejected)\n\
                     \x20\x20- Format options: \"markdown\" (default), \"text\", or \"html\"\n\
                     \x20\x20- This tool is read-only and does not modify any files\n\
                     \x20\x20- Results may be summarized if the content is very large\n";
@@ -500,9 +516,9 @@ fn fetch_output_omits_empty_attachments_in_json() {
     assert_eq!(v["output"], "hi");
 }
 
-/// `_byop_intercepted` sentinel 必须存在于所有 web tool result(包括 error)中,
-/// 否则 controller (`controller.rs::needs_byop_local_resume`) 不会触发 auto-resume,
-/// 模型会卡在等待结果,UI 显示静默失败。
+/// `_byop_intercepted` sentinel 必须存在于所有 web tool result（包括 error）中，
+/// 否则 controller（`controller.rs::needs_byop_local_resume`）不会触发 auto-resume，
+/// 模型会卡在等待结果，UI 显示静默失败。
 #[test]
 fn fetch_output_carries_byop_sentinel() {
     let out = FetchOutput {

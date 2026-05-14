@@ -66,107 +66,110 @@ impl EditorMetadata {
         })
     }
 
-    /// Common implementation of building a command
+    /// 构造外部编辑器命令的通用实现。
     ///
-    /// - Iterates over all characters in the Exec field, replacing field codes,
-    ///   to generate a new command string
-    /// - Builds a new command that executes `sh -c <command_string>`
+    /// - 先把 Exec 字段拆成 shell words，再在每个 token 内展开 field code，
+    ///   得到正确的 argv 向量
+    /// - 直接设置 program 和 args，避免经过 shell
     ///
-    /// Field code replacement is handled by the `field_code_processor` callback.
-    /// See [`Self::build_default_command`] and [`Self::process_field_code`]
-    /// for examples of how these work.
-    ///
-    /// ```ignore
-    /// use std::path::PathBuf;
-    /// use warp::util::file::external_editor::linux::EditorMetadata;
-    ///
-    /// let desktop_file_path = PathBuf::from("/var/lib/snapd/desktop/applications/webstorm_webstorm.desktop");
-    /// let metadata = EditorMetadata::try_new(desktop_file_path)?;
-    ///
-    /// let my_file_path = PathBuf::from("~/foo.rs");
-    ///
-    /// // This is identicial to metadata.build_default_command(my_file_path);
-    /// let command = metadata.build_command(|me, acc, c| me.process_field_code(acc, c, my_file_path))?;
-    ///
-    /// // If I want to do some custom stuff, I can use a modified field code processor
-    /// let command = metadata.build_command(|me, acc, c| {
-    ///     match c {
-    ///         'c' => acc += "foobar",
-    ///         c =>  me.process_field_code(acc, c, my_file_path),
-    ///     }
-    /// });
-    /// ```
+    /// field code 替换由 `field_code_processor` 回调处理。回调收到
+    /// `&mut Vec<String>`：修改最后一个元素表示追加到当前参数，push 新
+    /// `String` 表示新增参数。
     fn build_command<T>(&self, field_code_processor: T) -> Result<Command, DesktopExecError>
     where
-        T: Fn(&Self, &mut String, char),
+        T: Fn(&Self, &mut Vec<String>, char),
     {
         let raw_exec = &self.exec;
 
-        let mut iter = raw_exec.chars();
-        let mut processed_exec = String::new();
-        while let Some(ch) = iter.next() {
-            if ch != '%' {
-                processed_exec.push(ch);
-                continue;
+        // 先按 shell words 拆分 Exec，再在每个 token 内展开 field code。
+        // 这样能保留替换值中的空格(例如文件路径)，同时尊重 .desktop Exec
+        // 原始内容中的引用规则。
+        let tokens =
+            shell_words::split(raw_exec).map_err(|_| DesktopExecError::MalformedFieldCode)?;
+
+        let mut argv: Vec<String> = Vec::with_capacity(tokens.len());
+        for token in &tokens {
+            let mut iter = token.chars();
+            let mut parts: Vec<String> = vec![String::new()];
+            while let Some(ch) = iter.next() {
+                if ch != '%' {
+                    parts.last_mut().unwrap().push(ch);
+                    continue;
+                }
+                let Some(next_char) = iter.next() else {
+                    return Err(DesktopExecError::MalformedFieldCode);
+                };
+                // field code 处理器可以追加额外 argv 项，例如 %i 会把
+                // "--icon" 和 icon 值作为两个独立参数写入。
+                field_code_processor(self, &mut parts, next_char);
             }
-            let Some(next_char) = iter.next() else {
-                return Err(DesktopExecError::MalformedFieldCode);
-            };
-            field_code_processor(self, &mut processed_exec, next_char);
+            for p in parts {
+                if !p.is_empty() {
+                    argv.push(p);
+                }
+            }
         }
 
-        let mut command = Command::new("sh");
-        command.args(["-c", &processed_exec]);
+        let (program, args) = argv
+            .split_first()
+            .ok_or(DesktopExecError::MalformedFieldCode)?;
+        let mut command = Command::new(program);
+        command.args(args);
 
         Ok(command)
     }
 
-    /// The default handler for replacing field codes with values
+    /// field code 默认替换逻辑。
     ///
-    /// Takes in a `field_code`, and handles appending replacement values
-    /// to the passed in `processed_exec` string. Follows the standard
-    /// here: https://specifications.freedesktop.org/desktop-entry-spec/latest/ar01s07.html.
-    /// Any fields like %f, %F, %u, and %U that rely on a file path use the `file_path`
-    /// parameter.
+    /// 根据 FreeDesktop 规范处理 `field_code`，把替换值追加到当前 argv 参数
+    /// 或新增 argv 参数：
+    /// https://specifications.freedesktop.org/desktop-entry-spec/latest/ar01s07.html
+    /// 依赖文件路径的 %f、%F、%u、%U 使用 `file_path` 参数。
     ///
-    /// Any errors or missing information (ex: %i with no Icon field, %U wiht a non-existent path)
-    /// will fail silently, and result in nothing being appended to `processed_exec`
-    fn process_field_code(&self, processed_exec: &mut String, field_code: char, file_path: &Path) {
+    /// 信息缺失或处理失败时保持原有行为：静默跳过对应替换值。
+    fn process_field_code(&self, parts: &mut Vec<String>, field_code: char, file_path: &Path) {
         match field_code {
-            // file path
-            'f' | 'F' => *processed_exec += file_path.to_str().unwrap_or_default(),
+            // 文件路径
+            'f' | 'F' => {
+                parts
+                    .last_mut()
+                    .unwrap()
+                    .push_str(file_path.to_str().unwrap_or_default());
+            }
             // URI
             'u' | 'U' => {
-                // TODO(daprahamian): B/c we are using canonicalize, this will fail
-                // if the file we are checking here does not actually exist. Also
-                // it requires an fs check, which is not fun. In the future, it would
-                // be nice to replace this with the pending std::path::absolute in
-                // the future
+                // TODO(daprahamian): 这里使用 canonicalize，因此文件不存在时会失败，
+                // 也会额外触发一次文件系统检查。未来可以改用 std::path::absolute。
                 //
-                // See https://github.com/rust-lang/rust/issues/92750
+                // 参考 https://github.com/rust-lang/rust/issues/92750
                 if let Ok(absolute) = file_path.canonicalize() {
                     if let Ok(file_url) = url::Url::from_file_path(absolute) {
-                        *processed_exec += file_url.as_str();
+                        parts.last_mut().unwrap().push_str(file_url.as_str());
                     }
                 }
             }
-            // Localized Name
+            // 本地化名称
             'c' => {
                 if let Some(localized_name) = self.localized_name.as_ref() {
-                    *processed_exec += localized_name;
+                    parts.last_mut().unwrap().push_str(localized_name);
                 }
             }
-            // Icon argument
+            // icon 参数需要拆成独立 argv 项
             'i' => {
                 if let Some(icon) = &self.icon {
-                    *processed_exec += "--icon ";
-                    *processed_exec += icon;
+                    parts.last_mut().unwrap().push_str("--icon");
+                    parts.push(icon.clone());
                 }
             }
-            // Path to the display file
-            'k' => *processed_exec += self.desktop_file_path.to_str().unwrap_or_default(),
-            // Just add the character
-            other => processed_exec.push(other),
+            // desktop 文件路径
+            'k' => {
+                parts
+                    .last_mut()
+                    .unwrap()
+                    .push_str(self.desktop_file_path.to_str().unwrap_or_default());
+            }
+            // 未知 field code 按规范保留该字符
+            other => parts.last_mut().unwrap().push(other),
         };
     }
 
@@ -181,7 +184,7 @@ impl EditorMetadata {
     ///
     /// See https://specifications.freedesktop.org/desktop-entry-spec/latest/ar01s07.html
     fn build_default_command(&self, file_path: &Path) -> Result<Command, DesktopExecError> {
-        self.build_command(|me, acc, c| me.process_field_code(acc, c, file_path))
+        self.build_command(|me, parts, c| me.process_field_code(parts, c, file_path))
     }
 
     /// A variant of [`Self::build_default_command`] for jetbrains IDEs
@@ -197,19 +200,21 @@ impl EditorMetadata {
         file_path: &Path,
         line_column_number: Option<LineAndColumnArg>,
     ) -> Result<Command, DesktopExecError> {
-        self.build_command(|me, acc, field_code| match field_code {
+        self.build_command(|me, parts, field_code| match field_code {
             'f' | 'F' | 'u' | 'U' => {
                 if let Some(file_path) = file_path.to_str() {
                     if let Some(line_column_number) = line_column_number {
-                        *acc += &format!("--line {} ", line_column_number.line_num);
+                        parts.last_mut().unwrap().push_str("--line");
+                        parts.push(line_column_number.line_num.to_string());
                         if let Some(column_num) = line_column_number.column_num {
-                            *acc += &format!("--column {column_num} ");
+                            parts.push("--column".to_string());
+                            parts.push(column_num.to_string());
                         }
                     }
-                    *acc += file_path;
+                    parts.push(file_path.to_string());
                 }
             }
-            other => me.process_field_code(acc, other, file_path),
+            other => me.process_field_code(parts, other, file_path),
         })
     }
     /// A variant of [`Self::build_default_command`] for sublime
@@ -224,19 +229,21 @@ impl EditorMetadata {
         file_path: &Path,
         line_column_number: Option<LineAndColumnArg>,
     ) -> Result<Command, DesktopExecError> {
-        self.build_command(|me, acc, field_code| match field_code {
+        self.build_command(|me, parts, field_code| match field_code {
             'f' | 'F' | 'u' | 'U' => {
                 if let Some(file_path) = file_path.to_str() {
-                    *acc += file_path;
+                    let mut arg = file_path.to_string();
                     if let Some(line_column_number) = line_column_number {
-                        *acc += &format!(":{}", line_column_number.line_num);
+                        let line_num = line_column_number.line_num;
+                        arg += &format!(":{line_num}");
                         if let Some(column_num) = line_column_number.column_num {
-                            *acc += &format!(":{column_num}");
+                            arg += &format!(":{column_num}");
                         }
                     }
+                    parts.last_mut().unwrap().push_str(&arg);
                 }
             }
-            other => me.process_field_code(acc, other, file_path),
+            other => me.process_field_code(parts, other, file_path),
         })
     }
 }

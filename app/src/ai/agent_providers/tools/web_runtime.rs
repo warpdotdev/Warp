@@ -20,9 +20,13 @@
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, CONTENT_LENGTH, CONTENT_TYPE, USER_AGENT};
+use reqwest::redirect::Policy;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::Arc;
 use std::time::Duration;
 
 use super::exa;
@@ -102,11 +106,157 @@ pub struct FetchOutput {
     pub attachments: Vec<FetchAttachment>,
 }
 
+/// 如果 IP 属于 private、loopback、link-local 等 webfetch 不应访问的范围，
+/// 返回 `true`。
+fn is_blocked_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => is_blocked_ipv4(v4),
+        IpAddr::V6(v6) => {
+            // IPv4-mapped IPv6(::ffff:x.x.x.x) 按 IPv4 规则处理。
+            if let Some(mapped) = v6.to_ipv4_mapped() {
+                return is_blocked_ipv4(mapped);
+            }
+            v6.is_loopback()               // ::1
+                || v6.is_unspecified()      // ::
+                || v6.is_multicast()        // ff00::/8
+                || is_ipv6_unique_local(v6) // fc00::/7
+                || is_ipv6_link_local(v6)   // fe80::/10
+                || is_ipv6_documentation(v6) // 文档示例地址 2001:db8::/32
+        }
+    }
+}
+
+fn is_blocked_ipv4(v4: Ipv4Addr) -> bool {
+    let o = v4.octets();
+    v4.is_loopback()          // 127.0.0.0/8
+        || v4.is_private()    // 10/8, 172.16/12, 192.168/16
+        || v4.is_link_local() // 169.254.0.0/16
+        || v4.is_multicast()  // 224.0.0.0/4
+        || o[0] == 0          // 0.0.0.0/8，“本主机”范围
+        || v4.is_broadcast()  // 255.255.255.255
+        || (Ipv4Addr::new(100, 64, 0, 0) <= v4 && v4 <= Ipv4Addr::new(100, 127, 255, 255))
+            // CGNAT 100.64/10
+        || (o[0] == 192 && o[1] == 0 && o[2] == 2)   // TEST-NET-1 192.0.2.0/24
+        || (o[0] == 198 && o[1] == 51 && o[2] == 100) // TEST-NET-2 198.51.100.0/24
+        || (o[0] == 203 && o[1] == 0 && o[2] == 113)  // TEST-NET-3 203.0.113.0/24
+        || (o[0] == 198 && (o[1] & 0xfe) == 18)       // 性能测试地址 198.18.0.0/15
+        || o[0] >= 240 // 保留地址 240.0.0.0/4
+}
+
+fn is_ipv6_unique_local(v6: Ipv6Addr) -> bool {
+    (v6.segments()[0] & 0xfe00) == 0xfc00
+}
+
+fn is_ipv6_link_local(v6: Ipv6Addr) -> bool {
+    (v6.segments()[0] & 0xffc0) == 0xfe80
+}
+
+fn is_ipv6_documentation(v6: Ipv6Addr) -> bool {
+    v6.segments()[0] == 0x2001 && v6.segments()[1] == 0x0db8
+}
+
+/// 校验 URL 的 SSRF 安全性：解析 DNS 后拒绝 private/internal IP 范围。
+fn validate_url_not_internal(url_str: &str) -> Result<()> {
+    let parsed = url::Url::parse(url_str).context("invalid URL")?;
+    let host = parsed.host_str().context("URL has no host")?;
+
+    // 如果 host 已经是 IP 字面量，直接检查。
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        if is_blocked_ip(ip) {
+            bail!("URL targets a blocked IP address range");
+        }
+    }
+
+    // 额外解析 hostname，尽早发现指向内部 IP 的 DNS 结果。这里使用端口 0，
+    // 因为只需要地址本身。
+    if let Ok(addrs) = std::net::ToSocketAddrs::to_socket_addrs(&(host, 0)) {
+        for addr in addrs {
+            if is_blocked_ip(addr.ip()) {
+                bail!("URL resolves to a blocked IP address range");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// DNS resolver 在解析阶段过滤被禁止的内部 IP，避免预校验和连接之间的 TOCTOU 间隙。
+///
+/// 仅非 WASM 目标可用：reqwest 的 `dns` 模块和 `ClientBuilder::dns_resolver`
+/// 不暴露给 WebAssembly。
+#[cfg(not(target_arch = "wasm32"))]
+struct SsrfSafeResolver;
+
+#[cfg(not(target_arch = "wasm32"))]
+impl reqwest::dns::Resolve for SsrfSafeResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let host = name.as_str().to_owned();
+        Box::pin(async move {
+            use std::net::ToSocketAddrs;
+            let lookup_host = host.clone();
+            let addrs: Vec<std::net::SocketAddr> = tokio::task::spawn_blocking(
+                move || -> std::io::Result<Vec<std::net::SocketAddr>> {
+                    Ok((lookup_host.as_str(), 0)
+                        .to_socket_addrs()?
+                        .filter(|addr| !is_blocked_ip(addr.ip()))
+                        .collect())
+                },
+            )
+            .await
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?;
+            if addrs.is_empty() {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    format!("DNS for '{host}' resolved to blocked IPs (SSRF protection)"),
+                ))
+                    as Box<dyn std::error::Error + Send + Sync>);
+            }
+            Ok(Box::new(addrs.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
+}
+
+/// 最大重定向次数，与 reqwest 默认值保持一致。
+const MAX_REDIRECT_HOPS: usize = 10;
+
+/// 构建带 SSRF 防护的 reqwest client：
+/// - 自定义 DNS resolver 阻止连接到内部 IP
+/// - 自定义重定向策略强制 HTTPS、校验每一跳并限制总跳数
+///   (`Policy::custom` 不会继承 reqwest 默认跳数限制)
+pub fn build_ssrf_safe_client() -> Result<reqwest::Client> {
+    let policy = Policy::custom(|attempt| {
+        // `Policy::custom` 不继承 reqwest 默认的循环/最大跳数保护，需要显式限制。
+        if attempt.previous().len() >= MAX_REDIRECT_HOPS {
+            return attempt.stop();
+        }
+        let url = attempt.url();
+        // 重定向目标必须保持 HTTPS，避免 HTTPS → HTTP 降级。
+        if url.scheme() != "https" {
+            return attempt.stop();
+        }
+        // 在 DNS resolver 之外再做一层校验，立即拦截 IP 字面量形式的内部地址。
+        if validate_url_not_internal(url.as_str()).is_err() {
+            attempt.stop()
+        } else {
+            attempt.follow()
+        }
+    });
+    let builder = reqwest::Client::builder()
+        .redirect(policy)
+        .pool_idle_timeout(Duration::from_secs(30));
+    // 仅非 WASM 目标接入 SSRF-safe DNS resolver；WebAssembly 不暴露 reqwest DNS 模块。
+    #[cfg(not(target_arch = "wasm32"))]
+    let builder = builder.dns_resolver(Arc::new(SsrfSafeResolver));
+    builder.build().context("build SSRF-safe reqwest client")
+}
+
 /// 入口:执行一次 webfetch,返回结构化 output(由 caller `serde_json::to_value` 喂给上游 LLM)。
 pub async fn run_webfetch(client: &reqwest::Client, args: FetchArgs) -> Result<FetchOutput> {
-    if !args.url.starts_with("http://") && !args.url.starts_with("https://") {
-        bail!("URL must start with http:// or https://");
+    if !args.url.starts_with("https://") {
+        bail!("URL must use HTTPS");
     }
+    validate_url_not_internal(&args.url)?;
     let format = args.format.clone().unwrap_or_default();
     let timeout_secs = args
         .timeout
@@ -115,7 +265,7 @@ pub async fn run_webfetch(client: &reqwest::Client, args: FetchArgs) -> Result<F
     let timeout = Duration::from_secs(timeout_secs);
 
     let accept = format.accept_header();
-    let resp = match send_fetch(client, &args.url, accept, CHROME_UA, timeout).await {
+    let resp = match send_fetch(&client, &args.url, accept, CHROME_UA, timeout).await {
         Ok(r) => r,
         Err(e) => return Err(e),
     };
@@ -129,14 +279,26 @@ pub async fn run_webfetch(client: &reqwest::Client, args: FetchArgs) -> Result<F
             == Some("challenge")
     {
         log::info!("[webfetch] cloudflare challenge detected → retry with fallback UA");
-        send_fetch(client, &args.url, accept, FALLBACK_UA, timeout).await?
+        send_fetch(&client, &args.url, accept, FALLBACK_UA, timeout).await?
     } else {
         resp
     };
 
+    response_to_fetch_output(resp, &args.url, &format).await
+}
+
+/// 共享的 Response → FetchOutput 转换逻辑。
+///
+/// 由 `run_webfetch` 和测试辅助函数共同调用，避免重复实现状态检查、
+/// 大小限制、图片编码和 JSON 美化等逻辑。
+async fn response_to_fetch_output(
+    resp: reqwest::Response,
+    url: &str,
+    format: &FetchFormat,
+) -> Result<FetchOutput> {
     let status = resp.status();
     if !status.is_success() {
-        bail!("HTTP {} fetching {}", status.as_u16(), args.url);
+        bail!("HTTP {} fetching {url}", status.as_u16());
     }
 
     let content_type = resp
@@ -160,9 +322,7 @@ pub async fn run_webfetch(client: &reqwest::Client, args: FetchArgs) -> Result<F
         if let Ok(len) = len_str.parse::<usize>() {
             if len > MAX_RESPONSE_SIZE {
                 bail!(
-                    "Response too large (Content-Length {} > {} bytes limit)",
-                    len,
-                    MAX_RESPONSE_SIZE
+                    "Response too large (Content-Length {len} > {MAX_RESPONSE_SIZE} bytes limit)"
                 );
             }
         }
@@ -182,7 +342,7 @@ pub async fn run_webfetch(client: &reqwest::Client, args: FetchArgs) -> Result<F
         let encoded = BASE64.encode(&bytes);
         let data_url = format!("data:{mime};base64,{encoded}");
         return Ok(FetchOutput {
-            url: args.url.clone(),
+            url: url.to_owned(),
             status: status.as_u16(),
             content_type,
             format: format!("{format:?}").to_ascii_lowercase(),
@@ -201,12 +361,12 @@ pub async fn run_webfetch(client: &reqwest::Client, args: FetchArgs) -> Result<F
         FetchFormat::Markdown if is_html => html_to_markdown(&body_str),
         FetchFormat::Text if is_html => extract_text_from_html(&body_str),
         FetchFormat::Html => body_str,
-        // markdown / text 但 mime 不是 html → 透传(已经是 text 类)
+        // markdown / text 但 mime 不是 html → 透传（已经是 text 类）
         _ => body_str,
     };
 
     Ok(FetchOutput {
-        url: args.url.clone(),
+        url: url.to_owned(),
         status: status.as_u16(),
         content_type,
         format: format!("{format:?}").to_ascii_lowercase(),
