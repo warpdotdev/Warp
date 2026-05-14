@@ -1,7 +1,8 @@
-use std::path::Path;
 use warp_util::path::LineAndColumnArg;
 use warpui::{AppContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHandle};
 
+#[cfg(feature = "local_fs")]
+use std::path::Path;
 #[cfg(feature = "local_fs")]
 use crate::code::buffer_location::LocalOrRemotePath;
 use crate::{
