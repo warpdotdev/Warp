@@ -69,11 +69,6 @@ pub enum PersistenceScope {
     RemoteServerDaemon { identity_key: String },
 }
 
-pub enum RestoredPersistenceData {
-    App(Box<PersistedData>),
-    RemoteCodebaseIndexing(Vec<CodeWorkspaceMetadata>),
-}
-
 /// Initializes the persistence "subsystem".
 ///
 /// Returns the previously-persisted data, if any, and handles for
@@ -83,7 +78,7 @@ pub enum RestoredPersistenceData {
 pub fn initialize(
     ctx: &mut AppContext,
     scope: PersistenceScope,
-) -> (Option<RestoredPersistenceData>, Option<WriterHandles>) {
+) -> (Option<Box<PersistedData>>, Option<WriterHandles>) {
     cfg_if::cfg_if! {
         if #[cfg(feature = "local_fs")] {
             sqlite::initialize(ctx, scope)
