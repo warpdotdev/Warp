@@ -407,7 +407,7 @@ impl StartupPersistenceData {
     ) -> Self {
         match restored {
             Some(persistence::RestoredPersistenceData::App(sqlite_data)) => {
-                Self::from_app_persisted_data(sqlite_data)
+                Self::from_app_persisted_data(*sqlite_data)
             }
             Some(persistence::RestoredPersistenceData::RemoteCodebaseIndexing(
                 codebase_indices,

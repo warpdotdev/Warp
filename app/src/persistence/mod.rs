@@ -70,7 +70,7 @@ pub enum PersistenceScope {
 }
 
 pub enum RestoredPersistenceData {
-    App(PersistedData),
+    App(Box<PersistedData>),
     RemoteCodebaseIndexing(Vec<CodeWorkspaceMetadata>),
 }
 

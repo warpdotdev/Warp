@@ -198,7 +198,7 @@ fn read_persisted_data_for_scope(
         PersistenceScope::App => {
             let user_uid = AuthStateProvider::as_ref(ctx).get().user_id();
             match read_sqlite_data(conn, user_uid) {
-                Ok(app_state) => Some(RestoredPersistenceData::App(app_state)),
+                Ok(app_state) => Some(RestoredPersistenceData::App(Box::new(app_state))),
                 Err(err) => {
                     send_telemetry_from_app_ctx!(
                         TelemetryEvent::DatabaseReadError(err.to_string()),
