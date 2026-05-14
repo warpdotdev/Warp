@@ -1175,36 +1175,20 @@ impl AgentDriver {
         ctx.subscribe_to_model(&file_based_mcp_manager, move |_me, event, ctx| {
             if let FileBasedMCPManagerEvent::CloudEnvMcpScanComplete {
                 repo_path,
-                detected_servers,
                 wait_server_uuids,
+                ..
             } = event
             {
                 if pending_repos.remove(repo_path) {
                     collected_wait_uuids.extend(wait_server_uuids.iter().copied());
-                    let detected_details = detected_servers
-                        .iter()
-                        .map(|server| {
-                            format!(
-                                "'{}' ({}) from {} config, hash={}, auto_start_eligible={}",
-                                server.name,
-                                server.uuid,
-                                server.provider.display_name(),
-                                server.hash,
-                                server.auto_start_eligible
-                            )
-                        })
-                        .join("; ");
-                    log::info!(
-                        "File-based MCP scan complete for repo {repo_path:?}: detected [{}], waiting for auto-started UUIDs {wait_server_uuids:?}",
-                        if detected_details.is_empty() { "none".to_string() } else { detected_details }
-                    );
                     // If we've received all scan results from all cloud environment repos, send
                     // back the auto-start-requested UUIDs and begin waiting for initialization.
                     if pending_repos.is_empty() {
                         let uuids = collected_wait_uuids.clone();
                         if let Some(sender) = tx.take() {
                             log::info!(
-                                "Collected auto-started file-based MCP server UUIDs from cloud environment repos: {uuids:?}"
+                                "Collected {} auto-started file-based MCP server(s) from cloud environment repos",
+                                uuids.len()
                             );
                             let _ = sender.send(uuids);
                         }
@@ -1275,10 +1259,6 @@ impl AgentDriver {
                     .collect::<HashMap<_, _>>(),
             ))
         };
-        let pending_details = pending_state_details
-            .lock()
-            .map(|details| details.values().cloned().join("; "))
-            .unwrap_or_else(|_| "<unable to read pending state>".to_string());
         let file_based_mcp_names = {
             let file_based_manager = FileBasedMCPManager::as_ref(ctx);
             pending_uuids
@@ -1293,7 +1273,7 @@ impl AgentDriver {
                 .collect::<HashMap<_, _>>()
         };
         log::info!(
-            "Waiting for {} file-based MCP server(s) to reach a terminal state: {pending_details}",
+            "Waiting for {} file-based MCP server(s) to reach a terminal state",
             pending_uuids.len()
         );
 
@@ -1309,7 +1289,6 @@ impl AgentDriver {
                 if !pending_uuids.contains(uuid) {
                     return;
                 }
-                log::info!("File-based MCP server {uuid} changed state to {state:?}");
                 let server_name = file_based_mcp_names
                     .get(uuid)
                     .map(String::as_str)

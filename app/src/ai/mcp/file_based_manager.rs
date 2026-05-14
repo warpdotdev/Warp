@@ -180,13 +180,6 @@ impl FileBasedMCPManager {
             let Some(hash) = installation.hash() else {
                 continue;
             };
-            log::info!(
-                "Discovered file-based MCP server '{}' ({}) from {} config under {} with hash {hash}",
-                installation.templatable_mcp_server().name,
-                installation.uuid(),
-                provider.display_name(),
-                root_path.display()
-            );
             // TODO(APP-3429): Deduplicate file-based servers across provider directories.
             if let Entry::Vacant(e) = self.file_based_servers.entry(hash) {
                 // Detected a server that hasn't previously been spawned.
@@ -293,10 +286,7 @@ impl FileBasedMCPManager {
         let is_global_warp_server = self.is_global_warp_server(hash);
         let is_global_server = self.is_global_server(hash);
         if is_global_warp_server || (is_global_server && file_based_mcp_enabled) {
-            AutoStartDecision::AutoStart {
-                is_global_warp_server,
-                is_global_server,
-            }
+            AutoStartDecision::AutoStart
         } else if is_global_server {
             AutoStartDecision::GlobalDisabled
         } else {
@@ -328,26 +318,14 @@ impl FileBasedMCPManager {
             let installation_uuid = installation.uuid();
             let server_name = installation.templatable_mcp_server().name.clone();
             match self.auto_start_decision(hash, mcp_enabled) {
-                AutoStartDecision::AutoStart {
-                    is_global_warp_server,
-                    is_global_server,
-                } => {
+                AutoStartDecision::AutoStart => {
                     log::info!(
-                        "Auto-spawning file-based MCP server '{server_name}' ({installation_uuid}); global_warp={is_global_warp_server}, global={is_global_server}, file_based_mcp_enabled={mcp_enabled}"
+                        "Auto-spawning file-based MCP server '{server_name}' ({installation_uuid})"
                     );
                     auto_started_uuids.push(installation_uuid);
                     to_spawn.push(installation);
                 }
-                AutoStartDecision::GlobalDisabled => {
-                    log::info!(
-                        "Not auto-spawning global file-based MCP server '{server_name}' ({installation_uuid}) because file-based MCP is disabled"
-                    );
-                }
-                AutoStartDecision::ProjectScoped => {
-                    log::info!(
-                        "Not auto-spawning project-scoped file-based MCP server '{server_name}' ({installation_uuid}); project-scoped file-based MCP servers require explicit opt-in"
-                    );
-                }
+                AutoStartDecision::GlobalDisabled | AutoStartDecision::ProjectScoped => {}
             }
         }
 
@@ -375,7 +353,6 @@ impl FileBasedMCPManager {
             .collect();
 
         let mut detected_servers: Vec<CloudEnvMcpScanServer> = Vec::new();
-        let mut server_details: Vec<String> = Vec::new();
         if let Some(provider_map) = self.file_based_servers_by_root.get(repo_path) {
             for (provider, hash_set) in provider_map {
                 for hash in hash_set {
@@ -393,21 +370,11 @@ impl FileBasedMCPManager {
                         hash: *hash,
                         auto_start_eligible,
                     });
-                    server_details.push(format!(
-                        "'{}' ({uuid}) from {} config with hash {hash}; auto_start_eligible={auto_start_eligible}",
-                        installation.templatable_mcp_server().name,
-                        provider.display_name()
-                    ));
                 }
             }
         }
-        let server_details = if server_details.is_empty() {
-            "none".to_string()
-        } else {
-            server_details.join("; ")
-        };
         log::info!(
-            "Cloud environment file-based MCP scan complete for {}: {} detected server(s), {} auto-started server(s): {server_details}",
+            "Cloud environment file-based MCP scan complete for {}: {} detected server(s), {} auto-started server(s)",
             repo_path.display(),
             detected_servers.len(),
             wait_server_uuids.len()
@@ -531,21 +498,19 @@ impl FileBasedMCPManager {
 }
 
 enum AutoStartDecision {
-    AutoStart {
-        is_global_warp_server: bool,
-        is_global_server: bool,
-    },
+    AutoStart,
     GlobalDisabled,
     ProjectScoped,
 }
 
 impl AutoStartDecision {
     fn should_auto_start(&self) -> bool {
-        matches!(self, AutoStartDecision::AutoStart { .. })
+        matches!(self, AutoStartDecision::AutoStart)
     }
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct CloudEnvMcpScanServer {
     pub uuid: Uuid,
     pub name: String,
@@ -565,6 +530,7 @@ pub enum FileBasedMCPManagerEvent {
     },
     CloudEnvMcpScanComplete {
         repo_path: PathBuf,
+        #[allow(dead_code)]
         detected_servers: Vec<CloudEnvMcpScanServer>,
         wait_server_uuids: Vec<Uuid>,
     },

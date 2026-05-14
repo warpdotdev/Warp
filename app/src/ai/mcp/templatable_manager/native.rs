@@ -408,23 +408,7 @@ impl TemplatableMCPServerManager {
         {
             return;
         }
-        let previous_state = self.server_states.insert(installation_uuid, new_state);
-        let server_name = self
-            .get_installed_server_name(&installation_uuid)
-            .or_else(|| {
-                FileBasedMCPManager::as_ref(ctx)
-                    .get_installation_by_uuid(installation_uuid)
-                    .map(|installation| installation.templatable_mcp_server().name.clone())
-            })
-            .or_else(|| {
-                self.active_servers
-                    .get(&installation_uuid)
-                    .map(|server| server.name().to_string())
-            })
-            .unwrap_or_else(|| "<unknown>".to_string());
-        log::info!(
-            "Templatable MCP server '{server_name}' ({installation_uuid}) changed state from {previous_state:?} to {new_state:?}"
-        );
+        self.server_states.insert(installation_uuid, new_state);
         ctx.emit(TemplatableMCPServerManagerEvent::StateChanged {
             uuid: installation_uuid,
             state: new_state,
@@ -1693,11 +1677,6 @@ impl TemplatableMCPServerManager {
         installations: &[TemplatableMCPServerInstallation],
         ctx: &mut ModelContext<Self>,
     ) {
-        log::info!(
-            "Templatable MCP manager received {} file-based MCP server(s) to spawn",
-            installations.len()
-        );
-
         // First, check if the servers are already spawned.
         let mut new_installations = Vec::new();
         for installation in installations {
