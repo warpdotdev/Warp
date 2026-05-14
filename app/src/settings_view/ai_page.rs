@@ -3433,9 +3433,9 @@ impl UsageWidget {
         }
 
         let request_count_label = if workspace_is_delinquent_due_to_payment_issue {
-            "Restricted due to billing issue".to_string()
+            t!("settings.restricted_due_to_billing_issue").to_string()
         } else if is_unlimited {
-            "Unlimited".to_string()
+            t!("settings.unlimited").to_string()
         } else {
             format!("{used}/{limit}")
         };
@@ -3582,7 +3582,7 @@ impl SettingsWidget for UsageWidget {
                 .with_child(
                     build_sub_header(
                         appearance,
-                        "Usage",
+                        t!("settings.usage").to_string(),
                         Some(styles::header_font_color(true, app)),
                     )
                     .finish(),
@@ -3590,7 +3590,10 @@ impl SettingsWidget for UsageWidget {
                 .with_child(
                     appearance
                         .ui_builder()
-                        .paragraph(format!("Resets {formatted_next_refresh_time}"))
+                        .paragraph(
+                            t!("settings.usage_resets", date = formatted_next_refresh_time)
+                                .to_string(),
+                        )
                         .with_style(UiComponentStyles {
                             font_color: Some(blended_colors::text_sub(
                                 appearance.theme(),
@@ -3606,13 +3609,20 @@ impl SettingsWidget for UsageWidget {
         .with_padding_bottom(HEADER_PADDING)
         .finish();
 
-        let request_limit_description = format!(
-            "This is the {} limit of AI credits for your account.",
-            ai_request_usage_model.refresh_duration_to_string()
-        );
+        let refresh_duration = match ai_request_usage_model.refresh_duration_to_string().as_str() {
+            "weekly" => t!("settings.weekly").to_string(),
+            "monthly" => t!("settings.monthly").to_string(),
+            "biweekly" => t!("settings.biweekly").to_string(),
+            duration => duration.to_string(),
+        };
+        let request_limit_description = t!(
+            "settings.ai_credit_limit_description",
+            duration = refresh_duration
+        )
+        .to_string();
 
         let request_usage_row = self.render_ai_usage_limit_row(
-            "Credits",
+            t!("settings.credits").to_string(),
             request_limit_description,
             ai_request_usage_model.requests_used(),
             ai_request_usage_model.request_limit(),
