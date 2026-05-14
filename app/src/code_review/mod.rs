@@ -29,6 +29,7 @@ use warpui::{
     AppContext, Entity, EntityId, ModelContext, SingletonEntity, WeakViewHandle, WindowId,
 };
 
+use crate::code::buffer_location::LocalOrRemotePath;
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
 use crate::terminal::{view::TerminalView, CLIAgent};
 use crate::util::bindings::CustomAction;
@@ -38,7 +39,7 @@ use crate::util::bindings::CustomAction;
 /// review and perform follow-up work without relying on event ordering.
 #[derive(Clone)]
 pub struct CodeReviewPanelArg {
-    pub repo_path: Option<PathBuf>,
+    pub repo_path: Option<LocalOrRemotePath>,
     pub terminal_view: WeakViewHandle<TerminalView>,
     pub entrypoint: CodeReviewPaneEntrypoint,
     pub focus_new_pane: bool,

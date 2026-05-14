@@ -4562,12 +4562,16 @@ impl AIBlock {
         // won't match editor paths in relocate_comments, marking all comments as outdated.
         let canonical_repo_path =
             dunce::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
-        let repo_path = canonical_repo_path.as_path();
+        // Imported comments arriving via the blocklist flow are always local;
+        // wrap as `LocalOrRemotePath::Local` so the comment data type is
+        // host-aware end-to-end.
+        let repo_location =
+            crate::code::buffer_location::LocalOrRemotePath::Local(canonical_repo_path.clone());
 
         let raw_count = comments.len();
         let pending = convert_insert_review_comments(comments);
         let converted_count = pending.len();
-        let flattened = attach_pending_imported_comments(pending, repo_path);
+        let flattened = attach_pending_imported_comments(pending, &repo_location);
         let thread_count = flattened.len();
 
         if !self.model.is_restored() {
@@ -4583,7 +4587,9 @@ impl AIBlock {
 
         let cards: Vec<CommentViewCard> = flattened
             .into_iter()
-            .map(|comment| CommentViewCard::new(comment, true, true, None, Some(repo_path), ctx))
+            .map(|comment| {
+                CommentViewCard::new(comment, true, true, None, Some(&repo_location), ctx)
+            })
             .collect();
 
         let element_states = cards

@@ -1,7 +1,9 @@
 use chrono::Local;
+use std::path::PathBuf;
 use warp_editor::render::model::LineCount;
 use warpui::App;
 
+use crate::code::buffer_location::LocalOrRemotePath;
 use crate::code::editor::line::EditorLineLocation;
 use crate::code_review::comments::{
     AttachedReviewComment, AttachedReviewCommentTarget, CommentOrigin, LineDiffContent,
@@ -13,7 +15,7 @@ fn line_comment(file_path: &str, line_number: usize, content: &str) -> AttachedR
         id: Default::default(),
         content: content.to_string(),
         target: AttachedReviewCommentTarget::Line {
-            absolute_file_path: file_path.into(),
+            absolute_file_path: LocalOrRemotePath::Local(PathBuf::from(file_path)),
             line: EditorLineLocation::Current {
                 line_number: LineCount::from(line_number),
                 line_range: LineCount::from(line_number)..LineCount::from(line_number + 1),

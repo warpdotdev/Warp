@@ -3,6 +3,7 @@ use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::ai::request_usage_model::AIRequestUsageModel;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;
+use crate::code::buffer_location::LocalOrRemotePath;
 use crate::code::editor::view::{CodeEditorRenderOptions, CodeEditorView};
 use crate::code::local_code_editor::LocalCodeEditorView;
 use crate::code_review::comments::{
@@ -161,7 +162,7 @@ fn create_line_comment(
         id: CommentId::new(),
         content: comment_content.to_string(),
         target: AttachedReviewCommentTarget::Line {
-            absolute_file_path: file_path.into(),
+            absolute_file_path: LocalOrRemotePath::Local(file_path.into()),
             line: EditorLineLocation::Current {
                 line_number: line_count,
                 line_range: line_count..LineCount::from(line_number + 1),
@@ -189,7 +190,7 @@ fn create_file_comment(
         id: CommentId::new(),
         content: comment_content.to_string(),
         target: AttachedReviewCommentTarget::File {
-            absolute_file_path: file_path.into(),
+            absolute_file_path: LocalOrRemotePath::Local(file_path.into()),
         },
         last_update_time: Local::now(),
         base: None,
@@ -243,6 +244,7 @@ use crate::view_components::action_button::{ActionButton, NakedTheme};
 /// Test context that holds all common test state
 struct TestContext {
     repo_path: PathBuf,
+    repo_location: LocalOrRemotePath,
     #[allow(dead_code)]
     window_id: warpui::WindowId,
     state: LoadedState,
@@ -256,6 +258,7 @@ impl TestContext {
 
         let editor = create_editor_with_content(app, editor_content);
         let repo_path = PathBuf::from("/repo");
+        let repo_key = LocalOrRemotePath::Local(repo_path.clone());
 
         let (window_id, _) = app.add_window(WindowStyle::NotStealFocus, |_| TestView);
         let state = create_loaded_state_with_editors(app, window_id, vec![(file_path, editor)]);
@@ -265,12 +268,12 @@ impl TestContext {
         let working_directories_model = app.add_model(|_| WorkingDirectoriesModel::new());
         let code_review_comment_batch =
             working_directories_model.update(app, |working_directories, ctx| {
-                working_directories.get_or_create_code_review_comments(repo_path.as_path(), ctx)
+                working_directories.get_or_create_code_review_comments(&repo_key, ctx)
             });
 
         let code_review_view = app.add_view(window_id, |ctx| {
             CodeReviewView::new(
-                Some(repo_path.clone()),
+                Some(repo_key.clone()),
                 diff_state_model,
                 code_review_comment_batch,
                 None,
@@ -279,7 +282,8 @@ impl TestContext {
         });
 
         Self {
-            repo_path,
+            repo_path: repo_path.clone(),
+            repo_location: LocalOrRemotePath::Local(repo_path),
             window_id,
             state,
             code_review_view,
@@ -349,7 +353,7 @@ fn test_relocate_comments_empty_input() {
             let RelocateCommentsResult {
                 comments: relocated,
                 fallback_count: fallbacks,
-            } = CodeReviewView::relocate_comments(vec![], &ctx.state, &ctx.repo_path, view_ctx);
+            } = CodeReviewView::relocate_comments(vec![], &ctx.state, &ctx.repo_location, view_ctx);
 
             assert!(
                 relocated.is_empty(),
@@ -379,7 +383,7 @@ fn test_relocate_comments_general_comment_passes_through() {
             } = CodeReviewView::relocate_comments(
                 vec![general_comment],
                 &ctx.state,
-                &ctx.repo_path,
+                &ctx.repo_location,
                 view_ctx,
             );
 
@@ -414,7 +418,7 @@ fn test_relocate_comments_file_comment_passes_through() {
             } = CodeReviewView::relocate_comments(
                 vec![file_comment],
                 &ctx.state,
-                &ctx.repo_path,
+                &ctx.repo_location,
                 view_ctx,
             );
 
@@ -455,7 +459,7 @@ fn test_relocate_comments_line_comment_no_matching_editor_marked_outdated() {
             } = CodeReviewView::relocate_comments(
                 vec![line_comment],
                 &ctx.state,
-                &ctx.repo_path,
+                &ctx.repo_location,
                 view_ctx,
             );
 
@@ -496,7 +500,12 @@ fn test_relocate_comments_multiple_comment_types() {
             let RelocateCommentsResult {
                 comments: relocated,
                 fallback_count: _,
-            } = CodeReviewView::relocate_comments(comments, &ctx.state, &ctx.repo_path, view_ctx);
+            } = CodeReviewView::relocate_comments(
+                comments,
+                &ctx.state,
+                &ctx.repo_location,
+                view_ctx,
+            );
 
             assert_eq!(
                 relocated.len(),
@@ -542,7 +551,7 @@ fn test_relocate_comments_line_comment_with_absolute_path() {
             } = CodeReviewView::relocate_comments(
                 vec![line_comment],
                 &ctx.state,
-                &ctx.repo_path,
+                &ctx.repo_location,
                 view_ctx,
             );
 
@@ -587,7 +596,8 @@ fn test_attach_pending_imported_comment_formats_body_and_uses_absolute_path() {
         },
     );
 
-    let attached = attach_pending_imported_comments(vec![pending], repo_path.as_path());
+    let repo_location = LocalOrRemotePath::Local(repo_path.clone());
+    let attached = attach_pending_imported_comments(vec![pending], &repo_location);
 
     assert_eq!(attached.len(), 1);
     assert_eq!(attached[0].content, "**@alice**:\nHello world");
@@ -596,7 +606,10 @@ fn test_attach_pending_imported_comment_formats_body_and_uses_absolute_path() {
         AttachedReviewCommentTarget::Line {
             absolute_file_path, ..
         } => {
-            assert_eq!(*absolute_file_path, repo_path.join("test.txt"));
+            assert_eq!(
+                *absolute_file_path,
+                LocalOrRemotePath::Local(repo_path.join("test.txt")),
+            );
         }
         _ => panic!("expected line comment target"),
     }
@@ -667,9 +680,10 @@ fn test_attach_pending_imported_thread_flattens_depth_first_sorted_by_timestamp(
 
     let latest_timestamp = reply_nested.last_update_time;
 
+    let repo_location = LocalOrRemotePath::Local(repo_path.clone());
     let attached = attach_pending_imported_comments(
         vec![reply_late, root, reply_nested, reply_early],
-        repo_path.as_path(),
+        &repo_location,
     );
 
     assert_eq!(attached.len(), 1);
@@ -683,7 +697,10 @@ fn test_attach_pending_imported_thread_flattens_depth_first_sorted_by_timestamp(
         AttachedReviewCommentTarget::Line {
             absolute_file_path, ..
         } => {
-            assert_eq!(*absolute_file_path, repo_path.join("test.txt"));
+            assert_eq!(
+                *absolute_file_path,
+                LocalOrRemotePath::Local(repo_path.join("test.txt")),
+            );
         }
         _ => panic!("expected root line target to be preserved"),
     }
@@ -711,7 +728,7 @@ fn test_relocate_comments_file_comment_no_matching_editor_marked_outdated() {
             } = CodeReviewView::relocate_comments(
                 vec![file_comment],
                 &ctx.state,
-                &ctx.repo_path,
+                &ctx.repo_location,
                 view_ctx,
             );
 
@@ -755,7 +772,7 @@ fn test_relocate_comments_line_removed_marked_outdated() {
             } = CodeReviewView::relocate_comments(
                 vec![line_comment],
                 &ctx.state,
-                &ctx.repo_path,
+                &ctx.repo_location,
                 view_ctx,
             );
 
@@ -883,8 +900,8 @@ fn test_on_close_then_on_open_reinitializes_repo_state() {
 
             assert!(view.is_open, "View should be open after on_open");
             assert_eq!(
-                view.repo_path(),
-                Some(&repo_path),
+                view.repo_path().and_then(LocalOrRemotePath::to_local_path),
+                Some(repo_path.as_path()),
                 "Repo path should be preserved after on_open (set at construction)"
             );
         });
@@ -962,7 +979,7 @@ fn test_active_comments_not_marked_outdated() {
             } = CodeReviewView::relocate_comments(
                 vec![line_comment],
                 &ctx.state,
-                &ctx.repo_path,
+                &ctx.repo_location,
                 view_ctx,
             );
 

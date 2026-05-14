@@ -57,15 +57,19 @@ impl ReviewCommentBatch {
     /// `file` param should always be the filepath from the root of the repository.
     /// This ensures we'll never confuse files in different subdirectories with
     /// the same suffix, for example `/my_repo/src/a/file.txt` and `/my_repo/src/b/file.txt`.
+    ///
+    /// Comparison is done on the path component (without host id). Within a
+    /// single batch all comments share the same host, so this is safe.
     pub fn file_comments<'a>(
         &'a self,
         file: &'a Path,
     ) -> impl Iterator<Item = &'a AttachedReviewComment> + 'a {
+        let file = file.to_string_lossy();
         self.comments.iter().filter(move |comment| {
             comment
                 .target
                 .absolute_file_path()
-                .is_some_and(|comment_file| comment_file.ends_with(file))
+                .is_some_and(|comment_file| comment_file.path_component().ends_with(file.as_ref()))
         })
     }
 
@@ -83,7 +87,10 @@ impl ReviewCommentBatch {
                 ..
             } = &comment.target
             {
-                if comment_file_path.ends_with(file) {
+                if comment_file_path
+                    .path_component()
+                    .ends_with(file.to_string_lossy().as_ref())
+                {
                     line.line_number()
                 } else {
                     None
