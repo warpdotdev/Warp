@@ -18,7 +18,7 @@ use crate::ai::agent::{
 use crate::ai::blocklist::agent_view::shortcuts::AgentShortcutViewModel;
 use crate::ai::blocklist::agent_view::zero_state_block::render_ambient_credits_banner;
 use crate::ai::blocklist::agent_view::{
-    agent_view_bg_fill, AgentViewController, AgentViewControllerEvent,
+    agent_view_bg_fill, is_in_cloud_context, AgentViewController, AgentViewControllerEvent,
 };
 use crate::ai::blocklist::{
     ai_brand_color, BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIHistoryEvent,
@@ -578,10 +578,8 @@ impl MessageProvider<AgentMessageArgs<'_>> for ZeroStateMessageProducer {
             .with_is_disabled(!is_buffer_empty),
         );
 
-        let is_cloud_agent = matches!(
-            agent_view_controller.agent_view_state(),
-            AgentViewState::Active { origin, .. } if origin.is_cloud_agent()
-        );
+        let is_cloud_agent =
+            is_in_cloud_context(agent_view_controller.agent_view_state(), terminal_model);
 
         // Handoff to cloud only available for local agents.
         if !is_cloud_agent && AISettings::as_ref(app).is_ampersand_handoff_enabled(app) {

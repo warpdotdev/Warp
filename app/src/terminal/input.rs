@@ -112,7 +112,7 @@ use crate::ai::block_context::BlockContext;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::agent_view::agent_input_footer::sort_environments_by_recency;
 use crate::ai::blocklist::agent_view::{
-    AgentInputFooter, AgentInputFooterEvent, AgentViewController,
+    is_in_cloud_context, AgentInputFooter, AgentInputFooterEvent, AgentViewController,
 };
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::handoff::touched_repos::{
@@ -3852,12 +3852,19 @@ impl Input {
         let is_powershell_with_nld_enabled = self.editor.as_ref(ctx).shell_family()
             == Some(ShellFamily::PowerShell)
             && AISettings::as_ref(ctx).is_ai_autodetection_enabled(ctx);
+        let is_cloud = {
+            let terminal_model = self.model.lock();
+            is_in_cloud_context(
+                terminal_model.block_list().agent_view_state(),
+                &terminal_model,
+            )
+        };
         *edit_origin == EditOrigin::UserTyped
             && AISettings::as_ref(ctx).is_ampersand_handoff_enabled(ctx)
             && !is_powershell_with_nld_enabled
             && FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(ctx).is_fullscreen()
-            && self.ambient_agent_view_model().is_none()
+            && !is_cloud
             && !CLIAgentSessionsModel::as_ref(ctx).is_input_open(self.terminal_view_id)
             && self.prefix_mode(ctx) == InputPrefixMode::None
     }
