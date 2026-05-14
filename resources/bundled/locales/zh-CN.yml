@@ -1410,6 +1410,8 @@ zh-CN:
     network_log_console_description: "我们内置了一个原生控制台，用于查看 Warp 与外部服务器之间的所有通信，帮助你确认工作内容始终安全。"
     view_network_logging: "查看网络日志"
     data_management_description: "你可以随时选择永久删除 Warp 账号。删除后将无法继续使用 Warp。"
+    personal: "个人"
+    enterprise: "企业"
 
   # ── 上下文 ──
   context:

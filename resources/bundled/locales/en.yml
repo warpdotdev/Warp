@@ -1410,6 +1410,8 @@ en:
     network_log_console_description: "We've built a native console that allows you to view all communications from Warp to external servers to ensure you feel comfortable that your work is always kept safe."
     view_network_logging: "View network logging"
     data_management_description: "At any time, you may choose to delete your Warp account permanently. You will no longer be able to use Warp."
+    personal: "Personal"
+    enterprise: "Enterprise"
 
   # ── Context Chips ──
   context:
