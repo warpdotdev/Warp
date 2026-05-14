@@ -116,7 +116,7 @@ fn snapshot_last_opened(app: &AppContext) -> HashMap<String, instant::Instant> {
                 .get_root_for_path(&LocalOrRemotePath::Local(
                     Path::new(current_dir).to_path_buf(),
                 ))
-                .and_then(|r| r.to_local_path().map(Path::to_path_buf))
+                .and_then(|r| PathBuf::try_from(r).ok())
         });
 
     let Some(repo_path) = git_repo_path else {

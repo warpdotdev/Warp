@@ -10394,9 +10394,7 @@ impl Input {
                                             .get_root_for_path(&LocalOrRemotePath::Local(
                                                 Path::new(pwd).to_path_buf(),
                                             ))
-                                            .and_then(|r| {
-                                                r.to_local_path().map(Path::to_path_buf)
-                                            })?;
+                                            .and_then(|r| PathBuf::try_from(r).ok())?;
                                         let absolute_path = git_repo_path.join(file_path);
 
                                         // Try to get relative path if it's shorter

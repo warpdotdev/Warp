@@ -5536,7 +5536,7 @@ impl AIBlock {
         let repo_path = self.current_working_directory.as_ref().and_then(|cwd| {
             DetectedRepositories::as_ref(ctx)
                 .get_root_for_path(&LocalOrRemotePath::Local(PathBuf::from(cwd.as_str())))
-                .and_then(|r| r.to_local_path().map(Path::to_path_buf))
+                .and_then(|r| PathBuf::try_from(r).ok())
         });
         #[cfg(target_family = "wasm")]
         let repo_path = self.current_working_directory.as_ref().map(PathBuf::from);

@@ -321,7 +321,7 @@ fn resolve_unqualified(
     // Next, try to scope to the current repo root (if known).
     let repo_root = repo_metadata::repositories::DetectedRepositories::as_ref(ctx)
         .get_root_for_path(&LocalOrRemotePath::Local(working_dir.to_path_buf()))
-        .and_then(|r| r.to_local_path().map(Path::to_path_buf));
+        .and_then(|r| PathBuf::try_from(r).ok());
 
     if let Some(repo_root) = repo_root {
         match resolve_in_single_repo_root(spec, &repo_root, skill_manager) {

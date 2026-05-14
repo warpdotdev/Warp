@@ -1409,7 +1409,7 @@ impl LocalCodeEditorView {
         } else {
             match DetectedRepositories::as_ref(ctx)
                 .get_root_for_path(&LocalOrRemotePath::Local(path.to_path_buf()))
-                .and_then(|r| r.to_local_path().map(Path::to_path_buf))
+                .and_then(|r| PathBuf::try_from(r).ok())
             {
                 Some(root) => Some(root),
                 None => path.parent().map(|s| s.to_path_buf()), // If we can't find root, treat the parent as the root.
@@ -1450,7 +1450,7 @@ impl LocalCodeEditorView {
         } else {
             match DetectedRepositories::as_ref(ctx)
                 .get_root_for_path(&LocalOrRemotePath::Local(path.to_path_buf()))
-                .and_then(|r| r.to_local_path().map(Path::to_path_buf))
+                .and_then(|r| PathBuf::try_from(r).ok())
             {
                 Some(root) => Some(root),
                 None => path.parent().map(|s| s.to_path_buf()),

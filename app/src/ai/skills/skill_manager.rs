@@ -156,7 +156,7 @@ impl SkillManager {
         } else if let Some(working_directory) = working_directory {
             let repo_root = repo_metadata::repositories::DetectedRepositories::as_ref(ctx)
                 .get_root_for_path(&LocalOrRemotePath::Local(working_directory.to_path_buf()))
-                .and_then(|r| r.to_local_path().map(Path::to_path_buf));
+                .and_then(|r| PathBuf::try_from(r).ok());
 
             for (dir, dir_skill_paths) in &self.directory_skills {
                 if is_home_directory(dir) {

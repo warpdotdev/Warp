@@ -49,3 +49,15 @@ impl From<RemotePath> for LocalOrRemotePath {
         LocalOrRemotePath::Remote(remote)
     }
 }
+
+impl TryFrom<LocalOrRemotePath> for PathBuf {
+    type Error = RemotePath;
+
+    /// Extracts the local path, returning `Err(RemotePath)` for remote locations.
+    fn try_from(value: LocalOrRemotePath) -> Result<Self, Self::Error> {
+        match value {
+            LocalOrRemotePath::Local(path) => Ok(path),
+            LocalOrRemotePath::Remote(remote) => Err(remote),
+        }
+    }
+}
