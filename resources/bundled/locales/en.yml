@@ -1253,6 +1253,7 @@ en:
     no_settings_match_hint: "You may want to try using different keywords or checking for any possible typos."
     open_settings_file: "Open settings file"
     workspace_override_tooltip: "This option is enforced by your organization's settings and cannot be customized."
+    warp_drive_description: "Warp Drive is a workspace in your terminal where you can save Workflows, Notebooks, Prompts, and Environment Variables for personal use or to share with a team."
     add_repo: "Add repo"
     create_environment: "Create environment"
     selected_repos: "Selected repos"

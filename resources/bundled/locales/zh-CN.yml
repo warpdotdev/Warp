@@ -1253,6 +1253,7 @@ zh-CN:
     no_settings_match_hint: "可以尝试使用不同关键词，或检查是否有拼写错误。"
     open_settings_file: "打开设置文件"
     workspace_override_tooltip: "此选项由你的组织设置强制执行，无法自定义。"
+    warp_drive_description: "Warp Drive 是终端中的工作区，可用于保存个人使用或与团队共享的工作流、笔记本、提示词和环境变量。"
     add_repo: "添加仓库"
     create_environment: "创建环境"
     selected_repos: "已选仓库"
