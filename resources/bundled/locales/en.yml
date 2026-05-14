@@ -605,6 +605,16 @@ en:
     delete_mcp: "Delete MCP"
     remove_shared_mcp_server_title: "Remove shared MCP server from team?"
     remove_shared_mcp_server_description: "This will uninstall and remove this MCP server from Warp and across all of your teammates' devices."
+    available_to_install: "Available to install"
+    my_mcps: "My MCPs"
+    shared_by_warp_and_team: "Shared by Warp and {team}"
+    shared_by_warp_and_other_devices: "Shared by Warp and from other devices"
+    shared_from_warp: "Shared from Warp"
+    detected_from_provider: "Detected from {provider}"
+    detected_from_config_file: "Detected from config file"
+    shared_by_creator: "Shared by: {creator}"
+    shared_by_team_member: "Shared by a team member"
+    from_another_device: "From another device"
 
   platform:
     api_key_deleted: "API key deleted"

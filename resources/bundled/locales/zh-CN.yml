@@ -605,6 +605,16 @@ zh-CN:
     delete_mcp: "删除 MCP"
     remove_shared_mcp_server_title: "从团队移除共享 MCP server？"
     remove_shared_mcp_server_description: "这会从 Warp 及所有队友设备中卸载并移除此 MCP server。"
+    available_to_install: "可安装"
+    my_mcps: "我的 MCPs"
+    shared_by_warp_and_team: "由 Warp 和 {team} 共享"
+    shared_by_warp_and_other_devices: "由 Warp 和其他设备共享"
+    shared_from_warp: "来自 Warp 的共享"
+    detected_from_provider: "检测来源：{provider}"
+    detected_from_config_file: "从配置文件检测到"
+    shared_by_creator: "共享者：{creator}"
+    shared_by_team_member: "由团队成员共享"
+    from_another_device: "来自另一台设备"
 
   platform:
     api_key_deleted: "API key 已删除"

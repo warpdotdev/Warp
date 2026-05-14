@@ -368,7 +368,7 @@ impl MCPServersListPageView {
             template
                 .description
                 .clone()
-                .or_else(|| Some("Available to install".to_string())),
+                .or_else(|| Some(t!("mcp.available_to_install").to_string())),
             None, // Templates can never have tools
             None, // Templates cannot have an error
             title_chip_text.into_iter().collect(),
@@ -1261,7 +1261,7 @@ impl MCPServersListPageView {
 
                 if !owned_server_cards.is_empty() {
                     page.add_child(self.render_server_cards_section(
-                        "My MCPs",
+                        t!("mcp.my_mcps").as_ref(),
                         &owned_server_cards,
                         appearance,
                         app,
@@ -1273,8 +1273,8 @@ impl MCPServersListPageView {
                         .current_team()
                         .map(|team| team.name.clone());
                     let shared_by_text = match team_name {
-                        Some(name) => format!("Shared by Warp and {name}"),
-                        None => "Shared by Warp and from other devices".to_string(),
+                        Some(name) => t!("mcp.shared_by_warp_and_team", team = name).to_string(),
+                        None => t!("mcp.shared_by_warp_and_other_devices").to_string(),
                     };
 
                     page.add_child(self.render_server_cards_section(
@@ -1285,7 +1285,7 @@ impl MCPServersListPageView {
                     ));
                 } else if !filtered_gallery_cards.is_empty() {
                     page.add_child(self.render_server_cards_section(
-                        "Shared from Warp",
+                        t!("mcp.shared_from_warp").as_ref(),
                         &filtered_gallery_cards,
                         appearance,
                         app,
@@ -1294,7 +1294,11 @@ impl MCPServersListPageView {
 
                 // Render one section per provider (e.g. "Detected from Claude").
                 for (provider, cards) in &filtered_file_based_cards {
-                    let section_title = format!("Detected from {}", provider.display_name());
+                    let section_title = t!(
+                        "mcp.detected_from_provider",
+                        provider = provider.display_name()
+                    )
+                    .to_string();
                     page.add_child(self.render_server_cards_section(
                         &section_title,
                         cards,
@@ -1631,7 +1635,7 @@ impl MCPServersListPageView {
                     .templatable_mcp_server()
                     .description
                     .clone()
-                    .or_else(|| Some("Detected from config file".to_string())),
+                    .or_else(|| Some(t!("mcp.detected_from_config_file").to_string())),
                 None, // tools only available when running
                 None, // no error when not yet started
                 title_chips,
@@ -1765,11 +1769,13 @@ impl MCPServersListPageView {
 
                 if is_shared {
                     match creator {
-                        Some(creator) => Some(TitleChip::text(format!("Shared by: {creator}"))),
-                        None => Some(TitleChip::text("Shared by a team member")),
+                        Some(creator) => Some(TitleChip::text(
+                            t!("mcp.shared_by_creator", creator = creator).to_string(),
+                        )),
+                        None => Some(TitleChip::text(t!("mcp.shared_by_team_member"))),
                     }
                 } else if matches!(item_id, ServerCardItemId::TemplatableMCP(_)) {
-                    Some(TitleChip::text("From another device"))
+                    Some(TitleChip::text(t!("mcp.from_another_device")))
                 } else {
                     None
                 }
