@@ -521,15 +521,29 @@ pub struct TaskPrincipalInfo {
 pub struct TaskStatusMessage {
     pub message: String,
     #[serde(default, alias = "errorCode")]
-    pub error_code: Option<String>,
+    pub error_code: Option<TaskStatusErrorCode>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskStatusErrorCode {
+    #[serde(alias = "ENVIRONMENT_SETUP_FAILED")]
+    EnvironmentSetupFailed,
+    #[serde(other)]
+    Unknown,
+}
+
+impl TaskStatusErrorCode {
+    pub fn is_environment_setup_failure(&self) -> bool {
+        matches!(self, TaskStatusErrorCode::EnvironmentSetupFailed)
+    }
 }
 
 impl TaskStatusMessage {
     pub fn is_environment_setup_failure(&self) -> bool {
-        matches!(
-            self.error_code.as_deref(),
-            Some("environment_setup_failed")
-        )
+        self.error_code
+            .as_ref()
+            .is_some_and(TaskStatusErrorCode::is_environment_setup_failure)
     }
 }
 
@@ -574,3 +588,7 @@ pub fn cancel_task_silently<V: View>(task_id: AmbientAgentTaskId, ctx: &mut View
         },
     );
 }
+
+#[cfg(test)]
+#[path = "task_tests.rs"]
+mod tests;

@@ -2,7 +2,8 @@ use chrono::{Duration, Utc};
 use warp_cli::agent::Harness;
 
 use crate::ai::ambient_agents::task::{
-    AgentConfigSnapshot, HarnessConfig, RequestUsage, TaskPrincipalInfo, TaskStatusMessage,
+    AgentConfigSnapshot, HarnessConfig, RequestUsage, TaskPrincipalInfo, TaskStatusErrorCode,
+    TaskStatusMessage,
 };
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::ai::artifacts::Artifact;
@@ -93,7 +94,7 @@ fn environment_setup_failure_hides_continue_actions() {
     task.state = AmbientAgentTaskState::Failed;
     task.status_message = Some(TaskStatusMessage {
         message: "Environment setup failed: Failed to run setup command: hi".to_string(),
-        error_code: Some("environment_setup_failed".to_string()),
+        error_code: Some(TaskStatusErrorCode::EnvironmentSetupFailed),
     });
     let mut data = TombstoneDisplayData::default();
 
