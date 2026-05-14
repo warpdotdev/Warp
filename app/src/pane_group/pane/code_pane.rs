@@ -1,6 +1,8 @@
 use warp_util::path::LineAndColumnArg;
 use warpui::{AppContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHandle};
 
+#[cfg(feature = "local_fs")]
+use crate::code::buffer_location::FileLocation;
 use crate::{
     app_state::{CodePaneSnapShot, CodePaneTabSnapshot, LeafContents},
     code::{
@@ -9,8 +11,6 @@ use crate::{
     },
     pane_group::PaneGroup,
 };
-#[cfg(feature = "local_fs")]
-use crate::code::buffer_location::FileLocation;
 
 use super::{
     DetachType, PaneConfiguration, PaneContent, PaneId, PaneView, ShareableLink, ShareableLinkError,
