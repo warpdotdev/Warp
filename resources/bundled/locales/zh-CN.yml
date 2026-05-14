@@ -1143,6 +1143,26 @@ zh-CN:
       subscribe_item_drive: "无限 Warp Drive 对象和协作"
       subscribe_item_email: "私密邮件支持"
       subscribe_item_cloud_storage: "无限云端会话存储"
+    agent:
+      title: "自定义你的 Warp Agent"
+      subtitle: "选择应用内 Agent 的默认设置。"
+      default_model: "默认模型"
+      recommended: "推荐"
+      premium: "高级"
+      autonomy: "自主性"
+      autonomy_team_workspace_description: "自主性设置由你的团队工作区配置。"
+      autonomy_full: "完全"
+      autonomy_full_description: "无需询问即可运行命令、编写代码并读取文件。"
+      autonomy_partial: "部分"
+      autonomy_partial_description: "可以规划、读取文件并执行低风险命令。在进行任何更改或执行敏感命令前会询问。"
+      autonomy_none: "无"
+      autonomy_none_description: "未经你批准不会执行任何操作。"
+      upgrade_premium_models: "升级以使用高级模型。"
+      paid_models_required: "最先进的模型需要付费计划。"
+      click_here: "点击这里"
+      open_page_manually_suffix: " 并手动打开页面。"
+      paste_token_suffix: "以粘贴浏览器中的 token。"
+      plan_activated: "计划已成功激活。所有高级模型均可使用。"
 
   # ── 设置 ──
   settings:

@@ -1143,6 +1143,26 @@ en:
       subscribe_item_drive: "Unlimited Warp Drive objects and collaboration"
       subscribe_item_email: "Private email support"
       subscribe_item_cloud_storage: "Unlimited cloud conversation storage"
+    agent:
+      title: "Customize your Warp Agent"
+      subtitle: "Select your in-app agent's defaults."
+      default_model: "Default model"
+      recommended: "Recommended"
+      premium: "Premium"
+      autonomy: "Autonomy"
+      autonomy_team_workspace_description: "Autonomy settings are configured as part of your team workspace."
+      autonomy_full: "Full"
+      autonomy_full_description: "Runs commands, writes code, and reads files without asking."
+      autonomy_partial: "Partial"
+      autonomy_partial_description: "Can plan, read files, and execute low-risk commands. Asks before making any changes or executing sensitive commands."
+      autonomy_none: "None"
+      autonomy_none_description: "Takes no actions without your approval."
+      upgrade_premium_models: "Upgrade for access to premium models."
+      paid_models_required: "State-of-the-art models require paid plans."
+      click_here: "Click here"
+      open_page_manually_suffix: " and open the page manually. "
+      paste_token_suffix: " to paste your token from the browser."
+      plan_activated: "Plan successfully activated. All premium models are available."
 
   # ── Settings ──
   settings:
