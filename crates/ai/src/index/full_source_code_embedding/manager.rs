@@ -983,6 +983,19 @@ impl CodebaseIndexManager {
             .map(|(_, path)| path)
             .ok()
     }
+    pub fn with_indexed_codebase<T>(
+        &mut self,
+        path: &Path,
+        on_found: impl FnOnce(&mut Self, &Path, &mut ModelContext<Self>) -> T,
+        on_missing: impl FnOnce(&mut Self, &Path, &mut ModelContext<Self>) -> T,
+        ctx: &mut ModelContext<Self>,
+    ) -> T {
+        let Some(indexed_repo_path) = self.root_path_for_codebase(path) else {
+            return on_missing(self, path, ctx);
+        };
+
+        on_found(self, indexed_repo_path.as_path(), ctx)
+    }
 
     fn get_codebase_index_internal(
         &self,

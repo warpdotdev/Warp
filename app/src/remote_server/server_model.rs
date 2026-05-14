@@ -102,6 +102,16 @@ enum HandlerOutcome {
     Async(Option<SpawnedFutureHandle>),
 }
 
+struct CodebaseIndexRequest {
+    repo_path: PathBuf,
+}
+
+#[derive(Clone, Copy)]
+enum CodebaseIndexRequestPathKind {
+    Canonicalized,
+    Requested,
+}
+
 /// Tracks an in-flight file write or delete so the async completion
 /// event can be correlated back to the originating client request.
 enum FileOpKind {
@@ -868,49 +878,31 @@ impl ServerModel {
             repo_path,
             auth_token,
         } = msg;
-        let repo_path_for_log = repo_path.clone();
-        if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
-            log::info!(
-                "[Remote codebase indexing] Daemon rejecting IndexCodebase because remote indexing is disabled: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
-            );
-            return HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
-                CodebaseIndexStatusUpdated {
-                    status: Some(not_enabled_codebase_index_status(repo_path)),
-                },
-            ));
-        }
-
-        let repo_path = match canonicalize_index_repo_path(&repo_path) {
-            Ok(repo_path) => repo_path,
-            Err(error) => {
-                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                    code: ErrorCode::InvalidRequest.into(),
-                    message: error,
-                }));
-            }
+        let request = match self.prepare_codebase_index_request(
+            "IndexCodebase",
+            repo_path,
+            auth_token,
+            "remote codebase indexing",
+            CodebaseIndexRequestPathKind::Canonicalized,
+            request_id,
+            conn_id,
+        ) {
+            Ok(request) => request,
+            Err(outcome) => return outcome,
         };
-        if let Err(error) =
-            self.validate_remote_codebase_index_auth(&auth_token, "remote codebase indexing")
-        {
-            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                code: ErrorCode::InvalidRequest.into(),
-                message: error,
-            }));
-        }
-        log::info!(
-            "[Remote codebase indexing] Daemon handling IndexCodebase: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
-        );
+        let repo_path = request.repo_path;
         let status = CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
-            if let Some(indexed_repo_path) = manager.root_path_for_codebase(&repo_path) {
-                Self::current_codebase_index_status_or_queued(
-                    manager,
-                    indexed_repo_path.as_path(),
-                    ctx,
-                )
-            } else {
-                manager.index_directory(repo_path.clone(), ctx);
-                queued_codebase_index_status(repo_path.to_string_lossy().to_string())
-            }
+            manager.with_indexed_codebase(
+                &repo_path,
+                |manager, indexed_repo_path, ctx| {
+                    Self::current_codebase_index_status_or_queued(manager, indexed_repo_path, ctx)
+                },
+                |manager, repo_path, ctx| {
+                    manager.index_directory(repo_path.to_path_buf(), ctx);
+                    queued_codebase_index_status(repo_path.to_string_lossy().to_string())
+                },
+                ctx,
+            )
         });
 
         HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
@@ -931,52 +923,35 @@ impl ServerModel {
             repo_path,
             auth_token,
         } = msg;
-        let repo_path_for_log = repo_path.clone();
-        if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
-            log::info!(
-                "[Remote codebase indexing] Daemon rejecting ResyncCodebase because remote indexing is disabled: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
-            );
-            return HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
-                CodebaseIndexStatusUpdated {
-                    status: Some(not_enabled_codebase_index_status(repo_path)),
-                },
-            ));
-        }
-
-        let repo_path = match canonicalize_index_repo_path(&repo_path) {
-            Ok(repo_path) => repo_path,
-            Err(error) => {
-                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                    code: ErrorCode::InvalidRequest.into(),
-                    message: error,
-                }));
-            }
+        let request = match self.prepare_codebase_index_request(
+            "ResyncCodebase",
+            repo_path,
+            auth_token,
+            "remote codebase resync",
+            CodebaseIndexRequestPathKind::Canonicalized,
+            request_id,
+            conn_id,
+        ) {
+            Ok(request) => request,
+            Err(outcome) => return outcome,
         };
-        if let Err(error) =
-            self.validate_remote_codebase_index_auth(&auth_token, "remote codebase resync")
-        {
-            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                code: ErrorCode::InvalidRequest.into(),
-                message: error,
-            }));
-        }
-        log::info!(
-            "[Remote codebase indexing] Daemon handling ResyncCodebase: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
-        );
+        let repo_path = request.repo_path;
         let status = CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
-            if let Some(indexed_repo_path) = manager.root_path_for_codebase(&repo_path) {
-                manager.try_manual_resync_codebase(indexed_repo_path.as_path(), ctx);
-                Self::current_codebase_index_status_or_queued(
-                    manager,
-                    indexed_repo_path.as_path(),
-                    ctx,
-                )
-            } else {
-                unavailable_codebase_index_status(
-                    repo_path.to_string_lossy().to_string(),
-                    "Cannot resync remote codebase because it has not been indexed.".to_string(),
-                )
-            }
+            manager.with_indexed_codebase(
+                &repo_path,
+                |manager, indexed_repo_path, ctx| {
+                    manager.try_manual_resync_codebase(indexed_repo_path, ctx);
+                    Self::current_codebase_index_status_or_queued(manager, indexed_repo_path, ctx)
+                },
+                |_, repo_path, _| {
+                    unavailable_codebase_index_status(
+                        repo_path.to_string_lossy().to_string(),
+                        "Cannot resync remote codebase because it has not been indexed."
+                            .to_string(),
+                    )
+                },
+                ctx,
+            )
         });
 
         HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
@@ -1010,49 +985,25 @@ impl ServerModel {
             repo_path,
             auth_token,
         } = msg;
-        let repo_path_for_log = repo_path.clone();
-        if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
-            log::info!(
-                "[Remote codebase indexing] Daemon rejecting DropCodebaseIndex because remote indexing is disabled: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
-            );
-            return HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
-                CodebaseIndexStatusUpdated {
-                    status: Some(not_enabled_codebase_index_status(repo_path)),
-                },
-            ));
-        }
-
-        let repo_path = match requested_repo_path(&repo_path) {
-            Ok(repo_path) => repo_path,
-            Err(error) => {
-                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                    code: ErrorCode::InvalidRequest.into(),
-                    message: error,
-                }));
-            }
+        let request = match self.prepare_codebase_index_request(
+            "DropCodebaseIndex",
+            repo_path,
+            auth_token,
+            "remote codebase index removal",
+            CodebaseIndexRequestPathKind::Requested,
+            request_id,
+            conn_id,
+        ) {
+            Ok(request) => request,
+            Err(outcome) => return outcome,
         };
-        if let Err(error) =
-            self.validate_remote_codebase_index_auth(&auth_token, "remote codebase index removal")
-        {
-            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                code: ErrorCode::InvalidRequest.into(),
-                message: error,
-            }));
-        }
-        log::info!(
-            "[Remote codebase indexing] Daemon handling DropCodebaseIndex: request_id={request_id} conn_id={conn_id} repo_path={}",
-            repo_path.display()
-        );
+        let CodebaseIndexRequest { repo_path } = request;
         CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
             manager.drop_index(repo_path.clone(), ctx);
         });
 
-        HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
-            CodebaseIndexStatusUpdated {
-                status: Some(disabled_codebase_index_status(
-                    repo_path.to_string_lossy().to_string(),
-                )),
-            },
+        codebase_index_status_response(disabled_codebase_index_status(
+            repo_path.to_string_lossy().to_string(),
         ))
     }
 
@@ -1363,6 +1314,42 @@ impl ServerModel {
                 "Missing cached authentication credentials for {operation}"
             )),
         }
+    }
+
+    fn prepare_codebase_index_request(
+        &self,
+        operation_name: &str,
+        repo_path: String,
+        auth_token: String,
+        auth_operation: &str,
+        path_kind: CodebaseIndexRequestPathKind,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+    ) -> Result<CodebaseIndexRequest, HandlerOutcome> {
+        let repo_path_for_log = repo_path.clone();
+        if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
+            log::info!(
+                "[Remote codebase indexing] Daemon rejecting {operation_name} because remote indexing is disabled: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
+            );
+            return Err(codebase_index_status_response(
+                not_enabled_codebase_index_status(repo_path),
+            ));
+        }
+
+        let repo_path = match path_kind {
+            CodebaseIndexRequestPathKind::Canonicalized => canonicalize_index_repo_path(&repo_path),
+            CodebaseIndexRequestPathKind::Requested => requested_repo_path(&repo_path),
+        }
+        .map_err(invalid_request_response)?;
+
+        if let Err(error) = self.validate_remote_codebase_index_auth(&auth_token, auth_operation) {
+            return Err(invalid_request_response(error));
+        }
+
+        log::info!(
+            "[Remote codebase indexing] Daemon handling {operation_name}: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
+        );
+        Ok(CodebaseIndexRequest { repo_path })
     }
 
     /// Handles `Abort` by cancelling the in-progress request it targets.
@@ -2536,6 +2523,20 @@ impl ServerModel {
     }
 }
 
+fn invalid_request_response(message: String) -> HandlerOutcome {
+    HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+        code: ErrorCode::InvalidRequest.into(),
+        message,
+    }))
+}
+
+fn codebase_index_status_response(status: CodebaseIndexStatus) -> HandlerOutcome {
+    HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
+        CodebaseIndexStatusUpdated {
+            status: Some(status),
+        },
+    ))
+}
 fn requested_repo_path(repo_path: &str) -> Result<PathBuf, String> {
     if repo_path.is_empty() {
         return Err("repo_path is required".to_string());
