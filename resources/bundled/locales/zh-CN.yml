@@ -590,6 +590,13 @@ zh-CN:
     no_server_selected: "未选择 MCP server"
     no_updates_available: "没有可用更新"
     search_mcp_servers: "搜索 MCP Servers"
+    offline: "离线"
+    starting_server: "正在启动 server..."
+    authenticating: "正在认证..."
+    shutting_down: "正在关闭..."
+    show_logs: "显示日志"
+    share_server: "共享 server"
+    server_update_available: "Server 有可用更新"
 
   platform:
     api_key_deleted: "API key 已删除"

@@ -590,6 +590,13 @@ en:
     no_server_selected: "No MCP server selected"
     no_updates_available: "No updates available"
     search_mcp_servers: "Search MCP Servers"
+    offline: "Offline"
+    starting_server: "Starting server..."
+    authenticating: "Authenticating..."
+    shutting_down: "Shutting down..."
+    show_logs: "Show logs"
+    share_server: "Share server"
+    server_update_available: "Server update available"
 
   platform:
     api_key_deleted: "API key deleted"
