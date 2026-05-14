@@ -230,11 +230,16 @@ impl TerminalView {
                     Some(error_message.clone()),
                     ctx,
                 );
+
+                if FeatureFlag::CloudModeSetupV2.is_enabled() {
+                    self.insert_conversation_ended_tombstone(ctx);
+                }
+
                 // Refresh the details panel to show failed status
                 if self.is_conversation_details_panel_open {
                     self.fetch_and_update_conversation_details_panel(ctx);
                 }
-                // Re-render to show the error state in the footer.
+                // Re-render to show the error state.
                 ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }

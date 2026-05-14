@@ -55,6 +55,7 @@ use crate::terminal::session_settings::AgentToolbarChipSelection;
 use crate::terminal::shared_session::SharedSessionStatus;
 use crate::terminal::view::ambient_agent::AmbientAgentViewModelEvent;
 use crate::terminal::view::load_ai_conversation::RestoredAIConversation;
+use crate::terminal::view::shared_session::ConversationEndedTombstoneView;
 use crate::terminal::CLIAgent;
 
 use crate::terminal::{MockTerminalManager, TerminalManager, TerminalModel};
@@ -1023,6 +1024,71 @@ fn cloud_mode_dispatched_agent_inserts_queued_user_query() {
             view.handle_ambient_agent_event(&AmbientAgentViewModelEvent::DispatchedAgent, ctx);
 
             assert!(has_pending_user_query_block(view));
+        });
+    });
+}
+
+#[test]
+fn cloud_mode_failed_inserts_tombstone_and_hides_input() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cloud_mode = FeatureFlag::CloudMode.override_enabled(true);
+        let _setup_v2 = FeatureFlag::CloudModeSetupV2.override_enabled(true);
+
+        let terminal = add_window_with_cloud_mode_terminal(&mut app);
+
+        terminal.update(&mut app, |view, ctx| {
+            view.model
+                .lock()
+                .set_shared_session_status(SharedSessionStatus::ViewPending);
+            view.enter_ambient_agent_setup(None, ctx);
+            view.insert_cloud_mode_queued_user_query_block("queued prompt".to_string(), ctx);
+            assert!(has_pending_user_query_block(view));
+
+            view.handle_ambient_agent_event(
+                &AmbientAgentViewModelEvent::Failed {
+                    error_message: "setup failed".to_string(),
+                },
+                ctx,
+            );
+
+            assert!(!has_pending_user_query_block(view));
+            assert!(view.conversation_ended_tombstone_view_id.is_some());
+            assert_eq!(view.rich_content_views.len(), 1);
+            {
+                let model = view.model.lock();
+                assert!(!view.is_input_box_visible(&model, ctx));
+            }
+
+            view.handle_ambient_agent_event(
+                &AmbientAgentViewModelEvent::Failed {
+                    error_message: "setup failed again".to_string(),
+                },
+                ctx,
+            );
+            assert_eq!(view.rich_content_views.len(), 1);
+        });
+
+        let window_id = app.read(|ctx| terminal.window_id(ctx));
+        let tombstones = app
+            .views_of_type::<ConversationEndedTombstoneView>(window_id)
+            .expect("window should have tombstone views");
+        let tombstone = tombstones
+            .last()
+            .expect("failed cloud mode should insert a tombstone");
+        tombstone.read(&app, |tombstone, _| {
+            assert_eq!(
+                tombstone.title_for_test(),
+                Some("Cloud agent failed to start")
+            );
+            assert_eq!(
+                tombstone.error_message_for_test(),
+                Some("setup failed again")
+            );
+            assert_eq!(tombstone.credits_for_test(), None);
+            assert!(!tombstone.has_continue_in_cloud_button_for_test());
+            assert!(!tombstone.has_continue_locally_button_for_test());
         });
     });
 }

@@ -217,6 +217,7 @@ reqwest = { version = "0.13", features = [
   "gzip",
   "form",
   "json",
+  "multipart",
   "query",
   "stream",
 ] }

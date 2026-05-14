@@ -105,7 +105,7 @@ pub async fn generate_multi_agent_output(
             supports_bundled_skills: FeatureFlag::BundledSkills.is_enabled(),
             supports_research_agent: params.research_agent_enabled,
             supports_orchestration_v2: FeatureFlag::OrchestrationV2.is_enabled(),
-            custom_model_providers: None,
+            custom_model_providers: params.custom_model_providers,
         }),
         metadata: Some(api::request::Metadata {
             logging: logging_metadata,

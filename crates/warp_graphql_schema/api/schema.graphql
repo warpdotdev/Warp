@@ -923,7 +923,16 @@ type CreateTeamOutput implements Response {
 
 union CreateTeamResult = CreateTeamOutput | UserFacingError
 
+type ContentCRC32CFieldValue {
+  _: Boolean
+}
+
+type ContentDataFieldValue {
+  _: Boolean
+}
+
 type CreateUploadTarget {
+  fields: [UploadField!]!
   headers: [CreateUploadTargetHeader!]!
   method: String!
   url: String!
@@ -3115,6 +3124,10 @@ enum SpaceType {
   User
 }
 
+type StaticUploadFieldValue {
+  value: String!
+}
+
 input StripeBillingPortalInput {
   teamUid: ID!
 }
@@ -3818,6 +3831,13 @@ input UpdatedObjectInput {
   revisionTs: Time!
   uid: ID!
 }
+
+type UploadField {
+  name: String!
+  value: UploadFieldValue!
+}
+
+union UploadFieldValue = ContentCRC32CFieldValue | ContentDataFieldValue | StaticUploadFieldValue
 
 type UsageBasedPricingPolicy {
   toggleable: Boolean!

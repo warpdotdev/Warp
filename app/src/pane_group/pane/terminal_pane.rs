@@ -1555,6 +1555,7 @@ fn dispatch_start_agent_conversation(
             worker_host,
             harness_type,
             title,
+            auth_secret_name,
         } => {
             launch_remote_child(
                 group,
@@ -1568,6 +1569,7 @@ fn dispatch_start_agent_conversation(
                     worker_host,
                     harness_type,
                     title,
+                    auth_secret_name,
                 },
                 ctx,
             );
@@ -1783,6 +1785,10 @@ struct RemoteLaunchFields {
     worker_host: String,
     harness_type: String,
     title: String,
+    /// Managed-secret name forwarded from the orchestration UI for non-Oz
+    /// harness credentials. Resolved to `AgentConfigSnapshot.harness_auth_secrets`
+    /// when applicable.
+    auth_secret_name: Option<String>,
 }
 
 /// Sets up a hidden ambient-agent pane for a Remote child agent: creates the
@@ -1813,6 +1819,7 @@ fn launch_remote_child(
         worker_host,
         harness_type,
         title,
+        auth_secret_name,
     } = fields;
 
     let request_id = request.id;
@@ -1909,6 +1916,25 @@ fn launch_remote_child(
     };
     let computer_use_enabled =
         (orchestration_harness == Harness::Oz).then_some(computer_use_enabled);
+    // Map the run-wide auth secret name into the harness-specific
+    // config variant. For unsupported harnesses (Oz, OpenCode, Gemini,
+    // Unknown), the secret is silently ignored — those harnesses either
+    // use Warp's built-in auth (Oz) or don't currently support managed
+    // secrets via this flow.
+    let harness_auth_secrets = auth_secret_name
+        .as_ref()
+        .filter(|name| !name.trim().is_empty())
+        .and_then(|name| match orchestration_harness {
+            Harness::Claude => Some(crate::ai::ambient_agents::task::HarnessAuthSecretsConfig {
+                claude_auth_secret_name: Some(name.clone()),
+                codex_auth_secret_name: None,
+            }),
+            Harness::Codex => Some(crate::ai::ambient_agents::task::HarnessAuthSecretsConfig {
+                claude_auth_secret_name: None,
+                codex_auth_secret_name: Some(name.clone()),
+            }),
+            Harness::Oz | Harness::OpenCode | Harness::Gemini | Harness::Unknown => None,
+        });
     let spawn_request = SpawnAgentRequest {
         prompt: request.prompt,
         mode: UserQueryMode::Normal,
@@ -1918,6 +1944,7 @@ fn launch_remote_child(
             worker_host: (!worker_host.is_empty()).then_some(worker_host),
             computer_use_enabled,
             harness: harness_override,
+            harness_auth_secrets,
             ..Default::default()
         }),
         title: (!title.is_empty()).then_some(title),

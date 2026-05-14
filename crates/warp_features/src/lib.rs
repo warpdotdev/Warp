@@ -698,6 +698,10 @@ pub enum FeatureFlag {
     /// real time.
     OrchestrationV2,
 
+    /// Re-enables local Claude Code and Codex child harnesses in orchestration
+    /// flows while the default behavior temporarily keeps them disabled.
+    LocalClaudeCodexChildHarnesses,
+
     /// Gates client-side support for the `orchestrate` tool, which batches
     /// multiple child agents into a single tool call with an inline
     /// confirmation card. When enabled, the client advertises
@@ -794,6 +798,11 @@ pub enum FeatureFlag {
 
     /// When enabled, solo users (not on a team) can use BYO API keys.
     SoloUserByok,
+
+    /// Enables the Custom Inference settings UI for adding user-provided third-party / OpenAI-compatible inference endpoints.
+    CustomInferenceEndpoints,
+    /// Enables Custom Inference endpoints for enterprise users.
+    CustomInferenceEndpointsEnterprise,
 
     /// Replaces the in-block warpification banner with a warpify footer.
     WarpifyFooter,
@@ -937,6 +946,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::NamedAgents,
     FeatureFlag::HandoffCloudCloud,
     FeatureFlag::SoloUserByok,
+    FeatureFlag::CustomInferenceEndpoints,
     FeatureFlag::RemoteCodebaseIndexing,
 ];
 
@@ -969,7 +979,7 @@ pub const RELEASE_FLAGS: &[FeatureFlag] = &[
 ];
 
 /// Flags that we want to allow to switch at runtime (assuming RuntimeFeatureFlags is set)
-pub const RUNTIME_FEATURE_FLAGS: &[FeatureFlag] = &[];
+pub const RUNTIME_FEATURE_FLAGS: &[FeatureFlag] = &[FeatureFlag::LocalClaudeCodexChildHarnesses];
 
 impl FeatureFlag {
     pub fn is_enabled(&self) -> bool {
