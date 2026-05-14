@@ -13435,6 +13435,20 @@ impl Workspace {
             return;
         };
 
+        // If the handoff target's agent view is fullscreen, exit it so the
+        // cloud pane is visible at the terminal level, not inside the agent view.
+        let target_agent_view_controller =
+            handoff_target.as_ref(ctx).agent_view_controller().clone();
+        if target_agent_view_controller
+            .as_ref(ctx)
+            .agent_view_state()
+            .is_fullscreen()
+        {
+            target_agent_view_controller.update(ctx, |controller, ctx| {
+                controller.exit_agent_view_without_confirmation(ctx);
+            });
+        }
+
         if let Some(environment_id) = environment_id {
             model_handle.update(ctx, |model, ctx| {
                 model.set_environment_id(Some(environment_id), ctx);
