@@ -712,13 +712,13 @@ impl CodeReviewView {
 
     fn to_standardized_path(&self, path: &PathBuf) -> Option<StandardizedPath> {
         if path.is_absolute() {
-            return Some(StandardizedPath::from_local_absolute_unchecked(&path));
+            Some(StandardizedPath::from_local_absolute_unchecked(path))
         } else {
             let repo_path = self.repo_path()?;
             let absolute_path = repo_path.join(path);
-            return Some(StandardizedPath::from_local_absolute_unchecked(
+            Some(StandardizedPath::from_local_absolute_unchecked(
                 &absolute_path,
-            ));
+            ))
         }
     }
 
@@ -7302,9 +7302,9 @@ impl TypedActionView for CodeReviewView {
                                 .get(path)
                                 .unwrap_or(&false)
                             {
-                                return None;
+                                None
                             } else {
-                                return self.to_standardized_path(&path);
+                                self.to_standardized_path(path)
                             }
                         })
                         .collect();
