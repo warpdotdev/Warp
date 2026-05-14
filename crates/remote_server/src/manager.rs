@@ -1489,6 +1489,14 @@ impl RemoteServerManager {
             .spawn(async move {
                 match client.navigate_to_directory(path).await {
                     Ok(resp) => {
+                        log::info!(
+                            "[Debugging Remote Codebase Indexing] Client received navigation response: session={session_id:?} is_git={}",
+                            resp.is_git
+                        );
+                        log::debug!(
+                            "[Debugging Remote Codebase Indexing] Client received navigation response path: session={session_id:?} indexed_path={}",
+                            resp.indexed_path
+                        );
                         let _ = spawner
                             .spawn(move |_me, ctx| {
                                 let Some(remote_path) = StandardizedPath::try_new(&resp.indexed_path)
@@ -1502,6 +1510,15 @@ impl RemoteServerManager {
                                     );
                                     return;
                                 };
+                                log::info!(
+                                    "[Debugging Remote Codebase Indexing] Client emitting navigation event: session={session_id:?} host={} is_git={}",
+                                    remote_path.host_id,
+                                    resp.is_git
+                                );
+                                log::debug!(
+                                    "[Debugging Remote Codebase Indexing] Client emitting navigation event path: session={session_id:?} remote_path={}",
+                                    remote_path.path
+                                );
                                 ctx.emit(RemoteServerManagerEvent::NavigatedToDirectory {
                                     session_id,
                                     remote_path,

@@ -143,12 +143,44 @@ impl RemoteCodebaseIndexModel {
                 self.apply_status_update(remote_path.clone(), status.clone());
             }
             RemoteServerManagerEvent::NavigatedToDirectory {
-                session_id: _,
+                session_id,
                 remote_path,
                 is_git,
             } => {
                 self.record_navigated_directory(remote_path);
-                if *is_git && should_auto_index_remote_codebase(ctx) {
+                let remote_codebase_indexing_enabled =
+                    FeatureFlag::RemoteCodebaseIndexing.is_enabled();
+                let full_source_code_embedding_enabled =
+                    FeatureFlag::FullSourceCodeEmbedding.is_enabled();
+                let codebase_context_enabled =
+                    UserWorkspaces::as_ref(ctx).is_codebase_context_enabled(ctx);
+                let auto_indexing_enabled = *CodeSettings::as_ref(ctx).auto_indexing_enabled;
+                let should_auto_index =
+                    remote_auto_indexing_enabled(codebase_context_enabled, auto_indexing_enabled);
+                let existing_status = self.status_for_repo(remote_path);
+                let existing_state = existing_status.map(|status| status.state);
+                let has_root_hash = existing_status
+                    .and_then(|status| status.root_hash.as_deref())
+                    .is_some_and(|root_hash| !root_hash.is_empty());
+
+                log::info!(
+                    "[Debugging Remote Codebase Indexing] Client evaluating navigation for auto-indexing: session={session_id:?} host={} is_git={is_git} existing_state={existing_state:?} has_root_hash={has_root_hash}",
+                    remote_path.host_id
+                );
+                log::debug!(
+                    "[Debugging Remote Codebase Indexing] Client evaluating navigation path for auto-indexing: session={session_id:?} remote_path={}",
+                    remote_path.path
+                );
+
+                if *is_git && should_auto_index {
+                    log::info!(
+                        "[Debugging Remote Codebase Indexing] Client requesting remote codebase indexing after navigation: session={session_id:?} host={} existing_state={existing_state:?}",
+                        remote_path.host_id
+                    );
+                    log::debug!(
+                        "[Debugging Remote Codebase Indexing] Client requesting remote codebase indexing path: session={session_id:?} remote_path={}",
+                        remote_path.path
+                    );
                     // Mirrors local auto-indexing for the thin remote E2E path. TODO(APP-3792):
                     // route remote indexing through the speedbump/consent flow instead of
                     // requesting immediately on navigation.
@@ -156,6 +188,24 @@ impl RemoteCodebaseIndexModel {
                     RemoteServerManager::handle(ctx).update(ctx, |manager, ctx| {
                         manager.index_codebase(remote_path, ctx);
                     });
+                } else {
+                    let skip_reason = if !*is_git {
+                        "not_git"
+                    } else if !remote_codebase_indexing_enabled {
+                        "remote_codebase_indexing_disabled"
+                    } else if !full_source_code_embedding_enabled {
+                        "full_source_code_embedding_disabled"
+                    } else if !codebase_context_enabled {
+                        "codebase_context_disabled"
+                    } else if !auto_indexing_enabled {
+                        "auto_indexing_disabled"
+                    } else {
+                        "unknown"
+                    };
+                    log::info!(
+                        "[Debugging Remote Codebase Indexing] Client skipping remote codebase auto-indexing after navigation: session={session_id:?} host={} reason={skip_reason} existing_state={existing_state:?}",
+                        remote_path.host_id
+                    );
                 }
             }
             RemoteServerManagerEvent::HostDisconnected { host_id } => {
@@ -296,13 +346,6 @@ fn search_availability_for_status(
                 .unwrap_or_else(|| "Remote codebase search is not available.".to_string()),
         },
     }
-}
-
-fn should_auto_index_remote_codebase(ctx: &mut ModelContext<RemoteCodebaseIndexModel>) -> bool {
-    remote_auto_indexing_enabled(
-        UserWorkspaces::as_ref(ctx).is_codebase_context_enabled(ctx),
-        *CodeSettings::as_ref(ctx).auto_indexing_enabled,
-    )
 }
 
 fn remote_auto_indexing_enabled(
