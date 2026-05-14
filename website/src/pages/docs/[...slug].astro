@@ -22,14 +22,17 @@ const data = entry.data;
 <DocsLayout
   title={data.title}
   title_zh={data.title_zh}
+  title_ja={data.title_ja}
   lede={data.lede}
   lede_zh={data.lede_zh}
+  lede_ja={data.lede_ja}
   section={data.section}
   section_zh={data.section_zh}
+  section_ja={data.section_ja}
   activeSlug={entry.id}
   headings={headings}
-  prev={prev ? { slug: prev.id, title: prev.data.title, title_zh: prev.data.title_zh } : null}
-  next={next ? { slug: next.id, title: next.data.title, title_zh: next.data.title_zh } : null}
+  prev={prev ? { slug: prev.id, title: prev.data.title, title_zh: prev.data.title_zh, title_ja: prev.data.title_ja } : null}
+  next={next ? { slug: next.id, title: next.data.title, title_zh: next.data.title_zh, title_ja: next.data.title_ja } : null}
 >
   <Content />
 </DocsLayout>

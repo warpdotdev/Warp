@@ -33,6 +33,7 @@ const {
     <Banner
       en="Early development · Unofficial fork of Warp · Not affiliated with Warp Inc."
       zh="早期开发阶段 · Warp 的非官方社区分支 · 与 Warp Inc. 无隶属关系"
+      ja="初期開発段階 · Warp の非公式コミュニティフォーク · Warp Inc. とは無関係"
     />
     <LandingNav />
 
@@ -41,39 +42,74 @@ const {
     <LandingFooter />
 
     <script>
-      // Locale switching, lang pill, in-page nav, tab + copy widgets, scroll fade-in
+      // 语言切换、页内导航、标签页、复制按钮与滚动渐显
       (function () {
+        const htmlLang: Record<string, string> = { en: 'en', zh: 'zh-CN', ja: 'ja' };
+        function normalizeLocale(value: string | null) {
+          const tag = String(value || '').toLowerCase();
+          if (tag.startsWith('zh')) return 'zh';
+          if (tag.startsWith('ja')) return 'ja';
+          if (tag.startsWith('en')) return 'en';
+          return htmlLang[tag] ? tag : null;
+        }
         function applyLocale(l: string) {
-          document.body.dataset.locale = l;
-          document.documentElement.lang = l === 'zh' ? 'zh-CN' : 'en';
-          document.querySelectorAll('.lang button').forEach((b) => {
-            b.classList.toggle('active', (b as HTMLElement).getAttribute('data-set-lang') === l);
+          const locale = normalizeLocale(l) || 'en';
+          document.body.dataset.locale = locale;
+          document.documentElement.lang = htmlLang[locale] || 'en';
+          document.querySelectorAll<HTMLElement>('[data-set-lang]').forEach((option) => {
+            const active = option.getAttribute('data-set-lang') === locale;
+            option.classList.toggle('active', active);
+            option.setAttribute('aria-selected', String(active));
           });
-          positionPill();
+        }
+        function closeLocaleMenus() {
+          document.querySelectorAll<HTMLElement>('[data-locale-options]').forEach((menu) => {
+            menu.hidden = true;
+          });
+          document.querySelectorAll<HTMLElement>('[data-locale-trigger]').forEach((trigger) => {
+            trigger.setAttribute('aria-expanded', 'false');
+          });
+          document.querySelectorAll<HTMLElement>('[data-locale-menu]').forEach((menu) => {
+            menu.removeAttribute('data-open');
+          });
         }
         function setLocale(l: string) {
-          // Only persist when the user explicitly chose a language; auto-detection
-          // should keep following the OS / browser on subsequent visits.
-          localStorage.setItem('openwarp:locale', l);
-          applyLocale(l);
-        }
-        function positionPill() {
-          document.querySelectorAll<HTMLElement>('.lang').forEach((lang) => {
-            const a = lang.querySelector<HTMLElement>('button.active');
-            if (!a) return;
-            lang.style.setProperty('--lp-x', a.offsetLeft + 'px');
-            lang.style.setProperty('--lp-w', a.offsetWidth + 'px');
-          });
+          // 仅在用户显式选择语言时持久化;自动检测应在后续访问继续跟随系统/浏览器。
+          const locale = normalizeLocale(l) || 'en';
+          localStorage.setItem('openwarp:locale', locale);
+          applyLocale(locale);
         }
         const initialLocale = (document.body.dataset.locale as string) || 'en';
         applyLocale(initialLocale);
-        window.addEventListener('load', positionPill);
-        window.addEventListener('resize', positionPill);
-        document.querySelectorAll<HTMLButtonElement>('.lang button').forEach((b) => {
-          b.addEventListener('click', () => setLocale(b.getAttribute('data-set-lang') || 'en'));
+        document.querySelectorAll<HTMLElement>('[data-locale-menu]').forEach((menu) => {
+          const trigger = menu.querySelector<HTMLButtonElement>('[data-locale-trigger]');
+          const options = menu.querySelector<HTMLElement>('[data-locale-options]');
+          if (!trigger || !options) return;
+          trigger.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const shouldOpen = options.hidden;
+            closeLocaleMenus();
+            options.hidden = !shouldOpen;
+            trigger.setAttribute('aria-expanded', String(shouldOpen));
+            if (shouldOpen) menu.setAttribute('data-open', 'true');
+          });
+          menu.querySelectorAll<HTMLButtonElement>('[data-set-lang]').forEach((option) => {
+            option.addEventListener('click', (event) => {
+              event.stopPropagation();
+              setLocale(option.getAttribute('data-set-lang') || 'en');
+              closeLocaleMenus();
+            });
+          });
+        });
+        document.addEventListener('click', (event) => {
+          const target = event.target as Element | null;
+          if (!target?.closest('[data-locale-menu]')) closeLocaleMenus();
+        });
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') closeLocaleMenus();
         });
 
-        // Header scroll shadow
+        // 顶部导航滚动阴影
         const navEl = document.querySelector('header.nav');
         function onScroll() {
           if (navEl) navEl.classList.toggle('scrolled', window.scrollY > 8);
@@ -81,7 +117,7 @@ const {
         document.addEventListener('scroll', onScroll, { passive: true });
         onScroll();
 
-        // Mobile nav toggle
+        // 移动端导航开关
         const toggle = document.querySelector<HTMLButtonElement>('.nav-toggle');
         const links = document.getElementById('primary-nav');
         if (toggle && links) {
@@ -97,7 +133,7 @@ const {
           );
         }
 
-        // Smooth in-page nav
+        // 页内平滑滚动
         document.querySelectorAll<HTMLAnchorElement>('a[href^="#"]').forEach((a) => {
           a.addEventListener('click', (e) => {
             const id = a.getAttribute('href')?.slice(1);
@@ -108,7 +144,7 @@ const {
           });
         });
 
-        // Provider tabs (animated rail)
+        // 服务商标签页与动画轨道
         document.querySelectorAll<HTMLElement>('.prov-tabs').forEach((tabs) => {
           const rail = tabs.querySelector<HTMLElement>('[data-prov-rail]');
           const moveRail = (b: HTMLButtonElement) => {
@@ -137,7 +173,7 @@ const {
           });
         });
 
-        // Install tabs
+        // 安装方式标签页
         document.querySelectorAll<HTMLElement>('.install-tabs').forEach((tabs) => {
           tabs.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
             b.addEventListener('click', () => {
@@ -151,13 +187,13 @@ const {
           });
         });
 
-        // Copy buttons
+        // 复制按钮
         document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((btn) => {
           btn.addEventListener('click', () => {
             const pre = btn.closest('.pre-wrap, .code-card')?.querySelector<HTMLElement>('pre.code');
             if (pre && navigator.clipboard) navigator.clipboard.writeText(pre.innerText);
             const prev = btn.textContent;
-            btn.textContent = document.body.dataset.locale === 'zh' ? '已复制' : 'Copied';
+            btn.textContent = document.body.dataset.locale === 'zh' ? '已复制' : document.body.dataset.locale === 'ja' ? 'コピー済み' : 'Copied';
             btn.classList.add('copied');
             setTimeout(() => {
               btn.textContent = prev;
@@ -166,7 +202,7 @@ const {
           });
         });
 
-        // Scroll fade-in
+        // 滚动渐显
         const io = new IntersectionObserver(
           (entries) => {
             entries.forEach((e) => {

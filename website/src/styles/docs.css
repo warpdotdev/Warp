@@ -124,28 +124,109 @@ header.nav {
 .nav-links a:hover { color: var(--ink); }
 .nav-links a.active { color: var(--ink); }
 .nav-spacer { flex: 1; }
-.nav-right { display: flex; align-items: center; gap: 14px; font-size: 13px; }
+.nav-right { display: flex; align-items: center; gap: 10px; font-size: 13px; }
 .lang {
-  display: inline-flex;
-  border: 1px solid var(--line-2);
-  border-radius: 999px;
-  padding: 2px;
+  position: relative;
   font-family: "Geist Mono", monospace;
-  font-size: 11px; letter-spacing: 0.04em;
+  font-size: 11px; letter-spacing: 0.02em;
   color: var(--muted);
 }
-.lang button {
-  border: 0; background: transparent; color: inherit;
-  padding: 4px 10px; border-radius: 999px;
-  cursor: pointer; font: inherit; letter-spacing: inherit;
+.lang-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  min-width: 116px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  padding: 0 10px 0 12px;
+  transition: border-color .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease;
 }
-.lang button.active { background: var(--ink); color: #fff; }
+.lang-trigger:hover,
+.lang[data-open="true"] .lang-trigger {
+  border-color: var(--ink-2);
+  background: #fbfaf7;
+  color: var(--ink);
+  box-shadow: 0 8px 20px -18px rgba(20,20,26,0.38);
+}
+.lang-trigger:focus,
+.lang-trigger:focus-visible { outline: 0; }
+.lang-current { flex: 1; text-align: left; white-space: nowrap; }
+.lang-chev {
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  opacity: .7;
+}
+.lang-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 80;
+  min-width: 152px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 18px 42px -24px rgba(20,20,26,0.38), 0 8px 18px -16px rgba(20,20,26,0.22);
+}
+.lang-menu[hidden] { display: none; }
+.lang-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  padding: 7px 8px;
+  text-align: left;
+}
+.lang-option:hover,
+.lang-option.active {
+  background: var(--ink);
+  color: #fff;
+}
+.lang-option:focus,
+.lang-option:focus-visible { outline: 0; }
+.lang-option-mark {
+  width: 22px;
+  color: var(--muted-2);
+  font-size: 10px;
+  text-align: center;
+}
+.lang-option.active .lang-option-mark,
+.lang-option:hover .lang-option-mark { color: rgba(255,255,255,0.72); }
 .gh-link {
   display: inline-flex; align-items: center; gap: 8px;
+  height: 34px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   color: var(--muted);
   font-family: "Geist Mono", monospace; font-size: 12px;
+  transition: color .15s ease, border-color .18s ease, background .18s ease, transform .18s ease;
 }
-.gh-link:hover { color: var(--ink); }
+.gh-link:hover {
+  color: var(--ink);
+  border-color: var(--line-2);
+  background: #fff;
+  transform: translateY(-1px);
+}
 .gh-link svg { width: 16px; height: 16px; }
 
 .docs-toggle {
@@ -652,8 +733,9 @@ aside.toc {
   box-shadow: inset 1px 0 0 var(--accent);
 }
 
-body[data-locale="en"] [data-lang="zh"] { display: none; }
-body[data-locale="zh"] [data-lang="en"] { display: none; }
+body[data-locale="en"] [data-lang]:not([data-lang="en"]),
+body[data-locale="zh"] [data-lang]:not([data-lang="zh"]),
+body[data-locale="ja"] [data-lang]:not([data-lang="ja"]) { display: none; }
 
 /* ---------- Scrollbar ---------- */
 * { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
@@ -670,7 +752,7 @@ body[data-locale="zh"] [data-lang="en"] { display: none; }
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-corner { background: transparent; }
-/* dark surfaces (code cards, tabs panes) keep slim subtle thumbs */
+/* 深色区域的滚动条保持轻量 */
 .code-card ::-webkit-scrollbar-thumb,
 .tabs-card ::-webkit-scrollbar-thumb {
   background: rgba(255,255,255,0.18);

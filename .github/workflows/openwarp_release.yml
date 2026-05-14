@@ -1,10 +1,10 @@
 # OpenWarp 发布流水线 — 在 openWarp 分支上 push tag (v*) 即触发
 #
 # 与上游 create_release.yml 的差异:
-# - 仅 macOS arm64 + Windows x64 + Linux x86_64(AppImage),
-#   Web/CLI/Universal/Win-arm64/macOS x86_64/Linux 的 rpm/arch 全砍
-#   (macOS x86_64 在 macos-26-intel 上 release 编译稳定爆 3h job 上限,直接砍掉;
-#    Linux 只产 AppImage/deb,不发布上游 Warp 仓库源或签名 key)
+# - 仅 macOS arm64 + macOS Intel + Windows x64 + Linux x86_64(AppImage),
+#   Web/CLI/Universal/Win-arm64/Linux 的 rpm/arch 全砍
+#   (macOS 双架构分别产单架构 DMG 与 CLI tarball;Linux 只产 AppImage/deb,
+#    不发布上游 Warp 仓库源或签名 key)
 # - 单 channel: preview(由 release_configurations.json 提供配置)
 # - 不签名:不传 --read-passwords-from-env(macOS) / 不设 SIGN_TOOL_CMD(Windows)
 # - 不上传 GCS / 第三方 crash 平台 / Slack / changelog,不调 channel-versions repository_dispatch
@@ -82,8 +82,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     needs: prepare_metadata
     # macos-26 / macos-26-intel(Pro standard)无 sccache,full cargo build + bundle + create-dmg
-    # 实测 90min 卡在 cargo build 阶段被取消;参考 Windows standard 1h43m,留 buffer 设 180
-    timeout-minutes: 180
+    # 耗时高;Intel 构建历史上超过 180min,这里放宽到 GitHub-hosted job 6h 执行上限。
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
@@ -91,6 +91,9 @@ jobs:
           - arch: aarch64
             dmg_name_suffix: arm64
             runner: macos-26 # Pro standard arm64 (M2 Pro)
+          - arch: x86_64
+            dmg_name_suffix: intel
+            runner: macos-26-intel # Pro standard Intel
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -99,6 +102,7 @@ jobs:
       - uses: ./.github/actions/prepare_environment
         with:
           target_os: macos
+          cache_key: macos-${{ matrix.arch }}
           is_self_hosted: false
           install_release_deps: true
 

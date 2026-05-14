@@ -28,10 +28,12 @@ const repo = 'https://github.com/zerx-lab/warp';
       <div class="fade-in">
         <h1 data-lang="en">The Open<br/><span class="em">Warp</span> terminal<span class="dot">.</span></h1>
         <h1 data-lang="zh">开放的 <span class="em">Warp</span> 终端<span class="dot">.</span></h1>
+        <h1 data-lang="ja">オープンな <span class="em">Warp</span> ターミナル<span class="dot">.</span></h1>
         <p class="lede" data-lang="en">A fully decentralized fork of Warp. Six native AI protocols, third-party CLI agents as first-class Blocks, a built-in SSH + tmux host manager. Every credential, conversation and key stays on your machine.</p>
         <p class="lede" data-lang="zh">Warp 的开源社区分支。原生支持 6 种 AI 协议,适配主流第三方 CLI Agent,内置 SSH + tmux 主机管理。凭证、会话与密钥全部保存在本地。</p>
+        <p class="lede" data-lang="ja">Warp の完全分散型フォーク。6 種のネイティブ AI プロトコル、サードパーティ CLI Agent を第一級の Blocks として扱い、SSH + tmux ホスト管理も内蔵。認証情報、会話、鍵はすべて手元のマシンに残ります。</p>
         <div class="hero-cta">
-          <a class="btn" href="#install"><span data-lang="en">Install</span><span data-lang="zh">安装</span><span class="arr">→</span></a>
+          <a class="btn" href="#install"><span data-lang="en">Install</span><span data-lang="zh">安装</span><span data-lang="ja">インストール</span><span class="arr">→</span></a>
           <a class="btn alt" href={repo} target="_blank" rel="noopener">GitHub</a>
         </div>
       </div>
@@ -56,10 +58,12 @@ const repo = 'https://github.com/zerx-lab/warp';
       <blockquote>
         <span data-lang="en">“I shouldn't have to ship my prompts, my keys, and my <span class="accent">cwd</span> to a server I don't control just to use a smart terminal.”</span>
         <span data-lang="zh">“为了使用一个智能终端,不应当把 Prompt、API Key 和当前工作目录全部交给一台不在自己掌控之下的服务器。”</span>
+        <span data-lang="ja">「スマートなターミナルを使うためだけに、Prompt や API Key、現在の <span class="accent">cwd</span> を自分が管理していないサーバーへ送る必要はないはずです。」</span>
       </blockquote>
       <div class="who">
         <span data-lang="en"><strong>The thesis behind OpenWarp</strong> · COMMUNITY FORK</span>
         <span data-lang="zh"><strong>OpenWarp 的设计初衷</strong> · 社区分支</span>
+        <span data-lang="ja"><strong>OpenWarp の設計思想</strong> · コミュニティフォーク</span>
       </div>
     </div>
   </section>
@@ -73,11 +77,14 @@ const repo = 'https://github.com/zerx-lab/warp';
           <div class="sec-label"><span class="br">[</span> HOW <span class="br">]</span></div>
           <h2 class="sec-h2" data-lang="en">How <span class="em">OpenWarp</span> handles every prompt.</h2>
           <h2 class="sec-h2" data-lang="zh">OpenWarp <span class="em">如何处理</span>每一次对话.</h2>
+          <h2 class="sec-h2" data-lang="ja"><span class="em">OpenWarp</span> がすべてのプロンプトを扱う仕組み.</h2>
           <p class="sec-sub" data-lang="en">OpenWarp keeps the upstream Warp UI — Blocks, Workflows, command suggestions — and replaces the closed AI gateway with explicit, local, editable plumbing.</p>
           <p class="sec-sub" data-lang="zh">OpenWarp 完整保留上游 Warp 的 Blocks、Workflows 与命令建议,将封闭的 AI 网关替换为透明、本地、可配置的调用链路。</p>
+          <p class="sec-sub" data-lang="ja">OpenWarp は上流 Warp の UI、Blocks、Workflows、コマンド候補を保ちつつ、閉じた AI ゲートウェイを明示的でローカルかつ編集可能な経路に置き換えます。</p>
         </div>
         <span class="pill" data-lang="en">3 stages</span>
         <span class="pill" data-lang="zh">3 个阶段</span>
+        <span class="pill" data-lang="ja">3 段階</span>
       </div>
 
       <div class="how-cards">
@@ -85,8 +92,10 @@ const repo = 'https://github.com/zerx-lab/warp';
           <div class="num">STAGE 01</div>
           <div class="ttl" data-lang="en">Captures your block</div>
           <div class="ttl" data-lang="zh">采集 Block</div>
+          <div class="ttl" data-lang="ja">Block を取得</div>
           <div class="desc" data-lang="en">Each command becomes a Block with its cwd, env, exit code — the full unit of context.</div>
           <div class="desc" data-lang="zh">每条命令封装为一个 Block,包含工作目录、环境变量与退出码,构成完整的上下文单元。</div>
+          <div class="desc" data-lang="ja">各コマンドは cwd、env、終了コードを含む Block になり、完全なコンテキスト単位として扱われます。</div>
           <div class="vis">
             <div class="term-mock">
               <div class="term-mock__bar">
@@ -108,8 +117,10 @@ const repo = 'https://github.com/zerx-lab/warp';
           <div class="num">STAGE 02</div>
           <div class="ttl" data-lang="en">Routes to your provider</div>
           <div class="ttl" data-lang="zh">路由至目标服务商</div>
+          <div class="ttl" data-lang="ja">利用するプロバイダーへ送信</div>
           <div class="desc" data-lang="en">Your <code>settings.toml</code> picks the model. The request goes straight from your machine to the endpoint — no middle hop, no gateway.</div>
           <div class="desc" data-lang="zh">通过 <code>settings.toml</code> 配置目标模型。请求从本地设备直接发送至模型服务端点,不经过任何中间网关。</div>
+          <div class="desc" data-lang="ja"><code>settings.toml</code> がモデルを選びます。リクエストは手元のマシンからエンドポイントへ直接送られ、中継やゲートウェイはありません。</div>
           <div class="vis">
             <div class="term-mock">
               <div class="term-mock__bar">
@@ -131,8 +142,10 @@ const repo = 'https://github.com/zerx-lab/warp';
           <div class="num">STAGE 03</div>
           <div class="ttl" data-lang="en">Streams back into Blocks</div>
           <div class="ttl" data-lang="zh">流式回写至 Block</div>
+          <div class="ttl" data-lang="ja">Blocks へストリーミング返信</div>
           <div class="desc" data-lang="en">SSE tokens land in the same Block UI you already know. Local tools — shell / read / edit / search / mcp — execute on box and re-enter the loop.</div>
           <div class="desc" data-lang="zh">SSE Token 流式渲染至 Block 界面。shell、read、edit、search、mcp 等本地工具在本机执行后,再次进入下一轮调用。</div>
+          <div class="desc" data-lang="ja">SSE トークンは使い慣れた Block UI に流れ込みます。shell、read、edit、search、mcp などのローカルツールは手元で実行され、次のループへ戻ります。</div>
           <div class="vis">
             <div class="term-mock">
               <div class="term-mock__bar">
@@ -152,24 +165,26 @@ const repo = 'https://github.com/zerx-lab/warp';
 
       <!-- providers -->
       <div class="prov-head fade-in">
-        <div class="prov-eyebrow"><span class="dot"></span><span data-lang="en">PROVIDERS</span><span data-lang="zh">PROVIDERS · 模型服务商</span></div>
+        <div class="prov-eyebrow"><span class="dot"></span><span data-lang="en">PROVIDERS</span><span data-lang="zh">PROVIDERS · 模型服务商</span><span data-lang="ja">PROVIDERS · モデルプロバイダー</span></div>
         <h3 data-lang="en">Bring any provider you want.</h3>
         <h3 data-lang="zh">支持任意模型服务商接入.</h3>
+        <h3 data-lang="ja">好きなプロバイダーを接続できます.</h3>
         <p data-lang="en">Six native protocols — OpenAI / OpenAIResp / Anthropic / Gemini / Ollama / DeepSeek — plus any OpenAI-compatible endpoint. One TOML file, no gateway.</p>
         <p data-lang="zh">原生支持 6 种协议:OpenAI、OpenAIResp、Anthropic、Gemini、Ollama、DeepSeek,同时兼容任意 OpenAI 协议端点。仅需一个 TOML 配置文件,无需经过网关。</p>
+        <p data-lang="ja">OpenAI / OpenAIResp / Anthropic / Gemini / Ollama / DeepSeek の 6 種のネイティブプロトコルに加え、任意の OpenAI 互換エンドポイントに対応。TOML ファイル 1 つだけで、ゲートウェイは不要です。</p>
       </div>
       <div class="prov-tabs" role="tablist">
         <span class="prov-tabs-rail" data-prov-rail></span>
         <button class="active" data-pf="frontier" type="button">
-          <span class="t" data-lang="en">Frontier</span><span class="t" data-lang="zh">前沿模型</span>
+          <span class="t" data-lang="en">Frontier</span><span class="t" data-lang="zh">前沿模型</span><span class="t" data-lang="ja">フロンティア</span>
           <span class="c">3</span>
         </button>
         <button data-pf="oss" type="button">
-          <span class="t" data-lang="en">Gateways</span><span class="t" data-lang="zh">聚合服务</span>
+          <span class="t" data-lang="en">Gateways</span><span class="t" data-lang="zh">聚合服务</span><span class="t" data-lang="ja">ゲートウェイ</span>
           <span class="c">3</span>
         </button>
         <button data-pf="local" type="button">
-          <span class="t" data-lang="en">Local</span><span class="t" data-lang="zh">本地部署</span>
+          <span class="t" data-lang="en">Local</span><span class="t" data-lang="zh">本地部署</span><span class="t" data-lang="ja">ローカル</span>
           <span class="c">3</span>
         </button>
       </div>
@@ -192,6 +207,7 @@ protocol = <span class="s">"deepseek"</span>
 base_url = <span class="s">"…/v1"</span></pre>
           <p data-lang="en">Native DeepSeek protocol — reasoning trace and tool calling wired through, no compatibility shim.</p>
           <p data-lang="zh">DeepSeek 原生协议接入,完整支持思考链与工具调用,无需任何兼容层。</p>
+          <p data-lang="ja">DeepSeek ネイティブプロトコルに対応し、推論トレースとツール呼び出しを互換レイヤーなしで接続します。</p>
         </article>
 
         <article class="prov-card">
@@ -211,6 +227,7 @@ protocol = <span class="s">"anthropic"</span>
 base_url = <span class="s">"…/v1"</span></pre>
           <p data-lang="en">Tool-use loop, prompt caching and image inputs all bound to the native API.</p>
           <p data-lang="zh">工具调用、Prompt 缓存与图像输入均通过原生 API 实现。</p>
+          <p data-lang="ja">ツール利用ループ、プロンプトキャッシュ、画像入力をすべてネイティブ API に結び付けます。</p>
         </article>
 
         <article class="prov-card">
@@ -230,6 +247,7 @@ protocol = <span class="s">"openai"</span>
 base_url = <span class="s">"…/v1"</span></pre>
           <p data-lang="en">OpenAI Chat + Responses API and Gemini are first-class — function calling, SSE, no proxy.</p>
           <p data-lang="zh">原生支持 OpenAI Chat、Responses API 与 Gemini,完整支持函数调用与 SSE,无需中转代理。</p>
+          <p data-lang="ja">OpenAI Chat + Responses API と Gemini を第一級で扱い、関数呼び出しと SSE にプロキシなしで対応します。</p>
         </article>
       </div>
 
@@ -250,6 +268,7 @@ protocol = <span class="s">"openai"</span>
 base_url = <span class="s">"openrouter.ai/api/v1"</span></pre>
           <p data-lang="en">Point <code>base_url</code> at OpenRouter — one key reaches the whole catalog.</p>
           <p data-lang="zh">将 <code>base_url</code> 指向 OpenRouter,即可通过单个密钥访问全部模型。</p>
+          <p data-lang="ja"><code>base_url</code> を OpenRouter に向けるだけで、1 つのキーから全カタログへアクセスできます。</p>
         </article>
 
         <article class="prov-card">
@@ -269,6 +288,7 @@ protocol = <span class="s">"openai"</span>
 base_url = <span class="s">"api.moonshot.cn/v1"</span></pre>
           <p data-lang="en">Self-hosted or hosted — any OpenAI-compatible endpoint just works.</p>
           <p data-lang="zh">支持自托管与托管模式,任意 OpenAI 兼容端点均可直连。</p>
+          <p data-lang="ja">セルフホストでもホスト型でも、OpenAI 互換エンドポイントならそのまま接続できます。</p>
         </article>
 
         <article class="prov-card">
@@ -287,6 +307,7 @@ protocol = <span class="s">"openai"</span>
 base_url = <span class="s">"api.groq.com/openai/v1"</span></pre>
           <p data-lang="en">Production-grade hosted inference — drop-in via the OpenAI-compatible adapter.</p>
           <p data-lang="zh">面向生产环境的托管推理服务,通过 OpenAI 兼容适配器直接接入。</p>
+          <p data-lang="ja">本番向けのホスト型推論を、OpenAI 互換アダプターでそのまま利用できます。</p>
         </article>
       </div>
 
@@ -307,6 +328,7 @@ protocol = <span class="s">"ollama"</span>
 base_url = <span class="s">"http://127.0.0.1:11434"</span></pre>
           <p data-lang="en">First-class Ollama protocol bound — no key, no network, just <code>ollama serve</code>.</p>
           <p data-lang="zh">原生 Ollama 协议直连,无需密钥、无需公网访问,启动 <code>ollama serve</code> 即可使用。</p>
+          <p data-lang="ja">Ollama プロトコルを第一級で接続。キーも外部ネットワークも不要で、<code>ollama serve</code> だけで使えます。</p>
         </article>
 
         <article class="prov-card">
@@ -325,6 +347,7 @@ protocol = <span class="s">"openai"</span>
 base_url = <span class="s">"http://127.0.0.1:1234/v1"</span></pre>
           <p data-lang="en">Drop-in OpenAI-compatible endpoint — point <code>base_url</code> and you're done.</p>
           <p data-lang="zh">即插即用的 OpenAI 兼容端点,仅需修改 <code>base_url</code> 即可使用。</p>
+          <p data-lang="ja">OpenAI 互換エンドポイントとして差し込むだけ。<code>base_url</code> を指定すれば完了です。</p>
         </article>
 
         <article class="prov-card">
@@ -343,6 +366,7 @@ protocol = <span class="s">"openai"</span>
 base_url = <span class="s">"http://gpu-01:8000/v1"</span></pre>
           <p data-lang="en">Production-grade inference on your own hardware, fine-tunes included.</p>
           <p data-lang="zh">在自有硬件上运行的生产级推理服务,同时支持自定义微调模型。</p>
+          <p data-lang="ja">自前のハードウェア上で、本番品質の推論とファインチューニング済みモデルを運用できます。</p>
         </article>
       </div>
     </div>
@@ -355,15 +379,19 @@ base_url = <span class="s">"http://gpu-01:8000/v1"</span></pre>
       <div class="sec-label"><span class="br">[</span> 02 / 04 <span class="br">]</span></div>
       <h2 class="sec-h2 fade-in" data-lang="en">Adapts to <span class="em">your terminal</span>.</h2>
       <h2 class="sec-h2 fade-in" data-lang="zh">适配 <span class="em">你的</span> 终端使用习惯.</h2>
+      <h2 class="sec-h2 fade-in" data-lang="ja"><span class="em">あなたのターミナル</span>に適応します.</h2>
       <p class="sec-sub" data-lang="en">Your provider, your prompts, your CLI agents. The AI side of OpenWarp is your house — not ours.</p>
       <p class="sec-sub" data-lang="zh">服务商、Prompt 与 CLI Agent 全部由用户自行配置,OpenWarp 仅提供 AI 层的运行环境。</p>
+      <p class="sec-sub" data-lang="ja">プロバイダー、Prompt、CLI Agent はすべてあなたのもの。OpenWarp の AI レイヤーは、私たちではなくあなたの作業場です。</p>
 
       <div class="reviews-grid three">
         <div class="review-card fade-in">
           <div class="h" data-lang="en">Bring your own provider</div>
           <div class="h" data-lang="zh">自定义服务商</div>
+          <div class="h" data-lang="ja">任意のプロバイダーを利用</div>
           <div class="d" data-lang="en">Point at any OpenAI-compatible endpoint, or speak the native protocol of DeepSeek / Anthropic / Gemini / Ollama.</div>
           <div class="d" data-lang="zh">支持指向任意 OpenAI 兼容端点,或直接使用 DeepSeek、Anthropic、Gemini、Ollama 的原生协议。</div>
+          <div class="d" data-lang="ja">任意の OpenAI 互換エンドポイント、または DeepSeek / Anthropic / Gemini / Ollama のネイティブプロトコルに接続できます。</div>
           <div class="vis">
             <pre class="mini-toml"><span class="c"># settings.toml</span>
 <span class="k">[providers.deepseek]</span>
@@ -376,8 +404,10 @@ api_key  = <span class="s">"sk-•••"</span></pre>
         <div class="review-card fade-in">
           <div class="h" data-lang="en">Editable prompts, minijinja roles</div>
           <div class="h" data-lang="zh">可编辑 Prompt · minijinja 模板</div>
+          <div class="h" data-lang="ja">編集可能な Prompt と minijinja ロール</div>
           <div class="d" data-lang="en">8 templates ported from opencode, rendered live by minijinja against cwd / language / role. Switch per Block — no server round-trip.</div>
           <div class="d" data-lang="zh">提供 8 套从 opencode 移植的 Prompt 模板,通过 minijinja 按当前工作目录、语言与角色实时渲染,可按 Block 独立切换,全程在本地完成。</div>
+          <div class="d" data-lang="ja">opencode から移植した 8 種の Prompt テンプレートを、cwd / language / role に合わせて minijinja が即時レンダリング。Block ごとに切り替えられ、サーバー往復はありません。</div>
           <div class="vis role-list">
             <span class="chip k">default</span>
             <span class="chip">anthropic</span>
@@ -393,8 +423,10 @@ api_key  = <span class="s">"sk-•••"</span></pre>
         <div class="review-card fade-in">
           <div class="h" data-lang="en">Bring any CLI agent</div>
           <div class="h" data-lang="zh">任意 CLI Agent 均可接入 Block</div>
+          <div class="h" data-lang="ja">任意の CLI Agent を Block へ</div>
           <div class="d" data-lang="en">First-class adapters for DeepSeek-TUI, Codex CLI and Claude Code. OSC9 / OSC777 routes their notifications into the same Block lifecycle and notification center.</div>
           <div class="d" data-lang="zh">已完成 DeepSeek-TUI、Codex CLI 与 Claude Code 的原生适配,通过 OSC9 / OSC777 将通知统一接入 Block 生命周期与通知中心。</div>
+          <div class="d" data-lang="ja">DeepSeek-TUI、Codex CLI、Claude Code 向けの第一級アダプターを用意。OSC9 / OSC777 で通知を同じ Block ライフサイクルと通知センターへ流します。</div>
           <div class="vis agent-list">
             <span class="chip">deepseek-tui</span>
             <span class="chip">codex</span>
@@ -415,11 +447,14 @@ api_key  = <span class="s">"sk-•••"</span></pre>
           <div class="sec-label"><span class="br">[</span> 03 / 04 <span class="br">]</span></div>
           <h2 class="sec-h2" data-lang="en">A <span class="em">first-class</span> SSH manager.</h2>
           <h2 class="sec-h2" data-lang="zh">内置 <span class="em">SSH 管理能力</span>.</h2>
+          <h2 class="sec-h2" data-lang="ja"><span class="em">第一級</span>の SSH マネージャー.</h2>
           <p class="sec-sub" data-lang="en">Net-new in OpenWarp on top of upstream Warp. Saved hosts, jump-host chains, Block-aware remote sessions — all backed by your existing <code>~/.ssh</code>.</p>
           <p class="sec-sub" data-lang="zh">OpenWarp 在上游基础上新增的能力。支持主机收藏、跳板链与 Block 感知的远端会话,直接复用现有 <code>~/.ssh</code> 配置。</p>
+          <p class="sec-sub" data-lang="ja">上流 Warp の上に OpenWarp が新たに追加した機能です。保存済みホスト、踏み台チェーン、Block 対応のリモートセッションを、既存の <code>~/.ssh</code> と組み合わせて使えます。</p>
         </div>
         <span class="pill" data-lang="en">net-new</span>
         <span class="pill" data-lang="zh">新增能力</span>
+        <span class="pill" data-lang="ja">新機能</span>
       </div>
 
       <div class="cv-cards">
@@ -442,8 +477,10 @@ api_key  = <span class="s">"sk-•••"</span></pre>
           </div>
           <div class="h" data-lang="en">Saved hosts</div>
           <div class="h" data-lang="zh">主机收藏</div>
+          <div class="h" data-lang="ja">ホスト保存</div>
           <div class="d" data-lang="en">Pin frequent hosts. One keystroke to connect — fuzzy-search built in.</div>
           <div class="d" data-lang="zh">收藏常用主机,一键发起连接,内置模糊搜索。</div>
+          <div class="d" data-lang="ja">よく使うホストをピン留め。1 回のキー操作で接続でき、ファジー検索も内蔵しています。</div>
         </div>
         <div class="cv-card fade-in">
           <div class="num">02</div>
@@ -464,8 +501,10 @@ api_key  = <span class="s">"sk-•••"</span></pre>
           </div>
           <div class="h" data-lang="en">Jump chains</div>
           <div class="h" data-lang="zh">跳板链</div>
+          <div class="h" data-lang="ja">踏み台チェーン</div>
           <div class="d" data-lang="en">Multi-hop routing declared in <code>ssh.toml</code> — no <code>ProxyJump</code> wrangling.</div>
           <div class="d" data-lang="zh">在 <code>ssh.toml</code> 中声明跳板链,无需手动配置 <code>ProxyJump</code>。</div>
+          <div class="d" data-lang="ja"><code>ssh.toml</code> にマルチホップ経路を宣言すればよく、<code>ProxyJump</code> を手で調整する必要はありません。</div>
         </div>
         <div class="cv-card fade-in">
           <div class="num">03</div>
@@ -486,8 +525,10 @@ api_key  = <span class="s">"sk-•••"</span></pre>
           </div>
           <div class="h" data-lang="en">Block-aware remote · tmux</div>
           <div class="h" data-lang="zh">Block 感知远端 · tmux</div>
+          <div class="h" data-lang="ja">Block 対応リモート · tmux</div>
           <div class="d" data-lang="en">Remote sessions render as Blocks. Native tmux integration — windows, panes, persistence.</div>
           <div class="d" data-lang="zh">远端会话同样渲染为 Block,原生集成 tmux,支持多窗口、分屏与会话持久化。</div>
+          <div class="d" data-lang="ja">リモートセッションも Blocks として表示。tmux をネイティブ統合し、ウィンドウ、ペイン、永続化に対応します。</div>
         </div>
         <div class="cv-card fade-in">
           <div class="num">04</div>
@@ -508,8 +549,10 @@ api_key  = <span class="s">"sk-•••"</span></pre>
           </div>
           <div class="h" data-lang="en">Keys stay home</div>
           <div class="h" data-lang="zh">密钥不离开本机</div>
+          <div class="h" data-lang="ja">鍵は手元に残る</div>
           <div class="d" data-lang="en">Reuses existing <code>~/.ssh</code>. <code>ssh.toml</code> holds metadata only — never touches private keys.</div>
           <div class="d" data-lang="zh">直接复用 <code>~/.ssh</code> 目录,<code>ssh.toml</code> 仅保存元数据,不会读取或写入任何私钥。</div>
+          <div class="d" data-lang="ja">既存の <code>~/.ssh</code> を再利用します。<code>ssh.toml</code> はメタデータだけを保持し、秘密鍵には触れません。</div>
         </div>
       </div>
     </div>
@@ -522,8 +565,10 @@ api_key  = <span class="s">"sk-•••"</span></pre>
       <div class="sec-label"><span class="br">[</span> 04 / 04 <span class="br">]</span></div>
       <h2 class="sec-h2 fade-in" data-lang="en">Privacy <span class="em">by default</span>, not by toggle.</h2>
       <h2 class="sec-h2 fade-in" data-lang="zh">隐私保护 <span class="em">默认开启</span>,无需手动配置.</h2>
+      <h2 class="sec-h2 fade-in" data-lang="ja">切り替えではなく、<span class="em">既定で</span>プライバシー保護.</h2>
       <p class="sec-sub" data-lang="en">Cloud Agent, Computer Use, telemetry — all off out of the box. Verify it yourself with the matrix below.</p>
       <p class="sec-sub" data-lang="zh">Cloud Agent、Computer Use 与遥测功能默认全部关闭。下表为出厂默认配置,可自行核对。</p>
+      <p class="sec-sub" data-lang="ja">Cloud Agent、Computer Use、テレメトリーは初期状態ですべてオフ。下の表でそのまま確認できます。</p>
 
       <div class="privacy-block fade-in">
         <div class="pl-row"><span class="key">cloud_agent</span><span class="val">OFF</span></div>
@@ -531,7 +576,7 @@ api_key  = <span class="s">"sk-•••"</span></pre>
         <div class="pl-row"><span class="key">telemetry</span><span class="val">OFF</span></div>
         <div class="pl-row"><span class="key">referral</span><span class="val">OFF</span></div>
         <div class="pl-row"><span class="key">api_keys.location</span><span class="val warn">~/.config/openwarp</span></div>
-        <div class="pl-row"><span class="key">network_egress</span><span class="val warn" data-lang="en">PROVIDER ONLY</span><span class="val warn" data-lang="zh">仅访问已配置服务商</span></div>
+        <div class="pl-row"><span class="key">network_egress</span><span class="val warn" data-lang="en">PROVIDER ONLY</span><span class="val warn" data-lang="zh">仅访问已配置服务商</span><span class="val warn" data-lang="ja">設定済みプロバイダーのみ</span></div>
       </div>
     </div>
   </section>
@@ -545,15 +590,17 @@ api_key  = <span class="s">"sk-•••"</span></pre>
           <div class="sec-label"><span class="br">[</span> INSTALL <span class="br">]</span></div>
           <h2 class="sec-h2" data-lang="en">Build it from <span class="em">source</span>.</h2>
           <h2 class="sec-h2" data-lang="zh">从源码 <span class="em">构建</span>.</h2>
+          <h2 class="sec-h2" data-lang="ja"><span class="em">ソース</span>からビルド.</h2>
           <p class="sec-sub" data-lang="en">No binary installers yet — OpenWarp is in early development. Use the bootstrap script or cargo directly.</p>
           <p class="sec-sub" data-lang="zh">项目处于早期开发阶段,尚未提供预编译安装包。请使用 bootstrap 脚本,或直接通过 cargo 构建。</p>
+          <p class="sec-sub" data-lang="ja">まだバイナリインストーラーはありません。OpenWarp は初期開発段階です。bootstrap スクリプト、または cargo を直接使ってください。</p>
         </div>
         <span class="pill">v0.x</span>
       </div>
 
       <div class="install-card fade-in">
         <div class="install-tabs" role="tablist">
-          <button class="active" data-tab="run" type="button">script/run<span class="meta" data-lang="en">recommended</span><span class="meta" data-lang="zh">推荐</span></button>
+          <button class="active" data-tab="run" type="button">script/run<span class="meta" data-lang="en">recommended</span><span class="meta" data-lang="zh">推荐</span><span class="meta" data-lang="ja">推奨</span></button>
           <button data-tab="cargo" type="button">cargo<span class="meta">OSS binary</span></button>
         </div>
         <div class="pre-wrap" data-pane="run">
@@ -584,8 +631,10 @@ cargo run --release <span class="a">--bin warp-oss</span></pre>
       <div class="sec-label"><span class="br">[</span> ACKS <span class="br">]</span></div>
       <h2 class="sec-h2 fade-in" data-lang="en">Standing on shoulders.</h2>
       <h2 class="sec-h2 fade-in" data-lang="zh">致谢与依赖.</h2>
+      <h2 class="sec-h2 fade-in" data-lang="ja">土台への謝辞.</h2>
       <p class="sec-sub" data-lang="en">OpenWarp is a fork. Most of what makes the terminal feel good was built by upstream Warp and the open ecosystem — we just opened the AI layer.</p>
       <p class="sec-sub" data-lang="zh">OpenWarp 是一个社区分支。终端层面的核心体验来自上游 Warp 与开源生态的长期积累,本项目主要负责开放 AI 层的实现。</p>
+      <p class="sec-sub" data-lang="ja">OpenWarp はフォークです。ターミナルの心地よさの大部分は上流 Warp とオープンなエコシステムが築いたもので、私たちは AI レイヤーを開いただけです。</p>
 
       <div class="acks-grid">
         <div class="ack fade-in">
@@ -594,6 +643,7 @@ cargo run --release <span class="a">--bin warp-oss</span></pre>
             <div class="h"><a href="https://github.com/warpdotdev/Warp" target="_blank" rel="noopener">warpdotdev/warp</a></div>
             <div class="d" data-lang="en">Upstream Rust terminal — Blocks, Workflows, suggestions.</div>
             <div class="d" data-lang="zh">上游 Rust 终端项目,提供 Blocks、Workflows 与命令建议。</div>
+            <div class="d" data-lang="ja">上流の Rust ターミナル。Blocks、Workflows、候補表示を提供します。</div>
           </div>
         </div>
         <div class="ack fade-in">
@@ -602,6 +652,7 @@ cargo run --release <span class="a">--bin warp-oss</span></pre>
             <div class="h"><a href="https://github.com/sst/opencode" target="_blank" rel="noopener">opencode-ai/opencode</a></div>
             <div class="d" data-lang="en">Provider catalog and prompt templates.</div>
             <div class="d" data-lang="zh">服务商目录与 Prompt 模板。</div>
+            <div class="d" data-lang="ja">プロバイダーカタログと Prompt テンプレート。</div>
           </div>
         </div>
         <div class="ack fade-in">
@@ -610,6 +661,7 @@ cargo run --release <span class="a">--bin warp-oss</span></pre>
             <div class="h"><a href="https://models.dev" target="_blank" rel="noopener">models.dev</a></div>
             <div class="d" data-lang="en">Model metadata index, kept in sync.</div>
             <div class="d" data-lang="zh">模型元数据索引,保持同步。</div>
+            <div class="d" data-lang="ja">同期され続けるモデルメタデータ索引。</div>
           </div>
         </div>
         <div class="ack fade-in">
@@ -618,6 +670,7 @@ cargo run --release <span class="a">--bin warp-oss</span></pre>
             <div class="h">Rust ecosystem</div>
             <div class="d" data-lang="en">tokio, reqwest, ratatui, minijinja, serde — the unsung load-bearing crates.</div>
             <div class="d" data-lang="zh">tokio、reqwest、ratatui、minijinja、serde 等承担核心能力的 crate。</div>
+            <div class="d" data-lang="ja">tokio、reqwest、ratatui、minijinja、serde など、基盤を支える crate 群。</div>
           </div>
         </div>
         <div class="ack fade-in">
@@ -626,6 +679,7 @@ cargo run --release <span class="a">--bin warp-oss</span></pre>
             <div class="h"><a href="https://github.com/Hmbown/DeepSeek-TUI" target="_blank" rel="noopener">Hmbown/DeepSeek-TUI</a></div>
             <div class="d" data-lang="en">Sibling project — a focused TUI for DeepSeek that informed our DeepSeek-native protocol path.</div>
             <div class="d" data-lang="zh">姊妹项目,聚焦 DeepSeek 的 TUI 客户端,为本项目的 DeepSeek 原生协议支持提供了参考。</div>
+            <div class="d" data-lang="ja">姉妹プロジェクト。DeepSeek に特化した TUI で、DeepSeek ネイティブプロトコル対応の参考になりました。</div>
           </div>
         </div>
       </div>
@@ -638,32 +692,38 @@ cargo run --release <span class="a">--bin warp-oss</span></pre>
       <div class="sec-label" style="text-align:center"><span class="br">[</span> FAQ <span class="br">]</span></div>
       <h2 class="sec-h2 fade-in" style="text-align:center" data-lang="en">Frequently asked.</h2>
       <h2 class="sec-h2 fade-in" style="text-align:center" data-lang="zh">常见问题.</h2>
+      <h2 class="sec-h2 fade-in" style="text-align:center" data-lang="ja">よくある質問.</h2>
 
       <div class="faq-list">
         <details class="faq-item">
-          <summary class="faq-q"><span data-lang="en">Is this affiliated with Warp Inc.?</span><span data-lang="zh">这是 Warp 官方的吗?</span><span class="plus">+</span></summary>
+          <summary class="faq-q"><span data-lang="en">Is this affiliated with Warp Inc.?</span><span data-lang="zh">这是 Warp 官方的吗?</span><span data-lang="ja">Warp Inc. と関係がありますか?</span><span class="plus">+</span></summary>
           <div class="faq-a" data-lang="en">No. OpenWarp is a community fork. We are not affiliated with, endorsed by, or sponsored by Warp Inc. The trademarks belong to their respective owners.</div>
           <div class="faq-a" data-lang="zh">并非官方项目。OpenWarp 是社区分支,与 Warp Inc. 无任何隶属、合作或赞助关系。相关商标归各自所有者所有。</div>
+          <div class="faq-a" data-lang="ja">いいえ。OpenWarp はコミュニティフォークであり、Warp Inc. との提携、承認、後援はありません。商標はそれぞれの所有者に帰属します。</div>
         </details>
         <details class="faq-item">
-          <summary class="faq-q"><span data-lang="en">Can I use my company's private model?</span><span data-lang="zh">能接公司内部的私有模型吗?</span><span class="plus">+</span></summary>
+          <summary class="faq-q"><span data-lang="en">Can I use my company's private model?</span><span data-lang="zh">能接公司内部的私有模型吗?</span><span data-lang="ja">社内のプライベートモデルを使えますか?</span><span class="plus">+</span></summary>
           <div class="faq-a" data-lang="en">Yes — if it speaks any of the supported native protocols or exposes an OpenAI-compatible Chat Completions endpoint, just point <code>base_url</code> at it.</div>
           <div class="faq-a" data-lang="zh">支持。只要私有模型实现了任一原生协议,或对外提供 OpenAI 兼容的 Chat Completions 接口,将 <code>base_url</code> 指向对应地址即可。</div>
+          <div class="faq-a" data-lang="ja">はい。対応するネイティブプロトコルのいずれか、または OpenAI 互換の Chat Completions エンドポイントを公開していれば、<code>base_url</code> を向けるだけです。</div>
         </details>
         <details class="faq-item">
-          <summary class="faq-q"><span data-lang="en">What's different from upstream Warp?</span><span data-lang="zh">和上游 Warp 有什么差别?</span><span class="plus">+</span></summary>
+          <summary class="faq-q"><span data-lang="en">What's different from upstream Warp?</span><span data-lang="zh">和上游 Warp 有什么差别?</span><span data-lang="ja">上流 Warp との違いは?</span><span class="plus">+</span></summary>
           <div class="faq-a" data-lang="en">Six things: AI provider (any vs cloud gateway), credentials (local vs cloud account), prompts (minijinja editable vs server-assembled), third-party CLI agents (DeepSeek-TUI / Codex / Claude Code wired in vs none), SSH + tmux (built-in vs none), cloud features (off vs on by default). Plus rendering fixes for code blocks, tables and CJK soft-wrap. Everything else from upstream stays.</div>
           <div class="faq-a" data-lang="zh">主要差异在以下六点:AI 服务商(任意服务商 vs 云端网关)、凭证存储(本地 vs 云端账号)、Prompt(minijinja 可编辑 vs 服务端组装)、第三方 CLI Agent(已适配 DeepSeek-TUI、Codex、Claude Code vs 不支持)、SSH + tmux(内置 vs 不支持)、云端能力(默认关闭 vs 默认开启)。同时修复了代码块、表格与中文软换行的渲染问题。其余上游能力均保持不变。</div>
+          <div class="faq-a" data-lang="ja">主な違いは 6 つです。AI プロバイダーは任意選択、認証情報はローカル保存、Prompt は minijinja で編集可能、DeepSeek-TUI / Codex / Claude Code などのサードパーティ CLI Agent を統合、SSH + tmux を内蔵、クラウド機能は既定でオフ。さらにコードブロック、表、CJK ソフトラップの表示も修正しています。その他の上流機能は維持しています。</div>
         </details>
         <details class="faq-item">
-          <summary class="faq-q"><span data-lang="en">Is it production-ready?</span><span data-lang="zh">能上生产吗?</span><span class="plus">+</span></summary>
+          <summary class="faq-q"><span data-lang="en">Is it production-ready?</span><span data-lang="zh">能上生产吗?</span><span data-lang="ja">本番利用できますか?</span><span class="plus">+</span></summary>
           <div class="faq-a" data-lang="en">Not yet. v0.x — expect breaking changes, rough edges, and thin docs. File issues, send PRs.</div>
           <div class="faq-a" data-lang="zh">暂不建议。当前为 v0.x 阶段,可能存在不兼容变更、未完善的细节与文档不全的情况。欢迎提交 issue 与 PR。</div>
+          <div class="faq-a" data-lang="ja">まだです。v0.x では破壊的変更、粗い部分、薄いドキュメントがあり得ます。Issue や PR を歓迎します。</div>
         </details>
         <details class="faq-item">
-          <summary class="faq-q"><span data-lang="en">License?</span><span data-lang="zh">许可证?</span><span class="plus">+</span></summary>
+          <summary class="faq-q"><span data-lang="en">License?</span><span data-lang="zh">许可证?</span><span data-lang="ja">ライセンスは?</span><span class="plus">+</span></summary>
           <div class="faq-a" data-lang="en">Source-available, inheriting the upstream Warp license terms. Commercial redistribution may require a separate agreement — check <code>LICENSE.md</code>.</div>
           <div class="faq-a" data-lang="zh">项目以 source-available 形式发布,沿用上游 Warp 的许可条款。商业再分发可能需要单独签署协议,详见 <code>LICENSE.md</code>。</div>
+          <div class="faq-a" data-lang="ja">source-available として公開され、上流 Warp のライセンス条件を継承します。商用再配布には別途契約が必要な場合があります。<code>LICENSE.md</code> を確認してください。</div>
         </details>
       </div>
     </div>
@@ -674,11 +734,13 @@ cargo run --release <span class="a">--bin warp-oss</span></pre>
     <div class="wrap">
       <h2 data-lang="en">OpenWarp puts <span class="em">your terminal</span> back in your hands.</h2>
       <h2 data-lang="zh">把终端的 <span class="em">控制权</span> 交还给用户.</h2>
+      <h2 data-lang="ja">OpenWarp は<span class="em">あなたのターミナル</span>をあなたの手に戻します.</h2>
       <p data-lang="en">Bring your provider, edit your prompts, manage your hosts. All local, all editable, all yours.</p>
       <p data-lang="zh">自定义服务商、自定义 Prompt、统一管理主机。全部在本地完成,可自由配置,数据始终归用户所有。</p>
+      <p data-lang="ja">プロバイダーを持ち込み、Prompt を編集し、ホストを管理する。すべてローカルで、編集可能で、あなたのものです。</p>
       <div class="btn-row">
-        <a class="btn" href="#install"><span data-lang="en">Install</span><span data-lang="zh">安装</span><span class="arr">→</span></a>
-        <a class="btn alt" href="/docs/quickstart"><span data-lang="en">Read the docs</span><span data-lang="zh">阅读文档</span></a>
+        <a class="btn" href="#install"><span data-lang="en">Install</span><span data-lang="zh">安装</span><span data-lang="ja">インストール</span><span class="arr">→</span></a>
+        <a class="btn alt" href="/docs/quickstart"><span data-lang="en">Read the docs</span><span data-lang="zh">阅读文档</span><span data-lang="ja">ドキュメントを読む</span></a>
       </div>
     </div>
   </section>

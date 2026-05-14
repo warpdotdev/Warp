@@ -3,10 +3,12 @@ interface Item {
   slug: string;
   label_en: string;
   label_zh: string;
+  label_ja: string;
 }
 interface Group {
   label_en: string;
   label_zh: string;
+  label_ja: string;
   collapsible?: boolean;
   items: Item[];
 }
@@ -20,8 +22,9 @@ const groups: Group[] = [
   {
     label_en: 'Get Started',
     label_zh: '快速开始',
+    label_ja: 'はじめに',
     items: [
-      { slug: 'quickstart', label_en: 'Quick Start', label_zh: '快速开始' },
+      { slug: 'quickstart', label_en: 'Quick Start', label_zh: '快速开始', label_ja: 'クイックスタート' },
     ],
   },
 ];
@@ -37,6 +40,7 @@ const groupIcons: Record<string, string> = {
   <button class="sb-search" id="docs-search-trigger" type="button">
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M14 14l-3.5-3.5"/></svg>
     <span data-lang="en">Search docs</span><span data-lang="zh">搜索文档</span>
+    <span data-lang="ja">ドキュメントを検索</span>
     <span class="kbd">⌘K</span>
   </button>
 
@@ -45,12 +49,14 @@ const groupIcons: Record<string, string> = {
       <div class="sb-head">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" set:html={groupIcons[g.label_en] ?? ''}></svg>
         <span data-lang="en">{g.label_en}</span><span data-lang="zh">{g.label_zh}</span>
+        <span data-lang="ja">{g.label_ja}</span>
       </div>
       <div class="sb-list">
         {g.items.map((it) => (
           <a class={activeSlug === it.slug ? 'active' : ''} href={`/docs/${it.slug}`}>
             <svg class="icn" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="2"/></svg>
             <span data-lang="en">{it.label_en}</span><span data-lang="zh">{it.label_zh}</span>
+            <span data-lang="ja">{it.label_ja}</span>
           </a>
         ))}
       </div>

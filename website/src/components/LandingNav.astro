@@ -1,5 +1,6 @@
 ---
 import GhIcon from './GhIcon.astro';
+import LanguageSelect from './LanguageSelect.astro';
 const repo = 'https://github.com/zerx-lab/warp';
 ---
 <header class="nav">
@@ -9,19 +10,17 @@ const repo = 'https://github.com/zerx-lab/warp';
       OpenWarp
     </a>
     <nav class="nav-links" id="primary-nav">
-      <a href="#how" data-lang="en">How it works</a><a href="#how" data-lang="zh">工作原理</a>
-      <a href="#adapt" data-lang="en">Adapts to you</a><a href="#adapt" data-lang="zh">适配能力</a>
+      <a href="#how" data-lang="en">How it works</a><a href="#how" data-lang="zh">工作原理</a><a href="#how" data-lang="ja">仕組み</a>
+      <a href="#adapt" data-lang="en">Adapts to you</a><a href="#adapt" data-lang="zh">适配能力</a><a href="#adapt" data-lang="ja">適応性</a>
       <a href="#layer" data-lang="en">SSH</a><a href="#layer" data-lang="zh">SSH</a>
-      <a href="#privacy" data-lang="en">Privacy</a><a href="#privacy" data-lang="zh">隐私</a>
-      <a href="#install" data-lang="en">Install</a><a href="#install" data-lang="zh">安装</a>
-      <a href="/docs/quickstart" data-lang="en">Docs</a><a href="/docs/quickstart" data-lang="zh">文档</a>
+      <a href="#layer" data-lang="ja">SSH</a>
+      <a href="#privacy" data-lang="en">Privacy</a><a href="#privacy" data-lang="zh">隐私</a><a href="#privacy" data-lang="ja">プライバシー</a>
+      <a href="#install" data-lang="en">Install</a><a href="#install" data-lang="zh">安装</a><a href="#install" data-lang="ja">インストール</a>
+      <a href="/docs/quickstart" data-lang="en">Docs</a><a href="/docs/quickstart" data-lang="zh">文档</a><a href="/docs/quickstart" data-lang="ja">ドキュメント</a>
     </nav>
     <div class="nav-spacer"></div>
     <div class="nav-right">
-      <div class="lang">
-        <button class="active" data-set-lang="en" type="button">EN</button>
-        <button data-set-lang="zh" type="button">中</button>
-      </div>
+      <LanguageSelect />
       <a class="gh" href={repo} target="_blank" rel="noopener">
         <GhIcon />
         <span>GitHub</span>

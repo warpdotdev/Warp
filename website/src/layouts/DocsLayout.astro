@@ -15,17 +15,20 @@ interface Heading {
 interface Props {
   title: string;
   title_zh: string;
+  title_ja: string;
   lede: string;
   lede_zh: string;
+  lede_ja: string;
   section: string;
   section_zh: string;
+  section_ja: string;
   activeSlug: string;
   headings: Heading[];
-  prev?: { slug: string; title: string; title_zh: string } | null;
-  next?: { slug: string; title: string; title_zh: string } | null;
+  prev?: { slug: string; title: string; title_zh: string; title_ja: string } | null;
+  next?: { slug: string; title: string; title_zh: string; title_ja: string } | null;
 }
 
-const { title, title_zh, lede, lede_zh, section, section_zh, activeSlug, headings, prev, next } = Astro.props;
+const { title, title_zh, title_ja, lede, lede_zh, lede_ja, section, section_zh, section_ja, activeSlug, headings, prev, next } = Astro.props;
 const tocItems = headings.filter((h) => h.depth === 2);
 const repo = 'https://github.com/zerx-lab/warp';
 const editUrl = `${repo}/blob/main/website/src/content/docs/${activeSlug}.mdx`;
@@ -49,6 +52,7 @@ const editUrl = `${repo}/blob/main/website/src/content/docs/${activeSlug}.mdx`;
     <Banner
       en="Early development · Docs are evolving alongside the source · Community fork of Warp"
       zh="早期开发阶段 · 文档随源码持续更新 · Warp 的社区分支"
+      ja="初期開発段階 · ドキュメントはソースとともに更新中 · Warp のコミュニティフォーク"
     />
     <DocsNav />
 
@@ -63,20 +67,24 @@ const editUrl = `${repo}/blob/main/website/src/content/docs/${activeSlug}.mdx`;
             </button>
             <div class="crumbs">
               <span data-lang="en">DOCS</span><span data-lang="zh">文档</span>
+              <span data-lang="ja">ドキュメント</span>
               <span class="sep">/</span>
               <span data-lang="en">{section}</span><span data-lang="zh">{section_zh}</span>
+              <span data-lang="ja">{section_ja}</span>
               <span class="sep">/</span>
               <span class="here" data-lang="en">{title}</span><span class="here" data-lang="zh">{title_zh}</span>
+              <span class="here" data-lang="ja">{title_ja}</span>
             </div>
           </div>
           <div class="doc-actions">
             <button id="copy-md" type="button">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4.5" y="4.5" width="8" height="9" rx="1"/><path d="M3 11V3h7"/></svg>
               <span data-lang="en">Copy MD</span><span data-lang="zh">复制 MD</span>
+              <span data-lang="ja">MD をコピー</span>
             </button>
             <a href={editUrl} target="_blank" rel="noopener">
-              <span data-lang="en">Open in</span><span data-lang="zh">在</span>
-              <span style="margin-left:4px">GitHub</span>
+              <span data-lang="en">Open in GitHub</span><span data-lang="zh">在 GitHub 打开</span>
+              <span data-lang="ja">GitHub で開く</span>
               <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 8l4-4M4 4h4v4"/></svg>
             </a>
           </div>
@@ -84,8 +92,10 @@ const editUrl = `${repo}/blob/main/website/src/content/docs/${activeSlug}.mdx`;
 
         <h1 class="doc-title" data-lang="en">{title}</h1>
         <h1 class="doc-title" data-lang="zh">{title_zh}</h1>
+        <h1 class="doc-title" data-lang="ja">{title_ja}</h1>
         <p class="doc-lede" data-lang="en">{lede}</p>
         <p class="doc-lede" data-lang="zh">{lede_zh}</p>
+        <p class="doc-lede" data-lang="ja">{lede_ja}</p>
 
         <slot />
 
@@ -94,13 +104,17 @@ const editUrl = `${repo}/blob/main/website/src/content/docs/${activeSlug}.mdx`;
             {prev ? (
               <a href={`/docs/${prev.slug}`}>
                 <div class="lbl" data-lang="en">← Previous</div><div class="lbl" data-lang="zh">← 上一篇</div>
+                <div class="lbl" data-lang="ja">← 前へ</div>
                 <div class="ttl" data-lang="en">{prev.title}</div><div class="ttl" data-lang="zh">{prev.title_zh}</div>
+                <div class="ttl" data-lang="ja">{prev.title_ja}</div>
               </a>
             ) : <span />}
             {next ? (
               <a class="next" href={`/docs/${next.slug}`}>
                 <div class="lbl" data-lang="en">Next →</div><div class="lbl" data-lang="zh">下一篇 →</div>
+                <div class="lbl" data-lang="ja">次へ →</div>
                 <div class="ttl" data-lang="en">{next.title}</div><div class="ttl" data-lang="zh">{next.title_zh}</div>
+                <div class="ttl" data-lang="ja">{next.title_ja}</div>
               </a>
             ) : <span />}
           </div>
@@ -111,6 +125,7 @@ const editUrl = `${repo}/blob/main/website/src/content/docs/${activeSlug}.mdx`;
         <div class="toc-head">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4h10M3 8h10M3 12h7"/></svg>
           <span data-lang="en">On this page</span><span data-lang="zh">本页内容</span>
+          <span data-lang="ja">このページ</span>
         </div>
         {tocItems.map((h) => (
           <a href={`#${h.slug}`} data-toc>{h.text}</a>
@@ -128,25 +143,71 @@ const editUrl = `${repo}/blob/main/website/src/content/docs/${activeSlug}.mdx`;
     <script src="/pagefind/pagefind-ui.js" is:inline></script>
     <script>
       (function () {
+        const htmlLang: Record<string, string> = { en: 'en', zh: 'zh-CN', ja: 'ja' };
+        function normalizeLocale(value: string | null) {
+          const tag = String(value || '').toLowerCase();
+          if (tag.startsWith('zh')) return 'zh';
+          if (tag.startsWith('ja')) return 'ja';
+          if (tag.startsWith('en')) return 'en';
+          return htmlLang[tag] ? tag : null;
+        }
         function applyLocale(l: string) {
-          document.body.dataset.locale = l;
-          document.documentElement.lang = l === 'zh' ? 'zh-CN' : 'en';
-          document.querySelectorAll('.lang button').forEach((b) => {
-            b.classList.toggle('active', (b as HTMLElement).getAttribute('data-set-lang') === l);
+          const locale = normalizeLocale(l) || 'en';
+          document.body.dataset.locale = locale;
+          document.documentElement.lang = htmlLang[locale] || 'en';
+          document.querySelectorAll<HTMLElement>('[data-set-lang]').forEach((option) => {
+            const active = option.getAttribute('data-set-lang') === locale;
+            option.classList.toggle('active', active);
+            option.setAttribute('aria-selected', String(active));
+          });
+        }
+        function closeLocaleMenus() {
+          document.querySelectorAll<HTMLElement>('[data-locale-options]').forEach((menu) => {
+            menu.hidden = true;
+          });
+          document.querySelectorAll<HTMLElement>('[data-locale-trigger]').forEach((trigger) => {
+            trigger.setAttribute('aria-expanded', 'false');
+          });
+          document.querySelectorAll<HTMLElement>('[data-locale-menu]').forEach((menu) => {
+            menu.removeAttribute('data-open');
           });
         }
         function setLocale(l: string) {
-          // Only persist when the user explicitly chose a language; auto-detection
-          // should keep following the OS / browser on subsequent visits.
-          localStorage.setItem('openwarp:locale', l);
-          applyLocale(l);
+          // 仅在用户显式选择语言时持久化;自动检测应在后续访问继续跟随系统/浏览器。
+          const locale = normalizeLocale(l) || 'en';
+          localStorage.setItem('openwarp:locale', locale);
+          applyLocale(locale);
         }
         applyLocale((document.body.dataset.locale as string) || 'en');
-        document.querySelectorAll<HTMLButtonElement>('.lang button').forEach((b) => {
-          b.addEventListener('click', () => setLocale(b.getAttribute('data-set-lang') || 'en'));
+        document.querySelectorAll<HTMLElement>('[data-locale-menu]').forEach((menu) => {
+          const trigger = menu.querySelector<HTMLButtonElement>('[data-locale-trigger]');
+          const options = menu.querySelector<HTMLElement>('[data-locale-options]');
+          if (!trigger || !options) return;
+          trigger.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const shouldOpen = options.hidden;
+            closeLocaleMenus();
+            options.hidden = !shouldOpen;
+            trigger.setAttribute('aria-expanded', String(shouldOpen));
+            if (shouldOpen) menu.setAttribute('data-open', 'true');
+          });
+          menu.querySelectorAll<HTMLButtonElement>('[data-set-lang]').forEach((option) => {
+            option.addEventListener('click', (event) => {
+              event.stopPropagation();
+              setLocale(option.getAttribute('data-set-lang') || 'en');
+              closeLocaleMenus();
+            });
+          });
+        });
+        document.addEventListener('click', (event) => {
+          const target = event.target as Element | null;
+          if (!target?.closest('[data-locale-menu]')) closeLocaleMenus();
+        });
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') closeLocaleMenus();
         });
 
-        // Mobile sidebar toggle
+        // 移动端侧边栏开关
         const toggle = document.getElementById('docs-sidebar-toggle');
         const sidebar = document.getElementById('docs-sidebar');
         const backdrop = document.getElementById('docs-sidebar-backdrop');
@@ -168,7 +229,7 @@ const editUrl = `${repo}/blob/main/website/src/content/docs/${activeSlug}.mdx`;
         backdrop?.addEventListener('click', closeSidebar);
         sidebar?.querySelectorAll('a').forEach((a) => a.addEventListener('click', closeSidebar));
 
-        // Tabs in body
+        // 正文标签页
         document.querySelectorAll<HTMLElement>('.tabs-bar').forEach((bar) => {
           const card = bar.parentElement!;
           bar.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
@@ -182,13 +243,13 @@ const editUrl = `${repo}/blob/main/website/src/content/docs/${activeSlug}.mdx`;
           });
         });
 
-        // Copy buttons
+        // 复制按钮
         document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((btn) => {
           btn.addEventListener('click', () => {
             const pre = btn.closest('.code-card')?.querySelector<HTMLElement>('pre.code');
             if (pre && navigator.clipboard) navigator.clipboard.writeText(pre.innerText);
             const prev = btn.textContent;
-            btn.textContent = document.body.dataset.locale === 'zh' ? '已复制' : 'Copied';
+            btn.textContent = document.body.dataset.locale === 'zh' ? '已复制' : document.body.dataset.locale === 'ja' ? 'コピー済み' : 'Copied';
             btn.classList.add('copied');
             setTimeout(() => {
               btn.textContent = prev;
@@ -197,7 +258,7 @@ const editUrl = `${repo}/blob/main/website/src/content/docs/${activeSlug}.mdx`;
           });
         });
 
-        // Copy MD: download the source MDX as plain text via fetch (best effort)
+        // 复制正文内容:尽力从页面文本写入剪贴板
         const copyMd = document.getElementById('copy-md') as HTMLButtonElement | null;
         copyMd?.addEventListener('click', async () => {
           try {
@@ -207,13 +268,13 @@ const editUrl = `${repo}/blob/main/website/src/content/docs/${activeSlug}.mdx`;
             const span = copyMd.querySelector(`[data-lang="${document.body.dataset.locale}"]`);
             if (span) {
               const prev = span.textContent;
-              span.textContent = document.body.dataset.locale === 'zh' ? '已复制' : 'Copied';
+              span.textContent = document.body.dataset.locale === 'zh' ? '已复制' : document.body.dataset.locale === 'ja' ? 'コピー済み' : 'Copied';
               setTimeout(() => { span.textContent = prev; }, 1400);
             }
           } catch (_) {}
         });
 
-        // Pagefind search modal
+        // Pagefind 搜索弹窗
         const searchModal = document.getElementById('docs-search-modal');
         const searchTrigger = document.getElementById('docs-search-trigger');
         const searchUi = document.getElementById('docs-search-ui');
@@ -230,13 +291,16 @@ const editUrl = `${repo}/blob/main/website/src/content/docs/${activeSlug}.mdx`;
                 resetStyles: false,
                 translations: document.body.dataset.locale === 'zh'
                   ? { placeholder: '搜索文档…', clear_search: '清除', load_more: '加载更多', search_label: '搜索文档', filters_label: '筛选', zero_results: '未找到 [SEARCH_TERM] 的结果', many_results: '共 [COUNT] 条结果', one_result: '共 [COUNT] 条结果', alt_search: '未找到 [SEARCH_TERM] — 显示 [DIFFERENT_TERM] 的结果', search_suggestion: '未找到 [SEARCH_TERM] — 试试以下:', searching: '搜索 [SEARCH_TERM]…' }
+                  : document.body.dataset.locale === 'ja'
+                  ? { placeholder: 'ドキュメントを検索…', clear_search: 'クリア', load_more: 'さらに表示', search_label: 'ドキュメント検索', filters_label: 'フィルター', zero_results: '[SEARCH_TERM] の結果はありません', many_results: '[COUNT] 件の結果', one_result: '[COUNT] 件の結果', alt_search: '[SEARCH_TERM] は見つかりません — [DIFFERENT_TERM] の結果を表示', search_suggestion: '[SEARCH_TERM] は見つかりません — 次を試してください:', searching: '[SEARCH_TERM] を検索中…' }
                   : undefined,
               });
             } else {
               const zh = document.body.dataset.locale === 'zh';
+              const ja = document.body.dataset.locale === 'ja';
               searchUi.innerHTML = `<div class="search-fallback">
-                <div class="t">${zh ? '搜索仅在生产构建中可用' : 'Search is only available in production builds'}</div>
-                <div class="d">${zh ? '运行 <code>bun run build</code> 后,Pagefind 索引会生成在 <code>dist/pagefind/</code>。开发模式 (<code>bun run dev</code>) 不打包索引。' : 'Run <code>bun run build</code> to generate the Pagefind index under <code>dist/pagefind/</code>. Dev mode (<code>bun run dev</code>) does not produce the index.'}</div>
+                <div class="t">${zh ? '搜索仅在生产构建中可用' : ja ? '検索は本番ビルドでのみ利用できます' : 'Search is only available in production builds'}</div>
+                <div class="d">${zh ? '运行 <code>bun run build</code> 后,Pagefind 索引会生成在 <code>dist/pagefind/</code>。开发模式 (<code>bun run dev</code>) 不打包索引。' : ja ? '<code>bun run build</code> を実行すると、Pagefind インデックスが <code>dist/pagefind/</code> に生成されます。開発モード (<code>bun run dev</code>) ではインデックスは同梱されません。' : 'Run <code>bun run build</code> to generate the Pagefind index under <code>dist/pagefind/</code>. Dev mode (<code>bun run dev</code>) does not produce the index.'}</div>
               </div>`;
             }
             searchInited = true;
@@ -254,7 +318,7 @@ const editUrl = `${repo}/blob/main/website/src/content/docs/${activeSlug}.mdx`;
           else if (e.key === 'Escape' && searchModal && !searchModal.hidden) { closeSearch(); }
         });
 
-        // TOC active on scroll
+        // 滚动时更新目录高亮
         const headings = Array.from(document.querySelectorAll<HTMLElement>('main.doc h2[id]'));
         const tocLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('aside.toc a'));
         function updateActive() {

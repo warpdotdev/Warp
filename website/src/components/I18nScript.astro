@@ -1,36 +1,45 @@
 ---
-// Inline locale boot script — sets data-locale before paint to avoid FOUC.
-// Resolution order:
-//   1. localStorage('openwarp:locale')  — only set when the user clicks the switcher
-//   2. navigator.languages / navigator.language — follows the OS / browser language
-//   3. fallback to 'en'
+// 内联语言脚本会在首屏渲染前设置 data-locale,避免文案闪烁。
+// 判定顺序:
+//   1. localStorage('openwarp:locale')  — 用户显式选择后才写入
+//   2. navigator.languages / navigator.language — 跟随系统/浏览器语言
+//   3. 回退到 'en'
 ---
 <script is:inline>
   (function () {
     try {
+      var supportedLocales = ['en', 'zh', 'ja'];
+      var htmlLang = { en: 'en', zh: 'zh-CN', ja: 'ja' };
+      function normalizeLocale(value) {
+        var tag = String(value || '').toLowerCase();
+        if (tag.indexOf('zh') === 0) return 'zh';
+        if (tag.indexOf('ja') === 0) return 'ja';
+        if (tag.indexOf('en') === 0) return 'en';
+        return supportedLocales.indexOf(tag) >= 0 ? tag : null;
+      }
       function detectFromNavigator() {
         var list = (navigator.languages && navigator.languages.length)
           ? navigator.languages
           : [navigator.language || 'en'];
         for (var i = 0; i < list.length; i++) {
-          var tag = String(list[i] || '').toLowerCase();
-          if (tag.indexOf('zh') === 0) return 'zh';
-          if (tag.indexOf('en') === 0) return 'en';
+          var locale = normalizeLocale(list[i]);
+          if (locale) return locale;
         }
         return 'en';
       }
       var saved = localStorage.getItem('openwarp:locale');
-      var locale = (saved === 'en' || saved === 'zh') ? saved : detectFromNavigator();
+      var savedLocale = normalizeLocale(saved);
+      var locale = savedLocale || detectFromNavigator();
       window.__openwarpLocale = locale;
-      window.__openwarpLocaleSource = (saved === 'en' || saved === 'zh') ? 'saved' : 'auto';
-      document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
+      window.__openwarpLocaleSource = savedLocale ? 'saved' : 'auto';
+      document.documentElement.lang = htmlLang[locale] || 'en';
       if (document.body) document.body.dataset.locale = locale;
       document.addEventListener('DOMContentLoaded', function () {
         document.body.dataset.locale = locale;
-        // Reflect detected locale on the language switcher buttons so the
-        // active pill matches the actual language on first paint.
-        document.querySelectorAll('.lang button').forEach(function (b) {
-          b.classList.toggle('active', b.getAttribute('data-set-lang') === locale);
+        document.querySelectorAll('[data-set-lang]').forEach(function (option) {
+          var active = option.getAttribute('data-set-lang') === locale;
+          option.classList.toggle('active', active);
+          option.setAttribute('aria-selected', active ? 'true' : 'false');
         });
       });
     } catch (_) {}
