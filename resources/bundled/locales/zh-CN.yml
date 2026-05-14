@@ -777,6 +777,27 @@ zh-CN:
     slack: "Slack"
     feedback: "反馈"
 
+  ai_context_menu:
+    files_and_folders: "文件和文件夹"
+    commands: "命令"
+    blocks: "区块"
+    workflows: "工作流"
+    notebooks: "Notebooks"
+    plans: "计划"
+    diffs: "Diff"
+    docs: "文档"
+    past_tasks: "历史任务"
+    rules: "规则"
+    servers_and_integrations: "服务器和集成"
+    terminal: "终端"
+    web: "网页"
+    most_recent_diff: "最近的 diff"
+    most_recent_block: "最近的区块"
+    code: "代码"
+    diff_sets: "Diff 集"
+    conversations: "会话"
+    skills: "Skills"
+
   quit_warning:
     scope_this_tab: "，位于此标签页中"
     scope_this_window: "，位于此窗口中"

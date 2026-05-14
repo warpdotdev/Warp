@@ -777,6 +777,27 @@ en:
     slack: "Slack"
     feedback: "Feedback"
 
+  ai_context_menu:
+    files_and_folders: "Files and folders"
+    commands: "Commands"
+    blocks: "Blocks"
+    workflows: "Workflows"
+    notebooks: "Notebooks"
+    plans: "Plans"
+    diffs: "Diffs"
+    docs: "Docs"
+    past_tasks: "Past tasks"
+    rules: "Rules"
+    servers_and_integrations: "Servers and integrations"
+    terminal: "Terminal"
+    web: "Web"
+    most_recent_diff: "Most recent diff"
+    most_recent_block: "Most recent block"
+    code: "Code"
+    diff_sets: "Diff sets"
+    conversations: "Conversations"
+    skills: "Skills"
+
   quit_warning:
     scope_this_tab: " in this tab"
     scope_this_window: " in this window"
