@@ -503,6 +503,10 @@ en:
 
   pane_group:
     default_shell_unsupported: "Warp doesn't currently support your default shell, falling back to zsh.  "
+    new_tab: "New tab"
+    get_started: "Get started"
+    welcome_to_warp: "Welcome to Warp"
+    agentic_development_environment: "The Agentic Development Environment"
 
   tab_configs:
     session_type: "Session type"

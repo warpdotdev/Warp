@@ -503,6 +503,10 @@ zh-CN:
 
   pane_group:
     default_shell_unsupported: "Warp 当前不支持你的默认 shell，将回退到 zsh。"
+    new_tab: "新建标签页"
+    get_started: "开始使用"
+    welcome_to_warp: "欢迎使用 Warp"
+    agentic_development_environment: "Agentic 开发环境"
 
   tab_configs:
     session_type: "会话类型"
