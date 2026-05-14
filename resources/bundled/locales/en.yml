@@ -120,6 +120,9 @@ en:
     conversation: "Conversation"
     conversations_delete_in_progress: "Conversations cannot be deleted while in progress."
     conversation_cannot_be_deleted: "This conversation cannot be deleted"
+    delete_conversation_confirm_title: "Delete '{title}'?"
+    delete_conversation_confirm_title_unknown: "Delete conversation?"
+    delete_conversation_confirm_body: "This conversation will be permanently deleted. This action cannot be undone."
     share_conversation: "Share conversation"
     fork_in_new_pane: "Fork in new pane"
     fork_in_new_tab: "Fork in new tab"
@@ -446,6 +449,8 @@ en:
   tab_configs:
     session_type: "Session type"
     worktree_branch_placeholder: "my-feature-branch"
+    remove_confirm_title: "Remove '{name}'?"
+    remove_confirm_body: "This tab config will be permanently deleted. This action cannot be undone."
 
   tips:
     close_welcome_tips: "Close Welcome Tips"
@@ -525,6 +530,11 @@ en:
     ssh_extension_install_mode_description: "Controls the installation behavior for Warp's SSH extension when a remote host doesn't have it installed."
     command_regex_placeholder: "command (supports regex)"
     host_regex_placeholder: "host (supports regex)"
+    warpify_subshell: "Warpify subshell"
+    warpify_ssh_session: "Warpify SSH session"
+    enable_shell_integration: "Enable Warp shell integration in this session"
+    use_agent: "Use agent"
+    ask_agent_to_assist: "Ask the Warp agent to assist"
 
   execution_profile:
     models_heading: "MODELS"
@@ -1599,6 +1609,7 @@ en:
     cancel: "Cancel"
     update: "Update"
     delete: "Delete"
+    remove: "Remove"
     continue: "Continue"
     next: "Next"
     dismiss: "Dismiss"
