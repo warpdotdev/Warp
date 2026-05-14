@@ -242,7 +242,7 @@ impl BillingAndUsagePageView {
 
         let overage_limit_modal_view = ctx.add_typed_action_view(|ctx| {
             Modal::new(
-                Some("Overage spending limit".to_string()),
+                Some(t!("billing.overage_spending_limit").to_string()),
                 overage_limit_modal,
                 ctx,
             )
@@ -266,7 +266,7 @@ impl BillingAndUsagePageView {
 
         let addon_credit_modal_view = ctx.add_typed_action_view(|ctx| {
             Modal::new(
-                Some("Monthly spending limit".to_string()),
+                Some(t!("billing.monthly_spending_limit").to_string()),
                 addon_credit_modal,
                 ctx,
             )
@@ -390,7 +390,7 @@ impl BillingAndUsagePageView {
             }
             UserWorkspacesEvent::UpdateWorkspaceSettingsRejected(_err) => {
                 self.show_toast(
-                    "Failed to update workspace settings",
+                    &t!("billing.failed_update_workspace_settings"),
                     ToastFlavor::Error,
                     ctx,
                 );
@@ -403,7 +403,7 @@ impl BillingAndUsagePageView {
             UserWorkspacesEvent::PurchaseAddonCreditsSuccess => {
                 self.purchase_addon_credits_loading = false;
                 self.show_toast(
-                    "Successfully purchased add-on credits",
+                    &t!("billing.purchase_addon_credits_success"),
                     ToastFlavor::Success,
                     ctx,
                 );
@@ -2307,7 +2307,7 @@ impl UsageWidget {
         }
 
         let request_count_label = if workspace_is_delinquent_due_to_payment_issue {
-            "Restricted due to billing issue".to_string()
+            t!("billing.restricted_due_to_billing_issue").to_string()
         } else {
             match divisor {
                 Some(Divisor::Unlimited) => {
@@ -2394,9 +2394,12 @@ impl UsageWidget {
             )
             .finish()
         } else {
-            let header = "Credits";
-            let description =
-                format!("This is the {refresh_duration} limit of AI credits for your account.");
+            let header = t!("billing.credits");
+            let description = t!(
+                "billing.ai_credit_limit_description",
+                duration = refresh_duration
+            )
+            .to_string();
 
             let request_usage_description = FormattedTextElement::from_str(
                 description,
@@ -2827,7 +2830,9 @@ impl UsageWidget {
             .with_child(
                 appearance
                     .ui_builder()
-                    .paragraph(format!("Resets {formatted_next_refresh_time}"))
+                    .paragraph(
+                        t!("billing.usage_resets", date = formatted_next_refresh_time).to_string(),
+                    )
                     .with_style(UiComponentStyles {
                         font_color: Some(blended_colors::text_sub(
                             appearance.theme(),
@@ -2942,7 +2947,7 @@ impl UsageWidget {
                 .with_child(
                     build_sub_header(
                         appearance,
-                        "Usage",
+                        t!("billing.usage").to_string(),
                         Some(
                             appearance
                                 .theme()
@@ -2994,7 +2999,7 @@ impl UsageWidget {
             };
 
             usage.add_child(self.render_ai_usage_limit_row(
-                "Team total".to_string(),
+                t!("billing.team_total").to_string(),
                 team_total_used,
                 team_divisor,
                 ai_request_usage_model.refresh_duration_to_string(),
