@@ -86,16 +86,12 @@ fn availability_falls_back_to_longest_status_prefix() {
     assert!(availability.is_ready());
     assert_eq!(availability.repo_path(), Some("/repo/nested"));
 }
-
 #[test]
-fn availability_rejects_unmatched_requested_local_path() {
+fn availability_ignores_unmatched_explicit_local_path_in_remote_session() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
     model.record_navigated_directory(&remote_path("/workspaces/warp"));
-    model.apply_status_update(
-        remote_path("/workspaces/warp"),
-        ready_status("/workspaces/warp"),
-    );
+    model.apply_status_update(remote_path("/workspaces/warp"), ready_status("/workspaces/warp"));
 
     let availability = model.availability_for_remote(
         &host,
@@ -103,35 +99,12 @@ fn availability_rejects_unmatched_requested_local_path() {
         Some("/Users/moirahuang/code/warp"),
     );
 
-    assert!(matches!(
-        availability,
-        RemoteCodebaseSearchAvailability::NoActiveRepo
-    ));
-    assert_eq!(availability.repo_path(), None);
+    assert!(availability.is_ready());
+    assert_eq!(availability.repo_path(), Some("/workspaces/warp"));
 }
 
 #[test]
-fn availability_rejects_unknown_requested_remote_path() {
-    let mut model = RemoteCodebaseIndexModel::default();
-    let host = host();
-    model.record_navigated_directory(&remote_path("/workspaces/active"));
-    model.apply_status_update(
-        remote_path("/workspaces/active"),
-        ready_status("/workspaces/active"),
-    );
-
-    let availability =
-        model.availability_for_remote(&host, Some("/workspaces/active"), Some("/workspaces/other"));
-
-    assert!(matches!(
-        availability,
-        RemoteCodebaseSearchAvailability::NoActiveRepo
-    ));
-    assert_eq!(availability.repo_path(), None);
-}
-
-#[test]
-fn availability_uses_requested_path_when_it_matches_known_remote_repo() {
+fn availability_uses_explicit_path_when_it_matches_known_remote_repo() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
     model.record_navigated_directory(&remote_path("/workspaces/other"));
@@ -139,10 +112,7 @@ fn availability_uses_requested_path_when_it_matches_known_remote_repo() {
         remote_path("/workspaces/other"),
         ready_status("/workspaces/other"),
     );
-    model.apply_status_update(
-        remote_path("/workspaces/warp"),
-        ready_status("/workspaces/warp"),
-    );
+    model.apply_status_update(remote_path("/workspaces/warp"), ready_status("/workspaces/warp"));
 
     let availability = model.availability_for_remote(
         &host,
@@ -153,6 +123,8 @@ fn availability_uses_requested_path_when_it_matches_known_remote_repo() {
     assert!(availability.is_ready());
     assert_eq!(availability.repo_path(), Some("/workspaces/warp"));
 }
+
+
 #[test]
 fn codebases_for_agent_context_includes_searchable_remote_paths() {
     let mut model = RemoteCodebaseIndexModel::default();
