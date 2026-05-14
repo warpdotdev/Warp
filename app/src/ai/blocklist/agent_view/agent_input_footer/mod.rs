@@ -6,7 +6,6 @@ pub mod toolbar_item;
 use crate::{
     ai::{
         blocklist::{
-            handoff::is_local_to_cloud_handoff_available,
             history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel},
             prompt::prompt_alert::{PromptAlertEvent, PromptAlertView},
             usage::icon_for_context_window_usage,
@@ -2538,7 +2537,10 @@ impl TypedActionView for AgentInputFooter {
                 });
             }
             AgentInputFooterAction::OpenHandoffPane => {
-                if is_local_to_cloud_handoff_available() {
+                if FeatureFlag::OzHandoff.is_enabled()
+                    && FeatureFlag::HandoffLocalCloud.is_enabled()
+                    && cfg!(all(feature = "local_fs", not(target_family = "wasm")))
+                {
                     ctx.emit(AgentInputFooterEvent::OpenHandoffPane);
                 }
             }

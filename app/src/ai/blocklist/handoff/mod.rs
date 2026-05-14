@@ -14,7 +14,6 @@
 //! `AmbientAgentViewModel::submit_handoff`, which reads the cached
 //! `forked_conversation_id` and `snapshot_upload` off `PendingHandoff`.
 
-use crate::features::FeatureFlag;
 use crate::server::server_api::ai::AttachmentInput;
 
 use super::PendingAttachment;
@@ -37,10 +36,4 @@ pub struct HandoffLaunchAttachments {
 pub struct PendingCloudLaunch {
     pub(crate) prompt: String,
     pub(crate) attachments: HandoffLaunchAttachments,
-}
-
-pub(crate) fn is_local_to_cloud_handoff_available() -> bool {
-    FeatureFlag::OzHandoff.is_enabled()
-        && FeatureFlag::HandoffLocalCloud.is_enabled()
-        && cfg!(all(feature = "local_fs", not(target_family = "wasm")))
 }

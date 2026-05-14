@@ -1,6 +1,5 @@
 use super::hoa_onboarding;
 use crate::ai::blocklist::agent_view::toolbar_item::AgentToolbarItemKind;
-use crate::ai::blocklist::handoff::is_local_to_cloud_handoff_available;
 use crate::auth::auth_manager::AuthManagerEvent;
 use crate::auth::AuthManager;
 use crate::channel::{Channel, ChannelState};
@@ -450,7 +449,10 @@ impl OneTimeModalModel {
 ///
 /// Users on `Default` already see the chip via `AgentToolbarItemKind::default_right()`.
 fn maybe_ensure_handoff_chip_in_toolbar(ctx: &mut ModelContext<OneTimeModalModel>) {
-    if !is_local_to_cloud_handoff_available() {
+    if !FeatureFlag::OzHandoff.is_enabled()
+        || !FeatureFlag::HandoffLocalCloud.is_enabled()
+        || !cfg!(all(feature = "local_fs", not(target_family = "wasm")))
+    {
         return;
     }
 

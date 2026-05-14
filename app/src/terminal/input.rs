@@ -120,8 +120,6 @@ use crate::ai::blocklist::handoff::touched_repos::{
 };
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::handoff::{HandoffLaunchAttachments, PendingCloudLaunch};
-#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-use crate::ai::blocklist::handoff::is_local_to_cloud_handoff_available;
 use crate::ai::blocklist::AttachmentType;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::PendingAttachment;
@@ -3984,7 +3982,9 @@ impl Input {
 
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn maybe_launch_cloud_handoff_request(&mut self, ctx: &mut ViewContext<Self>) -> bool {
-        if !is_local_to_cloud_handoff_available()
+        if !FeatureFlag::OzHandoff.is_enabled()
+            || !FeatureFlag::HandoffLocalCloud.is_enabled()
+            || !cfg!(all(feature = "local_fs", not(target_family = "wasm")))
             || self.prefix_mode(ctx) != InputPrefixMode::CloudHandoff
         {
             return false;
