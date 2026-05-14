@@ -781,6 +781,10 @@ en:
     keybindings_input_editor: "Input Editor"
     keybindings_terminal: "Terminal"
     keybindings_fundamentals: "Fundamentals"
+    whats_new: "What's New?"
+    getting_started: "Getting Started"
+    maximize_warp: "Maximize Warp"
+    advanced_setup: "Advanced Setup"
 
   ai_context_menu:
     files_and_folders: "Files and folders"

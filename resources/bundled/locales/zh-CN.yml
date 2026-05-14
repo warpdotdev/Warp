@@ -781,6 +781,10 @@ zh-CN:
     keybindings_input_editor: "输入编辑器"
     keybindings_terminal: "终端"
     keybindings_fundamentals: "通用操作"
+    whats_new: "最新内容"
+    getting_started: "开始使用"
+    maximize_warp: "高效使用 Warp"
+    advanced_setup: "高级设置"
 
   ai_context_menu:
     files_and_folders: "文件和文件夹"
