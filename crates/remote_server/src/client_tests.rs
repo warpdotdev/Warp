@@ -61,7 +61,7 @@ async fn codebase_index_push_messages_become_client_events() {
     drop(server_read);
 
     let executor = executor::Background::default();
-    let (_client, event_rx) =
+    let (_client, event_rx, _failure_rx) =
         RemoteServerClient::new(client_read.compat(), client_write.compat_write(), &executor);
     let mut writer = server_write.compat_write();
 
@@ -132,7 +132,7 @@ where
     ));
 
     let executor = executor::Background::default();
-    let (client, event_rx) =
+    let (client, event_rx, _failure_rx) =
         RemoteServerClient::new(client_read.compat(), client_write.compat_write(), &executor);
     (client, event_rx, executor)
 }
@@ -313,7 +313,7 @@ async fn authenticate_sends_fire_and_forget_message() {
     let (server_read, _server_write) = tokio::io::split(server_stream);
     let (client_read, client_write) = tokio::io::split(client_stream);
     let executor = executor::Background::default();
-    let (client, _event_rx) =
+    let (client, _event_rx, _failure_rx) =
         RemoteServerClient::new(client_read.compat(), client_write.compat_write(), &executor);
 
     client.authenticate("rotated-secret");
@@ -337,7 +337,7 @@ async fn disconnected_on_closed_stream() {
 
     let (client_read, client_write) = tokio::io::split(client_stream);
     let executor = executor::Background::default();
-    let (client, disconnect_rx) =
+    let (client, disconnect_rx, _failure_rx) =
         RemoteServerClient::new(client_read.compat(), client_write.compat_write(), &executor);
 
     // An initialize call on a dead stream must complete with an error rather than hang.

@@ -33,6 +33,8 @@ pub(crate) use onboarding::OnboardingTutorial;
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::agent::conversation::AIConversation;
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::agent::CancellationReason;
 use crate::ai::agent_conversations_model::{
     AgentConversationNavigationSubject, AgentConversationsModel,
 };
@@ -258,10 +260,7 @@ use crate::drive::{
     CloudObjectTypeAndId, DriveObjectType, DrivePanel, DrivePanelEvent, OpenWarpDriveObjectSettings,
 };
 use crate::experiments::{BlockOnboarding, Experiment};
-use crate::menu::{
-    Event as MenuEvent, Menu, MenuItem, MenuItemFields, MenuSelectionSource,
-    DEFAULT_WIDTH as MENU_DEFAULT_WIDTH,
-};
+use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields, MenuSelectionSource};
 use crate::modal::{Modal, ModalEvent, ModalViewState};
 use crate::network::{NetworkStatus, NetworkStatusEvent};
 use crate::notebooks::manager::{NotebookManager, NotebookSource};
@@ -3796,9 +3795,10 @@ impl Workspace {
             NewWorkspaceSource::Restored {
                 window_snapshot, ..
             } => {
-                if should_default_open
-                    && *TabSettings::as_ref(ctx).show_vertical_tab_panel_in_restored_windows
-                {
+                if !should_default_open {
+                    // Stale "panel open" snapshot would leave a click-eating dismiss underlay (#9505).
+                    false
+                } else if *TabSettings::as_ref(ctx).show_vertical_tab_panel_in_restored_windows {
                     true
                 } else {
                     window_snapshot.vertical_tabs_panel_open
@@ -6152,7 +6152,7 @@ impl Workspace {
     /// Builds the unified new-session menu items
     /// tab bar chevron and the vertical tab bar `+` button.
     ///
-    /// Order: Agent → Terminal (sidecar) → Cloud Oz → [tab configs] → separator → New worktree config (sidecar) → New tab config → separator → Reopen closed session.
+    /// Order: Agent → Terminal (sidecar) → Cloud Agent → [tab configs] → separator → New worktree config (sidecar) → New tab config → separator → Reopen closed session.
     fn unified_new_session_menu_items(
         &self,
         ctx: &mut ViewContext<Self>,
@@ -6234,12 +6234,12 @@ impl Workspace {
             }
         }
 
-        // 3. Cloud Oz (if flags enabled)
+        // 3. Cloud Agent (if flags enabled)
         if is_any_ai_enabled
             && FeatureFlag::AgentView.is_enabled()
             && FeatureFlag::CloudMode.is_enabled()
         {
-            let mut cloud_item = MenuItemFields::new("Cloud Oz")
+            let mut cloud_item = MenuItemFields::new("Cloud Agent")
                 .with_on_select_action(WorkspaceAction::AddAmbientAgentTab)
                 .with_icon(icons::Icon::LayoutAlt01);
             if effective_default == DefaultSessionMode::CloudAgent {
@@ -6341,18 +6341,13 @@ impl Workspace {
     fn open_tab_configs_menu(
         &mut self,
         position: Vector2F,
-        is_vertical_tabs: bool,
         open_source: TabConfigsMenuOpenSource,
         ctx: &mut ViewContext<Self>,
     ) {
         let menu_items = self.unified_new_session_menu_items(ctx);
         ctx.update_view(&self.new_session_dropdown_menu, |context_menu, view_ctx| {
-            if is_vertical_tabs {
-                // Match the Figma mock width (OptionMenuItem component is 268px).
-                context_menu.set_width(268.);
-            } else {
-                context_menu.set_width(MENU_DEFAULT_WIDTH);
-            }
+            // Match the Figma mock width (OptionMenuItem component is 268px).
+            context_menu.set_width(268.);
             context_menu.set_items(menu_items, view_ctx);
             match open_source {
                 TabConfigsMenuOpenSource::KeyboardShortcut => {
@@ -6373,7 +6368,7 @@ impl Workspace {
         position: Vector2F,
         ctx: &mut ViewContext<Self>,
     ) {
-        self.open_tab_configs_menu(position, false, TabConfigsMenuOpenSource::Pointer, ctx);
+        self.open_tab_configs_menu(position, TabConfigsMenuOpenSource::Pointer, ctx);
     }
 
     fn toggle_tab_configs_menu(&mut self, ctx: &mut ViewContext<Self>) {
@@ -6391,7 +6386,6 @@ impl Workspace {
             }
             self.open_tab_configs_menu(
                 Vector2F::zero(),
-                true,
                 TabConfigsMenuOpenSource::KeyboardShortcut,
                 ctx,
             );
@@ -6402,18 +6396,12 @@ impl Workspace {
             .element_position_by_id_at_last_frame(self.window_id, NEW_TAB_BUTTON_POSITION_ID)
             .map(|position| position.lower_left())
             .unwrap_or_else(Vector2F::zero);
-        self.open_tab_configs_menu(
-            position,
-            false,
-            TabConfigsMenuOpenSource::KeyboardShortcut,
-            ctx,
-        );
+        self.open_tab_configs_menu(position, TabConfigsMenuOpenSource::KeyboardShortcut, ctx);
     }
 
     pub fn toggle_new_session_dropdown_menu(
         &mut self,
         position: Vector2F,
-        is_vertical_tabs: bool,
         ctx: &mut ViewContext<Self>,
     ) {
         if self.show_new_session_dropdown_menu.is_some() {
@@ -6421,12 +6409,7 @@ impl Workspace {
             return;
         }
 
-        self.open_tab_configs_menu(
-            position,
-            is_vertical_tabs,
-            TabConfigsMenuOpenSource::Pointer,
-            ctx,
-        );
+        self.open_tab_configs_menu(position, TabConfigsMenuOpenSource::Pointer, ctx);
     }
 
     fn open_launch_config_from_menu(
@@ -7441,16 +7424,24 @@ impl Workspace {
                         .is_pane_hidden_for_close(*pane_id)
                 });
             // If the tabbed editor view is enabled and there is an existing CodeView, we should group the newly opened file into this view.
-            if let (Some(path), Some((pane_id, code_view))) = (source.path(), code_view) {
+            if let (Some(location), Some((pane_id, code_view))) = (source.location(), code_view) {
                 code_view.update(ctx, |code_view, ctx| {
+                    // Preview (single-click = light open, double-click = promote to
+                    // full tab) is only supported for local files because it relies
+                    // on `open_in_preview_or_promote` which takes a local `PathBuf`.
+                    // Remote files skip preview and open normally.
                     if preview {
-                        code_view.open_in_preview_or_promote_and_jump(path, line_col, ctx);
+                        if let Some(path) = location.to_local_path() {
+                            code_view.open_in_preview_or_promote_and_jump(
+                                path.to_path_buf(),
+                                line_col,
+                                ctx,
+                            );
+                        } else {
+                            code_view.open_or_focus_existing(Some(location.clone()), line_col, ctx);
+                        }
                     } else {
-                        code_view.open_or_focus_existing(
-                            Some(FileLocation::Local(path)),
-                            line_col,
-                            ctx,
-                        );
+                        code_view.open_or_focus_existing(Some(location.clone()), line_col, ctx);
                     }
                     for extra in additional_paths {
                         code_view.open_or_focus_existing(
@@ -7471,10 +7462,10 @@ impl Workspace {
         } else {
             // When grouping is off, avoid opening duplicate code panes for the same file in the
             // current pane group. Instead, focus the existing pane and jump.
-            if let Some(path) = source.path() {
+            if let Some(location) = source.location() {
                 let pane_group_id = self.active_tab_pane_group().id();
                 let existing_locator = CodeManager::handle(ctx).read(ctx, |manager, _| {
-                    manager.get_locator_for_path_in_tab(pane_group_id, path.as_path())
+                    manager.get_locator_for_location_in_tab(pane_group_id, &location)
                 });
 
                 if let Some(locator) = existing_locator {
@@ -7485,15 +7476,24 @@ impl Workspace {
                             pane_group.code_view_from_pane_id(locator.pane_id, ctx)
                         {
                             code_view.update(ctx, |code_view, ctx| {
+                                // Preview is local-only (see comment above).
                                 if preview {
-                                    code_view.open_in_preview_or_promote_and_jump(
-                                        path.clone(),
-                                        line_col,
-                                        ctx,
-                                    );
+                                    if let Some(path) = location.to_local_path() {
+                                        code_view.open_in_preview_or_promote_and_jump(
+                                            path.to_path_buf(),
+                                            line_col,
+                                            ctx,
+                                        );
+                                    } else {
+                                        code_view.open_or_focus_existing(
+                                            Some(location.clone()),
+                                            line_col,
+                                            ctx,
+                                        );
+                                    }
                                 } else {
                                     code_view.open_or_focus_existing(
-                                        Some(FileLocation::Local(path.clone())),
+                                        Some(location.clone()),
                                         line_col,
                                         ctx,
                                     );
@@ -13390,10 +13390,41 @@ impl Workspace {
         if source_conversation.status().is_in_progress()
             || source_conversation.status().is_blocked()
         {
-            Self::restore_source_handoff_draft(&source_view, launch, environment_id, ctx);
-            Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
-            return;
-        };
+            let has_long_running_command = source_view
+                .as_ref(ctx)
+                .model
+                .lock()
+                .block_list()
+                .active_block()
+                .is_active_and_long_running();
+
+            if has_long_running_command {
+                Self::restore_source_handoff_draft(&source_view, launch, environment_id, ctx);
+                let window_id = ctx.window_id();
+                WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                    toast_stack.add_ephemeral_toast(
+                        DismissibleToast::error(
+                            "Can't hand off while a command is running. Cancel the command or wait for it to finish."
+                                .to_owned(),
+                        ),
+                        window_id,
+                        ctx,
+                    );
+                });
+                return;
+            }
+
+            let conversation_id = source_conversation.id();
+            source_view.update(ctx, |view, ctx| {
+                view.ai_controller().update(ctx, |controller, ctx| {
+                    controller.cancel_conversation_progress(
+                        conversation_id,
+                        CancellationReason::ManuallyCancelled,
+                        ctx,
+                    );
+                });
+            });
+        }
 
         let Some(source_token) = source_conversation.server_conversation_token().cloned() else {
             Self::restore_source_handoff_draft(&source_view, launch, environment_id, ctx);
@@ -14222,7 +14253,7 @@ impl Workspace {
                                                             |file_view, ctx| {
                                                                 let moved_file_path = file_view
                                                                     .tab_at(*editor_tab_index)
-                                                                    .and_then(|t| t.path());
+                                                                    .and_then(|t| t.local_path());
 
                                                                 file_view.remove_tab_for_move(
                                                                     *editor_tab_index,
@@ -18412,10 +18443,7 @@ impl Workspace {
                     false,
                 )
                 .on_right_click(move |ctx, _, position| {
-                    ctx.dispatch_typed_action(WorkspaceAction::ToggleNewSessionMenu {
-                        position,
-                        is_vertical_tabs: false,
-                    });
+                    ctx.dispatch_typed_action(WorkspaceAction::ToggleNewSessionMenu { position });
                 })
                 .finish();
             return Container::new(
@@ -18485,7 +18513,6 @@ impl Workspace {
                 {
                     ctx.dispatch_typed_action(WorkspaceAction::ToggleNewSessionMenu {
                         position: position.lower_left(),
-                        is_vertical_tabs: false,
                     });
                 }
             })
@@ -20666,10 +20693,9 @@ impl TypedActionView for Workspace {
             SaveCurrentTabAsNewConfig(tab_index) => {
                 self.save_current_tab_as_new_config(*tab_index, ctx)
             }
-            ToggleNewSessionMenu {
-                position,
-                is_vertical_tabs,
-            } => self.toggle_new_session_dropdown_menu(*position, *is_vertical_tabs, ctx),
+            ToggleNewSessionMenu { position } => {
+                self.toggle_new_session_dropdown_menu(*position, ctx)
+            }
             SelectNewSessionMenuItem(new_session_menu_item) => {
                 self.open_launch_config_from_menu(new_session_menu_item.clone(), ctx)
             }
@@ -23208,7 +23234,7 @@ impl View for Workspace {
                 }
             }
 
-            // Action sidecar for actionable items (Terminal, Agent, Cloud Oz, tab configs).
+            // Action sidecar for actionable items (Terminal, Agent, Cloud Agent, tab configs).
             if let Some(sidecar_item) = &self.tab_config_action_sidecar_item {
                 let anchor_label = self.new_session_dropdown_menu.read(app, |menu, _| {
                     menu.hovered_index().and_then(|idx| {

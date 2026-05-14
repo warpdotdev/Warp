@@ -154,6 +154,10 @@ fn convert_run_agents(run_agents: api::RunAgents) -> AIAgentActionType {
             })
             .collect(),
         plan_id,
+        // Auth secret is a client-side dispatch concern populated by the
+        // confirmation card from `CloudAgentSettings.last_selected_auth_secret`
+        // before Accept. The proto does not carry it.
+        harness_auth_secret_name: None,
     })
 }
 
@@ -175,6 +179,9 @@ fn convert_start_agent_v2_execution_mode(
                 harness_type: convert_start_agent_v2_harness_type(remote.harness)
                     .unwrap_or_default(),
                 title: remote.title,
+                // Auth secret is plumbed client-side via `RunAgentsRequest`;
+                // StartAgentV2 from the server never carries it.
+                auth_secret_name: None,
             }
         }
         Some(api::start_agent_v2::execution_mode::Mode::Local(local)) => {

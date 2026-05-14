@@ -1931,8 +1931,8 @@ impl RootView {
 
         let themes = onboarding_theme_picker_themes();
         let onboarding_view = ctx.add_typed_action_view(move |ctx| {
-            let llm_preferences = LLMPreferences::as_ref(ctx);
-            let (models, default_model_id) = build_onboarding_models(llm_preferences);
+            let (models, default_model_id) =
+                build_onboarding_models(LLMPreferences::as_ref(ctx), ctx);
 
             let workspace_enforces_autonomy = UserWorkspaces::as_ref(ctx)
                 .ai_autonomy_settings()
@@ -1976,7 +1976,7 @@ impl RootView {
             move |_, llm_preferences, event, ctx| match event {
                 LLMPreferencesEvent::UpdatedAvailableLLMs => {
                     let (models, default_model_id) =
-                        build_onboarding_models(llm_preferences.as_ref(ctx));
+                        build_onboarding_models(llm_preferences.as_ref(ctx), ctx);
                     onboarding_view_clone.update(ctx, |onboarding_view, ctx| {
                         onboarding_view.set_onboarding_models(models, default_model_id, ctx);
                     })

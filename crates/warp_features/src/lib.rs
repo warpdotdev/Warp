@@ -799,6 +799,11 @@ pub enum FeatureFlag {
     /// When enabled, solo users (not on a team) can use BYO API keys.
     SoloUserByok,
 
+    /// Enables the Custom Inference settings UI for adding user-provided third-party / OpenAI-compatible inference endpoints.
+    CustomInferenceEndpoints,
+    /// Enables Custom Inference endpoints for enterprise users.
+    CustomInferenceEndpointsEnterprise,
+
     /// Replaces the in-block warpification banner with a warpify footer.
     WarpifyFooter,
 
@@ -941,6 +946,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::NamedAgents,
     FeatureFlag::HandoffCloudCloud,
     FeatureFlag::SoloUserByok,
+    FeatureFlag::CustomInferenceEndpoints,
     FeatureFlag::RemoteCodebaseIndexing,
 ];
 

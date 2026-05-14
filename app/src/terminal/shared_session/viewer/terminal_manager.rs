@@ -1382,14 +1382,13 @@ impl TerminalManager {
                 block_id,
                 operations,
             } => {
-                // If the block ID has become stale by the time we get here,
-                // we don't need to send this update to the server.
-                if model.lock().block_list().active_block_id() != block_id {
-                    return;
-                }
-
-                // Only send input updates if the viewer is an executor
-                if model.lock().shared_session_status().is_executor() {
+                let should_send_input_update = view.read(ctx, |view, ctx| {
+                    let model = model.lock();
+                    model.block_list().active_block_id() == block_id
+                        && model.shared_session_status().is_executor()
+                        && view.should_publish_shared_session_input_editor_update(&model, ctx)
+                });
+                if should_send_input_update {
                     Self::update_current_network(&current_network, ctx, |network, _| {
                         network.send_input_update(block_id, operations.iter());
                     });

@@ -944,19 +944,6 @@ impl BlocklistAIStatusBar {
             ]));
         }
 
-        if let Some(error_message) = ambient_agent_model.error_message() {
-            return Some(Message::new(vec![
-                MessageItem::Icon {
-                    icon: CoreIcon::Triangle,
-                    color: Some(error_color),
-                },
-                MessageItem::Text {
-                    content: error_message.to_owned().into(),
-                    color: Some(error_color),
-                },
-            ]));
-        }
-
         if ambient_agent_model.is_cancelled() {
             let color = theme.disabled_text_color(theme.background()).into_solid();
             return Some(Message::new(vec![

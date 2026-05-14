@@ -19,6 +19,7 @@ use settings::Setting as _;
 
 use crate::ai::blocklist::agent_view::agent_input_footer::AgentInputButtonTheme;
 use crate::ai::cloud_agent_settings::CloudAgentSettings;
+use crate::ai::execution_profiles::model_menu_items::is_auto;
 use crate::ai::harness_availability::{HarnessAvailabilityEvent, HarnessAvailabilityModel};
 use crate::ai::harness_display::icon_for as harness_icon_for;
 use crate::ai::llms::{LLMId, LLMPreferences, LLMPreferencesEvent};
@@ -191,7 +192,8 @@ impl ModelSelector {
                 }
                 HarnessAvailabilityEvent::AuthSecretsLoaded
                 | HarnessAvailabilityEvent::AuthSecretCreated { .. }
-                | HarnessAvailabilityEvent::AuthSecretCreationFailed { .. } => {}
+                | HarnessAvailabilityEvent::AuthSecretCreationFailed { .. }
+                | HarnessAvailabilityEvent::AuthSecretsFetchFailed => {}
             },
         );
 
@@ -434,24 +436,43 @@ impl ModelSelector {
             .id
             .clone();
 
-        let items: Vec<MenuItem<ModelSelectorAction>> = llm_preferences
-            .get_base_llm_choices_for_agent_mode()
-            .filter_map(|llm| {
+        let mut auto_choices = Vec::new();
+        let mut custom_choices = Vec::new();
+        let mut other_choices = Vec::new();
+        for llm in llm_preferences.get_base_llm_choices_for_agent_mode(ctx) {
+            let display_name = llm.menu_display_name();
+            if !query.is_empty() && !display_name.to_lowercase().contains(query) {
+                continue;
+            }
+            if is_auto(llm) {
+                auto_choices.push(llm);
+            } else if llm_preferences.custom_llm_info_for_id(&llm.id).is_some() {
+                custom_choices.push(llm);
+            } else {
+                other_choices.push(llm);
+            }
+        }
+
+        let items: Vec<MenuItem<ModelSelectorAction>> = auto_choices
+            .into_iter()
+            .chain(custom_choices)
+            .chain(other_choices)
+            .map(|llm| {
                 let display_name = llm.menu_display_name();
-                if !query.is_empty() && !display_name.to_lowercase().contains(query) {
-                    return None;
+                let is_custom = llm_preferences.custom_llm_info_for_id(&llm.id).is_some();
+                let mut fields = MenuItemFields::new(display_name)
+                    .with_icon_size_override(ITEM_ICON_SIZE)
+                    .with_font_size_override(ITEM_FONT_SIZE)
+                    .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
+                    .with_override_hover_background_color(hover_background)
+                    .with_on_select_action(ModelSelectorAction::SelectModel(llm.id.clone()))
+                    .with_disabled(llm.disable_reason.is_some());
+                if is_custom {
+                    fields = fields.with_right_side_icon(Icon::Key);
+                } else {
+                    fields = fields.with_icon(llm.provider.icon().unwrap_or(Icon::Oz));
                 }
-                let icon = llm.provider.icon().unwrap_or(Icon::Oz);
-                Some(MenuItem::Item(
-                    MenuItemFields::new(display_name)
-                        .with_icon(icon)
-                        .with_icon_size_override(ITEM_ICON_SIZE)
-                        .with_font_size_override(ITEM_FONT_SIZE)
-                        .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
-                        .with_override_hover_background_color(hover_background)
-                        .with_on_select_action(ModelSelectorAction::SelectModel(llm.id.clone()))
-                        .with_disabled(llm.disable_reason.is_some()),
-                ))
+                MenuItem::Item(fields)
             })
             .collect();
 

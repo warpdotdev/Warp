@@ -12,7 +12,12 @@ use crate::client::ClientEvent;
 use crate::client::InitializeParams;
 use crate::client::RemoteServerClient;
 use crate::codebase_index_proto::RemoteCodebaseIndexStatus;
-use crate::proto::{DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot};
+use crate::proto::{
+    diff_state, get_diff_state_response, DiffMode, DiffState, DiffStateErrorValue,
+    DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot, FileStatusInfo,
+    GetDiffStateResponse, TextEdit,
+};
+use crate::repo_metadata_proto::proto_load_repo_metadata_directory_response_to_update;
 use crate::setup::PreinstallCheckResult;
 #[cfg(not(target_family = "wasm"))]
 use crate::setup::RemoteOs;
@@ -35,8 +40,7 @@ use warpui::r#async::FutureExt as _;
 use warpui::{Entity, ModelContext, ModelSpawner, SingletonEntity};
 
 /// Maximum number of reconnection attempts after a spontaneous disconnect.
-#[cfg(not(target_family = "wasm"))]
-const MAX_RECONNECT_ATTEMPTS: u32 = 2;
+pub const MAX_RECONNECT_ATTEMPTS: u32 = 2;
 /// Delay between reconnection attempts.
 #[cfg(not(target_family = "wasm"))]
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
@@ -61,6 +65,7 @@ struct ReconnectParams {
 struct InitializeHandshake {
     host_id: HostId,
     event_rx: async_channel::Receiver<ClientEvent>,
+    failure_rx: async_channel::Receiver<crate::client::RequestFailedEvent>,
 }
 
 /// Error from [`RemoteServerManager::run_connect_and_handshake`] that
@@ -105,6 +110,15 @@ pub enum RemoteServerOperation {
     LoadRepoMetadataDirectory,
     IndexCodebase,
     DropCodebaseIndex,
+    OpenBuffer,
+    SaveBuffer,
+    WriteFile,
+    ReadFileContext,
+    DeleteFile,
+    RunCommand,
+    GetFragmentMetadataFromHash,
+    GetDiffState,
+    DiscardFiles,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -165,7 +179,8 @@ impl RemoteServerErrorKind {
             ClientError::Protocol(_)
             | ClientError::UnexpectedResponse
             | ClientError::FileOperationFailed(_)
-            | ClientError::FragmentMetadataLookup { .. } => Self::Other,
+            | ClientError::FragmentMetadataLookup { .. }
+            | ClientError::DiscardFailed(_) => Self::Other,
         }
     }
 }
@@ -354,6 +369,11 @@ pub enum RemoteServerManagerEvent {
         /// `None` when the session was explicitly deregistered or when
         /// the exit status could not be determined.
         exit_status: Option<RemoteServerExitStatus>,
+        /// `true` when this disconnect follows exhausted reconnection
+        /// attempts. `false` for first-time disconnects and explicit
+        /// deregistrations. Used by the view layer to distinguish
+        /// reconnect-exhausted telemetry from regular disconnections.
+        was_reconnect_attempt: bool,
     },
     /// A reconnection attempt succeeded. Downstream owners (e.g.
     /// `RemoteServerCommandExecutor`) should swap their client reference
@@ -421,7 +441,7 @@ pub enum RemoteServerManagerEvent {
         path: String,
         new_server_version: u64,
         expected_client_version: u64,
-        edits: Vec<crate::proto::TextEdit>,
+        edits: Vec<TextEdit>,
     },
     /// The file changed on disk while the client had unsaved edits.
     /// The server did NOT apply the change; the client should show a
@@ -429,19 +449,26 @@ pub enum RemoteServerManagerEvent {
     BufferConflictDetected { host_id: HostId, path: String },
 
     // --- Diff state events (forwarded from ClientEvent push channel) ---
-    /// A full diff state snapshot was pushed by the server (NewDiffsComputed).
+    /// A full diff state snapshot was pushed by the server (or returned
+    /// from the initial `GetDiffState` request).
     DiffStateSnapshotReceived {
         host_id: HostId,
+        repo_path: StandardizedPath,
+        mode: DiffMode,
         snapshot: DiffStateSnapshot,
     },
     /// A metadata-only diff state update was pushed by the server.
     DiffStateMetadataUpdateReceived {
         host_id: HostId,
+        repo_path: StandardizedPath,
+        mode: DiffMode,
         update: DiffStateMetadataUpdate,
     },
     /// A single-file diff delta was pushed by the server.
     DiffStateFileDeltaReceived {
         host_id: HostId,
+        repo_path: StandardizedPath,
+        mode: DiffMode,
         delta: DiffStateFileDelta,
     },
 
@@ -599,10 +626,30 @@ impl RemoteServerManager {
     /// Returns a connected client for the given host by picking an arbitrary
     /// session from the host's session pool.
     pub fn client_for_host(&self, host_id: &HostId) -> Option<&Arc<RemoteServerClient>> {
+        self.any_connected_session_for_host(host_id)
+            .map(|(_, client)| client)
+    }
+
+    /// Returns the [`SessionId`] of an arbitrary currently-connected session
+    /// for the given host, if any.
+    pub fn find_connected_session(&self, host_id: &HostId) -> Option<SessionId> {
+        self.any_connected_session_for_host(host_id)
+            .map(|(session_id, _)| session_id)
+    }
+
+    /// Returns an arbitrary connected `(session_id, client)` pair for the
+    /// given host. Backs both [`Self::client_for_host`] and
+    /// [`Self::find_connected_session`] so they share a single source of
+    /// truth for iteration order and connection-state filtering.
+    fn any_connected_session_for_host(
+        &self,
+        host_id: &HostId,
+    ) -> Option<(SessionId, &Arc<RemoteServerClient>)> {
         let sessions = self.host_to_sessions.get(host_id)?;
         sessions
             .iter()
-            .find_map(|session_id| self.client_for_session(*session_id))
+            .copied()
+            .find_map(|sid| self.client_for_session(sid).map(|client| (sid, client)))
     }
 
     /// Checks if the remote server binary is installed and executable.
@@ -989,6 +1036,7 @@ impl RemoteServerManager {
         let Connection {
             client,
             event_rx,
+            failure_rx,
             child,
             control_path,
         } = transport
@@ -1087,6 +1135,7 @@ impl RemoteServerManager {
         Ok(InitializeHandshake {
             host_id: HostId::new(resp.host_id),
             event_rx,
+            failure_rx,
         })
     }
 
@@ -1166,6 +1215,7 @@ impl RemoteServerManager {
                 session_id,
                 host_id: host_id.clone(),
                 exit_status: None,
+                was_reconnect_attempt: false,
             });
             if !self.host_to_sessions.contains_key(&host_id) {
                 ctx.emit(RemoteServerManagerEvent::HostDisconnected { host_id });
@@ -1395,16 +1445,8 @@ impl RemoteServerManager {
                              operation={operation:?} host={host_id} session={session_id:?} \
                              repo_path={repo_path_for_log} error={e}"
                         );
-                        let error_kind = RemoteServerErrorKind::from_client_error(&e);
-                        let _ = spawner
-                            .spawn(move |_me, ctx| {
-                                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
-                                    session_id,
-                                    operation,
-                                    error_kind,
-                                });
-                            })
-                            .await;
+                        // Transport-level telemetry is emitted automatically
+                        // by send_tracked_request via ClientEvent::RequestFailed.
                     }
                 }
             })
@@ -1470,16 +1512,8 @@ impl RemoteServerManager {
                     }
                     Err(e) => {
                         log::warn!("Remote server navigate_to_directory failed: session={session_id:?} error={e}");
-                        let error_kind = RemoteServerErrorKind::from_client_error(&e);
-                        let _ = spawner
-                            .spawn(move |_me, ctx| {
-                                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
-                                    session_id,
-                                    operation: RemoteServerOperation::NavigateToDirectory,
-                                    error_kind,
-                                });
-                            })
-                            .await;
+                        // Transport-level telemetry is emitted automatically
+                        // by send_tracked_request via ClientEvent::RequestFailed.
                     }
                 }
             })
@@ -1516,6 +1550,154 @@ impl RemoteServerManager {
         }
     }
 
+    /// Sends a `GetDiffState` request to the remote server for the given
+    /// session and emits the snapshot response as a manager event.
+    pub fn get_diff_state(
+        &mut self,
+        session_id: SessionId,
+        remote_path: RemotePath,
+        mode: DiffMode,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(client) = self.client_for_session(session_id).cloned() else {
+            log::warn!("Remote server get_diff_state: no connected client session={session_id:?}");
+            return;
+        };
+
+        let RemotePath {
+            host_id,
+            path: repo_path,
+        } = remote_path;
+        let mode_for_event = mode.clone();
+        let repo_path_for_event = repo_path.clone();
+        let spawner = self.spawner.clone();
+        ctx.background_executor()
+            .spawn(async move {
+                let result = client.get_diff_state(&repo_path, mode).await;
+                match result {
+                    Ok(GetDiffStateResponse {
+                        result: Some(get_diff_state_response::Result::Snapshot(snapshot)),
+                    }) => {
+                        let _ = spawner
+                            .spawn(move |_me, ctx| {
+                                ctx.emit(RemoteServerManagerEvent::DiffStateSnapshotReceived {
+                                    host_id,
+                                    repo_path: repo_path_for_event,
+                                    mode: mode_for_event,
+                                    snapshot,
+                                });
+                            })
+                            .await;
+                    }
+                    other => {
+                        let error_message = match other {
+                            Ok(GetDiffStateResponse {
+                                result: Some(get_diff_state_response::Result::Error(e)),
+                            }) => {
+                                log::warn!("Remote server get_diff_state error: {}", e.message);
+                                e.message
+                            }
+                            Ok(_) => {
+                                let message = "Remote server returned an empty \
+                                                GetDiffStateResponse"
+                                    .to_string();
+                                log::warn!("{message}");
+                                message
+                            }
+                            Err(e) => {
+                                // Transport-level telemetry is emitted automatically
+                                // by send_request via RequestFailedEvent.
+                                log::warn!(
+                                    "Remote server get_diff_state failed: \
+                                     session={session_id:?} error={e}"
+                                );
+                                e.to_string()
+                            }
+                        };
+                        let error_snapshot = DiffStateSnapshot {
+                            repo_path: repo_path_for_event.to_string(),
+                            mode: Some(mode_for_event.clone()),
+                            metadata: None,
+                            state: Some(DiffState {
+                                state: Some(diff_state::State::Error(DiffStateErrorValue {
+                                    message: error_message,
+                                })),
+                            }),
+                            diffs: None,
+                        };
+                        let _ = spawner
+                            .spawn(move |_me, ctx| {
+                                ctx.emit(RemoteServerManagerEvent::DiffStateSnapshotReceived {
+                                    host_id,
+                                    repo_path: repo_path_for_event,
+                                    mode: mode_for_event,
+                                    snapshot: error_snapshot,
+                                });
+                            })
+                            .await;
+                    }
+                }
+            })
+            .detach();
+    }
+
+    /// Sends an `UnsubscribeDiffState` notification (fire-and-forget) to the
+    /// remote server for the given session.
+    pub fn unsubscribe_diff_state(
+        &self,
+        session_id: SessionId,
+        remote_path: &RemotePath,
+        mode: DiffMode,
+    ) {
+        if let Some(client) = self.client_for_session(session_id) {
+            client.unsubscribe_diff_state(&remote_path.path, mode);
+        } else {
+            log::debug!(
+                "Remote server unsubscribe_diff_state: no client for session={session_id:?}"
+            );
+        }
+    }
+
+    /// Sends a `DiscardFiles` request to the remote server. On success the
+    /// server's watcher will push updated diff snapshots.
+    #[allow(clippy::too_many_arguments)]
+    pub fn discard_files(
+        &mut self,
+        session_id: SessionId,
+        remote_path: RemotePath,
+        files: Vec<FileStatusInfo>,
+        should_stash: bool,
+        branch_name: Option<String>,
+        mode: DiffMode,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(client) = self.client_for_session(session_id).cloned() else {
+            log::warn!("Remote server discard_files: no connected client session={session_id:?}");
+            return;
+        };
+
+        let repo_path = remote_path.path;
+        ctx.background_executor()
+            .spawn(async move {
+                match client
+                    .discard_files(&repo_path, files, should_stash, branch_name, mode)
+                    .await
+                {
+                    Ok(()) => {
+                        log::info!("Remote server discard_files succeeded");
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Remote server discard_files failed: session={session_id:?} error={e}"
+                        );
+                        // Transport-level telemetry is emitted automatically
+                        // by send_request via RequestFailedEvent.
+                    }
+                }
+            })
+            .detach();
+    }
+
     /// Sends a `LoadRepoMetadataDirectory` request to the remote server for
     /// the given session and emits the response as a manager event.
     pub fn load_remote_repo_metadata_directory(
@@ -1547,7 +1729,7 @@ impl RemoteServerManager {
                 {
                     Ok(resp) => {
                         if let Some(update) =
-                            crate::repo_metadata_proto::proto_load_repo_metadata_directory_response_to_update(&resp)
+                            proto_load_repo_metadata_directory_response_to_update(&resp)
                         {
                             let _ = spawner
                                 .spawn(move |_me, ctx| {
@@ -1565,16 +1747,8 @@ impl RemoteServerManager {
                         log::warn!(
                             "Remote server load_repo_metadata_directory failed: session={session_id:?} error={e}"
                         );
-                        let error_kind = RemoteServerErrorKind::from_client_error(&e);
-                        let _ = spawner
-                            .spawn(move |_me, ctx| {
-                                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
-                                    session_id,
-                                    operation: RemoteServerOperation::LoadRepoMetadataDirectory,
-                                    error_kind,
-                                });
-                            })
-                            .await;
+                        // Transport-level telemetry is emitted automatically
+                        // by send_tracked_request via ClientEvent::RequestFailed.
                     }
                 }
             })
@@ -1665,17 +1839,41 @@ impl RemoteServerManager {
             ClientEvent::BufferConflictDetected { path } => {
                 ctx.emit(RemoteServerManagerEvent::BufferConflictDetected { host_id, path });
             }
-            ClientEvent::DiffStateSnapshotReceived { snapshot } => {
-                ctx.emit(RemoteServerManagerEvent::DiffStateSnapshotReceived { host_id, snapshot });
+            ClientEvent::DiffStateSnapshotReceived {
+                repo_path,
+                mode,
+                snapshot,
+            } => {
+                ctx.emit(RemoteServerManagerEvent::DiffStateSnapshotReceived {
+                    host_id,
+                    repo_path,
+                    mode,
+                    snapshot,
+                });
             }
-            ClientEvent::DiffStateMetadataUpdateReceived { update } => {
+            ClientEvent::DiffStateMetadataUpdateReceived {
+                repo_path,
+                mode,
+                update,
+            } => {
                 ctx.emit(RemoteServerManagerEvent::DiffStateMetadataUpdateReceived {
                     host_id,
+                    repo_path,
+                    mode,
                     update,
                 });
             }
-            ClientEvent::DiffStateFileDeltaReceived { delta } => {
-                ctx.emit(RemoteServerManagerEvent::DiffStateFileDeltaReceived { host_id, delta });
+            ClientEvent::DiffStateFileDeltaReceived {
+                repo_path,
+                mode,
+                delta,
+            } => {
+                ctx.emit(RemoteServerManagerEvent::DiffStateFileDeltaReceived {
+                    host_id,
+                    repo_path,
+                    mode,
+                    delta,
+                });
             }
             ClientEvent::Disconnected => {
                 // Handled by the drain loop's completion callback.
@@ -1694,7 +1892,11 @@ impl RemoteServerManager {
         transport: Arc<dyn RemoteTransport>,
         ctx: &mut ModelContext<Self>,
     ) {
-        let InitializeHandshake { host_id, event_rx } = handshake;
+        let InitializeHandshake {
+            host_id,
+            event_rx,
+            failure_rx,
+        } = handshake;
         log::info!("Remote server connected: session={session_id:?} host={host_id}");
 
         // Only transition if the session is still in Initializing state.
@@ -1731,6 +1933,20 @@ impl RemoteServerManager {
             move |me, ctx| {
                 me.mark_session_disconnected(session_id, ctx);
             },
+        );
+        // Drain the separate failure channel for request-failed telemetry.
+        // This stream is independent of the lifecycle stream above, so
+        // holding its sender on the client does not block disconnect.
+        ctx.spawn_stream_local(
+            failure_rx,
+            move |_me, event, ctx| {
+                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
+                    session_id,
+                    operation: event.operation,
+                    error_kind: event.error_kind,
+                });
+            },
+            |_, _| {}, // no-op on done
         );
         if is_first_session {
             ctx.emit(RemoteServerManagerEvent::HostConnected {
@@ -2089,6 +2305,7 @@ impl RemoteServerManager {
                 session_id,
                 host_id: params.host_id,
                 exit_status: params.exit_status,
+                was_reconnect_attempt: true,
             });
             // Note: HostDisconnected was already emitted by
             // mark_session_disconnected when entering the reconnect flow.
@@ -2118,6 +2335,7 @@ impl RemoteServerManager {
             session_id,
             host_id: host_id.clone(),
             exit_status,
+            was_reconnect_attempt: false,
         });
         if !self.host_to_sessions.contains_key(&host_id) {
             ctx.emit(RemoteServerManagerEvent::HostDisconnected { host_id });
