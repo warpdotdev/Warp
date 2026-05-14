@@ -129,10 +129,6 @@ impl OrchestrationViewerModel {
         terminal_view: WeakViewHandle<TerminalView>,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
-        log::info!(
-            "[orch-viewer] new: parent_task_id={parent_task_id} terminal_view_id={terminal_view_id:?}"
-        );
-
         // Kick polling back to fast cadence (and trigger an immediate
         // fetch) any time a new exchange lands on the orchestrator or one
         // of its tracked children. This catches the case where polling has
@@ -252,9 +248,6 @@ impl OrchestrationViewerModel {
         if !is_orchestrator && !is_tracked_child {
             return;
         }
-        log::info!(
-            "[orch-viewer] kick polling: AppendedExchange for tracked conv={conversation_id:?}"
-        );
         // Abort the pending timer; `fetch_children`'s response callback
         // will queue a fresh one using the post-fetch state, so a kick
         // landing during the idle (30s) interval correctly tightens back
@@ -303,11 +296,6 @@ impl OrchestrationViewerModel {
                 // Skip rescheduling too; the newer fetch's response
                 // callback owns the next reschedule.
                 if me.fetch_generation != fetch_generation {
-                    log::debug!(
-                        "[orch-viewer] dropping stale fetch response: generation={fetch_generation} \
-                         current={}",
-                        me.fetch_generation,
-                    );
                     return;
                 }
                 match result {
@@ -333,28 +321,11 @@ impl OrchestrationViewerModel {
     fn apply_children_fetch(&mut self, tasks: Vec<AmbientAgentTask>, ctx: &mut ModelContext<Self>) {
         let history_handle = BlocklistAIHistoryModel::handle(ctx);
 
-        log::info!(
-            "[orch-viewer] apply_children_fetch: parent_task_id={} tasks_returned={} \
-             known_children={}",
-            self.parent_task_id,
-            tasks.len(),
-            self.children.len(),
-        );
-
         // Collect materialization requests to dispatch outside the
         // `&mut self.children` borrow.
         let mut to_materialize: Vec<(AIConversationId, SessionId)> = Vec::new();
 
         for task in tasks {
-            log::debug!(
-                "[orch-viewer] task: task_id={} state={:?} parent_run_id={:?} \
-                 has_session_id={} title={:?}",
-                task.task_id,
-                task.state,
-                task.parent_run_id,
-                task.session_id.is_some(),
-                task.title,
-            );
             // The public API filter is `ancestor_run_id`, which returns every
             // descendant of the parent run. We previously enforced
             // single-level by skipping tasks whose direct `parent_run_id`
@@ -381,13 +352,6 @@ impl OrchestrationViewerModel {
                 // Existing child: update status if it changed and fill in
                 // session id once it becomes available.
                 if entry.last_state != new_state {
-                    log::info!(
-                        "[orch-viewer] child state update: conv={:?} task={} {:?} -> {:?}",
-                        entry.conversation_id,
-                        task_id,
-                        entry.last_state,
-                        new_state,
-                    );
                     let conversation_id = entry.conversation_id;
                     let terminal_view_id = self.terminal_view_id;
                     let status_for_update = conversation_status.clone();
@@ -425,11 +389,9 @@ impl OrchestrationViewerModel {
             // would record an empty parent agent id and the pill bar would
             // never link the two.
             let Some(parent_conversation_id) = self.find_parent_conversation_id(ctx) else {
-                log::info!(
-                    "[orch-viewer] cannot register new child task={task_id} yet: no parent \
-                     conversation found for terminal_view_id={view_id:?}",
-                    view_id = self.terminal_view_id,
-                );
+                // Repeats on every poll until the orchestrator's local
+                // conversation lands; intentionally silent to avoid spam
+                // during the initial join.
                 continue;
             };
 
@@ -471,13 +433,6 @@ impl OrchestrationViewerModel {
                 );
                 conversation_id
             });
-
-            log::info!(
-                "[orch-viewer] discovered new child: conv={conversation_id:?} task={task_id} \
-                 parent_conv={parent_conversation_id:?} state={new_state:?} \
-                 has_session_id={has_session_id} harness={harness:?}",
-                has_session_id = session_id.is_some(),
-            );
 
             let pane_materialization_requested = session_id.is_some();
             if let Some(sid) = session_id {
@@ -526,10 +481,6 @@ impl OrchestrationViewerModel {
             );
             return;
         };
-        log::info!(
-            "[orch-viewer] requesting child pane materialization: conv={conversation_id:?} \
-             session_id={session_id}"
-        );
         view.update(ctx, |_view, ctx| {
             ctx.emit(TerminalViewEvent::EnsureSharedSessionViewerChildPane {
                 conversation_id,

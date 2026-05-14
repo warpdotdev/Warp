@@ -3339,10 +3339,6 @@ impl PaneGroup {
                 );
             });
 
-            log::info!(
-                "[orch-viewer] created loading placeholder pane for viewer-side child \
-                 conv={child_id:?} pane={new_pane_id:?}"
-            );
             self.child_agent_panes.insert(child_id, new_pane_id.into());
             return;
         }
@@ -3482,10 +3478,6 @@ impl PaneGroup {
             .filter(|pane_id| self.has_pane_id(*pane_id))
         {
             let anchor = self.panes.original_pane_for_replacement(prior_pane_id);
-            log::info!(
-                "[orch-viewer] discarding fallback pane for conv={child_conversation_id:?} \
-                 prior_pane={prior_pane_id:?} swapped_in_for={anchor:?}"
-            );
             self.discard_child_agent_pane_for_conversation(child_conversation_id, ctx);
             anchor
         } else {
@@ -3573,11 +3565,6 @@ impl PaneGroup {
             }
         });
 
-        log::info!(
-            "[orch-viewer] materialized shared-session viewer child pane: \
-             conv={child_conversation_id:?} session={child_session_id} \
-             pane={new_pane_id:?}"
-        );
         self.child_agent_panes
             .insert(child_conversation_id, new_pane_id.into());
 

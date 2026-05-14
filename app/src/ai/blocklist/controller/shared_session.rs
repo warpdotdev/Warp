@@ -124,17 +124,7 @@ impl BlocklistAIController {
         // This preserves block visibility for terminal blocks created in the given agent view.
         let existing_conversation_id =
             self.find_existing_conversation_by_server_token(&init_event.conversation_id, ctx);
-        log::info!(
-            "[orch-init] on_shared_init: terminal_view_id={terminal_view_id:?} \
-             server_token={server_token:?} request_id={request_id:?} \
-             existing_match={existing_conversation_id:?}",
-            server_token = init_event.conversation_id,
-            request_id = init_event.request_id,
-        );
         let conversation_id = if let Some(existing_id) = existing_conversation_id {
-            log::info!(
-                "[orch-init] reusing existing conversation by server token: conv={existing_id:?}"
-            );
             existing_id
         } else {
             let selected_conversation_id =
@@ -144,13 +134,7 @@ impl BlocklistAIController {
                     .as_ref(ctx)
                     .conversation(&selected_id)
                     .map(|c| (c.exchange_count(), c.server_conversation_token().is_some()));
-                let should_reuse_selected_conversation =
-                    selected_state == Some((0, false));
-                log::info!(
-                    "[orch-init] selected reuse check: selected_conv={selected_id:?} \
-                     selected_state={selected_state:?} \
-                     should_reuse={should_reuse_selected_conversation}"
-                );
+                let should_reuse_selected_conversation = selected_state == Some((0, false));
                 if !should_reuse_selected_conversation {
                     return None;
                 }
@@ -162,30 +146,14 @@ impl BlocklistAIController {
                     history.set_viewing_shared_session_for_conversation(selected_id, true);
                     ctx.notify();
                 });
-                log::info!(
-                    "[orch-init] reused selected conversation by binding server token: conv={selected_id:?}"
-                );
                 Some(selected_id)
             });
-            if reuse.is_none() {
-                log::info!(
-                    "[orch-init] no reusable selected conversation; selected_conversation_id={selected_conversation_id:?}"
-                );
-            }
             reuse.unwrap_or_else(|| {
-                let new_id = history.update(ctx, |h, ctx| {
+                history.update(ctx, |h, ctx| {
                     h.start_new_conversation(terminal_view_id, false, true, false, ctx)
-                });
-                log::info!(
-                    "[orch-init] created NEW conversation for incoming shared session: conv={new_id:?}"
-                );
-                new_id
+                })
             })
         };
-        log::info!(
-            "[orch-init] chosen conversation_id={conversation_id:?} for server_token={server_token:?}",
-            server_token = init_event.conversation_id,
-        );
         if self.should_skip_replayed_response_for_existing_conversation(
             existing_conversation_id,
             &init_event.request_id,

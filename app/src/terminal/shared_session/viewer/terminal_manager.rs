@@ -1665,9 +1665,11 @@ impl TerminalManager {
     fn stop_orchestration_polling(
         orchestration_viewer_model: &Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
     ) {
-        if orchestration_viewer_model.lock().take().is_some() {
-            log::info!("[orch-viewer] dropping model: session ended for viewer");
-        }
+        // Drop the model handle from the shared slot. The continuation
+        // closures registered by the model's `ctx.spawn` calls become
+        // no-ops once the entity is dropped, so the polling loop
+        // terminates naturally without an explicit `abort` call here.
+        *orchestration_viewer_model.lock() = None;
     }
 
     fn shared_session_ended(
