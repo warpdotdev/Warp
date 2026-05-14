@@ -328,6 +328,7 @@ impl OrchestrationViewerModel {
                 // in `on_shared_init` would miss us and create a fresh
                 // conversation when the child's Network sends its first
                 // event.
+                let was_token_bound = entry.server_token_bound;
                 if !entry.server_token_bound {
                     if let Some(token) = task_server_conversation_id.as_deref() {
                         let conversation_id = entry.conversation_id;
@@ -350,22 +351,30 @@ impl OrchestrationViewerModel {
                 if entry.session_id.is_none() {
                     entry.session_id = session_id;
                 }
-                // If we just learned the child's session id and the user has
-                // either focused this child or expressed prior intent (a pill
-                // click that lost its race with the session id), kick off
-                // the join now. `maybe_join_child_session` is otherwise only
-                // invoked from `BlocklistAIHistoryEvent::SetActiveConversation`,
-                // which won't re-fire if the user clicked the pill before
-                // the session id was known and has since navigated away.
-                if was_missing_session_id && entry.session_id.is_some() {
+                // Once both the `session_id` and the server-side
+                // `conversation_id` are known we can safely open the child's
+                // Network: any `Init` that arrives will match our local
+                // conversation by `server_conversation_token`, so
+                // `on_shared_init` reuses our child conv instead of minting
+                // a new "new conversation" alongside it. Either transition
+                // (session id arriving, or token getting bound) can be the
+                // one that completes the pair; in either case we try the
+                // join now if the user has shown intent (clicked the pill)
+                // or is currently focused on the child.
+                let token_newly_bound = !was_token_bound && entry.server_token_bound;
+                let session_id_newly_present = was_missing_session_id && entry.session_id.is_some();
+                let is_join_ready = entry.server_token_bound && entry.session_id.is_some();
+                if is_join_ready && (token_newly_bound || session_id_newly_present) {
                     let conversation_id = entry.conversation_id;
                     let wants_join = entry.wants_join;
                     let active_id = BlocklistAIHistoryModel::as_ref(ctx)
                         .active_conversation_id(self.terminal_view_id);
                     let is_active = active_id == Some(conversation_id);
                     log::info!(
-                        "[orch-viewer] child session_id available: conv={conversation_id:?} \
+                        "[orch-viewer] child join ready: conv={conversation_id:?} \
                          task={task_id} session_id={session_id:?} \
+                         token_newly_bound={token_newly_bound} \
+                         session_id_newly_present={session_id_newly_present} \
                          active_conv={active_id:?} is_active={is_active} \
                          wants_join={wants_join}",
                         session_id = entry.session_id,
@@ -540,6 +549,28 @@ impl OrchestrationViewerModel {
             );
             return;
         };
+        // Refuse to open the Network until we've bound the server
+        // conversation token onto the local child conversation. Otherwise
+        // the child's first `Init` event arrives at
+        // `BlocklistAIController::on_shared_init` before our local conv has
+        // a matching `server_conversation_token`, and a brand-new
+        // ("new conversation") conversation gets minted in parallel.
+        // `wants_join` is sticky, so the next poll that surfaces
+        // `task.conversation_id` will retry through the eager-join in
+        // `apply_children_fetch`.
+        if !self
+            .children
+            .get(&task_id)
+            .map(|c| c.server_token_bound)
+            .unwrap_or(false)
+        {
+            log::info!(
+                "[orch-viewer] maybe_join_child_session: have session id but no server \
+                 conversation token yet for conv={conversation_id:?} task={task_id}; \
+                 deferring until the next poll surfaces task.conversation_id"
+            );
+            return;
+        }
 
         log::info!(
             "[orch-viewer] maybe_join_child_session: joining conv={conversation_id:?} \
