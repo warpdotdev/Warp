@@ -504,6 +504,9 @@ en:
     one_teammate: "1 teammate"
     teammates_count: "{count} teammates"
     join_team_collaboration_description: "Join this team and start collaborating on workflows, notebooks, and more."
+    invite_option_link: "Link"
+    invite_option_email: "Email"
+    failed_load_invite_link: "Failed to load invite link."
 
   features:
     default: "Default"

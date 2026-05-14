@@ -22,6 +22,7 @@ pub trait Tabs: PartialEq + Display + Copy {
         }
     }
 
+    #[allow(dead_code)]
     fn tab_name(&self) -> String {
         self.to_string()
     }

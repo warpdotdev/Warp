@@ -504,6 +504,9 @@ zh-CN:
     one_teammate: "1 位队友"
     teammates_count: "{count} 位队友"
     join_team_collaboration_description: "加入此团队，开始协作使用 workflows、notebooks 等内容。"
+    invite_option_link: "链接"
+    invite_option_email: "邮箱"
+    failed_load_invite_link: "邀请链接加载失败。"
 
   features:
     default: "默认"

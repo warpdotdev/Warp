@@ -309,7 +309,10 @@ impl Tabs for TeamsInviteOption {
     }
 
     fn label(&self, _team: &Team, _cloud_model: &CloudModel) -> String {
-        self.tab_name()
+        match self {
+            TeamsInviteOption::Link => t!("teams.invite_option_link").to_string(),
+            TeamsInviteOption::Email => t!("teams.invite_option_email").to_string(),
+        }
     }
 }
 
@@ -3396,7 +3399,7 @@ impl TeamsWidget {
                 );
                 (link, true)
             }
-            None => ("Failed to load invite link.".into(), false),
+            None => (t!("teams.failed_load_invite_link").to_string(), false),
         };
         let theme = appearance.theme();
 
