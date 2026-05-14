@@ -196,7 +196,7 @@ impl CommentListView {
         let menu = ctx.add_view(|_| Menu::new());
 
         let comments_button = ctx.add_view(|_| {
-            ActionButton::new("1 Comment", CustomSecondaryActionTheme)
+            ActionButton::new(t!("code_review.one_comment"), CustomSecondaryActionTheme)
                 .with_size(ButtonSize::Small)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(CommentListAction::ToggleCollapsed);

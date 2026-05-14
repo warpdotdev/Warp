@@ -954,13 +954,17 @@ fn render_force_refresh_inline(
         // Mirror `render_output_status_text` exactly: same `Text` configuration plus
         // the `Container::with_margin_top(1.)` wrapper so this sits on the same
         // baseline as the adjacent `Last seen by agent ...` text.
-        let text = Text::new(" · Check now".to_string(), font_family, font_size)
-            .with_color(color)
-            .with_style(Properties::default())
-            .with_clip(ClipConfig::end())
-            .with_selectable(false)
-            .soft_wrap(false)
-            .finish();
+        let text = Text::new(
+            t!("ai_output.check_now").to_string(),
+            font_family,
+            font_size,
+        )
+        .with_color(color)
+        .with_style(Properties::default())
+        .with_clip(ClipConfig::end())
+        .with_selectable(false)
+        .soft_wrap(false)
+        .finish();
         let text_with_margin = Container::new(text).with_margin_top(1.).finish();
 
         // Tooltip overlay, positioned above the element on hover. Same pattern as
@@ -968,7 +972,7 @@ fn render_force_refresh_inline(
         let mut stack = Stack::new().with_child(text_with_margin);
         if state.is_hovered() {
             let tool_tip = ui_builder
-                .tool_tip("Ask the agent to check this command now, skipping its timer.".to_owned())
+                .tool_tip(t!("ai_output.check_now_tooltip").to_string())
                 .build()
                 .finish();
             stack.add_positioned_overlay_child(
@@ -3255,7 +3259,7 @@ pub(crate) fn render_debug_footer<V: View>(
                     warpui::ui_components::button::ButtonVariant::Text,
                     props.submit_issue_button_handle,
                 )
-                .with_centered_text_label("Send Feedback".to_string())
+                .with_centered_text_label(t!("ai_output.send_feedback").to_string())
                 .with_style(submit_button_style)
                 .with_hovered_styles(submit_button_hover_style)
                 .with_clicked_styles(submit_button_hover_style)
