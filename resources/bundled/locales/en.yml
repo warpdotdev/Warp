@@ -777,6 +777,18 @@ en:
     slack: "Slack"
     feedback: "Feedback"
 
+  quit_warning:
+    yes_close: "Yes, close"
+    yes_quit: "Yes, quit"
+    dont_save: "Don't Save"
+    show_running_processes: "Show running processes"
+    close_pane_title: "Close pane?"
+    close_tab_title: "Close tab?"
+    close_tabs_title: "Close tabs?"
+    close_window_title: "Close window?"
+    quit_warp_title: "Quit Warp?"
+    save_changes_title: "Save changes?"
+
   env_vars:
     education_text: "Add secret or command. Warp never stores external secrets"
     invoke_error: "An error occurred while trying to invoke the env var"

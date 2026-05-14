@@ -777,6 +777,18 @@ zh-CN:
     slack: "Slack"
     feedback: "反馈"
 
+  quit_warning:
+    yes_close: "是，关闭"
+    yes_quit: "是，退出"
+    dont_save: "不保存"
+    show_running_processes: "显示运行中的进程"
+    close_pane_title: "关闭面板？"
+    close_tab_title: "关闭标签页？"
+    close_tabs_title: "关闭标签页？"
+    close_window_title: "关闭窗口？"
+    quit_warp_title: "退出 Warp？"
+    save_changes_title: "保存更改？"
+
   env_vars:
     education_text: "添加密钥或命令。Warp 永远不会存储外部密钥"
     invoke_error: "尝试调用环境变量时出错"
