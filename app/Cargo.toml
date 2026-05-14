@@ -629,6 +629,9 @@ default = [
     "settings_file",
     "directory_tab_colors",
     "configurable_context_window",
+    "oz_handoff",
+    "handoff_local_cloud",
+    "pending_user_query_indicator",
 ]
 # Enable this feature to automatically perform heap profiling.  NOTE: This will
 # substantially slow down program execution.
