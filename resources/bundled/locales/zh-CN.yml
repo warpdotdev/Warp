@@ -471,6 +471,7 @@ zh-CN:
     invalid_emails_instructions: "部分提供的邮箱地址无效、已被邀请或已经是团队成员。"
     cancel_invite: "取消邀请"
     transfer_ownership: "转移所有权"
+    transfer_ownership_confirmation: "确定要将团队所有权转移给 {email} 吗？你将不再是所有者，也无法再对此团队执行任何管理操作。"
     demote_from_admin: "降级为普通成员"
     promote_to_admin: "提升为管理员"
     member_usage_charge_admin: "你将按团队成员的 Warp 使用量支付一部分费用。"

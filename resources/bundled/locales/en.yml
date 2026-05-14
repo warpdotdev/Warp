@@ -471,6 +471,7 @@ en:
     invalid_emails_instructions: "Some of the provided email addresses are invalid, already invited, or members of the team."
     cancel_invite: "Cancel invite"
     transfer_ownership: "Transfer ownership"
+    transfer_ownership_confirmation: "Are you sure you want to transfer team ownership to {email}? You will no longer be the owner and will not be able to take any administrative actions for this team."
     demote_from_admin: "Demote from admin"
     promote_to_admin: "Promote to admin"
     member_usage_charge_admin: "You'll be charged for a portion of the team member's usage of Warp."
