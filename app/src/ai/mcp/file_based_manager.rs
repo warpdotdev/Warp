@@ -200,7 +200,7 @@ impl FileBasedMCPManager {
             scanned_servers.insert(hash);
         }
 
-        let auto_started_uuids = self.auto_start_file_based_servers(servers_to_spawn, ctx);
+        let auto_started_uuids = self.maybe_autostart_file_based_servers(servers_to_spawn, ctx);
         self.pending_scan_auto_started_servers_by_root
             .entry(root_path.clone())
             .or_default()
@@ -296,7 +296,8 @@ impl FileBasedMCPManager {
         }
     }
 
-    fn auto_start_file_based_servers(
+    /// Returns the UUIDs of servers that were actually auto-started.
+    fn maybe_autostart_file_based_servers(
         &mut self,
         servers_to_consider: Vec<TemplatableMCPServerInstallation>,
         ctx: &mut ModelContext<Self>,
