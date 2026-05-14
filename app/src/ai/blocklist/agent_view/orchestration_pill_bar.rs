@@ -894,7 +894,7 @@ impl View for OrchestrationPillBar {
         }
         // Only show the divider when both sides actually have pills.
         if has_pinned && has_unpinned {
-            row.add_child(render_pinned_divider(theme));
+            row.add_child(render_pinned_divider(app));
         }
         for pill in unpinned_pills {
             row.add_child(pill);
@@ -1404,8 +1404,10 @@ fn navigation_action_for_pill(kind: PillKind, conversation_id: AIConversationId)
 }
 
 /// 1px vertical divider between the pinned and unpinned sections.
-fn render_pinned_divider(theme: &WarpTheme) -> Box<dyn Element> {
+fn render_pinned_divider(app: &AppContext) -> Box<dyn Element> {
     const DIVIDER_HEIGHT: f32 = 14.;
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
     ConstrainedBox::new(
         Container::new(Empty::new().finish())
             .with_background(theme.outline())
