@@ -6,7 +6,7 @@
 
 use warpui::ModelContext;
 
-use crate::util::git::{Commit, PrInfo};
+use crate::util::git::Commit;
 
 use super::{DiffMode, DiffState, DiffStateModelEvent, DiffStats};
 
@@ -58,14 +58,6 @@ impl RemoteDiffStateModel {
     }
 
     pub fn upstream_differs_from_main(&self) -> bool {
-        false
-    }
-
-    pub fn pr_info(&self) -> Option<&PrInfo> {
-        None
-    }
-
-    pub fn is_pr_info_refreshing(&self) -> bool {
         false
     }
 

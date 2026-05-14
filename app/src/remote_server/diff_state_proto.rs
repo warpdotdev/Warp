@@ -16,7 +16,7 @@ use crate::code_review::diff_state::{
     DiffHunk, DiffLine, DiffLineType, DiffMetadata, DiffMetadataAgainstBase, DiffMode, DiffState,
     DiffStats, FileDiff, FileDiffAndContent, FileStatusInfo, GitDiffWithBaseContent, GitFileStatus,
 };
-use crate::util::git::{Commit, PrInfo};
+use crate::util::git::Commit;
 
 // ── Proto → Rust (for incoming client messages) ────────────────────
 
@@ -129,15 +129,6 @@ impl From<&Commit> for proto::Commit {
     }
 }
 
-impl From<&PrInfo> for proto::PrInfo {
-    fn from(p: &PrInfo) -> Self {
-        proto::PrInfo {
-            number: p.number,
-            url: p.url.clone(),
-        }
-    }
-}
-
 impl From<&DiffMetadata> for proto::DiffMetadata {
     fn from(m: &DiffMetadata) -> Self {
         proto::DiffMetadata {
@@ -148,7 +139,9 @@ impl From<&DiffMetadata> for proto::DiffMetadata {
             has_head_commit: m.has_head_commit,
             unpushed_commits: m.unpushed_commits.iter().map(proto::Commit::from).collect(),
             upstream_ref: m.upstream_ref.clone(),
-            pr_info: m.pr_info.as_ref().map(proto::PrInfo::from),
+            // PR info is fetched independently per repo by GitRepoStatusModel
+            // and is not part of the diff state. Always None on the wire.
+            pr_info: None,
         }
     }
 }

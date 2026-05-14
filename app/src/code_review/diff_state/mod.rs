@@ -6,7 +6,7 @@
 //! All consumers should use `DiffStateModel` rather than accessing sub-models directly.
 
 use crate::code::buffer_location::FileLocation;
-use crate::util::git::{Commit, PrInfo};
+use crate::util::git::Commit;
 use warpui::{AppContext, ModelContext, ModelHandle};
 
 // Re-export everything from the local model so existing `use
@@ -140,20 +140,6 @@ impl DiffStateModel {
         }
     }
 
-    pub(crate) fn pr_info<'a>(&self, ctx: &'a AppContext) -> Option<&'a PrInfo> {
-        match self {
-            Self::Local(m) => m.as_ref(ctx).pr_info(),
-            Self::Remote(m) => m.as_ref(ctx).pr_info(),
-        }
-    }
-
-    pub(crate) fn is_pr_info_refreshing(&self, ctx: &AppContext) -> bool {
-        match self {
-            Self::Local(m) => m.as_ref(ctx).is_pr_info_refreshing(),
-            Self::Remote(m) => m.as_ref(ctx).is_pr_info_refreshing(),
-        }
-    }
-
     pub(crate) fn is_git_operation_blocked(&self, ctx: &AppContext) -> bool {
         match self {
             Self::Local(m) => m.as_ref(ctx).is_git_operation_blocked(ctx),
@@ -231,11 +217,11 @@ impl DiffStateModel {
         }
     }
 
-    pub(crate) fn refresh_metadata_and_pr_info(&self, ctx: &mut ModelContext<Self>) {
+    pub(crate) fn refresh_metadata_after_git_operation(&self, ctx: &mut ModelContext<Self>) {
         match self {
             Self::Local(local) => {
                 local.update(ctx, |local, ctx| {
-                    local.refresh_metadata_and_pr_info(ctx);
+                    local.refresh_metadata_after_git_operation(ctx);
                 });
             }
             Self::Remote(_) => {}
