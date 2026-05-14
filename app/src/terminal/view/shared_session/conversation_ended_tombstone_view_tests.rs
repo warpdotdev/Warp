@@ -2,7 +2,7 @@ use chrono::{Duration, Utc};
 use warp_cli::agent::Harness;
 
 use crate::ai::ambient_agents::task::{
-    AgentConfigSnapshot, HarnessConfig, RequestUsage, TaskPrincipalInfo,
+    AgentConfigSnapshot, HarnessConfig, RequestUsage, TaskPrincipalInfo, TaskStatusMessage,
 };
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::ai::artifacts::Artifact;
@@ -65,6 +65,25 @@ fn data_with_conversation_values() -> TombstoneDisplayData {
         credits: Some("conv credits".to_string()),
         ..Default::default()
     }
+}
+
+#[test]
+fn task_failure_status_message_overrides_initial_error() {
+    let mut task = task_with_run_time_and_credits();
+    task.state = AmbientAgentTaskState::Failed;
+    task.status_message = Some(TaskStatusMessage {
+        message: "task failed".to_string(),
+    });
+    let mut data = TombstoneDisplayData {
+        is_error: true,
+        error_message: Some("setup failed".to_string()),
+        ..Default::default()
+    };
+
+    data.enrich_from_task(task);
+
+    assert!(data.is_error);
+    assert_eq!(data.error_message.as_deref(), Some("task failed"));
 }
 
 fn pr_artifact(branch: &str) -> Artifact {

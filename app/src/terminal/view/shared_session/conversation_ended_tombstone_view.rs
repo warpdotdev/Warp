@@ -69,6 +69,7 @@ impl TombstoneDisplayData {
         conversation_id: AIConversationId,
         terminal_view_id: EntityId,
         has_task_id: bool,
+        initial_error_message: Option<String>,
         ctx: &ViewContext<ConversationEndedTombstoneView>,
     ) -> Self {
         let history_model = BlocklistAIHistoryModel::handle(ctx);
@@ -90,12 +91,15 @@ impl TombstoneDisplayData {
             conversation_status,
             Some(AmbientConversationStatus::Error { .. })
         );
-        let error_message = conversation_status
-            .as_ref()
-            .and_then(|status| match status {
-                AmbientConversationStatus::Error { error } => Some(error.to_string()),
-                _ => None,
-            });
+        let initial_error_message = initial_error_message.filter(|message| !message.is_empty());
+        let error_message = initial_error_message.or_else(|| {
+            conversation_status
+                .as_ref()
+                .and_then(|status| match status {
+                    AmbientConversationStatus::Error { error } => Some(error.to_string()),
+                    _ => None,
+                })
+        });
 
         // Calculate run time from exchanges
         let run_time = (|| {
@@ -108,7 +112,7 @@ impl TombstoneDisplayData {
 
         Self {
             title: conversation.title(),
-            is_error,
+            is_error: is_error || error_message.is_some(),
             error_message,
             conversation_is_transcript,
             source: None,
@@ -188,24 +192,39 @@ impl ConversationEndedTombstoneView {
     pub fn new(
         ctx: &mut ViewContext<Self>,
         terminal_view_id: EntityId,
-        task_id: Option<AmbientAgentTaskId>,
+        #[cfg_attr(target_family = "wasm", allow(unused_variables))] task_id: Option<
+            AmbientAgentTaskId,
+        >,
+        initial_error_message: Option<String>,
     ) -> Self {
         let conversation_id = BlocklistAIHistoryModel::handle(ctx)
             .as_ref(ctx)
             .all_live_conversations_for_terminal_view(terminal_view_id)
             .next()
             .map(|c| c.id());
+        let initial_error_message = initial_error_message.filter(|message| !message.is_empty());
+        let is_initial_setup_failure = initial_error_message.is_some() && task_id.is_none();
 
-        let display_data = conversation_id
-            .map(|id| {
-                TombstoneDisplayData::from_conversation(
-                    id,
-                    terminal_view_id,
-                    task_id.is_some(),
-                    ctx,
-                )
-            })
-            .unwrap_or_default();
+        let display_data = if is_initial_setup_failure {
+            TombstoneDisplayData {
+                title: Some("Cloud agent failed to start".to_string()),
+                is_error: true,
+                error_message: initial_error_message.clone(),
+                ..Default::default()
+            }
+        } else {
+            conversation_id
+                .map(|conversation_id| {
+                    TombstoneDisplayData::from_conversation(
+                        conversation_id,
+                        terminal_view_id,
+                        task_id.is_some(),
+                        initial_error_message.clone(),
+                        ctx,
+                    )
+                })
+                .unwrap_or_default()
+        };
 
         let artifact_buttons_view =
             ctx.add_typed_action_view(|ctx| ArtifactButtonsRow::new(&display_data.artifacts, ctx));
@@ -225,17 +244,21 @@ impl ConversationEndedTombstoneView {
             });
 
         #[cfg(not(target_family = "wasm"))]
-        let continue_locally_button = conversation_id.map(|conv_id| {
-            ctx.add_typed_action_view(move |_| {
-                ActionButton::new("Continue locally", PrimaryTheme)
-                    .with_tooltip("Fork this conversation locally")
-                    .on_click(move |ctx| {
-                        ctx.dispatch_typed_action(
-                            ConversationEndedTombstoneAction::ContinueLocally(conv_id),
-                        );
-                    })
+        let continue_locally_button = if is_initial_setup_failure {
+            None
+        } else {
+            conversation_id.map(|conv_id| {
+                ctx.add_typed_action_view(move |_| {
+                    ActionButton::new("Continue locally", PrimaryTheme)
+                        .with_tooltip("Fork this conversation locally")
+                        .on_click(move |ctx| {
+                            ctx.dispatch_typed_action(
+                                ConversationEndedTombstoneAction::ContinueLocally(conv_id),
+                            );
+                        })
+                })
             })
-        });
+        };
 
         // In wasm, continuing locally is impossible so we instead
         // offer to open the conversation in warp (where you can continue locally).
@@ -532,6 +555,25 @@ impl ConversationEndedTombstoneView {
             return Empty::new().finish();
         }
         row.finish()
+    }
+}
+
+#[cfg(test)]
+impl ConversationEndedTombstoneView {
+    pub(in crate::terminal::view) fn title_for_test(&self) -> Option<&str> {
+        self.display_data.title.as_deref()
+    }
+
+    pub(in crate::terminal::view) fn error_message_for_test(&self) -> Option<&str> {
+        self.display_data.error_message.as_deref()
+    }
+
+    pub(in crate::terminal::view) fn credits_for_test(&self) -> Option<&str> {
+        self.display_data.credits.as_deref()
+    }
+
+    pub(in crate::terminal::view) fn has_continue_locally_button_for_test(&self) -> bool {
+        self.continue_locally_button.is_some()
     }
 }
 
