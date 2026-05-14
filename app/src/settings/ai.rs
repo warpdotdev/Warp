@@ -11,6 +11,7 @@ use indexmap::IndexMap;
 use crate::ai::request_usage_model::RequestLimitInfo;
 use crate::auth::AuthStateProvider;
 use crate::report_if_error;
+use crate::settings::PrivacySettings;
 use crate::terminal::CLIAgent;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use cfg_if::cfg_if;
@@ -1007,6 +1008,19 @@ define_settings_group!(AISettings, settings: [
         sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
         private: true,
     }
+    // Whether or not we should show the one-shot speedbump on Ask-User-Question cards.
+    //
+    // Not a user-visible setting - we model it as a setting so we can track state.
+    // Intentionally NOT cloud-synced: we want users to see the first-time nudge on
+    // each fresh device, and we avoid a cloud-sync race that would make the flag
+    // silently stay `false` on new devices after being consumed once elsewhere.
+    should_show_agent_mode_ask_user_question_speedbump: ShouldShowAgentModeAskUserQuestionSpeedbump {
+        type: bool,
+        default: true,
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Never,
+        private: true,
+    }
     // Whether to use locally loaded AWS credentials for Bedrock-enabled requests.
     aws_bedrock_credentials_enabled: AwsBedrockCredentialsEnabled {
         type: bool,
@@ -1163,6 +1177,19 @@ define_settings_group!(AISettings, settings: [
     // We model it as a setting so it's only shown once to a given user regardless of the number of
     // devices they use.
     did_check_to_trigger_oz_launch_modal: DidShowOzLaunchModal {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
+        private: true,
+    }
+
+    // This is not a user-visible setting - it's merely a one-time flag to track if the
+    // orchestration launch modal has been shown to the user.
+    //
+    // We model it as a setting so it's only shown once to a given user regardless of the number of
+    // devices they use.
+    did_check_to_trigger_orchestration_launch_modal: DidShowOrchestrationLaunchModal {
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
@@ -1460,6 +1487,26 @@ define_settings_group!(AISettings, settings: [
         toml_path: "agents.warp_agent.other.agent_attribution_enabled",
         description: "Whether the Warp Agent adds an attribution co-author line to commit messages and pull requests it creates.",
     }
+
+    should_force_disable_cloud_handoff: ShouldForceDisableCloudHandoff {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        private: false,
+        toml_path: "agents.warp_agent.other.should_force_disable_cloud_handoff",
+        description: "Whether to force-disable local-to-cloud handoff.",
+    }
+
+    should_force_disable_ampersand_handoff: ShouldForceDisableAmpersandHandoff {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        private: false,
+        toml_path: "agents.warp_agent.other.should_force_disable_ampersand_handoff",
+        description: "Whether to force-disable the & prefix for cloud handoff compose mode.",
+    }
 ]);
 
 impl AISettings {
@@ -1640,6 +1687,30 @@ impl AISettings {
         FeatureFlag::Orchestration.is_enabled()
             && self.is_any_ai_enabled(app)
             && *self.orchestration_enabled
+    }
+
+    /// Returns true when local-to-cloud handoff is effectively enabled.
+    /// False when the user/org has disabled it, cloud conversations are off,
+    /// or AI is globally off.
+    pub fn is_cloud_handoff_enabled(&self, app: &warpui::AppContext) -> bool {
+        if !self.is_any_ai_enabled(app) || *self.should_force_disable_cloud_handoff {
+            return false;
+        }
+        if !crate::ai::blocklist::is_local_to_cloud_handoff_available() {
+            return false;
+        }
+        let privacy = PrivacySettings::as_ref(app);
+        if !privacy.is_cloud_conversation_storage_enabled {
+            return false;
+        }
+        !matches!(
+            UserWorkspaces::as_ref(app).get_cloud_conversation_storage_enablement_setting(),
+            crate::workspaces::workspace::AdminEnablementSetting::Disable
+        )
+    }
+
+    pub fn is_ampersand_handoff_enabled(&self, app: &warpui::AppContext) -> bool {
+        self.is_cloud_handoff_enabled(app) && !*self.should_force_disable_ampersand_handoff
     }
 
     /// Determines whether a quota reset banner should be displayed to the user.

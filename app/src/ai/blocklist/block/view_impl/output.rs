@@ -127,6 +127,7 @@ use super::{
     render_citation_chips, todos::render_completed_todo_items, WithContentItemSpacing,
     CONTENT_ITEM_VERTICAL_MARGIN,
 };
+use crate::ai::blocklist::inline_action::run_agents_card_view::RunAgentsCardView;
 use warpui::{
     elements::{
         Align, Border, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
@@ -147,11 +148,11 @@ const BLOCKED_ACTION_MESSAGE_FOR_UPLOADING_ARTIFACT: &str = "Grant access to upl
 /// Data required to render the AI block output component.
 #[derive(Copy, Clone)]
 pub(crate) struct Props<'a> {
-    pub(super) model: &'a dyn AIBlockModel<View = AIBlock>,
+    pub(crate) model: &'a dyn AIBlockModel<View = AIBlock>,
     pub(super) state_handles: &'a AIBlockStateHandles,
     pub(super) action_buttons: &'a HashMap<AIAgentActionId, ActionButtons>,
     pub(super) view_screenshot_buttons: &'a HashMap<AIAgentActionId, ui_components::button::Button>,
-    pub(super) action_model: &'a ModelHandle<BlocklistAIActionModel>,
+    pub(crate) action_model: &'a ModelHandle<BlocklistAIActionModel>,
     pub(super) editor_views: &'a [EmbeddedCodeEditorView],
     pub(super) current_working_directory: Option<&'a String>,
     pub(super) shell_launch_data: Option<&'a ShellLaunchData>,
@@ -192,6 +193,12 @@ pub(crate) struct Props<'a> {
     pub(super) aws_bedrock_credentials_error_view:
         Option<&'a ViewHandle<AwsBedrockCredentialsErrorView>>,
     pub(super) imported_comments: &'a HashMap<AIAgentActionId, ImportedCommentGroup>,
+    /// Per-orchestrate-action card view. Each `RunAgentsCardView` owns
+    /// its own edit state, button + picker handles, and in-flight
+    /// spawning snapshot; AIBlock just lazily creates the view per
+    /// `AIAgentActionId` and embeds it via `ChildView` when the action
+    /// is rendered. Multi-card lifecycle = AIBlock lifecycle.
+    pub(crate) run_agents_card_views: &'a HashMap<AIAgentActionId, ViewHandle<RunAgentsCardView>>,
     #[cfg(feature = "local_fs")]
     pub(crate) resolved_code_block_paths:
         &'a HashMap<std::path::PathBuf, Option<std::path::PathBuf>>,
@@ -201,6 +208,12 @@ pub(crate) struct Props<'a> {
     pub(super) thinking_display_mode: crate::settings::ThinkingDisplayMode,
     pub(super) conversation_has_imported_comments: bool,
     pub(super) ask_user_question_view: Option<&'a ViewHandle<AskUserQuestionView>>,
+    /// `true` when this block belongs to a cloud agent pane that is still in its setup
+    /// phase (running environment startup commands before the first agent turn). Used to
+    /// hide the response footer (thumbs up/down, credit usage, fork) until the agent has
+    /// produced real output — otherwise the footer renders awkwardly above the still-
+    /// pending optimistic user prompt.
+    pub(super) is_cloud_agent_pre_first_exchange: bool,
 }
 
 pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
@@ -212,6 +225,24 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
     let is_conversation_in_progress = conversation_status.is_some_and(|s| s.is_in_progress());
 
     let status = props.model.status(app);
+    let has_expanded_last_requested_command = status.output_to_render().is_some_and(|output| {
+        let output = output.get();
+        output.messages.last().is_some_and(|message| {
+            let AIAgentOutputMessageType::Action(action) = &message.message else {
+                return false;
+            };
+
+            matches!(
+                &action.action,
+                AIAgentActionType::RequestCommandOutput { .. }
+            ) && props
+                .requested_commands
+                .get(&action.id)
+                .is_some_and(|requested_command| {
+                    requested_command.view.as_ref(app).is_header_expanded()
+                })
+        })
+    });
     match status {
         // Ignore errors if the response is not yet complete-- it could be a deserialization
         // error that corrects itself when more output is streamed in.
@@ -230,7 +261,8 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                 // when the entire response is complete to avoid intermediate states.
                 let mut should_render_references_section = is_complete && request_type.is_active();
                 let mut should_render_suggestions = is_complete
-                    && props.model.is_latest_non_passive_exchange_in_root_task(app)
+                    && props.model.is_latest_visible_exchange_in_root_task(app)
+                    && !has_expanded_last_requested_command
                     && !is_conversation_in_progress
                     && !is_output_for_static_prompt_suggestions
                     && request_type.is_active();
@@ -240,11 +272,13 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                     request_type.is_passive_code_diff() && props.has_accepted_edits;
 
                 let mut should_render_footer =
-                    (props.model.is_latest_non_passive_exchange_in_root_task(app)
+                    (props.model.is_latest_visible_exchange_in_root_task(app)
                         || requires_special_footer)
+                        && !has_expanded_last_requested_command
                         && !is_output_for_static_prompt_suggestions
                         && !is_conversation_in_progress
                         && request_type.is_active()
+                        && !props.is_cloud_agent_pre_first_exchange
                         && !status
                             .error()
                             .map(|e| e.is_invalid_api_key())
@@ -769,6 +803,22 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                             ));
                         }
                         AIAgentOutputMessageType::Action(AIAgentAction {
+                            action: AIAgentActionType::RunAgents(_req),
+                            id,
+                            ..
+                        }) if FeatureFlag::RunAgentsTool.is_enabled() => {
+                            // Embed the per-action `RunAgentsCardView`
+                            // via `ChildView`. The view renders a
+                            // "Configuring agents..." placeholder while
+                            // streaming, then transitions to the full
+                            // confirmation card once complete.
+                            should_render_footer = false;
+                            should_render_suggestions = false;
+                            if let Some(card_view) = props.run_agents_card_views.get(id) {
+                                output_items.add_child(ChildView::new(card_view).finish());
+                            }
+                        }
+                        AIAgentOutputMessageType::Action(AIAgentAction {
                             action:
                                 AIAgentActionType::SendMessageToAgent {
                                     addresses,
@@ -869,10 +919,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                         {
                             output_items.add_child(
                                 orchestration::render_messages_received_from_agents(
-                                    messages,
-                                    props,
-                                    &output_message.id,
-                                    app,
+                                    messages, props, app,
                                 ),
                             );
                         }
@@ -1106,7 +1153,8 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                 .finish(),
             );
 
-            if props.model.is_latest_non_passive_exchange_in_root_task(app)
+            if props.model.is_latest_visible_exchange_in_root_task(app)
+                && !has_expanded_last_requested_command
                 && !props.model.is_restored()
                 && !error.is_invalid_api_key()
             {

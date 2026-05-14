@@ -7,7 +7,7 @@ Thanks for helping improve Warp! This guide explains how to open issues, propose
 
 ## TL;DR
 
-- Bug fixes are welcome for any issue. All bugs are marked as `ready-to-implement`.
+- Bug fixes are welcome once the report is actionable from the provided details or maintainer triage.
 - Feature requests must be marked `ready-to-spec` or `ready-to-implement` before PRs are accepted.
 - Specs are the place where technical and design discussion on larger issues happen.
 - Oz automatically triages incoming issues and reviews open PRs.
@@ -20,7 +20,7 @@ Warp's contribution model is shaped by [Oz](https://oz.warp.dev), an agent that 
 - **Feature requests differ from bug fixes:**
   - Features are gated by readiness labels — `ready-to-spec`, then `ready-to-implement` once the design is settled — that signal when contributors can pick up the work. Discussion alone is not approval to begin work.
   - Feature work needs a written spec first: feature requests go through a spec PR (a *product spec* + *tech spec* committed under [`specs/`](specs/)) before any code is written.
-  - Bug fixes skip both steps; they are implicitly `ready-to-implement` once triaged.
+  - Bug fixes can go straight to a code PR once the report is reproducible or otherwise actionable; they do not require spec PRs unless the scope or design is unclear.
 - **Review is largely automated.** When you open a PR, Oz is auto-assigned and produces an initial review. Once Oz approves, it automatically requests a follow-up review from a Warp team subject-matter expert — you do not need to assign human reviewers yourself.
 
 ### Readiness labels
@@ -28,7 +28,7 @@ Warp's contribution model is shaped by [Oz](https://oz.warp.dev), an agent that 
 The Warp team applies one of the following labels when an issue is ready for contribution:
 
 - **`ready-to-spec`** — The problem is understood but the design is open. Open a spec PR with a *product spec* (`product.md`) and a *tech spec* (`tech.md`) under [`specs/`](specs/) — see [Opening a Spec PR](#opening-a-spec-pr) for what goes in each. This label is **reserved for feature requests**.
-- **`ready-to-implement`** — The design is settled. Open a code PR. **All triaged bug reports are implicitly `ready-to-implement`** once accepted — you don't need to wait for an explicit label on a confirmed bug.
+- **`ready-to-implement`** — The issue is ready for a code PR. For bugs, this means the report is sufficiently reproducible or actionable and the likely fix does not need a spec, mocks, or deeper investigation.
 - **`needs-mocks`** — Design mocks are required before implementation can begin. Wait for the Warp team to land them.
 
 Anyone can pick up a ready issue — readiness labels are not assignments, and the best implementation wins through normal review. If an issue has been sitting un-triaged or you'd like readiness re-evaluated, mention **@oss-maintainers** in a comment to flag it for the team.
@@ -44,7 +44,7 @@ flowchart TD
     B -- needs-mocks --> D[Design mocks produced]
     D --> E[Open code PR]
     C -- specs approved --> E
-    B -- ready-to-implement<br/>(incl. all triaged bugs) --> E
+    B -- ready-to-implement<br/>(actionable bugs or settled designs) --> E
     E --> F[Oz review → SME review → CI → merge]
 
     classDef contributor fill:#fef3c7,stroke:#b45309,color:#78350f;
@@ -69,7 +69,7 @@ A good bug report includes:
 - Warp version and OS (see `Settings → About`).
 - Logs, screenshots, or screen recordings when relevant.
 
-Once an issue is triaged as a bug (by Oz's triage agent or a maintainer), it is implicitly **`ready-to-implement`** — you can pick it up and open a code PR without waiting for a separate label.
+Once an issue is triaged as an actionable bug (by Oz's triage agent or a maintainer), it may be labeled **`ready-to-implement`** so you can pick it up and open a code PR.
 
 ### Feature requests
 
@@ -99,7 +99,7 @@ To open a spec PR:
 
 ## Opening a Code PR
 
-For issues labeled `ready-to-implement` (this includes any triaged bug):
+For issues labeled `ready-to-implement`:
 
 1. Branch from `master`.
 2. Implement the change and add tests (see [Testing](#testing)).
@@ -140,11 +140,17 @@ cargo run            # build and run Warp
 
 Tests are required for most code changes:
 
+### Manual Testing
+Manual testing is required for changes that can be manually tested, and almost all changes can be manually tested. If your change can be manually tested, please include screenshots or a screen recording that show it working end to end in the PR description.
+
+You can run the app locally using `./script/run` - see [WARP.md](WARP.md) for more details on how to get set up.
+
+### Automated Tests
 - **Bug fixes** should include a regression test that would have caught the bug.
 - **Algorithmic or non-trivial logic** needs unit tests.
 - **User-facing flows** should have end-to-end coverage under [`crates/integration/`](crates/integration/) whenever the behavior can be exercised that way. The bar is high-quality coverage of the changes you ship — with agent-driven development the expectation is more integration tests, not just coverage of P0 paths. If a flow is worth shipping, it's usually worth an integration test.
 
-Run unit tests with `cargo nextest run`. See [WARP.md](WARP.md) for more detail.
+Run unit tests with `cargo nextest run`.
 
 ## Code Style
 

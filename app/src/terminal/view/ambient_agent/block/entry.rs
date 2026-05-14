@@ -10,7 +10,6 @@ use warpui::{
     },
     fonts::Properties,
     platform::Cursor,
-    prelude::{CornerRadius, Radius},
     text_layout::ClipConfig,
     Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
     WeakModelHandle,
@@ -21,14 +20,15 @@ use crate::terminal::view::ambient_agent::AmbientAgentViewModel;
 use crate::{
     pane_group::pane::{PaneConfiguration, PaneConfigurationEvent, PaneStack},
     terminal::{BlockListSettings, TerminalManager, TerminalView},
-    ui_components::blended_colors,
+    ui_components::{
+        agent_icon::terminal_view_agent_icon_variant,
+        blended_colors,
+        icon_with_status::{render_icon_with_status, IconWithStatusVariant},
+    },
 };
 
 use super::super::{AmbientAgentViewModelEvent, Status};
 use crate::ai::ambient_agents::telemetry::{CloudAgentTelemetryEvent, CloudModeEntryPoint};
-
-/// Icon size for the status indicator
-const STATUS_ICON_SIZE: f32 = 16.;
 
 #[derive(Default)]
 struct StateHandles {
@@ -136,47 +136,6 @@ impl AmbientAgentEntryBlock {
             Status::Cancelled { .. } => Some("Cancelled"),
         }
     }
-
-    /// Renders the status icon based on the ambient agent status.
-    fn render_status_icon(
-        &self,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn warpui::Element> {
-        let theme = appearance.theme();
-
-        let Some(view_model) = self.ambient_agent_view_model(app) else {
-            return Empty::new().finish();
-        };
-        let (icon, color) = if view_model.is_failed() {
-            (Icon::AlertTriangle, theme.ui_error_color())
-        } else if view_model.is_needs_github_auth() {
-            (Icon::Info, blended_colors::accent(theme).into_solid())
-        } else if view_model.is_cancelled() {
-            (
-                Icon::Cancelled,
-                theme.disabled_text_color(theme.background()).into_solid(),
-            )
-        } else if view_model.is_waiting_for_session() {
-            (Icon::ClockLoader, theme.ansi_fg_magenta())
-        } else {
-            (
-                Icon::OzCloud,
-                theme.main_text_color(theme.background()).into_solid(),
-            )
-        };
-
-        Container::new(
-            ConstrainedBox::new(icon.to_warpui_icon(color.into()).finish())
-                .with_width(STATUS_ICON_SIZE)
-                .with_height(STATUS_ICON_SIZE)
-                .finish(),
-        )
-        .with_uniform_padding(2.)
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-        .with_margin_right(8.)
-        .finish()
-    }
 }
 
 impl View for AmbientAgentEntryBlock {
@@ -231,10 +190,17 @@ impl View for AmbientAgentEntryBlock {
             );
         }
 
+        let icon_variant = terminal_view_agent_icon_variant(self.terminal_view.as_ref(app), app)
+            .unwrap_or(IconWithStatusVariant::OzAgent {
+                status: None,
+                is_ambient: true,
+            });
+        let agent_icon = render_icon_with_status(icon_variant, 24., 0., theme, theme.background());
+
         let row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max)
-            .with_child(self.render_status_icon(appearance, app))
+            .with_child(Container::new(agent_icon).with_margin_right(8.).finish())
             .with_child(Shrinkable::new(1., title_row.finish()).finish())
             .with_child(
                 Container::new(Empty::new().finish())

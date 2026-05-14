@@ -148,7 +148,9 @@ winreg.workspace = true
 windows = { workspace = true, features = [
     "Win32_Graphics_Dwm",
     "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Gdi",
     "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
     "Win32_Networking",
     "Win32_System_Com",
     "Win32_Networking_NetworkListManager",

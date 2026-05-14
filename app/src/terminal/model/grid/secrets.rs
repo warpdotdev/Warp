@@ -117,7 +117,7 @@ impl GridHandler {
 
     /// Clears the secrets that are encompassed in the given range. Returns a range of the minimum
     /// and maximum point of all of the secrets that were removed.
-    fn clear_secrets_in_range(
+    pub(super) fn clear_secrets_in_range(
         &mut self,
         range: RangeInclusive<Point>,
     ) -> Option<RangeInclusive<Point>> {

@@ -449,11 +449,6 @@ impl CommentViewCard {
         matches!(self.diff_content, Some(CommentDiffContent::EditorLens))
     }
 
-    /// Recomputes the cached display title.
-    pub(crate) fn update_title(&mut self, repo_path: Option<&Path>) {
-        self.title = Self::compute_title(&self.source, repo_path);
-    }
-
     /// Refreshes the cached `last_updated_duration` to the current time.
     pub(crate) fn refresh_last_updated_duration(&mut self) {
         self.last_updated_duration = Local::now() - self.source.last_update_time;

@@ -19,6 +19,7 @@ pub const MODAL_CORNER_RADIUS: Radius = Radius::Pixels(8.);
 pub const MODAL_WIDTH: f32 = 440.;
 pub const MODAL_HEADER_HEIGHT: f32 = 70.;
 pub const MODAL_PADDING: f32 = 28.;
+pub const MODAL_BACKDROP_OPACITY: u8 = 179;
 
 #[derive(Clone)]
 pub struct Modal<T> {
@@ -156,7 +157,7 @@ impl<T: View> Modal<T> {
                 ..Default::default()
             },
             close_modal_hover_state: Default::default(),
-            background_opacity: 179,
+            background_opacity: MODAL_BACKDROP_OPACITY,
             offset_positioning: Self::default_offset_positioning(),
         }
     }

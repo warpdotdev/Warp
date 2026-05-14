@@ -8,7 +8,7 @@ use warpui::elements::{
     ParentElement, ParentOffsetBounds, Radius, Stack,
 };
 
-use crate::ai::agent::conversation::ConversationStatus;
+use crate::ai::agent::conversation::{ConversationStatus, StatusColorStyle};
 use crate::terminal::CLIAgent;
 use crate::themes::theme::Fill as ThemeFill;
 
@@ -24,8 +24,9 @@ const OZ_AMBIENT_BACKGROUND_COLOR: ColorU = ColorU {
 // Sub-component size ratios, expressed as fractions of `total_size`. The brand circle is
 // ~76% wide and the status badge is ~57% wide, with the badge's bottom-right anchored at
 // the box's bottom-right corner. With these ratios the badge center sits *inside* the
-// brand circle (not on its edge).
-const CIRCLE_RATIO: f32 = 0.76;
+// brand circle (not on its edge). `CIRCLE_RATIO` is `pub(crate)` so callers that
+// pre-render their own avatar can size it consistently with the other variants.
+pub(crate) const CIRCLE_RATIO: f32 = 0.76;
 const ICON_RATIO: f32 = 0.43;
 const BADGE_RATIO: f32 = 0.57;
 const BADGE_ICON_RATIO: f32 = 0.34;
@@ -37,7 +38,8 @@ const STATUS_IN_CLOUD_RATIO: f32 = 0.285;
 // a 24px container held a 16px glyph (16/24 ≈ 0.667).
 const NEUTRAL_GLYPH_RATIO: f32 = 16.0 / 24.0;
 
-fn circle_size(total: f32) -> f32 {
+/// Returns the brand-circle diameter for a given `total_size`.
+pub(crate) fn circle_size(total: f32) -> f32 {
     total * CIRCLE_RATIO
 }
 
@@ -113,6 +115,14 @@ pub(crate) enum IconWithStatusVariant {
         status: Option<ConversationStatus>,
         is_ambient: bool,
     },
+    /// A pre-rendered avatar with an optional status overlay (cloud lobe when
+    /// ambient). Caller must size `avatar` to `circle_size(total_size)` so the
+    /// overlay's overhang matches the other variants.
+    CustomAvatar {
+        avatar: Box<dyn Element>,
+        status: Option<ConversationStatus>,
+        is_ambient: bool,
+    },
 }
 
 /// Renders an icon-with-status component sized entirely from a single `total_size`. All
@@ -125,13 +135,13 @@ pub(crate) enum IconWithStatusVariant {
 /// BR (more overhang) and negative values pull it inward toward the circle's center.
 ///
 /// When `is_ambient` is set on an agent variant, the status badge is replaced by a
-/// white cloud containing the status icon.
+/// cloud (filled with `status_container_background`) containing the status icon.
 pub(crate) fn render_icon_with_status(
     variant: IconWithStatusVariant,
     total_size: f32,
     overlay_extra_overhang_ratio: f32,
     theme: &WarpTheme,
-    badge_ring_background: WarpThemeFill,
+    status_container_background: WarpThemeFill,
 ) -> Box<dyn Element> {
     let sub_text = theme.sub_text_color(theme.background());
 
@@ -160,10 +170,15 @@ pub(crate) fn render_icon_with_status(
             } else {
                 WarpIcon::Oz
             };
+            // Cloud (ambient) runs use a black glyph on the light-purple background
+            // for consistency with the web app; local runs keep the theme text color.
+            let glyph_color = if is_ambient {
+                WarpThemeFill::Solid(ColorU::black())
+            } else {
+                theme.main_text_color(theme.background())
+            };
             let circle = render_circle(
-                oz_glyph
-                    .to_warpui_icon(theme.main_text_color(theme.background()))
-                    .finish(),
+                oz_glyph.to_warpui_icon(glyph_color).finish(),
                 circle_background,
                 total_size,
             );
@@ -174,7 +189,7 @@ pub(crate) fn render_icon_with_status(
                 total_size,
                 overlay_extra_overhang_ratio,
                 theme,
-                badge_ring_background,
+                status_container_background,
             )
         }
         IconWithStatusVariant::CLIAgent {
@@ -201,9 +216,22 @@ pub(crate) fn render_icon_with_status(
                 total_size,
                 overlay_extra_overhang_ratio,
                 theme,
-                badge_ring_background,
+                status_container_background,
             )
         }
+        IconWithStatusVariant::CustomAvatar {
+            avatar,
+            status,
+            is_ambient,
+        } => attach_status_overlay(
+            avatar,
+            status.as_ref(),
+            is_ambient,
+            total_size,
+            overlay_extra_overhang_ratio,
+            theme,
+            status_container_background,
+        ),
     }
 }
 
@@ -263,7 +291,7 @@ fn attach_status_overlay(
     total_size: f32,
     overlay_extra_overhang_ratio: f32,
     theme: &WarpTheme,
-    badge_ring_background: WarpThemeFill,
+    status_container_background: WarpThemeFill,
 ) -> Box<dyn Element> {
     if is_ambient {
         render_with_cloud_status_badge(
@@ -280,12 +308,12 @@ fn attach_status_overlay(
             total_size,
             overlay_extra_overhang_ratio,
             theme,
-            badge_ring_background,
+            status_container_background,
         )
     }
 }
 
-/// Overlays a white cloud (with the conversation status icon centered inside, if any) at
+/// Overlays a cloud (with the conversation status icon centered inside, if any) at
 /// the bottom-right of the base circle. Used for agents running in ambient/cloud mode.
 fn render_with_cloud_status_badge(
     circle: Box<dyn Element>,
@@ -297,7 +325,7 @@ fn render_with_cloud_status_badge(
     let cloud_diameter = cloud_icon_size(total_size);
     let cloud = ConstrainedBox::new(
         WarpIcon::CloudFilled
-            .to_warpui_icon(WarpThemeFill::Solid(ColorU::white()))
+            .to_warpui_icon(theme.foreground())
             .finish(),
     )
     .with_width(cloud_diameter)
@@ -306,7 +334,7 @@ fn render_with_cloud_status_badge(
 
     let cloud_with_status: Box<dyn Element> = match status {
         Some(status) => {
-            let (icon, color) = status.status_icon_and_color(theme);
+            let (icon, color) = status.status_icon_and_color(theme, StatusColorStyle::Cloud);
             let inner = status_in_cloud_size(total_size);
             let status_icon =
                 ConstrainedBox::new(icon.to_warpui_icon(WarpThemeFill::Solid(color)).finish())
@@ -361,7 +389,7 @@ fn render_with_optional_status_badge(
     total_size: f32,
     overlay_extra_overhang_ratio: f32,
     theme: &WarpTheme,
-    badge_ring_background: WarpThemeFill,
+    status_container_background: WarpThemeFill,
 ) -> Box<dyn Element> {
     let Some(status) = status else {
         // No status badge: still occupy the full `total_size` footprint so the agent
@@ -372,7 +400,7 @@ fn render_with_optional_status_badge(
             .with_height(total_size)
             .finish();
     };
-    let (icon, color) = status.status_icon_and_color(theme);
+    let (icon, color) = status.status_icon_and_color(theme, StatusColorStyle::Standard);
     let badge_icon_diameter = badge_icon_size(total_size);
     let pad = badge_padding(total_size);
     let badge_icon = ConstrainedBox::new(icon.to_warpui_icon(WarpThemeFill::Solid(color)).finish())
@@ -386,7 +414,7 @@ fn render_with_optional_status_badge(
     // Cutout ring that visually separates the badge from the circle.
     let badge_with_ring = Container::new(badge)
         .with_uniform_padding(pad)
-        .with_background(badge_ring_background)
+        .with_background(status_container_background)
         .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
         .finish();
 

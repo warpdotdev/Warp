@@ -1508,6 +1508,7 @@ impl AISettingsPageView {
                 {
                     widgets.push(Box::new(VoiceWidget::default()));
                 }
+                widgets.push(Box::new(CloudHandoffWidget::default()));
                 widgets.push(Box::new(CLIAgentWidget::default()));
                 widgets.push(Box::new(ApiKeysWidget::new(ctx)));
                 widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
@@ -1549,6 +1550,7 @@ impl AISettingsPageView {
                 if voice_supported {
                     widgets.push(Box::new(VoiceWidget::default()));
                 }
+                widgets.push(Box::new(CloudHandoffWidget::default()));
                 widgets.push(Box::new(ApiKeysWidget::new(ctx)));
                 widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
                 widgets.push(Box::new(AgentAttributionWidget::default()));
@@ -2270,6 +2272,8 @@ pub enum AISettingsPageAction {
     #[cfg(feature = "local_fs")]
     SetConversationLayout(crate::util::file::external_editor::settings::OpenConversationPreference),
     ToggleOrchestration,
+    ToggleCloudHandoff,
+    ToggleAmpersandHandoff,
     ToggleShowConversationHistory,
     ToggleAutoToggleRichInput,
     ToggleAutoOpenRichInputOnCLIAgentStart,
@@ -2454,6 +2458,9 @@ impl TypedActionView for AISettingsPageView {
                 ctx.notify();
             }
             AISettingsPageAction::ToggleGitOperationsAutogen => {
+                if !UserWorkspaces::as_ref(ctx).is_git_operations_ai_enabled() {
+                    return;
+                }
                 match AISettings::handle(ctx).update(ctx, |settings, ctx| {
                     settings
                         .git_operations_autogen_enabled_internal
@@ -3009,6 +3016,22 @@ impl TypedActionView for AISettingsPageView {
                 AISettings::handle(ctx).update(ctx, |settings, ctx| {
                     report_if_error!(settings
                         .show_conversation_history
+                        .toggle_and_save_value(ctx));
+                });
+                ctx.notify();
+            }
+            AISettingsPageAction::ToggleCloudHandoff => {
+                AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings
+                        .should_force_disable_cloud_handoff
+                        .toggle_and_save_value(ctx));
+                });
+                ctx.notify();
+            }
+            AISettingsPageAction::ToggleAmpersandHandoff => {
+                AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings
+                        .should_force_disable_ampersand_handoff
                         .toggle_and_save_value(ctx));
                 });
                 ctx.notify();
@@ -3726,7 +3749,7 @@ impl ActiveAIWidget {
             && AISettings::as_ref(app)
                 .git_operations_autogen_enabled_internal
                 .is_supported_on_current_platform()
-            && UserWorkspaces::as_ref(app).ai_allowed_for_current_team()
+            && UserWorkspaces::as_ref(app).is_git_operations_ai_enabled()
     }
 
     fn render_next_command_section(
@@ -6303,6 +6326,138 @@ impl SettingsWidget for CloudAgentComputerUseWidget {
     }
 }
 
+#[derive(Default)]
+struct CloudHandoffWidget {
+    handoff_toggle: SwitchStateHandle,
+    ampersand_toggle: SwitchStateHandle,
+}
+
+impl SettingsWidget for CloudHandoffWidget {
+    type View = AISettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "cloud handoff ampersand & move to cloud local"
+    }
+
+    fn should_render(&self, _app: &AppContext) -> bool {
+        FeatureFlag::OzHandoff.is_enabled() && FeatureFlag::HandoffLocalCloud.is_enabled()
+    }
+
+    fn render(
+        &self,
+        _view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        use crate::settings::PrivacySettings;
+
+        let ai_settings = AISettings::as_ref(app);
+        let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
+
+        let privacy = PrivacySettings::as_ref(app);
+        let cloud_convos_off = !privacy.is_cloud_conversation_storage_enabled
+            || matches!(
+                UserWorkspaces::as_ref(app).get_cloud_conversation_storage_enablement_setting(),
+                AdminEnablementSetting::Disable
+            );
+        let is_force_disabled = !is_any_ai_enabled || cloud_convos_off;
+
+        let tooltip_text = if cloud_convos_off {
+            "Cloud handoff requires cloud conversations to be enabled."
+        } else {
+            ""
+        };
+
+        let ui_builder = appearance.ui_builder();
+
+        let handoff_toggle = if is_force_disabled {
+            let mut builder = ui_builder.switch(self.handoff_toggle.clone()).check(false);
+            if !tooltip_text.is_empty() {
+                builder = builder.with_tooltip(TooltipConfig {
+                    text: tooltip_text.to_string(),
+                    styles: ui_builder.default_tool_tip_styles(),
+                });
+            }
+            builder.disable().build().finish()
+        } else {
+            ui_builder
+                .switch(self.handoff_toggle.clone())
+                .check(!*ai_settings.should_force_disable_cloud_handoff)
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(AISettingsPageAction::ToggleCloudHandoff);
+                })
+                .finish()
+        };
+
+        let handoff_row = build_toggle_element(
+            render_body_item_label::<AISettingsPageAction>(
+                "Cloud handoff".to_string(),
+                Some(styles::header_font_color(!is_force_disabled, app)),
+                None,
+                LocalOnlyIconState::Hidden,
+                ToggleState::Enabled,
+                appearance,
+            ),
+            handoff_toggle,
+            appearance,
+            None,
+        );
+
+        let mut column = Flex::column()
+            .with_child(render_separator(appearance))
+            .with_child(
+                build_sub_header(
+                    appearance,
+                    "Cloud Handoff",
+                    Some(styles::header_font_color(is_any_ai_enabled, app)),
+                )
+                .with_padding_bottom(HEADER_PADDING)
+                .finish(),
+            )
+            .with_child(handoff_row)
+            .with_child(render_ai_setting_description(
+                "Hand off local agent conversations to a cloud agent.",
+                !is_force_disabled,
+                app,
+            ));
+
+        if ai_settings.is_cloud_handoff_enabled(app) {
+            let ampersand_toggle = ui_builder
+                .switch(self.ampersand_toggle.clone())
+                .check(!*ai_settings.should_force_disable_ampersand_handoff)
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(AISettingsPageAction::ToggleAmpersandHandoff);
+                })
+                .finish();
+
+            let ampersand_row = build_toggle_element(
+                render_body_item_label::<AISettingsPageAction>(
+                    "Use & to trigger handoff".to_string(),
+                    Some(styles::header_font_color(true, app)),
+                    None,
+                    LocalOnlyIconState::Hidden,
+                    ToggleState::Enabled,
+                    appearance,
+                ),
+                ampersand_toggle,
+                appearance,
+                None,
+            );
+
+            column.add_child(ampersand_row);
+            column.add_child(render_ai_setting_description(
+                "Type & as the first character to enter cloud handoff compose mode.",
+                true,
+                app,
+            ));
+        }
+
+        column.finish()
+    }
+}
+
 struct ApiKeysWidget {
     openai_api_key_editor: ViewHandle<EditorView>,
     anthropic_api_key_editor: ViewHandle<EditorView>,
@@ -6317,7 +6472,7 @@ impl ApiKeysWidget {
         let ai_settings = AISettings::as_ref(ctx);
         let workspace_handle = UserWorkspaces::handle(ctx);
         let is_any_ai_enabled = ai_settings.is_any_ai_enabled(ctx);
-        let is_byo_enabled = workspace_handle.as_ref(ctx).is_byo_api_key_enabled();
+        let is_byo_enabled = workspace_handle.as_ref(ctx).is_byo_api_key_enabled(ctx);
 
         let ApiKeys {
             openai: openai_key,
@@ -6372,7 +6527,7 @@ impl ApiKeysWidget {
                     if let UserWorkspacesEvent::TeamsChanged = event {
                         let is_any_ai_enabled =
                             AISettings::handle(ctx).as_ref(ctx).is_any_ai_enabled(ctx);
-                        let is_byo_enabled = workspace.as_ref(ctx).is_byo_api_key_enabled();
+                        let is_byo_enabled = workspace.as_ref(ctx).is_byo_api_key_enabled(ctx);
                         let is_enabled = is_any_ai_enabled && is_byo_enabled;
                         let has_key = !editor_clone.as_ref(ctx).is_empty(ctx);
 
@@ -6538,6 +6693,16 @@ impl ApiKeysWidget {
                         )]
                     }
                 }
+            } else if FeatureFlag::SoloUserByok.is_enabled()
+                && auth_state.is_anonymous_or_logged_out()
+            {
+                vec![
+                    FormattedTextFragment::hyperlink_action(
+                        "Create an account",
+                        AISettingsPageAction::SignupAnonymousUser,
+                    ),
+                    FormattedTextFragment::plain_text(" to use your own API keys."),
+                ]
             } else {
                 let user_id = auth_state.user_id().unwrap_or_default();
                 let upgrade_url = UserWorkspaces::upgrade_link(user_id);
@@ -6556,8 +6721,19 @@ impl ApiKeysWidget {
                 self.upgrade_highlight_index.clone(),
             )
             .with_hyperlink_font_color(appearance.theme().accent().into_solid())
-            .register_default_click_handlers(|url, ctx, _| {
-                ctx.dispatch_typed_action(AISettingsPageAction::HyperlinkClick(url));
+            .register_default_click_handlers_with_action_support(|hyperlink_lens, event, ctx| {
+                match hyperlink_lens {
+                    HyperlinkLens::Url(url) => {
+                        ctx.open_url(url);
+                    }
+                    HyperlinkLens::Action(action_ref) => {
+                        if let Some(action) =
+                            action_ref.as_any().downcast_ref::<AISettingsPageAction>()
+                        {
+                            event.dispatch_typed_action(action.clone());
+                        }
+                    }
+                }
             });
 
             column.add_child(Container::new(upgrade_text_element.finish()).finish());
@@ -6611,7 +6787,7 @@ impl SettingsWidget for ApiKeysWidget {
     ) -> Box<dyn Element> {
         let ai_settings = AISettings::as_ref(app);
         let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
-        let is_byo_enabled = UserWorkspaces::as_ref(app).is_byo_api_key_enabled();
+        let is_byo_enabled = UserWorkspaces::as_ref(app).is_byo_api_key_enabled(app);
 
         let mut column = Flex::column()
             .with_child(render_separator(appearance))

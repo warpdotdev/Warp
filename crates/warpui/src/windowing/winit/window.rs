@@ -1159,15 +1159,13 @@ impl Window {
     pub fn focus(&self) {
         if let Some(Inner { window, level, .. }) = self.inner.borrow().as_ref() {
             // Winit is a bit quirky here. Trying to focus a window which isn't visible will not
-            // make it visible. So, call `focus_window` if the window is visible, otherwise make it
-            // visible.
+            // make it visible. So, make it visible first if needed, then explicitly focus it.
             if window.is_visible().unwrap_or(true) {
                 window.set_minimized(false);
-                window.focus_window();
             } else {
-                // Setting visible to `true` will also focus it.
                 window.set_visible(true);
             }
+            window.focus_window();
             window.set_window_level(*level);
         }
     }
@@ -1502,6 +1500,13 @@ fn create_window(
                 }
             };
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    if let Ok(window) = created_window.as_ref() {
+        // On Linux/Wayland, winit only sends `zwp_text_input_v3.enable()` when IME is allowed,
+        // so without this call IME stays inactive and non-Latin input (CJK, etc.) is unusable.
+        window.set_ime_allowed(true);
     }
 
     created_window

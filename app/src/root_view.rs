@@ -100,9 +100,7 @@ use warpui::keymap::{EditableBinding, FixedBinding};
 use warpui::windowing::WindowManager;
 
 use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
-use crate::ai::onboarding::{
-    apply_free_tier_default_model_override, build_onboarding_models, current_onboarding_auth_state,
-};
+use crate::ai::onboarding::{build_onboarding_models, current_onboarding_auth_state};
 use crate::pricing::{PricingInfoModel, PricingInfoModelEvent};
 use warp_graphql::billing::StripeSubscriptionPlan;
 
@@ -110,7 +108,7 @@ use warpui::elements::{
     Border, ChildAnchor, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Stack,
 };
 use warpui::rendering::OnGPUDeviceSelected;
-use warpui::{id, AddWindowOptions, DisplayId, SingletonEntity};
+use warpui::{id, AddWindowOptions, DisplayId, EntityId, SingletonEntity};
 use warpui::{
     platform::{WindowBounds, WindowStyle},
     presenter::ChildView,
@@ -332,6 +330,10 @@ pub fn init(app: &mut AppContext) {
     app.add_action(
         "root_view:handle_pane_navigation_event",
         RootView::focus_pane,
+    );
+    app.add_action(
+        "root_view:activate_tab_by_pane_group_id",
+        RootView::activate_tab_by_pane_group_id,
     );
     app.add_action("root_view:close_window", RootView::close_window);
     app.add_action("root_view:minimize_window", RootView::minimize_window);
@@ -1798,7 +1800,21 @@ impl RootView {
             ctx.focus(onboarding_view);
         }
 
+        // For users who bypass onboarding (already logged in, or onboarding flags not active),
+        // start autoupdate polling immediately. For new users in onboarding, this is a no-op;
+        // polling will be started once onboarding completes.
+        root_view.start_autoupdate_polling(ctx);
+
         root_view
+    }
+
+    /// Starts the autoupdate polling loop, but only if we are already in the `Terminal` state
+    /// (i.e. onboarding has completed or was not shown). Safe to call unconditionally — it is
+    /// a no-op when still in a pre-terminal state.
+    fn start_autoupdate_polling(&self, ctx: &mut ViewContext<Self>) {
+        if matches!(self.auth_onboarding_state, AuthOnboardingState::Terminal(_)) {
+            AutoupdateState::handle(ctx).update(ctx, |state, ctx| state.start_polling(ctx));
+        }
     }
 
     /// Used for integration tests.
@@ -1915,10 +1931,8 @@ impl RootView {
 
         let themes = onboarding_theme_picker_themes();
         let onboarding_view = ctx.add_typed_action_view(move |ctx| {
-            let (mut models, default_model_id) =
-                build_onboarding_models(LLMPreferences::as_ref(ctx));
-            let default_model_id =
-                apply_free_tier_default_model_override(&mut models, default_model_id, ctx);
+            let llm_preferences = LLMPreferences::as_ref(ctx);
+            let (models, default_model_id) = build_onboarding_models(llm_preferences);
 
             let workspace_enforces_autonomy = UserWorkspaces::as_ref(ctx)
                 .ai_autonomy_settings()
@@ -1961,10 +1975,8 @@ impl RootView {
             &LLMPreferences::handle(ctx),
             move |_, llm_preferences, event, ctx| match event {
                 LLMPreferencesEvent::UpdatedAvailableLLMs => {
-                    let (mut models, default_model_id) =
+                    let (models, default_model_id) =
                         build_onboarding_models(llm_preferences.as_ref(ctx));
-                    let default_model_id =
-                        apply_free_tier_default_model_override(&mut models, default_model_id, ctx);
                     onboarding_view_clone.update(ctx, |onboarding_view, ctx| {
                         onboarding_view.set_onboarding_models(models, default_model_id, ctx);
                     })
@@ -2112,6 +2124,7 @@ impl RootView {
                 self.auth_onboarding_state = AuthOnboardingState::Terminal(workspace);
                 ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
                 self.start_pending_tutorial(ctx);
+                self.start_autoupdate_polling(ctx);
                 self.focus(ctx);
                 ctx.notify();
             }
@@ -2246,6 +2259,7 @@ impl RootView {
                 self.auth_onboarding_state = AuthOnboardingState::Terminal(workspace);
                 ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
                 self.start_pending_tutorial(ctx);
+                self.start_autoupdate_polling(ctx);
                 ctx.notify();
             }
             AgentOnboardingEvent::OnboardingSkipped => {
@@ -2267,6 +2281,7 @@ impl RootView {
                 let workspace = target.to_workspace(ctx);
                 self.auth_onboarding_state = AuthOnboardingState::Terminal(workspace);
                 ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
+                self.start_autoupdate_polling(ctx);
                 ctx.notify();
             }
             AgentOnboardingEvent::UpgradeRequested => {
@@ -2440,6 +2455,20 @@ impl RootView {
         if let AuthOnboardingState::Terminal(workspace) = &self.auth_onboarding_state {
             workspace.update(ctx, |view, ctx| {
                 view.focus_pane(*pane_view_locator, ctx);
+            });
+        }
+        true
+    }
+
+    fn activate_tab_by_pane_group_id(
+        &mut self,
+        pane_group_id: &EntityId,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        ctx.windows().show_window_and_focus_app(ctx.window_id());
+        if let AuthOnboardingState::Terminal(workspace) = &self.auth_onboarding_state {
+            workspace.update(ctx, |view, ctx| {
+                view.activate_tab_by_pane_group_id(*pane_group_id, ctx);
             });
         }
         true
@@ -2958,6 +2987,7 @@ impl RootView {
                         .complete_auth_and_create_workspace(ctx);
                 }
 
+                self.start_autoupdate_polling(ctx);
                 self.focus(ctx);
             }
             AuthManagerEvent::AuthFailed(err) => match err {
@@ -3009,6 +3039,7 @@ impl RootView {
                     ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
                     self.start_pending_tutorial(ctx);
                 }
+                self.start_autoupdate_polling(ctx);
                 self.focus(ctx);
             }
             AuthManagerEvent::LoginOverrideDetected(interrupted_auth_payload) => {
