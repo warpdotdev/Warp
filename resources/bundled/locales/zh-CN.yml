@@ -745,6 +745,12 @@ zh-CN:
     initialization_settings: "初始化设置"
     codebase_indexing: "代码库索引"
     codebase_index_description: "Warp 可以在你浏览代码仓库时自动建立索引，帮助 Agent 快速理解上下文并提供解决方案。代码不会存储在服务器上。如果某个代码库无法建立索引，Warp 仍然可以通过 grep 和 find 工具调用浏览代码库并获取信息。"
+    index_codebase_title: "索引代码库？"
+    index_codebase_description: "索引可以帮助 Agent 快速理解上下文并提供有针对性的解决方案。代码不会存储在服务器上。"
+    allow_automatic_indexing: "允许自动索引"
+    index_codebase: "索引代码库"
+    indexing_codebase: "正在索引代码库"
+    view_status: "查看状态"
     open_tab_config_skill: "打开 Agent 输入并使用 /update-tab-config skill"
     enable_ai_for_tab_config_skill: "启用 AI 以使用 /update-tab-config skill"
     install_server: "安装 {server}"
@@ -1283,6 +1289,9 @@ zh-CN:
     hand_off_to_environment: "Handoff 到 {environment}"
     kick_off_cloud_agent: "启动云端 Agent"
     ai_command_search_hint: "输入 '#' 获取 AI 命令建议"
+    optimize: "优化"
+    optimize_warp_for_codebase: "为此代码库优化 Warp？"
+    optimize_warp_for_codebase_description: "让 Agent 理解你的代码库并生成规则，以获得更智能、更一致的响应。你也可以随时运行 /init 来完成此操作"
 
   requested_command:
     reject: "拒绝"
@@ -1672,6 +1681,12 @@ zh-CN:
     no_results: "无结果"
     default_model: "默认模型"
     no_environment: "（无环境）"
+    prompt_agent_to_interact_with_command: "提示 Agent 与 `{command}` 交互"
+    prompt_agent_to_interact_with_running_command: "提示 Agent 与正在运行的命令交互"
+    agent_waiting_on_instructions: "Agent 正在等待指令"
+    agent_waiting_for_command_exit: "Agent 正在等待命令退出"
+    agent_needs_permission: "Agent 需要你的权限才能继续"
+    agent_in_control: "Agent 正在控制"
 
   # ── SSH 文件上传 ──
   ssh_file_upload:
