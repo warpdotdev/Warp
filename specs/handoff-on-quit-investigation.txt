@@ -1,0 +1,210 @@
+Investigation: suggest local-to-cloud handoff when quitting with interactive agents
+Slack idea:
+If a user quits Warp while interactive agents are still running, suggest handing them off to cloud.
+
+Recommendation:
+Implement this as an app-quit-only enhancement to the existing quit warning modal, not as an automatic shutdown behavior. The first version should detect active local Warp Agent conversations that are eligible for local-to-cloud handoff, add explicit copy to the quit warning, and provide a button that cancels quit and starts or focuses the existing handoff flow for one conversation. Multi-agent batch handoff should be treated as a follow-up because the current local-to-cloud handoff product spec explicitly scopes handoff to one conversation at a time.
+
+Current implementation pieces
+
+1. Quit warning surface
+- app/src/lib.rs wires app/window termination callbacks.
+- on_should_terminate_app builds UnsavedStateSummary::for_app(ctx), then shows QuitWarningDialog if should_display_warning() returns true.
+- app/src/quit_warning/mod.rs owns UnsavedStateSummary and QuitWarningDialog.
+- UnsavedStateSummary currently tracks:
+  - total_long_running_commands
+  - windows/tabs with long-running commands
+  - terminal_sessions
+  - shared_sessions
+  - unsaved_code_changes
+- Running processes come from SessionNavigationData::all_sessions(ctx) and RunningSessionSummary::new(...).
+- The modal currently has buttons such as "Yes, quit", "Show running processes", and "Cancel".
+- "Show running processes" cancels quit and opens the navigation palette with query "running" via on_close_app_cancelled(true, ctx).
+
+Important detail: app/src/session_management.rs already treats CommandContext::RunningAIBlock as a long-running item alongside RunningCommand. app/src/terminal/view.rs builds RunningAIBlock when the active block is an AI rich content block and it can find the latest prompt in BlocklistAIHistoryModel. That means some active local agent activity may already trigger the quit warning, but the copy still says "process/processes", and the modal does not surface handoff as the intended recovery action.
+
+2. Local-to-cloud handoff flow
+- specs/REMOTE-1486/PRODUCT.md and specs/REMOTE-1486/TECH.md define the existing local-to-cloud handoff behavior.
+- The current entry points are the "Hand off to cloud" chip, "/move-to-cloud", and "&" compose mode.
+- WorkspaceAction::OpenLocalToCloudHandoffPane is defined in app/src/workspace/action.rs.
+- Workspace::start_local_to_cloud_handoff in app/src/workspace/view.rs drives the actual open path.
+- It currently resolves the source from the active tab/pane:
+  - active_tab_pane_group().active_session_view(ctx)
+  - BlocklistAIHistoryModel::active_conversation(source_view.id())
+- If a non-empty active local conversation has a server_conversation_token, the client forks the server conversation, opens a new cloud-mode pane, restores the forked local conversation there, uploads a local workspace snapshot, and submits via AmbientAgentViewModel::submit_handoff.
+- If there is no handoff-able conversation, it falls back to opening a fresh cloud launch pane.
+- Existing gates are AISettings::is_cloud_handoff_enabled(ctx), FeatureFlag::OzHandoff, FeatureFlag::HandoffLocalCloud, local_fs, not wasm, cloud conversation storage enabled, and org policy not disabling cloud conversation storage.
+- Existing flow rejects handoff while a long-running shell command is active in the source pane, with the toast "Can't hand off while a command is running. Cancel the command or wait for it to finish."
+
+3. Active/open agent tracking
+- BlocklistAIHistoryModel stores local AIConversation objects and exposes active_conversation(terminal_view_id).
+- AIConversation::status() can be InProgress, Success, Error, Cancelled, or Blocked.
+- ConversationStatus has is_in_progress() and is_blocked().
+- AgentViewController tracks whether a terminal has an expanded Agent View and which conversation is active.
+- ActiveAgentViewsModel tracks currently open interactive agent views and ambient sessions, but its public methods are optimized for the agent management UI rather than for quit-warning summaries.
+- CLIAgentSessionsModel tracks third-party CLI agent sessions and their InProgress/Blocked/Success state. These are not covered by Oz local-to-cloud handoff V0, so they should not be included in a "hand off to cloud" button unless the product scope expands to third-party harnesses.
+
+Suggested V1 behavior
+
+Scope:
+- Trigger only on app quit, not window/tab/pane close. The Slack idea says "if you quit Warp", and limiting to app quit avoids surprising users during normal pane management.
+- Detect only local Warp Agent conversations that are:
+  - non-empty
+  - not cloud/ambient sessions
+  - status InProgress or Blocked
+  - associated with an open terminal view
+  - handoff-enabled under AISettings::is_cloud_handoff_enabled(ctx)
+  - have a server_conversation_token, because handoff needs a synced server conversation to fork
+- Do not include third-party CLI agent sessions or cloud agents in V1. For those, the correct action is different: cloud agents may already keep running remotely, while third-party local CLI sessions need separate resume/handoff design.
+
+Modal copy:
+- Add a separate line to the quit warning, for example:
+  "You have 1 local agent still running. You can hand it off to cloud before quitting."
+  "You have N local agents still running. You can hand one off to cloud before quitting."
+- Keep the existing running-process and unsaved-code copy. Do not replace it, because shell commands and agent tasks are not identical.
+
+Buttons:
+- If exactly one eligible local agent exists:
+  - Add a button such as "Hand off to cloud".
+  - Clicking it should cancel the quit, focus the source window/pane, and invoke the existing local-to-cloud handoff open path.
+  - The handoff pane should open without auto-submitting a prompt, matching the existing chip behavior. This makes the action a suggestion and gives the user a chance to inspect the fork/env before submitting.
+- If multiple eligible local agents exist:
+  - Prefer "Review running agents" or "Show running agents" for V1, opening a focused picker/navigation surface rather than attempting batch handoff.
+  - Batch handoff is out of scope for the existing REMOTE-1486 design and has several unanswered questions: one environment per conversation, prompt per handoff, how many cloud panes to open, and how to handle partial failures.
+
+Potential implementation shape
+
+1. Add an agent summary to quit_warning
+- Extend UnsavedStateSummary with something like:
+  active_handoff_candidates: Vec<AgentHandoffCandidate>
+- AgentHandoffCandidate can hold:
+  - window_id
+  - pane_view_locator
+  - terminal_view_id
+  - conversation_id
+  - title or latest prompt for display/debugging
+  - status
+- Build candidates in UnsavedStateSummary::for_scope for QuitScope::App only at first. If product later wants window/tab close behavior, the same helper can filter by scope.
+- Implementation options:
+  A. Walk SessionNavigationData and add the terminal_view_id/conversation_id fields it currently lacks.
+  B. Walk workspaces/pane groups directly in quit_warning, similar to SessionNavigationData::all_sessions(ctx), and inspect each TerminalView's agent_view_controller plus BlocklistAIHistoryModel.
+- Option B is less invasive for V1 because SessionNavigationData is used by the navigation palette and should not grow agent-specific fields unless they are broadly useful.
+
+2. Candidate detection helper
+- Add a helper such as collect_handoff_candidates(scope, ctx).
+- For each terminal view in scope:
+  - Get the active conversation from BlocklistAIHistoryModel::active_conversation(terminal_view_id).
+  - Skip if conversation.is_empty().
+  - Skip unless conversation.status().is_in_progress() || conversation.status().is_blocked().
+  - Skip if conversation.server_conversation_token().is_none().
+  - Skip cloud/ambient/third-party transcript cases. The existing conversation constructors pass booleans for is_viewing_shared_session and is_cli_agent_transcript; use existing accessors if available, or add narrow accessors if they are missing.
+  - Optionally require that the AgentViewController for the terminal is active on that conversation, to keep "interactive agent" aligned with "open expanded Agent View" rather than any historical conversation in memory.
+- Gate all candidates behind AISettings::as_ref(ctx).is_cloud_handoff_enabled(ctx).
+
+3. Refactor handoff invocation so quit_warning can target a source pane
+- Current Workspace::start_local_to_cloud_handoff reads the active pane. A quit-modal callback may know the candidate pane but not have it active yet.
+- Minimal V1 path:
+  - Focus the candidate window.
+  - Dispatch WorkspaceAction::FocusPane(candidate.pane_view_locator).
+  - Defer WorkspaceAction::OpenLocalToCloudHandoffPane { launch: None, environment_id: None } so the active pane is the candidate when start_local_to_cloud_handoff runs.
+- More robust path:
+  - Extract the existing start logic into a helper that accepts source_view: ViewHandle<TerminalView>.
+  - Keep WorkspaceAction::OpenLocalToCloudHandoffPane as the active-pane wrapper.
+  - Add an internal action/callback path that calls the helper with the exact source_view for the candidate.
+- I recommend the robust refactor if implementation time allows. It avoids ordering bugs caused by focusing and then dispatching a second action in the same event cycle.
+
+4. Modal wiring
+- Extend QuitWarningDialog with an optional on_handoff_to_cloud callback.
+- In build(), add a ModalButton only for QuitScope::App and only when active_handoff_candidates is non-empty.
+- Button labels:
+  - One candidate: "Hand off to cloud"
+  - Multiple candidates: "Review running agents" or "Show running agents"
+- The callback must not call terminate_app. It should cancel quit/relaunch state like on_close_app_cancelled does, then route to the candidate action.
+- Be careful with autoupdate: on_should_terminate_app applies pending updates before showing the warning. If the user chooses handoff, it should behave like cancellation and call autoupdate::cancel_relaunch(ctx), matching on_close_app_cancelled.
+
+5. Telemetry
+- Extend QuitModalShown with active_local_agents or handoff_candidates if schema churn is acceptable.
+- Add a click event for the new button, e.g. QuitModalHandoffClicked { candidate_count }.
+- Existing QuitModalCancel can still fire if the handoff button internally reuses on_close_app_cancelled(false, ctx), but a distinct event will make the feature measurable.
+
+Edge cases
+
+1. Agent is running a shell command
+- Existing handoff blocks this case. If the user clicks "Hand off to cloud" while a command is running, the current flow will restore state and show the existing error toast.
+- Product may want different copy in the quit modal, but I would not relax this constraint in V1 because snapshotting mid-command can produce confusing filesystem state.
+
+2. Agent is blocked on permission/user input
+- This is a good candidate. The local conversation can be forked, and the user can decide what prompt to send in the handoff pane.
+
+3. Unsynced local conversation
+- If server_conversation_token is absent, skip it as a handoff candidate. The modal can still warn about running AI through the existing RunningAIBlock path, but should not offer handoff if the fork cannot work.
+
+4. Multiple running agents
+- Do not batch handoff in V1. Open navigation/agent management and let the user pick one, or choose the focused/most-recent candidate only if product explicitly wants a single-click behavior.
+
+5. Cloud conversation storage disabled
+- AISettings::is_cloud_handoff_enabled(ctx) already covers this. Do not show the handoff suggestion.
+
+6. Anonymous/logged-out user
+- AISettings::is_any_ai_enabled(ctx), used by is_cloud_handoff_enabled(ctx), should prevent showing candidates. If a stale candidate slips through, the handoff path itself should fail safely.
+
+7. Quit warning disabled
+- If the user has disabled "show warning before quitting", the current quit modal will not show. There is a product decision here:
+  - Respect the setting and do not show handoff suggestions.
+  - Or treat active agents as a new, higher-priority warning that bypasses the old process warning setting.
+- I recommend respecting the setting in V1 to avoid surprising users who explicitly disabled quit warnings.
+
+Testing plan
+
+Unit/model tests:
+- Add tests around candidate collection:
+  - no candidates when cloud handoff is disabled
+  - no candidates for completed/error/cancelled conversations
+  - candidate for in-progress conversation with server token
+  - candidate for blocked conversation with server token
+  - no candidate for missing server token
+  - no candidate for cloud/ambient or CLI transcript conversations
+- Add quit warning tests:
+  - warning_text includes the agent handoff line for app quit
+  - dialog includes the extra button for one/multiple candidates
+  - existing running-process/unsaved-code behavior remains unchanged
+
+Workspace tests:
+- Test that the handoff callback focuses the candidate pane and dispatches/starts handoff without terminating the app.
+- If using the robust refactor, test the helper that accepts a source_view directly.
+
+Manual/integration validation:
+- Start a local Agent conversation, leave it InProgress or Blocked, quit Warp, verify the modal suggests cloud handoff.
+- Click "Hand off to cloud", verify quit is cancelled, the source pane remains local, and a cloud handoff pane opens.
+- Submit from the handoff pane and verify the cloud run receives the forked conversation and local snapshot.
+- Repeat with a long-running shell command and verify the existing "can't hand off while a command is running" toast.
+- Repeat with multiple local agents and verify the multi-agent V1 behavior is understandable.
+
+Estimated complexity
+
+Small-to-medium client change if scoped to one app-quit button and one conversation:
+- Candidate collection and summary state: medium risk because it walks live workspace/pane/agent state during termination.
+- Modal UI extension: low risk; QuitWarningDialog already supports optional callbacks/buttons.
+- Handoff invocation: medium risk if relying on focus-then-dispatch ordering; lower risk if start_local_to_cloud_handoff is refactored to accept a source TerminalView.
+- Tests: medium, mostly because setting up realistic AIConversation state in app tests can be verbose.
+
+Likely touched files
+- app/src/quit_warning/mod.rs
+- app/src/lib.rs
+- app/src/workspace/view.rs
+- app/src/workspace/action.rs only if adding an explicit source-targeted action
+- app/src/server/telemetry/events.rs if adding telemetry fields/events
+- app/src/workspace/view_tests.rs or app/src/quit_warning tests if a new test module is added
+- possibly app/src/ai/agent/conversation.rs for small accessor additions to distinguish local Oz vs CLI/cloud transcript conversations
+
+Open product questions
+
+1. Should the handoff suggestion show only when the agent is actively InProgress/Blocked, or also when an Agent View is open with a completed conversation and unsent draft text?
+2. For multiple agents, should V1 pick the focused/most-recent agent, or should it always send the user to a picker?
+3. Should the old "show warning before quitting" setting suppress this new handoff suggestion?
+4. Should clicking "Hand off to cloud" automatically submit a generic prompt, or should it only open the handoff pane and let the user decide? I recommend opening only.
+5. Should third-party local CLI agents be included in the future? Existing local-to-cloud handoff explicitly lists third-party harnesses as follow-up work, so including them would expand scope beyond this quit-modal idea.
+
+Conclusion
+
+The idea fits well into the existing quit warning and local-to-cloud handoff architecture, but it should be implemented as a targeted app-quit affordance rather than a new persistence mechanism. The main work is not cloud handoff itself; that already exists. The main work is accurately detecting eligible local agent conversations during quit, presenting clear modal copy, and invoking the handoff path against a specific source pane without accidentally quitting or batch-moving unrelated agents.
