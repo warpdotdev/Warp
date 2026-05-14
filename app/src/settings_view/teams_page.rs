@@ -101,17 +101,6 @@ const COMPARE_PLANS_BUTTON_WIDTH: f32 = 120.;
 const SUBSECTION_HEADER_FONT_SIZE: f32 = 18.;
 
 const INVITE_LINK_PREFIX: &str = "/team/";
-const INVALID_DOMAINS_INSTRUCTIONS: &str =
-    "Some of the provided domains are invalid, or have already been added.";
-
-const INVITE_LINK_TOGGLE_INSTRUCTIONS: &str = "As an admin, you can choose whether to enable or disable the ability for team members to invite others by invitation link.";
-const INVITE_LINK_DOMAIN_RESTRICTIONS_INSTRUCTIONS: &str =
-    "Only allow users with emails at specific domains to join your team through the invite link.";
-
-const INVITE_BY_EMAIL_EXPIRY_INSTRUCTIONS: &str = "Email invitations are valid for 7 days.";
-const INVALID_EMAILS_INSTRUCTIONS: &str =
-    "Some of the provided email addresses are invalid, already invited, or members of the team.";
-
 const MAX_CHIP_WIDTH: f32 = 280.;
 
 lazy_static! {
@@ -732,7 +721,7 @@ impl TeamsPageView {
         });
         let transfer_ownership_modal = ctx.add_typed_action_view(|ctx| {
             Modal::new(
-                Some("Transfer team ownership?".to_string()),
+                Some(t!("teams.transfer_team_ownership_title").to_string()),
                 transfer_ownership_modal_body,
                 ctx,
             )
@@ -849,7 +838,7 @@ impl TeamsPageView {
             }
             UserWorkspacesEvent::EmailInviteRejected(err) => {
                 self.update_team_members_state(ctx);
-                self.show_error("Failed to send invite", Some(err), ctx)
+                self.show_error(t!("teams.failed_send_invite").to_string(), Some(err), ctx)
             }
             UserWorkspacesEvent::TeamsChanged => {
                 self.update_team_members_state(ctx);
@@ -862,25 +851,33 @@ impl TeamsPageView {
                 ctx.emit(TeamsPageViewEvent::TeamsChanged);
             }
             UserWorkspacesEvent::ToggleInviteLinksSuccess => {
-                self.show_success("Toggled invite links", ctx);
+                self.show_success(t!("teams.toggled_invite_links").to_string(), ctx);
                 ctx.notify();
             }
             UserWorkspacesEvent::ToggleInviteLinksRejected(err) => {
-                self.show_error("Failed to toggle invite links", Some(err), ctx);
+                self.show_error(
+                    t!("teams.failed_toggle_invite_links").to_string(),
+                    Some(err),
+                    ctx,
+                );
             }
             UserWorkspacesEvent::ResetInviteLinks => {
-                self.show_success("Reset invite links", ctx);
+                self.show_success(t!("teams.reset_invite_links").to_string(), ctx);
                 ctx.notify();
             }
             UserWorkspacesEvent::ResetInviteLinksRejected(err) => {
-                self.show_error("Failed to reset invite links", Some(err), ctx);
+                self.show_error(
+                    t!("teams.failed_reset_invite_links").to_string(),
+                    Some(err),
+                    ctx,
+                );
             }
             UserWorkspacesEvent::DeleteTeamInvite => {
                 self.update_team_members_state(ctx);
-                self.show_success("Deleted invite", ctx);
+                self.show_success(t!("teams.deleted_invite").to_string(), ctx);
             }
             UserWorkspacesEvent::DeleteTeamInviteRejected(err) => {
-                self.show_error("Failed to delete invite", Some(err), ctx);
+                self.show_error(t!("teams.failed_delete_invite").to_string(), Some(err), ctx);
             }
             UserWorkspacesEvent::AddDomainRestrictionsSuccess => {
                 self.approve_domains_block_editor
@@ -889,20 +886,24 @@ impl TeamsPageView {
                     });
                 self.update_approved_domains_state(ctx);
             }
-            UserWorkspacesEvent::AddDomainRestrictionsRejected(err) => {
-                self.show_error("Failed to add domain restriction", Some(err), ctx)
-            }
+            UserWorkspacesEvent::AddDomainRestrictionsRejected(err) => self.show_error(
+                t!("teams.failed_add_domain_restriction").to_string(),
+                Some(err),
+                ctx,
+            ),
             UserWorkspacesEvent::DeleteDomainRestrictionSuccess => {
                 self.update_approved_domains_state(ctx);
             }
-            UserWorkspacesEvent::DeleteDomainRestrictionRejected(err) => {
-                self.show_error("Failed to delete domain restriction", Some(err), ctx)
-            }
+            UserWorkspacesEvent::DeleteDomainRestrictionRejected(err) => self.show_error(
+                t!("teams.failed_delete_domain_restriction").to_string(),
+                Some(err),
+                ctx,
+            ),
             UserWorkspacesEvent::GenerateUpgradeLink(upgrade_link) => {
                 ctx.open_url(upgrade_link);
             }
             UserWorkspacesEvent::GenerateUpgradeLinkRejected(err) => self.show_error(
-                "Failed to generate upgrade link. Please contact us at feedback@warp.dev",
+                t!("teams.failed_generate_upgrade_link").to_string(),
                 Some(err),
                 ctx,
             ),
@@ -910,16 +911,20 @@ impl TeamsPageView {
                 ctx.open_url(billing_session_link);
             }
             UserWorkspacesEvent::GenerateStripeBillingPortalLinkRejected(err) => self.show_error(
-                "Failed to generate billing link. Please contact us at feedback@warp.dev",
+                t!("teams.failed_generate_billing_link").to_string(),
                 Some(err),
                 ctx,
             ),
             UserWorkspacesEvent::ToggleTeamDiscoverabilitySuccess => {
-                self.show_success("Toggled team discoverability", ctx);
+                self.show_success(t!("teams.toggled_team_discoverability").to_string(), ctx);
                 ctx.notify();
             }
             UserWorkspacesEvent::ToggleTeamDiscoverabilityRejected(err) => {
-                self.show_error("Failed to toggle team discoverability", Some(err), ctx);
+                self.show_error(
+                    t!("teams.failed_toggle_team_discoverability").to_string(),
+                    Some(err),
+                    ctx,
+                );
             }
             UserWorkspacesEvent::JoinTeamWithTeamDiscoverySuccess => {
                 // Force refresh of Warp Drive objects after joining a team
@@ -931,14 +936,14 @@ impl TeamsPageView {
                     .user_workspaces
                     .as_ref(ctx)
                     .current_team()
-                    .map_or("Successfully joined team".to_string(), |team| {
-                        format!("Successfully joined {}", team.name)
+                    .map_or(t!("teams.successfully_joined_team").to_string(), |team| {
+                        t!("teams.successfully_joined_team_name", team = team.name).to_string()
                     });
                 self.show_success(message, ctx);
                 ctx.notify();
             }
             UserWorkspacesEvent::JoinTeamWithTeamDiscoveryRejected(err) => {
-                self.show_error("Failed to join team", Some(err), ctx);
+                self.show_error(t!("teams.failed_join_team").to_string(), Some(err), ctx);
             }
             UserWorkspacesEvent::FetchDiscoverableTeamsSuccess(teams) => {
                 self.discoverable_teams_states = teams
@@ -952,18 +957,32 @@ impl TeamsPageView {
                 log::error!("Failed to fetch discoverable teams: {e:?}");
             }
             UserWorkspacesEvent::TransferTeamOwnershipSuccess => {
-                self.show_success("Successfully transferred team ownership", ctx);
+                self.show_success(
+                    t!("teams.successfully_transferred_ownership").to_string(),
+                    ctx,
+                );
                 ctx.notify();
             }
             UserWorkspacesEvent::TransferTeamOwnershipRejected(err) => {
-                self.show_error("Failed to transfer team ownership", Some(err), ctx);
+                self.show_error(
+                    t!("teams.failed_transfer_ownership").to_string(),
+                    Some(err),
+                    ctx,
+                );
             }
             UserWorkspacesEvent::SetTeamMemberRoleSuccess => {
                 self.update_team_members_state(ctx);
-                self.show_success("Successfully updated team member role", ctx);
+                self.show_success(
+                    t!("teams.successfully_updated_member_role").to_string(),
+                    ctx,
+                );
             }
             UserWorkspacesEvent::SetTeamMemberRoleRejected(err) => {
-                self.show_error("Failed to update team member role", Some(err), ctx);
+                self.show_error(
+                    t!("teams.failed_update_member_role").to_string(),
+                    Some(err),
+                    ctx,
+                );
             }
             UserWorkspacesEvent::UpdateWorkspaceSettingsSuccess => {
                 // as of right now, this is only emitted on the billing & usage page
@@ -1014,18 +1033,18 @@ impl TeamsPageView {
     ) {
         match event {
             TeamUpdateManagerEvent::LeaveError => {
-                let error = "Error leaving team".to_string();
+                let error = t!("teams.error_leaving_team").to_string();
                 self.show_error(error, None, ctx);
             }
             TeamUpdateManagerEvent::LeaveSuccess => {
-                self.show_success("Successfully left team", ctx);
+                self.show_success(t!("teams.successfully_left_team").to_string(), ctx);
                 ctx.notify();
             }
             TeamUpdateManagerEvent::RenameTeamSuccess => {
-                self.show_success("Successfully renamed team", ctx)
+                self.show_success(t!("teams.successfully_renamed_team").to_string(), ctx)
             }
             TeamUpdateManagerEvent::RenameTeamError => {
-                self.show_error("Failed to rename team", None, ctx)
+                self.show_error(t!("teams.failed_rename_team").to_string(), None, ctx)
             }
         }
     }
@@ -1297,7 +1316,11 @@ impl TeamsPageView {
     fn copy_invite_link(&mut self, link: &str, ctx: &mut ViewContext<Self>) {
         ctx.clipboard()
             .write(ClipboardContent::plain_text(link.to_string()));
-        self.show_toast("Link copied to clipboard!", ToastFlavor::Default, ctx);
+        self.show_toast(
+            t!("teams.link_copied_to_clipboard").to_string(),
+            ToastFlavor::Default,
+            ctx,
+        );
     }
 
     fn remove_user_from_team(
@@ -1362,7 +1385,8 @@ impl TeamsPageView {
         // Verify no invalid domains before continuing
         let invalid_domains = editor.get_list_of_invalid_words(ctx);
         if !invalid_domains.is_empty() {
-            let error = format!("Invalid domains: {}", invalid_domains.len());
+            let error =
+                t!("teams.invalid_domains_count", count = invalid_domains.len()).to_string();
             self.show_error(error, None, ctx);
             return;
         }
@@ -1382,7 +1406,11 @@ impl TeamsPageView {
             .collect();
 
         self.show_success(
-            format!("Domain restrictions added: {}", unique_domains.len()),
+            t!(
+                "teams.domain_restrictions_added",
+                count = unique_domains.len()
+            )
+            .to_string(),
             ctx,
         );
         self.user_workspaces
@@ -1409,7 +1437,7 @@ impl TeamsPageView {
         // Verify no invalid emails before continuing
         let invalid_emails = editor.get_list_of_invalid_words(ctx);
         if !invalid_emails.is_empty() {
-            let error = format!("Invalid emails: {}", invalid_emails.len());
+            let error = t!("teams.invalid_emails_count", count = invalid_emails.len()).to_string();
             self.show_error(error, None, ctx);
             return;
         }
@@ -1429,9 +1457,9 @@ impl TeamsPageView {
             .collect();
 
         let message = if unique_emails.len() == 1 {
-            "Your invite is on the way!".to_string()
+            t!("teams.invite_on_the_way").to_string()
         } else {
-            format!("Your {} invites are on the way!", unique_emails.len())
+            t!("teams.invites_on_the_way", count = unique_emails.len()).to_string()
         };
         self.show_success(message, ctx);
         self.user_workspaces
@@ -2334,7 +2362,7 @@ impl TeamsWidget {
         if has_admin_permissions {
             section.add_child(
                 Container::new(self.render_sub_text(
-                    INVITE_LINK_TOGGLE_INSTRUCTIONS.into(),
+                    t!("teams.invite_link_toggle_instructions").to_string(),
                     appearance,
                     Some(Coords::uniform(0.).right(48.)),
                 ))
@@ -2422,7 +2450,7 @@ impl TeamsWidget {
                     // Instruction text for invite by email expiry
                     section.add_child(
                         Container::new(self.render_sub_text(
-                            INVITE_BY_EMAIL_EXPIRY_INSTRUCTIONS.into(),
+                            t!("teams.invite_by_email_expiry_instructions").to_string(),
                             appearance,
                             Some(Coords::uniform(0.).right(48.)),
                         ))
@@ -2458,7 +2486,7 @@ impl TeamsWidget {
                     {
                         section.add_child(
                             Container::new(self.render_error_sub_text(
-                                INVALID_EMAILS_INSTRUCTIONS.into(),
+                                t!("teams.invalid_emails_instructions").to_string(),
                                 appearance,
                             ))
                             .with_padding_top(8.)
@@ -2747,7 +2775,7 @@ impl TeamsWidget {
         if has_admin_permissions {
             section.add_child(
                 Container::new(self.render_sub_text(
-                    INVITE_LINK_DOMAIN_RESTRICTIONS_INSTRUCTIONS.into(),
+                    t!("teams.invite_link_domain_restrictions_instructions").to_string(),
                     appearance,
                     Some(Coords::uniform(0.).right(48.)),
                 ))
@@ -2783,9 +2811,10 @@ impl TeamsWidget {
                 && view.approve_domains_block_editor_state.num_chips > 0
             {
                 section.add_child(
-                    Container::new(
-                        self.render_error_sub_text(INVALID_DOMAINS_INSTRUCTIONS.into(), appearance),
-                    )
+                    Container::new(self.render_error_sub_text(
+                        t!("teams.invalid_domains_instructions").to_string(),
+                        appearance,
+                    ))
                     .with_padding_top(8.)
                     .finish(),
                 )
