@@ -3186,7 +3186,7 @@ impl FeaturesPageView {
         self.graphics_backend_dropdown.update(ctx, |dropdown, ctx| {
             if let Some(window) = ctx.windows().platform_window(ctx.window_id()) {
                 let mut items = vec![DropdownItem::new(
-                    "Default",
+                    t!("features.graphics_default"),
                     FeaturesPageAction::SetPreferredGraphicsBackend(None),
                 )];
                 items.extend(window.supported_backends().into_iter().map(|backend| {
@@ -3198,13 +3198,11 @@ impl FeaturesPageView {
                 dropdown.set_items(items, ctx);
             }
             let gpu_settings = GPUSettings::as_ref(ctx);
-            dropdown.set_selected_by_name(
-                gpu_settings
-                    .preferred_backend
-                    .map(|backend| backend.to_label())
-                    .unwrap_or("Default"),
-                ctx,
-            );
+            let selected_name = gpu_settings
+                .preferred_backend
+                .map(|backend| backend.to_label().to_string())
+                .unwrap_or_else(|| t!("features.graphics_default").to_string());
+            dropdown.set_selected_by_name(selected_name, ctx);
         });
     }
 
@@ -4151,7 +4149,7 @@ fn init_display_count_dropdown(
     ctx: &mut ViewContext<Dropdown<FeaturesPageAction>>,
 ) {
     let no_preference = DropdownItem::new(
-        "Active Screen",
+        t!("features.active_screen"),
         //|| {
         FeaturesPageAction::QuakeEditorSetPinScreen(None), //}
     );
@@ -4175,7 +4173,7 @@ fn init_display_count_dropdown(
         Some(idx) if idx.is_valid_given_display_count(display_count) => {
             dropdown.set_selected_by_name(format!("{idx}"), ctx)
         }
-        _ => dropdown.set_selected_by_name("Active Screen", ctx),
+        _ => dropdown.set_selected_by_name(t!("features.active_screen"), ctx),
     };
 }
 
@@ -6725,7 +6723,7 @@ impl SettingsWidget for SmartSelectWidget {
         let selection = SemanticSelection::as_ref(app);
         let mut column = Flex::column();
         column.add_child(render_body_item::<FeaturesPageAction>(
-            "Double-click smart selection".into(),
+            t!("features.double_click_smart_selection").to_string(),
             Some(AdditionalInfo {
                 mouse_state: self.additional_info_link.clone(),
                 on_click_action: Some(FeaturesPageAction::OpenUrl(
@@ -6801,7 +6799,7 @@ impl SettingsWidget for ShowTerminalZeroStateBlockWidget {
         let ui_builder = appearance.ui_builder();
         let terminal_settings = TerminalSettings::as_ref(app);
         render_body_item::<FeaturesPageAction>(
-            "Show help block in new sessions".into(),
+            t!("features.show_help_block_new_sessions").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 ShowTerminalZeroStateBlock::storage_key(),
@@ -6843,7 +6841,7 @@ impl SettingsWidget for CopyOnSelectWidget {
         let ui_builder = appearance.ui_builder();
         let copy_on_select_enabled = SelectionSettings::as_ref(app).copy_on_select_enabled();
         render_body_item::<FeaturesPageAction>(
-            "Copy on select".into(),
+            t!("features.copy_on_select").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 CopyOnSelect::storage_key(),
@@ -6887,7 +6885,7 @@ impl SettingsWidget for NewTabPlacementWidget {
     ) -> Box<dyn Element> {
         render_dropdown_item(
             appearance,
-            "New tab placement",
+            &t!("features.new_tab_placement"),
             None,
             None,
             LocalOnlyIconState::for_setting(
@@ -6922,7 +6920,7 @@ impl SettingsWidget for DefaultSessionModeWidget {
         app: &AppContext,
     ) -> Box<dyn Element> {
         let label = render_dropdown_item_label(
-            "Default mode for new sessions".to_string(),
+            t!("features.default_mode_new_sessions").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 DefaultSessionMode::storage_key(),
@@ -6976,7 +6974,7 @@ impl SettingsWidget for WorkflowsInCommandSearch {
         let ui_builder = appearance.ui_builder();
         let workflow_settings = CommandSearchSettings::as_ref(app);
         render_body_item::<FeaturesPageAction>(
-            "Show Global Workflows in Command Search (ctrl-r)".into(),
+            t!("features.show_global_workflows_command_search").to_string(),
             Some(AdditionalInfo {
                 mouse_state: self.additional_info_link.clone(),
                 on_click_action: Some(FeaturesPageAction::OpenUrl(
@@ -7031,13 +7029,13 @@ impl SettingsWidget for LinuxSelectionClipboardWidget {
         app: &AppContext,
     ) -> Box<dyn Element> {
         render_body_item::<FeaturesPageAction>(
-            "Honor linux selection clipboard".into(),
+            t!("features.honor_linux_selection_clipboard").to_string(),
             Some(AdditionalInfo {
                 mouse_state: self.additional_info_link.clone(),
                 on_click_action: None,
                 secondary_text: None,
                 tooltip_override_text: Some(
-                    "Whether the Linux primary clipboard should be supported.".into(),
+                    t!("features.linux_selection_clipboard_description").to_string(),
                 ),
             }),
             LocalOnlyIconState::for_setting(
@@ -7085,7 +7083,7 @@ impl SettingsWidget for GPUWidget {
     ) -> Box<dyn Element> {
         let gpu_settings = GPUSettings::as_ref(app);
         let mut col = Flex::column().with_child(render_body_item::<FeaturesPageAction>(
-            "Prefer rendering new windows with integrated GPU (low power)".into(),
+            t!("features.prefer_integrated_gpu").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 PreferLowPowerGPU::storage_key(),
@@ -7158,12 +7156,12 @@ impl SettingsWidget for WindowSystemWidget {
         let mut children = Flex::column();
         let force_x11 = *LinuxAppConfiguration::as_ref(app).force_x11.value();
         children.add_child(render_body_item::<FeaturesPageAction>(
-            "Use Wayland for window management".into(),
+            t!("features.use_wayland_window_management").to_string(),
             Some(AdditionalInfo {
                 mouse_state: self.additional_info_link.clone(),
                 on_click_action: None,
                 secondary_text: None,
-                tooltip_override_text: Some("Enables the use of Wayland".to_string()),
+                tooltip_override_text: Some(t!("features.use_wayland_tooltip").to_string()),
             }),
             LocalOnlyIconState::for_setting(
                 ForceX11::storage_key(),
@@ -7188,12 +7186,10 @@ impl SettingsWidget for WindowSystemWidget {
             None,
         ));
 
-        let mut secondary_text =
-            "Enabling this setting disables global hotkey support. When disabled, text \
-                    may be blurry if your Wayland compositor is using fraction scaling (ex: 125%)."
-                .to_string();
+        let mut secondary_text = t!("features.use_wayland_description").to_string();
         if view.force_x11_changed {
-            secondary_text.push_str("\n\nRestart Warp for changes to take effect.");
+            secondary_text.push_str("\n\n");
+            secondary_text.push_str(&t!("features.restart_warp_changes"));
         }
         let warp_theme = appearance.theme();
         children.add_child(
@@ -7234,7 +7230,7 @@ impl SettingsWidget for GraphicsBackendWidget {
         let theme = appearance.theme();
         let dropdown = render_dropdown_item(
             appearance,
-            "Preferred graphics backend",
+            &t!("features.preferred_graphics_backend"),
             None,
             None,
             LocalOnlyIconState::for_setting(
@@ -7255,7 +7251,14 @@ impl SettingsWidget for GraphicsBackendWidget {
             col.add_child(
                 appearance
                     .ui_builder()
-                    .wrappable_text(format!("Current backend: {}", backend.to_label()), true)
+                    .wrappable_text(
+                        t!(
+                            "features.current_graphics_backend",
+                            backend = backend.to_label()
+                        )
+                        .to_string(),
+                        true,
+                    )
                     .with_style(UiComponentStyles {
                         font_color: Some(theme.sub_text_color(theme.background()).into_solid()),
                         ..Default::default()
