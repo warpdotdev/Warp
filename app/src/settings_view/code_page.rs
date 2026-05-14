@@ -102,8 +102,8 @@ impl CodeSubpage {
 
     pub fn title(&self) -> &'static str {
         match self {
-            Self::Indexing => "Codebase Indexing",
-            Self::EditorAndCodeReview => "Editor and Code Review",
+            Self::Indexing => "settings.codebase_indexing",
+            Self::EditorAndCodeReview => "settings.editor_and_code_review",
         }
     }
 }
@@ -301,7 +301,10 @@ impl CodeSettingsPageView {
             ]);
             let categories = vec![
                 Category::new(t!("settings.codebase_indexing"), codebase_indexing_widgets),
-                Category::new(t!("settings.editor_and_code_review"), code_editor_review_widgets),
+                Category::new(
+                    t!("settings.editor_and_code_review"),
+                    code_editor_review_widgets,
+                ),
             ];
             PageType::new_categorized(categories, None)
         } else {
@@ -425,7 +428,10 @@ impl CodeSettingsPageView {
             ]);
             let categories = vec![
                 Category::new(t!("settings.codebase_indexing"), codebase_indexing_widgets),
-                Category::new(t!("settings.editor_and_code_review"), code_editor_review_widgets),
+                Category::new(
+                    t!("settings.editor_and_code_review"),
+                    code_editor_review_widgets,
+                ),
             ];
             PageType::new_categorized(categories, None)
         } else {
@@ -1334,7 +1340,7 @@ impl CodePageWidget {
                 .with_text_and_icon_label(
                     warpui::ui_components::button::TextAndIcon::new(
                         warpui::ui_components::button::TextAndIconAlignment::IconFirst,
-                        "Open project rules",
+                        t!("settings.open_project_rules").to_string(),
                         warpui::elements::Icon::new(
                             "bundled/svg/file-code-02.svg",
                             theme.foreground(),
@@ -1495,37 +1501,52 @@ impl CodePageWidget {
         let (status_text, status_color) = if index_state.has_pending() {
             let progress_text = match index_state.sync_progress() {
                 Some(SyncProgress::Discovering { total_nodes }) => {
-                    Cow::from(format!("Discovered {total_nodes} chunks"))
+                    Cow::Owned(t!("settings.discovered_chunks", count = total_nodes).to_string())
                 }
                 Some(SyncProgress::Syncing {
                     completed_nodes,
                     total_nodes,
-                }) => Cow::from(format!("Syncing - {completed_nodes} / {total_nodes}")),
-                None => Cow::from("Syncing..."),
+                }) => Cow::Owned(
+                    t!(
+                        "settings.syncing_progress",
+                        completed = completed_nodes,
+                        total = total_nodes
+                    )
+                    .to_string(),
+                ),
+                None => Cow::Owned(t!("settings.syncing").to_string()),
             };
             (progress_text, theme.disabled_ui_text_color().into_solid())
         } else if let Some(completed_successfully) = index_state.last_sync_successful() {
             should_render_retry = true;
             let (text, color, status_icon) = if completed_successfully {
-                ("Synced", theme.ansi_fg_green(), Icon::Check)
+                (
+                    Cow::Owned(t!("settings.synced").to_string()),
+                    theme.ansi_fg_green(),
+                    Icon::Check,
+                )
             } else if let Some(CodebaseIndexFinishedStatus::Failed(
                 CodebaseIndexingError::ExceededMaxFileLimit
                 | CodebaseIndexingError::MaxDepthExceeded,
             )) = index_state.last_sync_result()
             {
                 (
-                    "Codebase too large",
+                    Cow::Owned(t!("settings.codebase_too_large").to_string()),
                     theme.ui_warning_color(),
                     Icon::AlertTriangle,
                 )
             } else if index_state.has_synced_version() {
                 (
-                    "Stale",
+                    Cow::Owned(t!("settings.stale").to_string()),
                     theme.nonactive_ui_detail().into_solid(),
                     Icon::ClockRefresh,
                 )
             } else {
-                ("Failed", theme.ui_error_color(), Icon::AlertTriangle)
+                (
+                    Cow::Owned(t!("settings.failed").to_string()),
+                    theme.ui_error_color(),
+                    Icon::AlertTriangle,
+                )
             };
 
             label_row.add_child(
@@ -1540,11 +1561,11 @@ impl CodePageWidget {
                 .with_margin_right(4.)
                 .finish(),
             );
-            (Cow::from(text), color)
+            (text, color)
         } else {
             log::warn!("No index state for codebase");
             (
-                Cow::from("No index built"),
+                Cow::Owned(t!("settings.no_index_built").to_string()),
                 theme.nonactive_ui_text_color().into_solid(),
             )
         };
@@ -2056,7 +2077,7 @@ impl SettingsWidget for CodeSubpageHeaderWidget {
         appearance: &Appearance,
         _app: &AppContext,
     ) -> Box<dyn Element> {
-        build_sub_header(appearance, self.title, None)
+        build_sub_header(appearance, crate::i18n::t(self.title), None)
             .with_padding_bottom(HEADER_PADDING)
             .finish()
     }
@@ -2227,7 +2248,7 @@ impl SettingsWidget for AutoOpenCodeReviewPaneCodeWidget {
     ) -> Box<dyn Element> {
         let general_settings = GeneralSettings::as_ref(app);
         render_body_item::<CodeSettingsPageAction>(
-            "Auto open code review panel".into(),
+            t!("settings.auto_open_code_review_panel").into(),
             None,
             LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
@@ -2241,7 +2262,7 @@ impl SettingsWidget for AutoOpenCodeReviewPaneCodeWidget {
                     ctx.dispatch_typed_action(CodeSettingsPageAction::ToggleAutoOpenCodeReviewPane);
                 })
                 .finish(),
-            Some("When this setting is on, the code review panel will open on the first accepted diff of a conversation".into()),
+            Some(t!("settings.auto_open_code_review_panel_description").into()),
         )
     }
 }
@@ -2304,7 +2325,7 @@ impl SettingsWidget for CodeReviewPanelToggleWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<CodeSettingsPageAction>(
-            "Show code review button".into(),
+            t!("settings.show_code_review_button").into(),
             None,
             LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
@@ -2318,10 +2339,7 @@ impl SettingsWidget for CodeReviewPanelToggleWidget {
                     ctx.dispatch_typed_action(CodeSettingsPageAction::ToggleCodeReviewPanel);
                 })
                 .finish(),
-            Some(
-                "Show a button in the top right of the window to toggle the code review panel."
-                    .into(),
-            ),
+            Some(t!("settings.show_code_review_button_description").into()),
         )
     }
 }
@@ -2347,7 +2365,7 @@ impl SettingsWidget for CodeReviewDiffStatsToggleWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<CodeSettingsPageAction>(
-            "Show diff stats on code review button".into(),
+            t!("settings.show_code_review_diff_stats").into(),
             None,
             LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
@@ -2363,7 +2381,7 @@ impl SettingsWidget for CodeReviewDiffStatsToggleWidget {
                     );
                 })
                 .finish(),
-            Some("Show lines added and removed counts on the code review button.".into()),
+            Some(t!("settings.show_code_review_diff_stats_description").into()),
         )
     }
 }
@@ -2389,7 +2407,7 @@ impl SettingsWidget for ProjectExplorerToggleWidget {
         let code_settings = CodeSettings::as_ref(app);
 
         render_body_item::<CodeSettingsPageAction>(
-            "Project explorer".into(),
+            t!("settings.project_explorer").into(),
             None,
             LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
@@ -2403,10 +2421,7 @@ impl SettingsWidget for ProjectExplorerToggleWidget {
                     ctx.dispatch_typed_action(CodeSettingsPageAction::ToggleProjectExplorer);
                 })
                 .finish(),
-            Some(
-                "Adds an IDE-style project explorer / file tree to the left side tools panel."
-                    .into(),
-            ),
+            Some(t!("settings.project_explorer_description").into()),
         )
     }
 }
@@ -2432,7 +2447,7 @@ impl SettingsWidget for GlobalSearchToggleWidget {
         let code_settings = CodeSettings::as_ref(app);
 
         render_body_item::<CodeSettingsPageAction>(
-            "Global file search".into(),
+            t!("settings.global_file_search").into(),
             None,
             LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
@@ -2446,7 +2461,7 @@ impl SettingsWidget for GlobalSearchToggleWidget {
                     ctx.dispatch_typed_action(CodeSettingsPageAction::ToggleGlobalSearch);
                 })
                 .finish(),
-            Some("Adds global file search to the left side tools panel.".into()),
+            Some(t!("settings.global_file_search_description").into()),
         )
     }
 }
