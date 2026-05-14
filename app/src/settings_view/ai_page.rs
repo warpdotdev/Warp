@@ -5435,7 +5435,7 @@ impl AIFactWidget {
         app: &warpui::AppContext,
     ) -> Box<dyn Element> {
         let toggle = render_ai_setting_toggle::<MemoryEnabled>(
-            "Rules",
+            t!("ai_settings_page.rules").to_string(),
             AISettingsPageAction::ToggleRules,
             *ai_settings.memory_enabled,
             ai_settings.is_any_ai_enabled(app),
@@ -5445,11 +5445,9 @@ impl AIFactWidget {
         );
 
         let rules_description = vec![
-            FormattedTextFragment::plain_text(
-                "Rules help the Warp Agent follow your conventions, whether for codebases or specific workflows. ",
-            ),
+            FormattedTextFragment::plain_text(t!("ai_settings_page.rules_description")),
             FormattedTextFragment::hyperlink(
-                "Learn more",
+                t!("settings.learn_more"),
                 "https://docs.warp.dev/agent-platform/capabilities/rules",
             ),
         ];
@@ -5486,7 +5484,7 @@ impl AIFactWidget {
         app: &warpui::AppContext,
     ) -> Box<dyn Element> {
         let toggle = render_ai_setting_toggle::<RuleSuggestionsEnabled>(
-            "Suggested Rules",
+            t!("ai_settings_page.suggested_rules").to_string(),
             AISettingsPageAction::ToggleRuleSuggestions,
             *ai_settings.rule_suggestions_enabled_internal,
             ai_settings.is_any_ai_enabled(app),
@@ -5496,7 +5494,7 @@ impl AIFactWidget {
         );
 
         let description = render_ai_setting_description(
-            "Let AI suggest rules to save based on your interactions.",
+            t!("ai_settings_page.suggested_rules_description").to_string(),
             ai_settings.is_any_ai_enabled(app),
             app,
         );
@@ -5514,7 +5512,7 @@ impl AIFactWidget {
         app: &warpui::AppContext,
     ) -> Box<dyn Element> {
         let toggle = render_ai_setting_toggle::<WarpDriveContextEnabled>(
-            "Warp Drive as agent context",
+            t!("ai_settings_page.warp_drive_agent_context").to_string(),
             AISettingsPageAction::ToggleWarpDriveContext,
             *ai_settings.warp_drive_context_enabled,
             ai_settings.is_any_ai_enabled(app),
@@ -5524,7 +5522,7 @@ impl AIFactWidget {
         );
 
         let description = render_ai_setting_description(
-            "The Warp Agent can leverage your Warp Drive Contents to tailor responses to your personal and team developer workflows and environments. This includes any Workflows, Notebooks, and Environment Variables.",
+            t!("ai_settings_page.warp_drive_agent_context_description").to_string(),
             ai_settings.is_any_ai_enabled(app),
             app,
         );
@@ -5558,14 +5556,15 @@ impl SettingsWidget for AIFactWidget {
 
         let header = build_sub_header(
             appearance,
-            "Knowledge",
+            t!("ai_settings_page.knowledge").to_string(),
             Some(styles::header_font_color(is_any_ai_enabled, app)),
         )
         .with_margin_bottom(HEADER_PADDING)
         .finish();
 
+        let manage_rules_label = t!("ai_settings_page.manage_rules").to_string();
         let button = render_full_pane_width_ai_button(
-            "Manage rules",
+            &manage_rules_label,
             is_any_ai_enabled,
             self.manage_rules_button.clone(),
             AISettingsPageAction::OpenAIFactCollection,
