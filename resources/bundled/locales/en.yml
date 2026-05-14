@@ -1988,6 +1988,8 @@ en:
   buy_credits_banner:
     auto_reload: "Auto reload"
     auto_reload_tooltip: "When enabled, auto reload will purchase {credits} credits when your credit balance gets low"
+    monthly_limit_reached_title: "Monthly limit reached"
+    out_of_credits_title: "Out of credits"
     monthly_limit_reached: "Your monthly spend limit has been reached. Increase it to continue."
     contact_admin_increase_limit: "Contact a team admin to increase monthly limit."
     purchase_exceeds_limit_start: "Purchasing these credits would take you over your monthly spend limit. "

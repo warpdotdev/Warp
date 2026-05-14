@@ -1988,6 +1988,8 @@ zh-CN:
   buy_credits_banner:
     auto_reload: "自动充值"
     auto_reload_tooltip: "启用后，当 credits 余额较低时会自动购买 {credits} credits"
+    monthly_limit_reached_title: "已达到每月上限"
+    out_of_credits_title: "Credits 已用完"
     monthly_limit_reached: "你的每月支出上限已达到。请提高上限后继续。"
     contact_admin_increase_limit: "请联系团队管理员提高每月上限。"
     purchase_exceeds_limit_start: "购买这些 credits 会超过你的每月支出上限。"
