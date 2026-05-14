@@ -1955,20 +1955,9 @@ impl AISettings {
         });
     }
 
-    pub fn is_ai_disabled_due_to_remote_session_org_policy(&self, app: &AppContext) -> bool {
-        let contains_remote_blocks = FocusedTerminalInfo::as_ref(app).contains_any_remote_blocks();
-
-        let contains_restored_remote_blocks =
-            FocusedTerminalInfo::as_ref(app).contains_any_restored_remote_blocks();
-
-        let is_ai_allowed_in_remote_sessions =
-            UserWorkspaces::as_ref(app).is_ai_allowed_in_remote_sessions();
-
-        if is_ai_allowed_in_remote_sessions {
-            return false;
-        }
-
-        contains_remote_blocks || contains_restored_remote_blocks
+    pub fn is_ai_disabled_due_to_remote_session_org_policy(&self, _app: &AppContext) -> bool {
+        // OpenWarp 没有托管组织策略，远程 SSH 会话不能因此关闭本地 Agent 能力。
+        false
     }
 
     pub fn is_any_ai_enabled(&self, app: &AppContext) -> bool {

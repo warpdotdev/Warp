@@ -2845,6 +2845,33 @@ fn test_new_conversation_keybinding_requires_double_press_in_non_empty_agent_vie
 }
 
 #[test]
+fn test_cmd_enter_enters_agent_view_when_input_is_focused() {
+    App::test((), |mut app| async move {
+        let _agent_view_flag = FeatureFlag::AgentView.override_enabled(true);
+        initialize_app(&mut app);
+
+        let terminal = add_window_with_bootstrapped_terminal(&mut app, None, None).await;
+        let input = terminal.read(&app, |terminal, _| terminal.input().clone());
+
+        input.update(&mut app, |input, ctx| {
+            input.user_insert("draft", ctx);
+            input.handle_editor_event(&EditorEvent::CmdEnter, ctx);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            assert!(view
+                .agent_view_controller()
+                .as_ref(ctx)
+                .agent_view_state()
+                .is_fullscreen());
+        });
+        input.read(&app, |input, ctx| {
+            assert_eq!(input.buffer_text(ctx), "draft");
+        });
+    });
+}
+
+#[test]
 fn test_new_conversation_keybinding_does_not_require_confirmation_in_empty_agent_view() {
     App::test((), |mut app| async move {
         let _agent_view_flag = FeatureFlag::AgentView.override_enabled(true);

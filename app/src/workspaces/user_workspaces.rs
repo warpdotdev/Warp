@@ -700,13 +700,8 @@ impl UserWorkspaces {
     }
 
     pub fn is_ai_allowed_in_remote_sessions(&self) -> bool {
-        self.current_team()
-            .map(|team| {
-                team.organization_settings
-                    .ai_permissions_settings
-                    .allow_ai_in_remote_sessions
-            })
-            .unwrap_or(false)
+        // OpenWarp 没有托管组织策略，远程 SSH 会话始终允许使用本地 Agent 能力。
+        true
     }
 
     pub fn get_remote_session_regex_list(&self) -> Vec<Regex> {
@@ -887,3 +882,15 @@ impl SingletonEntity for UserWorkspaces {}
 
 // OpenWarp(本地化,Phase 5):`user_workspaces_tests.rs` 全部针对 team RPC 路径(`MockTeamClient` / `mockall::Sequence`),
 // 本地化后这些路径不可达，整文件物理删除。
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_team_allows_ai_in_remote_sessions() {
+        let workspaces = UserWorkspaces::new(vec![], None);
+
+        assert!(workspaces.is_ai_allowed_in_remote_sessions());
+    }
+}

@@ -5336,6 +5336,12 @@ impl Workspace {
             return;
         };
 
+        if AISettings::as_ref(ctx).default_session_mode(ctx) == DefaultSessionMode::Agent {
+            terminal_view.update(ctx, |view, _| {
+                view.set_enter_agent_view_after_ssh_bootstrap();
+            });
+        }
+
         // 1. 同步读 keychain(主线程 OK)。auth_type 决定查 password 还是 passphrase。
         let secret_kind = match server.auth_type {
             warp_ssh_manager::AuthType::Password => SecretKind::Password,

@@ -12011,6 +12011,20 @@ impl Input {
                     return;
                 }
 
+                if FeatureFlag::AgentView.is_enabled() {
+                    let mut prompt = self.editor.as_ref(ctx).buffer_text(ctx);
+                    prompt.truncate(prompt.trim_end().len());
+                    let initial_prompt = (!prompt.trim().is_empty()).then_some(prompt);
+                    ctx.emit(Event::EnterAgentView {
+                        initial_prompt,
+                        conversation_id: None,
+                        origin: AgentViewEntryOrigin::Input {
+                            was_prompt_autodetected: false,
+                        },
+                    });
+                    return;
+                }
+
                 ctx.emit(Event::UnhandledCmdEnter)
             }
         }

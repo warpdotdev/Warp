@@ -2339,6 +2339,9 @@ pub struct TerminalView {
     /// `pane_tree_from_template_recursive` when a tab config has both
     /// commands and `PaneMode::Agent`.
     enter_agent_view_after_pending_commands: bool,
+    /// SSH 管理器创建的 tab 会先启动本地 shell，再执行 ssh 并等待远端 shell
+    /// bootstrap；默认 Agent 模式必须延后到远端会话可用后再进入。
+    enter_agent_view_after_ssh_bootstrap: bool,
     slow_bootstrap_banner: ViewHandle<Banner<TerminalAction>>,
     is_slow_bootstrap_banner_open: bool,
 
@@ -3766,6 +3769,7 @@ impl TerminalView {
             is_login_shell_bootstrapped: false,
             awaiting_pending_command_completion: false,
             enter_agent_view_after_pending_commands: false,
+            enter_agent_view_after_ssh_bootstrap: false,
             slow_bootstrap_banner,
             is_slow_bootstrap_banner_open: false,
             incompatible_configuration_banner,
@@ -11224,6 +11228,8 @@ impl TerminalView {
         }
 
         let is_subshell_or_ssh = session.is_subshell_or_ssh();
+        let is_ssh_session = matches!(session.session_type(), SessionType::WarpifiedRemote { .. })
+            || session.is_legacy_ssh_session();
 
         // Make sure we decorate any text that is already in the input.  We
         // need to make sure external commands have finished loading before
@@ -11252,6 +11258,15 @@ impl TerminalView {
         self.any_session_contains_restored_remote_blocks = self.contains_restored_remote_blocks();
         self.any_session_contains_remote_blocks |= self.active_block_is_considered_remote(ctx);
         self.update_focused_terminal_info(ctx);
+
+        if self.enter_agent_view_after_ssh_bootstrap && is_ssh_session {
+            self.enter_agent_view_after_ssh_bootstrap = false;
+            self.enter_agent_view_for_new_conversation(
+                None,
+                AgentViewEntryOrigin::DefaultSessionMode,
+                ctx,
+            );
+        }
 
         // At the end of bootstrapping, set the title to the title of
         // the selected conversation. If there is no selected conversation,
@@ -13217,6 +13232,10 @@ impl TerminalView {
     /// guided tutorial.
     pub fn clear_enter_agent_view_after_pending_commands(&mut self) {
         self.enter_agent_view_after_pending_commands = false;
+    }
+
+    pub fn set_enter_agent_view_after_ssh_bootstrap(&mut self) {
+        self.enter_agent_view_after_ssh_bootstrap = true;
     }
 
     #[cfg(not(target_family = "wasm"))]
