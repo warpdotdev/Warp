@@ -182,8 +182,6 @@ impl AtContextMenuDisabledReason {
     }
 }
 
-const AT_CONTEXT_TOOLTIP: &str = "Attach context";
-
 const BLURRED_OPACITY: Opacity = 50;
 
 // Threshold calculation that estimates the width needed for the profile/model selector
@@ -356,7 +354,7 @@ impl UniversalDeveloperInputButtonBar {
         let at_button_view = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new("", PromptIconButtonTheme::new(false))
                 .with_icon(Icon::AtSign)
-                .with_tooltip(AT_CONTEXT_TOOLTIP)
+                .with_tooltip(t!("ai_ext.attach_context"))
                 .with_size(button_size)
                 .with_disabled_theme(UDIDisabledButtonTheme)
                 .with_tooltip_alignment(TooltipAlignment::Left)
@@ -697,7 +695,7 @@ impl UniversalDeveloperInputButtonBar {
             button.set_tooltip(
                 disable_reason
                     .map(|reason| reason.tooltip_text())
-                    .or(Some(AT_CONTEXT_TOOLTIP.to_string())),
+                    .or_else(|| Some(t!("ai_ext.attach_context").to_string())),
                 ctx,
             );
             ctx.notify();

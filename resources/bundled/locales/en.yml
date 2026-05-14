@@ -1255,6 +1255,7 @@ en:
     choose_environment: "Choose an environment"
     voice_input: "Voice input"
     attach_file: "Attach file"
+    attach_context: "Attach context"
     hand_off_to_cloud: "Hand off to cloud"
     open_file_explorer: "Open file explorer"
     open_rich_input: "Open Rich Input"
@@ -1273,6 +1274,36 @@ en:
 
   terminal:
     for_terminal: "for terminal"
+    run_commands: "Run commands"
+    steer_running_agent: "Steer the running agent"
+    ask_follow_up: "Ask a follow up"
+    tell_agent_what_to_build: "Tell the agent what to build..."
+    enter_prompt_for_agent: "Enter prompt for {agent}..."
+    handoff_to_cloud: "Handoff to cloud"
+    hand_off_to_environment: "Hand off to {environment}"
+    kick_off_cloud_agent: "Kick off a cloud agent"
+    ai_command_search_hint: "Type '#' for AI command suggestions"
+
+  requested_command:
+    reject: "Reject"
+    run: "Run"
+    done: "Done"
+    generating_command: "Generating command..."
+    command_waiting_for_user: "OK if I run this command and read the output?"
+    mcp_tool_waiting_for_user: "OK if I call this MCP tool?"
+    monitoring_command: "Agent is monitoring command..."
+    agent_needs_input: "Agent needs your input to continue"
+    user_in_control: "User is in control."
+    paused_user_in_control: "Paused agent. User is in control."
+    user_in_control_short: "User in control"
+    agent_errored: "Agent ran into an issue. Take over control."
+    viewing_command_detail: "Viewing command detail"
+    viewing_mcp_tool_detail: "Viewing MCP tool call detail"
+
+  code_diff:
+    refine: "Refine"
+    accept_and_continue_with_agent: "Accept and continue with agent"
+    iterate_with_agent: "Iterate with agent"
 
   # ── Prompt Alert ──
   prompt_alert:
@@ -1633,6 +1664,14 @@ en:
     powerful_cloud_agents_suffix: " for more powerful cloud agents."
     authenticate_with_github: "Authenticate with GitHub"
     free_credits: "Free credits"
+    api_key: "API key"
+    choose_type: "Choose a type"
+    inherit_key_from_environment: "Inherit key from environment"
+    search_models: "Search models"
+    choose_agent_model: "Choose agent model"
+    no_results: "No results"
+    default_model: "Default model"
+    no_environment: "(no environment)"
 
   # ── SSH File Upload ──
   ssh_file_upload:
@@ -1697,6 +1736,7 @@ en:
     cut: "Cut"
     copy: "Copy"
     paste: "Paste"
+    edit: "Edit"
     close: "Close"
     cancel: "Cancel"
     update: "Update"
@@ -1714,6 +1754,7 @@ en:
     new_badge: "New"
     period: "."
     search: "Search"
+    accept: "Accept"
     expand: "Expand"
     collapse: "Collapse"
     custom_ellipsis: "Custom..."

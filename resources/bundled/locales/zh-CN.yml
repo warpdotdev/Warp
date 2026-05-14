@@ -1255,6 +1255,7 @@ zh-CN:
     choose_environment: "选择环境"
     voice_input: "语音输入"
     attach_file: "附加文件"
+    attach_context: "附加上下文"
     hand_off_to_cloud: "Handoff 到云端"
     open_file_explorer: "打开文件浏览器"
     open_rich_input: "打开富文本输入"
@@ -1273,6 +1274,36 @@ zh-CN:
 
   terminal:
     for_terminal: "返回终端"
+    run_commands: "运行命令"
+    steer_running_agent: "引导正在运行的 Agent"
+    ask_follow_up: "继续追问"
+    tell_agent_what_to_build: "告诉 Agent 要构建什么..."
+    enter_prompt_for_agent: "输入给 {agent} 的提示词..."
+    handoff_to_cloud: "Handoff 到云端"
+    hand_off_to_environment: "Handoff 到 {environment}"
+    kick_off_cloud_agent: "启动云端 Agent"
+    ai_command_search_hint: "输入 '#' 获取 AI 命令建议"
+
+  requested_command:
+    reject: "拒绝"
+    run: "运行"
+    done: "完成"
+    generating_command: "正在生成命令..."
+    command_waiting_for_user: "可以运行此命令并读取输出吗？"
+    mcp_tool_waiting_for_user: "可以调用此 MCP tool 吗？"
+    monitoring_command: "Agent 正在监控命令..."
+    agent_needs_input: "Agent 需要你的输入才能继续"
+    user_in_control: "用户正在控制。"
+    paused_user_in_control: "已暂停 Agent。用户正在控制。"
+    user_in_control_short: "用户控制中"
+    agent_errored: "Agent 遇到问题。请接管控制。"
+    viewing_command_detail: "正在查看命令详情"
+    viewing_mcp_tool_detail: "正在查看 MCP tool 调用详情"
+
+  code_diff:
+    refine: "优化"
+    accept_and_continue_with_agent: "接受并继续使用 Agent"
+    iterate_with_agent: "让 Agent 继续迭代"
 
   # ── Prompt Alert ──
   prompt_alert:
@@ -1633,6 +1664,14 @@ zh-CN:
     powerful_cloud_agents_suffix: "以获得更强大的云端 Agents。"
     authenticate_with_github: "使用 GitHub 认证"
     free_credits: "免费 credits"
+    api_key: "API key"
+    choose_type: "选择类型"
+    inherit_key_from_environment: "从环境继承 key"
+    search_models: "搜索模型"
+    choose_agent_model: "选择 Agent 模型"
+    no_results: "无结果"
+    default_model: "默认模型"
+    no_environment: "（无环境）"
 
   # ── SSH 文件上传 ──
   ssh_file_upload:
@@ -1697,6 +1736,7 @@ zh-CN:
     cut: "剪切"
     copy: "复制"
     paste: "粘贴"
+    edit: "编辑"
     close: "关闭"
     cancel: "取消"
     update: "更新"
@@ -1714,6 +1754,7 @@ zh-CN:
     new_badge: "新功能"
     period: "。"
     search: "搜索"
+    accept: "接受"
     expand: "展开"
     collapse: "折叠"
     custom_ellipsis: "自定义..."

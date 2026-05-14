@@ -412,10 +412,6 @@ pub const DEBOUNCE_AI_QUERY_PREDICTION_PERIOD: Duration = Duration::from_millis(
 pub(super) const CLI_AGENT_RICH_INPUT_EDITOR_MAX_HEIGHT: f32 = 236.;
 pub(super) const CLI_AGENT_RICH_INPUT_EDITOR_TOP_PADDING: f32 = 10.;
 pub(super) const CLI_AGENT_RICH_INPUT_EDITOR_BOTTOM_PADDING: f32 = 8.;
-pub(super) const CLI_AGENT_RICH_INPUT_HINT_TEXT: &str = "Tell the agent what to build...";
-
-const CLOUD_MODE_V2_HINT_TEXT: &str = "Kick off a cloud agent";
-const CLOUD_HANDOFF_HINT_TEXT: &str = "Handoff to cloud";
 const SHORT_CIRCUIT_HIGHLIGHTING_ACTIONS: [Option<PlainTextEditorViewAction>; 7] = [
     Some(PlainTextEditorViewAction::Space),
     Some(PlainTextEditorViewAction::NonExpandingSpace),
@@ -439,10 +435,6 @@ pub const COMPLETIONS_MENU_WIDTH: f32 = 330.;
 pub const OPEN_COMPLETIONS_KEYBINDING_NAME: &str = "input:open_completion_suggestions";
 pub const INPUT_A11Y_LABEL: &str = "Command Input.";
 pub const INPUT_A11Y_HELPER: &str = "Input your shell command, press enter to execute. Press cmd-up to navigate to output of previously executed commands. Press cmd-l to re-focus command input.";
-pub const AI_COMMAND_SEARCH_HINT_TEXT: &str = "Type '#' for AI command suggestions";
-
-const AGENT_MODE_AI_DISABLED_AUTODETECTION_DISABLED_HINT_TEXT: &str = "Run commands";
-
 // Rotating hint text options for new Agent Mode conversations
 const AGENT_MODE_HINT_OPTIONS: &[&str] = &[
     "Warp anything e.g. Deploy my React app to Vercel and set up environment variables",
@@ -485,10 +477,8 @@ fn get_stable_agent_mode_hint_text(cached_hint: &mut Option<&'static str>) -> &'
     }
 }
 
-const AGENT_MODE_AI_ENABLED_STEER_HINT_TEXT_UDI: &str = "Steer the running agent";
 const AGENT_MODE_AI_ENABLED_STEER_HINT_TEXT_CLASSIC: &str =
     "Steer the running agent, or backspace to exit";
-const AGENT_MODE_AI_ENABLED_FOLLOW_UP_HINT_TEXT_UDI: &str = "Ask a follow up";
 const AGENT_MODE_AI_ENABLED_FOLLOW_UP_HINT_TEXT_CLASSIC: &str =
     "Ask a follow up, or backspace to exit";
 
@@ -5799,7 +5789,7 @@ impl Input {
     // Returns the appropriate hint/placeholder text to render in an empty input when Agent Mode is
     // enabled (the feature flag, not the specific AI input mode). This method ensures that hint text
     // is cached when needed for new conversations.
-    fn agent_mode_hint_text(&mut self, app: &AppContext) -> &str {
+    fn agent_mode_hint_text(&mut self, app: &AppContext) -> Cow<'static, str> {
         let input_model = self.ai_input_model.as_ref(app);
         let is_udi_enabled = InputSettings::as_ref(app).is_universal_developer_input_enabled(app);
 
@@ -5807,10 +5797,12 @@ impl Input {
             input_model.input_type(),
             input_model.should_run_input_autodetection(app),
         ) {
-            (InputType::Shell, false) => AGENT_MODE_AI_DISABLED_AUTODETECTION_DISABLED_HINT_TEXT,
+            (InputType::Shell, false) => Cow::Owned(t!("terminal.run_commands").to_string()),
             (InputType::Shell, true) => {
                 // Ensure hint text is cached for new conversations
-                get_stable_agent_mode_hint_text(&mut self.cached_agent_mode_hint_text)
+                Cow::Borrowed(get_stable_agent_mode_hint_text(
+                    &mut self.cached_agent_mode_hint_text,
+                ))
             }
             (InputType::AI, _) => {
                 // Follow the `agent_indicator` pattern (see `app/src/tab.rs`):
@@ -5824,21 +5816,23 @@ impl Input {
                 {
                     Some(status) if status.is_in_progress() => {
                         if is_udi_enabled {
-                            AGENT_MODE_AI_ENABLED_STEER_HINT_TEXT_UDI
+                            Cow::Owned(t!("terminal.steer_running_agent").to_string())
                         } else {
-                            AGENT_MODE_AI_ENABLED_STEER_HINT_TEXT_CLASSIC
+                            Cow::Borrowed(AGENT_MODE_AI_ENABLED_STEER_HINT_TEXT_CLASSIC)
                         }
                     }
                     Some(_) => {
                         if is_udi_enabled {
-                            AGENT_MODE_AI_ENABLED_FOLLOW_UP_HINT_TEXT_UDI
+                            Cow::Owned(t!("terminal.ask_follow_up").to_string())
                         } else {
-                            AGENT_MODE_AI_ENABLED_FOLLOW_UP_HINT_TEXT_CLASSIC
+                            Cow::Borrowed(AGENT_MODE_AI_ENABLED_FOLLOW_UP_HINT_TEXT_CLASSIC)
                         }
                     }
                     None => {
                         // Ensure hint text is cached for new conversations
-                        get_stable_agent_mode_hint_text(&mut self.cached_agent_mode_hint_text)
+                        Cow::Borrowed(get_stable_agent_mode_hint_text(
+                            &mut self.cached_agent_mode_hint_text,
+                        ))
                     }
                 }
             }
@@ -6244,19 +6238,24 @@ impl Input {
     }
     fn cli_agent_rich_input_hint_text(&self, ctx: &ViewContext<Self>) -> Cow<'static, str> {
         if self.is_locked_in_shell_mode(ctx) {
-            return Cow::Borrowed(AGENT_MODE_AI_DISABLED_AUTODETECTION_DISABLED_HINT_TEXT);
+            return Cow::Owned(t!("terminal.run_commands").to_string());
         }
 
         CLIAgentSessionsModel::as_ref(ctx)
             .session(self.terminal_view_id)
             .map(|session| match session.agent {
-                CLIAgent::Unknown => Cow::Borrowed(CLI_AGENT_RICH_INPUT_HINT_TEXT),
-                _ => Cow::Owned(format!(
-                    "Enter prompt for {}...",
-                    session.agent.display_name()
-                )),
+                CLIAgent::Unknown => {
+                    Cow::Owned(t!("terminal.tell_agent_what_to_build").to_string())
+                }
+                _ => Cow::Owned(
+                    t!(
+                        "terminal.enter_prompt_for_agent",
+                        agent = session.agent.display_name()
+                    )
+                    .to_string(),
+                ),
             })
-            .unwrap_or(Cow::Borrowed(CLI_AGENT_RICH_INPUT_HINT_TEXT))
+            .unwrap_or_else(|| Cow::Owned(t!("terminal.tell_agent_what_to_build").to_string()))
     }
 
     pub fn set_zero_state_hint_text(&mut self, ctx: &mut ViewContext<Self>) {
@@ -6277,9 +6276,13 @@ impl Input {
                 })
                 .map(|env| {
                     use crate::cloud_object::model::generic_string_model::StringModel;
-                    format!("Hand off to {}", env.model().string_model.display_name())
+                    t!(
+                        "terminal.hand_off_to_environment",
+                        environment = env.model().string_model.display_name()
+                    )
+                    .to_string()
                 })
-                .unwrap_or_else(|| CLOUD_HANDOFF_HINT_TEXT.to_owned());
+                .unwrap_or_else(|| t!("terminal.handoff_to_cloud").to_string());
             self.editor.update(ctx, |editor, ctx| {
                 editor.set_placeholder_text(&hint, ctx);
             });
@@ -6290,7 +6293,7 @@ impl Input {
             let show_hint = *InputSettings::as_ref(ctx).show_hint_text;
             self.editor.update(ctx, |editor, ctx| {
                 if show_hint {
-                    editor.set_placeholder_text(CLOUD_MODE_V2_HINT_TEXT, ctx);
+                    editor.set_placeholder_text(t!("terminal.kick_off_cloud_agent"), ctx);
                 } else {
                     editor.clear_placeholder_text(ctx);
                 }
@@ -6340,7 +6343,7 @@ impl Input {
                 });
             } else {
                 self.editor.update(ctx, |editor, ctx| {
-                    editor.set_placeholder_text(AI_COMMAND_SEARCH_HINT_TEXT, ctx);
+                    editor.set_placeholder_text(t!("terminal.ai_command_search_hint"), ctx);
                 });
             }
         } else {

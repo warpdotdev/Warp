@@ -46,15 +46,11 @@ use crate::LLMPreferences;
 // ── Shared constants ────────────────────────────────────────────────
 
 pub const ORCHESTRATION_WARP_WORKER_HOST: &str = "warp";
-pub const ORCHESTRATION_ENV_NONE_LABEL: &str = "(no environment)";
-
 pub const ORCHESTRATION_PICKER_HEIGHT: f32 = 36.;
 pub const ORCHESTRATION_PICKER_BORDER_WIDTH: f32 = 1.;
 pub const ORCHESTRATION_PICKER_FONT_SIZE: f32 = 14.;
 pub const ORCHESTRATION_PICKER_RADIUS: f32 = 4.;
 pub const ORCHESTRATION_PICKER_MAX_WIDTH: f32 = 205.;
-
-const DEFAULT_MODEL_LABEL: &str = "Default model";
 
 // ── Action trait ────────────────────────────────────────────────────
 
@@ -389,7 +385,7 @@ pub fn populate_model_picker_for_harness<A: OrchestrationControlAction, V: View>
                 // Local Codex: only "Default model" entry.
                 let items = vec![default_model_menu_item::<A>()];
                 dropdown.set_rich_items(items, ctx_dropdown);
-                dropdown.set_selected_by_name(DEFAULT_MODEL_LABEL, ctx_dropdown);
+                dropdown.set_selected_by_name(t!("ambient_agent.default_model"), ctx_dropdown);
             }
             Some(harness) => {
                 // Non-Oz harness: "Default model" at top, then server-provided
@@ -409,7 +405,7 @@ pub fn populate_model_picker_for_harness<A: OrchestrationControlAction, V: View>
                 }
                 // Find display name before set_rich_items borrows ctx_dropdown mutably.
                 let selected_display_name = if initial_model_id.is_empty() {
-                    Some(DEFAULT_MODEL_LABEL.to_string())
+                    Some(t!("ambient_agent.default_model").to_string())
                 } else {
                     availability
                         .models_for(harness)
@@ -419,7 +415,7 @@ pub fn populate_model_picker_for_harness<A: OrchestrationControlAction, V: View>
                                 .find(|m| m.id == initial_model_id)
                                 .map(|m| m.display_name.clone())
                         })
-                        .or_else(|| Some(DEFAULT_MODEL_LABEL.to_string()))
+                        .or_else(|| Some(t!("ambient_agent.default_model").to_string()))
                 };
                 dropdown.set_rich_items(items, ctx_dropdown);
                 if let Some(name) = &selected_display_name {
@@ -433,7 +429,7 @@ pub fn populate_model_picker_for_harness<A: OrchestrationControlAction, V: View>
 /// Creates a "Default model" menu item that emits an empty model_id.
 fn default_model_menu_item<A: OrchestrationControlAction>() -> MenuItem<DropdownAction<A>> {
     MenuItem::Item(
-        MenuItemFields::new(DEFAULT_MODEL_LABEL).with_on_select_action(
+        MenuItemFields::new(t!("ambient_agent.default_model")).with_on_select_action(
             DropdownAction::SelectActionAndClose(A::model_changed(String::new())),
         ),
     )
@@ -588,12 +584,12 @@ pub fn create_environment_picker<A: OrchestrationControlAction, V: View>(
         let mut items: Vec<MenuItem<DropdownAction<A>>> = Vec::new();
         let mut selected_name: Option<String> = None;
         items.push(MenuItem::Item(
-            MenuItemFields::new(ORCHESTRATION_ENV_NONE_LABEL).with_on_select_action(
+            MenuItemFields::new(t!("ambient_agent.no_environment")).with_on_select_action(
                 DropdownAction::SelectActionAndClose(A::environment_changed(String::new())),
             ),
         ));
         if initial_env.is_empty() {
-            selected_name = Some(ORCHESTRATION_ENV_NONE_LABEL.to_string());
+            selected_name = Some(t!("ambient_agent.no_environment").to_string());
         }
         for (env_id, env_name) in &sorted_envs {
             if env_id == &initial_env {
@@ -852,7 +848,7 @@ pub fn sync_picker_selections<A: OrchestrationControlAction, V: View>(
                 }
                 Some(harness) => {
                     if target_model_id.is_empty() {
-                        Some(DEFAULT_MODEL_LABEL.to_string())
+                        Some(t!("ambient_agent.default_model").to_string())
                     } else {
                         let availability = HarnessAvailabilityModel::as_ref(ctx_dropdown);
                         availability.models_for(harness).and_then(|models| {
@@ -888,7 +884,7 @@ pub fn sync_picker_selections<A: OrchestrationControlAction, V: View>(
         };
         environment_picker.update(ctx, |dropdown, ctx_dropdown| {
             if env_id.is_empty() {
-                dropdown.set_selected_by_name(ORCHESTRATION_ENV_NONE_LABEL, ctx_dropdown);
+                dropdown.set_selected_by_name(t!("ambient_agent.no_environment"), ctx_dropdown);
                 return;
             }
             let all_envs = CloudAmbientAgentEnvironment::get_all(ctx_dropdown);
