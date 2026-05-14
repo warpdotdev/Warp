@@ -2063,8 +2063,8 @@ fn test_context_menu_includes_clear_when_block_list_non_empty() {
                 .filter_map(|item| item.fields().map(|fields| fields.label()))
                 .collect();
             assert!(
-                labels.contains(&"Clear"),
-                "Expected `Clear` menu item, got {labels:?}"
+                labels.contains(&"Clear Blocks"),
+                "Expected `Clear Blocks` menu item, got {labels:?}"
             );
         });
     })
@@ -2091,8 +2091,8 @@ fn test_context_menu_omits_clear_when_block_list_empty() {
                 .filter_map(|item| item.fields().map(|fields| fields.label()))
                 .collect();
             assert!(
-                !labels.contains(&"Clear"),
-                "Did not expect `Clear` menu item when block list is empty, got {labels:?}"
+                !labels.contains(&"Clear Blocks"),
+                "Did not expect `Clear Blocks` menu item when block list is empty, got {labels:?}"
             );
         });
     })
@@ -2120,8 +2120,8 @@ fn test_context_menu_omits_clear_for_text_right_click() {
                 .filter_map(|item| item.fields().map(|fields| fields.label()))
                 .collect();
             assert!(
-                !labels.contains(&"Clear"),
-                "Did not expect `Clear` in text-selection right-click menu, got {labels:?}"
+                !labels.contains(&"Clear Blocks"),
+                "Did not expect `Clear Blocks` in text-selection right-click menu, got {labels:?}"
             );
         });
     })

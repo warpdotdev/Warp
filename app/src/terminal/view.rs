@@ -15901,10 +15901,11 @@ impl TerminalView {
                 | BlockListMenuSource::RichContentTextRightClick { .. }
                 | BlockListMenuSource::OutsideBlockRightClick { .. }
         ) {
-            // Surface "Clear" in the right-click menu so it's discoverable
-            // without the keyboard shortcut. We skip text-selection contexts
-            // (`Regular*TextRightClick` / `RichContentTextRightClick`) because
-            // those menus are scoped to actions on the selected text.
+            // Surface "Clear Blocks" in the right-click menu so it's
+            // discoverable without the keyboard shortcut. We skip
+            // text-selection contexts (`Regular*TextRightClick` /
+            // `RichContentTextRightClick`) because those menus are scoped to
+            // actions on the selected text.
             let include_clear = matches!(
                 menu_source,
                 BlockListMenuSource::RegularBlockRightClick { .. }
@@ -15935,8 +15936,8 @@ impl TerminalView {
         items
     }
 
-    /// Builds the "Clear" entry for the terminal right-click context menu.
-    /// Returns `None` when there are no blocks to clear, mirroring the
+    /// Builds the "Clear Blocks" entry for the terminal right-click context
+    /// menu. Returns `None` when there are no blocks to clear, mirroring the
     /// `TerminalView_NonEmptyBlockList` predicate that gates the
     /// `terminal:clear_blocks` keybinding.
     fn clear_buffer_menu_item(
@@ -15948,7 +15949,7 @@ impl TerminalView {
             return None;
         }
         Some(
-            MenuItemFields::new("Clear")
+            MenuItemFields::new("Clear Blocks")
                 .with_on_select_action(TerminalAction::ClearBuffer)
                 .with_key_shortcut_label(keybinding_name_to_display_string(
                     "terminal:clear_blocks",
