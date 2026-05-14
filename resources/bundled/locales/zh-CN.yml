@@ -321,6 +321,9 @@ zh-CN:
     copy_the_url: "复制 URL"
     open_page_manually: "并手动打开页面。"
     accessibility_open_browser: "按 Enter 打开浏览器注册或登录。"
+    sso_enabled_for_account: "你的组织已为你的账号启用 SSO"
+    link_sso_detail: "点击下方按钮，将你的 Warp 账号关联到 SSO 提供商。"
+    link_sso: "关联 SSO"
 
   # ── 账单 ──
   billing:

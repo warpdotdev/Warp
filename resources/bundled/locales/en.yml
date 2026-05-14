@@ -321,6 +321,9 @@ en:
     copy_the_url: "copy the URL"
     open_page_manually: "and open the page manually."
     accessibility_open_browser: "Press enter to open your browser to Sign Up or Sign In."
+    sso_enabled_for_account: "Your organization has enabled SSO for your account"
+    link_sso_detail: "Click the button below to link your Warp account to your SSO provider."
+    link_sso: "Link SSO"
 
   # ── Billing ──
   billing:
