@@ -17,6 +17,10 @@ use crate::context_chips::prompt_type::PromptType;
 use crate::editor::InteractionState;
 
 use crate::terminal::model::blocks::{ToTotalIndex as _, INLINE_BANNER_HEIGHT};
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::terminal::view::ambient_agent::{
+    HandoffSubmissionState, PendingHandoff, SnapshotUploadStatus,
+};
 use crate::terminal::view::shared_session::test_utils::terminal_view_for_viewer;
 use crate::terminal::TerminalView;
 use crate::test_util::add_window_with_terminal;
@@ -468,6 +472,85 @@ fn cloud_mode_terminal_for_test(app: &mut App) -> ViewHandle<TerminalView> {
         TerminalView::new_for_test_with_cloud_mode(tips_model, None, true, ctx)
     });
     terminal
+}
+
+#[test]
+fn test_ambient_session_join_auto_opens_details_panel() {
+    let _cloud_mode_flag = FeatureFlag::CloudMode.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        let terminal = cloud_mode_terminal_for_test(&mut app);
+        let firebase_uid = UserUid::new("mock_firebase_uid");
+
+        terminal.update(&mut app, |view, ctx| {
+            view.model
+                .lock()
+                .set_shared_session_status(SharedSessionStatus::ViewPending);
+            view.on_session_share_joined(
+                ParticipantId::new(),
+                firebase_uid,
+                ReplicaId::random(),
+                Box::new(ParticipantList::default()),
+                SessionId::new(),
+                SessionSourceType::AmbientAgent { task_id: None },
+                ctx,
+            );
+        });
+
+        terminal.read(&app, |view, _| {
+            assert!(view.is_conversation_details_panel_open);
+            assert!(view.has_auto_opened_conversation_details_panel);
+        });
+    });
+}
+
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+#[test]
+fn test_local_to_cloud_handoff_session_join_keeps_details_panel_hidden() {
+    let _cloud_mode_flag = FeatureFlag::CloudMode.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        let terminal = cloud_mode_terminal_for_test(&mut app);
+        let firebase_uid = UserUid::new("mock_firebase_uid");
+
+        terminal.update(&mut app, |view, ctx| {
+            view.model
+                .lock()
+                .set_shared_session_status(SharedSessionStatus::ViewPending);
+            let ambient_agent_view_model = view
+                .ambient_agent_view_model()
+                .expect("cloud mode terminal should have an ambient agent view model")
+                .clone();
+            ambient_agent_view_model.update(ctx, |model, ctx| {
+                model.set_pending_handoff(
+                    Some(PendingHandoff {
+                        forked_conversation_id: None,
+                        title: None,
+                        touched_workspace: None,
+                        snapshot_upload: SnapshotUploadStatus::Pending,
+                        submission_state: HandoffSubmissionState::Idle,
+                        auto_submit: None,
+                    }),
+                    ctx,
+                );
+            });
+
+            view.on_session_share_joined(
+                ParticipantId::new(),
+                firebase_uid,
+                ReplicaId::random(),
+                Box::new(ParticipantList::default()),
+                SessionId::new(),
+                SessionSourceType::AmbientAgent { task_id: None },
+                ctx,
+            );
+        });
+
+        terminal.read(&app, |view, _| {
+            assert!(!view.is_conversation_details_panel_open);
+            assert!(!view.has_auto_opened_conversation_details_panel);
+        });
+    });
 }
 
 #[test]

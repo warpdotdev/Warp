@@ -703,9 +703,15 @@ impl TerminalView {
         self.update_pane_configuration(ctx);
 
         self.update_shared_session_pane_header(ctx);
-        // Shared ambient agent sessions should auto-open the details panel once (same behavior as local cloud mode).
+        // Shared ambient agent sessions should auto-open the details panel once, except for
+        // local-to-cloud handoff panes where the user stays in the moved conversation by default.
+        let is_local_to_cloud_handoff = self
+            .ambient_agent_view_model
+            .as_ref()
+            .is_some_and(|model| model.as_ref(ctx).is_local_to_cloud_handoff());
         if FeatureFlag::CloudMode.is_enabled()
             && matches!(source_type, SessionSourceType::AmbientAgent { .. })
+            && !is_local_to_cloud_handoff
         {
             self.maybe_auto_open_conversation_details_panel(ctx);
         }
