@@ -1762,13 +1762,15 @@ impl EnvironmentsPageWidget {
             // since it returns a Box<dyn Element> that can only be consumed once
             let env_id_str_copy = env_id_str.clone();
             let env_id_with_copy = render_copyable_text_field(
-                CopyableTextFieldConfig::new(format!("Env ID: {}", env_id_str.clone()))
-                    .with_font_size(appearance.ui_font_size() * 0.9)
-                    .with_text_color(blended_colors::text_sub(theme, theme.surface_1()))
-                    .with_icon_size(12.)
-                    .with_mouse_state(copy_button_mouse_state.clone())
-                    .with_last_copied_at(last_copied_at.as_ref())
-                    .with_copy_button_placement(CopyButtonPlacement::NextToText),
+                CopyableTextFieldConfig::new(
+                    t!("environments.env_id", id = env_id_str.clone()).to_string(),
+                )
+                .with_font_size(appearance.ui_font_size() * 0.9)
+                .with_text_color(blended_colors::text_sub(theme, theme.surface_1()))
+                .with_icon_size(12.)
+                .with_mouse_state(copy_button_mouse_state.clone())
+                .with_last_copied_at(last_copied_at.as_ref())
+                .with_copy_button_placement(CopyButtonPlacement::NextToText),
                 move |ctx| {
                     ctx.dispatch_typed_action(EnvironmentsPageAction::CopyEnvId(
                         env_id,
@@ -1817,7 +1819,8 @@ impl EnvironmentsPageWidget {
                 }
             }
 
-            let mut details_parts = vec![format!("Image: {}", env_docker_image)];
+            let mut details_parts =
+                vec![t!("environments.image_detail", image = env_docker_image).to_string()];
 
             if !env_github_repos.is_empty() {
                 let repos_text = env_github_repos
@@ -1825,12 +1828,18 @@ impl EnvironmentsPageWidget {
                     .map(|(owner, repo)| format!("{}/{}", owner, repo))
                     .collect::<Vec<_>>()
                     .join(", ");
-                details_parts.push(format!("Repos: {}", repos_text));
+                details_parts.push(t!("environments.repos_detail", repos = repos_text).to_string());
             }
 
             if !env_setup_commands.is_empty() {
                 let commands_text = env_setup_commands.join(", ");
-                details_parts.push(format!("Setup commands: {}", commands_text));
+                details_parts.push(
+                    t!(
+                        "environments.setup_commands_detail",
+                        commands = commands_text
+                    )
+                    .to_string(),
+                );
             }
 
             // Create details section with Env ID on first line and other details below
