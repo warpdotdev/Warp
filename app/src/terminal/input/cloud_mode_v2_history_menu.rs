@@ -149,7 +149,20 @@ impl CloudModeV2HistoryMenuView {
     }
 
     pub fn select_down(&self, ctx: &mut ViewContext<Self>) {
-        self.menu_view.update(ctx, |v, ctx| v.select_down(ctx));
+        // Mirror the legacy `InlineHistoryMenuView::select_down` behavior:
+        // pressing Down past the last item (or with no results) closes the
+        // history menu rather than wrapping back to the first item.
+        let should_close = self.menu_view.read(ctx, |v, _| {
+            let result_count = v.result_count();
+            let is_last_item_selected =
+                result_count > 0 && v.selected_idx().is_some_and(|idx| idx == result_count - 1);
+            is_last_item_selected || result_count == 0
+        });
+        if should_close {
+            ctx.emit(InlineHistoryMenuEvent::Close);
+        } else {
+            self.menu_view.update(ctx, |v, ctx| v.select_down(ctx));
+        }
     }
 
     pub fn accept_selected(&self, ctx: &mut ViewContext<Self>) {
