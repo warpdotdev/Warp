@@ -49,8 +49,6 @@ use warpui::{
 use super::{is_edit_allowed, is_syncing, style, AIFact, CloudAIFact, CloudAIFactModel};
 use crate::ai::facts::AIMemory;
 
-pub const HEADER_TEXT: &str = "Rules";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuleScope {
     Global,
