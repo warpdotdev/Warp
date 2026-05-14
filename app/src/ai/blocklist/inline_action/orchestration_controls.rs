@@ -541,9 +541,9 @@ pub fn first_filtered_model_id<V: View>(
     }
 }
 
-fn is_harness_picker_disabled(state: &OrchestrationEditState) -> bool {
-    matches!(state.execution_mode, RunAgentsExecutionMode::Local)
-        && !FeatureFlag::LocalClaudeCodexChildHarnesses.is_enabled()
+fn should_show_harness_picker(state: &OrchestrationEditState) -> bool {
+    !matches!(state.execution_mode, RunAgentsExecutionMode::Local)
+        || FeatureFlag::LocalClaudeCodexChildHarnesses.is_enabled()
 }
 
 pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
@@ -1151,12 +1151,12 @@ pub fn sync_picker_selections<A: OrchestrationControlAction, V: View>(
     }
     if let Some(harness_picker) = handles.harness_picker.clone() {
         let harness_type = state.harness_type.clone();
-        let is_disabled = is_harness_picker_disabled(state);
+        let show_harness_picker = should_show_harness_picker(state);
         harness_picker.update(ctx, |dropdown, ctx_dropdown| {
-            if is_disabled {
-                dropdown.set_disabled(ctx_dropdown);
-            } else {
+            if show_harness_picker {
                 dropdown.set_enabled(ctx_dropdown);
+            } else {
+                dropdown.set_disabled(ctx_dropdown);
             }
             let target = Harness::parse_orchestration_harness(&harness_type).unwrap_or(Harness::Oz);
             // Use the server-provided display_name from HarnessAvailabilityModel
@@ -1475,6 +1475,7 @@ pub fn render_picker_row_with_layout<A: OrchestrationControlAction>(
     vertical: bool,
 ) -> Box<dyn Element> {
     let is_remote = state.execution_mode.is_remote();
+    let show_harness_picker = should_show_harness_picker(state);
 
     let show_auth_picker = should_show_auth_secret_picker(state);
 
@@ -1491,14 +1492,16 @@ pub fn render_picker_row_with_layout<A: OrchestrationControlAction>(
         // key) before host/environment/model so the API key sits directly
         // under the harness selector and does not split the model picker
         // from the "Primary model…" subtext that follows the picker row.
-        add(
-            &mut column,
-            "Agent harness",
-            handles
-                .harness_picker
-                .as_ref()
-                .map(|p| ChildView::new(p).finish()),
-        );
+        if show_harness_picker {
+            add(
+                &mut column,
+                "Agent harness",
+                handles
+                    .harness_picker
+                    .as_ref()
+                    .map(|p| ChildView::new(p).finish()),
+            );
+        }
         if show_auth_picker {
             add(
                 &mut column,
@@ -1548,14 +1551,16 @@ pub fn render_picker_row_with_layout<A: OrchestrationControlAction>(
                 row.add_child(col);
             };
 
-        add_picker(
-            &mut row,
-            "Agent harness",
-            handles
-                .harness_picker
-                .as_ref()
-                .map(|p| ChildView::new(p).finish()),
-        );
+        if show_harness_picker {
+            add_picker(
+                &mut row,
+                "Agent harness",
+                handles
+                    .harness_picker
+                    .as_ref()
+                    .map(|p| ChildView::new(p).finish()),
+            );
+        }
         if is_remote {
             add_picker(
                 &mut row,

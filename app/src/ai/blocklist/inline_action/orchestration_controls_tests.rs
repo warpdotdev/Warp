@@ -1,4 +1,4 @@
-use super::{is_harness_picker_disabled, OrchestrationEditState};
+use super::{should_show_harness_picker, OrchestrationEditState};
 use ai::agent::action::RunAgentsExecutionMode;
 use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationExecutionMode};
 use warp_core::features::FeatureFlag;
@@ -25,18 +25,17 @@ fn from_orchestration_config_sanitizes_disabled_local_claude() {
 }
 
 #[test]
-fn harness_picker_is_disabled_for_local_mode_when_feature_is_off() {
+fn harness_picker_is_hidden_for_local_mode_when_feature_is_off() {
     let state = OrchestrationEditState::from_run_agents_fields(
         "auto",
         "oz",
         &RunAgentsExecutionMode::Local,
     );
-
-    assert!(is_harness_picker_disabled(&state));
+    assert!(!should_show_harness_picker(&state));
 }
 
 #[test]
-fn harness_picker_stays_enabled_for_remote_mode_when_feature_is_off() {
+fn harness_picker_stays_visible_for_remote_mode_when_feature_is_off() {
     let state = OrchestrationEditState::from_run_agents_fields(
         "auto",
         "oz",
@@ -47,19 +46,18 @@ fn harness_picker_stays_enabled_for_remote_mode_when_feature_is_off() {
         },
     );
 
-    assert!(!is_harness_picker_disabled(&state));
+    assert!(should_show_harness_picker(&state));
 }
 
 #[test]
-fn harness_picker_stays_enabled_for_local_mode_when_feature_is_on() {
+fn harness_picker_stays_visible_for_local_mode_when_feature_is_on() {
     let _local_harnesses = FeatureFlag::LocalClaudeCodexChildHarnesses.override_enabled(true);
     let state = OrchestrationEditState::from_run_agents_fields(
         "auto",
         "oz",
         &RunAgentsExecutionMode::Local,
     );
-
-    assert!(!is_harness_picker_disabled(&state));
+    assert!(should_show_harness_picker(&state));
 }
 
 #[test]
