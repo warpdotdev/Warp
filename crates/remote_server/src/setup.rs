@@ -100,6 +100,26 @@ pub enum UnsupportedReason {
     NonGlibc {
         name: String,
     },
+    UnsupportedOs {
+        os: String,
+    },
+    UnsupportedArch {
+        arch: String,
+    },
+}
+
+pub fn unsupported_reason_from_transport_error(
+    error: &crate::transport::Error,
+) -> Option<UnsupportedReason> {
+    match error {
+        crate::transport::Error::UnsupportedOs { os } => {
+            Some(UnsupportedReason::UnsupportedOs { os: os.clone() })
+        }
+        crate::transport::Error::UnsupportedArch { arch } => {
+            Some(UnsupportedReason::UnsupportedArch { arch: arch.clone() })
+        }
+        _ => None,
+    }
 }
 
 impl PreinstallCheckResult {
@@ -426,6 +446,17 @@ fn pinned_version() -> &'static str {
     ChannelState::app_version().unwrap_or(env!("CARGO_PKG_VERSION"))
 }
 
+/// Returns the release version that identifies remote-server download
+/// artifacts, when the current channel uses version-pinned artifacts.
+pub fn remote_server_artifact_version() -> Option<&'static str> {
+    match ChannelState::channel() {
+        Channel::Local | Channel::Oss => None,
+        Channel::Stable | Channel::Preview | Channel::Dev | Channel::Integration => {
+            Some(pinned_version())
+        }
+    }
+}
+
 /// The install script template, loaded from a standalone `.sh` file for
 /// readability. Placeholders like `{download_base_url}` are substituted by
 /// [`install_script`].
@@ -490,6 +521,11 @@ fn download_channel() -> &'static str {
             "dev"
         }
     }
+}
+
+/// Returns the server-side download channel used for remote-server artifacts.
+pub fn remote_server_download_channel() -> &'static str {
+    download_channel()
 }
 
 /// Returns the version query string for the download URL (e.g.

@@ -350,3 +350,146 @@ fn parse_preinstall_missing_status_falls_open() {
     assert_eq!(result.status, PreinstallStatus::Unknown);
     assert!(result.is_supported());
 }
+
+#[test]
+fn parse_uname_unsupported_cygwin_os() {
+    let result = parse_uname_output("CYGWIN_NT-10.0-22621 x86_64");
+    match result {
+        Err(crate::transport::Error::UnsupportedOs { os }) => {
+            assert_eq!(os, "CYGWIN_NT-10.0-22621");
+        }
+        other => panic!("expected UnsupportedOs, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_uname_unsupported_armv6l() {
+    let result = parse_uname_output("Linux armv6l");
+    match result {
+        Err(crate::transport::Error::UnsupportedArch { arch }) => {
+            assert_eq!(arch, "armv6l");
+        }
+        other => panic!("expected UnsupportedArch, got {other:?}"),
+    }
+}
+
+#[test]
+fn unsupported_reason_from_transport_error_maps_os_and_arch() {
+    assert_eq!(
+        unsupported_reason_from_transport_error(&crate::transport::Error::UnsupportedOs {
+            os: "CYGWIN_NT-10.0-22621".into(),
+        }),
+        Some(UnsupportedReason::UnsupportedOs {
+            os: "CYGWIN_NT-10.0-22621".into(),
+        })
+    );
+    assert_eq!(
+        unsupported_reason_from_transport_error(&crate::transport::Error::UnsupportedArch {
+            arch: "armv7l".into(),
+        }),
+        Some(UnsupportedReason::UnsupportedArch {
+            arch: "armv7l".into(),
+        })
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn install_script_platform_mapping_handles_supported_and_unsupported_targets() {
+    use command::blocking::Command;
+    use std::process::Stdio;
+
+    let bash = if std::path::Path::new("/bin/bash").exists() {
+        "/bin/bash"
+    } else {
+        "bash"
+    };
+
+    let script = install_script(None);
+    let cutoff = script.find("install_dir=").expect(
+        "install script no longer contains the install_dir checkpoint this test relies on; update the test alongside the script change",
+    );
+    let prefix = &script[..cutoff];
+
+    struct Case<'a> {
+        name: &'a str,
+        os: &'a str,
+        arch: &'a str,
+        expected_status: i32,
+        expected_stdout: &'a str,
+        expected_stderr: &'a str,
+    }
+
+    let cases = [
+        Case {
+            name: "armv8l is treated as aarch64",
+            os: "Linux",
+            arch: "armv8l",
+            expected_status: 0,
+            expected_stdout: "linux/aarch64",
+            expected_stderr: "",
+        },
+        Case {
+            name: "armv6l remains unsupported",
+            os: "Linux",
+            arch: "armv6l",
+            expected_status: 2,
+            expected_stdout: "",
+            expected_stderr: "unsupported arch: armv6l",
+        },
+        Case {
+            name: "cygwin remains unsupported",
+            os: "CYGWIN_NT-10.0-22621",
+            arch: "x86_64",
+            expected_status: 2,
+            expected_stdout: "",
+            expected_stderr: "unsupported OS: CYGWIN_NT-10.0-22621",
+        },
+    ];
+
+    for case in cases {
+        let probe = format!(
+            r#"uname() {{
+  case "$1" in
+    -m) printf '%s\n' '{arch}' ;;
+    -s) printf '%s\n' '{os}' ;;
+    *) return 1 ;;
+  esac
+}}
+{prefix}
+printf '%s/%s' "$os_name" "$arch_name"
+"#,
+            arch = case.arch,
+            os = case.os,
+            prefix = prefix,
+        );
+
+        let output = Command::new(bash)
+            .arg("-c")
+            .arg(&probe)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .expect("failed to spawn bash");
+
+        assert_eq!(
+            output.status.code(),
+            Some(case.expected_status),
+            "{}: unexpected status; stderr={}",
+            case.name,
+            String::from_utf8_lossy(&output.stderr),
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            case.expected_stdout,
+            "{}: unexpected stdout",
+            case.name,
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr).trim(),
+            case.expected_stderr,
+            "{}: unexpected stderr",
+            case.name,
+        );
+    }
+}
