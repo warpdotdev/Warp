@@ -665,7 +665,7 @@ impl GlobalSearchView {
         let case_sensitivity_button = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new_with_boxed_theme(String::new(), Arc::new(NakedTheme))
                 .with_icon(UiIcon::CaseSensitivity)
-                .with_tooltip("Toggle Case Sensitivity")
+                .with_tooltip(t!("global_search.toggle_case_sensitivity").to_string())
                 .with_size(ButtonSize::Small)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(GlobalSearchAction::ToggleCaseSensitivity);
@@ -675,7 +675,7 @@ impl GlobalSearchView {
         let regex_button = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new_with_boxed_theme(String::new(), Arc::new(NakedTheme))
                 .with_icon(UiIcon::Regex)
-                .with_tooltip("Toggle Regex")
+                .with_tooltip(t!("global_search.toggle_regex").to_string())
                 .with_size(ButtonSize::Small)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(GlobalSearchAction::ToggleRegexSearch);

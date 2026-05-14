@@ -580,6 +580,7 @@ en:
     default_profile_name_cannot_be_changed: "Default profile name cannot be changed."
     profiles: "Profiles"
     manage_profiles: "Manage profiles"
+    manage_defaults: "Manage defaults"
     choose_profile: "Choose an AI execution profile"
     choose_model: "Choose an agent model"
     auto_select_best_model: "auto-select the best model for the task"
@@ -1064,6 +1065,8 @@ en:
 
   global_search:
     search_in_files: "Search in files"
+    toggle_case_sensitivity: "Toggle Case Sensitivity"
+    toggle_regex: "Toggle Regex"
 
   ssh_install_tmux:
     why_need_tmux: "Why do I need tmux?"
@@ -1576,6 +1579,9 @@ en:
   # ── Ambient Agent ──
   ambient_agent:
     learn_more: "Learn more"
+    agent_harness: "Agent harness"
+    locked_to_warp_agent_handoff: "This conversation is with the Warp Agent, so the cloud handoff will also use Warp"
+    disabled_by_admin: "Disabled by your administrator"
     running_on_machine: "Your agent is currently running on a {specs} machine. "
     upgrade: "Upgrade"
     powerful_cloud_agents_suffix: " for more powerful cloud agents."
@@ -1654,6 +1660,8 @@ en:
     continue: "Continue"
     previous: "Previous"
     next: "Next"
+    maximize: "Maximize"
+    minimize: "Minimize"
     dismiss: "Dismiss"
     dont_show_again: "Don't show again"
     finish: "Finish"

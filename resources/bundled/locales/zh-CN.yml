@@ -580,6 +580,7 @@ zh-CN:
     default_profile_name_cannot_be_changed: "默认配置名称无法更改。"
     profiles: "配置"
     manage_profiles: "管理配置"
+    manage_defaults: "管理默认值"
     choose_profile: "选择 AI 执行配置"
     choose_model: "选择 Agent 模型"
     auto_select_best_model: "自动为任务选择最佳模型"
@@ -1064,6 +1065,8 @@ zh-CN:
 
   global_search:
     search_in_files: "搜索文件"
+    toggle_case_sensitivity: "切换区分大小写"
+    toggle_regex: "切换 Regex"
 
   ssh_install_tmux:
     why_need_tmux: "为什么需要 tmux？"
@@ -1576,6 +1579,9 @@ zh-CN:
   # ── Ambient Agent ──
   ambient_agent:
     learn_more: "了解更多"
+    agent_harness: "Agent harness"
+    locked_to_warp_agent_handoff: "此会话使用 Warp Agent，因此 cloud handoff 也会使用 Warp"
+    disabled_by_admin: "已被管理员禁用"
     running_on_machine: "你的 Agent 当前正在 {specs} 机器上运行。"
     upgrade: "升级"
     powerful_cloud_agents_suffix: "以获得更强大的云端 Agents。"
@@ -1654,6 +1660,8 @@ zh-CN:
     continue: "继续"
     previous: "上一个"
     next: "下一步"
+    maximize: "最大化"
+    minimize: "最小化"
     dismiss: "忽略"
     dont_show_again: "不再显示"
     finish: "完成"
