@@ -279,6 +279,9 @@ impl NotebookLinks {
                 session,
                 is_markdown: true,
             } => {
+                #[cfg(not(feature = "local_fs"))]
+                let _ = line_and_column;
+
                 #[cfg(feature = "local_fs")]
                 {
                     let settings = EditorSettings::as_ref(ctx);
