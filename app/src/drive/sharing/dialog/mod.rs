@@ -246,7 +246,7 @@ impl SharingDialog {
             email_editor: ctx.add_typed_action_view(|ctx| {
                 let mut view = WordBlockEditorView::new(
                     ctx,
-                    "Emails",
+                    t!("drive.emails").as_ref(),
                     13.,
                     vec![' ', ','],
                     EMAIL_CHIP_WIDTH,
@@ -1822,14 +1822,14 @@ impl SharingDialog {
             return None;
         }
 
-        const PREFIX: &str = "You must have full access to manage permissions. You have ";
-        const SUFFIX: &str = " access.";
-        let access_level_start = PREFIX.chars().count();
+        let prefix = t!("drive.full_access_required_prefix").to_string();
+        let suffix = t!("drive.full_access_required_suffix").to_string();
+        let access_level_start = prefix.chars().count();
         let access_level_end = access_level_start + access_level.name().chars().count();
 
         let text = appearance
             .ui_builder()
-            .wrappable_text(format!("{PREFIX}{}{SUFFIX}", access_level.name()), true)
+            .wrappable_text(format!("{prefix}{}{suffix}", access_level.name()), true)
             .with_style(UiComponentStyles {
                 font_color: Some(style::label_text(appearance)),
                 ..Default::default()
@@ -1853,8 +1853,8 @@ impl SharingDialog {
         let owner = self.owner(app)?;
 
         let tooltip_text = match owner {
-            Subject::Team(_) => "Team objects automatically grant full permissions to team members",
-            _ => "Owners always have full permissions on their objects",
+            Subject::Team(_) => t!("drive.team_full_permissions_tooltip").to_string(),
+            _ => t!("drive.owner_full_permissions_tooltip").to_string(),
         };
         let owner_access_label = render_with_detail_tooltip(
             tooltip_text,
@@ -2350,7 +2350,9 @@ impl SharingDialog {
             .with_padding_right(10.)
             .finish();
 
-        let name_text = subject.name(app).unwrap_or(Cow::Borrowed("Unknown"));
+        let name_text = subject
+            .name(app)
+            .unwrap_or_else(|| Cow::Owned(t!("common.unknown").to_string()));
         let name_label = appearance
             .ui_builder()
             .span(name_text)
@@ -2422,7 +2424,7 @@ impl SharingDialog {
             .with_text_and_icon_label(
                 TextAndIcon::new(
                     TextAndIconAlignment::IconFirst,
-                    "Copy link",
+                    t!("drive.copy_link").to_string(),
                     Icon::Link.to_warpui_icon(copy_button_foreground),
                     MainAxisSize::Min,
                     MainAxisAlignment::SpaceBetween,
