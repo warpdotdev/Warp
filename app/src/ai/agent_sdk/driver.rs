@@ -1213,8 +1213,7 @@ impl AgentDriver {
         uuids: Vec<Uuid>,
         ctx: &mut ModelContext<Self>,
     ) -> impl Future<Output = ()> {
-        // Filter out UUIDs that have already reached a terminal state before the subscription is
-        // installed. Spawn eligibility is decided upstream by `FileBasedMCPManager`.
+        // Filter out UUIDs that have already reached a terminal state.
         let mut pending_uuids: HashSet<Uuid> = {
             let templatable_manager = TemplatableMCPServerManager::as_ref(ctx);
             uuids
@@ -1230,7 +1229,7 @@ impl AgentDriver {
 
         if pending_uuids.is_empty() {
             log::info!(
-                "No scheduled file-based MCP servers need to reach a terminal state; proceeding"
+                "All file-based MCP servers have reached a terminal state; proceeding"
             );
             return Either::Right(future::ready(()));
         }
