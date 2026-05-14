@@ -558,11 +558,10 @@ impl RunAgentsCardView {
                 // the auto-launched dispatch carries the user's
                 // plan-card pick instead of `None`.
                 if self.state.orch.auth_secret_name.is_none() {
-                    self.state.orch.auth_secret_name =
-                        oc::resolve_default_auth_secret_for_harness(
-                            &self.state.orch.harness_type,
-                            ctx,
-                        );
+                    self.state.orch.auth_secret_name = oc::resolve_default_auth_secret_for_harness(
+                        &self.state.orch.harness_type,
+                        ctx,
+                    );
                 }
 
                 self.auto_launched = true;
