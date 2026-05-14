@@ -189,9 +189,9 @@ impl MCPServersEditPageView {
         });
 
         let editing_disabled_banner = ctx.add_typed_action_view(|_| {
-            Banner::new_without_close(BannerTextContent::plain_text(
-                "Only team admins and the creator of the MCP server can edit the MCP server.",
-            ))
+            Banner::new_without_close(BannerTextContent::plain_text(t!(
+                "mcp.editing_restricted_to_admins_and_creator"
+            )))
             .with_icon(Icon::Warning)
         });
 

@@ -597,6 +597,7 @@ en:
     show_logs: "Show logs"
     share_server: "Share server"
     server_update_available: "Server update available"
+    editing_restricted_to_admins_and_creator: "Only team admins and the creator of the MCP server can edit the MCP server."
 
   platform:
     api_key_deleted: "API key deleted"

@@ -597,6 +597,7 @@ zh-CN:
     show_logs: "显示日志"
     share_server: "共享 server"
     server_update_available: "Server 有可用更新"
+    editing_restricted_to_admins_and_creator: "只有团队管理员和 MCP server 创建者可以编辑该 MCP server。"
 
   platform:
     api_key_deleted: "API key 已删除"
