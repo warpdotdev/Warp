@@ -342,6 +342,31 @@ pub enum MCPServerTelemetryTransportType {
     CLIServer,
     ServerSentEvents,
 }
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MCPAuthReauthenticationReason {
+    MissingCachedCredentials,
+    RefreshFailed,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MCPAuthRefreshErrorKind {
+    AuthorizationRequired,
+    AuthorizationFailed,
+    TokenExchangeFailed,
+    TokenRefreshFailed,
+    HttpError,
+    OAuthError,
+    MetadataError,
+    UrlError,
+    NoAuthorizationSupport,
+    InternalError,
+    InvalidTokenType,
+    TokenExpired,
+    InvalidScope,
+    RegistrationFailed,
+}
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub enum MCPServerTelemetryError {
@@ -2412,6 +2437,15 @@ pub enum TelemetryEvent {
         error: Option<MCPServerTelemetryError>,
         server_model: MCPServerModel,
     },
+    MCPAuthReauthenticationRequired {
+        server_name: String,
+        resource_origin: Option<String>,
+        reason: MCPAuthReauthenticationReason,
+        headless_reauth_blocked: bool,
+        token_response_received_at: Option<u64>,
+        refresh_token_received_at: Option<u64>,
+        refresh_error_kind: Option<MCPAuthRefreshErrorKind>,
+    },
     MCPToolCallAccepted {
         server_output_id: Option<ServerOutputId>,
         tool_call: String,
@@ -3230,6 +3264,23 @@ impl TelemetryEvent {
             } => Some(
                 json!({"transport_type": transport_type, "server_model": server_model, "error": error}),
             ),
+            TelemetryEvent::MCPAuthReauthenticationRequired {
+                server_name,
+                resource_origin,
+                reason,
+                headless_reauth_blocked,
+                token_response_received_at,
+                refresh_token_received_at,
+                refresh_error_kind,
+            } => Some(json!({
+                "server_name": server_name,
+                "resource_origin": resource_origin,
+                "reason": reason,
+                "headless_reauth_blocked": headless_reauth_blocked,
+                "token_response_received_at": token_response_received_at,
+                "refresh_token_received_at": refresh_token_received_at,
+                "refresh_error_kind": refresh_error_kind,
+            })),
             TelemetryEvent::MCPToolCallAccepted {
                 server_output_id,
                 tool_call,
@@ -4931,6 +4982,7 @@ impl TelemetryEvent {
             | TelemetryEvent::MCPTemplateInstalled { .. }
             | TelemetryEvent::MCPTemplateShared
             | TelemetryEvent::MCPServerSpawned { .. }
+            | TelemetryEvent::MCPAuthReauthenticationRequired { .. }
             | TelemetryEvent::MCPToolCallAccepted { .. }
             | TelemetryEvent::ExecutedWarpDrivePrompt { .. }
             | TelemetryEvent::ToggleSshWarpification { .. }
@@ -5140,6 +5192,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::MCPServerCollectionPaneOpened { .. }
             | Self::MCPServerAdded { .. }
             | Self::MCPServerSpawned { .. }
+            | Self::MCPAuthReauthenticationRequired { .. }
             | Self::MCPToolCallAccepted { .. } => EnablementState::Flag(FeatureFlag::McpServer),
             Self::MCPTemplateCreated { .. }
             | Self::MCPTemplateInstalled { .. }
@@ -5685,6 +5738,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::MCPTemplateInstalled { .. } => "MCP Template Installed",
             Self::MCPTemplateShared => "MCP Template Shared",
             Self::MCPServerSpawned { .. } => "MCP Server Spawned",
+            Self::MCPAuthReauthenticationRequired { .. } => "MCP Auth Reauthentication Required",
             Self::MCPToolCallAccepted { .. } => "MCP Tool Call Accepted",
             Self::KnowledgePaneOpened { .. } => "Knowledge Pane Opened",
             #[cfg(feature = "local_fs")]
@@ -6219,6 +6273,9 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::MCPTemplateInstalled { .. } => "MCP Template Installed",
             Self::MCPTemplateShared => "MCP Template Shared",
             Self::MCPServerSpawned { .. } => "MCP Server Spawned",
+            Self::MCPAuthReauthenticationRequired { .. } => {
+                "MCP OAuth requires interactive re-authentication"
+            }
             Self::MCPToolCallAccepted { .. } => "MCP Tool Call Accepted",
             Self::KnowledgePaneOpened { .. } => "Knowledge Pane Opened",
             #[cfg(feature = "local_fs")]

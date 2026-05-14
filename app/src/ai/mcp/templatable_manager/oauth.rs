@@ -1,7 +1,10 @@
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, bail};
 use oauth2::{RefreshToken, TokenResponse as _};
+use parking_lot::Mutex;
 use rmcp::transport::{
     auth::{
         AuthClient, AuthorizationManager, CredentialStore, InMemoryCredentialStore,
@@ -18,6 +21,10 @@ use warpui::ModelSpawner;
 use warpui_extras::secure_storage::AppContextExt as _;
 
 use super::{MCPServerState, TemplatableMCPServerManager};
+use crate::{
+    send_telemetry_from_ctx,
+    server::telemetry::{MCPAuthReauthenticationReason, MCPAuthRefreshErrorKind, TelemetryEvent},
+};
 use {crate::ai::mcp::FileBasedMCPManager, warpui::SingletonEntity};
 
 pub(crate) const TEMPLATABLE_MCP_CREDENTIALS_KEY: &str = "TemplatableMcpCredentials";
@@ -41,6 +48,224 @@ pub struct PersistedCredentials {
     client_id: String,
     client_secret: Option<String>,
     token_response: OAuthTokenResponse,
+    #[serde(default)]
+    token_response_received_at: Option<u64>,
+    #[serde(default)]
+    refresh_token_received_at: Option<u64>,
+}
+
+impl PersistedCredentials {
+    fn new(
+        client_id: String,
+        client_secret: Option<String>,
+        token_response: OAuthTokenResponse,
+        token_response_received_at: Option<u64>,
+        previous_refresh_token_received_at: Option<u64>,
+    ) -> Self {
+        let refresh_token_received_at = if token_response.refresh_token().is_some() {
+            token_response_received_at
+        } else {
+            previous_refresh_token_received_at
+        };
+
+        Self {
+            client_id,
+            client_secret,
+            token_response,
+            token_response_received_at,
+            refresh_token_received_at,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use oauth2::basic::BasicTokenType;
+    use oauth2::{AccessToken, EmptyExtraTokenFields, TokenResponse as _};
+    use serde_json::json;
+
+    use super::*;
+
+    fn token_response(refresh_token: Option<&str>) -> OAuthTokenResponse {
+        let mut token_response = OAuthTokenResponse::new(
+            AccessToken::new("access-token".to_string()),
+            BasicTokenType::Bearer,
+            EmptyExtraTokenFields {},
+        );
+        token_response
+            .set_refresh_token(refresh_token.map(|token| RefreshToken::new(token.to_string())));
+        token_response
+    }
+
+    #[test]
+    fn persisted_credentials_deserialize_without_receipt_metadata() {
+        let credentials = PersistedCredentials::new(
+            "client-id".to_string(),
+            None,
+            token_response(Some("refresh-token")),
+            Some(123),
+            None,
+        );
+        let mut value = serde_json::to_value(credentials).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("token_response_received_at");
+        object.remove("refresh_token_received_at");
+
+        let deserialized: PersistedCredentials = serde_json::from_value(value).unwrap();
+
+        assert_eq!(deserialized.token_response_received_at, None);
+        assert_eq!(deserialized.refresh_token_received_at, None);
+    }
+
+    #[test]
+    fn persisted_credentials_records_refresh_token_receipt_only_when_present() {
+        let credentials_with_refresh = PersistedCredentials::new(
+            "client-id".to_string(),
+            None,
+            token_response(Some("refresh-token")),
+            Some(123),
+            None,
+        );
+        assert_eq!(
+            credentials_with_refresh.token_response_received_at,
+            Some(123)
+        );
+        assert_eq!(
+            credentials_with_refresh.refresh_token_received_at,
+            Some(123)
+        );
+
+        let credentials_without_refresh = PersistedCredentials::new(
+            "client-id".to_string(),
+            None,
+            token_response(None),
+            Some(456),
+            Some(123),
+        );
+        assert_eq!(
+            credentials_without_refresh.token_response_received_at,
+            Some(456)
+        );
+        assert_eq!(
+            credentials_without_refresh.refresh_token_received_at,
+            Some(123)
+        );
+    }
+
+    #[test]
+    fn resource_origin_strips_path_query_and_fragment() {
+        assert_eq!(
+            resource_origin("https://example.com/mcp/path?secret=value#fragment"),
+            Some("https://example.com".to_string())
+        );
+        assert_eq!(
+            resource_origin("http://localhost:8080/mcp"),
+            Some("http://localhost:8080".to_string())
+        );
+        assert_eq!(resource_origin("not a url"), None);
+    }
+
+    #[tokio::test]
+    async fn persisting_store_preserves_refresh_token_received_at_on_carry_forward() {
+        let (persist_tx, persist_rx) = async_channel::unbounded();
+        let store = PersistingCredentialStore {
+            inner: InMemoryCredentialStore::new(),
+            client_secret: None,
+            persist_tx,
+            refresh_token_received_at: Arc::new(Mutex::new(Some(10))),
+        };
+        store
+            .inner
+            .save(StoredCredentials {
+                client_id: "client-id".to_string(),
+                token_response: Some(token_response(Some("old-refresh-token"))),
+                granted_scopes: Vec::new(),
+                token_received_at: Some(10),
+            })
+            .await
+            .unwrap();
+
+        store
+            .save(StoredCredentials {
+                client_id: "client-id".to_string(),
+                token_response: Some(token_response(None)),
+                granted_scopes: Vec::new(),
+                token_received_at: Some(20),
+            })
+            .await
+            .unwrap();
+
+        let persisted = persist_rx.recv().await.unwrap();
+        assert_eq!(persisted.token_response_received_at, Some(20));
+        assert_eq!(persisted.refresh_token_received_at, Some(10));
+        assert_eq!(
+            persisted
+                .token_response
+                .refresh_token()
+                .map(|token| token.secret().as_str()),
+            Some("old-refresh-token")
+        );
+    }
+
+    #[tokio::test]
+    async fn persisting_store_updates_refresh_token_received_at_when_token_rotates() {
+        let (persist_tx, persist_rx) = async_channel::unbounded();
+        let store = PersistingCredentialStore {
+            inner: InMemoryCredentialStore::new(),
+            client_secret: None,
+            persist_tx,
+            refresh_token_received_at: Arc::new(Mutex::new(Some(10))),
+        };
+
+        store
+            .save(StoredCredentials {
+                client_id: "client-id".to_string(),
+                token_response: Some(token_response(Some("new-refresh-token"))),
+                granted_scopes: Vec::new(),
+                token_received_at: Some(20),
+            })
+            .await
+            .unwrap();
+
+        let persisted = persist_rx.recv().await.unwrap();
+        assert_eq!(persisted.token_response_received_at, Some(20));
+        assert_eq!(persisted.refresh_token_received_at, Some(20));
+        assert_eq!(
+            persisted
+                .token_response
+                .refresh_token()
+                .map(|token| token.secret().as_str()),
+            Some("new-refresh-token")
+        );
+    }
+
+    #[test]
+    fn reauth_telemetry_payload_contains_only_requested_fields() {
+        let payload = TelemetryEvent::MCPAuthReauthenticationRequired {
+            server_name: "Granola".to_string(),
+            resource_origin: Some("https://api.granola.ai".to_string()),
+            reason: MCPAuthReauthenticationReason::RefreshFailed,
+            headless_reauth_blocked: false,
+            token_response_received_at: Some(100),
+            refresh_token_received_at: Some(50),
+            refresh_error_kind: Some(MCPAuthRefreshErrorKind::TokenRefreshFailed),
+        }
+        .payload()
+        .unwrap();
+
+        assert_eq!(
+            payload,
+            json!({
+                "server_name": "Granola",
+                "resource_origin": "https://api.granola.ai",
+                "reason": "refresh_failed",
+                "headless_reauth_blocked": false,
+                "token_response_received_at": 100,
+                "refresh_token_received_at": 50,
+                "refresh_error_kind": "token_refresh_failed",
+            })
+        );
+    }
 }
 
 /// Maps cloud MCP installation UUID to its OAuth credentials in secure storage.
@@ -60,6 +285,7 @@ struct PersistingCredentialStore {
     inner: InMemoryCredentialStore,
     client_secret: Option<String>,
     persist_tx: async_channel::Sender<PersistedCredentials>,
+    refresh_token_received_at: Arc<Mutex<Option<u64>>>,
 }
 
 impl PersistingCredentialStore {
@@ -105,16 +331,31 @@ impl CredentialStore for PersistingCredentialStore {
     }
 
     async fn save(&self, mut credentials: StoredCredentials) -> Result<(), AuthError> {
+        let response_included_refresh_token = credentials
+            .token_response
+            .as_ref()
+            .is_some_and(|tr| tr.refresh_token().is_some());
         self.apply_refresh_token_carry_forward(&mut credentials)
             .await;
 
         self.inner.save(credentials.clone()).await?;
 
         if let Some(token_response) = credentials.token_response {
+            let token_response_received_at =
+                credentials.token_received_at.or_else(current_epoch_secs);
+            let refresh_token_received_at = {
+                let mut previous_refresh_token_received_at = self.refresh_token_received_at.lock();
+                if response_included_refresh_token {
+                    *previous_refresh_token_received_at = token_response_received_at;
+                }
+                *previous_refresh_token_received_at
+            };
             let _ = self.persist_tx.try_send(PersistedCredentials {
                 client_id: credentials.client_id,
                 client_secret: self.client_secret.clone(),
                 token_response,
+                token_response_received_at,
+                refresh_token_received_at,
             });
         }
         Ok(())
@@ -141,12 +382,15 @@ async fn install_persisting_credential_store(
     client_secret: Option<String>,
     spawner: ModelSpawner<TemplatableMCPServerManager>,
     installation_uuid: Uuid,
+    token_response_received_at: Option<u64>,
+    refresh_token_received_at: Option<u64>,
 ) {
     let (persist_tx, persist_rx) = async_channel::unbounded();
     let store = PersistingCredentialStore {
         inner: InMemoryCredentialStore::new(),
         client_secret,
         persist_tx,
+        refresh_token_received_at: Arc::new(Mutex::new(refresh_token_received_at)),
     };
 
     // Seed the new store with the current credentials so that subsequent
@@ -158,7 +402,7 @@ async fn install_persisting_credential_store(
                 client_id,
                 token_response: Some(token_response),
                 granted_scopes: Vec::new(),
-                token_received_at: None,
+                token_received_at: token_response_received_at,
             })
             .await;
     }
@@ -184,6 +428,7 @@ pub struct AuthContext {
     pub oauth_result_rx: async_channel::Receiver<CallbackResult>,
     pub spawner: ModelSpawner<TemplatableMCPServerManager>,
     pub uuid: Uuid,
+    pub server_name: String,
     pub persisted_credentials: Option<PersistedCredentials>,
     /// Whether the client is running in headless/CLI mode.
     pub is_headless: bool,
@@ -196,6 +441,69 @@ pub struct AuthContext {
 pub enum CallbackResult {
     Success { code: String, csrf_token: String },
     Error { error: Option<String> },
+}
+
+fn current_epoch_secs() -> Option<u64> {
+    Some(SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs())
+}
+
+fn resource_origin(resource_url: &str) -> Option<String> {
+    let url = Url::parse(resource_url).ok()?;
+    Some(match url.port() {
+        Some(port) => format!("{}://{}:{port}", url.scheme(), url.host_str()?),
+        None => format!("{}://{}", url.scheme(), url.host_str()?),
+    })
+}
+
+fn refresh_error_kind(error: &AuthError) -> MCPAuthRefreshErrorKind {
+    match error {
+        AuthError::AuthorizationRequired => MCPAuthRefreshErrorKind::AuthorizationRequired,
+        AuthError::AuthorizationFailed(_) => MCPAuthRefreshErrorKind::AuthorizationFailed,
+        AuthError::TokenExchangeFailed(_) => MCPAuthRefreshErrorKind::TokenExchangeFailed,
+        AuthError::TokenRefreshFailed(_) => MCPAuthRefreshErrorKind::TokenRefreshFailed,
+        AuthError::HttpError(_) => MCPAuthRefreshErrorKind::HttpError,
+        AuthError::OAuthError(_) => MCPAuthRefreshErrorKind::OAuthError,
+        AuthError::MetadataError(_) => MCPAuthRefreshErrorKind::MetadataError,
+        AuthError::UrlError(_) => MCPAuthRefreshErrorKind::UrlError,
+        AuthError::NoAuthorizationSupport => MCPAuthRefreshErrorKind::NoAuthorizationSupport,
+        AuthError::InternalError(_) => MCPAuthRefreshErrorKind::InternalError,
+        AuthError::InvalidTokenType(_) => MCPAuthRefreshErrorKind::InvalidTokenType,
+        AuthError::TokenExpired => MCPAuthRefreshErrorKind::TokenExpired,
+        AuthError::InvalidScope(_) => MCPAuthRefreshErrorKind::InvalidScope,
+        AuthError::RegistrationFailed(_) => MCPAuthRefreshErrorKind::RegistrationFailed,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn emit_reauth_telemetry(
+    spawner: &ModelSpawner<TemplatableMCPServerManager>,
+    server_name: String,
+    resource_origin: Option<String>,
+    reason: MCPAuthReauthenticationReason,
+    headless_reauth_blocked: bool,
+    token_response_received_at: Option<u64>,
+    refresh_token_received_at: Option<u64>,
+    refresh_error_kind: Option<MCPAuthRefreshErrorKind>,
+) {
+    if let Err(err) = spawner
+        .spawn(move |_, ctx| {
+            send_telemetry_from_ctx!(
+                TelemetryEvent::MCPAuthReauthenticationRequired {
+                    server_name,
+                    resource_origin,
+                    reason,
+                    headless_reauth_blocked,
+                    token_response_received_at,
+                    refresh_token_received_at,
+                    refresh_error_kind,
+                },
+                ctx
+            );
+        })
+        .await
+    {
+        log::warn!("Failed to emit MCP re-auth telemetry: {err:?}");
+    }
 }
 
 /// Makes an authenticated client for the given authorization server.
@@ -213,10 +521,18 @@ pub async fn make_authenticated_client(
         oauth_result_rx,
         spawner,
         uuid,
+        server_name,
         persisted_credentials,
         is_headless,
         is_file_based,
     } = auth_context;
+    let resource_origin = resource_origin(resource_url);
+    let mut reauth_reason = persisted_credentials
+        .is_none()
+        .then_some(MCPAuthReauthenticationReason::MissingCachedCredentials);
+    let mut reauth_refresh_error_kind = None;
+    let mut token_response_received_at = None;
+    let mut refresh_token_received_at = None;
 
     // Build the redirect URI using the channel's URL scheme.
     // Routing data (the server UUID) is passed via the OAuth `state` parameter instead
@@ -229,6 +545,8 @@ pub async fn make_authenticated_client(
 
     // If we have cached credentials, use them.
     if let Some(credentials) = persisted_credentials {
+        token_response_received_at = credentials.token_response_received_at;
+        refresh_token_received_at = credentials.refresh_token_received_at;
         let provider = ChannelState::mcp_oauth_provider_by_client_id(&credentials.client_id);
         let client_secret = credentials
             .client_secret
@@ -267,6 +585,8 @@ pub async fn make_authenticated_client(
                 client_secret,
                 spawner.clone(),
                 uuid,
+                token_response_received_at,
+                refresh_token_received_at,
             )
             .await;
             match auth_manager.refresh_token().await {
@@ -275,6 +595,8 @@ pub async fn make_authenticated_client(
                 }
                 Err(e) => {
                     log::warn!("Failed to refresh token: {e:#}");
+                    reauth_reason = Some(MCPAuthReauthenticationReason::RefreshFailed);
+                    reauth_refresh_error_kind = Some(refresh_error_kind(&e));
 
                     // We didn't have a valid auth token _and_ we could not refresh it, so
                     // we need to go through the OAuth flow again.
@@ -282,6 +604,19 @@ pub async fn make_authenticated_client(
                 }
             }
         }
+    }
+    if let Some(reason) = reauth_reason {
+        emit_reauth_telemetry(
+            &spawner,
+            server_name.clone(),
+            resource_origin,
+            reason,
+            is_headless,
+            token_response_received_at,
+            refresh_token_received_at,
+            reauth_refresh_error_kind,
+        )
+        .await;
     }
 
     // If we're in headless mode and we reach here, it means we either have no credentials
@@ -409,12 +744,20 @@ pub async fn make_authenticated_client(
 
     // Save the credentials to secure storage.
     let (client_id, token_response) = oauth_state.get_credentials().await?;
+    let mut new_token_response_received_at = None;
+    let mut new_refresh_token_received_at = None;
     if let Some(token_response) = token_response {
-        let credentials = PersistedCredentials {
+        new_token_response_received_at = current_epoch_secs();
+        if token_response.refresh_token().is_some() {
+            new_refresh_token_received_at = new_token_response_received_at;
+        }
+        let credentials = PersistedCredentials::new(
             client_id,
-            client_secret: client_secret.clone(),
+            client_secret.clone(),
             token_response,
-        };
+            new_token_response_received_at,
+            None,
+        );
         spawner
             .spawn(move |manager, ctx| {
                 manager.save_credentials_to_secure_storage(ctx, uuid, credentials);
@@ -427,7 +770,15 @@ pub async fn make_authenticated_client(
         AuthError::InternalError("Failed to create authorization manager".to_string())
     })?;
 
-    install_persisting_credential_store(&mut am, client_secret, spawner, uuid).await;
+    install_persisting_credential_store(
+        &mut am,
+        client_secret,
+        spawner,
+        uuid,
+        new_token_response_received_at,
+        new_refresh_token_received_at,
+    )
+    .await;
 
     Ok((AuthClient::new(reqwest::Client::new(), am), true))
 }

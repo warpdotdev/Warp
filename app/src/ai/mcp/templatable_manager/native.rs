@@ -841,6 +841,7 @@ impl TemplatableMCPServerManager {
             oauth_result_rx,
             spawner: ctx.spawner(),
             uuid: installation_uuid,
+            server_name: server.name.clone(),
             persisted_credentials,
             is_headless,
             is_file_based,
