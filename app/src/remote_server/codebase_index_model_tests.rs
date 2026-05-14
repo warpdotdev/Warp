@@ -86,12 +86,16 @@ fn availability_falls_back_to_longest_status_prefix() {
     assert!(availability.is_ready());
     assert_eq!(availability.repo_path(), Some("/repo/nested"));
 }
+
 #[test]
-fn availability_ignores_unmatched_explicit_local_path_in_remote_session() {
+fn availability_uses_unmatched_explicit_path_as_not_indexed() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
     model.record_navigated_directory(&remote_path("/workspaces/warp"));
-    model.apply_status_update(remote_path("/workspaces/warp"), ready_status("/workspaces/warp"));
+    model.apply_status_update(
+        remote_path("/workspaces/warp"),
+        ready_status("/workspaces/warp"),
+    );
 
     let availability = model.availability_for_remote(
         &host,
@@ -99,8 +103,34 @@ fn availability_ignores_unmatched_explicit_local_path_in_remote_session() {
         Some("/Users/moirahuang/code/warp"),
     );
 
-    assert!(availability.is_ready());
-    assert_eq!(availability.repo_path(), Some("/workspaces/warp"));
+    assert!(matches!(
+        availability,
+        RemoteCodebaseSearchAvailability::NotIndexed { .. }
+    ));
+    assert_eq!(
+        availability.repo_path(),
+        Some("/Users/moirahuang/code/warp")
+    );
+}
+
+#[test]
+fn availability_uses_unknown_explicit_remote_path_as_not_indexed() {
+    let mut model = RemoteCodebaseIndexModel::default();
+    let host = host();
+    model.record_navigated_directory(&remote_path("/workspaces/active"));
+    model.apply_status_update(
+        remote_path("/workspaces/active"),
+        ready_status("/workspaces/active"),
+    );
+
+    let availability =
+        model.availability_for_remote(&host, Some("/workspaces/active"), Some("/workspaces/other"));
+
+    assert!(matches!(
+        availability,
+        RemoteCodebaseSearchAvailability::NotIndexed { .. }
+    ));
+    assert_eq!(availability.repo_path(), Some("/workspaces/other"));
 }
 
 #[test]
@@ -112,7 +142,10 @@ fn availability_uses_explicit_path_when_it_matches_known_remote_repo() {
         remote_path("/workspaces/other"),
         ready_status("/workspaces/other"),
     );
-    model.apply_status_update(remote_path("/workspaces/warp"), ready_status("/workspaces/warp"));
+    model.apply_status_update(
+        remote_path("/workspaces/warp"),
+        ready_status("/workspaces/warp"),
+    );
 
     let availability = model.availability_for_remote(
         &host,

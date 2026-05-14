@@ -117,8 +117,7 @@ impl RemoteCodebaseIndexModel {
             host_id,
             session_context.current_working_directory().as_deref(),
             explicit_repo_path,
-        )
-        else {
+        ) else {
             return false;
         };
 
@@ -291,9 +290,9 @@ impl RemoteCodebaseIndexModel {
                 .as_ref()
                 .filter(|remote_path| self.status_for_repo(remote_path).is_some())
             {
-                // Remote branch: explicit paths are only trusted directly when they already
-                // identify a known remote codebase. This keeps remote `SearchCodebase` from
-                // treating a local absolute path supplied by the model/tool call as a daemon path.
+                // Remote branch: exact explicit matches are authoritative, mirroring local
+                // `SearchCodebase` behavior where a provided `codebase_path` targets that repo
+                // instead of the current working directory.
                 return Some(remote_path.clone());
             }
 
@@ -303,16 +302,21 @@ impl RemoteCodebaseIndexModel {
                 // matched against daemon-reported index state.
                 return Some(remote_path.clone());
             }
+
+            // Remote branch: an explicit path that does not match known index state is still
+            // authoritative. Return it so callers surface `NotIndexed` (and can request indexing)
+            // for the explicit target instead of silently searching the active remote repo.
+            return explicit_remote_path;
         }
 
         if let Some(remote_path) = self.active_repos_by_host.get(host_id) {
-            // Remote branch: navigation events come from the remote daemon, so the active repo is a
-            // trusted remote path and should beat unmatched explicit paths that may be local.
+            // Remote branch: only implicit searches (no `codebase_path`) fall back to the active
+            // repo recorded by daemon navigation events.
             return Some(remote_path.clone());
         }
 
-        if let Some((remote_path, _)) = current_working_directory
-            .and_then(|cwd| self.best_status_for_path(host_id, cwd))
+        if let Some((remote_path, _)) =
+            current_working_directory.and_then(|cwd| self.best_status_for_path(host_id, cwd))
         {
             // Remote branch: if the remote cwd is inside a known indexed repo, use the indexed root
             // rather than re-indexing the nested directory.
