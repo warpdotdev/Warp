@@ -1812,10 +1812,11 @@ impl TeamsWidget {
         .with_margin_right(horizontal_padding)
         .finish();
 
-        let member_pricing_header =
-            Container::new(self.render_subsection_header("Team members".to_owned(), appearance))
-                .with_margin_bottom(8.)
-                .finish();
+        let member_pricing_header = Container::new(
+            self.render_subsection_header(t!("teams.team_members").to_string(), appearance),
+        )
+        .with_margin_bottom(8.)
+        .finish();
 
         let member_pricing_info =
             self.render_sub_text(additional_members_cost_money_msg, appearance, None);
@@ -2340,8 +2341,9 @@ impl TeamsWidget {
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
 
         // 1) "Invite by Link" subsection header
-        invite_by_link_header_row
-            .add_child(self.render_subsection_header("Invite by Link".to_owned(), appearance));
+        invite_by_link_header_row.add_child(
+            self.render_subsection_header(t!("teams.invite_by_link").to_string(), appearance),
+        );
 
         // 1.1) Toggle to the right of header only renders if user is admin
         if has_admin_permissions {
@@ -2390,7 +2392,7 @@ impl TeamsWidget {
                         appearance
                             .ui_builder()
                             .link(
-                                "Reset links".into(),
+                                t!("teams.reset_links").to_string(),
                                 None,
                                 Some(Box::new(move |ctx| {
                                     ctx.dispatch_typed_action(TeamsPageAction::ResetInviteLinks {
@@ -2437,10 +2439,12 @@ impl TeamsWidget {
 
         // "Invite by Email" subsection header
         section.add_child(
-            Container::new(self.render_subsection_header("Invite by Email".to_owned(), appearance))
-                .with_padding_top(CONTENT_SEPARATION_PADDING)
-                .with_padding_bottom(8.)
-                .finish(),
+            Container::new(
+                self.render_subsection_header(t!("teams.invite_by_email").to_string(), appearance),
+            )
+            .with_padding_top(CONTENT_SEPARATION_PADDING)
+            .with_padding_bottom(8.)
+            .finish(),
         );
 
         match team.billing_metadata.delinquency_status {
@@ -2740,7 +2744,7 @@ impl TeamsWidget {
         section.add_child(
             SavePosition::new(
                 Container::new(
-                    self.render_subsection_header("Team Members".to_owned(), appearance),
+                    self.render_subsection_header(t!("teams.team_members").to_string(), appearance),
                 )
                 .with_padding_bottom(16.)
                 .finish(),
@@ -2772,9 +2776,11 @@ impl TeamsWidget {
 
         // 1) "Restrict by domain" header
         section.add_child(
-            Container::new(self.render_sub_header("Restrict by domain".to_owned(), appearance))
-                .with_padding_top(16.)
-                .finish(),
+            Container::new(
+                self.render_sub_header(t!("teams.restrict_by_domain").to_string(), appearance),
+            )
+            .with_padding_top(16.)
+            .finish(),
         );
 
         // 2) Instruction text for domain restrictions + Domain approval mechanism (input box + button)
@@ -2835,7 +2841,7 @@ impl TeamsWidget {
                 let actions = if has_admin_permissions {
                     vec![ItemAction {
                         icon: Icon::X,
-                        label: "Remove domain".to_string(),
+                        label: t!("teams.remove_domain").to_string(),
                         action: TeamsPageAction::DeleteDomainRestriction {
                             domain_uid: domain_restriction.uid,
                             team_uid: team.uid,
@@ -2954,9 +2960,11 @@ impl TeamsWidget {
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
         discoverable_header_row.add_child(
-            Container::new(self.render_sub_header("Make team discoverable".to_owned(), appearance))
-                .with_padding_top(CONTENT_SEPARATION_PADDING)
-                .finish(),
+            Container::new(
+                self.render_sub_header(t!("teams.make_team_discoverable").to_string(), appearance),
+            )
+            .with_padding_top(CONTENT_SEPARATION_PADDING)
+            .finish(),
         );
 
         // Toggle to the right of header
@@ -2987,7 +2995,7 @@ impl TeamsWidget {
         // Instruction text for toggle
         let domain = current_user_email.split('@').nth(1).unwrap_or("");
         let team_discoverability_instructions =
-            format!("Allow Warp users with an @{domain} email to find and join the team.");
+            t!("teams.team_discoverability_domain", domain = domain).to_string();
         section.add_child(
             Container::new(self.render_sub_text(
                 team_discoverability_instructions,
@@ -3096,7 +3104,7 @@ impl TeamsWidget {
             let link = appearance
                 .ui_builder()
                 .link(
-                    "Manage plan".into(),
+                    t!("teams.manage_plan").to_string(),
                     None,
                     Some(Box::new(move |ctx| {
                         ctx.dispatch_typed_action(
@@ -3194,7 +3202,7 @@ impl TeamsWidget {
                         pending_and_close_row.add_child(
                             self.render_state_chip(
                                 appearance,
-                                "EXPIRED".into(),
+                                t!("teams.expired").to_string(),
                                 appearance.theme().ui_error_color(),
                                 themes::theme::Fill::from(appearance.theme().ui_error_color())
                                     .with_opacity(30)
@@ -3208,7 +3216,7 @@ impl TeamsWidget {
                         pending_and_close_row.add_child(
                             self.render_state_chip(
                                 appearance,
-                                "PENDING".into(),
+                                t!("teams.pending").to_string(),
                                 *EMAIL_INVITE_PENDING_COLOR,
                                 themes::theme::Fill::from(*EMAIL_INVITE_PENDING_COLOR)
                                     .with_opacity(30)
@@ -3221,7 +3229,7 @@ impl TeamsWidget {
                     ItemState::Owner => {
                         pending_and_close_row.add_child(self.render_state_chip(
                             appearance,
-                            "OWNER".into(),
+                            t!("teams.owner").to_string(),
                             appearance.theme().accent().into(),
                             appearance.theme().accent().with_opacity(30).into(),
                             appearance.ui_font_size() - 1.,
@@ -3232,7 +3240,7 @@ impl TeamsWidget {
                         pending_and_close_row.add_child(
                             self.render_state_chip(
                                 appearance,
-                                "ADMIN".into(),
+                                t!("teams.admin").to_string(),
                                 appearance
                                     .theme()
                                     .background()
@@ -3664,9 +3672,16 @@ impl TeamsWidget {
         let mut page = Flex::column();
 
         // Title, subtitle, and description
-        page.add_child(render_sub_header(appearance, "Teams".to_string(), None));
+        page.add_child(render_sub_header(
+            appearance,
+            t!("teams.title").to_string(),
+            None,
+        ));
         page.add_child(
-            self.render_sub_header_with_subtext_color(appearance, "Create a team".to_string()),
+            self.render_sub_header_with_subtext_color(
+                appearance,
+                t!("teams.create_team").to_string(),
+            ),
         );
         page.add_child(
             Container::new(
@@ -3696,10 +3711,9 @@ impl TeamsWidget {
             .with_margin_left(-4.)
             .finish();
             let checkbox_row_text = if let Some(domain) = view.auth_state.user_email_domain() {
-                format!("Allow Warp users with an @{domain} email to find and join the team.")
+                t!("teams.team_discoverability_domain", domain = domain).to_string()
             } else {
-                "Allow Warp users with the same email domain as you to find and join the team."
-                    .to_string()
+                t!("teams.team_discoverability_same_domain").to_string()
             };
             let checkbox_row = Container::new(
                 Flex::row()
@@ -3729,7 +3743,7 @@ impl TeamsWidget {
             page.add_child(render_separator(appearance));
             page.add_child(self.render_sub_header_with_subtext_color(
                 appearance,
-                "Or, join an existing team within your company".to_string(),
+                t!("teams.join_existing_company_team").to_string(),
             ));
 
             // Team discovery
@@ -3807,22 +3821,19 @@ impl TeamsWidget {
 
         // Number of teammates
         let teammate_string = if team_state.team.num_members == 1 {
-            "1 teammate".to_string()
+            t!("teams.one_teammate").to_string()
         } else {
-            format!("{} teammates", team_state.team.num_members)
+            t!("teams.teammates_count", count = team_state.team.num_members).to_string()
         };
         single_team.add_child(self.render_sub_text(teammate_string, appearance, None));
 
         // Call to action
         single_team.add_child(
-            Container::new(
-                self.render_sub_text(
-                    "Join this team and start collaborating on workflows, notebooks, and more."
-                        .to_string(),
-                    appearance,
-                    None,
-                ),
-            )
+            Container::new(self.render_sub_text(
+                t!("teams.join_team_collaboration_description").to_string(),
+                appearance,
+                None,
+            ))
             .with_padding_top(12.)
             .with_padding_bottom(12.)
             .finish(),
