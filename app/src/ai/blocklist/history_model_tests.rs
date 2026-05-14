@@ -1405,6 +1405,7 @@ fn test_find_by_token_after_insert_forked_conversation_from_tasks() {
             run_id: None,
             autoexecute_override: None,
             last_event_sequence: None,
+            pinned: false,
         };
         let tasks = vec![warp_multi_agent_api::Task {
             id: "root-task".to_string(),
@@ -1598,6 +1599,7 @@ fn test_fork_then_bind_handoff_token_resolves_to_forked_conversation() {
                 run_id: None,
                 autoexecute_override: None,
                 last_event_sequence: None,
+                pinned: false,
             }),
         )
         .expect("restored source conversation should build");
@@ -1695,6 +1697,7 @@ fn test_fork_conversation_preserves_task_ids_when_requested() {
                 run_id: None,
                 autoexecute_override: None,
                 last_event_sequence: None,
+                pinned: false,
             }),
         )
         .expect("restored source conversation should build");
@@ -1781,6 +1784,7 @@ fn test_fork_conversation_title_override_replaces_prefix() {
                 run_id: None,
                 autoexecute_override: None,
                 last_event_sequence: None,
+                pinned: false,
             }),
         )
         .expect("restored source conversation should build");

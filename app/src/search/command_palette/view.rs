@@ -179,7 +179,7 @@ impl warpui::View for View {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
 
-        let body = if self.search_bar_state.as_ref(app).should_show_zero_state() {
+        let body = if self.search_bar.as_ref(app).should_show_zero_state(app) {
             ChildView::new(&self.zero_state_handle).finish()
         } else {
             self.render_palette_list(theme, app)
@@ -364,15 +364,15 @@ impl View {
     }
 
     pub fn select_next_item(&mut self, ctx: &mut ViewContext<Self>) {
-        self.search_bar_state.update(ctx, |state, ctx| {
-            state.handle_selection_update(SelectionUpdate::Down, ctx);
+        self.search_bar.update(ctx, |search_bar, ctx| {
+            search_bar.handle_selection_update(SelectionUpdate::Down, ctx);
         });
         ctx.notify();
     }
 
     pub fn select_prev_item(&mut self, ctx: &mut ViewContext<Self>) {
-        self.search_bar_state.update(ctx, |state, ctx| {
-            state.handle_selection_update(SelectionUpdate::Up, ctx);
+        self.search_bar.update(ctx, |search_bar, ctx| {
+            search_bar.handle_selection_update(SelectionUpdate::Up, ctx);
         });
         ctx.notify();
     }

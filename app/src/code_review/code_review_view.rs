@@ -184,7 +184,7 @@ use super::{
     GlobalCodeReviewEvent, GlobalCodeReviewModel,
 };
 #[cfg(not(target_family = "wasm"))]
-use crate::code::buffer_location::FileLocation;
+use crate::code::buffer_location::LocalOrRemotePath;
 use crate::code::ShowCommentEditorProvider;
 #[cfg(not(target_family = "wasm"))]
 use crate::code::ShowFindReferencesCard;
@@ -2366,6 +2366,11 @@ impl CodeReviewView {
                 }
                 ctx.notify();
             }
+            DiffStateModelEvent::ConnectionLost => {
+                // Don't clear loaded state — keep stale diffs visible
+                // so the user can still see what they were looking at.
+                ctx.notify();
+            }
         }
     }
 
@@ -2495,6 +2500,12 @@ impl CodeReviewView {
                     repo.state = CodeReviewViewState::Error(err);
                 }
                 ctx.notify();
+                return;
+            }
+            DiffState::Disconnected => {
+                // Disconnected state is handled via the ConnectionLost event
+                // path, which preserves stale diffs. If invalidate_all is
+                // called while disconnected (e.g. from a stale push), ignore.
                 return;
             }
             DiffState::Loaded => (),
@@ -2944,7 +2955,7 @@ impl CodeReviewView {
 
             let local_code_view = ctx.add_typed_action_view(|ctx| {
                 let editor = LocalCodeEditorView::new_with_global_buffer(
-                    FileLocation::Local(full_file_path.clone()),
+                    LocalOrRemotePath::Local(full_file_path.clone()),
                     |buffer_state, ctx| {
                         ctx.add_typed_action_view(|ctx| {
                             let mut editor_view = CodeEditorView::new(

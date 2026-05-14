@@ -53,7 +53,7 @@ use crate::menu::{Event, Menu, MenuItem, MenuItemFields};
 
 use crate::{
     code::{
-        buffer_location::FileLocation as BufferFileLocation,
+        buffer_location::LocalOrRemotePath as BufferFileLocation,
         editor::model::HoverableLink,
         footer::{CodeFooterView, CodeFooterViewEvent},
         global_buffer_model::{BufferState, GlobalBufferModel},

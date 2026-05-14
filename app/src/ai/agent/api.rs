@@ -119,6 +119,9 @@ pub struct RequestParams {
 
     /// User-provided API keys for AI providers (BYO API Key).
     pub api_keys: Option<warp_multi_agent_api::request::settings::ApiKeys>,
+    /// User-provided custom model providers (BYOK endpoints).
+    pub custom_model_providers:
+        Option<warp_multi_agent_api::request::settings::CustomModelProviders>,
     pub allow_use_of_warp_credits_with_byok: bool,
     pub autonomy_level: warp_multi_agent_api::AutonomyLevel,
     pub isolation_level: warp_multi_agent_api::IsolationLevel,
@@ -238,10 +241,19 @@ impl RequestParams {
         let should_redact_secrets = get_secret_obfuscation_mode(app).should_redact_secret();
 
         let user_workspaces = UserWorkspaces::as_ref(app);
-        let api_keys = ApiKeyManager::as_ref(app).api_keys_for_request(
-            user_workspaces.is_byo_api_key_enabled(app),
+        let api_key_manager = ApiKeyManager::as_ref(app);
+        let is_byo_enabled = user_workspaces.is_byo_api_key_enabled(app);
+        let api_keys = api_key_manager.api_keys_for_request(
+            is_byo_enabled,
             user_workspaces.is_aws_bedrock_credentials_enabled(app),
         );
+        let is_custom_inference_enabled = user_workspaces.is_custom_inference_enabled(app);
+        let custom_model_providers = FeatureFlag::CustomInferenceEndpoints
+            .is_enabled()
+            .then(|| {
+                api_key_manager.custom_model_providers_for_request(is_custom_inference_enabled)
+            })
+            .flatten();
         let allow_use_of_warp_credits_with_byok =
             *AISettings::as_ref(app).can_use_warp_credits_with_byok;
 
@@ -331,6 +343,7 @@ impl RequestParams {
             planning_enabled: true,
             should_redact_secrets,
             api_keys,
+            custom_model_providers,
             allow_use_of_warp_credits_with_byok,
             autonomy_level,
             isolation_level,

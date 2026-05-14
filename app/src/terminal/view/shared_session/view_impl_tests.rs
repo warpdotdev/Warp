@@ -555,6 +555,8 @@ fn test_on_session_share_ended_inserts_tombstone_for_owned_ambient_session_witho
                     .interaction_state(ctx),
                 InteractionState::Selectable
             );
+            let model = view.model.lock();
+            assert!(!view.should_publish_shared_session_input_editor_update(&model, ctx));
         });
     });
 }

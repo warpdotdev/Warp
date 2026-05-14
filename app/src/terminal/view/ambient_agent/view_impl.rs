@@ -230,11 +230,16 @@ impl TerminalView {
                     Some(error_message.clone()),
                     ctx,
                 );
+
+                if FeatureFlag::CloudModeSetupV2.is_enabled() {
+                    self.insert_conversation_ended_tombstone(ctx);
+                }
+
                 // Refresh the details panel to show failed status
                 if self.is_conversation_details_panel_open {
                     self.fetch_and_update_conversation_details_panel(ctx);
                 }
-                // Re-render to show the error state in the footer.
+                // Re-render to show the error state.
                 ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
@@ -293,6 +298,7 @@ impl TerminalView {
             }
             AmbientAgentViewModelEvent::HarnessSelected => {
                 self.maybe_enter_agent_view_for_shared_third_party_viewer(ctx);
+                self.update_pane_configuration(ctx);
                 ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }

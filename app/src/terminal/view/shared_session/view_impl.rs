@@ -1672,8 +1672,7 @@ impl TerminalView {
         }
         let task_id = self.ambient_agent_task_id_for_details_panel(ctx);
         let terminal_view_id = self.id();
-
-        let tombstone_view_handle = ctx.add_typed_action_view(|ctx| {
+        let tombstone_view_handle = ctx.add_typed_action_view(move |ctx| {
             ConversationEndedTombstoneView::new(ctx, terminal_view_id, task_id)
         });
         #[cfg(not(target_family = "wasm"))]
