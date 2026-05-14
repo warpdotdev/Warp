@@ -144,6 +144,7 @@ en:
     close_panel: "Close panel"
     troubleshoot_notifications: "Troubleshoot notifications"
     view_changelog: "View changelog"
+    view_all_cloud_runs: "View all cloud runs"
     warp_updated: "Warp updated!"
     command_still_running: "A command in this session is still running."
     cannot_open_new_terminal_session: "Cannot open a new terminal session"
@@ -537,6 +538,8 @@ en:
     enable_shell_integration: "Enable Warp shell integration in this session"
     use_agent: "Use agent"
     ask_agent_to_assist: "Ask the Warp agent to assist"
+    give_control_back_to_agent: "Give control back to agent"
+    ask_agent_to_resume: "Ask the Warp agent to resume"
 
   execution_profile:
     models_heading: "MODELS"
@@ -687,6 +690,7 @@ en:
 
   # ── Code Review ──
   code_review:
+    comment: "Comment"
     commit: "Commit"
     push: "Push"
     publish: "Publish"
@@ -695,6 +699,7 @@ en:
     view_in_github: "View in GitHub"
     open_pr: "Open PR"
     file_level_comment_edit_hint: "File-level comments currently can't be edited."
+    comment_imported_from_github: "Comment imported from GitHub"
     view_changes: "View changes"
     local_workspaces_only: "Diffs only work for local workspaces."
     git_repositories_only: "Diffs only work for git repositories."
@@ -748,6 +753,8 @@ en:
     find_references: "Find references"
     goto_line_placeholder: "Line number:Column"
     go_to_line: "Go to line"
+    hunk_label: "Hunk:"
+    reject: "Reject"
 
   code_file_tree:
     open_in_new_pane: "Open in new pane"
@@ -1645,8 +1652,10 @@ en:
     remove: "Remove"
     manage: "Manage"
     continue: "Continue"
+    previous: "Previous"
     next: "Next"
     dismiss: "Dismiss"
+    dont_show_again: "Don't show again"
     finish: "Finish"
     new_badge: "New"
     period: "."

@@ -144,6 +144,7 @@ zh-CN:
     close_panel: "关闭面板"
     troubleshoot_notifications: "排查通知问题"
     view_changelog: "查看更新日志"
+    view_all_cloud_runs: "查看所有云端运行"
     warp_updated: "Warp 已更新！"
     command_still_running: "此会话中仍有命令在运行。"
     cannot_open_new_terminal_session: "无法打开新的终端会话"
@@ -537,6 +538,8 @@ zh-CN:
     enable_shell_integration: "在此会话中启用 Warp shell integration"
     use_agent: "使用 Agent"
     ask_agent_to_assist: "让 Warp Agent 协助"
+    give_control_back_to_agent: "将控制权交还给 Agent"
+    ask_agent_to_resume: "让 Warp Agent 继续"
 
   execution_profile:
     models_heading: "模型"
@@ -687,6 +690,7 @@ zh-CN:
 
   # ── 代码审查 ──
   code_review:
+    comment: "评论"
     commit: "提交"
     push: "推送"
     publish: "发布"
@@ -695,6 +699,7 @@ zh-CN:
     view_in_github: "在 GitHub 中查看"
     open_pr: "打开 PR"
     file_level_comment_edit_hint: "文件级评论暂不支持编辑"
+    comment_imported_from_github: "从 GitHub 导入的评论"
     view_changes: "查看更改"
     local_workspaces_only: "Diff 仅支持本地工作区。"
     git_repositories_only: "Diff 仅支持 Git 仓库。"
@@ -748,6 +753,8 @@ zh-CN:
     find_references: "查找引用"
     goto_line_placeholder: "行号:列"
     go_to_line: "转到行"
+    hunk_label: "Hunk:"
+    reject: "拒绝"
 
   code_file_tree:
     open_in_new_pane: "在新面板中打开"
@@ -1645,8 +1652,10 @@ zh-CN:
     remove: "移除"
     manage: "管理"
     continue: "继续"
+    previous: "上一个"
     next: "下一步"
     dismiss: "忽略"
+    dont_show_again: "不再显示"
     finish: "完成"
     new_badge: "新功能"
     period: "。"
