@@ -891,27 +891,17 @@ impl<'a> TabComponent<'a> {
     /// Returns the agent indicator for the focused session's active conversation,
     /// or `None` if there is no non-empty, non-passive conversation to display.
     /// When a shell command is long-running the status is overridden to
-    /// `InProgress`, matching vertical-tab behavior — except for viewers of
-    /// shared ambient-agent sessions, where the harness CLI is itself the
-    /// long-running shell block and would otherwise pin the indicator to
-    /// `InProgress` for the entire session lifetime even after the agent
-    /// run finishes. There we trust `conversation.status()`, which the
-    /// controller drives off `StreamFinished` (and which the orchestration
-    /// viewer's REST poll keeps in sync as a belt-and-suspenders).
+    /// `InProgress`, matching vertical-tab behavior.
     fn agent_indicator(tab: &TabData, app: &AppContext) -> Option<Indicator> {
         let terminal_view = tab.pane_group.as_ref(app).focused_session_view(app)?;
         let terminal_view_ref = terminal_view.as_ref(app);
         let is_long_running = terminal_view_ref.is_long_running();
-        let is_shared_ambient = terminal_view_ref
-            .model
-            .lock()
-            .is_shared_ambient_agent_session();
         let conversation =
             BlocklistAIHistoryModel::as_ref(app).active_conversation(terminal_view_ref.id())?;
 
         // Show in-progress indicator when a shell command is running in the AgentView.
         // This matches vertical-tab behavior.
-        if is_long_running && !is_shared_ambient {
+        if is_long_running {
             return Some(Indicator::Agent {
                 conversation_status: Some(ConversationStatus::InProgress),
             });
