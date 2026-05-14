@@ -1249,8 +1249,10 @@ impl UpdateEnvironmentForm {
                             Some(t!("settings.failed_load_github_repos").to_string());
                     }
                     Err(e) => {
-                        me.github_dropdown_state.load_error_message =
-                            Some(format!("Failed to load GitHub repos: {}", e));
+                        me.github_dropdown_state.load_error_message = Some(
+                            t!("environments.failed_load_github_repos_error", error = e)
+                                .to_string(),
+                        );
                     }
                 }
 
@@ -1466,7 +1468,8 @@ impl UpdateEnvironmentForm {
                         }
                     },
                     Err(e) => {
-                        let error_message = format!("Failed to suggest a Docker image: {}", e);
+                        let error_message =
+                            t!("environments.failed_suggest_docker_error", error = e).to_string();
                         send_telemetry_from_ctx!(
                             CloudAgentTelemetryEvent::ImageSuggestionFailed {
                                 error: error_message.clone(),
@@ -1855,7 +1858,12 @@ impl UpdateEnvironmentForm {
             .buffer_text(app)
             .chars()
             .count();
-        let count_text = format!("{} / {} characters", char_count, DESCRIPTION_MAX_CHARS);
+        let count_text = t!(
+            "environments.character_count",
+            count = char_count,
+            max = DESCRIPTION_MAX_CHARS
+        )
+        .to_string();
         field.add_child(
             Text::new(
                 count_text,
@@ -2947,7 +2955,10 @@ impl UpdateEnvironmentForm {
                 let ui_builder = appearance.ui_builder().clone();
                 move || {
                     ui_builder
-                        .tool_tip(format!("Open image at {docker_hub_url}"))
+                        .tool_tip(
+                            t!("environments.open_image_at", url = docker_hub_url.clone())
+                                .to_string(),
+                        )
                         .build()
                         .finish()
                 }

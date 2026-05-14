@@ -592,6 +592,10 @@ zh-CN:
     suggest_image: "建议镜像"
     suggest_image_tooltip: "Warp 会根据你选择的仓库建议 Docker 镜像。"
     authenticate: "认证"
+    failed_load_github_repos_error: "加载 GitHub 仓库失败：{error}"
+    failed_suggest_docker_error: "建议 Docker 镜像失败：{error}"
+    character_count: "{count} / {max} 个字符"
+    open_image_at: "打开镜像：{url}"
     suggest_image_github_auth_required: "你需要授予 GitHub 仓库访问权限，才能建议 Docker 镜像"
     suggest_image_no_match: "我们找不到合适匹配。建议为这些仓库使用自定义 Docker 镜像。"
 

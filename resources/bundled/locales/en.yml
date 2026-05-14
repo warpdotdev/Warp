@@ -592,6 +592,10 @@ en:
     suggest_image: "Suggest image"
     suggest_image_tooltip: "Warp will suggest a Docker image based on your selected repositories."
     authenticate: "Authenticate"
+    failed_load_github_repos_error: "Failed to load GitHub repos: {error}"
+    failed_suggest_docker_error: "Failed to suggest a Docker image: {error}"
+    character_count: "{count} / {max} characters"
+    open_image_at: "Open image at {url}"
     suggest_image_github_auth_required: "You need to grant access to your GitHub repos to suggest a Docker image"
     suggest_image_no_match: "We couldn't find a good match. We recommend using a custom Docker image for these repos."
 
