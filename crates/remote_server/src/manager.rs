@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 #[cfg(not(target_family = "wasm"))]
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -1505,36 +1506,50 @@ impl RemoteServerManager {
     }
 
     /// Sends a `NavigatedToDirectory` request to the remote server for
-    /// the given session and emits the response as a manager event.
+    /// the given session and returns a future that resolves with
+    /// `Some((remote_path, is_git))` on success, or `None` on failure
+    /// or dedup skip. The `NavigatedToDirectory` event is still emitted
+    /// for other subscribers (file tree, etc.).
     ///
     /// Deduplicates: if the same `(session_id, path)` was already requested,
-    /// the call is a no-op.
+    /// resolves to `None` immediately.
+    ///
+    /// Callers that don't need the result can simply drop the future.
     pub fn navigate_to_directory(
         &mut self,
         session_id: SessionId,
         path: String,
         ctx: &mut ModelContext<Self>,
-    ) {
+    ) -> impl Future<Output = Option<(RemotePath, bool)>> {
+        use futures::future::ready;
+
+        match self.navigate_to_directory_impl(session_id, path, ctx) {
+            Some(rx) => futures::future::Either::Left(async move { rx.await.ok().flatten() }),
+            None => futures::future::Either::Right(ready(None)),
+        }
+    }
+
+    /// Returns `Some(receiver)` when a request was dispatched, `None` when
+    /// skipped (dedup or missing client).
+    fn navigate_to_directory_impl(
+        &mut self,
+        session_id: SessionId,
+        path: String,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<futures::channel::oneshot::Receiver<Option<(RemotePath, bool)>>> {
         // Dedup: skip if this session already navigated to the same path.
         if self.last_navigated_path.get(&session_id) == Some(&path) {
-            return;
+            return None;
         }
 
-        let Some(client) = self.client_for_session(session_id).cloned() else {
-            log::warn!(
-                "Remote server navigate_to_directory: no connected client session={session_id:?}"
-            );
-            return;
-        };
-        let Some(host_id) = self.host_id_for_session(session_id).cloned() else {
-            log::warn!("Remote server navigate_to_directory: no host_id session={session_id:?}");
-            return;
-        };
+        let client = self.client_for_session(session_id).cloned()?;
+        let host_id = self.host_id_for_session(session_id).cloned()?;
 
         // Record only after confirming the client is connected, so that a
         // retry after SessionConnected is not incorrectly deduplicated.
         self.last_navigated_path.insert(session_id, path.clone());
 
+        let (tx, rx) = futures::channel::oneshot::channel();
         let spawner = self.spawner.clone();
         ctx.background_executor()
             .spawn(async move {
@@ -1551,8 +1566,11 @@ impl RemoteServerManager {
                                          session={session_id:?} indexed_path={}",
                                         resp.indexed_path
                                     );
+                                    let _ = tx.send(None);
                                     return;
                                 };
+                                let result = Some((remote_path.clone(), resp.is_git));
+                                let _ = tx.send(result);
                                 ctx.emit(RemoteServerManagerEvent::NavigatedToDirectory {
                                     session_id,
                                     remote_path,
@@ -1563,12 +1581,13 @@ impl RemoteServerManager {
                     }
                     Err(e) => {
                         log::warn!("Remote server navigate_to_directory failed: session={session_id:?} error={e}");
-                        // Transport-level telemetry is emitted automatically
-                        // by send_tracked_request via ClientEvent::RequestFailed.
+                        let _ = tx.send(None);
                     }
                 }
             })
             .detach();
+
+        Some(rx)
     }
 
     /// Sends a `SessionBootstrapped` notification to the remote server.

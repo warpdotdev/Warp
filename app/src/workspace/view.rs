@@ -270,8 +270,6 @@ use crate::pane_group::{
     TabBarHoverIndex,
 };
 use crate::remote_server::manager::RemoteServerManager;
-#[cfg(feature = "local_fs")]
-use crate::remote_server::manager::RemoteServerManagerEvent;
 use crate::terminal::keys_settings::KeysSettings;
 use crate::terminal::shared_session::SharedSessionActionSource;
 
@@ -2860,28 +2858,6 @@ impl Workspace {
             &SessionSettings::handle(ctx),
             Self::handle_session_settings_event,
         );
-
-        // When a remote server session finishes its initialize handshake, re-run
-        // update_active_session so navigate_to_directory fires now that the
-        // client is connected (it may have been skipped on the initial pwd change
-        // because the handshake was still in progress).
-        #[cfg(feature = "local_fs")]
-        if FeatureFlag::SshRemoteServer.is_enabled() {
-            ctx.subscribe_to_model(
-                &RemoteServerManager::handle(ctx),
-                |me, _handle, event, ctx| match event {
-                    RemoteServerManagerEvent::SessionConnected { .. } => {
-                        me.update_active_session(ctx);
-                    }
-                    RemoteServerManagerEvent::SetupStateChanged { state, .. }
-                        if state.is_failed() =>
-                    {
-                        me.update_active_session(ctx);
-                    }
-                    _ => {}
-                },
-            );
-        }
 
         ctx.subscribe_to_model(&WindowSettings::handle(ctx), |me, _handle, event, ctx| {
             me.handle_window_settings_changed_event(event, ctx);
@@ -8128,7 +8104,10 @@ impl Workspace {
             // Read repo_path and terminal_view from the pane group (immutable context).
             let read_result = active_pane_group.read(ctx, |pane_group, ctx| {
                 pane_group.active_session_view(ctx).map(|terminal_view| {
-                    let repo_path = terminal_view.as_ref(ctx).current_repo_path().cloned();
+                    let repo_path = terminal_view
+                        .as_ref(ctx)
+                        .current_local_repo_path()
+                        .map(Path::to_path_buf);
                     (repo_path, terminal_view.downgrade())
                 })
             });
@@ -8293,7 +8272,10 @@ impl Workspace {
         // Read repo_path and terminal_view from pane group (immutable context).
         let read_result = pane_group_handle.read(ctx, |pane_group, ctx| {
             pane_group.active_session_view(ctx).map(|terminal_view| {
-                let repo_path = terminal_view.as_ref(ctx).current_repo_path().cloned();
+                let repo_path = terminal_view
+                    .as_ref(ctx)
+                    .current_local_repo_path()
+                    .map(Path::to_path_buf);
                 (repo_path, terminal_view.downgrade())
             })
         });
@@ -15079,33 +15061,24 @@ impl Workspace {
 
         if let Some(terminal_handle) = pane_group_handle.as_ref(ctx).active_session_view(ctx) {
             #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]
-            let (
-                session,
-                path_if_local,
-                is_local,
-                is_wsl_session,
-                session_id,
-                pwd,
-                has_pending_ssh,
-            ) = terminal_handle.read(ctx, |terminal, ctx| {
-                let active_session_id = terminal.active_block_session_id();
-                let session =
-                    active_session_id.and_then(|id| terminal.sessions_model().as_ref(ctx).get(id));
-                let path_if_local = terminal.active_session_path_if_local(ctx);
-                let is_local = terminal.active_session_is_local(ctx);
-                let is_wsl_session = session.as_ref().map(|s| s.is_wsl()).unwrap_or(false);
-                let pwd = terminal.pwd();
-                let has_pending_ssh = terminal.has_pending_ssh_command();
-                (
-                    session,
-                    path_if_local,
-                    is_local,
-                    is_wsl_session,
-                    active_session_id,
-                    pwd,
-                    has_pending_ssh,
-                )
-            });
+            let (session, path_if_local, is_local, is_wsl_session, session_id, has_pending_ssh) =
+                terminal_handle.read(ctx, |terminal, ctx| {
+                    let active_session_id = terminal.active_block_session_id();
+                    let session = active_session_id
+                        .and_then(|id| terminal.sessions_model().as_ref(ctx).get(id));
+                    let path_if_local = terminal.active_session_path_if_local(ctx);
+                    let is_local = terminal.active_session_is_local(ctx);
+                    let is_wsl_session = session.as_ref().map(|s| s.is_wsl()).unwrap_or(false);
+                    let has_pending_ssh = terminal.has_pending_ssh_command();
+                    (
+                        session,
+                        path_if_local,
+                        is_local,
+                        is_wsl_session,
+                        active_session_id,
+                        has_pending_ssh,
+                    )
+                });
 
             let window_id = ctx.window_id();
             let working_directory_clone = path_if_local.clone();
@@ -15138,17 +15111,6 @@ impl Workspace {
                 && session_id.is_some_and(|sid| {
                     RemoteServerManager::as_ref(ctx).is_session_potentially_active(sid)
                 });
-
-            // When the session has a remote server, tell it about the current
-            // directory so it can start indexing and push repo metadata back.
-            #[cfg(feature = "local_fs")]
-            if has_remote_server {
-                if let (Some(sid), Some(cwd)) = (session_id, pwd) {
-                    RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
-                        mgr.navigate_to_directory(sid, cwd, ctx);
-                    });
-                }
-            }
 
             let enablement = CodingPanelEnablementState::from_session_env(
                 file_tree_and_global_search_are_enabled,
@@ -21265,8 +21227,10 @@ impl TypedActionView for Workspace {
                         pane_group
                             .terminal_view_from_pane_id(locator.pane_id, ctx)
                             .map(|terminal_view| {
-                                let repo_path =
-                                    terminal_view.as_ref(ctx).current_repo_path().cloned();
+                                let repo_path = terminal_view
+                                    .as_ref(ctx)
+                                    .current_local_repo_path()
+                                    .map(Path::to_path_buf);
                                 (repo_path, terminal_view.downgrade())
                             })
                     });
