@@ -1687,10 +1687,10 @@ pub(crate) fn initialize_app(
         let conversations = &multi_agent_conversations;
         ctx.add_singleton_model(move |_| BlocklistAIHistoryModel::new(ai_queries, conversations));
     }
-    // Cross-pane pin set for the orchestration pill bar. Registered after
-    // the history model since it subscribes to history events.
+    // Cross-pane UI state for the orchestration pill bar. Registered
+    // after the history model since it subscribes to history events.
     ctx.add_singleton_model(move |ctx| {
-        ai::blocklist::agent_view::orchestration_pin_model::OrchestrationPinModel::new(
+        ai::blocklist::agent_view::orchestration_pill_bar_model::OrchestrationPillBarModel::new(
             initial_pinned_conversations,
             ctx,
         )

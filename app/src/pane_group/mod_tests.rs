@@ -154,10 +154,10 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(TerminalKeybindings::new);
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
-    // Pin model subscribes to BlocklistAIHistoryModel events, so it must be
-    // registered after the history model is in place.
+    // Pill bar model subscribes to history events; register after the
+    // history model is in place.
     app.add_singleton_model(|ctx| {
-        crate::ai::blocklist::agent_view::orchestration_pin_model::OrchestrationPinModel::new(
+        crate::ai::blocklist::agent_view::orchestration_pill_bar_model::OrchestrationPillBarModel::new(
             Default::default(),
             ctx,
         )
