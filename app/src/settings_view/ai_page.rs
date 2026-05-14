@@ -5378,7 +5378,6 @@ impl AIInputWidget {
                     left: 6.,
                     right: 6.,
                 }),
-                background: Some(appearance.theme().surface_2().into()),
                 ..Default::default()
             })
             .build()
