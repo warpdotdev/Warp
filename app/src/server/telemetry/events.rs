@@ -2867,12 +2867,19 @@ pub enum TelemetryEvent {
     RemoteServerHostUnsupported {
         remote_os: Option<String>,
         remote_arch: Option<String>,
+        /// Machine-readable unsupported reason, e.g. `"glibc_too_old"`,
+        /// `"non_glibc"`, `"unsupported_os"`, or `"unsupported_arch"`.
+        reason: String,
         /// Detected libc on the remote host, e.g. `"glibc 2.28"`,
         /// `"musl"`, `"unknown"`.
         detected_libc: String,
         /// Required minimum glibc reported by the script. Empty when
         /// the unsupported classification was not glibc-related.
         required_glibc: String,
+        /// Raw unsupported OS value when the host's kernel is unsupported.
+        unsupported_os: Option<String>,
+        /// Raw unsupported architecture value when the CPU architecture is unsupported.
+        unsupported_arch: Option<String>,
     },
     /// Emitted when a reconnection attempt succeeds after a spontaneous disconnect.
     RemoteServerReconnection {
@@ -4259,13 +4266,19 @@ impl TelemetryEvent {
             TelemetryEvent::RemoteServerHostUnsupported {
                 remote_os,
                 remote_arch,
+                reason,
                 detected_libc,
                 required_glibc,
+                unsupported_os,
+                unsupported_arch,
             } => Some(json!({
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
+                "reason": reason,
                 "detected_libc": detected_libc,
                 "required_glibc": required_glibc,
+                "unsupported_os": unsupported_os,
+                "unsupported_arch": unsupported_arch,
             })),
             TelemetryEvent::RemoteServerReconnection {
                 attempt,

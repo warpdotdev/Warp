@@ -1361,6 +1361,12 @@ pub(crate) fn initialize_app(
     ctx.add_singleton_model(remote_server::codebase_index_model::RemoteCodebaseIndexModel::new);
     #[cfg(not(target_family = "wasm"))]
     remote_server::wire_auth_token_rotation(ctx);
+    #[cfg(not(target_family = "wasm"))]
+    if matches!(launch_mode, LaunchMode::App { .. }) {
+        remote_server::ssh_transport::installation::cleanup::schedule_remote_server_tarball_cache_cleanup(
+            ctx.background_executor().clone(),
+        );
+    }
 
     log::info!(
         "Starting warp with channel state {} and version {:?}",

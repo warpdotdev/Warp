@@ -13,6 +13,7 @@ use crate::client::InitializeParams;
 use crate::client::RemoteServerClient;
 use crate::codebase_index_proto::RemoteCodebaseIndexStatus;
 use crate::proto::{DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot};
+use crate::setup::unsupported_reason_from_transport_error;
 use crate::setup::PreinstallCheckResult;
 #[cfg(not(target_family = "wasm"))]
 use crate::setup::RemoteOs;
@@ -655,15 +656,36 @@ impl RemoteServerManager {
                     // versioned binary present), so it can skip the
                     // install prompt in the update case.
                     let platform_result = transport.detect_platform().await;
-                    let check_result = transport.check_binary().await;
-                    let old_binary_result = transport.check_has_old_binary().await;
                     let platform = match platform_result {
                         Ok(p) => Some(p),
                         Err(e) => {
+                            if let Some(reason) = unsupported_reason_from_transport_error(&e) {
+                                log::info!(
+                                    "Remote server platform detection classified host as unsupported: session={session_id:?} error={e}"
+                                );
+                                let _ = spawner
+                                    .spawn(move |_me, ctx| {
+                                        ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
+                                            session_id,
+                                            state: RemoteServerSetupState::Unsupported { reason },
+                                        });
+                                        ctx.emit(RemoteServerManagerEvent::BinaryCheckComplete {
+                                            session_id,
+                                            result: Err(Arc::new(e)),
+                                            remote_platform: None,
+                                            preinstall_check: None,
+                                            has_old_binary: false,
+                                        });
+                                    })
+                                    .await;
+                                return;
+                            }
                             log::warn!("Remote server platform detection failed: session={session_id:?} error={e}");
                             None
                         }
                     };
+                    let check_result = transport.check_binary().await;
+                    let old_binary_result = transport.check_has_old_binary().await;
                     let has_old_binary = match old_binary_result {
                         Ok(has) => has,
                         Err(e) => {
@@ -698,12 +720,19 @@ impl RemoteServerManager {
                                 me.session_platforms.insert(session_id, p.clone());
                             }
                             if let Err(error) = &check_result {
-                                ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
-                                    session_id,
-                                    state: RemoteServerSetupState::Failed {
-                                        error: error.to_string(),
-                                    },
-                                });
+                                if let Some(reason) = unsupported_reason_from_transport_error(error) {
+                                    ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
+                                        session_id,
+                                        state: RemoteServerSetupState::Unsupported { reason },
+                                    });
+                                } else {
+                                    ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
+                                        session_id,
+                                        state: RemoteServerSetupState::Failed {
+                                            error: error.to_string(),
+                                        },
+                                    });
+                                }
                             }
                             ctx.emit(RemoteServerManagerEvent::BinaryCheckComplete {
                                 session_id,
@@ -792,12 +821,20 @@ impl RemoteServerManager {
                     let _ = spawner
                         .spawn(move |_me, ctx| {
                             if let Err(error) = &outcome.result {
-                                ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
-                                    session_id,
-                                    state: RemoteServerSetupState::Failed {
-                                        error: error.to_string(),
-                                    },
-                                });
+                                if let Some(reason) = unsupported_reason_from_transport_error(error)
+                                {
+                                    ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
+                                        session_id,
+                                        state: RemoteServerSetupState::Unsupported { reason },
+                                    });
+                                } else {
+                                    ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
+                                        session_id,
+                                        state: RemoteServerSetupState::Failed {
+                                            error: error.to_string(),
+                                        },
+                                    });
+                                }
                             }
                             ctx.emit(RemoteServerManagerEvent::BinaryInstallComplete {
                                 session_id,

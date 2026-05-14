@@ -19,7 +19,8 @@ use crate::terminal::model::session::{IsLegacySSHSession, SessionInfo};
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
 use crate::{send_telemetry_from_ctx, TelemetryEvent};
 use remote_server::setup::{
-    PreinstallCheckResult, PreinstallStatus, RemoteLibc, RemotePlatform, UnsupportedReason,
+    unsupported_reason_from_transport_error, PreinstallCheckResult, PreinstallStatus, RemoteLibc,
+    RemotePlatform, UnsupportedReason,
 };
 use remote_server::transport::Error;
 
@@ -263,7 +264,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                 "Remote server preinstall check classified as unsupported, falling back to legacy SSH: session={session_id:?} status={:?}",
                 check.status
             );
-            send_unsupported_telemetry(self.remote_platform.as_ref(), check, ctx);
+            send_unsupported_telemetry(self.remote_platform.as_ref(), &reason, Some(check), ctx);
             RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
                 mgr.mark_setup_unsupported(session_id, reason, ctx);
             });
@@ -330,6 +331,17 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                 }
             }
             Err(err) => {
+                if let Some(reason) = unsupported_reason_from_transport_error(&err) {
+                    log::info!(
+                        "Remote server platform check classified host as unsupported, falling back to legacy SSH: session={session_id:?} error={err}"
+                    );
+                    send_unsupported_telemetry(self.remote_platform.as_ref(), &reason, None, ctx);
+                    RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
+                        mgr.mark_setup_unsupported(session_id, reason, ctx);
+                    });
+                    self.flush_stashed_bootstrap(session_info, ctx);
+                    return;
+                }
                 log::warn!("Remote server binary check failed: session={session_id:?} error={err}");
                 self.flush_stashed_bootstrap(session_info, ctx);
             }
@@ -509,6 +521,17 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                 self.connect_session_for_current_identity(session_id, socket_path, ctx);
             }
             Err(err) => {
+                if let Some(reason) = unsupported_reason_from_transport_error(&err) {
+                    log::info!(
+                        "Remote server binary install classified host as unsupported, falling back to legacy SSH: session={session_id:?} error={err}"
+                    );
+                    send_unsupported_telemetry(self.remote_platform.as_ref(), &reason, None, ctx);
+                    RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
+                        mgr.mark_setup_unsupported(session_id, reason, ctx);
+                    });
+                    self.flush_stashed_bootstrap(session_info, ctx);
+                    return;
+                }
                 log::warn!(
                     "Remote server binary install failed: session={session_id:?} error={err}"
                 );
@@ -559,7 +582,8 @@ fn describe_libc(libc: &RemoteLibc) -> String {
 
 fn send_unsupported_telemetry<T: EventLoopSender>(
     remote_platform: Option<&RemotePlatform>,
-    check: &PreinstallCheckResult,
+    reason: &UnsupportedReason,
+    preinstall_check: Option<&PreinstallCheckResult>,
     ctx: &mut ModelContext<RemoteServerController<T>>,
 ) {
     let (remote_os, remote_arch) = remote_platform
@@ -570,18 +594,29 @@ fn send_unsupported_telemetry<T: EventLoopSender>(
             )
         })
         .unwrap_or((None, None));
-    let required_glibc = match &check.status {
-        remote_server::setup::PreinstallStatus::Unsupported {
-            reason: UnsupportedReason::GlibcTooOld { required, .. },
-        } => required.to_string(),
-        _ => String::new(),
+    let (reason_name, unsupported_os, unsupported_arch, required_glibc) = match reason {
+        UnsupportedReason::GlibcTooOld { required, .. } => {
+            ("glibc_too_old", None, None, required.to_string())
+        }
+        UnsupportedReason::NonGlibc { .. } => ("non_glibc", None, None, String::new()),
+        UnsupportedReason::UnsupportedOs { os } => {
+            ("unsupported_os", Some(os.clone()), None, String::new())
+        }
+        UnsupportedReason::UnsupportedArch { arch } => {
+            ("unsupported_arch", None, Some(arch.clone()), String::new())
+        }
     };
     send_telemetry_from_ctx!(
         TelemetryEvent::RemoteServerHostUnsupported {
             remote_os,
             remote_arch,
-            detected_libc: describe_libc(&check.libc),
+            reason: reason_name.to_string(),
+            detected_libc: preinstall_check
+                .map(|check| describe_libc(&check.libc))
+                .unwrap_or_else(|| "unknown".to_string()),
             required_glibc,
+            unsupported_os,
+            unsupported_arch,
         },
         ctx
     );
