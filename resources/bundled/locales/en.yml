@@ -1176,6 +1176,23 @@ en:
     manage_shared_blocks: "Manage shared blocks"
     copy_link: "Copy link"
 
+  share_block:
+    title: "Share block"
+    title_placeholder: "Title (optional)"
+    command_and_output: "Command and Output"
+    command: "Command"
+    output: "Output"
+    creation_failed: "Something went wrong. Please try again."
+    link_copied: "Link copied."
+    embed_code_copied: "Embed code copied."
+    default_embed_title: "embedded warp block"
+    create_link: "Create link"
+    get_embed: "Get embed"
+    creating_block: "Creating block..."
+    embed_generation_error: "Error generating embed snippet"
+    show_prompt: "Show prompt"
+    redact_secrets: "Redact secrets (API keys, passwords, IP addresses, PII etc.)"
+
   # ── Code Review Extended ──
   code_review_ext:
     commit: "Commit"

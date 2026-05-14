@@ -1176,6 +1176,23 @@ zh-CN:
     manage_shared_blocks: "管理共享区块"
     copy_link: "复制链接"
 
+  share_block:
+    title: "共享区块"
+    title_placeholder: "标题（可选）"
+    command_and_output: "命令和输出"
+    command: "命令"
+    output: "输出"
+    creation_failed: "出了点问题。请重试。"
+    link_copied: "链接已复制。"
+    embed_code_copied: "嵌入代码已复制。"
+    default_embed_title: "嵌入的 Warp 区块"
+    create_link: "创建链接"
+    get_embed: "获取嵌入代码"
+    creating_block: "正在创建区块..."
+    embed_generation_error: "生成嵌入代码时出错"
+    show_prompt: "显示提示符"
+    redact_secrets: "隐藏密钥（API key、密码、IP 地址、PII 等）"
+
   # ── 代码审查扩展 ──
   code_review_ext:
     commit: "提交"
