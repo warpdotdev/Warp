@@ -95,10 +95,10 @@ impl WarpifyBannerState {
         self.mode.is_ssh()
     }
 
-    pub fn title(&self) -> &str {
+    pub fn title(&self) -> String {
         match &self.mode {
-            WarpificationMode::Ssh { .. } => "Warpify SSH session",
-            WarpificationMode::Subshell { .. } => "Warpify subshell",
+            WarpificationMode::Ssh { .. } => t!("warpify.warpify_ssh_session").to_string(),
+            WarpificationMode::Subshell { .. } => t!("warpify.warpify_subshell").to_string(),
         }
     }
 
