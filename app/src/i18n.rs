@@ -101,44 +101,50 @@ fn macos_requested_languages() -> Vec<LanguageIdentifier> {
 
     unsafe {
         let locale_class = class!(NSLocale);
-        let locale: *const Object = msg_send![locale_class, currentLocale];
+        let preferred_languages: *const Object = msg_send![locale_class, preferredLanguages];
+        let count: usize = msg_send![preferred_languages, count];
 
-        let is_language_code_supported: bool =
-            msg_send![locale, respondsToSelector: sel!(languageCode)];
-        if !is_language_code_supported {
-            return vec!["en".parse().expect("en is a valid language identifier")];
+        let mut requested = Vec::with_capacity(count);
+        for index in 0..count {
+            let language: *const Object = msg_send![preferred_languages, objectAtIndex: index];
+            match nsstring_as_str(language) {
+                Ok(language) => {
+                    if let Some(language) = parse_language_identifier(language) {
+                        requested.push(language);
+                    }
+                }
+                Err(err) => {
+                    log::warn!(
+                        "[i18n] failed to read macOS preferred language at index {index}: {err}"
+                    );
+                }
+            }
         }
 
-        let language_code: *const Object = msg_send![locale, languageCode];
-        let language_code_str = nsstring_as_str(language_code)
-            .map(str::to_owned)
-            .unwrap_or_else(|_| "en".to_string());
+        languages_or_fallback(requested)
+    }
+}
 
-        let is_country_code_supported: bool =
-            msg_send![locale, respondsToSelector: sel!(countryCode)];
-        let locale = if is_country_code_supported {
-            let country_code: *const Object = msg_send![locale, countryCode];
-            let country_code_str = nsstring_as_str(country_code)
-                .map(str::to_owned)
-                .unwrap_or_default();
-
-            if country_code_str.is_empty() {
-                language_code_str
-            } else {
-                format!("{language_code_str}-{country_code_str}")
-            }
-        } else {
-            language_code_str
-        };
-
-        match locale.parse() {
-            Ok(locale) => vec![locale],
-            Err(err) => {
-                log::warn!("[i18n] invalid macOS locale {locale:?}: {err}; falling back to en");
-                vec!["en".parse().expect("en is a valid language identifier")]
-            }
+fn parse_language_identifier(language: &str) -> Option<LanguageIdentifier> {
+    match language.parse::<LanguageIdentifier>() {
+        Ok(language) => Some(language),
+        Err(err) => {
+            log::warn!("[i18n] invalid language identifier {language:?}: {err}");
+            None
         }
     }
+}
+
+fn languages_or_fallback(languages: Vec<LanguageIdentifier>) -> Vec<LanguageIdentifier> {
+    if languages.is_empty() {
+        vec![fallback_language()]
+    } else {
+        languages
+    }
+}
+
+fn fallback_language() -> LanguageIdentifier {
+    "en".parse().expect("en is a valid language identifier")
 }
 
 /// 取全局 loader。`init()` 没调过时返回 `None`(早期/测试代码可用 [`t_or`] 兜底)。
@@ -271,5 +277,26 @@ mod tests {
         // 不存在的 key — fluent 会返回 key 本身或带 marker 的字符串
         let missing = loader.get("definitely-does-not-exist");
         assert!(missing.contains("definitely-does-not-exist"));
+    }
+
+    #[test]
+    fn requested_languages_keep_preferred_order() {
+        let languages = ["ja", "zh-CN"]
+            .into_iter()
+            .filter_map(parse_language_identifier)
+            .collect();
+
+        let languages = languages_or_fallback(languages);
+
+        assert_eq!(languages[0].to_string(), "ja");
+        assert_eq!(languages[1].to_string(), "zh-CN");
+    }
+
+    #[test]
+    fn requested_languages_fall_back_to_english_when_empty() {
+        let languages = languages_or_fallback(Vec::new());
+
+        assert_eq!(languages.len(), 1);
+        assert_eq!(languages[0].to_string(), "en");
     }
 }

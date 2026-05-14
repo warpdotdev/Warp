@@ -107,13 +107,11 @@ mod mac {
                 let language_code_str = nsstring_as_str(language_code)
                     .expect("should always be valid UTF-8 string")
                     .to_owned();
-                let _: () = msg_send![language_code, release];
 
                 let country_code: *const Object = msg_send![locale, countryCode];
                 let country_code_str = nsstring_as_str(country_code)
                     .expect("should always be valid UTF-8 string")
                     .to_owned();
-                let _: () = msg_send![country_code, release];
 
                 format!("{}_{}.UTF-8", &language_code_str, &country_code_str)
             } else {
@@ -121,7 +119,6 @@ mod mac {
                 let identifier_str = nsstring_as_str(identifier)
                     .expect("should always be valid UTF-8 string")
                     .to_owned();
-                let _: () = msg_send![identifier, release];
 
                 identifier_str + ".UTF-8"
             };
