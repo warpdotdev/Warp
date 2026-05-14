@@ -565,10 +565,8 @@ impl RunAgentsCardView {
                 // harness and must not be carried forward; otherwise we'd
                 // route e.g. a Codex secret name into Claude's auth field
                 // in `launch_remote_child`.
-                self.state.orch.auth_secret_name = oc::resolve_default_auth_secret_for_harness(
-                    &self.state.orch.harness_type,
-                    ctx,
-                );
+                self.state.orch.auth_secret_name =
+                    oc::resolve_default_auth_secret_for_harness(&self.state.orch.harness_type, ctx);
 
                 self.auto_launched = true;
                 ctx.notify();
