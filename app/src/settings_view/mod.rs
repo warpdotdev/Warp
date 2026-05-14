@@ -233,20 +233,31 @@ use std::fmt::{self, Display};
 impl Display for SettingsSection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SettingsSection::BillingAndUsage => write!(f, "Billing and usage"),
-            SettingsSection::Keybindings => write!(f, "Keyboard shortcuts"),
-            SettingsSection::SharedBlocks => write!(f, "Shared blocks"),
-            SettingsSection::MCPServers => write!(f, "MCP Servers"),
-            SettingsSection::WarpDrive => write!(f, "Warp Drive"),
-            SettingsSection::WarpAgent => write!(f, "Warp Agent"),
-            SettingsSection::AgentProfiles => write!(f, "Profiles"),
-            SettingsSection::AgentMCPServers => write!(f, "MCP servers"),
-            SettingsSection::Knowledge => write!(f, "Knowledge"),
-            SettingsSection::ThirdPartyCLIAgents => write!(f, "Third party CLI agents"),
-            SettingsSection::CodeIndexing => write!(f, "Indexing and projects"),
-            SettingsSection::EditorAndCodeReview => write!(f, "Editor and Code Review"),
-            SettingsSection::CloudEnvironments => write!(f, "Environments"),
-            SettingsSection::OzCloudAPIKeys => write!(f, "Oz Cloud API Keys"),
+            SettingsSection::About => write!(f, "{}", t!("settings.about")),
+            SettingsSection::Account => write!(f, "{}", t!("settings.account")),
+            SettingsSection::Appearance => write!(f, "{}", t!("settings.appearance")),
+            SettingsSection::BillingAndUsage => write!(f, "{}", t!("settings.billing_and_usage")),
+            SettingsSection::Features => write!(f, "{}", t!("settings.features")),
+            SettingsSection::Keybindings => write!(f, "{}", t!("settings.keyboard_shortcuts")),
+            SettingsSection::Privacy => write!(f, "{}", t!("settings.privacy")),
+            SettingsSection::Referrals => write!(f, "{}", t!("settings.referrals")),
+            SettingsSection::SharedBlocks => write!(f, "{}", t!("settings.shared_blocks")),
+            SettingsSection::Teams => write!(f, "{}", t!("settings.teams")),
+            SettingsSection::MCPServers => write!(f, "{}", t!("settings.mcp_servers")),
+            SettingsSection::WarpDrive => write!(f, "{}", t!("settings.warp_drive")),
+            SettingsSection::WarpAgent => write!(f, "{}", t!("settings.warp_agent")),
+            SettingsSection::AgentProfiles => write!(f, "{}", t!("settings.profiles")),
+            SettingsSection::AgentMCPServers => write!(f, "{}", t!("settings.mcp_servers")),
+            SettingsSection::Knowledge => write!(f, "{}", t!("settings.knowledge")),
+            SettingsSection::ThirdPartyCLIAgents => {
+                write!(f, "{}", t!("settings.third_party_cli_agents"))
+            }
+            SettingsSection::CodeIndexing => write!(f, "{}", t!("settings.indexing_and_projects")),
+            SettingsSection::EditorAndCodeReview => {
+                write!(f, "{}", t!("settings.editor_and_code_review"))
+            }
+            SettingsSection::CloudEnvironments => write!(f, "{}", t!("settings.environments")),
+            SettingsSection::OzCloudAPIKeys => write!(f, "{}", t!("settings.oz_cloud_api_keys")),
             _ => write!(f, "{self:?}"),
         }
     }
@@ -1202,19 +1213,19 @@ impl SettingsView {
         let mut nav_items = vec![
             SettingsNavItem::Page(SettingsSection::Account),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
-                "Agents",
+                t!("settings.agents").to_string(),
                 SettingsSection::ai_subpages().to_vec(),
             )),
             SettingsNavItem::Page(SettingsSection::BillingAndUsage),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
-                "Code",
+                t!("settings.code").to_string(),
                 vec![
                     SettingsSection::CodeIndexing,
                     SettingsSection::EditorAndCodeReview,
                 ],
             )),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
-                "Cloud platform",
+                t!("settings.cloud_platform").to_string(),
                 vec![
                     SettingsSection::CloudEnvironments,
                     SettingsSection::OzCloudAPIKeys,
@@ -2672,7 +2683,7 @@ impl BackingView for SettingsView {
         _ctx: &view::HeaderRenderContext<'_>,
         _app: &AppContext,
     ) -> view::HeaderContent {
-        view::HeaderContent::simple("Settings")
+        view::HeaderContent::simple(t!("workspace.settings").to_string())
     }
 
     fn set_focus_handle(&mut self, focus_handle: PaneFocusHandle, _ctx: &mut ViewContext<Self>) {
