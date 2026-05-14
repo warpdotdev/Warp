@@ -118,22 +118,23 @@ impl ExternalEditorView {
         dropdown: &mut Dropdown<ExternalEditorAction>,
         ctx: &mut ViewContext<Dropdown<ExternalEditorAction>>,
     ) {
-        let default_option_text = "Split Pane";
+        let default_option_text = t!("settings.split_pane").to_string();
+        let new_tab_text = t!("settings.new_tab").to_string();
         let default_app = DropdownItem::new(
-            default_option_text,
+            default_option_text.clone(),
             ExternalEditorAction::SetLayout(EditorLayout::SplitPane),
         );
 
         let mut items = vec![default_app];
         items.push(DropdownItem::new(
-            "New Tab",
+            new_tab_text.clone(),
             ExternalEditorAction::SetLayout(EditorLayout::NewTab),
         ));
 
         dropdown.set_items(items, ctx);
         match layout_to_open_files {
-            EditorLayout::SplitPane => dropdown.set_selected_by_name(default_option_text, ctx),
-            EditorLayout::NewTab => dropdown.set_selected_by_name("New Tab", ctx),
+            EditorLayout::SplitPane => dropdown.set_selected_by_name(&default_option_text, ctx),
+            EditorLayout::NewTab => dropdown.set_selected_by_name(&new_tab_text, ctx),
         };
     }
 

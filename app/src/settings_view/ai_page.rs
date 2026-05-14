@@ -1356,13 +1356,15 @@ impl AISettingsPageView {
             dropdown.set_top_bar_max_width(AI_SETTINGS_DROPDOWN_WIDTH);
             dropdown.set_menu_width(AI_SETTINGS_DROPDOWN_WIDTH, ctx);
 
+            let new_tab_label = t!("settings.new_tab").to_string();
+            let split_pane_label = t!("settings.split_pane").to_string();
             let items = vec![
                 DropdownItem::new(
-                    "New Tab",
+                    new_tab_label.clone(),
                     AISettingsPageAction::SetConversationLayout(OpenConversationPreference::NewTab),
                 ),
                 DropdownItem::new(
-                    "Split Pane",
+                    split_pane_label.clone(),
                     AISettingsPageAction::SetConversationLayout(
                         OpenConversationPreference::SplitPane,
                     ),
@@ -1373,9 +1375,11 @@ impl AISettingsPageView {
             let current = *crate::util::file::external_editor::EditorSettings::as_ref(ctx)
                 .open_conversation_layout_preference;
             match current {
-                OpenConversationPreference::NewTab => dropdown.set_selected_by_name("New Tab", ctx),
+                OpenConversationPreference::NewTab => {
+                    dropdown.set_selected_by_name(&new_tab_label, ctx)
+                }
                 OpenConversationPreference::SplitPane => {
-                    dropdown.set_selected_by_name("Split Pane", ctx)
+                    dropdown.set_selected_by_name(&split_pane_label, ctx)
                 }
             };
             dropdown
