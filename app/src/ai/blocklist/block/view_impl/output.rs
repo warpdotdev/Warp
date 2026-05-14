@@ -12,8 +12,8 @@ use crate::util::truncation::truncate_from_end;
 use ai::agent::file_locations::group_file_contexts_for_display;
 
 use crate::ai::blocklist::block::view_impl::common::{
-    MaybeShimmeringText, BLOCKED_ACTION_MESSAGE_FOR_GREP_OR_FILE_GLOB,
-    BLOCKED_ACTION_MESSAGE_FOR_READING_FILES, BLOCKED_ACTION_MESSAGE_FOR_SEARCHING_CODEBASE,
+    blocked_action_message_for_grep_or_file_glob, blocked_action_message_for_reading_files,
+    blocked_action_message_for_searching_codebase, MaybeShimmeringText,
 };
 use crate::ai::blocklist::inline_action::aws_bedrock_credentials_error::AwsBedrockCredentialsErrorView;
 use crate::ai::blocklist::inline_action::create_or_edit_document::CreateOrEditDocumentAction;
@@ -1459,7 +1459,7 @@ fn render_search_codebase(
                 )
                 .with_header(blocked_action_header(
                     id.clone(),
-                    BLOCKED_ACTION_MESSAGE_FOR_SEARCHING_CODEBASE,
+                    blocked_action_message_for_searching_codebase(),
                     buttons.run_button.clone(),
                     buttons.cancel_button.clone(),
                     props.action_model,
@@ -1826,7 +1826,7 @@ fn render_read_files(
         renderable_action = renderable_action
             .with_header(blocked_action_header(
                 id.clone(),
-                BLOCKED_ACTION_MESSAGE_FOR_READING_FILES,
+                blocked_action_message_for_reading_files(),
                 buttons.run_button.clone(),
                 buttons.cancel_button.clone(),
                 props.action_model,
@@ -2581,7 +2581,7 @@ fn render_file_retrieval_tool(
         config = config
             .with_header(blocked_action_header(
                 action_id.clone(),
-                BLOCKED_ACTION_MESSAGE_FOR_GREP_OR_FILE_GLOB,
+                blocked_action_message_for_grep_or_file_glob(),
                 buttons.run_button.clone(),
                 buttons.cancel_button.clone(),
                 props.action_model,
@@ -2698,7 +2698,7 @@ fn render_read_mcp_resource(
         renderable_action = renderable_action
             .with_header(blocked_action_header(
                 action_id.clone(),
-                t!("ai_output.read_mcp_resource_permission").as_ref(),
+                t!("ai_output.read_mcp_resource_permission").to_string(),
                 buttons.run_button.clone(),
                 buttons.cancel_button.clone(),
                 props.action_model,
@@ -2784,7 +2784,7 @@ fn render_upload_artifact(
         renderable_action = renderable_action
             .with_header(blocked_action_header(
                 action_id.clone(),
-                t!("ai_output.upload_artifact_permission").as_ref(),
+                t!("ai_output.upload_artifact_permission").to_string(),
                 buttons.run_button.clone(),
                 buttons.cancel_button.clone(),
                 props.action_model,
@@ -2886,7 +2886,7 @@ fn render_request_computer_use(
         renderable_action = renderable_action
             .with_header(blocked_action_header(
                 action_id.clone(),
-                t!("ai_output.use_computer_permission").as_ref(),
+                t!("ai_output.use_computer_permission").to_string(),
                 buttons.run_button.clone(),
                 buttons.cancel_button.clone(),
                 props.action_model,
@@ -3475,7 +3475,7 @@ pub fn action_icon<V: View>(
 
 pub(super) fn blocked_action_header<V: View>(
     action_id: AIAgentActionId,
-    text: &str,
+    text: impl Into<String>,
     accept_button: CompactibleActionButton,
     cancel_button: CompactibleActionButton,
     action_model: &ModelHandle<BlocklistAIActionModel>,
@@ -3486,7 +3486,7 @@ pub(super) fn blocked_action_header<V: View>(
         Rc::new(cancel_button.clone()),
         Rc::new(accept_button.clone()),
     ];
-    HeaderConfig::new(text.to_owned(), app)
+    HeaderConfig::new(text.into(), app)
         .with_icon(action_icon(&action_id, action_model, block_model, app))
         .with_interaction_mode(InteractionMode::ActionButtons {
             action_buttons,
