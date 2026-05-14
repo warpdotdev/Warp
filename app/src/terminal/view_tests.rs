@@ -683,7 +683,8 @@ fn escape_pops_nested_cloud_agent_view_with_long_running_command() {
                 .lock()
                 .simulate_long_running_block("sleep 10", "running");
 
-            assert!(view.can_pop_nested_cloud_agent_view(ctx));
+            assert!(view.is_ambient_agent_session(ctx));
+            assert!(view.is_nested_cloud_mode(ctx));
             assert_eq!(view.can_exit_agent_view_for_terminal_view(ctx), Ok(()));
         });
 

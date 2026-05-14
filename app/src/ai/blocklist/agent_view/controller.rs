@@ -430,16 +430,10 @@ impl AgentViewController {
                 .block_list()
                 .active_block()
                 .is_active_and_long_running();
-        let is_cloud_agent_view = self
-            .agent_view_state
-            .origin()
-            .is_some_and(|origin| matches!(origin, AgentViewEntryOrigin::CloudAgent));
-
-        // In a non-ambient agent case, users cannot exit the fullscreen agent view
-        // with an active long-running command. Cloud agent panes do not have the
-        // same underlying terminal ownership constraint, so long-running third
-        // party agent commands should not trap the user in agent view.
-        if is_fullscreen_with_long_running && !is_cloud_agent_view {
+        // Cloud agent panes do not have the same underlying terminal ownership
+        // constraint (no local shell process), so long-running third party agent
+        // commands should not trap the user in agent view.
+        if is_fullscreen_with_long_running && !model.is_dummy_cloud_mode_session() {
             return Err(ExitAgentViewError::LongRunningCommand);
         }
 

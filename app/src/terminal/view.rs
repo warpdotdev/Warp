@@ -4718,7 +4718,9 @@ impl TerminalView {
         ctx: &AppContext,
     ) -> Result<(), ExitAgentViewError> {
         match self.agent_view_controller.as_ref(ctx).can_exit_agent_view() {
-            Err(ExitAgentViewError::LongRunningCommand) if self.is_ambient_agent_session(ctx) => {
+            Err(ExitAgentViewError::LongRunningCommand)
+                if self.can_pop_nested_cloud_agent_view(ctx) =>
+            {
                 Ok(())
             }
             result => result,
@@ -20573,7 +20575,7 @@ impl TerminalView {
                         .block_list()
                         .active_block()
                         .is_active_and_long_running();
-                    if is_long_running && self.is_ambient_agent_session(ctx) {
+                    if is_long_running && self.can_pop_nested_cloud_agent_view(ctx) {
                         self.exit_agent_view(ctx);
                     } else if !is_long_running {
                         // During first-time setup, always exit directly without confirmation
