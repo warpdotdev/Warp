@@ -433,7 +433,12 @@ fn prefix_eligible_for_basename_recovery(prefix: &str) -> bool {
 /// runtime, not the script name — so a command surfaces as e.g.
 /// `node /usr/local/bin/codex` and we have to look at the second token to
 /// recover the agent identity. See #9870 for the canonical Codex case.
-const SCRIPT_RUNTIMES: &[&str] = &["node", "nodejs", "bun", "deno", "python", "python3"];
+/// Deno is intentionally omitted: its conventional invocation is
+/// `deno run <script>`, where the script basename sits at `argv[2]` rather than
+/// `argv[1]`. The first-positional recovery used here doesn't cover that shape,
+/// and per maintainer guidance we avoid runtime-specific special cases. See PR
+/// #10022 discussion.
+const SCRIPT_RUNTIMES: &[&str] = &["node", "nodejs", "bun", "python", "python3"];
 
 /// Common script extensions stripped when matching a runtime-invoked script
 /// against `command_prefix()`. Kept narrow on purpose; broadening to every
@@ -451,8 +456,6 @@ const VALUE_TAKING_RUNTIME_FLAGS: &[&str] = &[
     "-e", "--eval", "-p", "--print", "-r", "--require", "-C", "--conditions",
     // Python
     "-c", "-m", "-X", "-W",
-    // Deno (subset)
-    "-A", "--allow-read", "--allow-write", "--allow-net",
     // Bun (subset)
     "-d", "--define",
 ];
