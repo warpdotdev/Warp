@@ -244,13 +244,15 @@ impl TextLayoutSystem {
     /// 且净收益为正 —— 之前 `get_fallback_fonts_for_character` 每次 CJK 字符 cache miss
     /// 都会新建一次 `SystemSource` 并重新 select/load,预热后这条路径首屏即命中已加载 FontId。
     ///
-    /// 失败(locale 未列入 preferred 表 / 系统未装该 family / 句柄加载失败)只记 warn,
-    /// 不影响启动 —— 此时退化到 PR #62 之前的行为,与原 DirectWrite 默认回退一致。
+    /// 非 CJK locale 也会预热 Windows 默认简中 UI 字体族,保证英文 UI 下的中文文件名
+    /// 等普通 `Text` 元素首帧就有可用 Han 字形,且不需要枚举全部系统字体。
+    ///
+    /// 失败(系统未装该 family / 句柄加载失败)只记 warn,不影响启动 —— 此时退化到
+    /// DirectWrite 默认回退。
     pub(crate) fn warm_up_preferred_cjk_families(&self) {
         let locale = current_fallback_locale();
         let families = preferred_cjk_families_for_locale(&locale);
         if families.is_empty() {
-            // 非 CJK locale(en / fr / de / ...)无需预热。
             return;
         }
         let source = FKSource::new();
@@ -346,31 +348,37 @@ fn primary_subtag(lower: &str) -> &str {
         .unwrap_or("")
 }
 
+const SIMPLIFIED_CHINESE_CJK_FAMILIES: &[&str] =
+    &["Microsoft YaHei UI", "Microsoft YaHei", "SimSun"];
+const TRADITIONAL_CHINESE_CJK_FAMILIES: &[&str] = &[
+    "Microsoft JhengHei UI",
+    "Microsoft JhengHei",
+    "PMingLiU",
+    "MingLiU",
+];
+const JAPANESE_CJK_FAMILIES: &[&str] = &[
+    "Yu Gothic UI",
+    "Yu Gothic",
+    "Meiryo UI",
+    "Meiryo",
+    "MS Gothic",
+];
+const KOREAN_CJK_FAMILIES: &[&str] = &["Malgun Gothic", "Gulim", "Dotum"];
+
 /// 按 locale 优先返回 Windows 系统 CJK 字体族(按优先级)。
-/// 用于覆盖 DirectWrite 不参考 locale 的 Han 回退(默认偏向 Microsoft YaHei /
-/// 简体中文,这在 Windows 英文 / 开发环境下尤其明显)。
+/// 用于覆盖 DirectWrite 不参考 locale 的 Han 回退。
 ///
 /// 路由同时识别 BCP-47 region 子标签(zh-TW / zh-HK / zh-MO)和 script 子标签
 /// (zh-Hant / zh-Hans,可带 region:zh-Hant-TW 等),调用方无需事先规范化 tag。
+/// 非 CJK locale 使用简中字体族作为稳定兜底,避免英文 UI 下中文文件名首帧缺字。
 fn preferred_cjk_families_for_locale(locale: &str) -> &'static [&'static str] {
     let lower = locale.to_ascii_lowercase();
     match primary_subtag(&lower) {
-        "ja" => &[
-            "Yu Gothic UI",
-            "Yu Gothic",
-            "Meiryo UI",
-            "Meiryo",
-            "MS Gothic",
-        ],
-        "ko" => &["Malgun Gothic", "Gulim", "Dotum"],
-        "zh" if is_zh_traditional(&lower) => &[
-            "Microsoft JhengHei UI",
-            "Microsoft JhengHei",
-            "PMingLiU",
-            "MingLiU",
-        ],
-        "zh" => &["Microsoft YaHei UI", "Microsoft YaHei", "SimSun"],
-        _ => &[],
+        "ja" => JAPANESE_CJK_FAMILIES,
+        "ko" => KOREAN_CJK_FAMILIES,
+        "zh" if is_zh_traditional(&lower) => TRADITIONAL_CHINESE_CJK_FAMILIES,
+        "zh" => SIMPLIFIED_CHINESE_CJK_FAMILIES,
+        _ => SIMPLIFIED_CHINESE_CJK_FAMILIES,
     }
 }
 
@@ -408,4 +416,52 @@ fn fallback_font_path_handle(font: &font_kit::loaders::directwrite::Font) -> Opt
     let path = file.font_file_path().ok()?;
     let font_index = native.dwrite_font_face.get_index();
     Some(FontHandle::new(path, font_index, font.is_monospace()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        preferred_cjk_families_for_locale, JAPANESE_CJK_FAMILIES, KOREAN_CJK_FAMILIES,
+        SIMPLIFIED_CHINESE_CJK_FAMILIES, TRADITIONAL_CHINESE_CJK_FAMILIES,
+    };
+
+    #[test]
+    fn preferred_cjk_families_defaults_to_simplified_chinese_for_non_cjk_locale() {
+        assert_eq!(
+            preferred_cjk_families_for_locale("en-US"),
+            SIMPLIFIED_CHINESE_CJK_FAMILIES
+        );
+        assert_eq!(
+            preferred_cjk_families_for_locale(""),
+            SIMPLIFIED_CHINESE_CJK_FAMILIES
+        );
+    }
+
+    #[test]
+    fn preferred_cjk_families_respects_cjk_locale() {
+        assert_eq!(
+            preferred_cjk_families_for_locale("zh-CN"),
+            SIMPLIFIED_CHINESE_CJK_FAMILIES
+        );
+        assert_eq!(
+            preferred_cjk_families_for_locale("zh-Hans-US"),
+            SIMPLIFIED_CHINESE_CJK_FAMILIES
+        );
+        assert_eq!(
+            preferred_cjk_families_for_locale("zh-TW"),
+            TRADITIONAL_CHINESE_CJK_FAMILIES
+        );
+        assert_eq!(
+            preferred_cjk_families_for_locale("zh-Hant-HK"),
+            TRADITIONAL_CHINESE_CJK_FAMILIES
+        );
+        assert_eq!(
+            preferred_cjk_families_for_locale("ja-JP"),
+            JAPANESE_CJK_FAMILIES
+        );
+        assert_eq!(
+            preferred_cjk_families_for_locale("ko-KR"),
+            KOREAN_CJK_FAMILIES
+        );
+    }
 }
