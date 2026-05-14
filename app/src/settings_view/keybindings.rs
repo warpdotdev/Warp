@@ -58,11 +58,6 @@ const ROW_HEIGHT: f32 = 28.;
 const EDIT_BUTTONS_BORDER_RADIUS: f32 = 4.0;
 
 const KEYBINDINGS_PAGE_SHORTCUT: &str = "workspace:toggle_keybindings_page";
-const RESET_BUTTON_TEXT: &str = "Default";
-const CANCEL_BUTTON_TEXT: &str = "Cancel";
-const CLEAR_BUTTON_TEXT: &str = "Clear";
-const SAVE_BUTTON_TEXT: &str = "Save";
-
 /// Notifier for custom keybinding changed. Views could subscribe to this for
 /// KeybindingChangedEvent.
 #[derive(Default)]
@@ -410,7 +405,7 @@ impl KeybindingRow {
                 self.mouse_state_handles.remove_mouse_state.clone(),
                 |state| {
                     render_button(
-                        CLEAR_BUTTON_TEXT,
+                        t!("common.clear").to_string(),
                         appearance,
                         self.get_button_text_color(appearance, state),
                     )
@@ -431,7 +426,7 @@ impl KeybindingRow {
                     .clone(),
                 |state| {
                     render_button(
-                        RESET_BUTTON_TEXT,
+                        t!("keybindings.default").to_string(),
                         appearance,
                         self.get_button_text_color(appearance, state),
                     )
@@ -453,12 +448,20 @@ impl KeybindingRow {
                     let cancel_button_color = self.get_button_text_color(appearance, state);
                     if index == 0 {
                         SavePosition::new(
-                            render_button(CANCEL_BUTTON_TEXT, appearance, cancel_button_color),
+                            render_button(
+                                t!("common.cancel").to_string(),
+                                appearance,
+                                cancel_button_color,
+                            ),
                             "first_keybinding_cancel",
                         )
                         .finish()
                     } else {
-                        render_button("Cancel", appearance, cancel_button_color)
+                        render_button(
+                            t!("common.cancel").to_string(),
+                            appearance,
+                            cancel_button_color,
+                        )
                     }
                 },
             )
@@ -475,7 +478,7 @@ impl KeybindingRow {
         let save = Container::new(
             Hoverable::new(self.mouse_state_handles.save_mouse_state.clone(), |state| {
                 render_button(
-                    SAVE_BUTTON_TEXT,
+                    t!("common.save").to_string(),
                     appearance,
                     self.get_button_text_color(appearance, state),
                 )
@@ -905,7 +908,7 @@ fn render_columns(
 }
 
 fn render_button(
-    text: &'static str,
+    text: String,
     appearance: &Appearance,
     line_color: themes::theme::Fill,
 ) -> Box<dyn Element> {

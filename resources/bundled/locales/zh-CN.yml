@@ -468,6 +468,15 @@ zh-CN:
     education_text: "添加密钥或命令。Warp 永远不会存储外部密钥"
     invoke_error: "尝试调用环境变量时出错"
     restore_from_trash: "从废纸篓恢复环境变量"
+    secret_command: "密钥命令"
+    title: "标题"
+    name: "名称"
+    command: "命令"
+    value: "值"
+    description: "描述"
+    variable: "变量"
+    variables: "变量"
+    restore: "恢复"
 
   prompt:
     edit_prompt: "编辑提示词"
@@ -528,6 +537,13 @@ zh-CN:
   keybindings:
     search_placeholder: "按名称或按键搜索（例如 \"cmd d\"）"
     shortcut_conflict_warning: "此快捷键与其他快捷键冲突"
+    default: "默认"
+
+  telemetry_banner:
+    updated_policy: "我们已更新遥测政策。"
+    help_improve_warp: "帮助改进 Warp。"
+    description: "我们可能会收集某些控制台交互，用于改进 Warp 的 AI 能力。你可以随时选择退出。"
+    manage_privacy_settings: "管理隐私设置"
 
   warpify:
     ssh_tmux_warpification_description: "tmux ssh wrapper 在很多默认 wrapper 不适用的情况下可用，但可能需要你点击按钮进行 warpify。对新标签页生效。"
@@ -1752,6 +1768,8 @@ zh-CN:
     copy: "复制"
     paste: "粘贴"
     edit: "编辑"
+    save: "保存"
+    clear: "清除"
     close: "关闭"
     cancel: "取消"
     update: "更新"

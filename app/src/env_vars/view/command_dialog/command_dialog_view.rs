@@ -30,12 +30,6 @@ const CONTAINER_PADDING: f32 = 25.;
 const ELEMENT_SPACING: f32 = 10.;
 const EDITOR_DIVIDE: f32 = 6.;
 
-const SECRET_SPAN: &str = "Secret command";
-const SAVE_BUTTON_LABEL: &str = "Save";
-const CANCEL_BUTTON_LABEL: &str = "Cancel";
-const NAME_PLACEHOLDER_TEXT: &str = "Name";
-const COMMAND_PLACEHOLDER_TEXT: &str = "Command";
-
 #[derive(Debug, Clone)]
 pub enum EnvVarCommandDialogAction {
     Close,
@@ -73,7 +67,7 @@ impl EnvVarCommandDialog {
                 };
 
                 let mut editor = EditorView::single_line(options, ctx);
-                editor.set_placeholder_text(NAME_PLACEHOLDER_TEXT, ctx);
+                editor.set_placeholder_text(t!("env_vars.name"), ctx);
                 editor
             })
         };
@@ -101,7 +95,7 @@ impl EnvVarCommandDialog {
                 };
 
                 let mut editor = EditorView::new(options, ctx);
-                editor.set_placeholder_text(COMMAND_PLACEHOLDER_TEXT, ctx);
+                editor.set_placeholder_text(t!("env_vars.command"), ctx);
                 editor
             })
         };
@@ -184,7 +178,7 @@ impl EnvVarCommandDialog {
         appearance: &Appearance,
         button_mouse_state: MouseStateHandle,
         action: EnvVarCommandDialogAction,
-        label_text: &str,
+        label_text: String,
         is_save: bool,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -198,7 +192,7 @@ impl EnvVarCommandDialog {
                 },
                 button_mouse_state,
             )
-            .with_centered_text_label(label_text.to_owned())
+            .with_centered_text_label(label_text)
             .with_style(UiComponentStyles {
                 font_size: Some(BUTTON_FONT_SIZE),
                 font_weight: Some(warpui::fonts::Weight::Normal),
@@ -257,7 +251,7 @@ impl EnvVarCommandDialog {
         Container::new(
             appearance
                 .ui_builder()
-                .span(SECRET_SPAN)
+                .span(t!("env_vars.secret_command").to_string())
                 .with_style(UiComponentStyles {
                     font_size: Some(SPAN_FONT_SIZE),
                     ..Default::default()
@@ -309,7 +303,7 @@ impl View for EnvVarCommandDialog {
                                                     .cancel_button_mouse_state_handle
                                                     .clone(),
                                                 EnvVarCommandDialogAction::Close,
-                                                CANCEL_BUTTON_LABEL,
+                                                t!("common.cancel").to_string(),
                                                 false,
                                                 app,
                                             ),
@@ -328,7 +322,7 @@ impl View for EnvVarCommandDialog {
                                                 .save_button_mouse_state_handle
                                                 .clone(),
                                             EnvVarCommandDialogAction::SaveCommand,
-                                            SAVE_BUTTON_LABEL,
+                                            t!("common.save").to_string(),
                                             true,
                                             app,
                                         ),

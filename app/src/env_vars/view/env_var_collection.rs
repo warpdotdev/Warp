@@ -85,10 +85,6 @@ const DESCRIPTION_EDITOR_CUTOFF: f32 = 30.;
 const DESCRIPTION_BOTTOM_MARGIN: f32 = 12.;
 const DIVIDER_BOTTOM_MARGIN: f32 = 4.;
 const PLACEHOLDER_FONT_SIZE: f32 = 14.;
-const VARIABLE_VALUE_PLACEHOLDER_TEXT: &str = "Value";
-const VARIABLE_DESCRIPTION_PLACEHOLDER_TEXT: &str = "Description";
-const VARIABLE_NAME_PLACEHOLDER_TEXT: &str = "Variable";
-
 // Text input fields
 // Button spacing
 const BUTTON_CONTAINER_HORIZONTAL_MARGIN: f32 = 36.;
@@ -876,11 +872,12 @@ impl EnvVarCollectionView {
         let appearance = Appearance::as_ref(ctx);
         let ui_font_family = appearance.ui_font_family();
 
+        let variable_name_placeholder = t!("env_vars.variable").to_string();
         let variable_name_editor = Self::create_editor_handle(
             ctx,
             Some(VARIABLE_FONT_SIZE),
             Some(ui_font_family),
-            Some(VARIABLE_NAME_PLACEHOLDER_TEXT),
+            Some(&variable_name_placeholder),
             true,
         );
 
@@ -888,11 +885,12 @@ impl EnvVarCollectionView {
             me.handle_variable_event(emitter, event, ctx);
         });
 
+        let variable_value_placeholder = t!("env_vars.value").to_string();
         let variable_value_editor = Self::create_editor_handle(
             ctx,
             Some(VARIABLE_FONT_SIZE),
             Some(ui_font_family),
-            Some(VARIABLE_VALUE_PLACEHOLDER_TEXT),
+            Some(&variable_value_placeholder),
             true,
         );
 
@@ -900,11 +898,12 @@ impl EnvVarCollectionView {
             me.handle_variable_event(emitter, event, ctx);
         });
 
+        let variable_description_placeholder = t!("env_vars.description").to_string();
         let variable_description_editor = Self::create_editor_handle(
             ctx,
             Some(VARIABLE_FONT_SIZE),
             Some(ui_font_family),
-            Some(VARIABLE_DESCRIPTION_PLACEHOLDER_TEXT),
+            Some(&variable_description_placeholder),
             true,
         );
 

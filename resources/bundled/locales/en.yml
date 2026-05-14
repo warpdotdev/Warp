@@ -468,6 +468,15 @@ en:
     education_text: "Add secret or command. Warp never stores external secrets"
     invoke_error: "An error occurred while trying to invoke the env var"
     restore_from_trash: "Restore environment variables from trash"
+    secret_command: "Secret command"
+    title: "Title"
+    name: "Name"
+    command: "Command"
+    value: "Value"
+    description: "Description"
+    variable: "Variable"
+    variables: "Variables"
+    restore: "Restore"
 
   prompt:
     edit_prompt: "Edit prompt"
@@ -528,6 +537,13 @@ en:
   keybindings:
     search_placeholder: "Search by name or by keys (ex. \"cmd d\")"
     shortcut_conflict_warning: "This shortcut conflicts with other keybinds"
+    default: "Default"
+
+  telemetry_banner:
+    updated_policy: "We've updated our telemetry policy."
+    help_improve_warp: "Help improve Warp."
+    description: "We may collect certain console interactions to improve Warp's AI capabilities. You can opt out any time."
+    manage_privacy_settings: "Manage privacy settings"
 
   warpify:
     ssh_tmux_warpification_description: "The tmux ssh wrapper works in many situations where the default one does not, but may require you to hit a button to warpify. Takes effect in new tabs."
@@ -1752,6 +1768,8 @@ en:
     copy: "Copy"
     paste: "Paste"
     edit: "Edit"
+    save: "Save"
+    clear: "Clear"
     close: "Close"
     cancel: "Cancel"
     update: "Update"

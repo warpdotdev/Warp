@@ -28,9 +28,6 @@ const VARIABLE_DIVIDER_HEIGHT: f32 = 2.;
 const SECTION_FONT_SIZE: f32 = 16.;
 const BUTTON_HEIGHT: f32 = 32.;
 
-const SAVE_BUTTON_TEXT: &str = "Save";
-const VARIABLES_LABEL_TEXT: &str = "Variables";
-
 /// This file contains components that fixed in the view,
 /// i.e. the trash banner, breadcrumbs, and variables section header
 impl EnvVarCollectionView {
@@ -122,7 +119,7 @@ impl EnvVarCollectionView {
                                     .build()
                                     .finish()
                             })
-                            .with_text_label("Restore".to_string())
+                            .with_text_label(t!("env_vars.restore").to_string())
                             .build()
                             .on_click(|ctx, _, _| {
                                 ctx.dispatch_typed_action(EnvVarCollectionAction::Untrash)
@@ -165,7 +162,7 @@ impl EnvVarCollectionView {
                 2.,
                 appearance
                     .ui_builder()
-                    .span(VARIABLES_LABEL_TEXT.to_string())
+                    .span(t!("env_vars.variables").to_string())
                     .with_style(UiComponentStyles {
                         font_size: Some(SECTION_FONT_SIZE),
                         ..Default::default()
@@ -297,7 +294,7 @@ impl EnvVarCollectionView {
                 font_size: Some(14.),
                 ..Default::default()
             })
-            .with_centered_text_label(SAVE_BUTTON_TEXT.to_owned());
+            .with_centered_text_label(t!("common.save").to_string());
 
         if is_save_disabled {
             button = button.disabled();
