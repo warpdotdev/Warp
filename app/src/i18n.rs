@@ -113,7 +113,6 @@ fn macos_requested_languages() -> Vec<LanguageIdentifier> {
         let language_code_str = nsstring_as_str(language_code)
             .map(str::to_owned)
             .unwrap_or_else(|_| "en".to_string());
-        let _: () = msg_send![language_code, release];
 
         let is_country_code_supported: bool =
             msg_send![locale, respondsToSelector: sel!(countryCode)];
@@ -122,7 +121,6 @@ fn macos_requested_languages() -> Vec<LanguageIdentifier> {
             let country_code_str = nsstring_as_str(country_code)
                 .map(str::to_owned)
                 .unwrap_or_default();
-            let _: () = msg_send![country_code, release];
 
             if country_code_str.is_empty() {
                 language_code_str
