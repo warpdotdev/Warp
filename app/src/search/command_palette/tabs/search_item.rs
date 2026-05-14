@@ -98,13 +98,10 @@ impl SearchItemTrait for SearchItem {
     }
 
     fn accessibility_label(&self) -> String {
-        format!("Selected tab: {}.", self.tab.title)
+        t!("command_palette.selected_tab", title = &self.tab.title).to_string()
     }
 
     fn accessibility_help_message(&self) -> Option<String> {
-        Some(format!(
-            "Press enter to navigate to tab: {}.",
-            self.tab.title
-        ))
+        Some(t!("command_palette.navigate_tab_help", title = &self.tab.title).to_string())
     }
 }

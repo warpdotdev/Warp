@@ -412,29 +412,35 @@ impl SearchItem for ConversationSearchItem {
 
     fn accessibility_label(&self) -> String {
         match &self.action_info {
-            ConversationAction::Resume(matched_conversation) => {
-                format!(
-                    "Conversation: {}",
-                    matched_conversation.as_ref().conversation.title()
-                )
-            }
-            ConversationAction::Fork { title, .. } => {
-                format!("Fork current conversation ({title})")
-            }
-            ConversationAction::New => "New conversation".to_string(),
+            ConversationAction::Resume(matched_conversation) => t!(
+                "command_palette.conversation_label",
+                title = matched_conversation.as_ref().conversation.title()
+            )
+            .to_string(),
+            ConversationAction::Fork { title, .. } => t!(
+                "command_palette.fork_current_conversation_label",
+                title = title
+            )
+            .to_string(),
+            ConversationAction::New => t!("command_palette.new_conversation").to_string(),
         }
     }
 
     fn accessibility_help_message(&self) -> Option<String> {
         match &self.action_info {
-            ConversationAction::Resume(matched_conversation) => Some(format!(
-                "Press enter to navigate to conversation \"{}\".",
-                matched_conversation.as_ref().conversation.title()
-            )),
+            ConversationAction::Resume(matched_conversation) => Some(
+                t!(
+                    "command_palette.navigate_conversation_help",
+                    title = matched_conversation.as_ref().conversation.title()
+                )
+                .to_string(),
+            ),
             ConversationAction::Fork { .. } => {
-                Some("Press enter to fork the current conversation into a new conversation.".into())
+                Some(t!("command_palette.fork_current_conversation_help").to_string())
             }
-            ConversationAction::New => Some("Press enter to create a new conversation.".into()),
+            ConversationAction::New => {
+                Some(t!("command_palette.create_new_conversation_help").to_string())
+            }
         }
     }
 }

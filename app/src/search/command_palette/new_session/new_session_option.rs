@@ -29,10 +29,10 @@ impl fmt::Display for Direction {
             f,
             "{}",
             match self {
-                Direction::Down => "Down",
-                Direction::Right => "Right",
-                Direction::Up => "Up",
-                Direction::Left => "Left",
+                Direction::Down => t!("command_palette.direction_down"),
+                Direction::Right => t!("command_palette.direction_right"),
+                Direction::Up => t!("command_palette.direction_up"),
+                Direction::Left => t!("command_palette.direction_left"),
             }
         )
     }
@@ -81,13 +81,20 @@ impl NewSessionOption {
 impl NewSessionOption {
     pub(super) fn new(id: NewSessionOptionId, config: NewSessionConfig) -> Self {
         let description = match &config {
-            NewSessionConfig::NewTab(shell) => format!("Create New Tab: {}", shell.short_name()),
-            NewSessionConfig::NewWindow(shell) => {
-                format!("Create New Window: {}", shell.short_name())
+            NewSessionConfig::NewTab(shell) => {
+                t!("command_palette.create_new_tab", shell = shell.short_name()).to_string()
             }
-            NewSessionConfig::Split(direction, shell) => {
-                format!("Split Pane {direction}: {}", shell.short_name())
-            }
+            NewSessionConfig::NewWindow(shell) => t!(
+                "command_palette.create_new_window",
+                shell = shell.short_name()
+            )
+            .to_string(),
+            NewSessionConfig::Split(direction, shell) => t!(
+                "command_palette.split_pane",
+                direction = direction,
+                shell = shell.short_name()
+            )
+            .to_string(),
         };
         Self {
             id,
