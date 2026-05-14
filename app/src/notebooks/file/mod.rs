@@ -729,7 +729,13 @@ impl FileNotebookView {
             .with_child(
                 appearance
                     .ui_builder()
-                    .paragraph(format!("Could not read {}", source.display_name()))
+                    .paragraph(
+                        t!(
+                            "notebook.could_not_read_source_file",
+                            source = source.display_name()
+                        )
+                        .to_string(),
+                    )
                     .with_style(self.state_style(appearance))
                     .build()
                     .finish(),
@@ -742,7 +748,7 @@ impl FileNotebookView {
                         .with_text_and_icon_label(
                             TextAndIcon::new(
                                 TextAndIconAlignment::TextFirst,
-                                "Try again".to_string(),
+                                t!("notebook.try_again").to_string(),
                                 Icon::Refresh.to_warpui_icon(error_text_color),
                                 MainAxisSize::Min,
                                 MainAxisAlignment::Center,
@@ -768,7 +774,13 @@ impl FileNotebookView {
         Align::new(
             appearance
                 .ui_builder()
-                .paragraph(format!("Loading {}...", source.display_name()))
+                .paragraph(
+                    t!(
+                        "notebook.loading_source_file",
+                        source = source.display_name()
+                    )
+                    .to_string(),
+                )
                 .with_style(self.state_style(appearance))
                 .build()
                 .finish(),
@@ -781,7 +793,7 @@ impl FileNotebookView {
         Align::new(
             appearance
                 .ui_builder()
-                .paragraph("Missing source file".to_string())
+                .paragraph(t!("notebook.missing_source_file").to_string())
                 .with_style(self.state_style(appearance))
                 .build()
                 .finish(),
