@@ -1246,7 +1246,7 @@ impl AppearanceSettingsPageView {
 
     fn build_page(ctx: &mut ViewContext<Self>) -> PageType<Self> {
         let mut categories = vec![Category::new(
-            "Themes",
+            t!("appearance.themes"),
             vec![
                 Box::new(CreateCustomThemeWidget::default()),
                 Box::new(ThemeSelectWidget::default()),
@@ -1255,7 +1255,7 @@ impl AppearanceSettingsPageView {
 
         if AppIconSettings::as_ref(ctx).is_supported_on_current_platform() {
             categories.push(Category::new(
-                "Icon",
+                t!("appearance.icon"),
                 vec![Box::new(CustomAppIconWidget::default())],
             ));
         }
@@ -1299,7 +1299,10 @@ impl AppearanceSettingsPageView {
         }
 
         if !window_settings_widgets.is_empty() {
-            categories.push(Category::new("Window", window_settings_widgets));
+            categories.push(Category::new(
+                t!("appearance.window"),
+                window_settings_widgets,
+            ));
         }
 
         // Create the Input category with all widgets
@@ -1311,10 +1314,10 @@ impl AppearanceSettingsPageView {
             Box::new(InputModeWidget::default()),
         ];
 
-        categories.push(Category::new("Input", category_widgets));
+        categories.push(Category::new(t!("appearance.input"), category_widgets));
 
         categories.push(Category::new(
-            "Panes",
+            t!("appearance.panes"),
             vec![
                 Box::new(DimInactivePanesWidget::default()),
                 Box::new(FocusFollowsMouseWidget::default()),
@@ -1328,7 +1331,10 @@ impl AppearanceSettingsPageView {
         if FeatureFlag::MinimalistUI.is_enabled() {
             block_settings_widgets.push(Box::new(ShowBlockDividersWidget::default()));
         }
-        categories.push(Category::new("Blocks", block_settings_widgets));
+        categories.push(Category::new(
+            t!("appearance.blocks"),
+            block_settings_widgets,
+        ));
 
         let font_settings = FontSettings::as_ref(ctx);
         let mut text_settings_widgets: Vec<Box<dyn SettingsWidget<View = Self>>> = vec![
@@ -1357,10 +1363,10 @@ impl AppearanceSettingsPageView {
             text_settings_widgets.push(Box::new(LigaturesWidget::default()));
         }
 
-        categories.push(Category::new("Text", text_settings_widgets));
+        categories.push(Category::new(t!("appearance.text"), text_settings_widgets));
 
         categories.push(Category::new(
-            "Cursor",
+            t!("appearance.cursor"),
             vec![
                 Box::new(CursorTypeWidget::default()),
                 Box::new(BlinkingCursorWidget::default()),
@@ -1406,10 +1412,10 @@ impl AppearanceSettingsPageView {
             tab_settings_widgets.push(Box::new(DirectoryTabColorsWidget { add_picker }));
         }
 
-        categories.push(Category::new("Tabs", tab_settings_widgets));
+        categories.push(Category::new(t!("appearance.tabs"), tab_settings_widgets));
 
         categories.push(Category::new(
-            "Full-screen Apps",
+            t!("appearance.full_screen_apps"),
             vec![Box::new(AltScreenPaddingWidget::default())],
         ));
 
@@ -1516,11 +1522,11 @@ impl AppearanceSettingsPageView {
         initial_dropdown_item
     }
 
-    fn input_mode_dropdown_item_label(val: InputMode) -> &'static str {
+    fn input_mode_dropdown_item_label(val: InputMode) -> String {
         match val {
-            InputMode::PinnedToBottom => "Pin to the bottom (Warp mode)",
-            InputMode::PinnedToTop => "Pin to the top (Reverse mode)",
-            InputMode::Waterfall => "Start at the top (Classic mode)",
+            InputMode::PinnedToBottom => t!("appearance.input_mode_pin_bottom").to_string(),
+            InputMode::PinnedToTop => t!("appearance.input_mode_pin_top").to_string(),
+            InputMode::Waterfall => t!("appearance.input_mode_start_top").to_string(),
         }
     }
 
@@ -1546,39 +1552,41 @@ impl AppearanceSettingsPageView {
         }
     }
 
-    fn thin_strokes_dropdown_item_label(val: ThinStrokes) -> &'static str {
+    fn thin_strokes_dropdown_item_label(val: ThinStrokes) -> String {
         match val {
-            ThinStrokes::Never => "Never",
-            ThinStrokes::OnLowDpiDisplays => "On low-DPI displays",
-            ThinStrokes::OnHighDpiDisplays => "On high-DPI displays",
-            ThinStrokes::Always => "Always",
+            ThinStrokes::Never => t!("create_api_key.never").to_string(),
+            ThinStrokes::OnLowDpiDisplays => t!("appearance.on_low_dpi_displays").to_string(),
+            ThinStrokes::OnHighDpiDisplays => t!("appearance.on_high_dpi_displays").to_string(),
+            ThinStrokes::Always => t!("appearance.always").to_string(),
         }
     }
 
-    fn enforce_minimum_contrast_dropdown_item_label(val: EnforceMinimumContrast) -> &'static str {
+    fn enforce_minimum_contrast_dropdown_item_label(val: EnforceMinimumContrast) -> String {
         match val {
-            EnforceMinimumContrast::Always => "Always",
-            EnforceMinimumContrast::OnlyNamedColors => "Only for named colors",
-            EnforceMinimumContrast::Never => "Never",
+            EnforceMinimumContrast::Always => t!("appearance.always").to_string(),
+            EnforceMinimumContrast::OnlyNamedColors => {
+                t!("appearance.only_for_named_colors").to_string()
+            }
+            EnforceMinimumContrast::Never => t!("create_api_key.never").to_string(),
         }
     }
 
     fn workspace_decoration_visibility_dropdown_item_label(
         value: WorkspaceDecorationVisibility,
-    ) -> &'static str {
+    ) -> String {
         match value {
-            WorkspaceDecorationVisibility::AlwaysShow => "Always",
-            WorkspaceDecorationVisibility::HideFullscreen => "When windowed",
-            WorkspaceDecorationVisibility::OnHover => "Only on hover",
+            WorkspaceDecorationVisibility::AlwaysShow => t!("appearance.always").to_string(),
+            WorkspaceDecorationVisibility::HideFullscreen => {
+                t!("appearance.when_windowed").to_string()
+            }
+            WorkspaceDecorationVisibility::OnHover => t!("appearance.only_on_hover").to_string(),
         }
     }
 
-    fn tab_close_button_position_dropdown_item_label(
-        value: TabCloseButtonPosition,
-    ) -> &'static str {
+    fn tab_close_button_position_dropdown_item_label(value: TabCloseButtonPosition) -> String {
         match value {
-            TabCloseButtonPosition::Right => "Right",
-            TabCloseButtonPosition::Left => "Left",
+            TabCloseButtonPosition::Right => t!("appearance.right").to_string(),
+            TabCloseButtonPosition::Left => t!("appearance.left").to_string(),
         }
     }
 
