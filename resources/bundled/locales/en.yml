@@ -755,6 +755,15 @@ en:
     accessibility_title: "Command Search"
     accessibility_description: "Search your history, workflows, and more. Use the Up and Down arrows to browse search results after typing. Press Enter to accept a selected result, inserting it into the terminal input. Press Escape to close."
 
+  file_search:
+    directory_label: "Directory: {path}"
+    file_label: "File: {path}"
+    navigate_directory_help: "Press Enter to navigate to this directory"
+    open_file_help: "Press Enter to open this file"
+    create_file: "Create {name}…"
+    create_file_label: "Create file: {name}"
+    create_file_help: "Press Enter to create {name} in the current directory"
+
   search_bar:
     loading_suggestions: "Loading {filter} suggestions"
     error_finding_results: "Error finding results"

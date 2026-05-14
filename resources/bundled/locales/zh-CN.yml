@@ -755,6 +755,15 @@ zh-CN:
     accessibility_title: "命令搜索"
     accessibility_description: "搜索历史记录、工作流等。输入后使用上下方向键浏览搜索结果。按 Enter 接受所选结果并插入终端输入。按 Escape 关闭。"
 
+  file_search:
+    directory_label: "目录：{path}"
+    file_label: "文件：{path}"
+    navigate_directory_help: "按 Enter 跳转到此目录"
+    open_file_help: "按 Enter 打开此文件"
+    create_file: "创建 {name}…"
+    create_file_label: "创建文件：{name}"
+    create_file_help: "按 Enter 在当前目录创建 {name}"
+
   search_bar:
     loading_suggestions: "正在加载 {filter} 建议"
     error_finding_results: "查找结果时出错"
