@@ -767,7 +767,13 @@ en:
   command_palette:
     search_placeholder: "Search for a command"
     no_results: "No results found"
+    recent: "Recent"
+    suggested: "Suggested"
+    cannot_switch_conversations_monitoring: "Cannot switch conversations while agent is monitoring a command."
+    cannot_start_conversation_monitoring: "Cannot start a new conversation while agent is monitoring a command."
     conversation_label: "Conversation: {title}"
+    notebook_label: "Notebook: {title}"
+    environment_variables_label: "Environment Variables: {title}"
     fork_current_conversation_label: "Fork current conversation ({title})"
     new_conversation: "New conversation"
     navigate_conversation_help: "Press enter to navigate to conversation \"{title}\"."

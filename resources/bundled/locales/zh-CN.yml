@@ -767,7 +767,13 @@ zh-CN:
   command_palette:
     search_placeholder: "搜索命令"
     no_results: "未找到结果"
+    recent: "最近"
+    suggested: "建议"
+    cannot_switch_conversations_monitoring: "Agent 正在监控命令，无法切换会话。"
+    cannot_start_conversation_monitoring: "Agent 正在监控命令，无法开始新会话。"
     conversation_label: "会话：{title}"
+    notebook_label: "笔记本：{title}"
+    environment_variables_label: "环境变量：{title}"
     fork_current_conversation_label: "Fork 当前会话（{title}）"
     new_conversation: "新建会话"
     navigate_conversation_help: "按 Enter 跳转到会话“{title}”。"

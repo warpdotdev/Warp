@@ -857,7 +857,7 @@ impl View {
                         ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                             toast_stack.add_ephemeral_toast(
                                 DismissibleToast::error(
-                                    "Cannot switch conversations while agent is monitoring a command."
+                                    t!("command_palette.cannot_switch_conversations_monitoring")
                                         .to_string(),
                                 ),
                                 window_id,
@@ -998,7 +998,8 @@ impl View {
                     ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                         toast_stack.add_ephemeral_toast(
                             DismissibleToast::error(
-                                "Cannot start a new conversation while agent is monitoring a command.".to_string(),
+                                t!("command_palette.cannot_start_conversation_monitoring")
+                                    .to_string(),
                             ),
                             window_id,
                             ctx,
