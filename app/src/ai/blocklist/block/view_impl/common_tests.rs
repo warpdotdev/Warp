@@ -2,18 +2,18 @@ use itertools::Itertools;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use ai::skills::{ParsedSkill, SkillProvider, SkillScope};
-use warpui::App;
 #[cfg(feature = "local_fs")]
 use warpui::assets::asset_cache::AssetSource;
+use warpui::App;
 
+#[cfg(feature = "local_fs")]
+use super::{blocklist_image_asset_source, ResolvedBlocklistImageSources};
 use super::{
-    CollapsibleElementState, CollapsibleExpansionState, VisualMarkdownLightboxCollection,
     collect_visual_markdown_lightbox_collection, compute_visual_section_width,
     inline_image_source_label, is_supported_blocklist_image_source, lightbox_trigger_for_section,
     query_prefix_highlight_len, render_scrollable_collapsible_content, text_sections_with_indices,
+    CollapsibleElementState, CollapsibleExpansionState, VisualMarkdownLightboxCollection,
 };
-#[cfg(feature = "local_fs")]
-use super::{ResolvedBlocklistImageSources, blocklist_image_asset_source};
 use crate::{
     ai::agent::{
         AIAgentInput, AIAgentTextSection, AgentOutputImage, AgentOutputImageLayout,
@@ -23,7 +23,7 @@ use crate::{
     search::slash_command_menu::static_commands::commands,
 };
 use ui_components::lightbox::{LightboxImage, LightboxImageSource};
-use warpui::{Element, elements::Empty};
+use warpui::{elements::Empty, Element};
 
 #[test]
 fn query_prefix_highlight_len_highlights_invoke_skill_inputs() {
@@ -253,12 +253,10 @@ fn collect_visual_markdown_lightbox_collection_includes_mermaid_sections_in_sour
 
             assert_eq!(collection.section_indices, vec![11, 13]);
             assert_eq!(collection.images.len(), 2);
-            assert!(
-                collection
-                    .images
-                    .iter()
-                    .all(|image| image.description.is_none())
-            );
+            assert!(collection
+                .images
+                .iter()
+                .all(|image| image.description.is_none()));
         });
     });
 }

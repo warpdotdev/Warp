@@ -28,9 +28,6 @@ use warp_editor::{
 };
 use warpui::r#async::Timer;
 use warpui::{
-    AppContext, Element, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View,
-    ViewContext, ViewHandle,
-    r#async::SpawnedFutureHandle,
     clipboard::ClipboardContent,
     elements::{
         Border, ChildAnchor, ChildView, Container, CornerRadius, CrossAxisAlignment, DropShadow,
@@ -40,20 +37,22 @@ use warpui::{
     },
     fonts::{Properties, Style},
     keymap::{EditableBinding, Keystroke},
+    r#async::SpawnedFutureHandle,
+    AppContext, Element, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View,
+    ViewContext, ViewHandle,
 };
 
-use crate::ToastStack;
 use crate::ai::agent::{AIAgentPtyWriteMode, CancellationReason};
 use crate::ai::blocklist::block::view_impl::common::{
-    BLOCKED_ACTION_MESSAGE_FOR_GREP_OR_FILE_GLOB, BLOCKED_ACTION_MESSAGE_FOR_READING_FILES,
-    BLOCKED_ACTION_MESSAGE_FOR_SEARCHING_CODEBASE,
+    render_query_text, UserQueryProps, BLOCKED_ACTION_MESSAGE_FOR_GREP_OR_FILE_GLOB,
+    BLOCKED_ACTION_MESSAGE_FOR_READING_FILES, BLOCKED_ACTION_MESSAGE_FOR_SEARCHING_CODEBASE,
     BLOCKED_ACTION_MESSAGE_FOR_WRITE_TO_LONG_RUNNING_SHELL_COMMAND,
     LOAD_OUTPUT_MESSAGE_FOR_FILE_GLOB, LOAD_OUTPUT_MESSAGE_FOR_GREP,
     LOAD_OUTPUT_MESSAGE_FOR_READING_FILES, LOAD_OUTPUT_MESSAGE_FOR_SEARCH_CODEBASE,
-    LOAD_OUTPUT_MESSAGE_FOR_WEB_SEARCH, UserQueryProps, render_query_text,
+    LOAD_OUTPUT_MESSAGE_FOR_WEB_SEARCH,
 };
 use crate::ai::blocklist::permissions::is_agent_mode_autonomy_allowed;
-use crate::ai::control_code_parser::{ParsedControlCodeOutput, parse_control_codes_from_bytes};
+use crate::ai::control_code_parser::{parse_control_codes_from_bytes, ParsedControlCodeOutput};
 use crate::code::editor::view::{CodeEditorEvent, CodeEditorRenderOptions};
 use crate::menu::MenuItemFields;
 use crate::send_telemetry_from_ctx;
@@ -64,17 +63,17 @@ use crate::terminal::model::block::BlockId;
 use crate::terminal::{ShellLaunchData, TerminalModel};
 use crate::view_components::DismissibleToast;
 use crate::workspace::WorkspaceAction;
+use crate::ToastStack;
 use crate::{
-    BlocklistAIHistoryModel,
     ai::{
         agent::{
-            AIAgentActionType, AIAgentOutput, AIAgentOutputMessageType, AIAgentText,
-            AIAgentTextSection, ProgrammingLanguage, WebSearchStatus,
-            conversation::AIConversationId, task::TaskId,
+            conversation::AIConversationId, task::TaskId, AIAgentActionType, AIAgentOutput,
+            AIAgentOutputMessageType, AIAgentText, AIAgentTextSection, ProgrammingLanguage,
+            WebSearchStatus,
         },
         blocklist::{
-            BlocklistAIActionModel, BlocklistAIHistoryEvent, BlocklistAIPermissions,
-            code_block::CodeSnippetButtonHandles,
+            code_block::CodeSnippetButtonHandles, BlocklistAIActionModel, BlocklistAIHistoryEvent,
+            BlocklistAIPermissions,
         },
         execution_profiles::profiles::{AIExecutionProfilesModel, AIExecutionProfilesModelEvent},
     },
@@ -87,33 +86,34 @@ use crate::{
     view_components::{
         action_button::{ButtonSize, KeystrokeSource, NakedTheme, PrimaryTheme},
         compactible_action_button::{
-            CompactibleActionButton, RenderCompactibleActionButton,
-            render_compact_and_regular_button_rows,
+            render_compact_and_regular_button_rows, CompactibleActionButton,
+            RenderCompactibleActionButton,
         },
         compactible_split_action_button::CompactibleSplitActionButton,
     },
+    BlocklistAIHistoryModel,
 };
 
 use crate::ai::agent::AIAgentInput;
 use crate::ai::blocklist::block::TextLocation;
-use crate::util::link_detection::{DetectedLinksState, detect_links};
+use crate::util::link_detection::{detect_links, DetectedLinksState};
 
 use crate::ai::agent::icons::yellow_stop_icon;
 use crate::ai::blocklist::inline_action::inline_action_icons::icon_size;
 
-use super::TableSectionHandles;
 use super::cli_controller::{CLISubagentController, CLISubagentEvent, UserTakeOverReason};
 use super::model::AIBlockModelHelper;
+use super::TableSectionHandles;
 use super::{
-    EmbeddedCodeEditorView, SecretRedactionState,
     model::{AIBlockModel, AIBlockModelImpl, AIBlockOutputStatus},
     view_impl::{
         common::{
-            DebugFooterProps, FailedOutputProps, TextSectionsProps, render_debug_footer,
-            render_failed_output, render_informational_footer, render_text_sections,
+            render_debug_footer, render_failed_output, render_informational_footer,
+            render_text_sections, DebugFooterProps, FailedOutputProps, TextSectionsProps,
         },
         output::are_all_text_sections_empty,
     },
+    EmbeddedCodeEditorView, SecretRedactionState,
 };
 const MENU_WIDTH: f32 = 200.0;
 const MAX_HEIGHT: f32 = 320.0;
@@ -145,7 +145,7 @@ const HAS_PENDING_NON_TRANSFER_CONTROL_ACTION_CONTEXT_KEY: &str =
 const BLOCKED_ACTION_MESSAGE_FOR_TRANSFER_CONTROL: &str = "Agent is asking you to take control.";
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::{FixedBinding, macros::*};
+    use warpui::keymap::{macros::*, FixedBinding};
 
     app.register_fixed_bindings([
         FixedBinding::new(

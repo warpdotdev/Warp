@@ -17,27 +17,25 @@ pub use pending_user_query_block::{PendingUserQueryBlock, PendingUserQueryBlockE
 
 #[cfg(feature = "agent_mode_debug")]
 use self::code_diff_view::FileDiff;
+use crate::ai::agent::redaction::redact_secrets;
+use crate::ai::agent::telemetry::ForTelemetry as _;
 use crate::ai::agent::CancellationReason;
 use crate::ai::agent::PassiveSuggestionTrigger;
 use crate::ai::agent::SuggestPromptRequest;
 use crate::ai::agent::SuggestPromptResult;
 use crate::ai::agent::TodoOperation;
-use crate::ai::agent::redaction::redact_secrets;
-use crate::ai::agent::telemetry::ForTelemetry as _;
 use crate::ai::ai_document_view::DEFAULT_PLANNING_DOCUMENT_TITLE;
-use crate::ai::blocklist::BlocklistAIContextEvent;
-use crate::ai::blocklist::BlocklistAIContextModel;
-use crate::ai::blocklist::SuggestionDismissButtonTheme;
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewEntryOrigin};
 use crate::ai::blocklist::context_model::AttachmentType;
 use crate::ai::blocklist::inline_action::code_diff_view::convert_file_edits_to_file_diffs;
 use crate::ai::blocklist::inline_action::suggested_unit_tests::SuggestedUnitTestsEvent;
 use crate::ai::blocklist::inline_action::suggested_unit_tests::SuggestedUnitTestsView;
+use crate::ai::blocklist::BlocklistAIContextEvent;
+use crate::ai::blocklist::BlocklistAIContextModel;
+use crate::ai::blocklist::SuggestionDismissButtonTheme;
 #[cfg(not(target_family = "wasm"))]
 use repo_metadata::repositories::DetectedRepositories;
 
-use crate::AIAgentTodoList;
-use crate::FileEdit;
 #[cfg(feature = "local_fs")]
 use crate::ai::skills::SkillOpenOrigin;
 use crate::ai::skills::{SkillManager, SkillTelemetryEvent};
@@ -45,18 +43,20 @@ use crate::code::editor::comment_editor::create_readonly_comment_markdown_editor
 use crate::code::editor::view::CodeEditorRenderOptions;
 use crate::code::editor_management::CodeSource;
 use crate::code_review::comment_rendering::{CommentViewCard, HeaderClickHandler};
-use crate::terminal::TerminalModel;
 use crate::terminal::model::BlockId;
 use crate::terminal::model_events::ModelEvent;
 use crate::terminal::model_events::ModelEventDispatcher;
 use crate::terminal::view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent};
+use crate::terminal::TerminalModel;
 use crate::view_components::action_button::{
     ActionButtonTheme, NakedTheme, PrimaryTheme, SecondaryTheme,
 };
 use crate::view_components::compactible_action_button::CompactibleActionButton;
+use crate::AIAgentTodoList;
+use crate::FileEdit;
 use pathfinder_color::ColorU;
-use warp_core::ui::theme::Fill;
 use warp_core::ui::theme::color::internal_colors;
+use warp_core::ui::theme::Fill;
 
 use cli_controller::CLISubagentController;
 use cli_controller::CLISubagentEvent;
@@ -65,15 +65,12 @@ use model::AIBlockOutputStatus;
 use parking_lot::FairMutex;
 use settings::Setting as _;
 use warp_core::features::FeatureFlag;
+use warpui::elements::get_rich_content_position_id;
 use warpui::elements::ClippedScrollStateHandle;
 use warpui::elements::TableStateHandle;
-use warpui::elements::get_rich_content_position_id;
 use warpui::ui_components::radio_buttons::RadioButtonStateHandle;
 
-use crate::Appearance;
-use crate::LLMPreferences;
-use crate::ai::AIRequestUsageModel;
-use crate::ai::AIRequestUsageModelEvent;
+use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::AIAgentActionResultType;
 use crate::ai::agent::AIAgentOutput;
 use crate::ai::agent::AIAgentTextSection;
@@ -81,7 +78,6 @@ use crate::ai::agent::AIIdentifiers;
 use crate::ai::agent::MessageId;
 use crate::ai::agent::RequestFileEditsResult;
 use crate::ai::agent::SearchCodebaseResult;
-use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::blocklist::action_model::NewConversationDecision;
 use crate::ai::blocklist::block::keyboard_navigable_buttons::KeyboardNavigableButtonBuilder;
 use crate::ai::blocklist::block::keyboard_navigable_buttons::KeyboardNavigableButtons;
@@ -100,6 +96,8 @@ use crate::ai::blocklist::inline_action::search_codebase::{
 use crate::ai::blocklist::inline_action::web_fetch::WebFetchView;
 use crate::ai::blocklist::inline_action::web_search::WebSearchView;
 use crate::ai::facts::{AIFact, AIMemory, CloudAIFactModel};
+use crate::ai::AIRequestUsageModel;
+use crate::ai::AIRequestUsageModelEvent;
 use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
@@ -109,11 +107,13 @@ use crate::settings::InputSettings;
 use crate::terminal::view::{CodeDiffAction, TerminalAction};
 use crate::ui_components::icons::Icon;
 #[cfg(feature = "local_fs")]
-use crate::util::openable_file_type::{FileTarget, is_supported_image_file};
+use crate::util::openable_file_type::{is_supported_image_file, FileTarget};
 use crate::view_components::action_button::ActionButton;
 use crate::view_components::action_button::ButtonSize;
 use crate::view_components::action_button::KeystrokeSource;
 use crate::workspaces::user_workspaces::UserWorkspaces;
+use crate::Appearance;
+use crate::LLMPreferences;
 use indexmap::IndexMap;
 use parking_lot::{Mutex, RwLock};
 use pathfinder_geometry::vector::vec2f;
@@ -144,15 +144,15 @@ use warp_editor::{
     content::buffer::InitialBufferState, render::element::VerticalExpansionBehavior,
 };
 use warpui::{
-    AppContext, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
-    ViewHandle, WeakViewHandle, WindowId,
     assets::asset_cache::AssetCache,
-    r#async::{SpawnedFutureHandle, Timer},
     clipboard::ClipboardContent,
     elements::{MouseStateHandle, SelectionBound, SelectionHandle},
     image_cache::ImageType,
     keymap::FixedBinding,
+    r#async::{SpawnedFutureHandle, Timer},
     text::SelectionType,
+    AppContext, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
+    ViewHandle, WeakViewHandle, WindowId,
 };
 
 use crate::ai::agent::{
@@ -184,7 +184,7 @@ use crate::terminal::model::session::active_session::{ActiveSession, ActiveSessi
 use crate::terminal::{ShellLaunchData, TerminalView};
 use crate::view_components::DismissibleToast;
 use crate::workspace::{ForkAIConversationParams, ForkedConversationDestination, WorkspaceAction};
-use crate::{ToastStack, report_error, report_if_error};
+use crate::{report_error, report_if_error, ToastStack};
 use ai::agent::action::{AskUserQuestionItem, InsertReviewComment, RunAgentsRequest};
 
 use crate::editor::InteractionState;
@@ -199,7 +199,7 @@ use crate::terminal::{
     find::TerminalFindModel,
     model::secrets::RichContentSecretTooltipInfo,
     safe_mode_settings::{
-        SafeModeSettings, SafeModeSettingsChangedEvent, get_secret_obfuscation_mode,
+        get_secret_obfuscation_mode, SafeModeSettings, SafeModeSettingsChangedEvent,
     },
     view::{RichContentLink, RichContentLinkTooltipInfo},
 };
@@ -210,12 +210,12 @@ use super::inline_action::requested_action::CTRL_C_KEYSTROKE;
 use super::inline_action::requested_action::ENTER_KEYSTROKE;
 use super::suggested_agent_mode_workflow_modal::SuggestedAgentModeWorkflowAndId;
 use super::suggested_rule_modal::SuggestedRuleAndId;
-use crate::PrivacySettings;
-use crate::code_review::CodeReviewTelemetryEvent;
 use crate::code_review::comments::{
-    AttachedReviewComment, CommentId, CommentOrigin, attach_pending_imported_comments,
-    convert_insert_review_comments,
+    attach_pending_imported_comments, convert_insert_review_comments, AttachedReviewComment,
+    CommentId, CommentOrigin,
 };
+use crate::code_review::CodeReviewTelemetryEvent;
+use crate::PrivacySettings;
 use crate::{
     ai::agent::{AIAgentInput, ServerOutputId},
     send_telemetry_from_ctx,
@@ -223,11 +223,9 @@ use crate::{
     settings::AISettings,
 };
 
-use super::ResponseStreamId;
 use super::controller::ClientIdentifiers;
+use super::ResponseStreamId;
 use super::{
-    BlocklistAIActionModel, BlocklistAIController, BlocklistAIHistoryEvent,
-    BlocklistAIHistoryModel, BlocklistAIPermissions,
     action_model::{AIActionStatus, BlocklistAIActionEvent, RequestFileEditsFormatKind},
     code_block::CodeSnippetButtonHandles,
     inline_action::code_diff_view::{
@@ -236,6 +234,8 @@ use super::{
     inline_action::requested_command_attribution::is_command_copied_from_document,
     permissions::is_agent_mode_autonomy_allowed,
     telemetry_banner::should_collect_ai_ugc_telemetry,
+    BlocklistAIActionModel, BlocklistAIController, BlocklistAIHistoryEvent,
+    BlocklistAIHistoryModel, BlocklistAIPermissions,
 };
 
 /// The default display name used for the user if they have no associated display name.
@@ -4222,10 +4222,8 @@ impl AIBlock {
                             ..
                         } if speedbump_action_id == action_id && *shown.lock() => {
                             BlocklistAIPermissions::handle(ctx).update(ctx, |permissions, ctx| {
-                                report_if_error!(
-                                    permissions
-                                        .set_should_autoexecute_readonly_commands(*checked, ctx)
-                                );
+                                report_if_error!(permissions
+                                    .set_should_autoexecute_readonly_commands(*checked, ctx));
                             });
                         }
                         AutonomySettingSpeedbump::ShouldShowForFileAccess {
@@ -4277,12 +4275,8 @@ impl AIBlock {
                                     permission,
                                     AgentModeCodingPermissionsType::AllowReadingSpecificFiles
                                 ) {
-                                    report_if_error!(
-                                        permissions.add_filepath_to_code_read_allowlist(
-                                            root_repo_path,
-                                            ctx
-                                        )
-                                    );
+                                    report_if_error!(permissions
+                                        .add_filepath_to_code_read_allowlist(root_repo_path, ctx));
                                 }
                             });
                         }
@@ -6168,11 +6162,9 @@ impl TypedActionView for AIBlock {
                     }
                 });
                 AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(
-                        settings
-                            .rule_suggestions_enabled_internal
-                            .set_value(false, ctx)
-                    );
+                    report_if_error!(settings
+                        .rule_suggestions_enabled_internal
+                        .set_value(false, ctx));
                 });
                 ctx.notify();
             }

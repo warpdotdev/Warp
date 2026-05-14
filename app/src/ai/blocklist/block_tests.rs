@@ -1,6 +1,6 @@
 use super::{
-    CollapsibleElementState, CollapsibleExpansionState,
     default_collapsible_state_for_orchestration_action, received_message_collapsible_id,
+    CollapsibleElementState, CollapsibleExpansionState,
 };
 use crate::ai::agent::{AIAgentActionType, StartAgentExecutionMode};
 use crate::ai::blocklist::action_model::{

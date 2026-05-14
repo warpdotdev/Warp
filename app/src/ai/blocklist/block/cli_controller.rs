@@ -9,25 +9,25 @@ use warpui::{Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
 use crate::ai::blocklist::context_model::block_context_from_terminal_model;
 use crate::{
-    BlocklistAIHistoryModel,
     ai::{
         agent::{
-            AIAgentActionId, AIAgentActionResultType, AIAgentContext, CancellationReason,
-            ReadShellCommandOutputResult, RequestCommandOutputResult,
-            TransferShellCommandControlToUserResult, WriteToLongRunningShellCommandResult,
-            conversation::AIConversationId, task::TaskId,
+            conversation::AIConversationId, task::TaskId, AIAgentActionId, AIAgentActionResultType,
+            AIAgentContext, CancellationReason, ReadShellCommandOutputResult,
+            RequestCommandOutputResult, TransferShellCommandControlToUserResult,
+            WriteToLongRunningShellCommandResult,
         },
         blocklist::{
+            agent_view::{AgentViewController, AgentViewEntryOrigin},
             BlocklistAIActionEvent, BlocklistAIActionModel, BlocklistAIController,
             BlocklistAIHistoryEvent,
-            agent_view::{AgentViewController, AgentViewEntryOrigin},
         },
     },
     terminal::{
-        TerminalModel,
         model::block::BlockId,
         model_events::{ModelEvent, ModelEventDispatcher},
+        TerminalModel,
     },
+    BlocklistAIHistoryModel,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

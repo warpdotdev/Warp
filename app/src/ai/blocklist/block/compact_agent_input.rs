@@ -1,7 +1,7 @@
 //! Compact free-form text input used by inline AI block actions.
 use warpui::{
-    AppContext, Element, Entity, FocusContext, SingletonEntity, View, ViewContext, ViewHandle,
-    presenter::ChildView,
+    presenter::ChildView, AppContext, Element, Entity, FocusContext, SingletonEntity, View,
+    ViewContext, ViewHandle,
 };
 
 use crate::{

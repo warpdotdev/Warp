@@ -8,9 +8,9 @@ use warp_core::features::FeatureFlag;
 
 use crate::ai::{
     agent::{
-        AIAgentExchangeId, AIAgentInput, AIAgentOutput, CancellationReason,
-        PassiveSuggestionTrigger, PassiveSuggestionTriggerType, RenderableAIError, ServerOutputId,
-        Shared, conversation::AIConversationId,
+        conversation::AIConversationId, AIAgentExchangeId, AIAgentInput, AIAgentOutput,
+        CancellationReason, PassiveSuggestionTrigger, PassiveSuggestionTriggerType,
+        RenderableAIError, ServerOutputId, Shared,
     },
     llms::LLMId,
 };
@@ -224,11 +224,11 @@ pub mod testing {
 
     use crate::ai::{
         agent::{
-            AIAgentInput, AIAgentOutput, ServerOutputId, Shared, conversation::AIConversationId,
+            conversation::AIConversationId, AIAgentInput, AIAgentOutput, ServerOutputId, Shared,
         },
         blocklist::{
-            AIBlock,
             model::{AIRequestType, PassiveRequestType, PassiveSuggestionTriggerType},
+            AIBlock,
         },
         llms::LLMId,
     };

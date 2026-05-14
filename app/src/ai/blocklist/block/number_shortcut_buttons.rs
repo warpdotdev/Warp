@@ -1,5 +1,4 @@
 use warpui::{
-    AppContext, Element, Entity, TypedActionView, View, ViewContext, ViewHandle, WeakViewHandle,
     elements::{
         ClippedScrollStateHandle, Container, CrossAxisAlignment, DispatchEventResult, EventHandler,
         Flex, Hoverable, MouseInBehavior, MouseStateHandle, ParentElement, SavePosition,
@@ -7,6 +6,7 @@ use warpui::{
     },
     keymap::FixedBinding,
     ui_components::{button::Button, components::UiComponent},
+    AppContext, Element, Entity, TypedActionView, View, ViewContext, ViewHandle, WeakViewHandle,
 };
 
 use super::numbered_button::{

@@ -1,12 +1,12 @@
 use warpui::{
-    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
     elements::{ChildView, Container, CrossAxisAlignment, Expanded, Flex, ParentElement, Text},
     fonts::{Properties, Style, Weight},
+    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
 use crate::{
     ai::blocklist::block::view_impl::{
-        CONTENT_HORIZONTAL_PADDING, CONTENT_ITEM_VERTICAL_MARGIN, common::render_user_avatar,
+        common::render_user_avatar, CONTENT_HORIZONTAL_PADDING, CONTENT_ITEM_VERTICAL_MARGIN,
     },
     appearance::Appearance,
     ui_components::{blended_colors, icons::Icon},

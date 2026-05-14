@@ -3,11 +3,11 @@
 use warpui::fonts::Properties;
 use warpui::text_layout::TextStyle;
 use warpui::{
-    AppContext, Element, SingletonEntity,
     elements::{
         Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Flex,
         Highlight, ParentElement, Radius, Shrinkable, Text,
     },
+    AppContext, Element, SingletonEntity,
 };
 
 use crate::ai::agent::conversation::{AIConversation, TodoStatus};
@@ -22,7 +22,7 @@ use crate::{
             block::{AIBlockAction, TodoListElementState},
             inline_action::{
                 inline_action_header::{
-                    ExpandedConfig, HeaderConfig, INLINE_ACTION_HORIZONTAL_PADDING, InteractionMode,
+                    ExpandedConfig, HeaderConfig, InteractionMode, INLINE_ACTION_HORIZONTAL_PADDING,
                 },
                 inline_action_icons::icon_size,
             },
