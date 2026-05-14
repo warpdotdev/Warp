@@ -5602,7 +5602,7 @@ impl VoiceWidget {
         let ai_settings = AISettings::as_ref(app);
         let is_toggleable = ai_settings.is_any_ai_enabled(app);
         let mut column = Flex::column().with_child(render_ai_setting_toggle::<VoiceInputEnabled>(
-            "Voice Input",
+            t!("ai_assistant.voice_input").to_string(),
             AISettingsPageAction::ToggleVoiceInput,
             *ai_settings.voice_input_enabled_internal,
             is_toggleable,
@@ -5641,10 +5641,14 @@ impl VoiceWidget {
         );
 
         if ai_settings.is_voice_input_enabled(app) {
+            let voice_input_toggle_key_label =
+                t!("ai_settings_page.voice_input_toggle_key").to_string();
+            let voice_input_toggle_key_description =
+                t!("ai_settings_page.voice_input_toggle_key_description").to_string();
             column.add_child(render_dropdown_item(
                 appearance,
-                "Key for Activating Voice Input",
-                Some("Press and hold to activate."),
+                &voice_input_toggle_key_label,
+                Some(&voice_input_toggle_key_description),
                 None,
                 LocalOnlyIconState::for_setting(
                     VoiceInputToggleKey::storage_key(),
@@ -5685,7 +5689,7 @@ impl SettingsWidget for VoiceWidget {
             .with_child(
                 build_sub_header(
                     appearance,
-                    "Voice",
+                    t!("ai_settings_page.voice").to_string(),
                     Some(styles::header_font_color(is_any_ai_enabled, app)),
                 )
                 .with_padding_bottom(HEADER_PADDING)
