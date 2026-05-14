@@ -435,6 +435,9 @@ en:
     upgrade_to_lightspeed: "Upgrade to Lightspeed plan"
 
   features:
+    default: "Default"
+    custom: "Custom"
+    advanced: "Advanced"
     width_percent: "Width %"
     height_percent: "Height %"
     command_takes_longer_than: "When a command takes longer than"
@@ -448,6 +451,7 @@ en:
     choose_editor_open_code_panel_files: "Choose an editor to open files from the code review panel, project explorer, and global search"
     choose_layout_open_files: "Choose a layout to open files in Warp"
     open_markdown_in_viewer: "Open Markdown files in Warp's Markdown Viewer by default"
+    enable_reopen_closed_sessions: "Enable reopening of closed sessions"
     grace_period_seconds: "Grace period (seconds)"
     window_positions_wayland: "Window positions won't be restored on Wayland. "
     allowed_values_1_to_20: "Allowed Values: 1-20"

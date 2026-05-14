@@ -435,6 +435,9 @@ zh-CN:
     upgrade_to_lightspeed: "升级到 Lightspeed 计划"
 
   features:
+    default: "默认"
+    custom: "自定义"
+    advanced: "高级"
     width_percent: "宽度 %"
     height_percent: "高度 %"
     command_takes_longer_than: "当命令运行超过"
@@ -448,6 +451,7 @@ zh-CN:
     choose_editor_open_code_panel_files: "选择用于打开代码审查面板、项目浏览器和全局搜索中文件的编辑器"
     choose_layout_open_files: "选择在 Warp 中打开文件的布局"
     open_markdown_in_viewer: "默认在 Warp Markdown Viewer 中打开 Markdown 文件"
+    enable_reopen_closed_sessions: "允许重新打开已关闭的会话"
     grace_period_seconds: "宽限期（秒）"
     window_positions_wayland: "Wayland 上不会恢复窗口位置。"
     allowed_values_1_to_20: "允许值：1-20"
