@@ -722,6 +722,11 @@ en:
     loading_suggestions: "Loading {filter} suggestions"
     error_finding_results: "Error finding results"
 
+  notebook_embedding:
+    search_placeholder: "Search for a reference"
+    no_results_found: "No results found."
+    not_visible_to_other_users: "Not visible to other users"
+
   rules:
     header: "Rules"
     description: "Rules enhance the agent by providing structured guidelines that help maintain consistency, enforce best practices, and adapt to specific workflows, including codebases or broader tasks."

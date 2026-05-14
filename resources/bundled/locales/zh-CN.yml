@@ -722,6 +722,11 @@ zh-CN:
     loading_suggestions: "正在加载 {filter} 建议"
     error_finding_results: "查找结果时出错"
 
+  notebook_embedding:
+    search_placeholder: "搜索引用"
+    no_results_found: "未找到结果。"
+    not_visible_to_other_users: "其他用户不可见"
+
   rules:
     header: "规则"
     description: "规则通过提供结构化指南来增强 Agent，帮助保持一致性、执行最佳实践，并适配代码库或更广泛任务等特定工作流。"
