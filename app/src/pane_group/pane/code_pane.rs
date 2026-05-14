@@ -4,12 +4,13 @@ use warpui::{AppContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHa
 use crate::{
     app_state::{CodePaneSnapShot, CodePaneTabSnapshot, LeafContents},
     code::{
-        buffer_location::FileLocation,
         editor_management::{CodeEditorStatus, CodeManager, CodeSource},
         view::{CodeView, CodeViewEvent},
     },
     pane_group::PaneGroup,
 };
+#[cfg(feature = "local_fs")]
+use crate::code::buffer_location::FileLocation;
 
 use super::{
     DetachType, PaneConfiguration, PaneContent, PaneId, PaneView, ShareableLink, ShareableLinkError,
