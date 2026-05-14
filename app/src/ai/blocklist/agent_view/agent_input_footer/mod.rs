@@ -7,7 +7,6 @@ use crate::{
     ai::{
         blocklist::{
             history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel},
-            is_local_to_cloud_handoff_available,
             prompt::prompt_alert::{PromptAlertEvent, PromptAlertView},
             usage::icon_for_context_window_usage,
             BlocklistAIInputModel,
@@ -367,7 +366,7 @@ impl AgentInputFooter {
         let handoff_to_cloud_button = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new("", AgentInputButtonTheme)
                 .with_icon(Icon::UploadCloud)
-                .with_tooltip("Hand off to cloud")
+                .with_tooltip("Hand off to cloud (or type &)")
                 .with_size(button_size)
                 .with_tooltip_alignment(TooltipAlignment::Left)
                 .on_click(|ctx| {
@@ -2538,7 +2537,10 @@ impl TypedActionView for AgentInputFooter {
                 });
             }
             AgentInputFooterAction::OpenHandoffPane => {
-                if is_local_to_cloud_handoff_available() {
+                if FeatureFlag::OzHandoff.is_enabled()
+                    && FeatureFlag::HandoffLocalCloud.is_enabled()
+                    && cfg!(all(feature = "local_fs", not(target_family = "wasm")))
+                {
                     ctx.emit(AgentInputFooterEvent::OpenHandoffPane);
                 }
             }

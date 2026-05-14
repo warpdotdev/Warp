@@ -219,7 +219,11 @@ pub(super) fn check_and_report_update_errors(ctx: &mut AppContext) {
 
 pub(super) fn relaunch() -> Result<()> {
     let install_dir = install_dir()?;
-    let Some(installer_path) = INSTALLER_PATH.lock().take() else {
+    let Some(installer_path) = INSTALLER_PATH
+        .lock()
+        .as_ref()
+        .map(|path| path.to_path_buf())
+    else {
         bail!("No installer path");
     };
 
@@ -254,14 +258,6 @@ pub(super) fn relaunch() -> Result<()> {
             &format!("/DIR={}", install_dir.display()),
         ])
         .spawn()?;
-
-    // DEV ONLY: Sleep after spawning the installer so this process is still alive
-    // when Inno Setup tries to overwrite files. This reliably reproduces the
-    // auto-update race condition (APP-3702) for testing.
-    if matches!(ChannelState::channel(), Channel::Dev) {
-        log::info!("DEV: Sleeping 10s after spawning installer to reproduce update race");
-        std::thread::sleep(Duration::from_secs(10));
-    }
 
     Ok(())
 }

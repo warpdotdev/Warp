@@ -1,5 +1,6 @@
 use std::{collections::HashMap, ffi::OsString, path::PathBuf, sync::Arc};
 
+use crate::ai::local_child_harnesses::local_child_harness_disabled_message;
 use crate::ai::{
     agent_sdk::{
         driver::{
@@ -94,6 +95,9 @@ pub(super) async fn prepare_local_harness_child_launch(
             format!("Unsupported local child harness '{harness_name}'.")
         });
     };
+    if let Some(message) = local_child_harness_disabled_message(harness) {
+        return Err(message.to_string());
+    }
     validate_local_harness_shell(shell_type)?;
     let command = match harness {
         Harness::Oz => unreachable!("normalize_local_child_harness filters out Oz"),
