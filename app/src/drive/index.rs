@@ -2060,12 +2060,10 @@ impl DriveIndex {
     }
 
     fn render_team_space_zero_state(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let hint_text =
-            "Drag or move a personal workflow or notebook here to share it with your team.";
         let zero_state_info = Container::new(
             appearance
                 .ui_builder()
-                .wrappable_text(hint_text, true)
+                .wrappable_text(t!("drive.team_zero_state_hint").to_string(), true)
                 .with_style(UiComponentStyles {
                     font_family_id: Some(appearance.ui_font_family()),
                     font_size: Some(ITEM_FONT_SIZE),
@@ -2128,7 +2126,7 @@ impl DriveIndex {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        let button_text = "Create team".to_owned();
+        let button_text = t!("drive.create_team").to_string();
         let create_button = if UserWorkspaces::as_ref(app).total_teammates_in_joinable_teams() == 0
         {
             appearance
@@ -2196,9 +2194,9 @@ impl DriveIndex {
         app: &AppContext,
     ) -> Box<dyn Element> {
         let text = if UserWorkspaces::as_ref(app).num_joinable_teams() > 1 {
-            "View teams to join"
+            t!("drive.view_teams_to_join").to_string()
         } else {
-            "View team to join"
+            t!("drive.view_team_to_join").to_string()
         };
 
         let join_button = Container::new(
@@ -2222,7 +2220,7 @@ impl DriveIndex {
                     font_size: Some(14.),
                     ..Default::default()
                 })
-                .with_centered_text_label(text.to_owned())
+                .with_centered_text_label(text)
                 .build()
                 .with_cursor(Cursor::PointingHand)
                 .on_click(move |ctx, _, _| {
@@ -3964,12 +3962,9 @@ impl DriveIndex {
             .with_child(close_icon_button)
             .finish();
 
-        let personal_object_limit_description =
-            "Sign up for free to increase your storage limit and unlock more features.";
-
         let body_text = appearance
             .ui_builder()
-            .wrappable_text(personal_object_limit_description, true)
+            .wrappable_text(t!("drive.personal_storage_signup").to_string(), true)
             .with_style(UiComponentStyles {
                 font_size: Some(12.),
                 font_color: Some(sub_text_color),
