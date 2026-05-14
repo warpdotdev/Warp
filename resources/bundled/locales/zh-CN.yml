@@ -767,9 +767,15 @@ zh-CN:
     close_welcome_tips: "关闭欢迎提示"
 
   auto_reload:
+    enable_auto_reload_title: "启用自动充值？"
     when_enabled_prefix: "启用后，"
     auto_reload: "自动充值"
     purchase_selected_package_suffix: "会在额度用尽时自动购买你选择的套餐。"
+
+  resource_center:
+    docs: "文档"
+    slack: "Slack"
+    feedback: "反馈"
 
   env_vars:
     education_text: "添加密钥或命令。Warp 永远不会存储外部密钥"

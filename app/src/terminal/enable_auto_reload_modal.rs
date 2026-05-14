@@ -419,14 +419,17 @@ impl EnableAutoReloadModal {
         let body = ctx.add_typed_action_view(EnableAutoReloadModalBody::new);
 
         let modal = ctx.add_typed_action_view(|ctx| {
-            Modal::new(Some("Enable auto reload?".to_string()), body.clone(), ctx).with_body_style(
-                UiComponentStyles {
-                    // Padding of 0 here since we add a horizontal bar that needs to span the full width in the body
-                    // So we handle padding in the body itself
-                    padding: Some(Coords::uniform(0.)),
-                    ..Default::default()
-                },
+            Modal::new(
+                Some(t!("auto_reload.enable_auto_reload_title").to_string()),
+                body.clone(),
+                ctx,
             )
+            .with_body_style(UiComponentStyles {
+                // Padding of 0 here since we add a horizontal bar that needs to span the full width in the body
+                // So we handle padding in the body itself
+                padding: Some(Coords::uniform(0.)),
+                ..Default::default()
+            })
         });
 
         ctx.subscribe_to_view(&modal, |_, _, event, ctx| match event {

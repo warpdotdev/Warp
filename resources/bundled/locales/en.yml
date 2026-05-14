@@ -767,9 +767,15 @@ en:
     close_welcome_tips: "Close Welcome Tips"
 
   auto_reload:
+    enable_auto_reload_title: "Enable auto reload?"
     when_enabled_prefix: "When enabled, "
     auto_reload: "auto-reload"
     purchase_selected_package_suffix: " will automatically purchase your selected package when you run out. "
+
+  resource_center:
+    docs: "Docs"
+    slack: "Slack"
+    feedback: "Feedback"
 
   env_vars:
     education_text: "Add secret or command. Warp never stores external secrets"
