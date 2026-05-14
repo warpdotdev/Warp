@@ -163,6 +163,16 @@ fn local_with_disabled_claude_or_codex_disables_accept() {
 }
 
 #[test]
+fn from_request_sanitizes_disabled_local_harness_to_oz() {
+    let state =
+        RunAgentsEditState::from_request(&make_request("codex", RunAgentsExecutionMode::Local));
+
+    assert_eq!(state.orch.harness_type, "oz");
+    assert_eq!(state.orch.model_id, "");
+    assert!(state.orch.accept_disabled_reason().is_none());
+}
+
+#[test]
 fn cloud_with_env_and_non_opencode_harness_allows_accept() {
     for harness in ["oz", "claude", "gemini"] {
         let state = RunAgentsEditState::from_request(&make_request(

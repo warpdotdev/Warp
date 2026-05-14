@@ -97,12 +97,16 @@ pub struct RunAgentsEditState {
 
 impl RunAgentsEditState {
     pub fn from_request(req: &RunAgentsRequest) -> Self {
+        let mut orch = oc::OrchestrationEditState::from_run_agents_fields(
+            &req.model_id,
+            &req.harness_type,
+            &req.execution_mode,
+        );
+        if matches!(req.execution_mode, RunAgentsExecutionMode::Local) {
+            orch.sanitize_for_local_execution();
+        }
         Self {
-            orch: oc::OrchestrationEditState::from_run_agents_fields(
-                &req.model_id,
-                &req.harness_type,
-                &req.execution_mode,
-            ),
+            orch,
             agent_run_configs: req.agent_run_configs.clone(),
             base_prompt: req.base_prompt.clone(),
             summary: req.summary.clone(),

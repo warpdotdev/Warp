@@ -629,7 +629,6 @@ default = [
     "settings_file",
     "directory_tab_colors",
     "configurable_context_window",
-    "local_claude_codex_child_harnesses",
 ]
 # Enable this feature to automatically perform heap profiling.  NOTE: This will
 # substantially slow down program execution.

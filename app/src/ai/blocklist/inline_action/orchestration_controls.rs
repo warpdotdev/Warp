@@ -40,7 +40,7 @@ use crate::ai::local_child_harnesses::{
     local_child_harness_disabled_message, local_child_harness_is_enabled,
 };
 use crate::appearance::Appearance;
-use crate::menu::{MenuItem, MenuItemFields, MenuTooltipPosition};
+use crate::menu::{MenuItem, MenuItemFields};
 use crate::ui_components::blended_colors;
 use crate::view_components::dropdown::{Dropdown, DropdownAction, DropdownStyle};
 use crate::view_components::FilterableDropdown;
@@ -86,7 +86,7 @@ pub struct OrchestrationEditState {
 }
 
 impl OrchestrationEditState {
-    fn sanitize_for_local_execution(&mut self) {
+    pub(crate) fn sanitize_for_local_execution(&mut self) {
         let Some(harness) = Harness::parse_local_child_harness(&self.harness_type) else {
             return;
         };
@@ -199,6 +199,9 @@ impl OrchestrationEditState {
         }
         if !self.execution_mode.is_remote() && config.execution_mode.is_remote() {
             self.execution_mode = Self::from_orchestration_config(config).execution_mode;
+        }
+        if matches!(self.execution_mode, RunAgentsExecutionMode::Local) {
+            self.sanitize_for_local_execution();
         }
     }
 
@@ -557,24 +560,6 @@ pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
         let mut selected_name: Option<String> = None;
         let target_display = target_harness.map(|harness| availability.display_name_for(harness));
 
-        if is_local {
-            if let Some(harness) = Harness::parse_local_child_harness(&initial_harness) {
-                if let Some(message) = local_child_harness_disabled_message(harness) {
-                    let label = availability.display_name_for(harness).to_string();
-                    let mut fields = MenuItemFields::new(&label)
-                        .with_icon(harness_display::icon_for(harness))
-                        .with_disabled(true)
-                        .with_tooltip(message)
-                        .with_tooltip_position(MenuTooltipPosition::Right);
-                    if let Some(color) = harness_display::brand_color(harness) {
-                        fields = fields.with_override_icon_color(Fill::from(color));
-                    }
-                    selected_name = Some(label);
-                    items.push(MenuItem::Item(fields));
-                }
-            }
-        }
-
         for entry in sorted {
             let harness = resolve_entry_harness(entry.harness, &entry.display_name);
             // Use the server-provided display_name for the label so stale
@@ -790,25 +775,39 @@ pub fn apply_harness_change<A: OrchestrationControlAction, V: View>(
     state.harness_type = new_harness_type.to_string();
 
     let is_local = !state.execution_mode.is_remote();
+    if is_local {
+        state.sanitize_for_local_execution();
+        if state.harness_type != new_harness_type {
+            if let Some(handle) = &handles.harness_picker {
+                populate_harness_picker(handle, &state.harness_type, true, ctx);
+            }
+        }
+    }
     // Try to restore a previously saved model for this harness.
-    let new_key = harness_save_key(new_harness_type);
+    let new_key = harness_save_key(&state.harness_type);
     let restored = memory
         .get(new_key)
-        .filter(|id| is_model_in_filtered_choices(id, new_harness_type, is_local, ctx))
+        .filter(|id| is_model_in_filtered_choices(id, &state.harness_type, is_local, ctx))
         .cloned();
     if let Some(saved_id) = restored {
         state.model_id = saved_id;
-    } else if !is_model_in_filtered_choices(&state.model_id, new_harness_type, is_local, ctx) {
+    } else if !is_model_in_filtered_choices(&state.model_id, &state.harness_type, is_local, ctx) {
         // No saved model — fall back to conversation base model
         // for Oz, or default for non-Oz.
         let reset_id = fallback_base_model_id(ctx)
-            .filter(|id| is_model_in_filtered_choices(id, new_harness_type, is_local, ctx))
-            .or_else(|| first_filtered_model_id(new_harness_type, ctx))
+            .filter(|id| is_model_in_filtered_choices(id, &state.harness_type, is_local, ctx))
+            .or_else(|| first_filtered_model_id(&state.harness_type, ctx))
             .unwrap_or_default();
         state.model_id = reset_id;
     }
     if let Some(handle) = &handles.model_picker {
-        populate_model_picker_for_harness(handle, &state.model_id, new_harness_type, is_local, ctx);
+        populate_model_picker_for_harness(
+            handle,
+            &state.model_id,
+            &state.harness_type,
+            is_local,
+            ctx,
+        );
     }
 }
 
@@ -823,6 +822,10 @@ pub fn apply_execution_mode_change<A: OrchestrationControlAction, V: View>(
     ctx: &mut ViewContext<V>,
 ) {
     state.toggle_execution_mode_to_remote(is_remote);
+    let is_local = !state.execution_mode.is_remote();
+    if let Some(handle) = &handles.harness_picker {
+        populate_harness_picker(handle, &state.harness_type, is_local, ctx);
+    }
     // When switching to Cloud with no environment set, pre-fill with
     // the user's last-selected or most recently used environment.
     if is_remote {
@@ -834,7 +837,6 @@ pub fn apply_execution_mode_change<A: OrchestrationControlAction, V: View>(
             }
         }
     }
-    let is_local = !state.execution_mode.is_remote();
     if !is_model_in_filtered_choices(&state.model_id, &state.harness_type, is_local, ctx) {
         let reset_id = fallback_base_model_id(ctx)
             .filter(|id| is_model_in_filtered_choices(id, &state.harness_type, is_local, ctx))
@@ -866,6 +868,9 @@ pub fn repopulate_all_pickers<A: OrchestrationControlAction, V: View>(
     ctx: &mut ViewContext<V>,
 ) {
     let is_local = !state.execution_mode.is_remote();
+    if is_local {
+        state.sanitize_for_local_execution();
+    }
     if let Some(handle) = &handles.harness_picker {
         populate_harness_picker(handle, &state.harness_type, is_local, ctx);
     }

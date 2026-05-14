@@ -106,3 +106,18 @@ fn accept_disabled_reason_reports_local_claude_message() {
         Some("Local Claude Code child agents are temporarily disabled.")
     );
 }
+
+#[test]
+fn resolve_from_config_sanitizes_disabled_local_harness() {
+    let mut state =
+        OrchestrationEditState::from_run_agents_fields("", "", &RunAgentsExecutionMode::Local);
+
+    state.resolve_from_config(&local_config("claude", "sonnet"));
+
+    assert_eq!(state.harness_type, "oz");
+    assert_eq!(state.model_id, "");
+    assert!(matches!(
+        state.execution_mode,
+        RunAgentsExecutionMode::Local
+    ));
+}
