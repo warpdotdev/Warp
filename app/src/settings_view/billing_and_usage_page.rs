@@ -81,12 +81,6 @@ use super::{
 };
 
 const HEADER_FONT_SIZE: f32 = 16.;
-const AUTO_RELOAD_EXCEED_LIMIT_WARNING_STRING: &str =
-    "Auto reload is disabled, as the next reload would exceed your monthly spend limit. Increase your limit to use auto reload.";
-const AUTO_RELOAD_DELINQUENT_WARNING_STRING: &str =
-    "Restricted due to billing issue. Update your payment method to purchase add-on credits.";
-const RESTRICTED_BILLING_USAGE_WARNING_STRING: &str =
-    "Auto reload is disabled due to recent failed reload. Please update your payment method and try again.";
 
 /// The threshold below which we only show the "Buy more" button (not "New agent").
 use crate::ai::request_usage_model::AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD;
@@ -1372,7 +1366,7 @@ impl UsageWidget {
         let spend_limit_text = if let Some(cents) = usage_settings.max_monthly_spend_cents {
             format!("${:.2}", cents as f64 / 100.0)
         } else {
-            "Not set".to_string()
+            t!("billing.not_set").to_string()
         };
 
         let info_icon = render_info_icon(
@@ -1382,7 +1376,7 @@ impl UsageWidget {
                 on_click_action: None,
                 secondary_text: None,
                 tooltip_override_text: Some(
-                    "Sets the monthly overage spending limit beyond the plan amount".to_string(),
+                    t!("billing.monthly_overage_spending_limit_tooltip").to_string(),
                 ),
             },
         );
@@ -1677,9 +1671,15 @@ impl UsageWidget {
                     .current_team()
                     .is_some_and(|team| team.billing_metadata.is_on_legacy_paid_plan());
                 let (link_text, suffix) = if is_legacy_paid {
-                    ("Switch to the Build plan", " to purchase add-on credits.")
+                    (
+                        t!("billing.switch_to_build_plan"),
+                        t!("billing.purchase_addon_credits_suffix"),
+                    )
                 } else {
-                    ("Upgrade to the Build plan", " to purchase add-on credits.")
+                    (
+                        t!("billing.upgrade_to_build_plan"),
+                        t!("billing.purchase_addon_credits_suffix"),
+                    )
                 };
 
                 let text_fragments = vec![
@@ -1719,7 +1719,7 @@ impl UsageWidget {
             // they're on an Enterprise-like plan. For admins, we show them a message to contact their
             // Account Executive.
             (false, false, true) => {
-                let paragraph_text = "Contact your Account Executive for more add-on credits.";
+                let paragraph_text = t!("billing.contact_account_executive_addon_credits");
                 Some(
                     ui_builder
                         .paragraph(paragraph_text)
@@ -1734,7 +1734,7 @@ impl UsageWidget {
             // Every other case relates to not being a team admin. If you aren't an admin, we show
             // a generic message telling you to talk to them.
             (_, _, false) => {
-                let paragraph_text = "Contact a team admin to purchase add-on credits.";
+                let paragraph_text = t!("billing.contact_team_admin_addon_credits");
                 Some(
                     ui_builder
                         .paragraph(paragraph_text)
@@ -1795,7 +1795,7 @@ impl UsageWidget {
                 on_click_action: None,
                 secondary_text: None,
                 tooltip_override_text: Some(
-                    "Sets the monthly limit spent on add-on credits".to_string(),
+                    t!("billing.addon_monthly_spend_limit_tooltip").to_string(),
                 ),
             },
         );
@@ -1931,16 +1931,19 @@ impl UsageWidget {
         };
 
         let auto_reload_switch = Container::new(render_body_item::<BillingAndUsagePageAction>(
-            "Auto reload".into(),
+            t!("billing.auto_reload").to_string(),
             None,
             Default::default(),
             Default::default(),
             appearance,
             auto_reload_switch,
-            Some(format!(
-                "When enabled, auto reload will automatically purchase {auto_reload_amount} \
-                credits when your add-on credit balance reaches 100 credits remaining."
-            )),
+            Some(
+                t!(
+                    "billing.auto_reload_description",
+                    credits = auto_reload_amount
+                )
+                .to_string(),
+            ),
         ))
         .with_padding_right(-TOGGLE_BUTTON_RIGHT_PADDING)
         .finish();
@@ -1999,9 +2002,9 @@ impl UsageWidget {
         };
 
         let button_text = if purchase_addon_credits_loading {
-            "Buying…".to_string()
+            t!("buy_credits_banner.buying").to_string()
         } else {
-            "Buy".to_string()
+            t!("buy_credits_banner.buy").to_string()
         };
 
         let would_exceed_limit = selected_option.is_some_and(|option| {
@@ -2068,12 +2071,12 @@ impl UsageWidget {
             if delinquent_due_to_payment_issue {
                 card_content_upper.add_child(self.render_warning_row(
                     appearance,
-                    AUTO_RELOAD_DELINQUENT_WARNING_STRING.to_string(),
+                    t!("billing.auto_reload_delinquent_warning").to_string(),
                 ));
             } else if would_exceed_limit {
                 card_content_upper.add_child(self.render_warning_row(
                     appearance,
-                    AUTO_RELOAD_EXCEED_LIMIT_WARNING_STRING.to_string(),
+                    t!("billing.auto_reload_exceed_limit_warning").to_string(),
                 ));
             }
             let card_upper = Container::new(card_content_upper.finish())
@@ -2102,7 +2105,7 @@ impl UsageWidget {
             if delinquent_due_to_payment_issue {
                 card_content_lower_children.push(self.render_warning_row(
                     appearance,
-                    AUTO_RELOAD_DELINQUENT_WARNING_STRING.to_string(),
+                    t!("billing.auto_reload_delinquent_warning").to_string(),
                 ));
             } else if workspace
                 .billing_metadata
@@ -2110,7 +2113,7 @@ impl UsageWidget {
             {
                 card_content_lower_children.push(self.render_warning_row(
                     appearance,
-                    RESTRICTED_BILLING_USAGE_WARNING_STRING.to_string(),
+                    t!("billing.auto_reload_failed_warning").to_string(),
                 ));
             } else if would_exceed_limit {
                 let warning_fragments = vec![
@@ -2222,7 +2225,8 @@ impl UsageWidget {
         if let Some(period_end) = total_overages_period_end {
             let local_period_end = period_end.with_timezone(&Local);
             let formatted_date = local_period_end.format("%b %d at %-I:%M %p").to_string();
-            let billing_date_text = format!("Usage resets on {formatted_date}");
+            let billing_date_text =
+                t!("billing.usage_resets_on", date = formatted_date).to_string();
             left_side_component.add_child(
                 Container::new(
                     Text::new_inline(billing_date_text, appearance.ui_font_family(), 12.)
@@ -2271,17 +2275,21 @@ impl UsageWidget {
         if let Some(info) = prorated_request_limits_info {
             if info.is_request_limit_prorated {
                 row.add_child(render_info_icon(
-                appearance,
-                AdditionalInfo::<BillingAndUsagePageAction> {
-                    mouse_state: info.mouse_state,
-                    on_click_action: None,
-                    secondary_text: None,
-                    tooltip_override_text: match info.is_current_user {
-                        true => Some("Your credit limit is prorated because you joined midway through the billing cycle.".to_string()),
-                        false => Some("This credit limit is prorated because this user joined midway through the billing cycle.".to_string()),
+                    appearance,
+                    AdditionalInfo::<BillingAndUsagePageAction> {
+                        mouse_state: info.mouse_state,
+                        on_click_action: None,
+                        secondary_text: None,
+                        tooltip_override_text: match info.is_current_user {
+                            true => {
+                                Some(t!("billing.current_user_prorated_credit_limit").to_string())
+                            }
+                            false => {
+                                Some(t!("billing.other_user_prorated_credit_limit").to_string())
+                            }
+                        },
                     },
-                },
-            ))
+                ))
             }
         }
 
