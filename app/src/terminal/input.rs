@@ -12634,6 +12634,17 @@ impl Input {
                     return;
                 }
 
+                if let Some(ambient_agent_view_model) = self.ambient_agent_view_model() {
+                    let needs_env_modal = ambient_agent_view_model
+                        .as_ref(ctx)
+                        .selected_environment_id()
+                        .is_none();
+                    if needs_env_modal {
+                        ctx.emit(Event::OpenCloudModeV2EnvironmentCreationModal);
+                        return;
+                    }
+                }
+
                 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
                 let attachments = self
                     .collect_cloud_launch_attachments(ctx)
@@ -12666,18 +12677,6 @@ impl Input {
                                 ctx,
                             );
                         });
-                        return;
-                    }
-                }
-
-                if let Some(ambient_agent_view_model) = self.ambient_agent_view_model() {
-                    let needs_env_modal = {
-                        let model = ambient_agent_view_model.as_ref(ctx);
-                        !model.is_local_to_cloud_handoff()
-                            && model.selected_environment_id().is_none()
-                    };
-                    if needs_env_modal {
-                        ctx.emit(Event::OpenCloudModeV2EnvironmentCreationModal);
                         return;
                     }
                 }

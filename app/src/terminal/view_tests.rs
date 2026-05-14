@@ -4,6 +4,12 @@ use crate::ai::agent::{
     AIAgentExchange, AIAgentExchangeId, AIAgentInput, AIAgentOutputStatus, UserQueryMode,
 };
 use crate::ai::ambient_agents::AmbientAgentTaskId;
+use crate::ai::cloud_environments::{
+    AmbientAgentEnvironment, CloudAmbientAgentEnvironment, CloudAmbientAgentEnvironmentModel,
+};
+use crate::cloud_object::model::persistence::CloudModel;
+use crate::cloud_object::{CloudObjectMetadata, CloudObjectPermissions};
+use crate::server::ids::{ClientId, SyncId};
 use chrono::Local;
 use parking_lot::FairMutex;
 use std::any::Any;
@@ -871,6 +877,18 @@ fn cloud_mode_v2_agent_prefixed_query_spawns_cloud_agent() {
         let terminal = add_window_with_cloud_mode_terminal(&mut app);
         let input = terminal.read(&app, |view, _| view.input.clone());
 
+        // The cloud mode v2 submit path now opens a create-environment modal if
+        // no environment is selected. Register a stub environment and select it
+        // so the test exercises the spawn path instead of the modal-open path.
+        let env_id = register_test_cloud_environment(&mut app);
+        terminal.update(&mut app, |view, ctx| {
+            view.ambient_agent_view_model()
+                .expect("cloud mode terminal should have ambient model")
+                .update(ctx, |model, ctx| {
+                    model.set_environment_id(Some(env_id), ctx);
+                });
+        });
+
         input.update(&mut app, |input, ctx| {
             assert!(input.is_cloud_mode_input_v2_composing(ctx));
             input.replace_buffer_content("/agent fix the tests", ctx);
@@ -890,6 +908,31 @@ fn cloud_mode_v2_agent_prefixed_query_spawns_cloud_agent() {
             assert!(input.as_ref(ctx).buffer_text(ctx).is_empty());
         });
     });
+}
+
+/// Registers a stub `CloudAmbientAgentEnvironment` in the test `CloudModel` and
+/// returns its `SyncId` so the caller can attach it to an ambient view model.
+fn register_test_cloud_environment(app: &mut App) -> SyncId {
+    let sync_id = SyncId::ClientId(ClientId::new());
+    app.update(|ctx| {
+        let environment = AmbientAgentEnvironment::new(
+            "Test Environment".to_string(),
+            None,
+            vec![],
+            "ubuntu:latest".to_string(),
+            vec![],
+        );
+        let object = CloudAmbientAgentEnvironment::new(
+            sync_id,
+            CloudAmbientAgentEnvironmentModel::new(environment),
+            CloudObjectMetadata::mock(),
+            CloudObjectPermissions::mock_personal(),
+        );
+        CloudModel::handle(ctx).update(ctx, |model, ctx| {
+            model.create_object(sync_id, object, ctx);
+        });
+    });
+    sync_id
 }
 
 #[test]
