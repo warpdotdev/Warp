@@ -2081,22 +2081,22 @@ impl FeaturesPageView {
             let mut dropdown = Dropdown::new(ctx);
 
             let top = DropdownItem::new(
-                "Pin to top",
+                t!("features.pin_to_top"),
                 FeaturesPageAction::QuakeEditorSetPinPosition(QuakeModePinPosition::Top),
             );
 
             let bottom = DropdownItem::new(
-                "Pin to bottom",
+                t!("features.pin_to_bottom"),
                 FeaturesPageAction::QuakeEditorSetPinPosition(QuakeModePinPosition::Bottom),
             );
 
             let left = DropdownItem::new(
-                "Pin to left",
+                t!("features.pin_to_left"),
                 FeaturesPageAction::QuakeEditorSetPinPosition(QuakeModePinPosition::Left),
             );
 
             let right = DropdownItem::new(
-                "Pin to right",
+                t!("features.pin_to_right"),
                 FeaturesPageAction::QuakeEditorSetPinPosition(QuakeModePinPosition::Right),
             );
 
@@ -2751,18 +2751,18 @@ impl FeaturesPageView {
         }
 
         let categories = vec![
-            Category::new("General", general_widgets),
-            Category::new("Session", session_widgets),
-            Category::new("Keys", keys_widgets),
-            Category::new("Text Editing", text_editing_widgets),
-            Category::new("Terminal Input", editor_widgets),
-            Category::new("Terminal", terminal_widgets),
-            Category::new("Notifications", notifications_widgets),
+            Category::new(t!("features.category_general"), general_widgets),
+            Category::new(t!("features.category_session"), session_widgets),
+            Category::new(t!("features.category_keys"), keys_widgets),
+            Category::new(t!("features.category_text_editing"), text_editing_widgets),
+            Category::new(t!("features.category_terminal_input"), editor_widgets),
+            Category::new(t!("features.category_terminal"), terminal_widgets),
+            Category::new(t!("features.category_notifications"), notifications_widgets),
             Category::new(
-                "Workflows",
+                t!("features.category_workflows"),
                 vec![Box::new(WorkflowsInCommandSearch::default())],
             ),
-            Category::new("System", system_widgets),
+            Category::new(t!("features.category_system"), system_widgets),
         ];
 
         PageType::new_categorized(categories, None)
@@ -3294,10 +3294,10 @@ impl FeaturesPageView {
         self.refresh_tab_behavior_state(ctx);
     }
 
-    fn new_tab_placement_dropdown_item_label(val: NewTabPlacement) -> &'static str {
+    fn new_tab_placement_dropdown_item_label(val: NewTabPlacement) -> String {
         match val {
-            NewTabPlacement::AfterAllTabs => "After all tabs",
-            NewTabPlacement::AfterCurrentTab => "After current tab",
+            NewTabPlacement::AfterAllTabs => t!("features.after_all_tabs").to_string(),
+            NewTabPlacement::AfterCurrentTab => t!("features.after_current_tab").to_string(),
         }
     }
 
