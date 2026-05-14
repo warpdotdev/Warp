@@ -2,9 +2,7 @@ use serde::Serialize;
 use std::rc::Rc;
 
 use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::blocklist::prompt::prompt_alert::{
-    PromptAlertEvent, PromptAlertState, PromptAlertView,
-};
+use crate::ai::blocklist::prompt::prompt_alert::{PromptAlertState, PromptAlertView};
 use crate::ai::blocklist::BlocklistAIInputModel;
 use crate::ai::predict::prompt_suggestions::ACCEPT_PROMPT_SUGGESTION_KEYBINDING;
 use crate::server::telemetry::InteractionSource;
@@ -38,7 +36,6 @@ use crate::ai::agent::{PassiveSuggestionTrigger, StaticQueryType};
 const INLINE_BANNER_SPACING: f32 = 8.;
 const INLINE_BANNER_BUTTON_PADDING: f32 = 8.;
 
-const DELINQUENT_DUE_TO_PAYMENT_ISSUE_TOOLTIP_MESSAGE: &str = "Restricted due to payment issue";
 const OUT_OF_REQUESTS_TOOLTIP_MESSAGE: &str = "Out of credits";
 
 /// Types of zero-state prompt suggestions.
@@ -140,9 +137,6 @@ fn render_button(
         prompt_alert_state,
         PromptAlertState::NoConnection
             | PromptAlertState::AnonymousUserRequestLimitHardGate
-            | PromptAlertState::DelinquentDueToPaymentIssue
-            | PromptAlertState::OveragesToggleableButNotEnabled
-            | PromptAlertState::MonthlyOveragesSpendLimitReached
             | PromptAlertState::RequestLimitReached
     );
     let opacity: f32 = if is_button_disabled { 0.5 } else { 1.0 };
@@ -286,14 +280,9 @@ fn get_tooltip_text_for_alert_state(alert_state: &PromptAlertState) -> Option<St
     // This is not an exhaustive list; the actual prompt alert component will have more information,
     // so we can keep the tooltip's text relatively minimal and just capture broad groups.
     match alert_state {
-        PromptAlertState::DelinquentDueToPaymentIssue => {
-            Some(DELINQUENT_DUE_TO_PAYMENT_ISSUE_TOOLTIP_MESSAGE.to_string())
-        }
         PromptAlertState::RequestLimitReached
         | PromptAlertState::AnonymousUserRequestLimitHardGate
-        | PromptAlertState::AnonymousUserRequestLimitSoftGate
-        | PromptAlertState::OveragesToggleableButNotEnabled
-        | PromptAlertState::MonthlyOveragesSpendLimitReached => {
+        | PromptAlertState::AnonymousUserRequestLimitSoftGate => {
             Some(OUT_OF_REQUESTS_TOOLTIP_MESSAGE.to_string())
         }
         _ => None,
@@ -302,7 +291,6 @@ fn get_tooltip_text_for_alert_state(alert_state: &PromptAlertState) -> Option<St
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptSuggestionsEvent {
-    SignupAnonymousUser,
     OpenPrivacyPage,
 }
 
@@ -318,9 +306,6 @@ impl PromptSuggestionsView {
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let prompt_alert = ctx.add_typed_action_view(PromptAlertView::new);
-        ctx.subscribe_to_view(&prompt_alert, |me, _, event, ctx| {
-            me.handle_prompt_alert_event(event, ctx);
-        });
 
         ctx.subscribe_to_model(&ai_input_model, |_, _, _, ctx| {
             ctx.notify();
@@ -335,17 +320,6 @@ impl PromptSuggestionsView {
 
     pub fn set_banner_state(&mut self, banner_state: PromptSuggestionBannerState) {
         self.banner_state = Some(banner_state);
-    }
-
-    fn handle_prompt_alert_event(&mut self, event: &PromptAlertEvent, ctx: &mut ViewContext<Self>) {
-        match event {
-            PromptAlertEvent::SignupAnonymousUser => {
-                ctx.emit(PromptSuggestionsEvent::SignupAnonymousUser);
-            }
-            PromptAlertEvent::OpenPrivacyPage => {
-                ctx.emit(PromptSuggestionsEvent::OpenPrivacyPage);
-            }
-        }
     }
 }
 
@@ -427,9 +401,6 @@ impl TypedActionView for PromptSuggestionsView {
 
     fn handle_action(&mut self, action: &PromptSuggestionsEvent, ctx: &mut ViewContext<Self>) {
         match action {
-            PromptSuggestionsEvent::SignupAnonymousUser => {
-                ctx.emit(PromptSuggestionsEvent::SignupAnonymousUser);
-            }
             PromptSuggestionsEvent::OpenPrivacyPage => {
                 ctx.emit(PromptSuggestionsEvent::OpenPrivacyPage);
             }

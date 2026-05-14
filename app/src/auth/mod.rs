@@ -1,22 +1,20 @@
-//! OpenWarp 本地 auth facade。
+//! OpenWarp 本地身份 facade。
 //!
 //! 该模块保留 `AuthState` / `AuthStateProvider` / `AuthManager` / `User` / `UserUid` /
 //! `Credentials` 等类型表面 + pub 方法签名,**所有方法体本地化**:
 //! - `is_logged_in()` / 各 `is_*` 谓词:固定返回本地用户对应的常量。
 //! - `user_id()`:返回基于 `TEST_USER_UID` 的常量 [`UserUid`]。
 //! - `username_for_display` / `display_name`:基于 [`User::test`] 占位元数据。
-//! - 云端 RPC / 鉴权触发点(`AuthManager::initialize_user_from_auth_payload` 等):no-op,
-//!   不再依赖 `ServerApi` / `AuthClient`。
+//! - 外部账号回调触发点已下线,不再依赖远端账号客户端。
 //!
 //! 167 处 `crate::auth::AuthStateProvider::as_ref(ctx).get()` 调用一行不改即可继续编译,
 //! 运行时永远拿到"已登录、Free Tier 无限额"的本地占位状态。
 //!
 //! 物理删除清单见 README:21 个 UI / RPC / token 持久化 / web handoff /
-//! login_slide / paste_auth_token_modal / web_handoff 等文件随云端账号体系一并下线。
+//! login_slide / paste_auth_token_modal / web_handoff 等文件随外部账号体系一并下线。
 
 use std::sync::Arc;
 
-use anyhow::Result;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -39,24 +37,22 @@ pub enum OwnerType {
 
 /// OpenWarp 本地 API key 前缀。
 ///
-/// 历史上用于识别"以 wk- 开头的字符串为 Warp Inc cloud API key",在 BYOP 路径上
-/// 已无云端 API key 概念。常量仍被 `AuthState::initialize` 内部消费 + 少量遗留
+/// 历史上用于识别"以 wk- 开头的字符串为托管 API key",在 BYOP 路径上
+/// 已无托管账号 API key 概念。常量仍被 `AuthState::initialize` 内部消费 + 少量遗留
 /// 调用点匹配前缀,因此保留。
 pub const API_KEY_PREFIX: &str = "wk-";
 
 // ---------- Credentials / AuthToken / LoginToken ----------
 //
-// 原来用于云端 token / API key / SessionCookie 几种认证方式的运行时分支。OpenWarp
-// 本地化后只保留 `ApiKey` / `Test` 两种实际用得到的 variant 加上为编译兼容保留的
-// `SessionCookie`。云端 token variant 物理删,所有原云鉴权分支在 OpenWarp 下
-// 永远走 `None` / 早 return。
+// 原来用于托管 token / API key / session cookie 几种认证方式的运行时分支。OpenWarp
+// 本地化后只保留 `ApiKey` / `Test` 两种实际用得到的 variant。托管 token 与
+// cookie variant 已物理删除,所有原外部账号分支在 OpenWarp 下永远走 `None` / 早 return。
 
 /// 表示用户与 Warp 的认证方式。
 ///
 /// OpenWarp 本地化分支:
 /// - `ApiKey`:BYOP 路径下用户自携 LLM provider API key,实际由 settings/keychain
 ///   各自管理,这里只保留 enum facade 给 `AuthState::credentials()` 等读取方法。
-/// - `SessionCookie`:web 端 stub,native 永远不会构造。
 /// - `Test`:测试 / `skip_login` 构建下使用。
 #[derive(Clone, Debug)]
 pub enum Credentials {
@@ -65,8 +61,6 @@ pub enum Credentials {
         key: String,
         owner_type: Option<OwnerType>,
     },
-    /// Web 端 session cookie。
-    SessionCookie,
     /// 测试 / `skip_login` 构建占位。
     Test,
 }
@@ -76,7 +70,7 @@ impl Credentials {
     pub fn as_api_key(&self) -> Option<&str> {
         match self {
             Credentials::ApiKey { key, .. } => Some(key),
-            Credentials::SessionCookie | Credentials::Test => None,
+            Credentials::Test => None,
         }
     }
 
@@ -84,17 +78,17 @@ impl Credentials {
     pub fn api_key_owner_type(&self) -> Option<OwnerType> {
         match self {
             Credentials::ApiKey { owner_type, .. } => *owner_type,
-            Credentials::SessionCookie | Credentials::Test => None,
+            Credentials::Test => None,
         }
     }
 
     /// 返回要写入 Authorization 头的 bearer token。
     ///
-    /// 本地化后只有 `ApiKey` 产出真实值;`SessionCookie` / `Test` 返回 [`AuthToken::NoAuth`]。
+    /// 本地化后只有 `ApiKey` 产出真实值;`Test` 返回 [`AuthToken::NoAuth`]。
     pub fn bearer_token(&self) -> AuthToken {
         match self {
             Credentials::ApiKey { key, .. } => AuthToken::ApiKey(key.clone()),
-            Credentials::SessionCookie | Credentials::Test => AuthToken::NoAuth,
+            Credentials::Test => AuthToken::NoAuth,
         }
     }
 }
@@ -261,7 +255,7 @@ impl AuthState {
     }
 
     /// 初始化 AuthState。`api_key` 参数被忠实保留(BYOP 入口仍可能传入),
-    /// 但其他云端账号检查路径全部 no-op。
+    /// 但其他外部账号检查路径全部 no-op。
     #[cfg_attr(target_family = "wasm", allow(unused_variables))]
     pub fn initialize(_ctx: &AppContext, api_key: Option<String>) -> Self {
         let state = Self::new();
@@ -383,7 +377,7 @@ impl AuthState {
         self.user.read().as_ref().map(|user| user.local_id)
     }
 
-    /// 返回 nil UUID 字符串。OpenWarp 闭源遥测剥离 P0/P4a 后,该 ID 不再出现在
+    /// 返回 nil UUID 字符串。OpenWarp 本地化后,该 ID 不再出现在
     /// 任何外发 HTTP 头中,仅为给 telemetry 上下文 / session 头提供形式上的占位。
     pub fn anonymous_id(&self) -> String {
         Uuid::nil().to_string()
@@ -497,22 +491,6 @@ pub type LoginGatedFeature = &'static str;
 /// OpenWarp 下匿名身份不再存在,回调被丢弃。
 pub type AnonymousTokenUrlBuilder = Box<dyn FnOnce(Option<&str>) -> String>;
 
-/// 跨 modal / login 流程透传的回跳 payload,OpenWarp 本地化后只保留 struct 表面
-/// 以兼容 `AuthManagerEvent::LoginOverrideDetected` 与 `AuthRedirectPayload::from_url`
-/// 调用点。OpenWarp 永远不会通过浏览器回跳触发 auth。
-#[derive(Clone, Debug, Default)]
-pub struct AuthRedirectPayload {
-    pub refresh_token_placeholder: (),
-}
-
-impl AuthRedirectPayload {
-    pub fn from_url(_url: url::Url) -> Result<Self, anyhow::Error> {
-        Err(anyhow::anyhow!(
-            "OpenWarp 已下线云端登录,不再处理浏览器回跳 URL"
-        ))
-    }
-}
-
 /// AuthView 变体 facade。OpenWarp 已物理删 AuthView UI,所有派发点在 stub 中
 /// 仅产生 log,但 enum 表面保留供旧 `match` arm 编译通过。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -535,19 +513,14 @@ pub enum AuthViewVariant {
 use warpui::elements::Empty;
 use warpui::{Element, View, ViewContext};
 
-/// AuthView facade。原 UI 包含《登录 / 注册》表单,Wave 3-1 物理删。
+/// AuthView facade。原 UI 包含《登录 / 注册》表单,本地化后已物理删除。
 pub struct AuthView {
     variant: AuthViewVariant,
-    /// 原 UI 记录上一次登录失败原因,Wave 3-1 仅作字段保留 以供原赋值点编译。
-    pub last_login_failure_reason: Option<LoginFailureReason>,
 }
 
 impl AuthView {
     pub fn new(variant: AuthViewVariant, _ctx: &mut ViewContext<Self>) -> Self {
-        Self {
-            variant,
-            last_login_failure_reason: None,
-        }
+        Self { variant }
     }
 
     pub fn set_variant(&mut self, _ctx: &mut ViewContext<Self>, variant: AuthViewVariant) {
@@ -594,9 +567,6 @@ impl AuthOverrideWarningModal {
     pub fn new(_ctx: &mut ViewContext<Self>, _variant: AuthOverrideWarningModalVariant) -> Self {
         Self
     }
-
-    /// 设置 被中断的 auth payload。OpenWarp:no-op。
-    pub fn set_interrupted_auth_payload(&mut self, _payload: AuthRedirectPayload) {}
 }
 
 impl Entity for AuthOverrideWarningModal {
@@ -694,13 +664,6 @@ pub enum WebHandoffEvent {
     Unsupported,
 }
 
-/// 登录失败原因 facade(原 `auth/login_failure_notification.rs` 定义)。
-#[derive(Clone, Debug)]
-pub enum LoginFailureReason {
-    InvalidRedirectUrl { was_pasted: bool },
-    Generic,
-}
-
 /// AuthManager 事件 facade。`AuthManagerEvent::AuthComplete` 仍可被
 /// `AuthManager::new` 内部触发以兼容部分订阅方对"已认证"信号的依赖。
 #[derive(Debug)]
@@ -711,14 +674,6 @@ pub enum AuthManagerEvent {
     NeedsReauth,
     AttemptedLoginGatedFeature {
         auth_view_variant: AuthViewVariant,
-    },
-    LoginOverrideDetected(AuthRedirectPayload),
-    /// CLI headless device auth 路径中原发出的"已拿到 device authorization code"事件。
-    /// OpenWarp 路径下不再触发,但 enum variant 保留以免旧 `match` 调用点报错。
-    ReceivedDeviceAuthorizationCode {
-        verification_url: String,
-        verification_url_complete: Option<String>,
-        user_code: String,
     },
     /// 低频 失败:同上。
     CreateAnonymousUserFailed,
@@ -754,7 +709,7 @@ pub struct PersistedCurrentUserInformation {
     pub email: String,
 }
 
-/// AuthManager facade。OpenWarp 本地化后所有云端 RPC / 云鉴权入口都成为 no-op,
+/// AuthManager facade。OpenWarp 本地化后所有外部账号/RPC 入口都成为 no-op,
 /// `AuthManager` 仍作为 singleton 模型挂在 App 中,以保证 `subscribe_to_model` /
 /// `handle(ctx).update(...)` 调用 0 改动,同时保留本地身份 / onboarded 标记 /
 /// logout reset 语义。
@@ -763,7 +718,7 @@ pub struct AuthManager {
 }
 
 impl AuthManager {
-    /// 创建 AuthManager。本地化后不再接受 `auth_client` 参数。
+    /// 创建 AuthManager。本地化后不再接受外部账号客户端参数。
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
         Self { auth_state }
@@ -774,35 +729,11 @@ impl AuthManager {
         Self::new(ctx)
     }
 
-    /// 历史上从浏览器回跳 URL 重建用户态。本地化:no-op,只 log。
-    pub fn initialize_user_from_auth_payload(
-        &mut self,
-        _auth_payload: AuthRedirectPayload,
-        _enforce_state_validation: bool,
-        _ctx: &mut ModelContext<Self>,
-    ) {
-        log::debug!("AuthManager::initialize_user_from_auth_payload 已 no-op(OpenWarp)");
-    }
-
-    /// 恢复被中断的 auth payload。本地化:no-op。
-    pub fn resume_interrupted_auth_payload(
-        &mut self,
-        _auth_payload: AuthRedirectPayload,
-        _ctx: &mut ModelContext<Self>,
-    ) {
-        log::debug!("AuthManager::resume_interrupted_auth_payload 已 no-op(OpenWarp)");
-    }
-
     /// 刷新当前用户态。
     ///
     /// 历史上这里会走云端 token 刷新;OpenWarp 本地化后认证状态在启动时已完成
-    /// 本地初始化,不再发任何 `ServerApi` / `AuthClient` 请求。
+    /// 本地初始化,不再发任何外部账号请求。
     pub fn refresh_user(&self, _ctx: &mut ModelContext<Self>) {}
-
-    /// 设备授权码流(CLI 启动登录)。本地化:no-op。
-    pub fn authorize_device(&self, _ctx: &mut ModelContext<Self>) {
-        log::debug!("AuthManager::authorize_device 已 no-op(OpenWarp)");
-    }
 
     /// 主动登出。
     ///
@@ -810,7 +741,7 @@ impl AuthManager {
     /// 供设置重置 / 会话清理等调用点复用。
     pub(crate) fn log_out(&mut self, _ctx: &mut ModelContext<Self>) {
         self.auth_state.reset_local_defaults();
-        log::debug!("AuthManager::log_out 已本地 reset: 已切换为测试占位用户态");
+        log::debug!("AuthManager::log_out 已本地 reset: 已切换为本地占位用户态");
     }
 
     /// 标记需要重新认证。本地化:no-op。
@@ -897,7 +828,7 @@ impl SingletonEntity for AuthManager {}
 
 // ---------- 全模块 init ----------
 
-/// OpenWarp 本地 auth facade 的 init(no-op)。
+/// OpenWarp 本地身份 facade 的 init(no-op)。
 ///
 /// 原 `init` 中挂载的 `init` / `auth_view_body::init` /
 /// `auth_override_warning_body::init` / `login_slide::init` /

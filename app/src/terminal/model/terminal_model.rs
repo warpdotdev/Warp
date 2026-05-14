@@ -569,9 +569,9 @@ pub struct TerminalModel {
     /// If it is not a shared session, this will be `None`.
     shared_session_source_type: Option<SessionSourceType>,
 
-    /// Whether this terminal model was created as a cloud mode dummy session
+    /// Whether this terminal model was created as a ambient-agent dummy session
     /// (no local shell process, deferred shared-session viewer backing).
-    is_dummy_cloud_mode_session: bool,
+    is_dummy_ambient_agent_session: bool,
 
     /// If Some, this terminal is displaying a read-only conversation transcript.
     /// Tracks both the loading state and the type of conversation being viewed.
@@ -1103,7 +1103,7 @@ impl TerminalModel {
         session_startup_path: Option<PathBuf>,
         shell_state: ShellLaunchState,
         shared_session_status: SharedSessionStatus,
-        is_dummy_cloud_mode_session: bool,
+        is_dummy_ambient_agent_session: bool,
     ) -> Self {
         let alt_screen = AltScreen::new(
             sizes.size,
@@ -1156,7 +1156,7 @@ impl TerminalModel {
             obfuscate_secrets,
             shared_session_status,
             shared_session_source_type: None,
-            is_dummy_cloud_mode_session,
+            is_dummy_ambient_agent_session,
             conversation_transcript_viewer_status: None,
             ordered_terminal_events_for_shared_session_tx: None,
             write_to_pty_events_for_shared_session_tx: None,
@@ -1210,9 +1210,9 @@ impl TerminalModel {
         )
     }
 
-    /// Creates a terminal model for a cloud mode pane before it has connected to a shared session.
+    /// Creates a terminal model for a ambient-agent pane before it has connected to a shared session.
     #[allow(clippy::too_many_arguments)]
-    pub fn new_for_cloud_mode_shared_session_viewer(
+    pub fn new_for_ambient_agent_shared_session_viewer(
         sizes: BlockSize,
         colors: color::List,
         event_proxy: ChannelEventListener,
@@ -1250,7 +1250,7 @@ impl TerminalModel {
         honor_ps1: bool,
         is_inverted: bool,
         obfuscate_secrets: ObfuscateSecrets,
-        is_dummy_cloud_mode_session: bool,
+        is_dummy_ambient_agent_session: bool,
     ) -> Self {
         Self::new_internal(
             None,
@@ -1273,7 +1273,7 @@ impl TerminalModel {
                 shell_type: ShellType::Zsh,
             },
             SharedSessionStatus::ViewPending,
-            is_dummy_cloud_mode_session,
+            is_dummy_ambient_agent_session,
         )
     }
 
@@ -1427,8 +1427,8 @@ impl TerminalModel {
         self.shared_session_source_type.clone()
     }
 
-    pub fn is_dummy_cloud_mode_session(&self) -> bool {
-        self.is_dummy_cloud_mode_session
+    pub fn is_dummy_ambient_agent_session(&self) -> bool {
+        self.is_dummy_ambient_agent_session
     }
 
     pub fn is_shared_ambient_agent_session(&self) -> bool {

@@ -8,8 +8,6 @@
             "is_autopush": false,
             "release_base_name": "OpenWarp",
             "release_body_text": "OpenWarp release (fork of Warp Terminal, oss channel)",
-            "sentry_project": "",
-            "sentry_environment": "oss_release",
             "changelog_slack_channel": "",
             "gcs_cache_control_value": "",
             "web_gcs_bucket_prefix": ""

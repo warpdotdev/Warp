@@ -125,8 +125,8 @@ pub fn init_global_actions(app: &mut AppContext) {
         "workspace:toggle_debug_network_status",
         toggle_debug_network_status,
     );
-    // OpenWarp Wave 3-1:`workspace:debug_create_anonymous_user` global action 随
-    // AuthClient + create_anonymous_user GraphQL mutation 一同物理删。
+    // OpenWarp Wave 3-1:`workspace:debug_create_anonymous_user` global action 已随
+    // 上游匿名用户创建云端入口一同物理删。
     app.add_global_action("workspace:open_repository", open_repository);
     app.add_global_action("app:undo_close", undo_close);
 }
@@ -215,9 +215,8 @@ fn toggle_debug_network_status(_: &(), ctx: &mut AppContext) {
     });
 }
 
-// OpenWarp Wave 3-1:`fn create_anonymous_user`(debug 调试入口,原调用
-// `ServerApi::create_anonymous_user` GraphQL mutation)随 AuthClient + GraphQL operation
-// 一同物理删。OpenWarp 已无匿名用户概念。
+// OpenWarp Wave 3-1:`fn create_anonymous_user` debug 调试入口已随上游匿名用户
+// 创建云端入口一同物理删。OpenWarp 已无匿名用户概念。
 
 /// Reopens the last closed item (window or tab).
 fn undo_close(_: &(), ctx: &mut AppContext) {

@@ -9,7 +9,7 @@ license.workspace = true
 jemalloc = []
 local_fs = []
 test-util = []
-crash_reporting = ["dep:sentry"]
+crash_reporting = []
 
 [dependencies]
 async-channel.workspace = true
@@ -34,7 +34,6 @@ rayon.workspace = true
 ignore = "0.4.23"
 line-span = "0.1.5"
 log.workspace = true
-sentry = { workspace = true, optional = true }
 shellexpand.workspace = true
 strum.workspace = true
 strum_macros.workspace = true

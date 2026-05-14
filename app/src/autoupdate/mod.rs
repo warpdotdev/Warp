@@ -866,11 +866,10 @@ pub fn apply_update(
             // `spawn_child_if_necessary`. In either case, simply continue relaunching the app.
             Ok(ReadyForRelaunch::Yes)
         } else if #[cfg(target_os = "linux")] {
-            let AutoupdateStage::UpdateReady { update_id, .. } = &AutoupdateState::handle(_ctx).as_ref(_ctx).stage else {
+            let AutoupdateStage::UpdateReady { .. } = &AutoupdateState::handle(_ctx).as_ref(_ctx).stage else {
                 anyhow::bail!("Trying to apply an update without AutoupdateState being UpdateReady!");
             };
-            let update_id = update_id.clone();
-            linux::apply_update(_initiating_workspace, &update_id, _ctx)
+            linux::apply_update()
         } else {
             anyhow::bail!("Not implemented")
         }

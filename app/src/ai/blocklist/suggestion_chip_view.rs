@@ -37,7 +37,7 @@ const MAX_PROMPT_TOOLTIP_LENGTH: usize = 200;
 /// - Rendering a clickable chip that represents a suggested rule or agent mode workflow
 /// - Tracking the state of the rule/workflow (saved or not)
 /// - Handling clicks to show the appropriate modal dialog via workspace-level events
-/// - Syncing with the cloud model for persistence
+/// - Syncing with the local object store for persistence
 ///
 /// When clicked, the chip emits events to display either the `SuggestedRuleModal` or
 /// `SuggestedAgentModeWorkflowModal` at the workspace level, which position themselves
@@ -262,8 +262,8 @@ impl SuggestionChipView {
             me.handle_update_manager_event(event, ctx);
         });
 
-        let cloud_model = ObjectStoreModel::handle(ctx);
-        ctx.subscribe_to_model(&cloud_model, |me, _, event, ctx| {
+        let object_model = ObjectStoreModel::handle(ctx);
+        ctx.subscribe_to_model(&object_model, |me, _, event, ctx| {
             me.handle_object_store_event(event, ctx);
         });
     }
@@ -283,7 +283,7 @@ impl SuggestionChipView {
             if self.sync_id.into_client() == result.client_id {
                 if let Some(server_id) = result.server_id {
                     self.sync_id = SyncId::ServerId(server_id);
-                    // Reload the rule from the cloud model.
+                    // Reload the rule from the local object store.
                     match &mut self.suggestion {
                         Suggestion::Rule { .. } => {
                             self.load_suggestion(ctx);
@@ -344,14 +344,14 @@ impl SuggestionChipView {
         ctx.notify();
     }
 
-    /// Fetches the rule from the cloud model, and updates the UI to reflect that.
+    /// Fetches the rule from the local object store, and updates the UI to reflect that.
     fn load_suggestion(&mut self, ctx: &mut ViewContext<Self>) {
-        let cloud_model = ObjectStoreModel::handle(ctx);
+        let object_model = ObjectStoreModel::handle(ctx);
         let tooltip = self.suggestion.tooltip();
 
         match &mut self.suggestion {
             Suggestion::Rule { .. } => {
-                if let Some(rule) = cloud_model
+                if let Some(rule) = object_model
                     .as_ref(ctx)
                     .get_object_of_type::<GenericStringObjectId, AIFactObjectModel>(&self.sync_id)
                 {

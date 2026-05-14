@@ -49,8 +49,6 @@ impl DestructiveMCPConfirmationDialogDisplayOptions {
 #[derive(Debug, Clone)]
 pub enum DestructiveMCPConfirmationDialogVariant {
     DeleteLocal,
-    DeleteShared,
-    Unshare,
 }
 
 impl From<&DestructiveMCPConfirmationDialogVariant>
@@ -63,22 +61,6 @@ impl From<&DestructiveMCPConfirmationDialogVariant>
                     crate::t!("settings-mcp-confirm-delete-local-title"),
                     crate::t!("settings-mcp-confirm-delete-local-description"),
                     crate::t!("settings-mcp-confirm-delete-button"),
-                    crate::t!("settings-mcp-confirm-cancel-button"),
-                )
-            }
-            DestructiveMCPConfirmationDialogVariant::DeleteShared => {
-                DestructiveMCPConfirmationDialogDisplayOptions::new(
-                    crate::t!("settings-mcp-confirm-delete-shared-title"),
-                    crate::t!("settings-mcp-confirm-delete-shared-description"),
-                    crate::t!("settings-mcp-confirm-delete-button"),
-                    crate::t!("settings-mcp-confirm-cancel-button"),
-                )
-            }
-            DestructiveMCPConfirmationDialogVariant::Unshare => {
-                DestructiveMCPConfirmationDialogDisplayOptions::new(
-                    crate::t!("settings-mcp-confirm-unshare-title"),
-                    crate::t!("settings-mcp-confirm-unshare-description"),
-                    crate::t!("settings-mcp-confirm-remove-from-team-button"),
                     crate::t!("settings-mcp-confirm-cancel-button"),
                 )
             }

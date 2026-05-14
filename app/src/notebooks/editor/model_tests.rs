@@ -77,7 +77,7 @@ impl TypedActionView for TestView {
 fn model_from_markdown(
     markdown: &str,
     app: &mut App,
-    should_initialize_cloud_model: bool,
+    should_initialize_object_store_model: bool,
 ) -> ModelHandle<NotebooksEditorModel> {
     let global_resources = GlobalResourceHandles::mock(app);
     app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resources));
@@ -91,7 +91,7 @@ fn model_from_markdown(
     app.add_singleton_model(TerminalKeybindings::new);
 
     // In some tests, we need to initialize ObjectStoreModel first to mock some server data. In those cases, avoid mocking it a second time.
-    if should_initialize_cloud_model {
+    if should_initialize_object_store_model {
         app.add_singleton_model(ObjectStoreModel::mock);
     }
 
@@ -1655,8 +1655,8 @@ fn mock_server_workflow(id: i64, app: &mut App) {
         StoredObjectPermissions::mock_personal(),
     );
 
-    ObjectStoreModel::handle(app).update(app, |cloud_model, _| {
-        cloud_model.add_object(sync_id, workflow);
+    ObjectStoreModel::handle(app).update(app, |object_store_model, _| {
+        object_store_model.add_object(sync_id, workflow);
     });
 }
 

@@ -640,12 +640,12 @@ fn snapshot_agent_pane_gets_agent_type() {
 }
 
 #[test]
-fn snapshot_cloud_pane_gets_cloud_type() {
+fn snapshot_cloud_pane_gets_agent_type() {
     let snapshot = make_cloud_leaf(true);
     let config = tab_config_from_pane_snapshot(&snapshot, None, None);
 
     assert_eq!(config.panes.len(), 1);
-    assert_eq!(config.panes[0].pane_type, Some(TabConfigPaneType::Cloud));
+    assert_eq!(config.panes[0].pane_type, Some(TabConfigPaneType::Agent));
     assert!(config.panes[0].directory.is_none());
 }
 
@@ -672,7 +672,7 @@ fn snapshot_mixed_terminal_agent_cloud_split() {
     assert_eq!(config.panes.len(), 4);
     assert_eq!(config.panes[1].pane_type, Some(TabConfigPaneType::Terminal));
     assert_eq!(config.panes[2].pane_type, Some(TabConfigPaneType::Agent));
-    assert_eq!(config.panes[3].pane_type, Some(TabConfigPaneType::Cloud));
+    assert_eq!(config.panes[3].pane_type, Some(TabConfigPaneType::Agent));
 }
 
 // ── nested / multi-level pane layout edge cases ──
@@ -852,7 +852,7 @@ fn snapshot_round_trip_agent_and_cloud_pane_types() {
     assert_eq!(parsed.panes[1].directory.as_deref(), Some("/term"));
     assert_eq!(parsed.panes[2].pane_type, Some(TabConfigPaneType::Agent));
     assert_eq!(parsed.panes[2].directory.as_deref(), Some("/agent"));
-    assert_eq!(parsed.panes[3].pane_type, Some(TabConfigPaneType::Cloud));
+    assert_eq!(parsed.panes[3].pane_type, Some(TabConfigPaneType::Agent));
     assert!(parsed.panes[3].directory.is_none());
 }
 
@@ -896,7 +896,7 @@ fn snapshot_round_trip_3_deep_nesting() {
         Some(vec!["p3".to_string(), "p4".to_string()])
     );
     assert_eq!(parsed.panes[2].pane_type, Some(TabConfigPaneType::Agent));
-    assert_eq!(parsed.panes[3].pane_type, Some(TabConfigPaneType::Cloud));
+    assert_eq!(parsed.panes[3].pane_type, Some(TabConfigPaneType::Agent));
     assert_eq!(parsed.panes[4].pane_type, Some(TabConfigPaneType::Terminal));
 }
 

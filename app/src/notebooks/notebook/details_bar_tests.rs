@@ -19,13 +19,13 @@ fn test_editor_display_name() {
         UserProfiles::handle(&app).update(&mut app, |profiles, _ctx| {
             profiles.insert_profiles(&vec![
                 UserProfileWithUID {
-                    firebase_uid: UserUid::new("abc123"),
+                    local_user_uid: UserUid::new("abc123"),
                     display_name: Some("The Editor".to_string()),
                     email: "editor@warp.dev".to_string(),
                     photo_url: "http://example.com/profile.jpg".to_string(),
                 },
                 UserProfileWithUID {
-                    firebase_uid: UserUid::new("def456"),
+                    local_user_uid: UserUid::new("def456"),
                     display_name: None,
                     email: "anon@warp.dev".to_string(),
                     photo_url: "http://example.com/profile.jpg".to_string(),

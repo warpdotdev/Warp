@@ -143,7 +143,6 @@ impl CliAgentPluginManager for ClaudeCodePluginManager {
             None => check_installed(&claude_dir),
         }
     }
-
 }
 
 static INSTALL_INSTRUCTIONS: LazyLock<PluginInstructions> = LazyLock::new(|| PluginInstructions {

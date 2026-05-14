@@ -66,10 +66,10 @@ impl WorkflowAliases {
 
     /// A mapping of all aliases, for autocomplete.
     pub fn autocomplete_data(&self, ctx: &AppContext) -> HashMap<String, String> {
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
         let mut alias_data = HashMap::with_capacity(self.aliases.len());
         for alias in self.aliases.iter() {
-            if let Some(backing_workflow) = cloud_model.get_workflow(&alias.workflow_id) {
+            if let Some(backing_workflow) = object_store_model.get_workflow(&alias.workflow_id) {
                 alias_data.insert(alias.alias.clone(), backing_workflow.display_name());
             }
         }

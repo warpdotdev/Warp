@@ -183,10 +183,10 @@ fn test_remaining_substitutions() {
 
         assert!(result.is_ok());
 
-        // With argv-based construction, each token is a separate arg.
-        // %c → "Warp Test Application" (single arg, spaces preserved)
-        // %i → "--icon" and "/foo/bar/icon.png" (two separate args)
-        // %k → desktop file path
+        // 基于 argv 构造命令时，每个 token 都是独立参数。
+        // %c → "Warp Test Application"（单个参数，保留空格）
+        // %i → "--icon" 和 "/foo/bar/icon.png"（两个独立参数）
+        // %k → desktop 文件路径
         // %% → "%"
         let cmd = result.unwrap();
         let args: Vec<_> = cmd.get_args().collect();

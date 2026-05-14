@@ -201,7 +201,6 @@ pub(crate) trait CliAgentPluginManager: Send + Sync {
 
     /// Manual update instructions for the modal UI.
     fn update_instructions(&self) -> &'static PluginInstructions;
-
 }
 
 /// Returns a plugin manager for the given CLI agent, or `None` if the agent

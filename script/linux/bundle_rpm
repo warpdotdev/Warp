@@ -88,25 +88,9 @@ fakeroot rpmbuild -v -bb "$RPMBUILD_DIR/SPEC/warp.spec" --target="$ARCH" --defin
 RPM_NAME="$PACKAGE_NAME-$VERSION-$RELEASE.$ARCH.rpm"
 cp "$RPMBUILD_DIR/RPMS/$ARCH/$RPM_NAME" "$OUT_DIR"
 
-# If we're running on GitHub, sign the package using our signing key that
-# should have already been added to the gpg-agent with a preset passphrase.
+# OpenWarp 不使用上游 Warp 的 RPM 签名 key；GitHub 构建只产出未签名本地包。
 if [ "${GITHUB_ACTIONS}" == "true" ]; then
-  # Import our signing key's public key into rpm so the signature can be
-  # verified.
-  sudo rpm --import https://releases.warp.dev/linux/keys/warp.asc
-
-  # We use batch mode with tty-based pin entry to ensure that the build doesn't
-  # hang waiting on user input if, for some reason, we failed to preset the
-  # passphrase for the signing key in the gpg-agent cache.
-  #
-  # Additionally, until we know that this works, don't let an error here fail
-  # the build.
-  rpmsign \
-    --verbose \
-    --addsign --key-id "linux-maintainers@warp.dev" \
-    --define "_gpg_sign_cmd_extra_args --batch --yes --pinentry-mode loopback" --define "_gpg_digest_algo sha256" \
-    "$OUT_DIR/$RPM_NAME" \
-    || true
+  echo "Skipping upstream Warp RPM signing for OpenWarp."
 fi
 
 echo "Successfully built .rpm package at $OUT_DIR/$RPM_NAME!"

@@ -52,11 +52,11 @@ fn create_index(app: &mut App) -> ViewHandle<DriveIndex> {
 }
 
 fn create_workflow(app: &mut App) -> SyncId {
-    ObjectStoreModel::handle(app).update(app, |cloud_model, ctx| {
+    ObjectStoreModel::handle(app).update(app, |object_store_model, ctx| {
         let client_id = ClientId::new();
         let sync_id = SyncId::ClientId(client_id);
         let workflow = Workflow::new("my workflow", "my command");
-        cloud_model.create_object(
+        object_store_model.create_object(
             sync_id,
             WorkflowObject::new_local(
                 WorkflowObjectModel::new(workflow),
@@ -71,10 +71,10 @@ fn create_workflow(app: &mut App) -> SyncId {
 }
 
 fn create_notebook(app: &mut App) -> SyncId {
-    ObjectStoreModel::handle(app).update(app, |cloud_model, ctx| {
+    ObjectStoreModel::handle(app).update(app, |object_store_model, ctx| {
         let client_id = ClientId::new();
         let sync_id = SyncId::ClientId(client_id);
-        cloud_model.create_object(
+        object_store_model.create_object(
             sync_id,
             NotebookObject::new_local(
                 NotebookObjectModel::default(),
@@ -91,8 +91,8 @@ fn create_notebook(app: &mut App) -> SyncId {
 fn set_object_in_error(app: &mut App, object_type_and_id: &ObjectTypeAndId) {
     ObjectStoreModel::handle(app).update(
         app,
-        |cloud_model, _ctx: &mut warpui::ModelContext<'_, ObjectStoreModel>| {
-            if let Some(object) = cloud_model.get_mut_by_uid(&object_type_and_id.uid()) {
+        |object_store_model, _ctx: &mut warpui::ModelContext<'_, ObjectStoreModel>| {
+            if let Some(object) = object_store_model.get_mut_by_uid(&object_type_and_id.uid()) {
                 object.set_pending_content_changes_status(StoredObjectSyncStatus::Errored);
             }
         },
@@ -174,8 +174,8 @@ fn test_retry_menu_item_logic() {
         });
 
         // the item is now in flight
-        ObjectStoreModel::handle(&app).update(&mut app, |cloud_model, _ctx| {
-            if let Some(object) = cloud_model.get_mut_by_uid(&object_type_and_id.uid()) {
+        ObjectStoreModel::handle(&app).update(&mut app, |object_store_model, _ctx| {
+            if let Some(object) = object_store_model.get_mut_by_uid(&object_type_and_id.uid()) {
                 let _ = object;
             }
         });

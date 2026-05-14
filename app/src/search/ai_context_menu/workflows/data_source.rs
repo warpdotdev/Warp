@@ -33,14 +33,14 @@ impl SyncDataSource for WorkflowDataSource {
         let query_text = &query.text;
 
         // Get all workflows from ObjectStoreModel
-        let cloud_model = ObjectStoreModel::as_ref(app);
+        let object_store_model = ObjectStoreModel::as_ref(app);
         let _user_workspaces = UserWorkspaces::as_ref(app);
 
         // Get workflows from all spaces the user has access to
         let mut workflow_results = Vec::new();
 
         // Collect non-welcome workflows, sorted by revision timestamp in zero state
-        let mut workflows: Vec<_> = cloud_model
+        let mut workflows: Vec<_> = object_store_model
             .get_all_active_workflows()
             .filter(|w| !w.metadata.is_welcome_object)
             .collect();

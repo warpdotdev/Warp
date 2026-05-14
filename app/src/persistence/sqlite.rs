@@ -137,9 +137,8 @@ const OPENWARP_APP_GROUP_SQLITE_MIGRATION_MARKER: &str = ".openwarp-app-group-sq
 #[cfg(target_os = "macos")]
 const WARP_APP_GROUP_ID: &str = "2BBY89MBSN.dev.warp";
 
-/// When delete a cloud object, this callback is used to delete the cloud
-/// object. It takes the id of the cloud object to delete as a parameter.
-/// The supplied conn has already started a transaction.
+/// 删除本地 stored object 时使用的回调。入参是待删除对象的 id。
+/// 传入的 conn 已经启动 transaction。
 type DeleteCloudObjectFn =
     Box<dyn FnOnce(&mut SqliteConnection, StoredObjectId) -> Result<(), Error>>;
 
@@ -405,22 +404,9 @@ unsafe fn init_logging() {
         // valid C string pointer.
         let msg = unsafe { CStr::from_ptr(msg) };
         let err_message = String::from_utf8_lossy(msg.to_bytes());
-        // Sentry shouldn't panic, but to be safe, make sure we don't unwind across the FFI
-        // boundary.
+        // 本地日志路径不应 panic,但仍避免跨 FFI 边界 unwind。
         let _ = panic::catch_unwind(|| {
-            // We report SQLite errors to Sentry in a more-structured format so that they have
-            // better grouping (all are under the same Sentry issue, with details for the specific
-            // error kind). Warning and debug SQLite messages are logged - with the default
-            // sentry_log configuration, warnings are added as breadcrumbs to other events and
-            // debug messages are ignored.
-            // In local builds without crash reporting, all SQLite messages get logged locally.
-
-            // openWarp 闭源遥测剥离 P2:原会把 SQLite error 以结构化 context 上报到 Warp
-            // 官方 Sentry(grouping by error kind)。剥离后统一走下方 log::log! 路径,
-            // 错误码/描述照常落本地日志,保留诊断价值。
-            #[cfg(feature = "crash_reporting")]
-            let _ = level;
-
+            // openWarp 仅写本地日志,错误码/描述照常保留诊断价值。
             log::log!(
                 level,
                 "SQLite error {} ({}): {}",
@@ -960,8 +946,7 @@ fn handle_model_event(event: ModelEvent, connection: &mut SqliteConnection) -> a
 
 /// Report a database error and additional context for debugging.
 fn report_db_error(err_kind: &str, err: anyhow::Error, database_path: &Path) {
-    // Sentry reports indicate that the database is sometimes missing/inaccessible, so check its
-    // permissions and whether or not it exists.
+    // 数据库有时会缺失或不可访问,这里补充权限和存在性诊断。
     fn log_access(prefix: &str, path: &Path) {
         match fs::metadata(path) {
             Ok(metadata) => {
@@ -2125,8 +2110,8 @@ fn increment_retry_count(
     })
 }
 
-/// Helper function to delete a cloud object identified by `sync_id`. If a valid object metadata row
-/// for the object is found, `delete_object_fn` is called to delete the actual object.
+/// 删除 `sync_id` 标识的本地 stored object 的 helper。如果找到有效 object metadata row,
+/// 就调用 `delete_object_fn` 删除实际对象。
 fn delete_cloud_object(
     conn: &mut SqliteConnection,
     sync_id: SyncId,
@@ -3466,13 +3451,13 @@ fn upsert_user_profiles(
             // Delete any stale profile with that uid
             diesel::delete(
                 schema::user_profiles::dsl::user_profiles
-                    .filter(firebase_uid.eq(profile.firebase_uid.to_string())),
+                    .filter(firebase_uid.eq(profile.local_user_uid.to_string())),
             )
             .execute(conn)?;
 
             // Insert a new user profile row
             let new_user_profile = UserProfile {
-                firebase_uid: profile.firebase_uid.to_string(),
+                firebase_uid: profile.local_user_uid.to_string(),
                 photo_url: profile.photo_url,
                 display_name: profile.display_name,
                 email: profile.email,

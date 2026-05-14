@@ -5,8 +5,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
-use serde_json::Value;
+use serde_json::{json, Value};
 use warp_completer::completer::MatchType;
 use warp_core::command::ExitCode;
 use warpui::keymap::Keystroke;
@@ -55,7 +54,6 @@ use crate::settings::import::config::ParsedTerminalSetting;
 use crate::settings::import::config::SettingType;
 use crate::settings::import::model::TerminalType;
 use crate::settings::AgentModeCodingPermissionsType;
-use crate::settings_view::TeamsInviteOption;
 use crate::tab::TabTelemetryAction;
 use crate::terminal::block_list_viewport::InputMode;
 use crate::terminal::cli_agent_sessions::CLIAgentInputEntrypoint;
@@ -149,7 +147,7 @@ pub struct BlockLatencyInfo {
     pub execution_ms: u64,
 }
 
-// For use when recording what type of cloud object a particular telemetry is for.
+// Compatibility metadata for local Warp Drive object event shells.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TelemetryObjectType {
     Workflow,
@@ -171,7 +169,7 @@ impl From<&ObjectTypeAndId> for TelemetryObjectType {
     }
 }
 
-/// For use when recording how a user has access to a cloud object.
+/// Compatibility metadata for how an object is scoped locally.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum TelemetrySpace {
     /// The object is owned by the current user.
@@ -192,14 +190,14 @@ impl From<Space> for TelemetrySpace {
     }
 }
 
-/// Common metadata to include in all Warp Drive telemetry events that act on a specific object.
+/// Common metadata retained for local Warp Drive event call sites that act on a specific object.
 /// Events that only apply to a single object type may use specific metadata like [`WorkflowTelemetryMetadata`],
 /// [`NotebookTelemetryMetadata`], or [`EnvVarTelemetryMetadata`] instead.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ObjectTelemetryMetadata {
     pub object_type: TelemetryObjectType,
-    /// The server UID of the object. This only exists for objects that have been synced to the
-    /// server.
+    /// Legacy server UID slot. OpenWarp keeps it optional while object-event call sites are being
+    /// localized.
     pub object_uid: Option<ServerId>,
     /// The space through which the user has access to the object.
     pub space: Option<TelemetrySpace>,
@@ -223,8 +221,8 @@ pub struct WorkflowTelemetryMetadata {
 /// Metadata to include in all notebook telemetry events.
 ///
 /// There are 4 expected configurations:
-/// * Personal cloud notebooks: `notebook_id` is `Some`, `team_uid` is `None`, and location is `PersonalCloud`
-/// * Team cloud notebooks: `notebook_id` is `Some`, `team_uid` is `Some`, and location is `Team`
+/// * Legacy personal notebooks: `notebook_id` is `Some`, `team_uid` is `None`, and location is `PersonalCloud`
+/// * Legacy team notebooks: `notebook_id` is `Some`, `team_uid` is `Some`, and location is `Team`
 /// * Local file-based notebooks: `notebook_id` and `team_uid` are `None`, and location is `LocalFile`
 /// * Remote file-based notebooks: `notebook_id` and `team_uid` are `None`, and location is `RemoteFile`
 ///
@@ -232,9 +230,9 @@ pub struct WorkflowTelemetryMetadata {
 /// example, to find all notebook events for a given team).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct NotebookTelemetryMetadata {
-    /// The notebook ID, only available for cloud notebooks that have been synced to the server.
+    /// Legacy notebook ID, only available for migrated/synced notebook records.
     pub notebook_id: Option<NotebookId>,
-    /// The team UID, only available for cloud notebooks in a shared team.
+    /// Legacy team UID, only available for migrated/shared-team records.
     pub team_uid: Option<ServerId>,
     pub space: Option<TelemetrySpace>,
     /// Where the notebook is canonically located.
@@ -275,9 +273,9 @@ pub struct NotebookActionEvent {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct EnvVarTelemetryMetadata {
-    /// The object ID, only available for cloud env vars that have been synced to the server.
+    /// Legacy object ID, only available for migrated env-var records.
     pub object_id: Option<GenericStringObjectId>,
-    /// The team UID, only available for cloud env vars in a shared team.
+    /// Legacy team UID, only available for migrated/shared-team records.
     pub team_uid: Option<ServerId>,
     pub space: TelemetrySpace,
 }
@@ -655,12 +653,6 @@ pub enum ToggleBlockFilterSource {
     /// This includes the keybinding and the command palette items.
     Binding,
     ContextMenu,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TierLimitHitEvent {
-    pub team_uid: ServerId,
-    pub feature: String,
 }
 
 #[derive(Clone, Debug, Copy, Serialize, Deserialize)]
@@ -1083,8 +1075,8 @@ impl From<AgentViewEntryOrigin> for TelemetryAgentViewEntryOrigin {
             AgentViewEntryOrigin::AcceptedUnitTestSuggestion => Self::AcceptedUnitTestSuggestion,
             AgentViewEntryOrigin::AcceptedPassiveCodeDiff => Self::AcceptedPassiveCodeDiff,
             AgentViewEntryOrigin::InlineCodeReview => Self::InlineCodeReview,
-            AgentViewEntryOrigin::CloudAgent => Self::AmbientAgent,
-            AgentViewEntryOrigin::ThirdPartyCloudAgent => Self::ThirdPartyAmbientAgent,
+            AgentViewEntryOrigin::AmbientAgent => Self::AmbientAgent,
+            AgentViewEntryOrigin::ExternalAmbientAgent => Self::ThirdPartyAmbientAgent,
             AgentViewEntryOrigin::Cli => Self::Cli,
             AgentViewEntryOrigin::ImageAdded => Self::ImageAdded,
             AgentViewEntryOrigin::SlashCommand { .. } => Self::SlashCommand,
@@ -1131,22 +1123,6 @@ pub enum SlashCommandAcceptedDetails {
     StaticCommand { command_name: String },
     /// A user-created saved prompt/workflow
     SavedPrompt,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum AutoReloadModalAction {
-    #[serde(rename = "dismissed")]
-    Dismissed,
-    #[serde(rename = "enabled_auto_reload")]
-    EnabledAutoReload,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum OutOfCreditsBannerAction {
-    #[serde(rename = "dismissed")]
-    Dismissed,
-    #[serde(rename = "credits_purchased")]
-    CreditsPurchased,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -1251,7 +1227,6 @@ pub enum TelemetryEvent {
     /// suggestions menu may be triggered with a keybinding other than tab.
     TabSingleResultAutocompletion,
     EditorUnhandledModifierKey(String),
-    CopyInviteLink,
     OpenThemeChooser,
     ThemeSelection {
         theme: String,
@@ -1346,7 +1321,6 @@ pub enum TelemetryEvent {
         source: LoginEventSource,
     },
     OpenNewSessionFromFilePath,
-    OpenTeamFromURI,
     ShowedSuggestedAgentModeWorkflowChip {
         logging_id: SuggestedLoggingId,
     },
@@ -1424,16 +1398,9 @@ pub enum TelemetryEvent {
         ui_location: LaunchConfigUiLocation,
         open_in_active_window: bool,
     },
-    TeamCreated,
-    TeamJoined,
-    TeamLeft,
-    TeamLinkCopied,
-    RemovedUserFromTeam,
     DeletedWorkflow,
     DeletedNotebook,
     ToggleApprovalsModal,
-    ChangedInviteViewOption(TeamsInviteOption),
-    SendEmailInvites,
     CommandCorrection {
         event: CommandCorrectionEvent,
     },
@@ -1698,10 +1665,6 @@ pub enum TelemetryEvent {
     },
     LogOut,
     SettingsImportInitiated,
-    InviteTeammates {
-        num_teammates: usize,
-        team_uid: ServerId,
-    },
     CopyObjectToClipboard(TelemetryObjectType),
     OpenAndWarpifyDockerSubshell {
         /// Some variant if we support this shell type, and None otherwise.
@@ -1797,12 +1760,6 @@ pub enum TelemetryEvent {
         /// Whether or not Universal Developer Input mode is enabled
         is_udi_enabled: bool,
     },
-    /// The user tried to send an Agent Mode query but they have already reached their AI request
-    /// limit. Note that this limit is for all AI requests, not Agent Mode alone.
-    AgentModeUserAttemptedQueryAtRequestLimit {
-        /// The AI request limit for the user's current plan.
-        limit: usize,
-    },
     AgentModeClickedEntrypoint {
         entrypoint: AgentModeEntrypoint,
     },
@@ -1871,7 +1828,7 @@ pub enum TelemetryEvent {
         does_actual_command_match_history_prediction: bool,
         history_prediction_likelihood: f64,
         total_history_count: usize,
-        // The below fields are only collected if telemetry is enabled.
+        // OpenWarp leaves these optional; no telemetry sender consumes them.
         actual_next_command_run: Option<String>,
         history_based_autosuggestion_state: Option<HistoryBasedAutosuggestionState>,
         generate_ai_input_suggestions_request: Option<GenerateAIInputSuggestionsRequest>,
@@ -1884,9 +1841,8 @@ pub enum TelemetryEvent {
         request_duration_ms: u64,
         block_id: Option<String>,
         view: PromptSuggestionViewType,
-        /// Server-assigned request token from the `/passive-suggestion`
-        /// request that generated this suggestion. Used to join client-side
-        /// telemetry with server-side logs. `None` on the legacy code path.
+        /// Legacy request token from the `/passive-suggestion` request that generated this
+        /// suggestion. OpenWarp keeps it optional for local diagnostics only.
         server_request_token: Option<String>,
     },
 
@@ -1899,9 +1855,8 @@ pub enum TelemetryEvent {
         code_exchange_id: Option<AIAgentExchangeId>,
         block_id: Option<String>,
         request_duration_ms: u64,
-        /// Server-assigned request token from the `/passive-suggestion`
-        /// request. Used to join client-side telemetry with server-side logs.
-        /// `None` on the legacy code path.
+        /// Legacy request token from the `/passive-suggestion` request. OpenWarp keeps it optional
+        /// for local diagnostics only.
         server_request_token: Option<String>,
     },
 
@@ -1923,7 +1878,7 @@ pub enum TelemetryEvent {
         id: String,
         block_id: String,
         static_prompt_suggestion_name: String,
-        // The below fields are only collected if telemetry is enabled.
+        // OpenWarp leaves these optional; no telemetry sender consumes them.
         query: Option<String>,
         block_command: Option<String>,
         request_duration_ms: u64,
@@ -1962,8 +1917,7 @@ pub enum TelemetryEvent {
     /// Emitted when a user makes their first edit to any file in a code diff suggestion from Agent
     /// Mode.
     AgentModeCodeSuggestionEditedByUser {
-        /// Server-generated unique ID associated with the AI API output that generated the
-        /// suggestion. Used to join client-side telemetry with server-side logs.
+        /// Local AI output ID associated with the suggestion.
         output_id: ServerOutputId,
     },
 
@@ -2024,7 +1978,6 @@ pub enum TelemetryEvent {
         is_enabled: bool,
     },
 
-    TierLimitHit(TierLimitHitEvent),
     ResourceUsageStats {
         cpu: CpuUsageStats,
         mem: MemoryUsageStats,
@@ -2393,30 +2346,6 @@ pub enum TelemetryEvent {
         is_ftux: bool,
     },
 
-    /// User closed the "Out of credits" banner (dismissed or purchased credits)
-    OutOfCreditsBannerClosed {
-        action: OutOfCreditsBannerAction,
-        selected_credits: Option<i32>,
-        auto_reload_checkbox_enabled: bool,
-        banner_toggle_flag_enabled: bool,
-        post_purchase_modal_flag_enabled: bool,
-    },
-
-    /// User closed the auto-reload modal (either dismissed or enabled auto-reload)
-    AutoReloadModalClosed {
-        action: AutoReloadModalAction,
-        selected_credits: Option<i32>,
-        banner_toggle_flag_enabled: bool,
-        post_purchase_modal_flag_enabled: bool,
-    },
-
-    /// User toggled auto-reload in Billing & Usage settings
-    AutoReloadToggledFromBillingSettings {
-        enabled: bool,
-        banner_toggle_flag_enabled: bool,
-        post_purchase_modal_flag_enabled: bool,
-    },
-
     /// Emitted when the control state of the CLI subagent changes.
     CLISubagentControlStateChanged {
         conversation_id: Option<AIConversationId>,
@@ -2601,12 +2530,6 @@ pub enum TelemetryEvent {
     },
     /// Emitted when a warp://linear deeplink is opened.
     LinearIssueLinkOpened,
-    /// Emitted when the free tier limit hit interstitial is displayed.
-    FreeTierLimitHitInterstitialDisplayed,
-    /// Emitted when the user clicks the "Upgrade" button in the free tier limit hit interstitial.
-    FreeTierLimitHitInterstitialUpgradeButtonClicked,
-    /// Emitted when the user clicks close on the free tier limit hit interstitial.
-    FreeTierLimitHitInterstitialClosed,
     /// Emitted when the remote server binary check completes.
     RemoteServerBinaryCheck {
         found: bool,
@@ -3184,10 +3107,6 @@ impl TelemetryEvent {
             TelemetryEvent::PaneDropped { drop_location } => {
                 Some(json!({ "location": drop_location }))
             }
-            TelemetryEvent::InviteTeammates {
-                num_teammates,
-                team_uid,
-            } => Some(json!({"num_teammates": num_teammates, "team_uid": team_uid})),
             TelemetryEvent::AgentModeCreatedAIBlock {
                 client_exchange_id,
                 server_output_id,
@@ -3209,10 +3128,6 @@ impl TelemetryEvent {
                 "conversation_id": conversation_id,
                 "is_udi_enabled": is_udi_enabled,
             })),
-            TelemetryEvent::TierLimitHit(event) => Some(json!(event)),
-            TelemetryEvent::AgentModeUserAttemptedQueryAtRequestLimit { limit } => {
-                Some(json!({"limit": limit}))
-            }
             TelemetryEvent::AgentModeClickedEntrypoint { entrypoint } => {
                 Some(json!({"entrypoint": entrypoint}))
             }
@@ -3709,7 +3624,6 @@ impl TelemetryEvent {
             | TelemetryEvent::ContextMenuCopySelectedText
             | TelemetryEvent::JumpToPreviousCommand
             | TelemetryEvent::TabSingleResultAutocompletion
-            | TelemetryEvent::CopyInviteLink
             | TelemetryEvent::OpenThemeChooser
             | TelemetryEvent::OpenThemeCreatorModal
             | TelemetryEvent::CreateCustomTheme
@@ -3727,7 +3641,6 @@ impl TelemetryEvent {
             | TelemetryEvent::NotificationClicked
             | TelemetryEvent::SignUpButtonClicked
             | TelemetryEvent::OpenNewSessionFromFilePath
-            | TelemetryEvent::OpenTeamFromURI
             | TelemetryEvent::SelectNavigationPaletteItem
             | TelemetryEvent::DragAndDropTab
             | TelemetryEvent::EditedInputBeforePrecmd
@@ -3737,16 +3650,9 @@ impl TelemetryEvent {
             | TelemetryEvent::ShowInFileExplorer
             | TelemetryEvent::OpenLaunchConfigSaveModal
             | TelemetryEvent::OpenLaunchConfigFile
-            | TelemetryEvent::TeamCreated
-            | TelemetryEvent::TeamJoined
-            | TelemetryEvent::TeamLeft
-            | TelemetryEvent::TeamLinkCopied
-            | TelemetryEvent::RemovedUserFromTeam
             | TelemetryEvent::DeletedWorkflow
             | TelemetryEvent::DeletedNotebook
             | TelemetryEvent::ToggleApprovalsModal
-            | TelemetryEvent::ChangedInviteViewOption(_)
-            | TelemetryEvent::SendEmailInvites
             | TelemetryEvent::ResourceCenterOpened
             | TelemetryEvent::ResourceCenterTipsCompleted
             | TelemetryEvent::ResourceCenterTipsSkipped
@@ -4011,39 +3917,6 @@ impl TelemetryEvent {
             TelemetryEvent::OpenRepoFolderSubmitted { is_ftux } => Some(json!({
                 "is_ftux": is_ftux,
             })),
-            TelemetryEvent::OutOfCreditsBannerClosed {
-                action,
-                selected_credits,
-                auto_reload_checkbox_enabled,
-                banner_toggle_flag_enabled,
-                post_purchase_modal_flag_enabled,
-            } => Some(json!({
-                "action": action,
-                "selected_credits": selected_credits,
-                "auto_reload_checkbox_enabled": auto_reload_checkbox_enabled,
-                "banner_toggle_flag_enabled": banner_toggle_flag_enabled,
-                "post_purchase_modal_flag_enabled": post_purchase_modal_flag_enabled,
-            })),
-            TelemetryEvent::AutoReloadModalClosed {
-                action,
-                selected_credits,
-                banner_toggle_flag_enabled,
-                post_purchase_modal_flag_enabled,
-            } => Some(json!({
-                "action": action,
-                "selected_credits": selected_credits,
-                "banner_toggle_flag_enabled": banner_toggle_flag_enabled,
-                "post_purchase_modal_flag_enabled": post_purchase_modal_flag_enabled,
-            })),
-            TelemetryEvent::AutoReloadToggledFromBillingSettings {
-                enabled,
-                banner_toggle_flag_enabled,
-                post_purchase_modal_flag_enabled,
-            } => Some(json!({
-                "enabled": enabled,
-                "banner_toggle_flag_enabled": banner_toggle_flag_enabled,
-                "post_purchase_modal_flag_enabled": post_purchase_modal_flag_enabled,
-            })),
             TelemetryEvent::WarpDriveOpened {
                 source,
                 is_code_mode_v2,
@@ -4224,9 +4097,6 @@ impl TelemetryEvent {
                 "conversation_id": conversation_id,
                 "ambient_agent_task_id": ambient_agent_task_id.map(|id| id.to_string()),
             })),
-            TelemetryEvent::FreeTierLimitHitInterstitialDisplayed => None,
-            TelemetryEvent::FreeTierLimitHitInterstitialUpgradeButtonClicked => None,
-            TelemetryEvent::FreeTierLimitHitInterstitialClosed => None,
             TelemetryEvent::LoginButtonClicked { source }
             | TelemetryEvent::LoginLaterButtonClicked { source }
             | TelemetryEvent::LoginLaterConfirmationButtonClicked { source }
@@ -4299,7 +4169,6 @@ impl TelemetryEvent {
             | TelemetryEvent::BootstrappingSucceeded(_)
             | TelemetryEvent::TabSingleResultAutocompletion
             | TelemetryEvent::EditorUnhandledModifierKey(_)
-            | TelemetryEvent::CopyInviteLink
             | TelemetryEvent::OpenThemeChooser
             | TelemetryEvent::ThemeSelection { .. }
             | TelemetryEvent::AppIconSelection { .. }
@@ -4345,7 +4214,6 @@ impl TelemetryEvent {
             | TelemetryEvent::LoginLaterButtonClicked { .. }
             | TelemetryEvent::LoginLaterConfirmationButtonClicked { .. }
             | TelemetryEvent::OpenNewSessionFromFilePath
-            | TelemetryEvent::OpenTeamFromURI
             | TelemetryEvent::SelectNavigationPaletteItem
             | TelemetryEvent::SelectCommandPaletteOption(_)
             | TelemetryEvent::PaletteSearchOpened { .. }
@@ -4375,16 +4243,9 @@ impl TelemetryEvent {
             | TelemetryEvent::SaveLaunchConfig { .. }
             | TelemetryEvent::OpenLaunchConfigFile
             | TelemetryEvent::OpenLaunchConfig { .. }
-            | TelemetryEvent::TeamCreated
-            | TelemetryEvent::TeamJoined
-            | TelemetryEvent::TeamLeft
-            | TelemetryEvent::TeamLinkCopied
-            | TelemetryEvent::RemovedUserFromTeam
             | TelemetryEvent::DeletedWorkflow
             | TelemetryEvent::DeletedNotebook
             | TelemetryEvent::ToggleApprovalsModal
-            | TelemetryEvent::ChangedInviteViewOption(_)
-            | TelemetryEvent::SendEmailInvites
             | TelemetryEvent::CommandCorrection { .. }
             | TelemetryEvent::SetLineHeight { .. }
             | TelemetryEvent::ResourceCenterOpened
@@ -4495,7 +4356,6 @@ impl TelemetryEvent {
             | TelemetryEvent::WebObjectOpenedOnDesktop { .. }
             | TelemetryEvent::UnsupportedShell { .. }
             | TelemetryEvent::LogOut
-            | TelemetryEvent::InviteTeammates { .. }
             | TelemetryEvent::CopyObjectToClipboard(_)
             | TelemetryEvent::OpenAndWarpifyDockerSubshell { .. }
             | TelemetryEvent::UpdateBlockFilterQuery
@@ -4510,7 +4370,6 @@ impl TelemetryEvent {
             | TelemetryEvent::PaneDropped { .. }
             | TelemetryEvent::ObjectLinkCopied { .. }
             | TelemetryEvent::FileTreeToggled { .. }
-            | TelemetryEvent::AgentModeUserAttemptedQueryAtRequestLimit { .. }
             | TelemetryEvent::AgentModeClickedEntrypoint { .. }
             | TelemetryEvent::AgentModeAttachedBlockContext { .. }
             | TelemetryEvent::AgentModeToggleAutoDetectionSetting { .. }
@@ -4530,7 +4389,6 @@ impl TelemetryEvent {
             | TelemetryEvent::TogglePromptSuggestionsSetting { .. }
             | TelemetryEvent::ToggleCodeSuggestionsSetting { .. }
             | TelemetryEvent::ToggleVoiceInputSetting { .. }
-            | TelemetryEvent::TierLimitHit(_)
             | TelemetryEvent::ResourceUsageStats { .. }
             | TelemetryEvent::MemoryUsageStats { .. }
             | TelemetryEvent::MemoryUsageHigh { .. }
@@ -4625,9 +4483,6 @@ impl TelemetryEvent {
             | TelemetryEvent::InputBufferSubmitted { .. }
             | TelemetryEvent::RecentMenuItemSelected { .. }
             | TelemetryEvent::OpenRepoFolderSubmitted { .. }
-            | TelemetryEvent::OutOfCreditsBannerClosed { .. }
-            | TelemetryEvent::AutoReloadModalClosed { .. }
-            | TelemetryEvent::AutoReloadToggledFromBillingSettings { .. }
             | TelemetryEvent::CLISubagentControlStateChanged { .. }
             | TelemetryEvent::CLISubagentResponsesToggled { .. }
             | TelemetryEvent::CLISubagentInputDismissed { .. }
@@ -4659,9 +4514,6 @@ impl TelemetryEvent {
             | TelemetryEvent::LinearIssueLinkOpened
             | TelemetryEvent::ComputerUseApproved { .. }
             | TelemetryEvent::ComputerUseCancelled { .. }
-            | TelemetryEvent::FreeTierLimitHitInterstitialDisplayed
-            | TelemetryEvent::FreeTierLimitHitInterstitialUpgradeButtonClicked
-            | TelemetryEvent::FreeTierLimitHitInterstitialClosed
             | TelemetryEvent::RemoteServerBinaryCheck { .. }
             | TelemetryEvent::RemoteServerInstallation { .. }
             | TelemetryEvent::RemoteServerInitialization { .. }
@@ -4682,5 +4534,4 @@ impl TelemetryEvent {
             | TelemetryEvent::AutoupdateForcekillFailed => false,
         }
     }
-
 }

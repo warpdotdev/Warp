@@ -740,8 +740,7 @@ fn handle_terminal_view_event(
                 ctx.notify();
             }
             // OpenWarp Wave 7-3:`Event::EnvironmentSetupModeSelectorToggled` handler 随
-            // Cloud Mode UI 子系统物理删。
-            Event::AnonymousUserSignup => ctx.emit(pane_group::Event::AnonymousUserSignup),
+            // ambient-agent UI 子系统物理删。
             #[cfg(feature = "local_fs")]
             Event::OpenFileWithTarget {
                 path,
@@ -818,11 +817,6 @@ fn handle_terminal_view_event(
                     upload_id: *upload_id,
                 })
             }
-            Event::SignupAnonymousUser { entrypoint } => {
-                ctx.emit(pane_group::Event::SignupAnonymousUser {
-                    entrypoint: *entrypoint,
-                });
-            }
             Event::OpenThemeChooser => {
                 ctx.emit(pane_group::Event::OpenThemeChooser);
             }
@@ -843,7 +837,7 @@ fn handle_terminal_view_event(
                     initial_content: initial_content.clone(),
                 });
             }
-            // OpenWarp Wave 7-3:`OpenEnvironmentManagementPane` event forwarding 随 Cloud Mode UI
+            // OpenWarp Wave 7-3:`OpenEnvironmentManagementPane` event forwarding 随 ambient-agent UI
             // 子系统物理删。
             #[cfg(feature = "local_fs")]
             Event::FileRenamed { old_path, new_path } => {
@@ -936,9 +930,6 @@ fn handle_terminal_view_event(
                     diff_mode: diff_mode.to_owned(),
                     open_code_review: open_code_review.clone(),
                 });
-            }
-            Event::FreeTierLimitCheckTriggered => {
-                ctx.emit(pane_group::Event::FreeTierLimitCheckTriggered);
             }
             Event::RevealChildAgent { conversation_id } => {
                 if let Some(&child_pane_id) = group.child_agent_panes.get(conversation_id) {

@@ -256,7 +256,7 @@ struct PersistedGuest {
 
 #[derive(Serialize, Deserialize)]
 enum PersistedSubject {
-    User { firebase_uid: String },
+    User { user_uid: String },
     PendingUser { email: Option<String> },
     Team { team_uid: ServerId },
 }
@@ -282,8 +282,8 @@ impl PersistedGuest {
 impl PersistedSubject {
     pub fn into_subject(self) -> Subject {
         match self {
-            PersistedSubject::User { firebase_uid } => {
-                Subject::User(UserKind::Account(UserUid::new(&firebase_uid)))
+            PersistedSubject::User { user_uid } => {
+                Subject::User(UserKind::Account(UserUid::new(&user_uid)))
             }
             PersistedSubject::PendingUser { email } => Subject::PendingUser { email },
             PersistedSubject::Team { team_uid } => Subject::Team(TeamKind::Team { team_uid }),
@@ -294,7 +294,7 @@ impl PersistedSubject {
         match subject {
             Subject::User(user_kind) => match user_kind {
                 UserKind::Account(user_uid) => Ok(PersistedSubject::User {
-                    firebase_uid: user_uid.to_string(),
+                    user_uid: user_uid.to_string(),
                 }),
             },
             Subject::PendingUser { email } => Ok(PersistedSubject::PendingUser {

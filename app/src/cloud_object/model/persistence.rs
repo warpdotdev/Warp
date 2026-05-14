@@ -100,10 +100,8 @@ enum FolderOpenState {
     Reversed,
 }
 
-/// Persistence model for [StoredObject] information. In an ideal world, this singleton model
-/// is a 1:1 mapping for what we persisting in sqlite, and on the server. Any logic beyond a basic update
-/// or query to data in [ObjectStoreModel] should instead be stored in [ObjectStoreViewModel] and tested in
-/// model_test.rs.
+/// [StoredObject] 信息的持久化 model。OpenWarp 中它对应 SQLite 内的本地 object store。
+/// 超出基础 update/query 的逻辑应放在 [ObjectStoreViewModel] 并在 model_test.rs 覆盖。
 pub struct ObjectStoreModel {
     objects_by_id: HashMap<ObjectUid, Box<dyn StoredObject>>,
     model_event_sender: Option<SyncSender<ModelEvent>>,
@@ -134,7 +132,7 @@ impl ObjectStoreModel {
         }
     }
 
-    /// 等待本地 cloud object 存储可读。OpenWarp 下该条件在 SQLite restore 后立即满足。
+    /// 等待本地 object store 可读。OpenWarp 下该条件在 SQLite restore 后立即满足。
     pub fn initial_load_complete(&self) -> impl Future<Output = ()> {
         self.initial_load_complete.wait()
     }
@@ -730,7 +728,7 @@ impl ObjectStoreModel {
             .count()
     }
 
-    /// Number of cloud objects that have errored in some way and are visible in the Warp Drive index
+    /// 已进入错误状态且会显示在 Warp Drive index 中的本地对象数量。
     pub fn num_visible_errored_objects(&self) -> usize {
         self.objects_by_id
             .values()
@@ -789,7 +787,7 @@ impl ObjectStoreModel {
     }
 
     #[allow(unused)]
-    /// Returns only active (not trashed) folders in cloud model.
+    /// Returns only active (not trashed) folders in object store.
     pub fn get_all_active_folders(&self) -> impl Iterator<Item = &FolderObject> {
         self.objects_by_id
             .values()
@@ -797,7 +795,7 @@ impl ObjectStoreModel {
             .filter_map(|object| object.into())
     }
 
-    /// Returns all folders (trashed or not) in cloud model.
+    /// Returns all folders (trashed or not) in object store.
     pub fn get_all_active_and_inactive_folders(&self) -> impl Iterator<Item = &FolderObject> {
         self.objects_by_id
             .values()
@@ -841,7 +839,7 @@ impl ObjectStoreModel {
             .and_then(|object| object.into())
     }
 
-    /// Returns only active (not trashed) workflows in cloud model.
+    /// Returns only active (not trashed) workflows in object store.
     pub fn get_all_active_workflows(&self) -> impl Iterator<Item = &WorkflowObject> {
         self.objects_by_id
             .values()
@@ -849,14 +847,14 @@ impl ObjectStoreModel {
             .filter_map(|object| object.into())
     }
 
-    /// Returns all workflows (trashed or not) in cloud model.
+    /// Returns all workflows (trashed or not) in object store.
     pub fn get_all_active_and_inactive_workflows(&self) -> impl Iterator<Item = &WorkflowObject> {
         self.objects_by_id
             .values()
             .filter_map(|object| object.into())
     }
 
-    /// Returns all workflows (trashed or not) in cloud model.
+    /// Returns all workflows (trashed or not) in object store.
     pub fn get_all_active_and_inactive_workflows_mut(
         &mut self,
     ) -> impl Iterator<Item = &mut WorkflowObject> {
@@ -1009,7 +1007,7 @@ impl ObjectStoreModel {
         self.objects_by_id.get(uid).and_then(|object| object.into())
     }
 
-    /// Returns only active (not trashed) EVCs in cloud model.
+    /// Returns only active (not trashed) EVCs in object store.
     pub fn get_all_active_env_var_collections(
         &self,
     ) -> impl Iterator<Item = &EnvVarCollectionObject> {
@@ -1025,7 +1023,7 @@ impl ObjectStoreModel {
             .and_then(|warp_cloud_object| warp_cloud_object.metadata().revision.as_ref())
     }
 
-    /// Returns only active (not trashed) notebooks in cloud model.
+    /// Returns only active (not trashed) notebooks in object store.
     pub fn get_all_active_notebooks(&self) -> impl Iterator<Item = &NotebookObject> {
         self.objects_by_id
             .values()
@@ -1033,7 +1031,7 @@ impl ObjectStoreModel {
             .filter_map(|object| object.into())
     }
 
-    /// Returns all notebooks (trashed or not) in cloud model.
+    /// Returns all notebooks (trashed or not) in object store.
     pub fn get_all_active_and_inactive_notebooks(&self) -> impl Iterator<Item = &NotebookObject> {
         self.objects_by_id
             .values()
@@ -1104,9 +1102,8 @@ impl ObjectStoreModel {
         result
     }
 
-    /// Given a StoredObjectLocation (either a folder or a space), returns an iterator of active (not trashed) cloud objects
-    /// that live directly in this location (its children). I.e. this function does NOT look into nested folders in order
-    /// to return those children.
+    /// 给定 StoredObjectLocation(folder 或 space),返回直接位于该位置且未被 trashed 的本地对象。
+    /// 这个函数不会递归 nested folders。
     pub fn active_cloud_objects_in_location_without_descendents<'a>(
         &'a self,
         location: StoredObjectLocation,
@@ -1120,9 +1117,8 @@ impl ObjectStoreModel {
             .map(|object| object.as_ref())
     }
 
-    /// Given a StoredObjectLocation (either a folder or a space), returns an iterator of trashed cloud objects
-    /// that live directly in this location (its children). I.e. this function does NOT look into nested folders in order
-    /// to return those children.
+    /// 给定 StoredObjectLocation(folder 或 space),返回直接位于该位置且已 trashed 的本地对象。
+    /// 这个函数不会递归 nested folders。
     pub fn trashed_cloud_objects_in_location_without_descendents<'a>(
         &'a self,
         location: StoredObjectLocation,
@@ -1173,9 +1169,8 @@ impl ObjectStoreModel {
             });
     }
 
-    /// Given a StoredObjectLocation (either a folder or a space), returns an iterator of cloud objects
-    /// that live directly in this location (its children) are in the trash but have not been explicitly
-    /// trashed by a user. I.e. this function does NOT look into nested folders in order to return those children.
+    /// 给定 StoredObjectLocation(folder 或 space),返回直接位于该位置、因父级被 trashed 而进入
+    /// trash、但未被用户显式 trashed 的本地对象。这个函数不会递归 nested folders。
     pub fn indirectly_trashed_cloud_objects_in_location_without_descendents<'a>(
         &'a self,
         location: StoredObjectLocation,
@@ -1191,7 +1186,7 @@ impl ObjectStoreModel {
             .map(|object| object.as_ref())
     }
 
-    /// Returns all active (not trashed) cloud objects in the space.
+    /// 返回指定 space 中所有 active(未 trashed)本地对象。
     pub fn active_cloud_objects_in_space<'a>(
         &'a self,
         space: Space,
@@ -1203,7 +1198,7 @@ impl ObjectStoreModel {
             .map(|object| object.as_ref())
     }
 
-    /// Returns all active (not trashed) cloud objects in the space.
+    /// 返回指定 space 中所有 active(未 trashed)且非 welcome 的本地对象。
     pub fn active_non_welcome_cloud_objects_in_space<'a>(
         &'a self,
         space: Space,
@@ -1231,7 +1226,7 @@ impl ObjectStoreModel {
             .map(|object| object.as_ref())
     }
 
-    /// Returns all trashed cloud objects in the space.
+    /// 返回指定 space 中所有 trashed 本地对象。
     pub fn trashed_cloud_objects_in_space<'a>(
         &'a self,
         space: Space,
@@ -1243,7 +1238,7 @@ impl ObjectStoreModel {
             .map(|object| object.as_ref())
     }
 
-    /// Returns all cloud objects in the space that have been explicitly trashed by a user.
+    /// 返回指定 space 中所有被用户显式 trashed 的本地对象。
     pub fn directly_trashed_cloud_objects_in_space<'a>(
         &'a self,
         space: Space,
@@ -1316,7 +1311,7 @@ impl ObjectStoreModel {
         }
     }
 
-    /// Whether the next object sync should force a refresh on all cloud objects
+    /// 下一次本地 object-store refresh 是否需要强制全量遍历对象。
     pub fn cloud_objects_force_refresh_pending(&self) -> bool {
         // If there's no stated time for the next refresh, assume we should do one now. Otherwise,
         // check if we're at or past the time of the next refresh.

@@ -86,20 +86,16 @@ fn invoke_without_crash_reporting<T>(
     is_crash_reporting_enabled: bool,
     func: impl FnOnce() -> T,
 ) -> T {
-    // Uninitialize cocoa-sentry before spawning the shell process to avoid passing any custom state
-    // (such as BSD signal handlers and mach exception handlers) into the shell process. This means
-    // we lose all Cocoa crash reports from now until when the session is successfully spawned,
-    // which is not ideal but allows us to fully ensure that we don't improperly leak any Sentry state
-    // into the child processes.
+    // 子进程派生前暂停本地 crash reporting 状态,避免把信号/异常处理状态泄漏到 shell。
     #[cfg(feature = "crash_reporting")]
-    crate::crash_reporting::uninit_cocoa_sentry();
+    crate::crash_reporting::suspend_crash_reporting_for_child_spawn();
 
     let retval = func();
 
-    // Now that the child has spawned--reinitialize cocoa sentry.
+    // 子进程完成派生后恢复本地 crash reporting 状态。
     if is_crash_reporting_enabled {
         #[cfg(feature = "crash_reporting")]
-        crate::crash_reporting::init_cocoa_sentry();
+        crate::crash_reporting::resume_crash_reporting_after_child_spawn();
     }
 
     retval

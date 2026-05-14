@@ -12,7 +12,6 @@ use crate::{
     ai::{blocklist::error_color, AIRequestUsageModel},
     auth::AuthStateProvider,
     network::NetworkStatus,
-    settings::PrivacySettings,
     settings_view::SettingsSection,
     ui_components::icons::Icon,
     workspace::WorkspaceAction,
@@ -22,55 +21,26 @@ use ai::api_keys::ApiKeyManager;
 
 const ANONYMOUS_USER_REQUEST_LIMIT_SOFT_GATE_PERCENTAGE: f32 = 0.5;
 
-const TELEMETRY_DISABLED_PRIMARY_TEXT: &str = "To use AI features,";
-const ENABLE_ANALYTICS_ACTION_TEXT: &str = "enable analytics";
-
 const NO_CONNECTION_PRIMARY_TEXT: &str = "No internet connection";
 const ANONYMOUS_USER_REQUEST_LIMIT_SOFT_GATE_PRIMARY_TEXT: &str = "";
 const ANONYMOUS_USER_REQUEST_LIMIT_HARD_GATE_PRIMARY_TEXT: &str = "At Limit -";
-const DELINQUENT_DUE_TO_PAYMENT_ISSUE_PRIMARY_TEXT: &str = "Restricted due to payment issue";
 const OUT_OF_REQUESTS_PRIMARY_TEXT: &str = "Out of credits";
 
-const ANONYMOUS_USER_REQUEST_LIMIT_ACTION_TEXT: &str = "Sign up for more AI credits";
-const OVERAGES_TOGGLEABLE_BUT_NOT_ENABLED_ACTION_TEXT: &str = "Enable premium overages";
-const MONTHLY_OVERAGES_SPEND_LIMIT_REACHED_ACTION_TEXT: &str = "Increase monthly spend limit";
-const NON_ADMIN_CONTACT_ADMIN_TEXT: &str = ", contact a team admin";
-const NON_ADMIN_ASK_ADMIN_TO_ENABLE_OVERAGES_TEXT: &str = ", ask a team admin to enable overages";
-const NON_ADMIN_ASK_ADMIN_TO_INCREASE_OVERAGES_TEXT: &str =
-    ", ask a team admin to increase overages";
+const ANONYMOUS_USER_REQUEST_LIMIT_ACTION_TEXT: &str = "Configure local AI provider";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PromptAlertAction {
-    SignUpClickedForAnonymousUser,
-    OpenSettingsClicked,
-    OpenPrivacySettingsClicked,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PromptAlertEvent {
-    SignupAnonymousUser,
-    OpenPrivacyPage,
-}
+pub enum PromptAlertAction {}
 
 /// The alert state of the chip that appears to the right of certain parts of the prompt.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptAlertState {
     /// The user is offline (no connection).
     NoConnection,
-    /// Telemetry is disabled and the user is on a free tier.
-    /// Free tier users must enable telemetry or upgrade to use AI features.
-    TelemetryDisabledOnFreeTier,
     /// An anonymous user has reached a certain percentage of requests used.
     /// This doesn't use a primary text to avoid being too in-your-face.
     AnonymousUserRequestLimitSoftGate,
     /// An anonymous user has reached the request limit.
     AnonymousUserRequestLimitHardGate,
-    /// The user is delinquent due to a payment issue.
-    DelinquentDueToPaymentIssue,
-    /// Overages could be turned on, but aren't enabled.
-    OveragesToggleableButNotEnabled,
-    /// Overages are on, but the spend limit is too low.
-    MonthlyOveragesSpendLimitReached,
     /// The user has reached the request limit.
     RequestLimitReached,
     /// No alert should be displayed.
@@ -87,7 +57,6 @@ impl PromptAlertView {
         let request_usage_model = AIRequestUsageModel::handle(ctx);
         let user_workspaces = UserWorkspaces::handle(ctx);
         let network_status = NetworkStatus::handle(ctx);
-        let privacy_settings = PrivacySettings::handle(ctx);
         let api_key_manager = ApiKeyManager::handle(ctx);
 
         ctx.subscribe_to_model(&request_usage_model, |me, _, _, ctx| {
@@ -105,11 +74,6 @@ impl PromptAlertView {
             ctx.notify();
         });
 
-        ctx.subscribe_to_model(&privacy_settings, |me, _, _, ctx| {
-            me.state = Self::determine_state(ctx);
-            ctx.notify();
-        });
-
         ctx.subscribe_to_model(&api_key_manager, |me, _, _, ctx| {
             me.state = Self::determine_state(ctx);
             ctx.notify();
@@ -122,28 +86,14 @@ impl PromptAlertView {
     }
 
     pub fn determine_state(app: &AppContext) -> PromptAlertState {
-        // First, if the user is offline, no AI features will work.
-        if !NetworkStatus::as_ref(app).is_online() {
-            return PromptAlertState::NoConnection;
-        }
-
         if UserWorkspaces::as_ref(app).is_byo_api_key_enabled() {
             return PromptAlertState::NoAlert;
         }
 
-        // Check if telemetry is disabled for free tier users.
-        // Free tier users must enable telemetry or upgrade to use AI features.
-        let privacy_settings = PrivacySettings::as_ref(app);
-        if !privacy_settings.is_telemetry_enabled {
-            // Fail safe: if billing status is unknown, assume paid to avoid showing confusing message to paying users
-            let is_on_paid_plan = UserWorkspaces::as_ref(app)
-                .current_workspace()
-                .map(|w| w.billing_metadata.is_user_on_paid_plan())
-                .unwrap_or(true);
-
-            if !is_on_paid_plan {
-                return PromptAlertState::TelemetryDisabledOnFreeTier;
-            }
+        // OpenWarp: BYOP/本地 provider 自行处理连接状态,包括 Ollama 这类 localhost
+        // provider。全局离线状态只阻止内置云端用量。
+        if !NetworkStatus::as_ref(app).is_online() {
+            return PromptAlertState::NoConnection;
         }
 
         let request_usage_model = AIRequestUsageModel::as_ref(app);
@@ -163,33 +113,12 @@ impl PromptAlertView {
             }
         }
 
-        // Next, make sure the user isn't delinquent in their plan.
-        let workspace = UserWorkspaces::as_ref(app).current_workspace();
-        if workspace.is_some_and(|w| w.billing_metadata.is_delinquent_due_to_payment_issue()) {
-            return PromptAlertState::DelinquentDueToPaymentIssue;
-        }
-
         // If there is ever any ai remaining, no alert
         if request_usage_model.has_any_ai_remaining(app) {
             return PromptAlertState::NoAlert;
         }
 
-        // Check if overages are available.
-        if let Some(workspace) = workspace {
-            let are_overages_toggleable = workspace.are_overages_toggleable();
-            let are_overages_enabled = workspace.are_overages_enabled();
-
-            if are_overages_toggleable {
-                if are_overages_enabled {
-                    return PromptAlertState::MonthlyOveragesSpendLimitReached;
-                } else {
-                    return PromptAlertState::OveragesToggleableButNotEnabled;
-                }
-            }
-        }
-
-        // If overages aren't available, and since we already checked that the user
-        // has no requests remaining, we can show the generic request limit reached alert.
+        // 本地版没有云端 overages / 计费升级路径。
         PromptAlertState::RequestLimitReached
     }
 
@@ -221,11 +150,6 @@ impl PromptAlertView {
                     NO_CONNECTION_PRIMARY_TEXT,
                 ));
             }
-            PromptAlertState::TelemetryDisabledOnFreeTier => {
-                text_fragments.push(FormattedTextFragment::plain_text(
-                    TELEMETRY_DISABLED_PRIMARY_TEXT,
-                ));
-            }
             PromptAlertState::AnonymousUserRequestLimitSoftGate => {
                 text_fragments.push(FormattedTextFragment::plain_text(
                     ANONYMOUS_USER_REQUEST_LIMIT_SOFT_GATE_PRIMARY_TEXT,
@@ -236,14 +160,7 @@ impl PromptAlertView {
                     ANONYMOUS_USER_REQUEST_LIMIT_HARD_GATE_PRIMARY_TEXT,
                 ));
             }
-            PromptAlertState::DelinquentDueToPaymentIssue => {
-                text_fragments.push(FormattedTextFragment::plain_text(
-                    DELINQUENT_DUE_TO_PAYMENT_ISSUE_PRIMARY_TEXT,
-                ));
-            }
-            PromptAlertState::OveragesToggleableButNotEnabled
-            | PromptAlertState::MonthlyOveragesSpendLimitReached
-            | PromptAlertState::RequestLimitReached => {
+            PromptAlertState::RequestLimitReached => {
                 text_fragments.push(FormattedTextFragment::plain_text(
                     OUT_OF_REQUESTS_PRIMARY_TEXT,
                 ));
@@ -258,62 +175,18 @@ impl PromptAlertView {
         text_fragments: &mut Vec<FormattedTextFragment>,
         app: &AppContext,
     ) {
-        let auth_state = AuthStateProvider::as_ref(app).get();
-        let current_team = UserWorkspaces::as_ref(app).current_team();
-        let has_admin_permissions = current_team.is_some_and(|team| {
-            team.has_admin_permissions(&auth_state.user_email().unwrap_or_default())
-        });
-
         match state {
             PromptAlertState::NoConnection => {}
-            PromptAlertState::TelemetryDisabledOnFreeTier => {
-                // Show "enable analytics" action link
-                text_fragments.push(FormattedTextFragment::plain_text("  "));
-                text_fragments.push(FormattedTextFragment::hyperlink_action(
-                    ENABLE_ANALYTICS_ACTION_TEXT,
-                    PromptAlertAction::OpenPrivacySettingsClicked,
-                ));
-
-                text_fragments.push(FormattedTextFragment::plain_text("."));
-            }
             PromptAlertState::AnonymousUserRequestLimitSoftGate
             | PromptAlertState::AnonymousUserRequestLimitHardGate => {
                 text_fragments.push(FormattedTextFragment::plain_text("  "));
                 text_fragments.push(FormattedTextFragment::hyperlink_action(
                     ANONYMOUS_USER_REQUEST_LIMIT_ACTION_TEXT,
-                    PromptAlertAction::SignUpClickedForAnonymousUser,
+                    WorkspaceAction::ShowSettingsPageWithSearch {
+                        search_query: "api".to_string(),
+                        section: Some(SettingsSection::WarpAgent),
+                    },
                 ));
-            }
-            PromptAlertState::DelinquentDueToPaymentIssue => {
-                text_fragments.push(FormattedTextFragment::plain_text(
-                    NON_ADMIN_CONTACT_ADMIN_TEXT,
-                ));
-            }
-            PromptAlertState::OveragesToggleableButNotEnabled => {
-                if has_admin_permissions {
-                    text_fragments.push(FormattedTextFragment::plain_text("  "));
-                    text_fragments.push(FormattedTextFragment::hyperlink_action(
-                        OVERAGES_TOGGLEABLE_BUT_NOT_ENABLED_ACTION_TEXT,
-                        PromptAlertAction::OpenSettingsClicked,
-                    ));
-                } else {
-                    text_fragments.push(FormattedTextFragment::plain_text(
-                        NON_ADMIN_ASK_ADMIN_TO_ENABLE_OVERAGES_TEXT,
-                    ));
-                }
-            }
-            PromptAlertState::MonthlyOveragesSpendLimitReached => {
-                if has_admin_permissions {
-                    text_fragments.push(FormattedTextFragment::plain_text("  "));
-                    text_fragments.push(FormattedTextFragment::hyperlink_action(
-                        MONTHLY_OVERAGES_SPEND_LIMIT_REACHED_ACTION_TEXT,
-                        PromptAlertAction::OpenSettingsClicked,
-                    ));
-                } else {
-                    text_fragments.push(FormattedTextFragment::plain_text(
-                        NON_ADMIN_ASK_ADMIN_TO_INCREASE_OVERAGES_TEXT,
-                    ));
-                }
             }
             PromptAlertState::RequestLimitReached => {
                 text_fragments.push(FormattedTextFragment::plain_text("  "));
@@ -336,17 +209,13 @@ fn does_alert_block_ai_requests(state: &PromptAlertState) -> bool {
     match state {
         PromptAlertState::AnonymousUserRequestLimitSoftGate | PromptAlertState::NoAlert => false,
         PromptAlertState::NoConnection
-        | PromptAlertState::TelemetryDisabledOnFreeTier
         | PromptAlertState::AnonymousUserRequestLimitHardGate
-        | PromptAlertState::DelinquentDueToPaymentIssue
-        | PromptAlertState::OveragesToggleableButNotEnabled
-        | PromptAlertState::MonthlyOveragesSpendLimitReached
         | PromptAlertState::RequestLimitReached => true,
     }
 }
 
 impl Entity for PromptAlertView {
-    type Event = PromptAlertEvent;
+    type Event = ();
 }
 
 impl View for PromptAlertView {
@@ -380,11 +249,7 @@ impl View for PromptAlertView {
                     ctx.open_url(url);
                 }
                 HyperlinkLens::Action(action_ref) => {
-                    if let Some(action) = action_ref.as_any().downcast_ref::<PromptAlertAction>() {
-                        event.dispatch_typed_action(action.clone());
-                    } else if let Some(action) =
-                        action_ref.as_any().downcast_ref::<WorkspaceAction>()
-                    {
+                    if let Some(action) = action_ref.as_any().downcast_ref::<WorkspaceAction>() {
                         event.dispatch_typed_action(action.clone());
                     }
                 }
@@ -422,17 +287,7 @@ impl View for PromptAlertView {
 impl TypedActionView for PromptAlertView {
     type Action = PromptAlertAction;
 
-    fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
-        match action {
-            PromptAlertAction::SignUpClickedForAnonymousUser => {
-                ctx.emit(PromptAlertEvent::SignupAnonymousUser);
-            }
-            PromptAlertAction::OpenSettingsClicked => {
-                // 去云端分支:不再跳转 billing & usage
-            }
-            PromptAlertAction::OpenPrivacySettingsClicked => {
-                ctx.emit(PromptAlertEvent::OpenPrivacyPage);
-            }
-        }
+    fn handle_action(&mut self, action: &Self::Action, _ctx: &mut ViewContext<Self>) {
+        match *action {}
     }
 }

@@ -431,7 +431,7 @@ struct BootstrappingMessageProducer;
 impl MessageProvider<AgentMessageArgs<'_>> for BootstrappingMessageProducer {
     fn produce_message(&self, args: AgentMessageArgs<'_>) -> Option<Message> {
         if args.terminal_model.block_list().is_bootstrapped()
-            || args.terminal_model.is_dummy_cloud_mode_session()
+            || args.terminal_model.is_dummy_ambient_agent_session()
             || args.terminal_model.is_shared_ambient_agent_session()
         {
             None
@@ -552,9 +552,9 @@ impl MessageProvider<AgentMessageArgs<'_>> for ZeroStateMessageProducer {
             .with_is_disabled(!is_buffer_empty),
         );
 
-        let is_cloud_agent = matches!(
+        let is_ambient_agent = matches!(
             agent_view_controller.agent_view_state(),
-            AgentViewState::Active { origin, .. } if origin.is_cloud_agent()
+            AgentViewState::Active { origin, .. } if origin.is_ambient_agent()
         );
 
         let plan_count = AIDocumentModel::as_ref(app)
@@ -564,7 +564,7 @@ impl MessageProvider<AgentMessageArgs<'_>> for ZeroStateMessageProducer {
         let has_conversation_been_updated_since_agent_view_entry =
             *original_conversation_length != active_conversation.exchange_count();
 
-        if !is_cloud_agent && !has_conversation_been_updated_since_agent_view_entry {
+        if !is_ambient_agent && !has_conversation_been_updated_since_agent_view_entry {
             if let Some(conversations_keystroke) =
                 keybinding_name_to_keystroke(commands::CONVERSATIONS.name, app)
             {
@@ -583,7 +583,7 @@ impl MessageProvider<AgentMessageArgs<'_>> for ZeroStateMessageProducer {
 
         // Code review only works locally.
         #[cfg(not(target_family = "wasm"))]
-        if !is_cloud_agent && *TabSettings::as_ref(app).show_code_review_button {
+        if !is_ambient_agent && *TabSettings::as_ref(app).show_code_review_button {
             let code_review_keystroke = if OperatingSystem::get().is_mac() {
                 Keystroke::parse("cmd-shift-+").expect("keystroke should parse")
             } else {

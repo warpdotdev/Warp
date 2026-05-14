@@ -44,8 +44,8 @@ pub fn load_workflow_enums_with_owner<V>(
 where
     V: warpui::View,
 {
-    let cloud_model = ObjectStoreModel::as_ref(ctx);
-    cloud_model
+    let object_store_model = ObjectStoreModel::as_ref(ctx);
+    object_store_model
         .workflow_enums_with_owner(owner, ctx)
         .filter(|workflow_enum| workflow_enum.model().string_model.is_shared)
         .map(|workflow_enum| {
@@ -79,9 +79,9 @@ pub fn load_argument_into_selector(
         if let Some(enum_data) = all_workflow_enums.get(&enum_id) {
             selector.insert_enum_into_menu(enum_id, enum_data.name.clone(), ctx);
         } else {
-            // Grab the revision_ts, enum name, and shared status from the cloud model
-            let cloud_model = ObjectStoreModel::as_ref(ctx);
-            let workflow_enum_model = cloud_model.get_workflow_enum(&enum_id);
+            // Grab the revision_ts, enum name, and shared status from the object store
+            let object_store_model = ObjectStoreModel::as_ref(ctx);
+            let workflow_enum_model = object_store_model.get_workflow_enum(&enum_id);
             let revision_ts = workflow_enum_model.and_then(|model| model.metadata.revision.clone());
             let enum_data = workflow_enum_model.map(|workflow_enum| {
                 let workflow_enum = &workflow_enum.model().string_model;
@@ -315,7 +315,7 @@ where
         // We don't have the variants for this enum
         Some(WorkflowEnumData { .. }) => {
             enum_creation_dialog.update(ctx, |dialog, ctx| {
-                dialog.load_from_cloud_model(*id, ctx);
+                dialog.load_from_object_store_model(*id, ctx);
             });
             true
         }

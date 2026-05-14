@@ -1,21 +1,14 @@
-// Session-sharing specific logic for BlocklistAIController.
-// This module extends BlocklistAIController with methods used when viewing a shared session
-// and defines state used only for session sharing.
-use std::collections::HashMap;
-
-use crate::terminal::shared_session::protocol::{AgentAttachment, ServerConversationToken};
+// BlocklistAIController 的共享会话本地展示逻辑。
 use itertools::Itertools;
-use warp_core::features::FeatureFlag;
-use warp_multi_agent_api::response_event::{stream_finished, ClientActions};
+use warp_multi_agent_api::response_event::ClientActions;
 use warp_multi_agent_api::{client_action::Action, message::Message};
 
 use super::response_stream::ResponseStreamId;
 use super::{BlocklistAIController, RequestInput};
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
-use crate::ai::agent::{AIAgentActionId, AIAgentAttachment, EntrypointType};
+use crate::ai::agent::AIAgentActionId;
 use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
 use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
-use crate::terminal::model::block::BlockId;
 use crate::terminal::shared_session::ParticipantId;
 use warpui::{AppContext, ModelContext, SingletonEntity};
 
@@ -42,29 +35,6 @@ impl BlocklistAIController {
             .and_then(|response_id| {
                 BlocklistAIHistoryModel::as_ref(app).conversation_for_response_stream(response_id)
             })
-    }
-
-    /// Handle a shared cancel control action and cancel the provided conversation
-    /// (if it exists and is live).
-    pub fn handle_shared_session_cancel_action(
-        &mut self,
-        server_conversation_token: ServerConversationToken,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let Some(conversation_id) = self.find_existing_conversation_by_server_token(
-            &server_conversation_token.to_string(),
-            ctx,
-        ) else {
-            return;
-        };
-
-        if BlocklistAIHistoryModel::as_ref(ctx).is_conversation_live(conversation_id) {
-            self.cancel_conversation_progress(
-                conversation_id,
-                super::CancellationReason::ManuallyCancelled,
-                ctx,
-            );
-        }
     }
 
     /// Apply agent session events to the current conversation state.
@@ -99,12 +69,11 @@ impl BlocklistAIController {
         let terminal_view_id = self.terminal_view_id;
         let history = BlocklistAIHistoryModel::handle(ctx);
 
-        // If the server conversation already exists locally (matched by server_conversation_token), reuse it.
-        // Otherwise, if we're currently in an empty agent view conversation, reuse that
-        // local conversation ID and bind the incoming server token to it.
-        // This preserves block visibility for terminal blocks created in the given agent view.
+        // 如果共享会话 conversation token 已经绑定到本地对话,直接复用。
+        // 否则,当当前 agent view 对话为空时复用该本地对话 ID,并绑定传入的共享 token。
+        // 这样可以保留当前 agent view 里已创建终端 block 的可见性。
         let conversation_id = self
-            .find_existing_conversation_by_server_token(&init_event.conversation_id, ctx)
+            .find_existing_conversation_by_shared_token(&init_event.conversation_id, ctx)
             .or_else(|| {
                 let selected_conversation_id = self
                     .context_model
@@ -364,11 +333,10 @@ impl BlocklistAIController {
         );
     }
 
-    /// Finds an existing client conversation whose server_conversation_token matches `server_token`.
-    /// Searches only live conversations for this terminal view. Returns None if no match is found.
-    pub fn find_existing_conversation_by_server_token(
+    /// 查找与共享会话 conversation token 对应的本地对话。
+    pub fn find_existing_conversation_by_shared_token(
         &self,
-        server_token: &str,
+        conversation_token: &str,
         ctx: &mut ModelContext<Self>,
     ) -> Option<AIConversationId> {
         let history = BlocklistAIHistoryModel::handle(ctx);
@@ -377,85 +345,8 @@ impl BlocklistAIController {
             .all_live_conversations_for_terminal_view(self.terminal_view_id)
             .find_map(|conv| {
                 conv.server_conversation_token()
-                    .and_then(|t| (t.as_str() == server_token).then_some(conv.id()))
+                    .and_then(|t| (t.as_str() == conversation_token).then_some(conv.id()))
             })
-    }
-
-    /// Sends a synthetic cancellation event to viewers when the sharer cancels a conversation.
-    /// This ensures viewers see the conversation as cancelled and update their UI accordingly.
-    pub(super) fn send_cancellation_to_viewers(&mut self, ctx: &mut ModelContext<Self>) {
-        if !self
-            .terminal_model
-            .lock()
-            .shared_session_status()
-            .is_sharer()
-        {
-            return;
-        }
-
-        // Get the current conversation and build usage metadata from it.
-        let conversation_id = self.get_current_shared_session_conversation_id(ctx);
-        let usage_metadata = conversation_id.and_then(|conv_id| {
-            BlocklistAIHistoryModel::as_ref(ctx)
-                .conversation(&conv_id)
-                .map(|conversation| stream_finished::ConversationUsageMetadata {
-                    context_window_usage: conversation.context_window_usage(),
-                    credits_spent: conversation.credits_spent(),
-                    summarized: conversation.was_summarized(),
-                    #[allow(deprecated)]
-                    token_usage: conversation
-                        .token_usage()
-                        .iter()
-                        .map(|u| u.to_proto_combined())
-                        .collect(),
-                    tool_usage_metadata: Some(conversation.tool_usage_metadata().into()),
-                    warp_token_usage: conversation
-                        .token_usage()
-                        .iter()
-                        .filter_map(|u| u.to_proto_warp_usage())
-                        .collect(),
-                    byok_token_usage: conversation
-                        .token_usage()
-                        .iter()
-                        .filter_map(|u| u.to_proto_byok_usage())
-                        .collect(),
-                })
-        });
-
-        // Create a synthetic StreamFinished event to notify viewers of the cancellation.
-        // We use "Done" reason rather than a specific cancellation reason because
-        // the proto doesn't have explicit variants for UserCommandExecuted or ManuallyCancelled.
-        // TODO: we should probably add representations for said variants in the proto for this usecase.
-        let finished_event = warp_multi_agent_api::ResponseEvent {
-            r#type: Some(warp_multi_agent_api::response_event::Type::Finished(
-                warp_multi_agent_api::response_event::StreamFinished {
-                    reason: Some(stream_finished::Reason::Done(stream_finished::Done {})),
-                    conversation_usage_metadata: usage_metadata,
-                    token_usage: vec![],
-                    should_refresh_model_config: false,
-                    request_cost: None,
-                },
-            )),
-        };
-
-        // Send the cancellation event to viewers.
-        // If no initiator is tracked, fall back to the sharer's participant ID.
-        let forked_from_token = conversation_id.and_then(|conv_id| {
-            BlocklistAIHistoryModel::as_ref(ctx)
-                .conversation(&conv_id)
-                .and_then(|conv| {
-                    conv.forked_from_server_conversation_token()
-                        .map(|t| t.as_str().to_string())
-                })
-        });
-        self.terminal_model
-            .lock()
-            .send_agent_response_for_shared_session(
-                &finished_event,
-                self.get_current_response_initiator()
-                    .or_else(|| self.get_sharer_participant_id()),
-                forked_from_token,
-            );
     }
 
     /// Marks an action as remotely executing when a viewer receives a CommandExecutionStarted event.
@@ -501,7 +392,7 @@ impl BlocklistAIController {
         event: &warp_multi_agent_api::ResponseEvent,
         ctx: &mut ModelContext<Self>,
     ) {
-        // Extract the new server conversation id from the StreamInit event
+        // 从 StreamInit 事件取出新的共享会话 conversation id。
         let new_conversation_id = match &event.r#type {
             Some(warp_multi_agent_api::response_event::Type::Init(init)) => {
                 init.conversation_id.as_str()
@@ -512,7 +403,7 @@ impl BlocklistAIController {
 
         // Find the conversation with the forked_from token
         if let Some(conversation_id) =
-            self.find_existing_conversation_by_server_token(forked_from_token, ctx)
+            self.find_existing_conversation_by_shared_token(forked_from_token, ctx)
         {
             // Update the conversation's server_conversation_token to the new one
             BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, ctx| {
@@ -522,162 +413,6 @@ impl BlocklistAIController {
                 );
                 ctx.notify();
             });
-        }
-    }
-
-    /// Execute an agent prompt on behalf of the viewer.
-    pub fn execute_agent_prompt_for_shared_session(
-        &mut self,
-        prompt: String,
-        server_conversation_token: Option<ServerConversationToken>,
-        attachments: Vec<AgentAttachment>,
-        participant_id: ParticipantId,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        // Map server token to sharer's local conversation ID
-        let conversation_id = server_conversation_token
-            .and_then(|id| self.find_existing_conversation_by_server_token(&id.to_string(), ctx))
-            .and_then(
-                |id| match BlocklistAIHistoryModel::as_ref(ctx).conversation(&id) {
-                    Some(c) => Some(c),
-                    None => {
-                        log::error!(
-                            "Tried to execute prompt for non-existent conversation: {id:?}",
-                        );
-                        None
-                    }
-                },
-            )
-            .map(|conversation| conversation.id());
-
-        // Process attachments and set them in the context model
-        let mut block_ids = Vec::new();
-        let mut selected_text_parts = Vec::new();
-        let mut ignored_file_attachments = Vec::new();
-        for attachment in attachments {
-            match attachment {
-                AgentAttachment::BlockReference { block_id } => {
-                    // Convert protocol BlockId to app BlockId
-                    block_ids.push(BlockId::from(block_id.to_string()));
-                }
-                AgentAttachment::PlainText { content } => {
-                    selected_text_parts.push(content);
-                }
-                AgentAttachment::FileReference { file_name, .. } => {
-                    ignored_file_attachments.push(file_name);
-                }
-            }
-        }
-
-        // Set block and text attachments in the context model.
-        self.context_model.update(ctx, |context_model, ctx| {
-            // Set block IDs if any were provided
-            if !block_ids.is_empty() {
-                context_model.set_pending_context_block_ids(block_ids, false, ctx);
-            }
-
-            // Set selected text if any was provided
-            if !selected_text_parts.is_empty() {
-                let combined_text = selected_text_parts.join("\n");
-                context_model.set_pending_context_selected_text(Some(combined_text), false, ctx);
-            }
-        });
-
-        if !ignored_file_attachments.is_empty() {
-            log::warn!(
-                "Ignoring {} shared-session file attachment(s) because cloud attachment downloads are disabled in OpenWarp: {}",
-                ignored_file_attachments.len(),
-                ignored_file_attachments.join(", ")
-            );
-        }
-
-        self.send_shared_session_query(
-            prompt,
-            conversation_id,
-            participant_id,
-            HashMap::new(),
-            ctx,
-        );
-    }
-
-    /// Helper to send a shared-session query, used both for immediate sends
-    /// (no file attachments) and deferred sends (after file downloads complete).
-    fn send_shared_session_query(
-        &mut self,
-        prompt: String,
-        conversation_id: Option<AIConversationId>,
-        participant_id: ParticipantId,
-        file_attachments: HashMap<String, AIAgentAttachment>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if let Some(conversation_id) = conversation_id {
-            if FeatureFlag::AgentView.is_enabled() {
-                // Enter agent view for this conversation so the sharer's UI state is correct
-                // and updates are sent to the viewer.
-                self.context_model.update(ctx, |context_model, ctx| {
-                    context_model.set_pending_query_state_for_existing_conversation(
-                        conversation_id,
-                        AgentViewEntryOrigin::SharedSessionSelection,
-                        ctx,
-                    );
-                });
-            }
-            self.send_user_query_in_conversation_with_attachments(
-                prompt,
-                conversation_id,
-                Some(participant_id),
-                file_attachments,
-                ctx,
-            );
-        } else {
-            if FeatureFlag::AgentView.is_enabled() {
-                // If we're already in an empty agent view conversation, reuse it
-                // (so that any command blocks remain visible). Otherwise create a new one for the given prompt.
-                let history = BlocklistAIHistoryModel::handle(ctx);
-                let origin = AgentViewEntryOrigin::SharedSessionSelection;
-
-                let Some(conversation_id) = self
-                    .context_model
-                    .as_ref(ctx)
-                    .selected_conversation_id(ctx)
-                    .filter(|conversation_id| {
-                        history
-                            .as_ref(ctx)
-                            .conversation(conversation_id)
-                            .is_some_and(|conversation| {
-                                conversation.exchange_count() == 0
-                                    && conversation.server_conversation_token().is_none()
-                            })
-                    })
-                    .or_else(|| {
-                        self.context_model.update(ctx, |context_model, ctx| {
-                            context_model
-                                .try_enter_agent_view_for_new_conversation(origin, ctx)
-                                .ok()
-                        })
-                    })
-                else {
-                    log::error!("Failed to get conversation id for shared session prompt");
-                    return;
-                };
-
-                self.send_user_query_in_conversation_with_attachments(
-                    prompt,
-                    conversation_id,
-                    Some(participant_id),
-                    file_attachments,
-                    ctx,
-                );
-                return;
-            }
-
-            self.send_user_query_in_new_conversation(
-                prompt,
-                None,
-                EntrypointType::SharedSession,
-                Some(participant_id),
-                ctx,
-            );
         }
     }
 }

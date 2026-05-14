@@ -269,10 +269,10 @@ impl ExportManager {
         shell_family: ShellFamily,
         ctx: &mut ModelContext<Self>,
     ) -> anyhow::Result<SpawnedFutureHandle> {
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
         let (name, extension, data) = match object {
             ObjectTypeAndId::Workflow(workflow_id) => {
-                let workflow = cloud_model
+                let workflow = object_store_model
                     .get_workflow(&workflow_id)
                     .ok_or_else(|| anyhow!("no workflow for {workflow_id}"))?;
 
@@ -283,7 +283,7 @@ impl ExportManager {
                 (workflow.model().data.name().to_owned(), "yaml", data)
             }
             ObjectTypeAndId::Notebook(notebook_id) => {
-                let notebook = cloud_model
+                let notebook = object_store_model
                     .get_notebook(&notebook_id)
                     .ok_or_else(|| anyhow!("no notebook for {notebook_id}"))?;
                 let internal_data = &notebook.model().data;
@@ -295,7 +295,7 @@ impl ExportManager {
                 (notebook.model().title.clone(), "md", data)
             }
             ObjectTypeAndId::GenericStringObject { object_type, id } => {
-                if let Some(env_var_collection) = cloud_model.get_env_var_collection(&id) {
+                if let Some(env_var_collection) = object_store_model.get_env_var_collection(&id) {
                     let env_var_collection_model = env_var_collection.model();
 
                     let exported_variables = env_var_collection_model
@@ -367,10 +367,7 @@ impl ExportManager {
         ctx: &mut ModelContext<Self>,
     ) {
         let id = *export.key();
-        // Don't send the error to Sentry, since it likely includes a user file path and their Warp
-        // Drive object name. Also don't report this as an error, since the most likely failure
-        // reason is an I/O issue on the user's machine (like being out of disk space, or exporting
-        // to a directory they can't write to).
+        // 导出失败可能包含用户文件路径或对象名,只写本地安全日志;最常见原因也是本机 I/O 问题。
         safe_warn!(
             safe: ("Exporting {id:?} failed"),
             full: ("Exporting {id:?} failed: {error:#}")

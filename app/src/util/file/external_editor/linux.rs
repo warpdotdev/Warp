@@ -66,25 +66,24 @@ impl EditorMetadata {
         })
     }
 
-    /// Common implementation of building a command
+    /// 构造外部编辑器命令的通用实现。
     ///
-    /// - Pre-splits the Exec field into shell words, then expands field codes
-    ///   within each token to build a proper argv vector
-    /// - Returns a `Command` with program and args set directly (no shell)
+    /// - 先把 Exec 字段拆成 shell words，再在每个 token 内展开 field code，
+    ///   得到正确的 argv 向量
+    /// - 直接设置 program 和 args，避免经过 shell
     ///
-    /// Field code replacement is handled by the `field_code_processor` callback.
-    /// The callback receives `&mut Vec<String>` — push to the last element to
-    /// append within the current arg, or push a new `String` to add a new arg.
+    /// field code 替换由 `field_code_processor` 回调处理。回调收到
+    /// `&mut Vec<String>`：修改最后一个元素表示追加到当前参数，push 新
+    /// `String` 表示新增参数。
     fn build_command<T>(&self, field_code_processor: T) -> Result<Command, DesktopExecError>
     where
         T: Fn(&Self, &mut Vec<String>, char),
     {
         let raw_exec = &self.exec;
 
-        // Pre-split the Exec string into shell words first, then expand
-        // field codes within each token.  This preserves spaces inside
-        // substituted values (e.g. file paths) while still honouring the
-        // quoting in the original .desktop Exec line.
+        // 先按 shell words 拆分 Exec，再在每个 token 内展开 field code。
+        // 这样能保留替换值中的空格(例如文件路径)，同时尊重 .desktop Exec
+        // 原始内容中的引用规则。
         let tokens =
             shell_words::split(raw_exec).map_err(|_| DesktopExecError::MalformedFieldCode)?;
 
@@ -100,8 +99,8 @@ impl EditorMetadata {
                 let Some(next_char) = iter.next() else {
                     return Err(DesktopExecError::MalformedFieldCode);
                 };
-                // Field code processors may push additional argv entries
-                // (e.g. %i pushes "--icon" and the icon value as separate args).
+                // field code 处理器可以追加额外 argv 项，例如 %i 会把
+                // "--icon" 和 icon 值作为两个独立参数写入。
                 field_code_processor(self, &mut parts, next_char);
             }
             for p in parts {
@@ -120,19 +119,17 @@ impl EditorMetadata {
         Ok(command)
     }
 
-    /// The default handler for replacing field codes with values
+    /// field code 默认替换逻辑。
     ///
-    /// Takes in a `field_code`, and handles appending replacement values
-    /// to the passed in `processed_exec` string. Follows the standard
-    /// here: https://specifications.freedesktop.org/desktop-entry-spec/latest/ar01s07.html.
-    /// Any fields like %f, %F, %u, and %U that rely on a file path use the `file_path`
-    /// parameter.
+    /// 根据 FreeDesktop 规范处理 `field_code`，把替换值追加到当前 argv 参数
+    /// 或新增 argv 参数：
+    /// https://specifications.freedesktop.org/desktop-entry-spec/latest/ar01s07.html
+    /// 依赖文件路径的 %f、%F、%u、%U 使用 `file_path` 参数。
     ///
-    /// Any errors or missing information (ex: %i with no Icon field, %U wiht a non-existent path)
-    /// will fail silently, and result in nothing being appended to `processed_exec`
+    /// 信息缺失或处理失败时保持原有行为：静默跳过对应替换值。
     fn process_field_code(&self, parts: &mut Vec<String>, field_code: char, file_path: &Path) {
         match field_code {
-            // file path
+            // 文件路径
             'f' | 'F' => {
                 parts
                     .last_mut()
@@ -141,40 +138,37 @@ impl EditorMetadata {
             }
             // URI
             'u' | 'U' => {
-                // TODO(daprahamian): B/c we are using canonicalize, this will fail
-                // if the file we are checking here does not actually exist. Also
-                // it requires an fs check, which is not fun. In the future, it would
-                // be nice to replace this with the pending std::path::absolute in
-                // the future
+                // TODO(daprahamian): 这里使用 canonicalize，因此文件不存在时会失败，
+                // 也会额外触发一次文件系统检查。未来可以改用 std::path::absolute。
                 //
-                // See https://github.com/rust-lang/rust/issues/92750
+                // 参考 https://github.com/rust-lang/rust/issues/92750
                 if let Ok(absolute) = file_path.canonicalize() {
                     if let Ok(file_url) = url::Url::from_file_path(absolute) {
                         parts.last_mut().unwrap().push_str(file_url.as_str());
                     }
                 }
             }
-            // Localized Name
+            // 本地化名称
             'c' => {
                 if let Some(localized_name) = self.localized_name.as_ref() {
                     parts.last_mut().unwrap().push_str(localized_name);
                 }
             }
-            // Icon argument — push as separate argv entries
+            // icon 参数需要拆成独立 argv 项
             'i' => {
                 if let Some(icon) = &self.icon {
                     parts.last_mut().unwrap().push_str("--icon");
                     parts.push(icon.clone());
                 }
             }
-            // Path to the display file
+            // desktop 文件路径
             'k' => {
                 parts
                     .last_mut()
                     .unwrap()
                     .push_str(self.desktop_file_path.to_str().unwrap_or_default());
             }
-            // Just add the character
+            // 未知 field code 按规范保留该字符
             other => parts.last_mut().unwrap().push(other),
         };
     }

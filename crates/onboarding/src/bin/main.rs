@@ -150,9 +150,7 @@ impl OnboardingMainView {
                 self.state = OnboardingMainState::Finished(finished_view);
                 ctx.notify();
             }
-            AgentOnboardingEvent::SyncWithOsToggled { .. }
-            | AgentOnboardingEvent::LoginFromWelcomeRequested
-            | AgentOnboardingEvent::PrivacySettingsFromTerminalThemeSlideRequested => {
+            AgentOnboardingEvent::SyncWithOsToggled { .. } => {
                 // No-op in the standalone demo binary
             }
         }

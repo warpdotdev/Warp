@@ -40,15 +40,11 @@ pub enum StripeSubscriptionPlan {
     Other(String),
 }
 
-/// A global model for pricing information from the server.
+/// 服务端价格信息的全局模型。
 ///
-/// In OpenWarp this is effectively a no-op stub: the OSS channel has no
-/// cloud server pushing pricing data, so `pricing_info` is normally `None`
-/// for the lifetime of the process and every getter returns `None`. The
-/// model is preserved only because consumer call sites (request_usage,
-/// billing-aware modals, teams settings page) still reference it;
-/// downstream cloud-removal phases will eventually retire those call sites
-/// and let us delete this entirely.
+/// OpenWarp 中它是本地 no-op stub:OSS channel 没有云端服务推送价格数据,
+/// 所以进程生命周期内 `pricing_info` 通常保持 `None`,所有 getter 都返回 `None`。
+/// 模型暂时保留给少量请求用量和计费兼容调用点,后续云端清理完成后可整段删除。
 #[derive(Debug)]
 pub struct PricingInfoModel {
     pricing_info: Option<PricingInfo>,

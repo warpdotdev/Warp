@@ -150,8 +150,8 @@ impl RuleView {
         // 事件、以及网络状态驱动的面板重绘。本地化后 ObjectStoreEvent 已覆盖本地写入后的
         // UI 刷新需求(2c-2/2c-3 在 update_object/create_object 里发送),UpdateManager 与
         // NetworkStatus 订阅为死代码,一并移除。
-        let cloud_model = ObjectStoreModel::handle(ctx);
-        ctx.subscribe_to_model(&cloud_model, |me, _, event, ctx| {
+        let object_store_model = ObjectStoreModel::handle(ctx);
+        ctx.subscribe_to_model(&object_store_model, |me, _, event, ctx| {
             me.handle_object_store_event(event, ctx);
         });
 
@@ -168,8 +168,8 @@ impl RuleView {
         });
 
         let ai_rules: Vec<AIFactObject> = {
-            let cloud_model = ObjectStoreModel::handle(ctx);
-            cloud_model
+            let object_store_model = ObjectStoreModel::handle(ctx);
+            object_store_model
                 .as_ref(ctx)
                 .get_all_objects_of_type::<GenericStringObjectId, AIFactObjectModel>()
                 .cloned()
@@ -285,8 +285,8 @@ impl RuleView {
 
     fn fetch_ai_rules(&mut self, ctx: &mut ViewContext<Self>) {
         let ai_rules: Vec<AIFactObject> = {
-            let cloud_model = ObjectStoreModel::handle(ctx);
-            cloud_model
+            let object_store_model = ObjectStoreModel::handle(ctx);
+            object_store_model
                 .as_ref(ctx)
                 .get_all_objects_of_type::<GenericStringObjectId, AIFactObjectModel>()
                 .cloned()

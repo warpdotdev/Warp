@@ -162,13 +162,13 @@ fn add_slash_command_highlight(
 /// That first prompt is rendered in the ambient-agent query block UI, so this helper only gates
 /// duplicate rendering in the AI block path when that optimistic block was actually inserted.
 fn should_hide_first_ai_block_query_and_header(
-    has_inserted_cloud_mode_user_query_block: bool,
+    has_inserted_ambient_user_query_block: bool,
     is_shared_ambient_agent_session: bool,
     is_first_exchange: bool,
     is_receiving_agent_conversation_replay: bool,
 ) -> bool {
     false
-        && has_inserted_cloud_mode_user_query_block
+        && has_inserted_ambient_user_query_block
         && is_shared_ambient_agent_session
         && is_first_exchange
         && !is_receiving_agent_conversation_replay
@@ -854,12 +854,12 @@ impl View for AIBlock {
         let is_first_exchange = conversation
             .first_exchange()
             .is_some_and(|exchange| exchange.id == self.client_ids.client_exchange_id);
-        let has_inserted_cloud_mode_user_query_block = self
+        let has_inserted_ambient_user_query_block = self
             .ambient_agent_view_model
             .as_ref(app)
-            .has_inserted_cloud_mode_user_query_block();
+            .has_inserted_ambient_agent_user_query_block();
         let should_hide_first_block_query_and_header = should_hide_first_ai_block_query_and_header(
-            has_inserted_cloud_mode_user_query_block,
+            has_inserted_ambient_user_query_block,
             is_shared_ambient_agent_session,
             is_first_exchange,
             is_receiving_agent_conversation_replay,

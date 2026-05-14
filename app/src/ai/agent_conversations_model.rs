@@ -613,7 +613,7 @@ impl ConversationOrTask<'_> {
     }
 
     /// Returns the appropriate `WorkspaceAction` to dispatch when opening this item.
-    /// This encapsulates the decision logic for opening ambient agent sessions vs
+    /// This encapsulates the decision logic for opening ambient agent runs vs
     /// navigating to local conversations.
     pub fn get_open_action(
         &self,

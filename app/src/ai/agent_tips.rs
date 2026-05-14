@@ -510,8 +510,8 @@ impl AITipModel<AgentTip> {
 
 impl SingletonEntity for AITipModel<AgentTip> {}
 
-// Specific implementation for CloudModeTip
-impl AITipModel<crate::terminal::view::ambient_agent::CloudModeTip> {
+// Specific implementation for AmbientAgentTip
+impl AITipModel<crate::terminal::view::ambient_agent::AmbientAgentTip> {
     /// Refreshes the current tip with a new random selection.
     /// Only updates if not in cooldown period (60 seconds).
     pub fn maybe_refresh_tip(&mut self, ctx: &mut ModelContext<Self>) {

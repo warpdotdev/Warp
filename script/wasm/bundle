@@ -154,8 +154,7 @@ WASM_BINARY_OUT="${OUT_DIR}/warp_bg.wasm"
 WASM_BINARY_DEBUG="${EXTRAS_DIR}/warp_bg.debug.wasm"
 
 if [[ "$NO_SPLIT" != "true" ]]; then
-  # Run Sentry's wasm-split binary to separate out debug information from the
-  # wasm binary.
+  # 使用 wasm-split 从 wasm binary 中拆分 debug information。
   #
   # Binary releases of wasm-split can be found here:
   # https://github.com/getsentry/symbolicator/releases

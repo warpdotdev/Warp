@@ -26,7 +26,8 @@ use crate::cloud_object::update_manager::{InitiatedBy, UpdateManager};
 use crate::cloud_object::{Space, StoredObject, StoredObjectLocation, StoredObjectMetadataExt};
 use crate::server::ids::{ClientId, ServerId};
 use crate::server::telemetry::{
-    MCPServerModel, MCPServerTelemetryTransportType, MCPTemplateCreationSource,
+    MCPServerModel, MCPServerTelemetryError, MCPServerTelemetryTransportType,
+    MCPTemplateCreationSource,
 };
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{
@@ -196,8 +197,8 @@ impl TemplatableMCPServerManager {
         });
 
         // TemplatableMCPServerManager is the source of truth for templatable MCP servers stored on the cloud
-        let cloud_model = ObjectStoreModel::handle(ctx);
-        ctx.subscribe_to_model(&cloud_model, |me, event, ctx| match event {
+        let object_store_model = ObjectStoreModel::handle(ctx);
+        ctx.subscribe_to_model(&object_store_model, |me, event, ctx| match event {
             ObjectStoreEvent::ObjectUpdated {
                 type_and_id:
                     ObjectTypeAndId::GenericStringObject {
@@ -852,7 +853,7 @@ impl TemplatableMCPServerManager {
                 me.spawned_servers.remove(&installation_uuid);
                 me.pending_oauth_csrf.retain(|_, v| *v != installation_uuid);
 
-                let error = match server_info {
+                let error: Option<MCPServerTelemetryError> = match server_info {
                     Ok(info) => {
                         let peer = info.service.clone();
                         me.active_servers.insert(installation_uuid, info);

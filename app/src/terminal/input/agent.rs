@@ -217,22 +217,22 @@ impl Input {
             .is_shortcut_view_open()
         {
             let agent_view_controller = self.agent_view_controller.as_ref(app);
-            let (is_cloud_agent, has_submitted_first_prompt) =
+            let (is_ambient_agent, has_submitted_first_prompt) =
                 match agent_view_controller.agent_view_state() {
                     AgentViewState::Active {
                         conversation_id,
                         origin,
                         ..
                     } => {
-                        let is_cloud_agent = origin.is_cloud_agent();
-                        let has_submitted_first_prompt = if is_cloud_agent {
+                        let is_ambient_agent = origin.is_ambient_agent();
+                        let has_submitted_first_prompt = if is_ambient_agent {
                             BlocklistAIHistoryModel::as_ref(app)
                                 .conversation(conversation_id)
                                 .is_some_and(|c| c.initial_user_query().is_some())
                         } else {
                             true
                         };
-                        (is_cloud_agent, has_submitted_first_prompt)
+                        (is_ambient_agent, has_submitted_first_prompt)
                     }
                     // When inactive, show all shortcuts (treat as not-cloud and not in the zero-state).
                     AgentViewState::Inactive => (false, true),
@@ -240,7 +240,7 @@ impl Input {
 
             column.add_child(render_agent_shortcuts_view(
                 AgentShortcutsViewContext {
-                    is_cloud_agent,
+                    is_ambient_agent,
                     has_submitted_first_prompt,
                 },
                 app,

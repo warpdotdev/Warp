@@ -137,18 +137,13 @@ where
 pub(super) fn relaunch() -> Result<()> {
     let bundle_path = PathBuf::from(get_bundle_path()?);
 
-    // We need to make sure that the current Warp process is no longer running
-    // before we spawn the new one, otherwise we can end up showing multiple
-    // icons in the macOS dock.  To do this, we use an intermediary /bin/sh
-    // process that watches for this process to terminate, and then spawns a
-    // new Warp process.
+    // 启动新版 Warp 前先等待当前进程退出，避免 Dock 中短暂出现多个图标。
+    // 这里用一个中间 shell 进程轮询当前 PID，进程退出后再启动新版应用。
     //
-    // Wait until the current process is no longer running, checking every
-    // 200ms.  Once the current process has terminated, launch the new one.
+    // 每 200ms 检查一次当前进程是否仍在运行；进程退出后启动新版。
     //
-    // We build the shell command carefully: the `pid` is our own numeric PID
-    // (safe), and the bundle_path / env var are shell-quoted to prevent
-    // injection via paths containing metacharacters.
+    // shell 命令需要谨慎拼接：`pid` 来自当前进程且是数字，bundle 路径和
+    // 环境变量值必须 shell 转义，避免路径中的元字符造成注入。
     let pid = std::process::id();
     let quoted_bundle = shell_escape::escape(bundle_path.to_string_lossy());
 
@@ -157,9 +152,8 @@ pub(super) fn relaunch() -> Result<()> {
         quoted_bundle,
         warp_cli::finish_update_flag(),
     );
-    // If we're testing with a local copy of channel_versions.json, have the
-    // newly-started binary also reference that same file (so we can test
-    // displaying an updated changelog after an autoupdate).
+    // 测试本地通道版本 JSON 时，让新启动的二进制继续引用同一个文件，
+    // 以便验证自动更新后的 changelog 展示。
     if let Ok(path) = env::var("WARP_CHANNEL_VERSIONS_PATH") {
         let quoted_path = shell_escape::escape(path.into());
         open_args.push_str(&format!(" --env WARP_CHANNEL_VERSIONS_PATH={quoted_path}"));

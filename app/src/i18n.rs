@@ -10,9 +10,11 @@
 //!   - 当前 locale 没有 → fluent 内部 fallback 到 fallback_language (en)
 //!   - 连英文都没有 → 返回 key 本身字符串(并 log::warn,便于 CI 抓未翻译条目)
 
+#[cfg(not(target_os = "macos"))]
+use i18n_embed::DesktopLanguageRequester;
 use i18n_embed::{
     fluent::{fluent_language_loader, FluentLanguageLoader},
-    DesktopLanguageRequester, LanguageLoader,
+    LanguageLoader,
 };
 use rust_embed::RustEmbed;
 use std::sync::OnceLock;
@@ -47,10 +49,10 @@ pub fn init(override_locale: Option<&str>) {
             Ok(li) => vec![li],
             Err(e) => {
                 log::warn!("[i18n] invalid override_locale {s:?}: {e} — falling back to system");
-                DesktopLanguageRequester::requested_languages()
+                system_requested_languages()
             }
         },
-        None => DesktopLanguageRequester::requested_languages(),
+        None => system_requested_languages(),
     };
 
     if let Err(e) = i18n_embed::select(&loader, &Localizations, &requested) {
@@ -77,6 +79,65 @@ fn propagate_ui_locale(loader: &FluentLanguageLoader) {
     let langs = loader.current_languages();
     if let Some(li) = langs.first() {
         warpui::set_ui_locale(li.to_string());
+    }
+}
+
+fn system_requested_languages() -> Vec<LanguageIdentifier> {
+    #[cfg(target_os = "macos")]
+    {
+        macos_requested_languages()
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        DesktopLanguageRequester::requested_languages()
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_requested_languages() -> Vec<LanguageIdentifier> {
+    use objc::{class, msg_send, runtime::Object, sel, sel_impl};
+    use warpui::platform::mac::utils::nsstring_as_str;
+
+    unsafe {
+        let locale_class = class!(NSLocale);
+        let locale: *const Object = msg_send![locale_class, currentLocale];
+
+        let is_language_code_supported: bool =
+            msg_send![locale, respondsToSelector: sel!(languageCode)];
+        if !is_language_code_supported {
+            return vec!["en".parse().expect("en is a valid language identifier")];
+        }
+
+        let language_code: *const Object = msg_send![locale, languageCode];
+        let language_code_str = nsstring_as_str(language_code)
+            .map(str::to_owned)
+            .unwrap_or_else(|_| "en".to_string());
+
+        let is_country_code_supported: bool =
+            msg_send![locale, respondsToSelector: sel!(countryCode)];
+        let locale = if is_country_code_supported {
+            let country_code: *const Object = msg_send![locale, countryCode];
+            let country_code_str = nsstring_as_str(country_code)
+                .map(str::to_owned)
+                .unwrap_or_default();
+
+            if country_code_str.is_empty() {
+                language_code_str
+            } else {
+                format!("{language_code_str}-{country_code_str}")
+            }
+        } else {
+            language_code_str
+        };
+
+        match locale.parse() {
+            Ok(locale) => vec![locale],
+            Err(err) => {
+                log::warn!("[i18n] invalid macOS locale {locale:?}: {err}; falling back to en");
+                vec!["en".parse().expect("en is a valid language identifier")]
+            }
+        }
     }
 }
 
@@ -121,7 +182,7 @@ pub fn reset_to_system_locale() {
     let Some(loader) = LANGUAGE_LOADER.get() else {
         return;
     };
-    let requested = DesktopLanguageRequester::requested_languages();
+    let requested = system_requested_languages();
     if let Err(e) = i18n_embed::select(loader, &Localizations, &requested) {
         log::warn!("[i18n] reset_to_system_locale failed: {e}");
     }

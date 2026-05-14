@@ -86,7 +86,7 @@ fn autoupdate_log_file() -> Result<PathBuf> {
 }
 
 /// Checks the autoupdate log file from a previous update attempt.
-/// Sends telemetry for specific known issues, and sends a Sentry event if errors are found.
+/// 记录上一次更新尝试中发现的已知问题。
 /// The log file is renamed after processing to avoid duplicate reports on subsequent launches.
 pub(super) fn check_and_report_update_errors(ctx: &mut AppContext) {
     let log_path = match autoupdate_log_file() {
@@ -148,10 +148,8 @@ pub(super) fn check_and_report_update_errors(ctx: &mut AppContext) {
         crate::send_telemetry_sync_from_app_ctx!(TelemetryEvent::AutoupdateForcekillFailed, ctx);
     }
 
-    // openWarp 闭源遥测剥离 P2:原 #[cfg(feature = "crash_reporting")] 块会把 autoupdate 失败
-    // 日志(完整文件内容作为 sentry attachment)上报到 Warp 官方 Sentry。剥离后改为本地
-    // log 计数提示——日志文件已落本地(被下方 .log.reported 重命名保留),用户/调试需要时
-    // 直接看本地文件。`contents_lowercase` 仅用于 sentry 上报路径判断,一并去除。
+    // openWarp 不上传 autoupdate 失败日志,仅在本地记录错误计数;完整日志文件会被下方
+    // `.log.reported` 重命名保留,用户/调试需要时直接看本地文件。
     #[cfg(feature = "crash_reporting")]
     {
         const IGNOREABLE_ERRORS: &[&[u8]] = &[

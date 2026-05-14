@@ -311,20 +311,22 @@ fn blocked_ip_ipv4_basics() {
         "192.168.1.1",
         "169.254.1.1",
         "0.0.0.0",
-        "0.0.0.1",       // 0.0.0.0/8 "This host" range
-        "0.255.255.255", // 0.0.0.0/8 upper bound
+        "0.0.0.1",       // 0.0.0.0/8 本主机范围
+        "0.255.255.255", // 0.0.0.0/8 上界
         "255.255.255.255",
-        "100.64.0.1",   // CGNAT
-        "192.0.2.1",    // TEST-NET-1
-        "198.51.100.1", // TEST-NET-2
-        "203.0.113.1",  // TEST-NET-3
-        "198.18.0.1",   // Benchmarking
-        "240.0.0.1",    // Reserved
+        "100.64.0.1",      // CGNAT
+        "192.0.2.1",       // TEST-NET-1
+        "198.51.100.1",    // TEST-NET-2
+        "203.0.113.1",     // TEST-NET-3
+        "198.18.0.1",      // 性能测试地址
+        "224.0.0.1",       // 组播
+        "239.255.255.255", // 组播上界
+        "240.0.0.1",       // 保留地址
     ] {
         let ip: IpAddr = blocked.parse().unwrap();
         assert!(is_blocked_ip(ip), "should block {blocked}");
     }
-    // Public IPs must NOT be blocked.
+    // 公网 IP 不能被误拦截。
     for allowed in ["8.8.8.8", "1.1.1.1", "93.184.216.34"] {
         let ip: IpAddr = allowed.parse().unwrap();
         assert!(!is_blocked_ip(ip), "should allow {allowed}");
@@ -334,7 +336,7 @@ fn blocked_ip_ipv4_basics() {
 #[test]
 fn blocked_ip_ipv4_mapped_ipv6() {
     use std::net::IpAddr;
-    // ::ffff:127.0.0.1 is IPv4-mapped — must be blocked.
+    // ::ffff:127.0.0.1 是 IPv4-mapped IPv6，必须按 IPv4 loopback 拦截。
     let mapped_loopback: IpAddr = "::ffff:127.0.0.1".parse().unwrap();
     assert!(
         is_blocked_ip(mapped_loopback),
@@ -353,7 +355,7 @@ fn blocked_ip_ipv4_mapped_ipv6() {
         "::ffff:169.254.1.1 must be blocked"
     );
 
-    // ::ffff:8.8.8.8 is public — must NOT be blocked.
+    // ::ffff:8.8.8.8 对应公网 IPv4，不能被误拦截。
     let mapped_public: IpAddr = "::ffff:8.8.8.8".parse().unwrap();
     assert!(
         !is_blocked_ip(mapped_public),
@@ -369,12 +371,13 @@ fn blocked_ip_ipv6_ranges() {
         "::",          // unspecified
         "fc00::1",     // unique-local
         "fe80::1",     // link-local
-        "2001:db8::1", // documentation
+        "ff00::1",     // 组播
+        "2001:db8::1", // 文档示例地址
     ] {
         let ip: IpAddr = blocked.parse().unwrap();
         assert!(is_blocked_ip(ip), "should block {blocked}");
     }
-    // Public IPv6 must NOT be blocked.
+    // 公网 IPv6 不能被误拦截。
     let public: IpAddr = "2606:4700:4700::1111".parse().unwrap();
     assert!(!is_blocked_ip(public), "public IPv6 should be allowed");
 }
@@ -396,11 +399,12 @@ async fn ssrf_safe_client_builds_with_redirect_policy() {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// 真实端点 smoke 测试（默认开启；CI 网络受限时设 WARP_SKIP_WEB_INTEGRATION=1）
+// 真实端点 smoke 测试默认跳过，避免 CI 或离线开发环境依赖外网。
+// 需要手动验证真实端点时设置 WARP_RUN_WEB_INTEGRATION=1。
 // ---------------------------------------------------------------------------
 
 fn skip_real() -> bool {
-    std::env::var("WARP_SKIP_WEB_INTEGRATION").is_ok()
+    std::env::var("WARP_RUN_WEB_INTEGRATION").is_err()
 }
 
 #[tokio::test]

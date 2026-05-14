@@ -3167,8 +3167,7 @@ fn make_append_event(task_id: &str, message_id: &str, kind: AppendKind) -> api::
 /// 让模型看到标准 tool_result。
 async fn dispatch_byop_web_tool(tool_name: &str, args_str: &str) -> Value {
     use tools::web_runtime;
-    // Build an SSRF-safe client for webfetch (custom redirect policy validates
-    // each redirect target against blocked IP ranges).
+    // 为 webfetch 构建带 SSRF 防护的 client：自定义重定向策略会校验每一跳目标。
     let client = match web_runtime::build_ssrf_safe_client() {
         Ok(c) => c,
         Err(e) => {

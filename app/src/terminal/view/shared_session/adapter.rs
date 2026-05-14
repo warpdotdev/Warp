@@ -133,7 +133,7 @@ impl Adapter {
 
     pub fn new_for_viewer(
         viewer_id: ParticipantId,
-        firebase_uid: UserUid,
+        user_uid: UserUid,
         participant_list: Box<ParticipantList>,
         session_id: SessionId,
         started_at: DateTime<Local>,
@@ -141,7 +141,7 @@ impl Adapter {
         ctx: &mut ViewContext<TerminalView>,
     ) -> Self {
         let presence_manager = ctx.add_model(|ctx| {
-            PresenceManager::new_for_viewer(viewer_id, firebase_uid, *participant_list, ctx)
+            PresenceManager::new_for_viewer(viewer_id, user_uid, *participant_list, ctx)
         });
         let viewer = Kind::Viewer(Viewer::new(ctx));
         Self::new(
@@ -156,14 +156,14 @@ impl Adapter {
 
     pub fn new_for_sharer(
         sharer_id: ParticipantId,
-        firebase_uid: UserUid,
+        user_uid: UserUid,
         session_id: SessionId,
         started_at: DateTime<Local>,
         source_type: SessionSourceType,
         ctx: &mut ViewContext<TerminalView>,
     ) -> Self {
         let presence_manager =
-            ctx.add_model(|_| PresenceManager::new_for_sharer(sharer_id, firebase_uid));
+            ctx.add_model(|_| PresenceManager::new_for_sharer(sharer_id, user_uid));
 
         // The inactivity timer is reset every 10 seconds
         // as long as sharer activity was detected during the interval.

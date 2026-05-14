@@ -346,7 +346,7 @@ pub struct Block {
     pub(super) is_for_in_band_command: bool,
 
     /// `true` if this command block corresponds to a startup command in an oz environment executed
-    /// in cloud mode.
+    /// in ambient-agent mode.
     is_oz_environment_startup_command: bool,
 
     /// Blocklist Env var metadata associated with this block, if any.

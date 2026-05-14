@@ -70,7 +70,7 @@ use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::{vec2f, Vector2F};
 use std::{any::Any, collections::HashMap, sync::Arc};
 use url::Url;
-use warp_core::{context_flag::ContextFlag, settings::Setting, ui::theme::color::internal_colors};
+use warp_core::{context_flag::ContextFlag, settings::Setting};
 use warpui::{
     clipboard::ClipboardContent,
     elements::{
@@ -165,7 +165,6 @@ struct DriveIndexSectionState {
     header_hover_state: MouseStateHandle,
     collapsible_hover_state: MouseStateHandle,
     create_menu_mouse_state_handle: MouseStateHandle,
-    add_teammates_mouse_state: MouseStateHandle,
     empty_trash_mouse_state: MouseStateHandle,
 }
 
@@ -183,8 +182,6 @@ struct RenderedWarpDriveItemAndChildren {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum DriveIndexSection {
     Space(Space),
-    CreateATeam,
-    JoinTeam,
 }
 
 #[derive(Debug, Clone)]
@@ -249,7 +246,6 @@ pub enum DriveIndexAction {
     },
     ClearDropTarget,
     ToggleSectionCollapsed(DriveIndexSection),
-    OpenTeamSettingsPage,
     RunObject(ObjectTypeAndId),
     OpenWorkflowModalWithNew {
         space: Space,
@@ -299,7 +295,6 @@ pub enum DriveIndexAction {
     EscapeKey,
     /// Hitting cmd+enter on a WD item toggles the context menu.
     ToggleDriveItemContextMenu,
-    SignupAnonymousUser,
     DismissPersonalObjectLimits,
     SetCurrentWorkspace(WorkspaceUid),
     AttachPlanAsContext(AIDocumentId),
@@ -338,18 +333,14 @@ impl DriveIndexAction {
     }
 
     pub fn blocked_for_anonymous_user(&self) -> bool {
-        use DriveIndexAction::*;
-        matches!(self, OpenTeamSettingsPage)
+        false
     }
 }
 
 impl From<&DriveIndexAction> for LoginGatedFeature {
     fn from(val: &DriveIndexAction) -> LoginGatedFeature {
-        use DriveIndexAction::*;
-        match val {
-            OpenTeamSettingsPage => "Open Team Settings",
-            _ => "Unknown reason",
-        }
+        let _ = val;
+        "Unknown reason"
     }
 }
 
@@ -391,7 +382,6 @@ pub enum DriveIndexEvent {
     },
     DuplicateObject(ObjectTypeAndId),
     ExportObject(ObjectTypeAndId),
-    OpenTeamSettingsPage,
     OpenImportModal {
         space: Space,
         initial_folder_id: Option<SyncId>,
@@ -414,9 +404,6 @@ struct MouseStateHandles {
     retry_button_mouse_state: MouseStateHandle,
     trash_row_mouse_state: MouseStateHandle,
     exit_trash_button_mouse_state: MouseStateHandle,
-    join_team_button_mouse_state: MouseStateHandle,
-    create_team_button_mouse_state: MouseStateHandle,
-    anonymous_sign_up_button_mouse_state: MouseStateHandle,
     anonymous_object_limit_close_button_mouse_state: MouseStateHandle,
     search_button_mouse_state: MouseStateHandle,
 }
@@ -526,7 +513,7 @@ pub fn init(app: &mut AppContext) {
 }
 
 impl DriveIndex {
-    // Called whenever cloud model or user workspaces change.
+    // Called whenever object store or user workspaces change.
     pub fn initialize_section_states(&mut self, ctx: &mut ViewContext<Self>) {
         let user_workspaces = UserWorkspaces::handle(ctx);
 
@@ -559,16 +546,16 @@ impl DriveIndex {
             dropdown.set_selected_by_index(selected_index, ctx);
         });
 
-        let cloud_model = ObjectStoreModel::handle(ctx);
+        let object_store_model = ObjectStoreModel::handle(ctx);
 
         let spaces = user_workspaces.update(ctx, |user_workspaces, ctx| {
             user_workspaces.all_user_spaces(ctx)
         });
         let num_cloud_objects_per_space = match self.index_variant {
-            DriveIndexVariant::MainIndex => cloud_model
+            DriveIndexVariant::MainIndex => object_store_model
                 .as_ref(ctx)
                 .num_active_cloud_objects_per_space(spaces.iter(), ctx),
-            DriveIndexVariant::Trash => cloud_model
+            DriveIndexVariant::Trash => object_store_model
                 .as_ref(ctx)
                 .num_trashed_cloud_objects_per_space(spaces.iter(), ctx),
         };
@@ -576,10 +563,6 @@ impl DriveIndex {
             .iter()
             .map(|space| DriveIndexSection::Space(*space))
             .collect::<Vec<_>>();
-
-        // Decentralize: 不再展示 "Create team" / "Join team" 云端协作入口。
-        // DriveIndexSection::CreateATeam / JoinTeam 的 enum variant 与 render 函数
-        // 暂留为死代码,Batch 5(Drive 云同步)统一清理。
 
         // Item UI state is attached by index, not by id, so this is re-initialized whenever there's any type of change
         let item_mouse_states = num_cloud_objects_per_space
@@ -616,7 +599,7 @@ impl DriveIndex {
         spaces.iter().for_each(|space| {
             self.sort_location(
                 StoredObjectLocation::Space(*space),
-                cloud_model.as_ref(ctx),
+                object_store_model.as_ref(ctx),
                 ObjectStoreViewModel::as_ref(ctx),
                 ctx,
             );
@@ -626,12 +609,12 @@ impl DriveIndex {
         // If an item is already focused, retrieve focused item ID then re-sort ordered_items
         // Otherwise, re-sort ordered_items to ensure it is always accurate after a ObjectStoreModel change
         if self.ordered_items.is_empty() {
-            self.compute_ordered_items(cloud_model.as_ref(ctx));
+            self.compute_ordered_items(object_store_model.as_ref(ctx));
             self.focused_index = Some(0);
         } else if let Some(focused_index) = self.focused_index {
-            self.update_focused_params(focused_index, cloud_model.as_ref(ctx));
+            self.update_focused_params(focused_index, object_store_model.as_ref(ctx));
         } else {
-            self.compute_ordered_items(cloud_model.as_ref(ctx));
+            self.compute_ordered_items(object_store_model.as_ref(ctx));
         }
     }
 
@@ -645,14 +628,14 @@ impl DriveIndex {
     fn sort_location(
         &mut self,
         location: StoredObjectLocation,
-        cloud_model: &ObjectStoreModel,
+        object_store_model: &ObjectStoreModel,
         cloud_view_model: &ObjectStoreViewModel,
         app: &AppContext,
     ) {
         let item_iter = match (self.index_variant, location) {
             (DriveIndexVariant::MainIndex, StoredObjectLocation::Space(Space::Shared)) => {
                 let user_uid = AuthStateProvider::as_ref(app).get().user_id();
-                cloud_model
+                object_store_model
                     .active_cloud_objects_in_location_without_descendents(location, app)
                     .filter(move |cloud_object| {
                         cloud_object.renders_in_warp_drive()
@@ -666,7 +649,7 @@ impl DriveIndex {
                         app,
                     ))
             }
-            (DriveIndexVariant::MainIndex, _) => cloud_model
+            (DriveIndexVariant::MainIndex, _) => object_store_model
                 .active_cloud_objects_in_location_without_descendents(location, app)
                 .filter(|cloud_object| cloud_object.renders_in_warp_drive())
                 .sorted_by(self.sorting_choice.sort_by(
@@ -674,14 +657,14 @@ impl DriveIndex {
                     UpdateTimestamp::Revision,
                     app,
                 )),
-            (DriveIndexVariant::Trash, StoredObjectLocation::Space(space)) => cloud_model
+            (DriveIndexVariant::Trash, StoredObjectLocation::Space(space)) => object_store_model
                 .directly_trashed_cloud_objects_in_space(space, app)
                 .sorted_by(self.sorting_choice.sort_by(
                     cloud_view_model,
                     UpdateTimestamp::Trashed,
                     app,
                 )),
-            (DriveIndexVariant::Trash, _) => cloud_model
+            (DriveIndexVariant::Trash, _) => object_store_model
                 .indirectly_trashed_cloud_objects_in_location_without_descendents(location, app)
                 .sorted_by(self.sorting_choice.sort_by(
                     cloud_view_model,
@@ -706,7 +689,7 @@ impl DriveIndex {
                             if folder.model().is_open {
                                 self.sort_location(
                                     StoredObjectLocation::Folder(folder.id),
-                                    cloud_model,
+                                    object_store_model,
                                     cloud_view_model,
                                     app,
                                 )
@@ -722,9 +705,9 @@ impl DriveIndex {
     }
 
     /// Recursively populates and sorts the ordered_items list used for WD keyboard navigation
-    fn sort_ordered_items(&mut self, uids: Vec<String>, cloud_model: &ObjectStoreModel) {
+    fn sort_ordered_items(&mut self, uids: Vec<String>, object_store_model: &ObjectStoreModel) {
         for uid in uids {
-            if let Some(cloud_object) = cloud_model.get_by_uid(&uid) {
+            if let Some(cloud_object) = object_store_model.get_by_uid(&uid) {
                 // Add object to the list
                 let cloud_id = cloud_object.object_type_and_id();
                 self.ordered_items.push(WarpDriveItemId::Object(cloud_id));
@@ -738,7 +721,7 @@ impl DriveIndex {
                             self.sorted_orders_by_location
                                 [&StoredObjectLocation::Folder(folder_id)]
                                 .clone(),
-                            cloud_model,
+                            object_store_model,
                         )
                     }
                 }
@@ -747,37 +730,36 @@ impl DriveIndex {
     }
 
     /// Sets the ordered_items vector used for WD keyboard navigation
-    fn compute_ordered_items(&mut self, cloud_model: &ObjectStoreModel) {
+    fn compute_ordered_items(&mut self, object_store_model: &ObjectStoreModel) {
         self.ordered_items.clear();
         for section in self.sections.clone() {
-            if let DriveIndexSection::Space(space) = section {
-                // Add space to the list
-                self.ordered_items.push(WarpDriveItemId::Space(space));
-                // If the space is not collapsed, iterate through the items in the space
-                if let Some(section_state) = self
-                    .section_states
-                    .get_mut(&DriveIndexSection::Space(space))
-                {
-                    if !section_state.collapsed {
-                        // Add AI fact collection object + MCP server collection object for personal space
-                        if matches!(space, Space::Personal) {
-                            if FeatureFlag::McpServer.is_enabled()
-                                && ContextFlag::ShowMCPServers.is_enabled()
-                            {
-                                self.ordered_items
-                                    .push(WarpDriveItemId::MCPServerCollection);
-                            }
-                            self.ordered_items.push(WarpDriveItemId::AIFactCollection);
+            let DriveIndexSection::Space(space) = section;
+            // Add space to the list
+            self.ordered_items.push(WarpDriveItemId::Space(space));
+            // If the space is not collapsed, iterate through the items in the space
+            if let Some(section_state) = self
+                .section_states
+                .get_mut(&DriveIndexSection::Space(space))
+            {
+                if !section_state.collapsed {
+                    // Add AI fact collection object + MCP server collection object for personal space
+                    if matches!(space, Space::Personal) {
+                        if FeatureFlag::McpServer.is_enabled()
+                            && ContextFlag::ShowMCPServers.is_enabled()
+                        {
+                            self.ordered_items
+                                .push(WarpDriveItemId::MCPServerCollection);
                         }
-                        // Sort and add the rest of the items in the space
-                        let Some(uids) = self
-                            .sorted_orders_by_location
-                            .get(&StoredObjectLocation::Space(space))
-                        else {
-                            return;
-                        };
-                        self.sort_ordered_items(uids.to_vec(), cloud_model);
+                        self.ordered_items.push(WarpDriveItemId::AIFactCollection);
                     }
+                    // Sort and add the rest of the items in the space
+                    let Some(uids) = self
+                        .sorted_orders_by_location
+                        .get(&StoredObjectLocation::Space(space))
+                    else {
+                        return;
+                    };
+                    self.sort_ordered_items(uids.to_vec(), object_store_model);
                 }
             }
         }
@@ -787,11 +769,15 @@ impl DriveIndex {
     }
 
     /// Updates both ordered_items and focused_index, the parameters used for WD keyboard navigation
-    fn update_focused_params(&mut self, focused_index: usize, cloud_model: &ObjectStoreModel) {
+    fn update_focused_params(
+        &mut self,
+        focused_index: usize,
+        object_store_model: &ObjectStoreModel,
+    ) {
         // Error check to make sure indexing into ordered_items will be valid
         if focused_index < self.ordered_items.len() {
             // Retrieve the focused item ID, then re-sort ordered_items
-            self.compute_ordered_items(cloud_model);
+            self.compute_ordered_items(object_store_model);
             let Some(focused_item_id) = self.ordered_items.get(focused_index) else {
                 return;
             };
@@ -806,13 +792,13 @@ impl DriveIndex {
     }
 
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
-        let cloud_model = ObjectStoreModel::handle(ctx);
-        ctx.observe(&cloud_model, Self::on_cloud_model_changed);
+        let object_store_model = ObjectStoreModel::handle(ctx);
+        ctx.observe(&object_store_model, Self::on_object_store_model_changed);
 
         let object_actions = ObjectActions::handle(ctx);
         ctx.observe(&object_actions, Self::on_object_actions_changed);
 
-        ctx.subscribe_to_model(&cloud_model, |index, _, event, ctx| {
+        ctx.subscribe_to_model(&object_store_model, |index, _, event, ctx| {
             index.handle_object_store_event(event, ctx);
         });
 
@@ -1060,13 +1046,13 @@ impl DriveIndex {
         ctx.notify();
     }
 
-    fn on_cloud_model_changed(
+    fn on_object_store_model_changed(
         &mut self,
-        cloud_model: ModelHandle<ObjectStoreModel>,
+        object_store_model: ModelHandle<ObjectStoreModel>,
         ctx: &mut ViewContext<Self>,
     ) {
         self.initialize_section_states(ctx);
-        self.num_errored_objects = cloud_model.as_ref(ctx).num_visible_errored_objects();
+        self.num_errored_objects = object_store_model.as_ref(ctx).num_visible_errored_objects();
         ctx.notify();
     }
 
@@ -1201,61 +1187,6 @@ impl DriveIndex {
         }
     }
 
-    /// Used for 1) create team 2) join discoverable teams sections
-    fn render_team_section_header(
-        &self,
-        text: String,
-        appearance: &Appearance,
-    ) -> Box<dyn Element> {
-        let icon = Container::new(
-            ConstrainedBox::new(
-                Icon::CreateTeam
-                    .to_warpui_icon(
-                        appearance
-                            .theme()
-                            .main_text_color(appearance.theme().surface_1()),
-                    )
-                    .finish(),
-            )
-            .with_width(CREATE_TEAM_ICON_WIDTH)
-            .with_height(CREATE_TEAM_ICON_HEIGHT)
-            .finish(),
-        )
-        .with_margin_right(MARGIN_BETWEEN_HEADER_AND_ICON)
-        .finish();
-
-        let title_text = Shrinkable::new(
-            1.,
-            appearance
-                .ui_builder()
-                .wrappable_text(text, true)
-                .with_style(UiComponentStyles {
-                    font_family_id: Some(appearance.ui_font_family()),
-                    font_size: Some(TEAM_SECTIONS_TITLE_FONT_SIZE),
-                    font_weight: Some(Weight::Normal),
-                    ..Default::default()
-                })
-                .build()
-                .finish(),
-        )
-        .finish();
-
-        let title_row = Flex::row()
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_child(icon)
-            .with_child(title_text)
-            .finish();
-
-        Container::new(
-            Container::new(title_row)
-                .with_margin_left(INDEX_CONTENT_MARGIN_LEFT)
-                .with_padding_right(INDEX_CONTENT_PADDING_RIGHT)
-                .finish(),
-        )
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-        .finish()
-    }
-
     fn render_space_section_header(
         &self,
         title: Box<dyn Element>,
@@ -1318,27 +1249,17 @@ impl DriveIndex {
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_child(Shrinkable::new(1., stack.finish()).finish());
 
-        // The teammates icon that redirects to the team settings page.
-        if matches!(section, DriveIndexSection::Space(Space::Team { .. })) && self.is_online(app) {
-            if let DriveIndexSection::Space(space) = section {
-                let add_teammates_button =
-                    self.render_add_teammates_button(appearance, section_state, space);
-                header_row.add_child(add_teammates_button)
-            }
-        }
-
         // The "+" icon for adding new objects.
-        if let DriveIndexSection::Space(space) = section {
-            let can_create_objects = match space {
-                Space::Personal => true,
-                Space::Team { .. } => self.is_online(app),
-                Space::Shared => false,
-            };
-            if can_create_objects {
-                let create_object_button =
-                    self.render_create_new_button(appearance, space, section_state, app);
-                header_row.add_child(create_object_button);
-            }
+        let DriveIndexSection::Space(section_space) = section;
+        let can_create_objects = match section_space {
+            Space::Personal => true,
+            Space::Team { .. } => self.is_online(app),
+            Space::Shared => false,
+        };
+        if can_create_objects {
+            let create_object_button =
+                self.render_create_new_button(appearance, section_space, section_state, app);
+            header_row.add_child(create_object_button);
         }
 
         let mut container = Container::new(
@@ -1353,16 +1274,13 @@ impl DriveIndex {
 
         // If the space is focused, set background
         let mut is_focused = false;
-        if let DriveIndexSection::Space(space) = section {
-            if let Some(focused_index) = self.focused_index {
-                if Some(&WarpDriveItemId::Space(space)) == self.ordered_items.get(focused_index) {
-                    container = container.with_background(
-                        warp_core::ui::theme::color::internal_colors::fg_overlay_4(
-                            appearance.theme(),
-                        ),
-                    );
-                    is_focused = true;
-                }
+        if let Some(focused_index) = self.focused_index {
+            if Some(&WarpDriveItemId::Space(section_space)) == self.ordered_items.get(focused_index)
+            {
+                container = container.with_background(
+                    warp_core::ui::theme::color::internal_colors::fg_overlay_4(appearance.theme()),
+                );
+                is_focused = true;
             }
         }
         Container::new(
@@ -1499,8 +1417,8 @@ impl DriveIndex {
         // Only show Empty Trash button when online, do not show for Shared space
         if self.is_online(app) && space != &Space::Shared {
             // Disable Empty Trash button if trash is empty
-            let cloud_model = ObjectStoreModel::as_ref(app);
-            if cloud_model
+            let object_store_model = ObjectStoreModel::as_ref(app);
+            if object_store_model
                 .directly_trashed_cloud_objects_in_space(*space, app)
                 .count()
                 == 0
@@ -1556,16 +1474,13 @@ impl DriveIndex {
 
         // If the space is focused, set background
         let mut is_focused = false;
-        if let DriveIndexSection::Space(space) = section {
-            if let Some(focused_index) = self.focused_index {
-                if Some(&WarpDriveItemId::Space(space)) == self.ordered_items.get(focused_index) {
-                    container = container.with_background(
-                        warp_core::ui::theme::color::internal_colors::fg_overlay_4(
-                            appearance.theme(),
-                        ),
-                    );
-                    is_focused = true;
-                }
+        let DriveIndexSection::Space(space) = section;
+        if let Some(focused_index) = self.focused_index {
+            if Some(&WarpDriveItemId::Space(space)) == self.ordered_items.get(focused_index) {
+                container = container.with_background(
+                    warp_core::ui::theme::color::internal_colors::fg_overlay_4(appearance.theme()),
+                );
+                is_focused = true;
             }
         }
 
@@ -1614,27 +1529,6 @@ impl DriveIndex {
                     app,
                 ))
             }
-            (DriveIndexVariant::MainIndex, DriveIndexSection::CreateATeam) => {
-                if self.is_online(app) {
-                    Some(self.render_team_section_header(
-                        crate::t!("drive-create-team-text"),
-                        appearance,
-                    ))
-                } else {
-                    None
-                }
-            }
-            (DriveIndexVariant::MainIndex, DriveIndexSection::JoinTeam) => {
-                if self.is_online(app) {
-                    let teammates = UserWorkspaces::handle(app)
-                        .as_ref(app)
-                        .total_teammates_in_joinable_teams();
-                    let join_teams_text = crate::t!("drive-join-team-header", count = teammates);
-                    Some(self.render_team_section_header(join_teams_text, appearance))
-                } else {
-                    None
-                }
-            }
             (DriveIndexVariant::Trash, DriveIndexSection::Space(space)) => {
                 let title_font_color = self
                     .font_color_based_on_focused_state(appearance, WarpDriveItemId::Space(space));
@@ -1647,8 +1541,6 @@ impl DriveIndex {
                     app,
                 ))
             }
-            (DriveIndexVariant::Trash, DriveIndexSection::CreateATeam) => None,
-            (DriveIndexVariant::Trash, DriveIndexSection::JoinTeam) => None,
         };
 
         if let Some(header) = rendered_header {
@@ -1861,7 +1753,7 @@ impl DriveIndex {
     fn render_space_items(
         &self,
         space: Space,
-        cloud_model: &ObjectStoreModel,
+        object_store_model: &ObjectStoreModel,
         item_mouse_states: &Vec<ItemStates>,
         active_hover_preview: bool,
         appearance: &Appearance,
@@ -1880,7 +1772,7 @@ impl DriveIndex {
                     DriveIndexVariant::MainIndex => {
                         let user_uid = AuthStateProvider::as_ref(app).get().user_id();
                         let is_shared_space = space == Space::Shared;
-                        cloud_model
+                        object_store_model
                             .active_cloud_objects_in_location_without_descendents(
                                 StoredObjectLocation::Space(space),
                                 app,
@@ -1897,7 +1789,7 @@ impl DriveIndex {
                                 app,
                             ))
                     }
-                    DriveIndexVariant::Trash => cloud_model
+                    DriveIndexVariant::Trash => object_store_model
                         .directly_trashed_cloud_objects_in_space(space, app)
                         .sorted_by(self.sorting_choice.sort_by(
                             cloud_view_model,
@@ -1911,7 +1803,7 @@ impl DriveIndex {
 
         let item_iter = results
             .into_iter()
-            .filter_map(|uid| cloud_model.get_by_uid(&uid));
+            .filter_map(|uid| object_store_model.get_by_uid(&uid));
 
         for object in item_iter {
             if let Some(item_and_children) = self.render_item_and_children(
@@ -1921,7 +1813,7 @@ impl DriveIndex {
                 space_idx,
                 0,
                 active_hover_preview,
-                cloud_model,
+                object_store_model,
                 appearance,
                 app,
             ) {
@@ -2041,166 +1933,16 @@ impl DriveIndex {
             .finish()
     }
 
-    fn render_create_team_section(
-        &self,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let button_text = crate::t!("drive-create-team-button");
-        let create_button = if UserWorkspaces::as_ref(app).total_teammates_in_joinable_teams() == 0
-        {
-            appearance
-                .ui_builder()
-                .button(
-                    ButtonVariant::Accent,
-                    self.mouse_state_handles
-                        .create_team_button_mouse_state
-                        .clone(),
-                )
-                .with_style(UiComponentStyles {
-                    font_color: Some(
-                        appearance
-                            .theme()
-                            .main_text_color(appearance.theme().accent())
-                            .into_solid(),
-                    ),
-                    font_weight: Some(Weight::Medium),
-                    height: Some(38.),
-                    font_size: Some(14.),
-                    ..Default::default()
-                })
-                .with_centered_text_label(button_text)
-                .build()
-                .with_cursor(Cursor::PointingHand)
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(DriveIndexAction::OpenTeamSettingsPage)
-                })
-                .finish()
-        } else {
-            appearance
-                .ui_builder()
-                .button(
-                    ButtonVariant::Secondary,
-                    self.mouse_state_handles
-                        .create_team_button_mouse_state
-                        .clone(),
-                )
-                .with_style(UiComponentStyles {
-                    font_weight: Some(Weight::Medium),
-                    height: Some(38.),
-                    font_size: Some(14.),
-                    ..Default::default()
-                })
-                .with_centered_text_label(button_text)
-                .build()
-                .with_cursor(Cursor::PointingHand)
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(DriveIndexAction::OpenTeamSettingsPage)
-                })
-                .finish()
-        };
-
-        Container::new(create_button)
-            .with_margin_top(16.)
-            .with_margin_left(INDEX_CONTENT_MARGIN_LEFT)
-            .with_margin_right(INDEX_CONTENT_MARGIN_LEFT)
-            .with_margin_bottom(20.)
-            .finish()
-    }
-
-    fn render_join_discoverable_team_section(
-        &self,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let text = crate::t!(
-            "drive-view-teams-to-join",
-            count = UserWorkspaces::as_ref(app).num_joinable_teams()
-        );
-
-        let join_button = Container::new(
-            appearance
-                .ui_builder()
-                .button(
-                    ButtonVariant::Accent,
-                    self.mouse_state_handles
-                        .join_team_button_mouse_state
-                        .clone(),
-                )
-                .with_style(UiComponentStyles {
-                    font_color: Some(
-                        appearance
-                            .theme()
-                            .main_text_color(appearance.theme().accent())
-                            .into_solid(),
-                    ),
-                    font_weight: Some(Weight::Medium),
-                    height: Some(38.),
-                    font_size: Some(14.),
-                    ..Default::default()
-                })
-                .with_centered_text_label(text)
-                .build()
-                .with_cursor(Cursor::PointingHand)
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(DriveIndexAction::OpenTeamSettingsPage)
-                })
-                .finish(),
-        )
-        .with_margin_top(16.)
-        .finish();
-
-        let or_text = Container::new(
-            Text::new_inline(
-                crate::t!("drive-or"),
-                appearance.ui_font_family(),
-                ITEM_FONT_SIZE,
-            )
-            .with_color(appearance.theme().nonactive_ui_text_color().into())
-            .with_style(Properties::default().weight(Weight::Medium))
-            .finish(),
-        )
-        .with_margin_top(14.)
-        .finish();
-
-        let or_row = Flex::row()
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_main_axis_alignment(MainAxisAlignment::Center)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(or_text)
-            .finish();
-
-        Container::new(Flex::column().with_children([join_button, or_row]).finish())
-            .with_margin_left(INDEX_CONTENT_MARGIN_LEFT)
-            .with_margin_right(INDEX_CONTENT_MARGIN_LEFT)
-            .finish()
-    }
-
     /// Renders the given space header as well as all the included items
     #[allow(clippy::unwrap_in_result)]
     fn render_section(
         &self,
         section: DriveIndexSection,
         appearance: &Appearance,
-        cloud_model: &ObjectStoreModel,
+        object_store_model: &ObjectStoreModel,
         app: &AppContext,
     ) -> Option<impl Iterator<Item = Box<dyn Element>>> {
         let mut rendered_space = vec![];
-
-        // Do not render "Create team" or "Join team" sections in the trash index
-        if (matches!(section, DriveIndexSection::CreateATeam)
-            || matches!(section, DriveIndexSection::JoinTeam))
-            && matches!(self.index_variant, DriveIndexVariant::Trash)
-        {
-            return None;
-        }
-
-        // Do not render "Join team" sections for anonymous users
-        if matches!(section, DriveIndexSection::JoinTeam)
-            && self.auth_state.is_anonymous_or_logged_out()
-        {
-            return None;
-        }
 
         if let Some(section_state) = self.section_states.get(&section) {
             rendered_space.push(self.render_section_header(
@@ -2249,7 +1991,7 @@ impl DriveIndex {
                                 .map(|item_mouse_states| {
                                     let space_items = self.render_space_items(
                                         space,
-                                        cloud_model,
+                                        object_store_model,
                                         item_mouse_states,
                                         active_hover_preview,
                                         appearance,
@@ -2271,17 +2013,6 @@ impl DriveIndex {
                                 })
                                 .unwrap_or_default(),
                         );
-                    }
-                    DriveIndexSection::CreateATeam => {
-                        if self.is_online(app) {
-                            rendered_space.push(self.render_create_team_section(appearance, app));
-                        }
-                    }
-                    DriveIndexSection::JoinTeam => {
-                        if self.is_online(app) {
-                            rendered_space
-                                .push(self.render_join_discoverable_team_section(appearance, app));
-                        }
                     }
                 }
             }
@@ -2339,7 +2070,7 @@ impl DriveIndex {
 
     fn render_all_sections(&self, app: &AppContext) -> impl Iterator<Item = Box<dyn Element>> {
         let appearance = Appearance::as_ref(app);
-        let cloud_model = ObjectStoreModel::as_ref(app);
+        let object_store_model = ObjectStoreModel::as_ref(app);
 
         let mut sections = vec![];
 
@@ -2349,23 +2080,21 @@ impl DriveIndex {
 
         for section in self.sections.iter() {
             // items_in_space includes the header of the space as well as all the untrashed cloud objects.
-            let rendered_section = self.render_section(*section, appearance, cloud_model, app);
+            let rendered_section =
+                self.render_section(*section, appearance, object_store_model, app);
             if let Some(rendered_section) = rendered_section {
                 let mut section_content =
                     Container::new(Flex::column().with_children(rendered_section).finish());
                 // All spaces should be separated by some padding
                 section_content = section_content.with_padding_bottom(PADDING_BETWEEN_SPACES);
 
-                if let DriveIndexSection::Space(space) = section {
-                    let location = StoredObjectLocation::Space(*space);
-                    sections.push(self.render_as_drop_target(
-                        section_content.finish(),
-                        location,
-                        appearance,
-                    ));
-                } else {
-                    sections.push(section_content.finish())
-                }
+                let DriveIndexSection::Space(space) = section;
+                let location = StoredObjectLocation::Space(*space);
+                sections.push(self.render_as_drop_target(
+                    section_content.finish(),
+                    location,
+                    appearance,
+                ));
             }
         }
 
@@ -2565,7 +2294,7 @@ impl DriveIndex {
         space_index: usize,
         folder_depth: usize,
         active_hover_preview: bool,
-        cloud_model: &ObjectStoreModel,
+        object_store_model: &ObjectStoreModel,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Option<RenderedWarpDriveItemAndChildren> {
@@ -2667,7 +2396,7 @@ impl DriveIndex {
                     .unwrap_or_else(|| {
                         let cloud_view_model = ObjectStoreViewModel::as_ref(app);
                         match self.index_variant {
-                            DriveIndexVariant::MainIndex => cloud_model
+                            DriveIndexVariant::MainIndex => object_store_model
                                 .active_cloud_objects_in_location_without_descendents(
                                     StoredObjectLocation::Folder(folder.id),
                                     app,
@@ -2677,7 +2406,7 @@ impl DriveIndex {
                                     UpdateTimestamp::Revision,
                                     app,
                                 )),
-                            DriveIndexVariant::Trash => cloud_model
+                            DriveIndexVariant::Trash => object_store_model
                                 .indirectly_trashed_cloud_objects_in_location_without_descendents(
                                     StoredObjectLocation::Folder(folder.id),
                                     app,
@@ -2694,7 +2423,7 @@ impl DriveIndex {
 
                 let item_iter = results
                     .into_iter()
-                    .filter_map(|uid| cloud_model.get_by_uid(&uid));
+                    .filter_map(|uid| object_store_model.get_by_uid(&uid));
 
                 item_iter.for_each(|object| {
                     // TODO: Remove this check once we change our permissions logic. This is a temporary
@@ -2709,7 +2438,7 @@ impl DriveIndex {
                             space_index + total_rows_for_item,
                             folder_depth + 1,
                             active_hover_preview,
-                            cloud_model,
+                            object_store_model,
                             appearance,
                             app,
                         ) {
@@ -2820,20 +2549,18 @@ impl DriveIndex {
         } else {
             Icon::ListOpen
         };
-        let icon_color = match section {
-            DriveIndexSection::Space(space) => {
-                // Set icon color contrast correctly if a space is focused
-                if self.focused_index.is_some()
-                    && self.ordered_items.get(self.focused_index.unwrap())
-                        == Some(&WarpDriveItemId::Space(space))
-                {
-                    blended_colors::text_main(appearance.theme(), appearance.theme().background())
-                        .into()
-                } else {
-                    appearance.theme().foreground()
-                }
+        let DriveIndexSection::Space(space) = section;
+        let icon_color = {
+            // Set icon color contrast correctly if a space is focused
+            if self.focused_index.is_some()
+                && self.ordered_items.get(self.focused_index.unwrap())
+                    == Some(&WarpDriveItemId::Space(space))
+            {
+                blended_colors::text_main(appearance.theme(), appearance.theme().background())
+                    .into()
+            } else {
+                appearance.theme().foreground()
             }
-            _ => appearance.theme().foreground(),
         };
 
         // This icon should render the same as other WarpDrive icons but with no click or hover states.
@@ -2984,48 +2711,6 @@ impl DriveIndex {
             .finish()
     }
 
-    fn render_add_teammates_button(
-        &self,
-        appearance: &Appearance,
-        state: &DriveIndexSectionState,
-        space: Space,
-    ) -> Box<dyn warpui::Element> {
-        let mut button = icon_button(
-            appearance,
-            Icon::AddTeammates,
-            false,
-            state.add_teammates_mouse_state.clone(),
-        );
-        // Set color contrast correctly when focused
-        if self.focused_index.is_some()
-            && self.ordered_items.get(self.focused_index.unwrap())
-                == Some(&WarpDriveItemId::Space(space))
-        {
-            button = highlight(button, appearance)
-        };
-
-        // Override hover background to surface_1 for better visibility on section header
-        button = button.with_hovered_styles(
-            UiComponentStyles::default()
-                .set_background(appearance.theme().surface_1().into())
-                .set_border_color(appearance.theme().surface_3().into()),
-        );
-
-        Container::new(
-            Align::new(
-                button
-                    .build()
-                    .on_click(move |ctx, _, _| {
-                        ctx.dispatch_typed_action(DriveIndexAction::OpenTeamSettingsPage)
-                    })
-                    .finish(),
-            )
-            .finish(),
-        )
-        .with_margin_right(2.) // These icons at the end of a row are spaced apart with 2 pixels between them
-        .finish()
-    }
-
     fn font_color_based_on_focused_state(
         &self,
         appearance: &Appearance,
@@ -3059,9 +2744,8 @@ impl DriveIndex {
 
     fn refocus_section_index(&mut self, section: &DriveIndexSection, ctx: &mut ViewContext<Self>) {
         if self.focused_index.is_some() {
-            if let DriveIndexSection::Space(space) = *section {
-                self.set_focused_item(WarpDriveItemId::Space(space), true, ctx);
-            }
+            let DriveIndexSection::Space(space) = *section;
+            self.set_focused_item(WarpDriveItemId::Space(space), true, ctx);
             // Need to re-render focused index in Warp Drive after a space has been toggled
             if let Some(focused_index) = self.focused_index {
                 self.update_focused_params(focused_index, ObjectStoreModel::as_ref(ctx));
@@ -3112,16 +2796,16 @@ impl DriveIndex {
             return;
         }
 
-        let cloud_model = ObjectStoreModel::handle(ctx);
+        let object_store_model = ObjectStoreModel::handle(ctx);
 
         // Only proceed if we can move the object to this location AND the operation results in a change.
         // Even though an object technically can be moved to its current location (can_move_object_to_location returns true)
         // we do not need to do any of the update logic that follows.
-        if !cloud_model.as_ref(ctx).can_move_object_to_location(
+        if !object_store_model.as_ref(ctx).can_move_object_to_location(
             &object_type_and_id.uid(),
             new_location,
             ctx,
-        ) || cloud_model
+        ) || object_store_model
             .as_ref(ctx)
             .object_location(&object_type_and_id.uid(), ctx)
             .is_none_or(|location| location == new_location)
@@ -3169,8 +2853,8 @@ impl DriveIndex {
         match new_location {
             StoredObjectLocation::Space(space) => self.open_section_of_space(space),
             StoredObjectLocation::Folder(folder_id) => {
-                cloud_model.update(ctx, |cloud_model, ctx| {
-                    cloud_model.open_folder(folder_id, ctx);
+                object_store_model.update(ctx, |object_store_model, ctx| {
+                    object_store_model.open_folder(folder_id, ctx);
                 });
             }
             // If location is the trash, then the above move_[object]_to_location call already trashed the object
@@ -3387,11 +3071,11 @@ impl DriveIndex {
                             }
                         }
                         ObjectTypeAndId::Folder(folder_id) => {
-                            let cloud_model = ObjectStoreModel::handle(ctx);
+                            let object_store_model = ObjectStoreModel::handle(ctx);
 
                             // When untrashing a folder, check to see if there are any notebooks or workflows
                             // in the trashed folder and make sure they are within limits.
-                            let trashed_object_types = cloud_model
+                            let trashed_object_types = object_store_model
                                 .as_ref(ctx)
                                 .trashed_cloud_object_types_in_location_with_descendants(
                                     StoredObjectLocation::Folder(*folder_id),
@@ -3772,7 +3456,7 @@ impl DriveIndex {
             .with_child(close_icon_button)
             .finish();
 
-        let personal_object_limit_description = crate::t!("drive-sign-up-storage-limit");
+        let personal_object_limit_description = crate::t!("drive-local-storage-limit-description");
 
         let body_text = appearance
             .ui_builder()
@@ -3824,50 +3508,6 @@ impl DriveIndex {
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
         .finish();
 
-        let button_styles = UiComponentStyles {
-            font_size: Some(14.),
-            font_family_id: Some(appearance.ui_font_family()),
-            font_color: Some(
-                appearance
-                    .theme()
-                    .main_text_color(appearance.theme().accent())
-                    .into(),
-            ),
-            font_weight: Some(Weight::Bold),
-            padding: Some(Coords {
-                top: 8.,
-                bottom: 8.,
-                left: 64.,
-                right: 64.,
-            }),
-            border_color: Some(appearance.theme().outline().into()),
-            background: Some(appearance.theme().accent().into()),
-            ..Default::default()
-        };
-
-        let hovered_and_clicked_styles = UiComponentStyles {
-            background: Some(internal_colors::accent_bg_strong(appearance.theme()).into()),
-            ..button_styles
-        };
-
-        let button = appearance
-            .ui_builder()
-            .button(
-                ButtonVariant::Basic,
-                self.mouse_state_handles
-                    .anonymous_sign_up_button_mouse_state
-                    .clone(),
-            )
-            .with_style(button_styles)
-            .with_hovered_styles(hovered_and_clicked_styles)
-            .with_active_styles(hovered_and_clicked_styles)
-            .with_centered_text_label(crate::t!("drive-sign-up"))
-            .build()
-            // 去中心化分支:Sign up 按钮 dispatch 已删除。
-            .on_click(|_ctx, _, _| {})
-            .with_cursor(Cursor::PointingHand)
-            .finish();
-
         Some(
             ConstrainedBox::new(
                 Container::new(
@@ -3882,7 +3522,6 @@ impl DriveIndex {
                                 .finish(),
                         )
                         .with_child(usage_section)
-                        .with_child(Container::new(button).with_margin_top(12.).finish())
                         .finish(),
                 )
                 .with_background(background_color)
@@ -4387,24 +4026,21 @@ impl DriveIndex {
                             || access_level.can_move_drive())
                     {
                         menu_items.extend(self.sections.iter().filter_map(|section| {
-                            if let DriveIndexSection::Space(space) = section {
-                                match space {
-                                    Space::Personal | Space::Shared => None,
-                                    Space::Team { .. } => Some(
-                                        MenuItemFields::new(crate::t!(
-                                            "drive-move-to-space",
-                                            space = space.name(app)
-                                        ))
-                                        .with_on_select_action(DriveIndexAction::MoveObject {
-                                            object_type_and_id: *object_type_and_id,
-                                            new_space: *space,
-                                        })
-                                        .with_icon(Icon::Move)
-                                        .into_item(),
-                                    ),
-                                }
-                            } else {
-                                None
+                            let DriveIndexSection::Space(space) = section;
+                            match space {
+                                Space::Personal | Space::Shared => None,
+                                Space::Team { .. } => Some(
+                                    MenuItemFields::new(crate::t!(
+                                        "drive-move-to-space",
+                                        space = space.name(app)
+                                    ))
+                                    .with_on_select_action(DriveIndexAction::MoveObject {
+                                        object_type_and_id: *object_type_and_id,
+                                        new_space: *space,
+                                    })
+                                    .with_icon(Icon::Move)
+                                    .into_item(),
+                                ),
                             }
                         }));
                     }
@@ -4530,8 +4166,8 @@ impl DriveIndex {
 
         let access_level =
             ObjectStoreViewModel::as_ref(app).access_level(&object_type_and_id.uid(), app);
-        let cloud_model = ObjectStoreModel::as_ref(app);
-        let object = cloud_model.get_by_uid(&object_type_and_id.uid());
+        let object_store_model = ObjectStoreModel::as_ref(app);
+        let object = object_store_model.get_by_uid(&object_type_and_id.uid());
 
         if let Some(object) = object {
             if self.is_online(app) && object.metadata().is_errored() {
@@ -4702,13 +4338,19 @@ impl DriveIndex {
                         }
                     }
                     ObjectTypeAndId::Folder(id) => {
-                        ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| match key {
-                            DriveIndexAction::EnterKey => {
-                                cloud_model.toggle_folder_open(*id, ctx);
+                        ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, ctx| {
+                            match key {
+                                DriveIndexAction::EnterKey => {
+                                    object_store_model.toggle_folder_open(*id, ctx);
+                                }
+                                DriveIndexAction::LeftArrowKey => {
+                                    object_store_model.close_folder(*id, ctx)
+                                }
+                                DriveIndexAction::RightArrowKey => {
+                                    object_store_model.open_folder(*id, ctx)
+                                }
+                                _ => {}
                             }
-                            DriveIndexAction::LeftArrowKey => cloud_model.close_folder(*id, ctx),
-                            DriveIndexAction::RightArrowKey => cloud_model.open_folder(*id, ctx),
-                            _ => {}
                         });
                     }
                     ObjectTypeAndId::GenericStringObject { object_type, id: _ } => {
@@ -4985,8 +4627,8 @@ impl TypedActionView for DriveIndex {
                     })
                     .unwrap_or_else(|| OperatingSystem::get().default_shell_family());
 
-                let cloud_model = ObjectStoreModel::as_ref(ctx);
-                let object = cloud_model.get_by_uid(&object_type_and_id.uid());
+                let object_store_model = ObjectStoreModel::as_ref(ctx);
+                let object = object_store_model.get_by_uid(&object_type_and_id.uid());
 
                 if let Some(object) = object {
                     match object.object_type() {
@@ -5130,9 +4772,6 @@ impl TypedActionView for DriveIndex {
             DriveIndexAction::ToggleSectionCollapsed(section) => {
                 self.toggle_section_collapse(section, ctx);
             }
-            DriveIndexAction::OpenTeamSettingsPage => {
-                ctx.emit(DriveIndexEvent::OpenTeamSettingsPage);
-            }
             DriveIndexAction::RunObject(id) => {
                 if !matches!(self.index_variant, DriveIndexVariant::Trash) {
                     ctx.emit(DriveIndexEvent::RunObject(*id));
@@ -5159,13 +4798,13 @@ impl TypedActionView for DriveIndex {
                         ctx,
                     );
                 }
-                ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
-                    cloud_model.toggle_folder_open(*id, ctx);
+                ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, ctx| {
+                    object_store_model.toggle_folder_open(*id, ctx);
                 });
             }
             DriveIndexAction::CollapseAllInLocation(location) => {
-                ObjectStoreModel::handle(ctx).update(ctx, |cloud_model, ctx| {
-                    cloud_model.collapse_all_in_location(*location, self.index_variant, ctx);
+                ObjectStoreModel::handle(ctx).update(ctx, |object_store_model, ctx| {
+                    object_store_model.collapse_all_in_location(*location, self.index_variant, ctx);
                 });
             }
             DriveIndexAction::TrashObject { object_type_and_id } => {
@@ -5278,8 +4917,6 @@ impl TypedActionView for DriveIndex {
             DriveIndexAction::InvokeEnvVarCollectionInSubshell(id) => {
                 ctx.emit(DriveIndexEvent::InvokeEnvVarCollectionInSubshell(*id))
             }
-            // 去中心化分支:`DriveIndexAction::SignupAnonymousUser` 已 noop。
-            DriveIndexAction::SignupAnonymousUser => {}
             DriveIndexAction::DismissPersonalObjectLimits => {
                 self.dismiss_personal_object_limit_status(ctx);
             }

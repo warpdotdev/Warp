@@ -1,4 +1,3 @@
-pub mod cloud_action_confirmation_dialog;
 mod cloud_object_naming_dialog;
 pub mod cloud_object_styling;
 pub mod drive_helpers;
@@ -288,7 +287,7 @@ impl DriveSortOrder {
     /// type Iterator<Item = &'_ dyn StoredObject>)
     pub fn sort_by<'a>(
         &self,
-        cloud_model: &'a ObjectStoreViewModel,
+        object_store_model: &'a ObjectStoreViewModel,
         update_timestamp: UpdateTimestamp,
         app: &'a AppContext,
     ) -> Box<SortByComparator<'a>> {
@@ -296,9 +295,13 @@ impl DriveSortOrder {
             // Sorts newly-created objects to be at the top of the list
             Self::ByTimestamp => Box::new(
                 move |a: &&dyn StoredObject, b: &&dyn StoredObject| -> Ordering {
-                    cloud_model
+                    object_store_model
                         .object_sorting_timestamp(*a, update_timestamp, app)
-                        .cmp(&cloud_model.object_sorting_timestamp(*b, update_timestamp, app))
+                        .cmp(&object_store_model.object_sorting_timestamp(
+                            *b,
+                            update_timestamp,
+                            app,
+                        ))
                         .reverse()
                 },
             ),

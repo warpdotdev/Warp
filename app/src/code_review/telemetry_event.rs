@@ -1,6 +1,6 @@
+use crate::code_review::diff_state::DiffMode;
 use crate::server::telemetry::CLIAgentType;
 use crate::view_components::find::FindDirection;
-use crate::code_review::diff_state::DiffMode;
 use serde::Serialize;
 use serde_with::SerializeDisplay;
 use std::fmt::Display;

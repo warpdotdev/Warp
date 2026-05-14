@@ -41,7 +41,7 @@ pub fn validate_agent_mode_base_model_id(
     }
 }
 
-/// Resolve the owner of a new cloud object. This resolution is based on the CLI `--team` and `--personal` flags.
+/// Resolve the owner of a new object. This resolution is based on the CLI `--team` and `--personal` flags.
 ///
 /// If `team_flag` is true, attempts to get the current team UID (errors if not on a team).
 /// If `user_flag` is true, gets the current user's UID.
@@ -77,8 +77,7 @@ pub fn resolve_owner(team_flag: bool, user_flag: bool, ctx: &AppContext) -> anyh
 
 /// Refresh workspace metadata before executing an operation.
 ///
-/// This ensures that team state is up-to-date before creating cloud objects or performing
-/// other operations that depend on team membership.
+/// This keeps workspace state fresh before operations that depend on team membership.
 pub fn refresh_workspace_metadata<C>(
     _ctx: &mut C,
 ) -> impl Future<Output = anyhow::Result<()>> + Send + 'static {

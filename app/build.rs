@@ -7,7 +7,7 @@ use cfg_aliases::cfg_aliases;
 
 use anyhow::Result;
 use sha2::Digest;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::{env, fs, process::Command};
 use walkdir::WalkDir;
 use warp_util::assets::{
@@ -34,7 +34,6 @@ fn main() -> Result<()> {
     if target_os == "macos" && target_family != "wasm" {
         println!("cargo:rustc-link-lib=framework=MetalKit");
         println!("cargo:rustc-link-lib=framework=UserNotifications");
-        build_and_link_sentry();
 
         println!("cargo:rerun-if-changed=src/platform/mac/objc/app_bundle.h");
         println!("cargo:rerun-if-changed=src/platform/mac/objc/app_bundle.m");
@@ -237,130 +236,6 @@ fn add_features(target_family: &str, target_os: &str) {
     if env::var("PROFILE").ok().is_some_and(|val| val == "debug") {
         println!("cargo:rustc-cfg=feature=\"agent_mode_debug\"");
     }
-}
-
-fn build_and_link_sentry() {
-    // Ensure we re-run the build script if the target framework directory changes.
-    println!("cargo:rerun-if-env-changed=FRAMEWORK_OVERRIDE");
-
-    // If the cocoa_sentry feature is not enabled, there's nothing more to do here.
-    if env::var("CARGO_FEATURE_COCOA_SENTRY").is_err() {
-        return;
-    }
-
-    // Download/update the Sentry framework.
-    let dir_name = env::var("FRAMEWORK_OVERRIDE").unwrap_or_else(|_| "default".to_string());
-    let frameworks_dir = format!("frameworks/{dir_name}");
-    let standalone = env::var("CARGO_FEATURE_STANDALONE").is_ok();
-    download_sentry_framework(&frameworks_dir, &dir_name, standalone);
-
-    let sentry_dir = if standalone {
-        "Sentry.xcframework"
-    } else {
-        "Sentry-Dynamic-WithARM64e.xcframework"
-    };
-    let sentry_framework_path = format!("{frameworks_dir}/{sentry_dir}/macos-arm64_arm64e_x86_64");
-
-    // Make sure we re-run the build script if the framework directory changes (e.g.: it gets
-    // deleted).
-    println!("cargo:rerun-if-changed={sentry_framework_path}");
-
-    // Link the Sentry framework, and compile our objc logic that interfaces with it.
-    println!("cargo:rustc-link-search=framework=app/{sentry_framework_path}");
-    println!("cargo:rustc-link-lib=framework=Sentry");
-
-    // If building standalone, we need to copy some flags from the Sentry build that the static library requires.
-    if standalone {
-        println!("cargo:rustc-link-lib=c++");
-        let swift_library_path = get_xcode_toolchain().join("usr/lib/swift/macosx");
-        println!(
-            "cargo:rustc-link-search=all={}",
-            swift_library_path.display()
-        );
-    }
-
-    compile_sentry_objc_lib(&sentry_framework_path);
-}
-
-fn download_sentry_framework(frameworks_dir: &str, dir_name: &str, standalone: bool) {
-    // Build absolute path to the script from workspace root.
-    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let workspace_root = manifest_dir.parent().unwrap();
-    let script_path = workspace_root.join("script/macos/update_sentry_cocoa");
-
-    let cocoa_sentry_version = match dir_name {
-        "default" | "dev" => "9.4.1",
-        name => panic!("Invalid framework override: {name}"),
-    };
-
-    let mut cmd = Command::new(&script_path);
-    cmd.current_dir(workspace_root)
-        .arg("--dir")
-        .arg(format!("app/{frameworks_dir}"))
-        .arg("--version")
-        .arg(cocoa_sentry_version);
-
-    if standalone {
-        cmd.arg("--static");
-    }
-
-    let output = cmd
-        .output()
-        .expect("Failed to run update_sentry_cocoa script");
-    if !output.status.success() {
-        panic!(
-            "Failed to download/update Sentry frameworks:\n--- stdout\n{}\n--- stderr\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-}
-
-fn compile_sentry_objc_lib(sentry_framework_path: &str) {
-    println!("cargo:rerun-if-changed=src/platform/mac/objc/crash_reporting.h");
-    println!("cargo:rerun-if-changed=src/platform/mac/objc/crash_reporting.m");
-
-    // We need to tell `Clang` to build with a specific framework path. This is represented within
-    // Clang by the `-F` flag, which is not supported directly in the `cc::Build` API, so we
-    // directly pass the flag and its value instead.
-    cc::Build::new()
-        .file("src/platform/mac/objc/crash_reporting.m")
-        .flag(format!("-F{sentry_framework_path}").as_str())
-        .compile("warp_sentry_objc");
-}
-
-#[cfg(unix)]
-fn get_xcode_toolchain() -> PathBuf {
-    use std::ffi::OsString;
-    use std::os::unix::ffi::OsStringExt;
-
-    let mut output = Command::new("xcode-select")
-        .arg("-p")
-        .output()
-        .expect("Could not run xcode-select");
-    if !output.status.success() {
-        panic!(
-            "`xcode-select -p` failed:\n\n--- stdout\n{}\n\n--- stderr\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    // Trim trailing whitespace.
-    while output
-        .stdout
-        .last()
-        .is_some_and(|b| b.is_ascii_whitespace())
-    {
-        output.stdout.pop();
-    }
-
-    PathBuf::from(OsString::from_vec(output.stdout)).join("Toolchains/XcodeDefault.xctoolchain")
-}
-
-#[cfg(not(unix))]
-fn get_xcode_toolchain() -> PathBuf {
-    panic!("get_xcode_toolchain is only supported on macOS")
 }
 
 fn copy_async_assets() {

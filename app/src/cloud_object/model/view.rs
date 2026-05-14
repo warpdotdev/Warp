@@ -98,8 +98,8 @@ impl ObjectStoreViewModel {
     /// when it's not needed. For more info see:
     /// https://docs.google.com/document/d/1KgDFLApPg1uDVP-vOwhZzL1kRIviS8mMECIZg2VCKLY/edit
     pub fn object_current_editor(&self, uid: &ObjectUid, ctx: &AppContext) -> Option<Editor> {
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
-        let object = cloud_model.get_by_uid(uid)?;
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
+        let object = object_store_model.get_by_uid(uid)?;
 
         match &object.metadata().current_editor_uid {
             Some(uid) => {
@@ -272,7 +272,7 @@ impl ObjectStoreViewModel {
     fn sorting_timestamp_rec(
         &self,
         object: &dyn StoredObject,
-        cloud_model: &ObjectStoreModel,
+        object_store_model: &ObjectStoreModel,
         app: &AppContext,
     ) -> Option<ServerTimestamp> {
         let folder: Option<&FolderObject> = object.into();
@@ -287,14 +287,16 @@ impl ObjectStoreViewModel {
                 .ok()
                 .and_then(|cache| cache.get(&folder.id).cloned())
                 .or_else(|| {
-                    let max_child_timestamp = cloud_model
+                    let max_child_timestamp = object_store_model
                         .active_cloud_objects_in_location_without_descendents(
                             StoredObjectLocation::Folder(folder.id),
                             app,
                         )
                         // TODO(ben): This check won't be needed soon.
                         .filter(|child| child.permissions().owner == folder.permissions().owner)
-                        .filter_map(|child| self.sorting_timestamp_rec(child, cloud_model, app))
+                        .filter_map(|child| {
+                            self.sorting_timestamp_rec(child, object_store_model, app)
+                        })
                         .max();
                     // The `Ord` implementation of `Option` always considers `None` less than
                     // `Some`.
@@ -337,12 +339,12 @@ impl ObjectStoreViewModel {
                 // Both the old parent and the new parent need to be invalidated, since this object
                 // could affect the sort timestamp of both. Even if the moved object were a folder,
                 // its own sort timestamp isn't affected.
-                let cloud_model = ObjectStoreModel::as_ref(ctx);
+                let object_store_model = ObjectStoreModel::as_ref(ctx);
                 let old_parent_changed = from_folder.is_some_and(|folder_id| {
-                    self.invalidate_folder_timestamps(&folder_id, cloud_model)
+                    self.invalidate_folder_timestamps(&folder_id, object_store_model)
                 });
                 let new_parent_changed = to_folder.is_some_and(|folder_id| {
-                    self.invalidate_folder_timestamps(&folder_id, cloud_model)
+                    self.invalidate_folder_timestamps(&folder_id, object_store_model)
                 });
                 if old_parent_changed || new_parent_changed {
                     ctx.emit(ObjectStoreViewModelEvent::SortTimestampsChanged);
@@ -390,12 +392,15 @@ impl ObjectStoreViewModel {
             return;
         }
 
-        let cloud_model = ObjectStoreModel::as_ref(ctx);
+        let object_store_model = ObjectStoreModel::as_ref(ctx);
         if let ObjectOperation::Create { .. } = result.operation {
             // If a folder was created, remove the cache entry tied to its client ID.
             // TODO @ianhodge: Update the way we do this check once we remove the generic
             let server_id = &result.server_id.expect("Expect server id on success");
-            if cloud_model.get_folder_by_uid(&server_id.uid()).is_some() {
+            if object_store_model
+                .get_folder_by_uid(&server_id.uid())
+                .is_some()
+            {
                 if let Some(client_id) = result.client_id {
                     let sync_id = SyncId::ClientId(client_id);
                     self.folder_timestamp_cache.borrow_mut().remove(&sync_id);
@@ -404,11 +409,11 @@ impl ObjectStoreViewModel {
 
             // For any new object, we need to recalculate its ancestors' timestamp with their
             // new child.
-            if let Some(parent_id) = cloud_model
+            if let Some(parent_id) = object_store_model
                 .get_by_uid(&server_id.uid())
                 .and_then(|object| object.metadata().folder_id)
             {
-                if self.invalidate_folder_timestamps(&parent_id, cloud_model) {
+                if self.invalidate_folder_timestamps(&parent_id, object_store_model) {
                     ctx.emit(ObjectStoreViewModelEvent::SortTimestampsChanged);
                 }
             }
@@ -419,17 +424,17 @@ impl ObjectStoreViewModel {
     fn invalidate_object_timestamps(
         &mut self,
         uid: &ObjectUid,
-        cloud_model: &ObjectStoreModel,
+        object_store_model: &ObjectStoreModel,
     ) -> bool {
-        let Some(object) = cloud_model.get_by_uid(uid) else {
+        let Some(object) = object_store_model.get_by_uid(uid) else {
             return false;
         };
         let folder: Option<&FolderObject> = object.into();
         match folder {
-            Some(folder) => self.invalidate_folder_timestamps(&folder.id, cloud_model),
+            Some(folder) => self.invalidate_folder_timestamps(&folder.id, object_store_model),
             None => {
                 if let Some(parent_id) = object.metadata().folder_id {
-                    self.invalidate_folder_timestamps(&parent_id, cloud_model)
+                    self.invalidate_folder_timestamps(&parent_id, object_store_model)
                 } else {
                     false
                 }
@@ -441,7 +446,7 @@ impl ObjectStoreViewModel {
     fn invalidate_folder_timestamps(
         &mut self,
         folder_id: &SyncId,
-        cloud_model: &ObjectStoreModel,
+        object_store_model: &ObjectStoreModel,
     ) -> bool {
         let had_revision_ts = self
             .folder_timestamp_cache
@@ -449,10 +454,10 @@ impl ObjectStoreViewModel {
             .remove(folder_id)
             .is_some();
 
-        let had_parent_ts = cloud_model
+        let had_parent_ts = object_store_model
             .get_folder(folder_id)
             .and_then(|folder| folder.metadata().folder_id.as_ref())
-            .is_some_and(|parent| self.invalidate_folder_timestamps(parent, cloud_model));
+            .is_some_and(|parent| self.invalidate_folder_timestamps(parent, object_store_model));
         had_revision_ts || had_parent_ts
     }
 }

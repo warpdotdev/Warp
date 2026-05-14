@@ -147,7 +147,7 @@ impl AmbientAgentEntryBlock {
             (Icon::ClockLoader, theme.ansi_fg_magenta())
         } else {
             (
-                Icon::OzCloud,
+                Icon::AmbientAgentMode,
                 theme.main_text_color(theme.background()).into_solid(),
             )
         };
@@ -248,7 +248,7 @@ impl View for AmbientAgentEntryBlock {
                 blended_colors::fg_overlay_1(appearance.theme())
             };
             render_block_container(
-                AgentViewEntryOrigin::CloudAgent,
+                AgentViewEntryOrigin::AmbientAgent,
                 row.finish(),
                 background.into(),
                 appearance,

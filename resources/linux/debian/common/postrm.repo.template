@@ -2,8 +2,8 @@ if [ "$action" != "purge" ]; then
   exit 0
 fi
 
-# If the user is "purging" the package (removing the package and associated
-# configuration), remove our custom repository and signing key.
+# If the user is "purging" the package, clean up legacy Warp repository files
+# that older builds may have installed.
 
 # Determine the path to the apt-config command.
 APT_CONFIG="$(command -v apt-config 2> /dev/null)"

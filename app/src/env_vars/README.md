@@ -8,15 +8,15 @@ This documentation is up-to-date as of 6/26/2024. All referenced files are prese
 
 The core data model for EVCs is defined in `mod.rs`. The motivations behind our data model are detailed in the above documents, with the v1 tech doc being the most relevant.
 
-## Cloud Infrastructure
+## Local Object Store Compatibility
 
-Context: EVCs are built on GenericStringObjects (GSOs). Consequently, there isn't much unique server-side infrastructure dedicated to EVCs — we added a variant to the `Format` enum on the server side and did the same on the client (`JsonObjectType::EnvVarCollection`), and a small DB migration to support the type.
+Context: EVCs are built on GenericStringObjects (GSOs). In OpenWarp, that means the object is stored in the local object store and persisted through SQLite. The historical `JsonObjectType::EnvVarCollection` discriminator is still used for backwards-compatible deserialization.
 
-We defined `CloudEnvVarCollection` in `mod.rs`, which implements the `GenericCloudObjectType` trait. This is a mostly boilerplate implementation specifying properties such as EVCs should render in Warp Drive, be linkable/exportable, etc.
+The `EnvVarCollectionObject` implementation in `mod.rs` specifies local object-store behavior such as rendering in Warp Drive and supporting export.
 
 The implementation of EVCs as a Warp Drive object is in `app/src/drive/items/env_var_collection.rs`, where code for the Warp Drive preview and click action is located.
 
-Code relevant to edit collisions and fetching EVCs from the server is in `app/src/server/server_api.rs` and `app/src/server/update_manager.rs`. We aimed to maintain a similar liveness property to workflows, meaning a concurrent edit made by another user requires one to check out the other's edit before committing their own.
+Edit-collision and liveness behavior now lives in the local object-store/update-manager path. Legacy cloud/server file names in older docs should be read as historical context, not as active OpenWarp network behavior.
 
 ## Client Side
 

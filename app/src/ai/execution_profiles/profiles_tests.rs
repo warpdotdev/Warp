@@ -126,8 +126,8 @@ fn reconciles_unsynced_default_profile_with_cloud_after_initial_load() {
 
         // Insert the object into ObjectStoreModel without per-object events and then
         // emit `InitialLoadCompleted` so the reconciliation handler fires.
-        ObjectStoreModel::handle(&app).update(&mut app, move |cloud_model, ctx| {
-            cloud_model.add_object(cloud_sync_id, profile_object);
+        ObjectStoreModel::handle(&app).update(&mut app, move |object_store_model, ctx| {
+            object_store_model.add_object(cloud_sync_id, profile_object);
             ctx.emit(ObjectStoreEvent::InitialLoadCompleted);
         });
 

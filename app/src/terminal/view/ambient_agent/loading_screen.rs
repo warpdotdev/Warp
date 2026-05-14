@@ -20,18 +20,18 @@ use warpui::{AppContext, ModelHandle};
 
 use crate::ai::agent_tips::{AITip, AITipModel};
 use crate::ai::loading::shimmering_warp_loading_text;
-use crate::terminal::view::ambient_agent::CloudModeTip;
+use crate::terminal::view::ambient_agent::AmbientAgentTip;
 use crate::ui_components::blended_colors;
 
 /// Icon size for the error icon
 const ERROR_ICON_SIZE: f32 = 24.;
 
 /// Renders the ambient-agent loading screen with shimmering warp logo and tips.
-pub fn render_cloud_mode_loading_screen(
+pub fn render_ambient_agent_loading_screen(
     message: &str,
     appearance: &Appearance,
     shimmer_handle: &ShimmeringTextStateHandle,
-    tip_model: &ModelHandle<AITipModel<CloudModeTip>>,
+    tip_model: &ModelHandle<AITipModel<AmbientAgentTip>>,
     app: &AppContext,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
@@ -142,7 +142,7 @@ fn render_tier_limits_footer(
 }
 
 /// Renders the ambient-agent error screen.
-pub fn render_cloud_mode_error_screen(
+pub fn render_ambient_agent_error_screen(
     error_message: &str,
     appearance: &Appearance,
     selection_handle: &SelectionHandle,
@@ -229,7 +229,7 @@ pub fn render_cloud_mode_error_screen(
 }
 
 /// Renders the ambient-agent GitHub authentication required screen.
-pub fn render_cloud_mode_github_auth_required_screen(
+pub fn render_ambient_agent_github_auth_required_screen(
     auth_url: &str,
     appearance: &Appearance,
     auth_button_mouse_state: &MouseStateHandle,
@@ -319,7 +319,7 @@ pub fn render_cloud_mode_github_auth_required_screen(
 }
 
 /// Renders the ambient-agent cancelled screen.
-pub fn render_cloud_mode_cancelled_screen(appearance: &Appearance) -> Box<dyn Element> {
+pub fn render_ambient_agent_cancelled_screen(appearance: &Appearance) -> Box<dyn Element> {
     let theme = appearance.theme();
 
     // Use main text color for the icon and title

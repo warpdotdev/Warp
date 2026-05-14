@@ -17,7 +17,7 @@ use super::AmbientAgentTaskId;
 ///
 /// This is the merged/resolved config used when spawning or running an agent.
 /// It combines settings from config files and CLI args.
-/// Unlike `AgentConfig` (the cloud model), field names here use the runtime format
+/// Unlike persisted agent profile/config records, field names here use the runtime format
 /// (e.g. `model_id` instead of `base_model_id`).
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct AgentConfigSnapshot {
@@ -34,12 +34,12 @@ pub struct AgentConfigSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp_servers: Option<serde_json::Map<String, serde_json::Value>>,
     /// Profile ID for local agent runs. This configures the terminal session
-    /// with the specified execution profile. Only used for local runs, not cloud runs.
+    /// with the specified execution profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
-    /// Self-hosted worker ID that should execute this task.
-    /// If None or Some("warp"), the task will be dispatched to Warp-hosted (Namespace) workers.
-    /// Otherwise, the task will only be assigned to a connected self-hosted worker with matching ID.
+    /// Local worker ID that should execute this task.
+    /// If None or Some("warp"), the default local runtime is used.
+    /// Otherwise, the task will only be assigned to a connected local worker with matching ID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worker_host: Option<String>,
     /// Skill spec to use as the base prompt for the agent.
@@ -218,7 +218,6 @@ where
             "SCHEDULED_AGENT" => Some(AgentSource::ScheduledAgent),
             "WEB_APP" => Some(AgentSource::WebApp),
             "GITHUB_ACTION" => Some(AgentSource::GitHubAction),
-            "CLOUD_MODE" => None,
             _ => {
                 report_error!(anyhow!("Unknown AmbientAgentSource: {}", s));
                 None
@@ -255,22 +254,18 @@ pub struct AmbientAgentTask {
     #[serde(default, deserialize_with = "deserialize_artifacts")]
     pub artifacts: Vec<Artifact>,
 
-    /// The last event sequence number recorded for this run by the server.
-    /// Used by orchestration event delivery to resume from the correct
-    /// cursor on restart. Populated by `GET /agent/runs/{run_id}` when the
-    /// server supports it; `None` on older servers.
+    /// The last event sequence number recorded for this run.
+    /// Used by local orchestration event delivery to resume from the correct
+    /// cursor on restart. Older locally restored records may leave this unset.
     #[serde(default)]
     pub last_event_sequence: Option<i64>,
 
-    /// The server-recorded `run_id`s of direct children of this run. Used
-    /// by orchestration event-delivery restore to discover children whose
-    /// records may not exist locally (e.g. remote-worker children in the
-    /// driver case). Empty on older servers.
+    /// The recorded `run_id`s of direct children of this run.
     #[serde(default)]
     pub children: Vec<String>,
 }
 
-/// Represents a single attachment input from the client (e.g., file upload)
+/// Represents a single attachment input from the client.
 #[derive(Clone, Debug, Serialize)]
 pub struct AttachmentInput {
     pub file_name: String,

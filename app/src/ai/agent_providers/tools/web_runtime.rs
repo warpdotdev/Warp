@@ -106,21 +106,22 @@ pub struct FetchOutput {
     pub attachments: Vec<FetchAttachment>,
 }
 
-/// Returns `true` if the IP address is private, loopback, link-local, or
-/// otherwise should not be reachable from a webfetch tool (SSRF protection).
+/// 如果 IP 属于 private、loopback、link-local 等 webfetch 不应访问的范围，
+/// 返回 `true`。
 fn is_blocked_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => is_blocked_ipv4(v4),
         IpAddr::V6(v6) => {
-            // IPv4-mapped IPv6 (::ffff:x.x.x.x) — apply IPv4 rules.
+            // IPv4-mapped IPv6(::ffff:x.x.x.x) 按 IPv4 规则处理。
             if let Some(mapped) = v6.to_ipv4_mapped() {
                 return is_blocked_ipv4(mapped);
             }
             v6.is_loopback()               // ::1
                 || v6.is_unspecified()      // ::
+                || v6.is_multicast()        // ff00::/8
                 || is_ipv6_unique_local(v6) // fc00::/7
                 || is_ipv6_link_local(v6)   // fe80::/10
-                || is_ipv6_documentation(v6) // 2001:db8::/32
+                || is_ipv6_documentation(v6) // 文档示例地址 2001:db8::/32
         }
     }
 }
@@ -130,15 +131,16 @@ fn is_blocked_ipv4(v4: Ipv4Addr) -> bool {
     v4.is_loopback()          // 127.0.0.0/8
         || v4.is_private()    // 10/8, 172.16/12, 192.168/16
         || v4.is_link_local() // 169.254.0.0/16
-        || o[0] == 0          // 0.0.0.0/8 — "This host" (RFC 1122 §3.2.1.3)
+        || v4.is_multicast()  // 224.0.0.0/4
+        || o[0] == 0          // 0.0.0.0/8，“本主机”范围
         || v4.is_broadcast()  // 255.255.255.255
         || (Ipv4Addr::new(100, 64, 0, 0) <= v4 && v4 <= Ipv4Addr::new(100, 127, 255, 255))
             // CGNAT 100.64/10
-        || (o[0] == 192 && o[1] == 0 && o[2] == 2)   // TEST-NET-1  192.0.2.0/24
-        || (o[0] == 198 && o[1] == 51 && o[2] == 100) // TEST-NET-2  198.51.100.0/24
-        || (o[0] == 203 && o[1] == 0 && o[2] == 113)  // TEST-NET-3  203.0.113.0/24
-        || (o[0] == 198 && (o[1] & 0xfe) == 18)       // Benchmarking 198.18.0.0/15
-        || o[0] >= 240 // Reserved    240.0.0.0/4
+        || (o[0] == 192 && o[1] == 0 && o[2] == 2)   // TEST-NET-1 192.0.2.0/24
+        || (o[0] == 198 && o[1] == 51 && o[2] == 100) // TEST-NET-2 198.51.100.0/24
+        || (o[0] == 203 && o[1] == 0 && o[2] == 113)  // TEST-NET-3 203.0.113.0/24
+        || (o[0] == 198 && (o[1] & 0xfe) == 18)       // 性能测试地址 198.18.0.0/15
+        || o[0] >= 240 // 保留地址 240.0.0.0/4
 }
 
 fn is_ipv6_unique_local(v6: Ipv6Addr) -> bool {
@@ -153,23 +155,20 @@ fn is_ipv6_documentation(v6: Ipv6Addr) -> bool {
     v6.segments()[0] == 0x2001 && v6.segments()[1] == 0x0db8
 }
 
-/// Validate a URL for SSRF safety: reject private/internal IP ranges after DNS
-/// resolution.
+/// 校验 URL 的 SSRF 安全性：解析 DNS 后拒绝 private/internal IP 范围。
 fn validate_url_not_internal(url_str: &str) -> Result<()> {
     let parsed = url::Url::parse(url_str).context("invalid URL")?;
     let host = parsed.host_str().context("URL has no host")?;
 
-    // If the host is already an IP literal, check directly.
+    // 如果 host 已经是 IP 字面量，直接检查。
     if let Ok(ip) = host.parse::<IpAddr>() {
         if is_blocked_ip(ip) {
             bail!("URL targets a blocked IP address range");
         }
     }
 
-    // Also try resolving the hostname to catch DNS rebinding to internal IPs.
-    // Use std::net (blocking) — this runs in an async context but the resolution
-    // is fast for legitimate hosts and the alternative (tokio::net) would add a
-    // dependency.  We resolve with port 0 since we only need the address.
+    // 额外解析 hostname，尽早发现指向内部 IP 的 DNS 结果。这里使用端口 0，
+    // 因为只需要地址本身。
     if let Ok(addrs) = std::net::ToSocketAddrs::to_socket_addrs(&(host, 0)) {
         for addr in addrs {
             if is_blocked_ip(addr.ip()) {
@@ -181,11 +180,10 @@ fn validate_url_not_internal(url_str: &str) -> Result<()> {
     Ok(())
 }
 
-/// DNS resolver that filters out blocked (internal/private) IPs at resolution
-/// time, eliminating the TOCTOU gap between pre-validation and connection.
+/// DNS resolver 在解析阶段过滤被禁止的内部 IP，避免预校验和连接之间的 TOCTOU 间隙。
 ///
-/// Only available on non-WASM targets — reqwest's `dns` module (and
-/// `ClientBuilder::dns_resolver`) is not exposed on WebAssembly.
+/// 仅非 WASM 目标可用：reqwest 的 `dns` 模块和 `ClientBuilder::dns_resolver`
+/// 不暴露给 WebAssembly。
 #[cfg(not(target_arch = "wasm32"))]
 struct SsrfSafeResolver;
 
@@ -195,11 +193,18 @@ impl reqwest::dns::Resolve for SsrfSafeResolver {
         let host = name.as_str().to_owned();
         Box::pin(async move {
             use std::net::ToSocketAddrs;
-            let addrs: Vec<std::net::SocketAddr> = (host.as_str(), 0)
-                .to_socket_addrs()
-                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?
-                .filter(|addr| !is_blocked_ip(addr.ip()))
-                .collect();
+            let lookup_host = host.clone();
+            let addrs: Vec<std::net::SocketAddr> = tokio::task::spawn_blocking(
+                move || -> std::io::Result<Vec<std::net::SocketAddr>> {
+                    Ok((lookup_host.as_str(), 0)
+                        .to_socket_addrs()?
+                        .filter(|addr| !is_blocked_ip(addr.ip()))
+                        .collect())
+                },
+            )
+            .await
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?;
             if addrs.is_empty() {
                 return Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::PermissionDenied,
@@ -212,28 +217,25 @@ impl reqwest::dns::Resolve for SsrfSafeResolver {
     }
 }
 
-/// Maximum number of redirects before stopping (matches reqwest's default).
+/// 最大重定向次数，与 reqwest 默认值保持一致。
 const MAX_REDIRECT_HOPS: usize = 10;
 
-/// Build a reqwest client with:
-/// - A custom DNS resolver that blocks connections to internal IPs
-/// - A redirect policy that enforces HTTPS, validates each hop, and limits
-///   the total number of redirects (reqwest's default limits are not inherited
-///   by `Policy::custom`)
+/// 构建带 SSRF 防护的 reqwest client：
+/// - 自定义 DNS resolver 阻止连接到内部 IP
+/// - 自定义重定向策略强制 HTTPS、校验每一跳并限制总跳数
+///   (`Policy::custom` 不会继承 reqwest 默认跳数限制)
 pub fn build_ssrf_safe_client() -> Result<reqwest::Client> {
     let policy = Policy::custom(|attempt| {
-        // Enforce redirect hop limit (Policy::custom does not inherit
-        // reqwest's default loop/max-hop protections).
+        // `Policy::custom` 不继承 reqwest 默认的循环/最大跳数保护，需要显式限制。
         if attempt.previous().len() >= MAX_REDIRECT_HOPS {
             return attempt.stop();
         }
         let url = attempt.url();
-        // Enforce HTTPS on redirect targets (prevent HTTPS→HTTP downgrade).
+        // 重定向目标必须保持 HTTPS，避免 HTTPS → HTTP 降级。
         if url.scheme() != "https" {
             return attempt.stop();
         }
-        // Validate redirect target is not internal (defense-in-depth on top
-        // of the DNS resolver, catches IP-literal redirect URLs immediately).
+        // 在 DNS resolver 之外再做一层校验，立即拦截 IP 字面量形式的内部地址。
         if validate_url_not_internal(url.as_str()).is_err() {
             attempt.stop()
         } else {
@@ -243,8 +245,7 @@ pub fn build_ssrf_safe_client() -> Result<reqwest::Client> {
     let builder = reqwest::Client::builder()
         .redirect(policy)
         .pool_idle_timeout(Duration::from_secs(30));
-    // Wire the SSRF-safe DNS resolver only on non-WASM targets (reqwest
-    // does not expose the dns module on WebAssembly).
+    // 仅非 WASM 目标接入 SSRF-safe DNS resolver；WebAssembly 不暴露 reqwest DNS 模块。
     #[cfg(not(target_arch = "wasm32"))]
     let builder = builder.dns_resolver(Arc::new(SsrfSafeResolver));
     builder.build().context("build SSRF-safe reqwest client")

@@ -407,7 +407,7 @@ fn mock_workspace_viewing_shared_session(app: &mut App) -> ViewHandle<Workspace>
     terminal_view.update(app, |view, ctx| {
         view.on_session_share_joined(
             ParticipantId::new(),
-            UserUid::new("mock_firebase_uid"),
+            UserUid::new("mock_user_uid"),
             ReplicaId::random(),
             Box::new(ParticipantList::default()),
             SessionId::new(),
@@ -2398,5 +2398,5 @@ fn test_standard_tab_context_menu_shows_hover_only_tab_bar() {
     });
 }
 
-// 已删:test_open_cloud_agent_setup_guide_action_opens_management_view_and_is_idempotent
+// 已删:test_open_ambient_agent_setup_guide_action_opens_management_view_and_is_idempotent
 // agent_management_view 字段连同 agent setup guide 整片功能在 Phase 2c 已删。

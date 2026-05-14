@@ -75,9 +75,7 @@ fn changelog_url(channel: Channel, version: &str) -> String {
     )
 }
 
-/// Returns whether the app should fetch changelog.json for the current
-/// build (true), or use the changelog information embedded in
-/// channel_versions.json (false).
+/// Returns whether the app should fetch changelog.json for the current build.
 pub fn should_fetch_changelog_json(channel: Channel) -> bool {
     channel == Channel::Dev
 }

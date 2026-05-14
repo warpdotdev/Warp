@@ -137,7 +137,6 @@ line-ending.workspace = true
 log.workspace = true
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 warp_logging.workspace = true
-sentry = { workspace = true, optional = true }
 lz4_flex = "0.11"
 markdown_parser.workspace = true
 memchr.workspace = true
@@ -172,7 +171,6 @@ i18n-embed-fl.workspace = true
 fluent.workspace = true
 unic-langid.workspace = true
 sys-locale.workspace = true
-sentry-log = { workspace = true, optional = true }
 inventory = "0.3"
 schemars = { version = "1", features = ["uuid1"] }
 serde.workspace = true
@@ -440,7 +438,6 @@ agent_onboarding = []
 ask_user_question = []
 changelog = []
 clear_autosuggestion_on_escape = []
-cocoa_sentry = ["crash_reporting"]
 command_predictor = []
 context_line_review_comments = []
 completions_v2 = [
@@ -449,8 +446,6 @@ completions_v2 = [
     "dep:command-signatures-v2",
 ]
 crash_reporting = [
-    "dep:sentry",
-    "dep:sentry-log",
     "dep:minidumper",
     "dep:crash-handler",
     "warp_logging/crash_reporting",
@@ -485,7 +480,6 @@ default = [
     "agent_mode_pre_plan_xml",
     "command_correction_key",
     "kitty_images",
-    "global_ai_analytics_collection",
     "grep_tool",
     "validate_autosuggestions",
     "clear_autosuggestion_on_escape",
@@ -621,8 +615,6 @@ ssh_enable_host_denylist_in_settings = []
 extern_plist = []
 fast_dev = ["skip_login"]
 full_screen_zen_mode = []
-global_ai_analytics_banner = []
-global_ai_analytics_collection = []
 grab_the_baton_editing = []
 grep_tool = []
 # This feature is enabled in graphical builds of Warp, and groups together other features
@@ -684,7 +676,6 @@ local_fs = [
     "repo_metadata/local_fs",
     "warp_core/local_fs",
 ]
-log_expensive_frames_in_sentry = []
 markdown_tables = []
 markdown_mermaid = []
 mcp_server = []
@@ -885,9 +876,6 @@ category = "public.app-category.developer-tools"
 copyright = "© 2025, Denver Technologies, Inc"
 identifier = "dev.warp.Warp-Stable"
 name = "Warp"
-osx_frameworks = [
-    "frameworks/default/Sentry-Dynamic-WithARM64e.xcframework/macos-arm64_arm64e_x86_64/Sentry.framework",
-]
 resources = ["assets/onboarding"]
 short_description = "The local-first terminal for individuals and teams, stable build."
 
@@ -896,9 +884,6 @@ category = "public.app-category.developer-tools"
 copyright = "© 2025, Denver Technologies, Inc"
 identifier = "dev.warp.Warp-Preview"
 name = "WarpPreview"
-osx_frameworks = [
-    "frameworks/default/Sentry-Dynamic-WithARM64e.xcframework/macos-arm64_arm64e_x86_64/Sentry.framework",
-]
 resources = ["assets/onboarding"]
 short_description = "The local-first terminal for individuals and teams, feature preview build."
 
@@ -907,9 +892,6 @@ category = "public.app-category.developer-tools"
 copyright = "© 2025, Denver Technologies, Inc"
 identifier = "dev.warp.Warp-Dev"
 name = "WarpDev"
-osx_frameworks = [
-    "frameworks/dev/Sentry-Dynamic-WithARM64e.xcframework/macos-arm64_arm64e_x86_64/Sentry.framework",
-]
 resources = ["assets/onboarding"]
 short_description = "The local-first terminal for individuals and teams, developer build."
 

@@ -1,9 +1,8 @@
 use crate::localization::localized;
 use crate::model::{OnboardingStateEvent, OnboardingStateModel, OnboardingStep, SelectedSettings};
 use crate::slides::{
-    AgentSlide, CustomizeUISlide, IntentionSlide, IntroSlide, IntroSlideEvent,
-    OnboardingModelInfo, OnboardingSlide, ProjectSlide, ThemePickerSlide, ThemePickerSlideEvent,
-    ThirdPartySlide,
+    AgentSlide, CustomizeUISlide, IntentionSlide, IntroSlide, OnboardingModelInfo, OnboardingSlide,
+    ProjectSlide, ThemePickerSlide, ThemePickerSlideEvent, ThirdPartySlide,
 };
 use crate::telemetry::OnboardingEvent;
 use ai::LLMId;
@@ -30,19 +29,10 @@ use warpui::{
 
 #[derive(Clone, Debug)]
 pub enum AgentOnboardingEvent {
-    ThemeSelected {
-        theme_name: String,
-    },
-    SyncWithOsToggled {
-        enabled: bool,
-    },
+    ThemeSelected { theme_name: String },
+    SyncWithOsToggled { enabled: bool },
     OnboardingCompleted(SelectedSettings),
     OnboardingSkipped,
-    LoginFromWelcomeRequested,
-    /// Emitted when the user clicks the "Privacy Settings" link on the terminal
-    /// intention theme slide. The variant name encodes that the event is only
-    /// emitted from the terminal-intention theme slide.
-    PrivacySettingsFromTerminalThemeSlideRequested,
 }
 
 pub struct AgentOnboardingView {
@@ -126,12 +116,6 @@ impl AgentOnboardingView {
             let onboarding_state = onboarding_state.clone();
             ctx.add_typed_action_view(move |_| IntroSlide::new(onboarding_state))
         };
-
-        ctx.subscribe_to_view(&intro_slide, |_me, _view, event, ctx| match event {
-            IntroSlideEvent::LoginRequested => {
-                ctx.emit(AgentOnboardingEvent::LoginFromWelcomeRequested);
-            }
-        });
 
         let theme_picker_slide = {
             let themes = theme_picker_themes.clone();
@@ -275,9 +259,6 @@ impl AgentOnboardingView {
             }
             ThemePickerSlideEvent::SyncWithOsToggled { enabled } => {
                 ctx.emit(AgentOnboardingEvent::SyncWithOsToggled { enabled: *enabled });
-            }
-            ThemePickerSlideEvent::PrivacySettingsRequested => {
-                ctx.emit(AgentOnboardingEvent::PrivacySettingsFromTerminalThemeSlideRequested);
             }
         }
     }

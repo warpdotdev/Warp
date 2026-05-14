@@ -16,18 +16,19 @@ where
 {
     let id = SyncId::ServerId(ServerId::try_from(id).expect("ID is invalid"));
     Box::new(move |app, _window_id| {
-        let revision =
-            app.get_singleton_model_handle::<ObjectStoreModel>()
-                .read(app, |cloud_model, _| {
-                    let object = cloud_model
-                        .get_object_of_type::<K, M>(&id)
-                        .expect("object should exist");
-                    object
-                        .metadata
-                        .revision
-                        .clone()
-                        .expect("revision should exist")
-                });
+        let revision = app.get_singleton_model_handle::<ObjectStoreModel>().read(
+            app,
+            |object_store_model, _| {
+                let object = object_store_model
+                    .get_object_of_type::<K, M>(&id)
+                    .expect("object should exist");
+                object
+                    .metadata
+                    .revision
+                    .clone()
+                    .expect("revision should exist")
+            },
+        );
         async_assert!(
             revision
                 == Revision::from_unix_timestamp_micros(expected_revision)

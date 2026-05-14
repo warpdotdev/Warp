@@ -244,8 +244,8 @@ impl SuggestedRuleView {
             me.handle_update_manager_event(event, ctx);
         });
 
-        let cloud_model = ObjectStoreModel::handle(ctx);
-        ctx.subscribe_to_model(&cloud_model, |me, _, event, ctx| {
+        let object_model = ObjectStoreModel::handle(ctx);
+        ctx.subscribe_to_model(&object_model, |me, _, event, ctx| {
             me.handle_object_store_event(event, ctx);
         });
 
@@ -426,7 +426,7 @@ impl SuggestedRuleView {
                             rule: rule_and_id.rule.clone(),
                             sync_id: SyncId::ServerId(server_id),
                         });
-                        // Reload the rule from the cloud model.
+                        // Reload the rule from the local object store.
                         self.load_rule(ctx);
                     }
                 }
@@ -490,14 +490,14 @@ impl SuggestedRuleView {
         ctx.notify();
     }
 
-    /// Fetches the rule from the cloud model, and updates the UI to reflect that.
+    /// Fetches the rule from the local object store, and updates the UI to reflect that.
     fn load_rule(&mut self, ctx: &mut ViewContext<Self>) {
         let Some(SuggestedRuleAndId { sync_id, .. }) = &self.rule_and_id else {
             return;
         };
 
-        let cloud_model = ObjectStoreModel::handle(ctx);
-        if let Some(rule) = cloud_model
+        let object_model = ObjectStoreModel::handle(ctx);
+        if let Some(rule) = object_model
             .as_ref(ctx)
             .get_object_of_type::<GenericStringObjectId, AIFactObjectModel>(sync_id)
         {

@@ -92,11 +92,11 @@ impl AgentToolbarItemKind {
     pub fn available_to_session_viewer(
         &self,
         status: &SharedSessionStatus,
-        is_cloud_mode: bool,
+        is_ambient_mode: bool,
     ) -> bool {
         match self {
             Self::Settings | Self::ShareSession | Self::FileExplorer => !status.is_viewer(),
-            Self::FileAttach => !status.is_viewer() || is_cloud_mode,
+            Self::FileAttach => !status.is_viewer() || is_ambient_mode,
             Self::FastForwardToggle => !status.is_viewer() || status.is_executor(),
             Self::ContextChip(_)
             | Self::ModelSelector

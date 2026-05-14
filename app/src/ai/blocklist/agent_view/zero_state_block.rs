@@ -80,13 +80,13 @@ impl AgentViewZeroStateBlock {
         origin: AgentViewEntryOrigin,
         agent_view_controller: ModelHandle<AgentViewController>,
         sessions: &ModelHandle<Sessions>,
-        cloud_agent_view_model: &ModelHandle<AmbientAgentViewModel>,
+        ambient_agent_view_model: &ModelHandle<AmbientAgentViewModel>,
         terminal_model: Arc<FairMutex<TerminalModel>>,
         model_events_dispatcher: &ModelHandle<ModelEventDispatcher>,
         should_show_init_callout: bool,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let cloud_agent_view_model_clone = cloud_agent_view_model.clone();
+        let ambient_agent_view_model_clone = ambient_agent_view_model.clone();
         let model_events_clone = model_events_dispatcher.clone();
         ctx.subscribe_to_model(
             &BlocklistAIHistoryModel::handle(ctx),
@@ -99,7 +99,7 @@ impl AgentViewZeroStateBlock {
                         me.should_hide = true;
                         ctx.unsubscribe_to_model(&model_events_clone);
                         ctx.unsubscribe_to_model(&history_model);
-                        ctx.unsubscribe_to_model(&cloud_agent_view_model_clone);
+                        ctx.unsubscribe_to_model(&ambient_agent_view_model_clone);
                         ctx.notify();
                         return;
                     }
@@ -118,7 +118,7 @@ impl AgentViewZeroStateBlock {
             },
         );
 
-        let cloud_agent_view_model_clone = cloud_agent_view_model.clone();
+        let ambient_agent_view_model_clone = ambient_agent_view_model.clone();
         ctx.subscribe_to_model(
             model_events_dispatcher,
             move |me, model_events_dispatcher, event, ctx| {
@@ -130,7 +130,7 @@ impl AgentViewZeroStateBlock {
                             me.should_hide = true;
                             ctx.unsubscribe_to_model(&model_events_dispatcher);
                             ctx.unsubscribe_to_model(&BlocklistAIHistoryModel::handle(ctx));
-                            ctx.unsubscribe_to_model(&cloud_agent_view_model_clone);
+                            ctx.unsubscribe_to_model(&ambient_agent_view_model_clone);
                             ctx.notify();
                         }
                     }
@@ -145,7 +145,7 @@ impl AgentViewZeroStateBlock {
         );
 
         let model_events_clone = model_events_dispatcher.clone();
-        ctx.subscribe_to_model(cloud_agent_view_model, move |me, model, event, ctx| {
+        ctx.subscribe_to_model(ambient_agent_view_model, move |me, model, event, ctx| {
             if false {
                 match event {
                     AmbientAgentViewModelEvent::DispatchedAgent
@@ -169,9 +169,9 @@ impl AgentViewZeroStateBlock {
             }
         });
 
-        let cloud_agent_view = cloud_agent_view_model.as_ref(ctx);
+        let ambient_agent_view = ambient_agent_view_model.as_ref(ctx);
         let has_parent_terminal =
-            !cloud_agent_view.is_ambient_agent() || cloud_agent_view.has_parent_terminal();
+            !ambient_agent_view.is_ambient_agent() || ambient_agent_view.has_parent_terminal();
         let state_handles = StateHandles::default();
         let current_working_directory = {
             let terminal_model = terminal_model.lock();
@@ -329,7 +329,7 @@ impl View for AgentViewZeroStateBlock {
         let header_props = HeaderProps {
             title: crate::t!("agent-zero-state-title").into(),
             description: AgentViewDescription::PlainText(vec![local_description.into()]),
-            icon: if self.origin.is_cloud_agent() {
+            icon: if self.origin.is_ambient_agent() {
                 Icon::OzCloud
             } else {
                 Icon::Oz
@@ -362,7 +362,7 @@ impl View for AgentViewZeroStateBlock {
         }));
         let content = content.finish();
 
-        let show_bottom_border = !self.origin.is_cloud_agent();
+        let show_bottom_border = !self.origin.is_ambient_agent();
         let content = Container::new(content)
             .with_horizontal_padding(*terminal::view::PADDING_LEFT)
             .with_vertical_padding(styles::CONTAINER_VERTICAL_PADDING)
@@ -550,7 +550,7 @@ fn render_body(props: ZeroStateBodyProps<'_>, app: &AppContext) -> Vec<Box<dyn E
     } = props;
 
     // Ambient-agent mode doesn't show keyboard shortcuts.
-    if origin.is_cloud_agent() {
+    if origin.is_ambient_agent() {
         return vec![];
     }
     let mut body_items = if let Some(recent_conversations_section) =

@@ -81,10 +81,11 @@ impl AppExecutionMode {
     }
 
     /// Whether telemetry should be sent synchronously at shutdown.
-    /// In CLI mode, we synchronously send events at shutdown because there's a higher likelihood
-    /// that they will be lost otherwise.
+    ///
+    /// OpenWarp has no telemetry sender, so shutdown must never wait on telemetry work. The method
+    /// remains as a compatibility surface for callers that still branch on the old capability.
     pub fn send_telemetry_at_shutdown(&self) -> bool {
-        matches!(self.mode, ExecutionMode::Sdk)
+        false
     }
 
     /// If true, the app is running autonomously, without a user present.

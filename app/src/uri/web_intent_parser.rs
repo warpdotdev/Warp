@@ -97,7 +97,7 @@ impl WebIntent {
                     return Err(anyhow!("Attempting to parse invalid url: {}", url));
                 }
                 let action_type = segments[1];
-                const ALLOWED_ACTIONS: &[&str] = &["open-repo", "focus_cloud_mode"];
+                const ALLOWED_ACTIONS: &[&str] = &["open-repo", "focus_ambient_agent"];
                 if !ALLOWED_ACTIONS.contains(&action_type) {
                     return Err(anyhow!("Unknown action type in url: {}", action_type));
                 }

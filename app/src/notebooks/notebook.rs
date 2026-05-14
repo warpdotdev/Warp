@@ -406,8 +406,8 @@ impl NotebookView {
         let user_workspaces = UserWorkspaces::handle(ctx);
         ctx.observe(&user_workspaces, Self::on_user_workspaces_update);
 
-        let cloud_model = ObjectStoreModel::handle(ctx);
-        ctx.subscribe_to_model(&cloud_model, |notebook, _handle, event, ctx| {
+        let object_store_model = ObjectStoreModel::handle(ctx);
+        ctx.subscribe_to_model(&object_store_model, |notebook, _handle, event, ctx| {
             notebook.handle_object_store_event(event, ctx);
         });
 
@@ -1850,7 +1850,7 @@ impl NotebookView {
             update_manager.replace_object_with_conflict(&id.uid(), ctx);
         });
 
-        // Load the server's version of the notebook now that the cloud model has been updated.
+        // Load the server's version of the notebook now that the object store has been updated.
         // This will also switch back to edit mode if there isn't an active editor.
         if let Some(notebook) = ObjectStoreModel::as_ref(ctx).get_notebook(&id) {
             self.load(

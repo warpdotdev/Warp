@@ -52,9 +52,8 @@ fn test_warp_drive_sections_with_no_team() {
         let index = panel.read(&app, |panel, _| panel.index_view.clone());
         index.read(&app, |index, _| {
             let sections = index.sections();
-            assert_eq!(sections.len(), 2);
-            assert_eq!(sections[0], DriveIndexSection::CreateATeam);
-            assert_eq!(sections[1], DriveIndexSection::Space(Space::Personal))
+            assert_eq!(sections.len(), 1);
+            assert_eq!(sections[0], DriveIndexSection::Space(Space::Personal))
         });
     })
 }

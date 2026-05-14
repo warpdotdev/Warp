@@ -1,6 +1,6 @@
 pub(super) mod chips;
 pub mod editor;
-// OpenWarp Wave 7-3:`environment_selector` 随 Cloud Mode UI 子系统物理删。
+// OpenWarp Wave 7-3:`environment_selector` was removed with the hosted-mode footer.
 mod reasoning_depth_selector;
 pub mod toolbar_item;
 
@@ -8,7 +8,7 @@ use crate::{
     ai::{
         blocklist::{
             history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel},
-            prompt::prompt_alert::{PromptAlertEvent, PromptAlertView},
+            prompt::prompt_alert::PromptAlertView,
             usage::icon_for_context_window_usage,
             BlocklistAIInputModel,
         },
@@ -56,7 +56,7 @@ use crate::{
     workspaces::user_workspaces::UserWorkspaces,
 };
 use toolbar_item::AgentToolbarItemKind;
-// OpenWarp Wave 7-3:`warp_cli::agent::Harness` import 随 `render_cloud_mode_v2_footer` 物理删。
+// OpenWarp Wave 7-3:`warp_cli::agent::Harness` import was removed with the hosted-mode footer.
 
 use std::sync::Arc;
 
@@ -107,8 +107,8 @@ use warpui::{
 #[cfg(not(target_family = "wasm"))]
 use warpui::r#async::Timer;
 
-// OpenWarp Wave 7-3:`EnvironmentSelector` / `EnvironmentSelectorEvent` re-export 随
-// Cloud Mode UI 子系统物理删。
+// OpenWarp Wave 7-3:`EnvironmentSelector` / `EnvironmentSelectorEvent` re-export was removed
+// with the hosted-mode footer.
 pub(crate) use self::reasoning_depth_selector::{
     ReasoningDepthSelector, ReasoningDepthSelectorEvent,
 };
@@ -124,8 +124,7 @@ use crate::view_components::ToastLink;
 #[cfg(not(target_family = "wasm"))]
 use crate::workspace::WorkspaceAction;
 
-// OpenWarp Wave 7-3:`CLOUD_MODE_V2_FOOTER_GAP` 随 `render_cloud_mode_v2_footer` /
-// Cloud Mode UI 子系统物理删。
+// OpenWarp Wave 7-3: removed the hosted-mode footer gap constant with the old footer.
 
 /// Voice input state for the CLI agent footer. Unlike the editor-based voice
 /// flow (which goes through Input → EditorView), this state is self-contained
@@ -187,7 +186,7 @@ pub struct AgentInputFooter {
     context_window_button: ViewHandle<ActionButton>,
     model_selector: ViewHandle<ProfileModelSelector>,
     ftu_callout_close_button: ViewHandle<ActionButton>,
-    // OpenWarp Wave 7-3:`environment_selector` field 随 Cloud Mode UI 子系统物理删。
+    // OpenWarp Wave 7-3:`environment_selector` field was removed with the hosted-mode footer.
     reasoning_depth_selector: ViewHandle<ReasoningDepthSelector>,
     prompt_alert: ViewHandle<PromptAlertView>,
     ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
@@ -576,7 +575,7 @@ impl AgentInputFooter {
         });
 
         // OpenWarp Wave 7-3:`EnvironmentSelector` 初始化 + 订阅 + ambient_agent
-        // 状态重渲染订阅随 Cloud Mode UI 子系统物理删。
+        // Status rerender subscription was removed with the hosted-mode footer.
 
         let reasoning_depth_selector = ctx.add_typed_action_view(|ctx| {
             ReasoningDepthSelector::new(menu_positioning_provider.clone(), terminal_view_id, ctx)
@@ -588,9 +587,6 @@ impl AgentInputFooter {
         });
 
         let prompt_alert = ctx.add_typed_action_view(PromptAlertView::new);
-        ctx.subscribe_to_view(&prompt_alert, |_, _, event, ctx| {
-            ctx.emit(AgentInputFooterEvent::PromptAlert(event.clone()));
-        });
 
         ctx.subscribe_to_model(&NetworkStatus::handle(ctx), |_, _, _, ctx| {
             ctx.notify();
@@ -698,7 +694,7 @@ impl AgentInputFooter {
             plugin_chip_ready: false,
             context_window_button,
             model_selector: profile_model_selector_full,
-            // OpenWarp Wave 7-3:`environment_selector` field init 随 Cloud Mode UI
+            // OpenWarp Wave 7-3:`environment_selector` field init was removed with hosted-mode UI.
             // 子系统物理删。
             reasoning_depth_selector,
             prompt_alert,
@@ -747,8 +743,7 @@ impl AgentInputFooter {
             .is_some_and(|s| s.as_ref(app).is_menu_open())
     }
 
-    // OpenWarp Wave 7-3:`should_render_cloud_mode_v2` / `render_cloud_mode_v2_footer`
-    // 随 Cloud Mode UI 子系统物理删。
+    // OpenWarp Wave 7-3: hosted-mode footer rendering was removed.
 
     fn all_display_chips(&self) -> impl Iterator<Item = &ViewHandle<DisplayChip>> {
         self.left_display_chips
@@ -1340,7 +1335,7 @@ impl AgentInputFooter {
     }
 
     pub fn has_open_chip_menu(&self, app: &AppContext) -> bool {
-        // OpenWarp Wave 7-3:`environment_selector` is_menu_open() 检查随 Cloud Mode UI
+        // OpenWarp Wave 7-3:`environment_selector` is_menu_open() check was removed with hosted-mode UI.
         // 子系统物理删。
         self.all_display_chips()
             .any(|chip| chip.as_ref(app).display_chip_kind().has_open_menu())
@@ -1818,8 +1813,7 @@ impl View for AgentInputFooter {
     }
 
     fn render(&self, app: &warpui::AppContext) -> Box<dyn warpui::Element> {
-        // OpenWarp Wave 7-3:`should_render_cloud_mode_v2` / `render_cloud_mode_v2_footer`
-        // 随 Cloud Mode UI 子系统物理删。
+        // OpenWarp Wave 7-3: hosted-mode footer rendering was removed.
         // When a CLI agent session is active, render the CLI agent toolbar instead.
         if self.is_cli_agent_session_active(app) {
             return self.render_cli_mode_footer(app);
@@ -1836,8 +1830,7 @@ impl View for AgentInputFooter {
             .with_run_spacing(4.)
             .with_spacing(4.);
 
-        // OpenWarp Wave 7-3:`environment_selector` ambient_agent chip 注入 随 Cloud Mode UI
-        // 子系统物理删 (CloudMode flag 在 OpenWarp 中强制返回 false)。
+        // OpenWarp Wave 7-3: removed environment-selector ambient-agent chip injection.
 
         let terminal_model = self.terminal_model.lock();
         let shared_status = terminal_model.shared_session_status();
@@ -2235,7 +2228,6 @@ pub enum AgentInputFooterEvent {
         open: bool,
     },
     TryExecuteChipCommand(String),
-    PromptAlert(PromptAlertEvent),
     ModelSelectorOpened,
     ModelSelectorClosed,
     ToggleInlineModelSelector {
@@ -2250,7 +2242,7 @@ pub enum AgentInputFooterEvent {
     ShowContextMenu {
         position: Vector2F,
     },
-    // OpenWarp Wave 7-3:`OpenEnvironmentManagementPane` event 随 Cloud Mode UI 子系统
+    // OpenWarp Wave 7-3:`OpenEnvironmentManagementPane` event was removed with hosted-mode UI.
     // 物理删。
     PluginInstalled(CLIAgent),
     #[cfg(not(target_family = "wasm"))]
