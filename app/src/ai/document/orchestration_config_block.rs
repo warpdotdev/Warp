@@ -198,7 +198,11 @@ impl OrchestrationConfigBlockView {
             |me, _, event, ctx| match event {
                 HarnessAvailabilityEvent::Changed
                 | HarnessAvailabilityEvent::AuthSecretsLoaded
-                | HarnessAvailabilityEvent::AuthSecretCreated { .. } => {
+                | HarnessAvailabilityEvent::AuthSecretCreated { .. }
+                | HarnessAvailabilityEvent::AuthSecretsFetchFailed { .. } => {
+                    // Repopulate on fetch failure too, otherwise the picker
+                    // would stay on the "Loading…" placeholder we wrote
+                    // when the fetch started.
                     if me.pickers_initialized {
                         oc::repopulate_all_pickers(&mut me.edit_state, &me.pickers, ctx);
                     }

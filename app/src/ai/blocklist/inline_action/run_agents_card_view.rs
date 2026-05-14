@@ -434,7 +434,11 @@ impl RunAgentsCardView {
             |me, _, event, ctx| match event {
                 HarnessAvailabilityEvent::Changed
                 | HarnessAvailabilityEvent::AuthSecretsLoaded
-                | HarnessAvailabilityEvent::AuthSecretCreated { .. } => {
+                | HarnessAvailabilityEvent::AuthSecretCreated { .. }
+                | HarnessAvailabilityEvent::AuthSecretsFetchFailed { .. } => {
+                    // Repopulate on fetch failure too, otherwise the picker
+                    // would stay on the "Loading…" placeholder we wrote
+                    // when the fetch started.
                     oc::repopulate_all_pickers(&mut me.state.orch, &me.handles.pickers, ctx);
                     ctx.notify();
                 }
@@ -553,16 +557,18 @@ impl RunAgentsCardView {
             {
                 self.state.orch.override_from_approved_config(config);
 
-                // `override_from_approved_config` may have changed the
-                // harness; re-resolve the auth secret from settings so
-                // the auto-launched dispatch carries the user's
-                // plan-card pick instead of `None`.
-                if self.state.orch.auth_secret_name.is_none() {
-                    self.state.orch.auth_secret_name = oc::resolve_default_auth_secret_for_harness(
-                        &self.state.orch.harness_type,
-                        ctx,
-                    );
-                }
+                // Always re-resolve the auth secret from settings keyed by
+                // the (now authoritative) harness from the approved config.
+                // Unconditional — not gated on `is_none()` — because if
+                // streaming had set `auth_secret_name` based on a different
+                // (proto-suggested) harness, the value belongs to that
+                // harness and must not be carried forward; otherwise we'd
+                // route e.g. a Codex secret name into Claude's auth field
+                // in `launch_remote_child`.
+                self.state.orch.auth_secret_name = oc::resolve_default_auth_secret_for_harness(
+                    &self.state.orch.harness_type,
+                    ctx,
+                );
 
                 self.auto_launched = true;
                 ctx.notify();

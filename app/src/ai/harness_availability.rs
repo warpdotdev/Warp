@@ -60,6 +60,11 @@ pub struct AuthSecretEntry {
 pub enum HarnessAvailabilityEvent {
     Changed,
     AuthSecretsLoaded,
+    /// Emitted when a lazy auth-secrets fetch fails. Subscribers should
+    /// re-render so any "Loading…" placeholders can transition to an
+    /// error state — without this signal the picker would otherwise be
+    /// stuck on the loading placeholder until the next refetch.
+    AuthSecretsFetchFailed { harness: Harness },
     AuthSecretCreated { harness: Harness, name: String },
     AuthSecretCreationFailed { error: String },
 }
@@ -189,6 +194,10 @@ impl HarnessAvailabilityModel {
                         report_error!(e.context("Failed to fetch harness auth secrets"));
                         me.auth_secrets
                             .insert(harness, AuthSecretFetchState::Failed(msg));
+                        // Notify subscribers so they can drop any
+                        // "Loading…" placeholder rendered during the
+                        // in-flight fetch and surface the error state.
+                        ctx.emit(HarnessAvailabilityEvent::AuthSecretsFetchFailed { harness });
                     }
                 }
             },
