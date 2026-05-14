@@ -560,7 +560,7 @@ pub fn render_info_icon<T: Clone + Action>(
             13.,
             additional_info
                 .tooltip_override_text
-                .unwrap_or("Click to learn more in docs".to_owned()),
+                .unwrap_or_else(|| t!("settings.learn_more_docs_tooltip").to_string()),
             additional_info.mouse_state.clone(),
         )
         .on_click(move |ctx, _, _| {
@@ -586,7 +586,8 @@ pub fn render_local_only_icon(
         .ui_builder()
         .local_only_icon_with_tooltip(
             13.,
-            custom_tooltip.unwrap_or("This setting is not synced to your other devices".to_owned()),
+            custom_tooltip
+                .unwrap_or_else(|| t!("settings.not_synced_to_devices_tooltip").to_string()),
             mouse_state.clone(),
         )
         .finish();
