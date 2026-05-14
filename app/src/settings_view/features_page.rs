@@ -6266,36 +6266,45 @@ impl TabKeyBehaviorWidget {
             TabBehavior::Completions if view.autosuggestions_keystroke.is_empty() => {
                 // If the "Accept autosuggestions" keybinding is unbound, the
                 // user can always still accept with right arrow.
-                Some("→ accepts autosuggestions.".into())
+                Some(t!("features.right_arrow_accepts_autosuggestions").to_string())
             }
-            TabBehavior::Completions => Some(format!(
-                "{} accepts autosuggestions.",
-                *view.autosuggestions_keystroke
-            )),
+            TabBehavior::Completions => Some(
+                t!(
+                    "features.key_accepts_autosuggestions",
+                    key = format!("{}", *view.autosuggestions_keystroke)
+                )
+                .to_string(),
+            ),
             TabBehavior::Autosuggestions
                 if *input_settings.completions_open_while_typing.value() =>
             {
                 if view.completions_keystroke.is_empty() {
-                    Some("Completions open as you type.".into())
+                    Some(t!("features.completions_open_as_you_type").to_string())
                 } else {
-                    Some(format!(
-                        "Completions open as you type (or {}).",
-                        *view.completions_keystroke
-                    ))
+                    Some(
+                        t!(
+                            "features.completions_open_as_you_type_or",
+                            key = format!("{}", *view.completions_keystroke)
+                        )
+                        .to_string(),
+                    )
                 }
             }
             TabBehavior::Autosuggestions if view.completions_keystroke.is_empty() => {
-                Some("Opening the completion menu is unbound.".into())
+                Some(t!("features.opening_completion_menu_unbound").to_string())
             }
-            TabBehavior::Autosuggestions => Some(format!(
-                "{} opens completion menu.",
-                *view.completions_keystroke
-            )),
+            TabBehavior::Autosuggestions => Some(
+                t!(
+                    "features.key_opens_completion_menu",
+                    key = format!("{}", *view.completions_keystroke)
+                )
+                .to_string(),
+            ),
             TabBehavior::UserDefined => None,
         };
         let other_keybinding_name = match *view.tab_behavior {
-            TabBehavior::Completions => Some("Accept Autosuggestion"),
-            TabBehavior::Autosuggestions => Some("Open Completions Menu"),
+            TabBehavior::Completions => Some(t!("features.accept_autosuggestion").to_string()),
+            TabBehavior::Autosuggestions => Some(t!("features.open_completions_menu").to_string()),
             TabBehavior::UserDefined => None,
         };
 
@@ -6318,7 +6327,7 @@ impl TabKeyBehaviorWidget {
                 )
                 .with_child(
                     Container::new(
-                        view.render_change_keybinding_button(other_keybinding_name, appearance),
+                        view.render_change_keybinding_button(&other_keybinding_name, appearance),
                     )
                     .with_margin_left(4.)
                     .finish(),
@@ -6408,7 +6417,7 @@ impl SettingsWidget for CtrlTabBehaviorWidget {
             || {
                 render_dropdown_item(
                     appearance,
-                    "Ctrl+Tab behavior:",
+                    &t!("features.ctrl_tab_behavior_label"),
                     None,
                     None,
                     LocalOnlyIconState::for_setting(
@@ -6451,7 +6460,7 @@ impl SettingsWidget for MouseReportingWidget {
         let reporting_settings = AltScreenReporting::as_ref(app);
         let ui_builder = appearance.ui_builder();
         render_body_item::<FeaturesPageAction>(
-            "Enable Mouse Reporting".into(),
+            t!("features.enable_mouse_reporting").to_string(),
             Some(AdditionalInfo {
                 mouse_state: self.additional_info_link.clone(),
                 on_click_action: Some(FeaturesPageAction::OpenUrl(
@@ -6506,7 +6515,7 @@ impl SettingsWidget for ScrollReportingWidget {
         let reporting_settings = AltScreenReporting::as_ref(app);
         let ui_builder = appearance.ui_builder();
         render_body_item::<FeaturesPageAction>(
-            "Enable Scroll Reporting".into(),
+            t!("features.enable_scroll_reporting").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 ScrollReportingEnabled::storage_key(),
@@ -6564,7 +6573,7 @@ impl SettingsWidget for FocusReportingWidget {
         let reporting_settings = AltScreenReporting::as_ref(app);
         let ui_builder = appearance.ui_builder();
         render_body_item::<FeaturesPageAction>(
-            "Enable Focus Reporting".into(),
+            t!("features.enable_focus_reporting").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 FocusReportingEnabled::storage_key(),
@@ -6611,7 +6620,7 @@ impl SettingsWidget for AudibleBellWidget {
         let ui_builder = appearance.ui_builder();
         let terminal_settings = TerminalSettings::as_ref(app);
         render_body_item::<FeaturesPageAction>(
-            "Use Audible Bell".into(),
+            t!("features.use_audible_bell").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 UseAudibleBell::storage_key(),
