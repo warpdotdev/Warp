@@ -7232,19 +7232,19 @@ impl ApiKeysWidget {
         list.finish()
     }
 
-    fn render_can_use_warp_credits_with_byok_toggle(
+    fn render_warp_credit_fallback_toggle(
         &self,
         view: &AISettingsPageView,
         app: &AppContext,
     ) -> Box<dyn Element> {
         let ai_settings = AISettings::as_ref(app);
 
-        let toggle = render_ai_setting_toggle::<CanUseWarpCreditsWithByok>(
+        let toggle = render_ai_setting_toggle::<CanUseWarpCreditsForFallback>(
             "Warp credit fallback",
-            AISettingsPageAction::ToggleCanUseWarpCreditsWithByok,
-            *ai_settings.can_use_warp_credits_with_byok,
+            AISettingsPageAction::ToggleCanUseWarpCreditsForFallback,
+            *ai_settings.can_use_warp_credits_for_fallback,
             ai_settings.is_any_ai_enabled(app),
-            self.can_use_warp_credits_with_byok.clone(),
+            self.can_use_warp_credits_for_fallback.clone(),
             &view.local_only_icon_tooltip_states,
             app,
         );
@@ -7372,7 +7372,7 @@ impl SettingsWidget for ApiKeysWidget {
         // Warp credit fallback toggle (shown when BYO is enabled)
         if is_byo_enabled {
             column.add_child(
-                Container::new(self.render_can_use_warp_credits_with_byok_toggle(view, app))
+                Container::new(self.render_warp_credit_fallback_toggle(view, app))
                     .with_margin_top(16.)
                     .finish(),
             );
@@ -7456,78 +7456,6 @@ impl SettingsWidget for ApiKeysWidget {
         }
 
         column.finish()
-    }
-
-    fn render_warp_credit_fallback_toggle(
-        &self,
-        view: &AISettingsPageView,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let ai_settings = AISettings::as_ref(app);
-        let toggle = render_ai_setting_toggle::<CanUseWarpCreditsForFallback>(
-            "Warp credit fallback",
-            AISettingsPageAction::ToggleCanUseWarpCreditsForFallback,
-            *ai_settings.can_use_warp_credits_for_fallback,
-            ai_settings.is_any_ai_enabled(app),
-            self.can_use_warp_credits_for_fallback.clone(),
-            &view.local_only_icon_tooltip_states,
-            app,
-        );
-
-        let description = render_ai_setting_description(
-            "When enabled, agent requests may be routed to one of Warp's provided models in the event of an error. Warp will prioritize using your API keys over your Warp credits.",
-            ai_settings.is_any_ai_enabled(app),
-            app,
-        );
-
-        Flex::column()
-            .with_child(toggle)
-            .with_child(description)
-            .finish()
-    }
-}
-
-impl SettingsWidget for ApiKeysWidget {
-    type View = AISettingsPageView;
-
-    fn search_terms(&self) -> &str {
-        "api keys bring your own byo openai anthropic google claude gemini gpt"
-    }
-
-    fn render(
-        &self,
-        view: &Self::View,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let ai_settings = AISettings::as_ref(app);
-        let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
-        let is_byo_enabled = UserWorkspaces::as_ref(app).is_byo_api_key_enabled(app);
-
-        let mut column = Flex::column()
-            .with_child(render_separator(appearance))
-            .with_child(
-                build_sub_header(
-                    appearance,
-                    "API Keys",
-                    Some(styles::header_font_color(is_any_ai_enabled, app)),
-                )
-                .with_padding_bottom(HEADER_PADDING)
-                .finish(),
-            )
-            .with_child(self.render_api_keys_section(appearance, app, is_byo_enabled));
-
-        if is_byo_enabled {
-            column.add_child(
-                Container::new(self.render_warp_credit_fallback_toggle(view, app))
-                    .with_margin_top(16.)
-                    .finish(),
-            );
-        }
-
-        Container::new(column.finish())
-            .with_margin_bottom(HEADER_PADDING)
-            .finish()
     }
 }
 

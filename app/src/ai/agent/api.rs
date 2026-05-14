@@ -254,8 +254,7 @@ impl RequestParams {
                 api_key_manager.custom_model_providers_for_request(is_custom_inference_enabled)
             })
             .flatten();
-        let allow_use_of_warp_credits =
-            *AISettings::as_ref(app).can_use_warp_credits_for_fallback;
+        let allow_use_of_warp_credits = *AISettings::as_ref(app).can_use_warp_credits_for_fallback;
 
         let app_execution_mode = AppExecutionMode::as_ref(app);
         let autonomy_level = if app_execution_mode.is_autonomous() {
