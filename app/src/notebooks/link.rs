@@ -12,18 +12,18 @@ use futures_util::future::Either;
 use url::Url;
 use warp_util::path::{CleanPathResult, LineAndColumnArg};
 use warpui::{
-    AppContext, Entity, ModelContext, ModelHandle, SingletonEntity, WindowId,
-    r#async::SpawnedFutureHandle,
+    r#async::SpawnedFutureHandle, AppContext, Entity, ModelContext, ModelHandle, SingletonEntity,
+    WindowId,
 };
 
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
 #[cfg(feature = "local_fs")]
-use crate::util::openable_file_type::{FileTarget, is_supported_image_file, resolve_file_target};
+use crate::util::openable_file_type::{is_supported_image_file, resolve_file_target, FileTarget};
 use crate::{
     drive::OpenWarpDriveObjectArgs,
     terminal::model::session::Session,
-    uri::parse_url_paths::{WarpWebLink, get_item_data_from_warp_link},
+    uri::parse_url_paths::{get_item_data_from_warp_link, WarpWebLink},
     workspace::ActiveSession,
 };
 
