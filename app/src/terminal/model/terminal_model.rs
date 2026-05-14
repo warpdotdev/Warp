@@ -29,8 +29,8 @@ use super::ansi::{
     WarpificationUnavailableReason,
 };
 use super::block::{
-    AgentInteractionMetadata, Block, BlockId, BlockMetadata, BlockSize, BlocklistEnvVarMetadata,
-    BlockState, SerializedBlock,
+    AgentInteractionMetadata, Block, BlockId, BlockMetadata, BlockSize, BlockState,
+    BlocklistEnvVarMetadata, SerializedBlock,
 };
 use super::blockgrid::BlockGrid;
 use super::grid::grid_handler::{
