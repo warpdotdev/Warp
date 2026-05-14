@@ -764,6 +764,10 @@ en:
     create_file_label: "Create file: {name}"
     create_file_help: "Press Enter to create {name} in the current directory"
 
+  command_palette:
+    search_placeholder: "Search for a command"
+    no_results: "No results found"
+
   search_bar:
     loading_suggestions: "Loading {filter} suggestions"
     error_finding_results: "Error finding results"

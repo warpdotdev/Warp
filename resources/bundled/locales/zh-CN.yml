@@ -764,6 +764,10 @@ zh-CN:
     create_file_label: "创建文件：{name}"
     create_file_help: "按 Enter 在当前目录创建 {name}"
 
+  command_palette:
+    search_placeholder: "搜索命令"
+    no_results: "未找到结果"
+
   search_bar:
     loading_suggestions: "正在加载 {filter} 建议"
     error_finding_results: "查找结果时出错"
