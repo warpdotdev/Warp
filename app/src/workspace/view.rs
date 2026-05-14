@@ -12858,35 +12858,24 @@ impl Workspace {
             (true, Some(ChangelogRequestType::WindowLaunch), _) => {
                 if let Some(version) = ChannelState::app_version() {
                     Settings::mark_changelog_shown(version, ctx);
-                    if FeatureFlag::AvatarInTabBar.is_enabled() {
-                        self.update_toast_stack.update(ctx, |stack, ctx| {
-                            // Get keybinding for view changelog action
-                            let keystroke = ctx
-                                .editable_bindings()
-                                .find(|binding| binding.name == "workspace:view_changelog")
-                                .and_then(|binding| trigger_to_keystroke(binding.trigger));
+                    self.update_toast_stack.update(ctx, |stack, ctx| {
+                        // Get keybinding for view changelog action
+                        let keystroke = ctx
+                            .editable_bindings()
+                            .find(|binding| binding.name == "workspace:view_changelog")
+                            .and_then(|binding| trigger_to_keystroke(binding.trigger));
 
-                            let mut link = ToastLink::new("View changelog".to_owned())
-                                .with_onclick_action(WorkspaceAction::ViewLatestChangelog);
-                            if let Some(keystroke) = keystroke {
-                                link = link.with_keystroke(keystroke);
-                            }
-
-                            let toast = DismissibleToast::default(String::from("Warp updated!"))
-                                .with_link(link);
-
-                            stack.add_ephemeral_toast(toast, ctx);
-                        });
-                    } else {
-                        // If resource center isn't already open and Warp AI isn't open, then open resource center
-                        if !self.current_workspace_state.is_resource_center_open
-                            && !self.current_workspace_state.is_ai_assistant_panel_open
-                        {
-                            self.open_resource_center_main_page(ctx);
-                            self.update_resource_center_action_target(ctx);
-                            ctx.notify();
+                        let mut link = ToastLink::new("View changelog".to_owned())
+                            .with_onclick_action(WorkspaceAction::ViewLatestChangelog);
+                        if let Some(keystroke) = keystroke {
+                            link = link.with_keystroke(keystroke);
                         }
-                    }
+
+                        let toast = DismissibleToast::default(String::from("Warp updated!"))
+                            .with_link(link);
+
+                        stack.add_ephemeral_toast(toast, ctx);
+                    });
                 }
             }
             (_, Some(ChangelogRequestType::UserAction), _) => {
@@ -18254,28 +18243,11 @@ impl Workspace {
             );
         }
 
-        if FeatureFlag::AvatarInTabBar.is_enabled() {
-            target.add_child(
-                Container::new(self.render_avatar_button(appearance, ctx))
-                    .with_margin_left(TAB_BAR_PADDING_LEFT)
-                    .finish(),
-            );
-        } else {
-            let resource_center_closed = !self.current_workspace_state.is_resource_center_open;
-            if resource_center_closed && ContextFlag::WarpEssentials.is_enabled() {
-                target.add_child(
-                    Container::new(self.render_resource_center_button(appearance, ctx))
-                        .with_margin_left(TAB_BAR_PADDING_LEFT)
-                        .finish(),
-                );
-            }
-
-            target.add_child(
-                Container::new(self.render_settings_button(appearance))
-                    .with_margin_left(TAB_BAR_PADDING_LEFT)
-                    .finish(),
-            );
-        }
+        target.add_child(
+            Container::new(self.render_avatar_button(appearance, ctx))
+                .with_margin_left(TAB_BAR_PADDING_LEFT)
+                .finish(),
+        );
 
         if self.auth_state.is_anonymous_or_logged_out()
             && !FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
@@ -23718,7 +23690,7 @@ impl View for Workspace {
             );
         }
 
-        if FeatureFlag::AvatarInTabBar.is_enabled() && self.is_user_menu_open {
+        if self.is_user_menu_open {
             stack.add_positioned_overlay_child(
                 ChildView::new(&self.user_menu).finish(),
                 OffsetPositioning::offset_from_save_position_element(
@@ -23879,7 +23851,7 @@ impl View for Workspace {
         }
 
         if let Some(input_position_id) = input_position_id {
-            if FeatureFlag::AvatarInTabBar.is_enabled() && self.is_input_box_visible(app) {
+            if self.is_input_box_visible(app) {
                 stack.add_positioned_overlay_child(
                     ChildView::new(&self.update_toast_stack).finish(),
                     self.update_toast_positioning(input_position_id, app),

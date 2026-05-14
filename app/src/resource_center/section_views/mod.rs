@@ -2,7 +2,6 @@ pub mod feature_section;
 pub use feature_section::FeatureSectionView;
 pub mod content_section;
 pub use content_section::ContentSectionView;
-use warp_core::features::FeatureFlag;
 pub mod changelog_section;
 use crate::{
     appearance::Appearance,
@@ -85,7 +84,7 @@ pub trait SectionView {
         top_bar_mouse_state: MouseStateHandle,
         ctx: &AppContext,
     ) -> Box<dyn Element> {
-        Hoverable::new(top_bar_mouse_state, |state| {
+        Hoverable::new(top_bar_mouse_state, |_state| {
             let mut section_header = Flex::row();
 
             let section_title = Shrinkable::new(
@@ -107,30 +106,6 @@ pub trait SectionView {
             )
             .finish();
 
-            let icon_path = if self.is_expanded() {
-                CHEVRON_DOWN_SKINNY_SVG_PATH
-            } else {
-                CHEVRON_RIGHT_SKINNY_SVG_PATH
-            };
-
-            let icon_color = if state.is_hovered() {
-                appearance.theme().active_ui_detail()
-            } else {
-                appearance
-                    .theme()
-                    .active_ui_detail()
-                    .with_opacity(DROPDOWN_ICON_OPACITY)
-            };
-
-            let dropdown_icon =
-                ConstrainedBox::new(Icon::new(icon_path, icon_color.into_solid()).finish())
-                    .with_height(CHEVRON_ICON_SIZE)
-                    .with_width(CHEVRON_ICON_SIZE)
-                    .finish();
-
-            if !FeatureFlag::AvatarInTabBar.is_enabled() {
-                section_header.add_child(dropdown_icon);
-            }
             section_header.add_child(section_title);
 
             if let Some(progress_indicator) =

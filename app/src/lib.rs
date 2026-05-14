@@ -2536,8 +2536,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::FullScreenZenMode,
         #[cfg(feature = "minimalist_ui")]
         FeatureFlag::MinimalistUI,
-        #[cfg(feature = "avatar_in_tab_bar")]
-        FeatureFlag::AvatarInTabBar,
         #[cfg(feature = "workflow_aliases")]
         FeatureFlag::WorkflowAliases,
         #[cfg(feature = "ssh_drag_and_drop")]
