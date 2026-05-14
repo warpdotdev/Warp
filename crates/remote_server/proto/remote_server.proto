@@ -38,6 +38,7 @@ message ClientMessage {
     DropCodebaseIndex drop_codebase_index = 22;
     GetFragmentMetadataFromHash get_fragment_metadata_from_hash = 23;
     GetBranches get_branches = 24;
+    ResyncCodebase resync_codebase = 25;
   }
 }
 // Top-level envelope for all server → client messages.
@@ -336,6 +337,10 @@ message FileContextProto {
 // ── Remote codebase indexing status ───────────────────────────────
 
 message IndexCodebase {
+  string repo_path = 1;
+  string auth_token = 2;
+}
+message ResyncCodebase {
   string repo_path = 1;
   string auth_token = 2;
 }

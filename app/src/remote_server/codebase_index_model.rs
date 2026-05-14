@@ -122,7 +122,7 @@ impl RemoteCodebaseIndexModel {
         };
 
         RemoteServerManager::handle(ctx).update(ctx, |manager, ctx| {
-            manager.index_codebase(remote_path, ctx);
+            manager.ensure_codebase_indexed(remote_path, ctx);
         });
         true
     }
@@ -157,7 +157,7 @@ impl RemoteCodebaseIndexModel {
                     // requesting immediately on navigation.
                     let remote_path = remote_path.clone();
                     RemoteServerManager::handle(ctx).update(ctx, |manager, ctx| {
-                        manager.index_codebase(remote_path, ctx);
+                        manager.ensure_codebase_indexed(remote_path, ctx);
                     });
                 }
             }

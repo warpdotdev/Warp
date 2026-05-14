@@ -26,6 +26,15 @@ pub(super) fn not_enabled_codebase_index_status(repo_path: String) -> CodebaseIn
 pub(super) fn disabled_codebase_index_status(repo_path: String) -> CodebaseIndexStatus {
     base_codebase_index_status(repo_path, CodebaseIndexStatusState::Disabled)
 }
+pub(super) fn unavailable_codebase_index_status(
+    repo_path: String,
+    failure_message: String,
+) -> CodebaseIndexStatus {
+    CodebaseIndexStatus {
+        failure_message: Some(failure_message),
+        ..base_codebase_index_status(repo_path, CodebaseIndexStatusState::Unavailable)
+    }
+}
 
 fn base_codebase_index_status(
     repo_path: String,
