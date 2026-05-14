@@ -369,27 +369,23 @@ impl CLIAgent {
 
         // Build the set of identifying tokens to match against `command_prefix()`.
         // The exact first word is the primary candidate; we also peel a leading
-        // path component (so `/usr/local/bin/codex` matches `codex`), and on
-        // Linux a Node.js / Python shebang-script invocation may surface as
-        // `node /usr/local/bin/codex` or `python /usr/local/bin/foo.py` — in
-        // that case `argv[0]` is the runtime, not the agent, so we additionally
-        // consider `argv[1]`'s basename (stripping common script extensions).
-        // See #9870 for the Linux-specific Codex detection failure this covers.
+        // path component (so `/usr/local/bin/codex` and `./run-claude.py`
+        // both match via basename). Shebang-script invocations preserve their
+        // path-style invocation through `Block::preexec_command`, which means
+        // basename matching is sufficient — there is no longer a heuristic
+        // runtime-arg parser for `node script.js` / `python script.py` shapes
+        // (per maintainer feedback on #10022).
         let candidate_basename = path_basename_token(&resolved_first_word);
-        let runtime_invoked_basename =
-            shebang_script_basename(&resolved_command, &resolved_first_word);
 
         // Check if any candidate matches a known CLI agent.
         // Also matches `aifx agent run claude` as Claude for Uber employees,
         // and the `vibe-acp` ACP-mode binary as Mistral Vibe (also recovered
-        // through the path / runtime basename helpers when invoked via path
-        // prefix or Node.js shebang).
+        // through the path basename helper when invoked via path prefix).
         //
-        // Basename / runtime-script fallbacks are gated on
-        // `prefix_eligible_for_basename_recovery(prefix)` so that generic
-        // command_prefix values (e.g. `CLIAgent::CursorCli` whose prefix is
-        // the bare string "agent") don't false-positive on unrelated
-        // scripts/binaries that happen to share the name. See #9870 review.
+        // Basename recovery is gated on `prefix_eligible_for_basename_recovery(prefix)`
+        // so that generic `command_prefix` values (e.g. `CLIAgent::CursorCli`
+        // whose prefix is the bare string "agent") don't false-positive on
+        // unrelated scripts/binaries that happen to share the name. See #9870 review.
         enum_iterator::all::<CLIAgent>()
             .filter(|agent| !matches!(agent, CLIAgent::Unknown))
             .find(|agent| {
@@ -398,14 +394,11 @@ impl CLIAgent {
                 resolved_first_word == prefix
                     || (basename_eligible
                         && candidate_basename.as_deref() == Some(prefix))
-                    || (basename_eligible
-                        && runtime_invoked_basename.as_deref() == Some(prefix))
                     || (matches!(agent, CLIAgent::Claude)
                         && Self::is_aifx_agent_run_claude(&resolved_command, ctx))
                     || (matches!(agent, CLIAgent::Vibe)
                         && (resolved_first_word == "vibe-acp"
-                            || candidate_basename.as_deref() == Some("vibe-acp")
-                            || runtime_invoked_basename.as_deref() == Some("vibe-acp")))
+                            || candidate_basename.as_deref() == Some("vibe-acp")))
             })
     }
 
@@ -428,55 +421,30 @@ impl CLIAgent {
 }
 
 /// Agent `command_prefix()` values that are too generic to safely match via
-/// path basename or runtime-script basename recovery. `CLIAgent::CursorCli`'s
-/// prefix is the bare string "agent", which would false-positive on unrelated
-/// scripts/binaries named `agent` (e.g. `/tmp/agent`, `node /tmp/agent.js`).
-/// These prefixes still match exactly via `resolved_first_word`, but the
-/// fallback paths are gated. See #9870 review.
+/// path basename recovery. `CLIAgent::CursorCli`'s prefix is the bare string
+/// "agent", which would false-positive on unrelated scripts/binaries named
+/// `agent` (e.g. `/tmp/agent`). These prefixes still match exactly via
+/// `resolved_first_word`, but path basename recovery is gated. See #9870 review.
 const GENERIC_AGENT_PREFIXES: &[&str] = &["agent"];
 
 /// Returns true when an agent's `command_prefix()` is distinctive enough
-/// to safely accept a basename / runtime-script match in addition to the
-/// exact-word match.
+/// to safely accept a basename match in addition to the exact-word match.
 fn prefix_eligible_for_basename_recovery(prefix: &str) -> bool {
-    !GENERIC_AGENT_PREFIXES.iter().any(|p| *p == prefix)
+    !GENERIC_AGENT_PREFIXES.contains(&prefix)
 }
 
-/// Script-runtime executable names whose `argv[1]` is the script being run.
-/// On Linux, a Node.js / Python shebang script's `/proc/PID/comm` reports the
-/// runtime, not the script name — so a command surfaces as e.g.
-/// `node /usr/local/bin/codex` and we have to look at the second token to
-/// recover the agent identity. See #9870 for the canonical Codex case.
-/// Deno is intentionally omitted: its conventional invocation is
-/// `deno run <script>`, where the script basename sits at `argv[2]` rather than
-/// `argv[1]`. The first-positional recovery used here doesn't cover that shape,
-/// and per maintainer guidance we avoid runtime-specific special cases. See PR
-/// #10022 discussion.
-const SCRIPT_RUNTIMES: &[&str] = &["node", "nodejs", "bun", "python", "python3"];
-
-/// Common script extensions stripped when matching a runtime-invoked script
-/// against `command_prefix()`. Kept narrow on purpose; broadening to every
-/// possible extension is a follow-up.
+/// Common script extensions stripped from path basenames when matching against
+/// `command_prefix()`. Kept narrow on purpose so a script named exactly like
+/// the agent's `command_prefix` (e.g. `./claude.py`, `./codex.js`) is recovered
+/// without broadening into general filename-stem matching.
 const STRIPPED_SCRIPT_EXTENSIONS: &[&str] = &[".js", ".mjs", ".cjs", ".ts", ".py"];
 
-/// Runtime flags that consume the *next* token as a value rather than acting on
-/// the script. Without skipping past them, an invocation like `node -e codex`
-/// (eval string) or `python -c claude` would false-positive as the agent.
-/// Keep this list aligned with the most common value-taking flags across the
-/// runtimes in `SCRIPT_RUNTIMES`. Flags using the `--key=value` form are
-/// handled implicitly because they remain a single whitespace token.
-const VALUE_TAKING_RUNTIME_FLAGS: &[&str] = &[
-    // Node.js
-    "-e", "--eval", "-p", "--print", "-r", "--require", "-C", "--conditions",
-    // Python
-    "-c", "-m", "-X", "-W",
-    // Bun (subset)
-    "-d", "--define",
-];
-
 /// If `first_word` looks like an absolute or relative path (`/usr/local/bin/codex`,
-/// `./codex`), returns the basename for matching purposes. Returns `None` when
-/// the input has no path component — callers fall back to the exact-word match.
+/// `./codex`, `./claude.py`), returns the basename for matching purposes. Returns
+/// `None` when the input has no path component — callers fall back to the exact-word
+/// match. Common script extensions are stripped so a shebang-invoked Python or
+/// JS script named after the agent (e.g. `./claude.py`) recovers the agent
+/// identity through basename matching.
 fn path_basename_token(first_word: &str) -> Option<String> {
     if !first_word.contains('/') && !first_word.contains('\\') {
         return None;
@@ -485,80 +453,6 @@ fn path_basename_token(first_word: &str) -> Option<String> {
         .file_name()
         .and_then(|s| s.to_str())
         .map(strip_script_extension)
-}
-
-/// If `first_word` is a known script runtime (`node`, `python`, ...), returns
-/// the basename of the script being executed (the first non-flag positional
-/// argument). Returns `None` if the first token isn't a recognized runtime, or
-/// if the command has no script positional.
-///
-/// Value-taking runtime flags (e.g. `node -e <code>`, `python -c <code>`) are
-/// detected and their value is consumed alongside the flag, so an invocation
-/// like `node -e codex` does NOT false-positive as the Codex agent.
-///
-/// Leading shell env-var assignments (`FOO=1 node ...`) are skipped to stay
-/// aligned with `extract_first_command`'s shell-aware parsing — without this,
-/// an invocation like `FOO=1 node /usr/local/bin/codex` would be mis-parsed
-/// here (treating `FOO=1` as the runtime token) even though
-/// `resolved_first_word` correctly resolved to `node`. See #9870 review.
-fn shebang_script_basename(command: &str, first_word: &str) -> Option<String> {
-    if !SCRIPT_RUNTIMES.iter().any(|r| *r == first_word) {
-        return None;
-    }
-    // Use whitespace splitting (not shell parsing) — this is best-effort
-    // recovery, not security-critical input handling.
-    let mut tokens = command.split_whitespace().peekable();
-
-    // Skip leading `KEY=VALUE` env-var assignments so we align with
-    // `extract_first_command`. Stop at the first non-assignment token, which
-    // is the runtime executable (matches `first_word`).
-    while tokens.peek().is_some_and(|t| is_env_var_assignment(t)) {
-        tokens.next();
-    }
-
-    let _runtime = tokens.next()?;
-
-    let script = loop {
-        let token = tokens.next()?;
-        if !token.starts_with('-') {
-            break token;
-        }
-        // `-e`, `-c`, `--require` etc. consume the next token as their value.
-        // `--key=value` collapses to a single token and is handled by the
-        // outer `starts_with('-')` check.
-        if VALUE_TAKING_RUNTIME_FLAGS.iter().any(|f| *f == token) {
-            // Consume the value; ignore it.
-            tokens.next();
-        }
-        // Otherwise it's a flag without a value (e.g. `--inspect`,
-        // `-O`, `--no-warnings`); the loop continues past it.
-    };
-
-    Path::new(script)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .map(strip_script_extension)
-}
-
-/// Returns true when `token` looks like a shell env-var assignment such as
-/// `FOO=bar` or `PATH=/tmp:/usr/bin`. Conservative: requires the prefix to
-/// match the POSIX env-var naming pattern (`[A-Za-z_][A-Za-z0-9_]*=`).
-fn is_env_var_assignment(token: &str) -> bool {
-    let Some(eq_pos) = token.find('=') else {
-        return false;
-    };
-    if eq_pos == 0 {
-        return false;
-    }
-    let name = &token[..eq_pos];
-    let mut chars = name.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !(first.is_ascii_alphabetic() || first == '_') {
-        return false;
-    }
-    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// Strips a single trailing extension from `STRIPPED_SCRIPT_EXTENSIONS`, if any.
