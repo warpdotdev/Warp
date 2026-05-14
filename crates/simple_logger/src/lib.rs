@@ -5,10 +5,17 @@ use std::{
 
 use async_channel::Sender;
 use async_fs::OpenOptions;
+use chrono::Utc;
 use futures::AsyncWriteExt as _;
 use warpui::r#async::executor::{Background, BackgroundTask};
 
 pub mod manager;
+pub mod rotation_events;
+
+pub use rotation_events::{
+    MockSummarizer, PipelineStep, RotationEvent, RotationSummarizer, RotationSummary,
+    SummarizerError,
+};
 
 /// Configuration for size-based log file rotation.
 ///
@@ -92,16 +99,27 @@ pub struct SimpleLogger {
 }
 
 impl SimpleLogger {
-    /// Creates a new logger that writes to the specified file path.
+    /// Creates a new logger that, in addition to size-based rotation, optionally
+    /// invokes a [`RotationSummarizer`] on each rotation to produce a structured
+    /// summary record of the soon-to-be-discarded content.
     ///
-    /// If `rotation` is `Some`, the active file is rotated whenever its written
-    /// byte count reaches the configured threshold. If `None`, the file is
-    /// truncated on creation and grows without bound for the logger's lifetime
-    /// (the original behavior).
-    pub(crate) fn new(
+    /// Two sidecar files are emitted alongside the active log:
+    ///
+    /// - `<path>.rotations.jsonl` — written whenever rotation is configured,
+    ///   regardless of `summarizer`. Records timestamp, bytes rotated, and the
+    ///   path of the discarded file (if any).
+    /// - `<path>.summaries.jsonl` — written only when `summarizer` is `Some`
+    ///   and returns `Ok(Some(_))`. Records the summary content + per-step
+    ///   pipeline traces.
+    ///
+    /// Summarizer errors are logged and swallowed; the rotation itself always
+    /// completes regardless of summarization outcome, so a failing model call
+    /// or unavailable backend never blocks logging.
+    pub(crate) fn new_with_summarizer(
         log_path: PathBuf,
         executor: Arc<Background>,
         rotation: Option<RotationConfig>,
+        summarizer: Option<Arc<dyn RotationSummarizer>>,
     ) -> Self {
         let (log_tx, log_rx) = async_channel::unbounded::<String>();
 
@@ -134,6 +152,23 @@ impl SimpleLogger {
 
                         if let Some(config) = rotation {
                             if written_bytes >= config.max_file_size_bytes {
+                                let pre_rotation_bytes = written_bytes;
+                                // Snapshot the soon-to-be-discarded file's content
+                                // *before* `perform_rotation` deletes it, so the
+                                // summarizer (if any) has something to work with.
+                                let oldest_path = path_with_suffix(&log_path, config.max_rotation);
+                                let discarded_snapshot =
+                                    if summarizer.is_some() && oldest_path.exists() {
+                                        async_fs::read_to_string(&oldest_path).await.ok()
+                                    } else {
+                                        None
+                                    };
+                                let discarded_path_for_event = if oldest_path.exists() {
+                                    Some(oldest_path.clone())
+                                } else {
+                                    None
+                                };
+
                                 // Drop the active file handle before renaming so platforms
                                 // that disallow renaming an open file (notably Windows)
                                 // succeed, and so the subsequent reopen receives a fresh
@@ -148,6 +183,60 @@ impl SimpleLogger {
                                         &log_path,
                                     );
                                 }
+
+                                // Layer A — emit a rotation event. Always-on when
+                                // rotation is configured. Failure here is logged but
+                                // never bubbles up: a missing sidecar must not
+                                // prevent the logger from continuing to write logs.
+                                if let Err(e) = emit_rotation_event(
+                                    &log_path,
+                                    pre_rotation_bytes,
+                                    discarded_path_for_event,
+                                )
+                                .await
+                                {
+                                    log::warn!(
+                                        "SimpleLogger: failed to write rotation event for \
+                                         {:?}: {e}",
+                                        &log_path,
+                                    );
+                                }
+
+                                // Layer B — optional summarization of the discarded
+                                // file. Skipped silently when no summarizer is
+                                // configured or when the discarded file was empty.
+                                if let (Some(summarizer), Some(content)) =
+                                    (summarizer.as_ref(), discarded_snapshot)
+                                {
+                                    let snapshot_path =
+                                        path_with_suffix(&log_path, config.max_rotation);
+                                    match summarizer.summarize(&snapshot_path, &content).await {
+                                        Ok(Some(summary)) => {
+                                            if let Err(e) =
+                                                append_summary(&log_path, &summary).await
+                                            {
+                                                log::warn!(
+                                                    "SimpleLogger: failed to append rotation \
+                                                     summary for {:?}: {e}",
+                                                    &log_path,
+                                                );
+                                            }
+                                        }
+                                        Ok(None) => {
+                                            // Summarizer chose to emit nothing — this
+                                            // is a valid response (e.g. trivially-small
+                                            // content). Silent.
+                                        }
+                                        Err(e) => {
+                                            log::warn!(
+                                                "SimpleLogger: summarizer errored for {:?}: \
+                                                 {e}; rotation proceeded without summary",
+                                                &log_path,
+                                            );
+                                        }
+                                    }
+                                }
+
                                 log_file = match open_truncated(&log_path).await {
                                     Ok(f) => f,
                                     Err(e) => {
@@ -274,6 +363,64 @@ pub(crate) fn path_with_suffix(base: &Path, n: usize) -> PathBuf {
     let mut s = base.as_os_str().to_owned();
     s.push(format!(".{n}"));
     PathBuf::from(s)
+}
+
+/// Sidecar path: `<base>.rotations.jsonl` — the rotation event log.
+pub(crate) fn rotations_sidecar_path(base: &Path) -> PathBuf {
+    let mut s = base.as_os_str().to_owned();
+    s.push(".rotations.jsonl");
+    PathBuf::from(s)
+}
+
+/// Sidecar path: `<base>.summaries.jsonl` — model-generated summary records.
+pub(crate) fn summaries_sidecar_path(base: &Path) -> PathBuf {
+    let mut s = base.as_os_str().to_owned();
+    s.push(".summaries.jsonl");
+    PathBuf::from(s)
+}
+
+/// Append a single `RotationEvent` JSON line to the rotations sidecar. Creates
+/// the file if it doesn't exist. Errors propagate so the caller can decide
+/// whether to log the failure; the framework specifically swallows them so a
+/// missing sidecar never blocks logging.
+async fn emit_rotation_event(
+    base_path: &Path,
+    bytes_rotated: u64,
+    discarded_path: Option<PathBuf>,
+) -> std::io::Result<()> {
+    let event = RotationEvent {
+        timestamp: Utc::now(),
+        active_log: base_path.to_path_buf(),
+        bytes_rotated,
+        discarded_path,
+    };
+    let line = event
+        .to_jsonl_line()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    append_line(&rotations_sidecar_path(base_path), &line).await
+}
+
+/// Append a single `RotationSummary` JSON line to the summaries sidecar.
+async fn append_summary(base_path: &Path, summary: &RotationSummary) -> std::io::Result<()> {
+    let line = summary
+        .to_jsonl_line()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    append_line(&summaries_sidecar_path(base_path), &line).await
+}
+
+/// Append `line` to `path`, creating the file if needed. The line is expected
+/// to already include its terminating newline; this helper is a thin wrapper
+/// around `OpenOptions::append` so the sidecar callers don't each repeat the
+/// file-open dance.
+async fn append_line(path: &Path, line: &str) -> std::io::Result<()> {
+    let mut file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(path)
+        .await?;
+    file.write_all(line.as_bytes()).await?;
+    file.flush().await?;
+    Ok(())
 }
 
 #[cfg(test)]

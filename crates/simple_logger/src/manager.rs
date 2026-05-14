@@ -1,4 +1,4 @@
-use crate::{LogFileWriter, RotationConfig, SimpleLogger};
+use crate::{LogFileWriter, RotationConfig, RotationSummarizer, SimpleLogger};
 use std::collections::{HashMap, HashSet};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -134,13 +134,35 @@ impl LogManager {
         executor: Arc<Background>,
         rotation: Option<RotationConfig>,
     ) -> Result<SimpleLogger, LogManagerError> {
+        self.register_with_summarizer(namespace, relative_path, executor, rotation, None)
+    }
+
+    /// Register a logger with rotation **and** an optional summarizer.
+    ///
+    /// When `summarizer` is `Some`, each rotation also invokes the summarizer
+    /// on the content of the file about to be discarded and writes a
+    /// structured record to a `<path>.summaries.jsonl` sidecar. The rotation
+    /// event itself is logged to a `<path>.rotations.jsonl` sidecar
+    /// unconditionally whenever rotation fires.
+    ///
+    /// Summarizer failures are recoverable: the rotation always completes,
+    /// the rotation event is still logged, only the summary record is
+    /// dropped on error.
+    pub fn register_with_summarizer(
+        &mut self,
+        namespace: &str,
+        relative_path: impl AsRef<Path>,
+        executor: Arc<Background>,
+        rotation: Option<RotationConfig>,
+        summarizer: Option<Arc<dyn RotationSummarizer>>,
+    ) -> Result<SimpleLogger, LogManagerError> {
         if !self.namespaces.contains(namespace) {
             return Err(LogManagerError::UnknownNamespace {
                 namespace: namespace.to_string(),
             });
         }
         let path = resolve_log_path(namespace, relative_path);
-        self.register_resolved_path(path, executor, rotation)
+        self.register_resolved_path(path, executor, rotation, summarizer)
     }
 
     fn register_resolved_path(
@@ -148,6 +170,7 @@ impl LogManager {
         path: PathBuf,
         executor: Arc<Background>,
         rotation: Option<RotationConfig>,
+        summarizer: Option<Arc<dyn RotationSummarizer>>,
     ) -> Result<SimpleLogger, LogManagerError> {
         if let Some(existing) = self.loggers.get(&path) {
             if let Some(writer) = existing.upgrade() {
@@ -162,7 +185,8 @@ impl LogManager {
 
         // In the absence of an active logger at this path, initialize and return a new logger,
         // which truncates any existing log file on creation.
-        let logger = SimpleLogger::new(path.clone(), executor, rotation);
+        let logger =
+            SimpleLogger::new_with_summarizer(path.clone(), executor, rotation, summarizer);
         self.loggers.insert(path, logger.downgrade());
         Ok(logger)
     }
