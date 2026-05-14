@@ -3430,7 +3430,6 @@ impl PaneGroup {
             return;
         }
 
-        let mut entered = false;
         new_terminal_view.update(ctx, |terminal_view, ctx| {
             terminal_view.restore_conversation_after_view_creation(
                 RestoredAIConversation::new(child_conversation),
@@ -3443,29 +3442,26 @@ impl PaneGroup {
                 AgentViewEntryOrigin::SharedSessionSelection,
                 ctx,
             );
-            let Some(ambient_agent_view_model) = terminal_view
+            // The shared-session viewer's `TerminalView` is constructed with
+            // `is_cloud_mode=false`, so `ambient_agent_view_model()` is
+            // typically `None` here. Update it opportunistically if the view
+            // happens to expose one (mirrors the guarded call in
+            // `handle_network_events::JoinedSuccessfully`); the network's
+            // own `JoinedSuccessfully` handler is the authoritative source
+            // for ambient agent state.
+            if let Some(ambient_agent_view_model) = terminal_view
                 .ambient_agent_view_model()
                 .into_optional_handle()
                 .cloned()
-            else {
-                log::error!(
-                    "ensure_shared_session_viewer_child_pane: missing ambient agent view model for conv={child_conversation_id:?}"
-                );
-                return;
-            };
-            ambient_agent_view_model.update(ctx, |model, ctx| {
-                model.set_conversation_id(Some(child_conversation_id));
-                if let Some(task_id) = child_task_id {
-                    model.enter_viewing_existing_session(task_id, ctx);
-                }
-            });
-            entered = true;
+            {
+                ambient_agent_view_model.update(ctx, |model, ctx| {
+                    model.set_conversation_id(Some(child_conversation_id));
+                    if let Some(task_id) = child_task_id {
+                        model.enter_viewing_existing_session(task_id, ctx);
+                    }
+                });
+            }
         });
-
-        if !entered {
-            self.discard_pane(new_pane_id.into(), ctx);
-            return;
-        }
 
         log::info!(
             "[orch-viewer] materialized shared-session viewer child pane: \
