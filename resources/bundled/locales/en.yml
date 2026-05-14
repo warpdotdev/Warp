@@ -503,6 +503,18 @@ en:
     use_the_agent: "Use the agent"
     use_the_agent_subtitle: "Choose a locally set up project and we’ll help you set up an environment based on it"
     view_my_runs: "View my runs"
+    create_environment: "Create environment"
+    save_environment: "Save environment"
+    edit_environment: "Edit environment"
+    personal_not_for_integrations: "Personal environments cannot be used with external integrations or team API keys. For the best experience, use shared environments."
+    setup_commands: "Setup command(s)"
+    docker_image_reference: "Docker image reference"
+    generating: "Generating…"
+    suggest_image: "Suggest image"
+    suggest_image_tooltip: "Warp will suggest a Docker image based on your selected repositories."
+    authenticate: "Authenticate"
+    suggest_image_github_auth_required: "You need to grant access to your GitHub repos to suggest a Docker image"
+    suggest_image_no_match: "We couldn't find a good match. We recommend using a custom Docker image for these repos."
 
   themes:
     title: "Themes"
