@@ -630,6 +630,45 @@ en:
   workflows:
     command_edited: "Command edited."
     to_cycle_parameters: "to cycle parameters"
+    new_enum: "New enum"
+    edit_enum: "Edit enum"
+    enum_name_placeholder: "Name"
+    enum_variant_placeholder: "Variant"
+    enum_variants: "Variants"
+    enum_type_static: "Static"
+    enum_type_dynamic: "Dynamic"
+    enum_dynamic_placeholder: "# Enter a shell command that generates variants, delimited by newlines.\n\ngit branch -a"
+
+  command_search:
+    placeholder: "Search your history, workflows, and more"
+    result_executed: "Result executed"
+    result_executed_help: "Press Cmd-Up to navigate to the command's output."
+    result_accepted: "Result accepted."
+    result_accepted_help: "You can edit the command here before pressing Enter to execute it."
+    loading: "Loading..."
+    no_results: "No results found."
+    out_of_credits_prefix: "Looks like you're out of credits. "
+    out_of_credits_suffix: " for more credits."
+    accessibility_title: "Command Search"
+    accessibility_description: "Search your history, workflows, and more. Use the Up and Down arrows to browse search results after typing. Press Enter to accept a selected result, inserting it into the terminal input. Press Escape to close."
+
+  search_bar:
+    loading_suggestions: "Loading {filter} suggestions"
+    error_finding_results: "Error finding results"
+
+  rules:
+    header: "Rules"
+    description: "Rules enhance the agent by providing structured guidelines that help maintain consistency, enforce best practices, and adapt to specific workflows, including codebases or broader tasks."
+    search_placeholder: "Search rules"
+    zero_state: "Add a rule above, or drop one at ~/.agents/AGENTS.md to apply it across every project."
+    zero_state_project: "Once you generate a WARP.md rules file for a project, it will appear here."
+    disabled_banner_prefix: "Your rules are disabled and won't be used as context in sessions. You can "
+    disabled_banner_link: "turn it back on"
+    disabled_banner_suffix: " anytime."
+    global_scope: "Global"
+    project_based_scope: "Project based"
+    open_file: "Open file"
+    untitled: "Untitled"
 
   # ── AI Assistant ──
   ai_assistant:
@@ -1768,7 +1807,9 @@ en:
     copy: "Copy"
     paste: "Paste"
     edit: "Edit"
+    create: "Create"
     save: "Save"
+    upgrade: "Upgrade"
     clear: "Clear"
     close: "Close"
     cancel: "Cancel"

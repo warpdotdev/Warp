@@ -630,6 +630,45 @@ zh-CN:
   workflows:
     command_edited: "命令已编辑。"
     to_cycle_parameters: "切换参数"
+    new_enum: "新建枚举"
+    edit_enum: "编辑枚举"
+    enum_name_placeholder: "名称"
+    enum_variant_placeholder: "变体"
+    enum_variants: "变体"
+    enum_type_static: "静态"
+    enum_type_dynamic: "动态"
+    enum_dynamic_placeholder: "# 输入生成变体的 shell 命令，变体之间用换行分隔。\n\ngit branch -a"
+
+  command_search:
+    placeholder: "搜索历史记录、工作流等"
+    result_executed: "结果已执行"
+    result_executed_help: "按 Cmd-Up 跳转到命令输出。"
+    result_accepted: "结果已接受。"
+    result_accepted_help: "你可以先在这里编辑命令，再按 Enter 执行。"
+    loading: "正在加载..."
+    no_results: "未找到结果。"
+    out_of_credits_prefix: "你的额度似乎已经用完。"
+    out_of_credits_suffix: "以获得更多额度。"
+    accessibility_title: "命令搜索"
+    accessibility_description: "搜索历史记录、工作流等。输入后使用上下方向键浏览搜索结果。按 Enter 接受所选结果并插入终端输入。按 Escape 关闭。"
+
+  search_bar:
+    loading_suggestions: "正在加载 {filter} 建议"
+    error_finding_results: "查找结果时出错"
+
+  rules:
+    header: "规则"
+    description: "规则通过提供结构化指南来增强 Agent，帮助保持一致性、执行最佳实践，并适配代码库或更广泛任务等特定工作流。"
+    search_placeholder: "搜索规则"
+    zero_state: "在上方添加规则，或把规则放到 ~/.agents/AGENTS.md，让它应用到每个项目。"
+    zero_state_project: "为项目生成 WARP.md 规则文件后，它会显示在这里。"
+    disabled_banner_prefix: "你的规则已禁用，不会作为会话上下文使用。你可以"
+    disabled_banner_link: "重新启用"
+    disabled_banner_suffix: "。"
+    global_scope: "全局"
+    project_based_scope: "基于项目"
+    open_file: "打开文件"
+    untitled: "未命名"
 
   # ── AI 助手 ──
   ai_assistant:
@@ -1768,7 +1807,9 @@ zh-CN:
     copy: "复制"
     paste: "粘贴"
     edit: "编辑"
+    create: "创建"
     save: "保存"
+    upgrade: "升级"
     clear: "清除"
     close: "关闭"
     cancel: "取消"
