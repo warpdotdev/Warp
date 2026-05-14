@@ -219,7 +219,6 @@ impl BlocklistAIController {
         });
 
         // Eagerly create an exchange for this request (with empty inputs) and initialize output.
-        let is_re_init_of_existing_conv = existing_conversation_id.is_some();
         history.update(ctx, |history_model, ctx| {
             let _ = history_model.update_conversation_for_new_request_input(
                 RequestInput::for_task(
@@ -251,40 +250,15 @@ impl BlocklistAIController {
                 ConversationStatus::InProgress,
                 ctx,
             );
-            // Only transfer ownership / mark active for the first Init that
-            // sets up this conversation locally. Subsequent re-Inits (the
-            // parent's stream replays a new request, or a child's Network
-            // delivers its Init after pre-binding) must not disrupt the
-            // user's current focus -- in particular, a shared-session viewer
-            // that has navigated to a child agent must not be ripped back to
-            // the orchestrator every time the parent emits another Init.
-            if !is_re_init_of_existing_conv {
-                history_model.set_active_conversation_id(
-                    conversation_id,
-                    self.terminal_view_id,
-                    ctx,
-                );
-            } else {
-                log::info!(
-                    "[orch-init] skipping set_active_conversation_id for re-Init of existing \
-                     conv={conversation_id:?}"
-                );
-            }
+            history_model.set_active_conversation_id(conversation_id, self.terminal_view_id, ctx);
         });
-        if !is_re_init_of_existing_conv {
-            self.context_model.update(ctx, |context_model, ctx| {
-                context_model.set_pending_query_state_for_existing_conversation(
-                    conversation_id,
-                    AgentViewEntryOrigin::SharedSessionSelection,
-                    ctx,
-                );
-            });
-        } else {
-            log::info!(
-                "[orch-init] skipping agent view entry for re-Init of existing \
-                 conv={conversation_id:?}"
+        self.context_model.update(ctx, |context_model, ctx| {
+            context_model.set_pending_query_state_for_existing_conversation(
+                conversation_id,
+                AgentViewEntryOrigin::SharedSessionSelection,
+                ctx,
             );
-        }
+        });
     }
 
     /// Returns whether replayed events for an already-populated shared-session conversation should

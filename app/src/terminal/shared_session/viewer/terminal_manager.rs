@@ -448,7 +448,6 @@ impl TerminalManager {
             self.current_network.clone(),
             self.network_resources.prompt_type.clone(),
             self.viewer_remote_update_guard.clone(),
-            self.network_resources.channel_event_proxy.clone(),
             self.orchestration_viewer_model.clone(),
             ctx,
         );
@@ -691,7 +690,6 @@ impl TerminalManager {
         current_network: Arc<FairMutex<Option<ModelHandle<Network>>>>,
         prompt_type: ModelHandle<PromptType>,
         viewer_remote_update_guard: RemoteUpdateGuard,
-        channel_event_proxy: ChannelEventListener,
         orchestration_viewer_model: Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
         ctx: &mut AppContext,
     ) {
@@ -772,14 +770,16 @@ impl TerminalManager {
                         // Spin up the orchestration viewer model on first join.
                         // Idempotent across reconnects via the `is_none()` guard
                         // on the shared slot. Gated on the feature flag so the
-                        // REST polling and child-session connections are off
-                        // until the pill bar feature is enabled.
+                        // REST polling is off until the pill bar feature is
+                        // enabled. The model is pure discovery + polling: each
+                        // discovered child gets a dedicated hidden
+                        // shared-session viewer pane materialized by the pane
+                        // group when the model emits
+                        // `Event::EnsureSharedSessionViewerChildPane`.
                         if FeatureFlag::OrchestrationViewerPillBar.is_enabled()
                             && orchestration_viewer_model.lock().is_none()
                         {
                             let weak_view_handle_for_orch = weak_view_handle.clone();
-                            let terminal_model_for_orch = model.clone();
-                            let channel_event_proxy_for_orch = channel_event_proxy.clone();
                             let orchestration_viewer_model_slot =
                                 orchestration_viewer_model.clone();
                             let handle = ctx.add_model(|model_ctx| {
@@ -787,8 +787,6 @@ impl TerminalManager {
                                     task_id,
                                     terminal_view_id,
                                     weak_view_handle_for_orch,
-                                    terminal_model_for_orch,
-                                    channel_event_proxy_for_orch,
                                     model_ctx,
                                 )
                             });
