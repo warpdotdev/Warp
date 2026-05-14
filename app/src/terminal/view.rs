@@ -4718,9 +4718,7 @@ impl TerminalView {
         ctx: &AppContext,
     ) -> Result<(), ExitAgentViewError> {
         match self.agent_view_controller.as_ref(ctx).can_exit_agent_view() {
-            Err(ExitAgentViewError::LongRunningCommand)
-                if self.can_pop_nested_cloud_agent_view(ctx) =>
-            {
+            Err(ExitAgentViewError::LongRunningCommand) if self.is_ambient_agent_session(ctx) => {
                 Ok(())
             }
             result => result,
@@ -4775,13 +4773,22 @@ impl TerminalView {
     /// * Exiting agent view for the selected conversation
     /// * Popping the current view off the navigation stack (for cloud mode agents)
     fn exit_agent_view(&mut self, ctx: &mut ViewContext<Self>) {
-        // For ambient agent sessions (cloud mode), always pop from pane stack.
-        // These sessions are pushed onto a nav stack and have no underlying terminal
-        // to return to via the normal agent view exit path.
+        // For nested ambient agent sessions (cloud mode), pop from pane stack.
+        // Root cloud-mode panes have no parent terminal to return to, so exit
+        // the fullscreen agent view in place instead.
         if self.is_ambient_agent_session(ctx) {
-            if let Some(pane_stack) = self.pane_stack.as_ref().and_then(|h| h.upgrade(ctx)) {
+            if let Some(pane_stack) = self
+                .pane_stack
+                .as_ref()
+                .and_then(|h| h.upgrade(ctx))
+                .filter(|stack| stack.as_ref(ctx).depth() > 1)
+            {
                 pane_stack.update(ctx, |stack, ctx| {
                     stack.pop(ctx);
+                });
+            } else {
+                self.agent_view_controller.update(ctx, |controller, ctx| {
+                    controller.exit_agent_view_without_confirmation(ctx);
                 });
             }
         } else {
@@ -20566,7 +20573,7 @@ impl TerminalView {
                         .block_list()
                         .active_block()
                         .is_active_and_long_running();
-                    if is_long_running && self.can_pop_nested_cloud_agent_view(ctx) {
+                    if is_long_running && self.is_ambient_agent_session(ctx) {
                         self.exit_agent_view(ctx);
                     } else if !is_long_running {
                         // During first-time setup, always exit directly without confirmation

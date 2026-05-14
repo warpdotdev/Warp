@@ -704,6 +704,30 @@ fn escape_pops_nested_cloud_agent_view_with_long_running_command() {
 }
 
 #[test]
+fn escape_exits_root_cloud_agent_view_with_long_running_command() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cloud_mode = FeatureFlag::CloudMode.override_enabled(true);
+
+        let terminal = add_window_with_cloud_mode_terminal(&mut app);
+
+        terminal.update(&mut app, |view, ctx| {
+            view.enter_agent_view_for_new_conversation(None, AgentViewEntryOrigin::CloudAgent, ctx);
+            view.model
+                .lock()
+                .simulate_long_running_block("claude", "running");
+
+            assert_eq!(view.can_exit_agent_view_for_terminal_view(ctx), Ok(()));
+
+            view.handle_input_event(&InputEvent::Escape, ctx);
+
+            assert!(!view.agent_view_controller().as_ref(ctx).is_active());
+        });
+    })
+}
+
+#[test]
 fn escape_does_not_exit_local_agent_view_with_long_running_command() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
