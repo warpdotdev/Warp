@@ -1615,6 +1615,12 @@ zh-CN:
     context_remaining: "剩余 {pct}% 上下文"
 
   terminal:
+    new_session: "新建终端会话"
+    start_agent_conversation: "开始新的 Agent 对话"
+    start_cloud_agent_conversation: "开始新的云端 Agent 对话"
+    cycle_past_commands: "切换历史命令和对话"
+    open_code_review: "打开代码审查"
+    autodetect_agent_prompts: "自动检测终端会话中的 Agent 提示词"
     for_terminal: "返回终端"
     run_commands: "运行命令"
     steer_running_agent: "引导正在运行的 Agent"

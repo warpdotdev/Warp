@@ -1615,6 +1615,12 @@ en:
     context_remaining: "{pct}% context remaining"
 
   terminal:
+    new_session: "New terminal session"
+    start_agent_conversation: "start a new agent conversation"
+    start_cloud_agent_conversation: "start a new cloud agent conversation"
+    cycle_past_commands: "cycle past commands and conversations"
+    open_code_review: "open code review"
+    autodetect_agent_prompts: "autodetect agent prompts in terminal sessions"
     for_terminal: "for terminal"
     run_commands: "Run commands"
     steer_running_agent: "Steer the running agent"
