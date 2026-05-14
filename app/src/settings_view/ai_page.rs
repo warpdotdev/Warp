@@ -154,17 +154,6 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
 ) {
     ToggleSettingActionPair::add_toggle_setting_action_pairs_as_bindings(
         vec![ToggleSettingActionPair::new(
-            &crate::t!("toggle-suffix-ai"),
-            builder(SettingsAction::AI(AISettingsPageAction::ToggleGlobalAI)),
-            context,
-            flags::IS_ANY_AI_ENABLED,
-        )
-        .with_group(bindings::BindingGroup::WarpAi)],
-        app,
-    );
-
-    ToggleSettingActionPair::add_toggle_setting_action_pairs_as_bindings(
-        vec![ToggleSettingActionPair::new(
             &crate::t!("toggle-suffix-active-ai"),
             builder(SettingsAction::AI(AISettingsPageAction::ToggleActiveAI)),
             &(context.clone() & id!(flags::IS_ANY_AI_ENABLED)),
@@ -1429,7 +1418,7 @@ impl AISettingsPageView {
         match subpage {
             None => {
                 // Full page: all widgets (legacy behavior)
-                widgets.push(Box::new(GlobalAIWidget::default()));
+                widgets.push(Box::new(WarpAgentHeaderWidget));
                 if should_show_usage_widget {
                     widgets.push(Box::new(UsageWidget::default()));
                 }
@@ -1474,8 +1463,8 @@ impl AISettingsPageView {
                 }
             }
             Some(AISubpage::WarpAgent) => {
-                // Oz page: global toggle + Active AI + Input + Other
-                widgets.push(Box::new(GlobalAIWidget::default()));
+                // Oz page: header + Active AI + Input + Other
+                widgets.push(Box::new(WarpAgentHeaderWidget));
                 if ai_settings
                     .intelligent_autosuggestions_enabled_internal
                     .is_supported_on_current_platform()
@@ -2194,7 +2183,6 @@ impl Entity for AISettingsPageView {
 pub enum AISettingsPageAction {
     OpenUrl(String),
     SetVoiceInputToggleKey(VoiceInputToggleKey),
-    ToggleGlobalAI,
     ToggleActiveAI,
     ToggleIntelligentAutosuggestions,
     TogglePromptSuggestions,
@@ -2422,24 +2410,6 @@ impl TypedActionView for AISettingsPageView {
                         .explicitly_interacted_with_voice
                         .set_value(true, ctx));
                 });
-                ctx.notify();
-            }
-            AISettingsPageAction::ToggleGlobalAI => {
-                match AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                    settings.is_any_ai_enabled.toggle_and_save_value(ctx)
-                }) {
-                    Ok(new_value) => {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::ToggleGlobalAI {
-                                is_ai_enabled: new_value,
-                            },
-                            ctx
-                        );
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to set value for Global AI setting: {e:?}");
-                    }
-                }
                 ctx.notify();
             }
             AISettingsPageAction::ToggleActiveAI => {
@@ -3818,16 +3788,13 @@ fn render_ai_list(
         .finish()
 }
 
-#[derive(Default)]
-struct GlobalAIWidget {
-    switch_state: SwitchStateHandle,
-}
+struct WarpAgentHeaderWidget;
 
-impl SettingsWidget for GlobalAIWidget {
+impl SettingsWidget for WarpAgentHeaderWidget {
     type View = AISettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "oz warp agent global ai a.i. active next command prompt code diffs suggestion suggested suggestions \
+        "oz warp agent ai a.i. active next command prompt code diffs suggestion suggested suggestions \
                 agent mode natural language detection input hint api keys bring your own byo google anthropic openai"
     }
 
@@ -3835,13 +3802,9 @@ impl SettingsWidget for GlobalAIWidget {
         &self,
         _view: &Self::View,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
-        let ui_builder = appearance.ui_builder();
-        let is_ai_disabled_due_to_remote_session_org_policy =
-            AISettings::as_ref(app).is_ai_disabled_due_to_remote_session_org_policy(app);
-
-        let mut row = Flex::row()
+        let row = Flex::row()
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -3855,42 +3818,6 @@ impl SettingsWidget for GlobalAIWidget {
                 .with_color(appearance.theme().active_ui_text_color().into())
                 .finish(),
             );
-
-        if is_ai_disabled_due_to_remote_session_org_policy {
-            row.add_child(
-                ConstrainedBox::new(
-                    Container::new(
-                        Text::new(
-                            crate::t!("settings-ai-org-disallows-remote-session"),
-                            appearance.ui_font_family(),
-                            12.,
-                        )
-                        .with_color(appearance.theme().ui_warning_color())
-                        .finish(),
-                    )
-                    .with_padding_left(8.)
-                    .with_padding_right(8.)
-                    .finish(),
-                )
-                .with_max_width(400.)
-                .finish(),
-            );
-        }
-
-        row.add_child(
-            Container::new(
-                ui_builder
-                    .switch(self.switch_state.clone())
-                    .check(AISettings::as_ref(app).is_any_ai_enabled(app))
-                    .build()
-                    .on_click(move |ctx, _, _| {
-                        ctx.dispatch_typed_action(AISettingsPageAction::ToggleGlobalAI);
-                    })
-                    .finish(),
-            )
-            .with_padding_right(TOGGLE_BUTTON_RIGHT_PADDING)
-            .finish(),
-        );
 
         Container::new(row.finish())
             .with_padding_bottom(15.)

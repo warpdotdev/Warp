@@ -900,7 +900,6 @@ settings-ai-profiles-description = Profiles let you define how your Agent operat
 # Anonymous / org gates
 settings-ai-sign-up = Enable local AI
 settings-ai-anonymous-create-account = Local AI features do not require an account.
-settings-ai-org-disallows-remote-session = Your organization disallows AI when the active pane contains content from a remote session
 settings-ai-org-enforced-tooltip = This option is enforced by your organization's settings and cannot be customized.
 settings-ai-restricted-billing = Restricted due to billing issue
 settings-ai-unlimited = Unlimited
@@ -2142,7 +2141,6 @@ agent-error-attempting-resume-conversation = Attempting to resume conversation..
 toggle-setting-enable = Enable { $suffix }
 toggle-setting-disable = Disable { $suffix }
 
-toggle-suffix-ai = AI
 toggle-suffix-active-ai = Active AI
 toggle-suffix-ai-input-autodetect-agent = terminal command autodetection in agent input
 toggle-suffix-ai-input-autodetect-nld = natural language detection

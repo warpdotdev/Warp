@@ -9,7 +9,6 @@ use std::path::PathBuf;
 use indexmap::IndexMap;
 
 use crate::ai::request_usage_model::RequestLimitInfo;
-use crate::auth::AuthStateProvider;
 use crate::report_if_error;
 use crate::terminal::CLIAgent;
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -1130,7 +1129,7 @@ impl settings_value::SettingsValue for BYOPLastUsedReasoningMap {
 }
 
 define_settings_group!(AISettings, settings: [
-    // If `false`, all AI features are disabled.
+    // 历史遗留设置。OpenWarp 的 Warp 智能体现在固定开启,不要用这个字段判断启用状态。
     is_any_ai_enabled: IsAnyAIEnabled {
         type: bool,
         default: true,
@@ -1946,20 +1945,10 @@ impl AISettings {
         });
     }
 
-    pub fn is_ai_disabled_due_to_remote_session_org_policy(&self, _app: &AppContext) -> bool {
-        // OpenWarp 没有托管组织策略，远程 SSH 会话不能因此关闭本地 Agent 能力。
-        false
-    }
-
-    pub fn is_any_ai_enabled(&self, app: &AppContext) -> bool {
-        // Disable AI for anonymous and logged-out users.
-        let is_anonymous_or_logged_out = AuthStateProvider::as_ref(app)
-            .get()
-            .is_anonymous_or_logged_out();
-
-        *self.is_any_ai_enabled
-            && !is_anonymous_or_logged_out
-            && !self.is_ai_disabled_due_to_remote_session_org_policy(app)
+    pub fn is_any_ai_enabled(&self, _app: &AppContext) -> bool {
+        // OpenWarp 不再允许通过设置关闭 Warp 智能体。旧配置文件里持久化的
+        // `agents.warp_agent.is_any_ai_enabled = false` 会被忽略。
+        true
     }
 
     pub fn default_session_mode(&self, app: &AppContext) -> DefaultSessionMode {

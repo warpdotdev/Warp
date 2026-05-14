@@ -108,7 +108,7 @@ fn test_parse_rename_tab_slash_command_arguments() {
 }
 
 #[test]
-fn test_non_ai_commands_remain_active_when_ai_is_disabled() {
+fn test_ai_commands_ignore_legacy_global_ai_disabled_setting() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 
@@ -121,7 +121,7 @@ fn test_non_ai_commands_remain_active_when_ai_is_disabled() {
         let slash_command_data_source =
             input.read(&app, |input, _| input.slash_command_data_source.clone());
 
-        // Disable AI globally.
+        // 旧版全局关闭值现在会被忽略,AI 功能保持开启。
         AISettings::handle(&app).update(&mut app, |settings, ctx| {
             report_if_error!(settings.is_any_ai_enabled.set_value(false, ctx));
         });
@@ -132,22 +132,18 @@ fn test_non_ai_commands_remain_active_when_ai_is_disabled() {
                 .map(|(_, command)| command.name)
                 .collect();
 
-            // Commands that don't require AI should still be active.
-            // `/rename-tab` is a good canary because it has no session-context requirements
-            // other than ALWAYS.
             assert!(
                 active_command_names.contains(&commands::RENAME_TAB.name),
-                "/rename-tab should remain active when AI is off, got: {active_command_names:?}"
+                "/rename-tab should remain active, got: {active_command_names:?}"
             );
 
-            // Commands that require AI should be filtered out.
             assert!(
-                !active_command_names.contains(&commands::AGENT.name),
-                "/agent should NOT be active when AI is off, got: {active_command_names:?}"
+                active_command_names.contains(&commands::AGENT.name),
+                "/agent should remain active, got: {active_command_names:?}"
             );
             assert!(
-                !active_command_names.contains(&commands::PLAN.name),
-                "/plan should NOT be active when AI is off, got: {active_command_names:?}"
+                active_command_names.contains(&commands::PLAN.name),
+                "/plan should remain active, got: {active_command_names:?}"
             );
         });
     });

@@ -14,28 +14,23 @@ use warpui::{AppContext, SingletonEntity as _};
 
 /// Applies onboarding settings based on the user's selected mode.
 pub fn apply_onboarding_settings(selected_settings: &SelectedSettings, app: &mut AppContext) {
-    let is_ai_enabled = match selected_settings {
+    match selected_settings {
         SelectedSettings::AgentDrivenDevelopment {
             agent_settings,
             ui_customization,
             ..
         } => {
             apply_agent_settings(agent_settings, app);
-            let is_ai_enabled = !agent_settings.disable_oz;
             if let Some(ui) = ui_customization {
                 apply_ui_customization_settings(ui, true, app);
             }
-            is_ai_enabled
         }
         SelectedSettings::Terminal {
             ui_customization,
             cli_agent_toolbar_enabled,
             show_agent_notifications,
         } => {
-            // In old onboarding, there's nothing to set for terminal intent.
-            if !FeatureFlag::OpenWarpNewSettingsModes.is_enabled() {
-                true
-            } else {
+            if FeatureFlag::OpenWarpNewSettingsModes.is_enabled() {
                 if let Some(ui) = ui_customization {
                     apply_ui_customization_settings(ui, false, app);
                 }
@@ -47,16 +42,9 @@ pub fn apply_onboarding_settings(selected_settings: &SelectedSettings, app: &mut
                         .show_agent_notifications
                         .set_value(*show_agent_notifications, ctx));
                 });
-                false
             }
         }
     };
-
-    if FeatureFlag::OpenWarpNewSettingsModes.is_enabled() {
-        AISettings::handle(app).update(app, |settings, ctx| {
-            report_if_error!(settings.is_any_ai_enabled.set_value(is_ai_enabled, ctx));
-        });
-    }
 }
 
 /// Applies the explicit UI customization settings chosen during the

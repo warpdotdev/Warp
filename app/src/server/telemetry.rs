@@ -1937,11 +1937,6 @@ pub enum TelemetryEvent {
         is_intelligent_autosuggestions_enabled: bool,
     },
 
-    /// Emitted when the user toggles global AI.
-    ToggleGlobalAI {
-        is_ai_enabled: bool,
-    },
-
     /// Emitted when the user toggles active AI.
     ToggleActiveAI {
         is_active_ai_enabled: bool,
@@ -3412,9 +3407,6 @@ impl TelemetryEvent {
             } => Some(
                 json!({ "citation": citation, "block_id": block_id, "conversation_id": conversation_id, "server_output_id": server_output_id }),
             ),
-            TelemetryEvent::ToggleGlobalAI { is_ai_enabled } => {
-                Some(json!({"is_ai_enabled": is_ai_enabled}))
-            }
             TelemetryEvent::ToggleActiveAI {
                 is_active_ai_enabled,
             } => Some(json!({"is_active_ai_enabled": is_active_ai_enabled})),
@@ -4384,7 +4376,6 @@ impl TelemetryEvent {
             | TelemetryEvent::AgentModeCodeFilesNavigated { .. }
             | TelemetryEvent::AgentModeCodeDiffHunksNavigated { .. }
             | TelemetryEvent::ToggleIntelligentAutosuggestionsSetting { .. }
-            | TelemetryEvent::ToggleGlobalAI { .. }
             | TelemetryEvent::ToggleActiveAI { .. }
             | TelemetryEvent::TogglePromptSuggestionsSetting { .. }
             | TelemetryEvent::ToggleCodeSuggestionsSetting { .. }
