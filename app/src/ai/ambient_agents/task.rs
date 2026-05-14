@@ -520,6 +520,17 @@ pub struct TaskPrincipalInfo {
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct TaskStatusMessage {
     pub message: String,
+    #[serde(default, alias = "errorCode")]
+    pub error_code: Option<String>,
+}
+
+impl TaskStatusMessage {
+    pub fn is_environment_setup_failure(&self) -> bool {
+        matches!(
+            self.error_code.as_deref(),
+            Some("environment_setup_failed")
+        )
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]

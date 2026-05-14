@@ -53,6 +53,7 @@ struct TombstoneDisplayData {
     working_directory: Option<String>,
     /// Artifacts from the conversation
     artifacts: Vec<Artifact>,
+    hide_continue_actions: bool,
     /// Execution harness for the task. None until the task is loaded.
     #[cfg(not(target_family = "wasm"))]
     harness: Option<Harness>,
@@ -115,6 +116,7 @@ impl TombstoneDisplayData {
             credits: Some(format_credits(conversation.credits_spent())),
             working_directory: conversation.initial_working_directory(),
             artifacts: conversation.artifacts().to_vec(),
+            hide_continue_actions: false,
             #[cfg(not(target_family = "wasm"))]
             harness: None,
         }
@@ -147,6 +149,9 @@ impl TombstoneDisplayData {
         if task.state.is_failure_like() {
             self.is_error = true;
             if let Some(status_message) = &task.status_message {
+                if status_message.is_environment_setup_failure() {
+                    self.hide_continue_actions = true;
+                }
                 self.error_message = Some(status_message.message.clone());
             }
         }
@@ -210,6 +215,7 @@ impl ConversationEndedTombstoneView {
         if failed_before_task_creation {
             display_data.title = Some("Cloud agent failed to start".to_string());
             display_data.credits = None;
+            display_data.hide_continue_actions = true;
         }
 
         let artifact_buttons_view =
@@ -503,6 +509,9 @@ impl ConversationEndedTombstoneView {
             .with_spacing(8.);
 
         let mut has_button = false;
+        if self.display_data.hide_continue_actions {
+            return Empty::new().finish();
+        }
 
         #[cfg(not(target_family = "wasm"))]
         {
@@ -559,7 +568,11 @@ impl ConversationEndedTombstoneView {
     }
 
     pub(in crate::terminal::view) fn has_continue_locally_button_for_test(&self) -> bool {
-        self.continue_locally_button.is_some()
+        !self.display_data.hide_continue_actions && self.continue_locally_button.is_some()
+    }
+
+    pub(in crate::terminal::view) fn has_continue_in_cloud_button_for_test(&self) -> bool {
+        !self.display_data.hide_continue_actions && self.continue_in_cloud_button.is_some()
     }
 }
 

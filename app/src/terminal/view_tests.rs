@@ -1087,6 +1087,7 @@ fn cloud_mode_failed_inserts_tombstone_and_hides_input() {
                 Some("setup failed again")
             );
             assert_eq!(tombstone.credits_for_test(), None);
+            assert!(!tombstone.has_continue_in_cloud_button_for_test());
             assert!(!tombstone.has_continue_locally_button_for_test());
         });
     });
