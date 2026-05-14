@@ -471,7 +471,7 @@ impl View for AliasBar {
             .with_text_and_icon_label(
                 TextAndIcon::new(
                     TextAndIconAlignment::IconFirst,
-                    "Add alias",
+                    t!("workflows.add_alias").to_string(),
                     Icon::Plus.to_warpui_icon(
                         appearance
                             .theme()
