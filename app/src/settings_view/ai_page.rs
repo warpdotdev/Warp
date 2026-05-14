@@ -3475,16 +3475,12 @@ impl TypedActionView for AISettingsPageView {
                 });
                 ctx.notify();
             }
-<<<<<<< dagm/custom-api-endpoint
-
             AISettingsPageAction::OpenAddCustomEndpointModal => {
                 self.show_add_custom_endpoint_modal(ctx);
             }
             AISettingsPageAction::OpenEditCustomEndpointModal(index) => {
                 self.show_edit_custom_endpoint_modal(*index, ctx);
             }
-
-=======
             AISettingsPageAction::ToggleCloudHandoff => {
                 AISettings::handle(ctx).update(ctx, |settings, ctx| {
                     report_if_error!(settings
@@ -3501,7 +3497,6 @@ impl TypedActionView for AISettingsPageView {
                 });
                 ctx.notify();
             }
->>>>>>> master
             AISettingsPageAction::ToggleAgentAttribution => {
                 // The updated value syncs to warp-server automatically via
                 // `CloudPreferencesSyncer` as a `JsonPreference` GSO keyed
