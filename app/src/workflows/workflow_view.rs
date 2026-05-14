@@ -1593,7 +1593,7 @@ impl WorkflowView {
     fn save_aliases(&mut self, ctx: &mut ViewContext<Self>) {
         if let Err(e) = self.alias_bar.update(ctx, |bar, ctx| bar.save(ctx)) {
             log::error!("Error saving aliases: {e:?}");
-            self.display_error_toast("Error saving aliases".to_string(), ctx);
+            self.display_error_toast(t!("workflows.error_saving_aliases").to_string(), ctx);
         }
     }
 
@@ -1602,10 +1602,7 @@ impl WorkflowView {
 
         // Block saving if secrets are detected in the workflow when secret redaction is enabled.
         if self.workflow_contains_secrets(ctx) {
-            self.display_error_toast(
-                "This workflow cannot be saved because it contains secrets".to_string(),
-                ctx,
-            );
+            self.display_error_toast(t!("workflows.save_contains_secrets").to_string(), ctx);
             return;
         }
 
@@ -1637,7 +1634,7 @@ impl WorkflowView {
                     id
                 } else {
                     log::error!("No client_id obtained for creating workflow");
-                    self.display_error_toast(String::from("Could not create workflow"), ctx);
+                    self.display_error_toast(t!("workflows.create_failed").to_string(), ctx);
                     return;
                 };
 
@@ -1748,9 +1745,9 @@ impl WorkflowView {
         crate::workspace::ToastStack::handle(ctx).update(ctx, |stack, ctx| {
             stack.add_ephemeral_toast(
                 DismissibleToast::success(if self.is_for_agent_mode {
-                    "Prompt copied.".to_string()
+                    t!("workflows.prompt_copied").to_string()
                 } else {
-                    "Command copied.".to_string()
+                    t!("workflows.command_copied").to_string()
                 }),
                 window_id,
                 ctx,
@@ -2190,13 +2187,13 @@ impl WorkflowView {
 
     fn render_section_header(
         &self,
-        text: &'static str,
+        text: impl Into<String>,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         Container::new(
             appearance
                 .ui_builder()
-                .span(text)
+                .span(text.into())
                 .with_style(UiComponentStyles {
                     font_size: Some(SECTION_FONT_SIZE),
                     font_weight: Some(Weight::Bold),
@@ -2260,7 +2257,7 @@ impl WorkflowView {
             .with_children([
                 Flex::row()
                     .with_children([
-                        self.render_section_header("Aliases", appearance),
+                        self.render_section_header(t!("workflows.aliases").to_string(), appearance),
                         Container::new(help_icon).with_margin_left(4.).finish(),
                     ])
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -2833,9 +2830,9 @@ impl WorkflowView {
 
         let appearance = Appearance::as_ref(app);
         let text = if deleted {
-            "You no longer have access to this workflow"
+            t!("workflows.no_longer_have_access").to_string()
         } else {
-            "Workflow moved to trash"
+            t!("workflows.moved_to_trash").to_string()
         };
 
         let mut stack = Stack::new();
