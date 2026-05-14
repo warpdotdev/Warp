@@ -716,6 +716,12 @@ zh-CN:
     project_based_scope: "基于项目"
     open_file: "打开文件"
     untitled: "未命名"
+    add_rule: "添加规则"
+    edit_rule: "编辑规则"
+    name: "名称"
+    rule: "规则"
+    name_placeholder: "例如 Rust 规则"
+    rule_placeholder: "例如 永远不要在 Rust 中使用 unwrap"
 
   # ── AI 助手 ──
   ai_assistant:

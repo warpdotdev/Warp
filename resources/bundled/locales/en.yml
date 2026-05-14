@@ -716,6 +716,12 @@ en:
     project_based_scope: "Project based"
     open_file: "Open file"
     untitled: "Untitled"
+    add_rule: "Add Rule"
+    edit_rule: "Edit Rule"
+    name: "Name"
+    rule: "Rule"
+    name_placeholder: "e.g. Rust rules"
+    rule_placeholder: "e.g. Never use unwrap in Rust"
 
   # ── AI Assistant ──
   ai_assistant:
