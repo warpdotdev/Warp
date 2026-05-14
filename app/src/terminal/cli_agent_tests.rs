@@ -734,7 +734,7 @@ fn test_detect_node_shebang_with_env_var_prefix() {
             assert_eq!(
                 CLIAgent::detect(
                     "FOO=1 node /usr/local/bin/codex",
-                    Some(EscapeChar::Bash),
+                    Some(EscapeChar::Backslash),
                     None,
                     ctx,
                 ),
@@ -744,7 +744,7 @@ fn test_detect_node_shebang_with_env_var_prefix() {
             assert_eq!(
                 CLIAgent::detect(
                     "FOO=1 BAR=baz node /usr/local/bin/codex",
-                    Some(EscapeChar::Bash),
+                    Some(EscapeChar::Backslash),
                     None,
                     ctx,
                 ),
@@ -754,7 +754,7 @@ fn test_detect_node_shebang_with_env_var_prefix() {
             assert_eq!(
                 CLIAgent::detect(
                     "PATH=/tmp:/usr/bin node /usr/local/bin/codex",
-                    Some(EscapeChar::Bash),
+                    Some(EscapeChar::Backslash),
                     None,
                     ctx,
                 ),
