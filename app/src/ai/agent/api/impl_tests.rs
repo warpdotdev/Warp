@@ -1,4 +1,6 @@
-use super::{get_supported_cli_agent_tools, get_supported_tools};
+use super::{
+    api_keys_with_warp_credit_fallback_setting, get_supported_cli_agent_tools, get_supported_tools,
+};
 use crate::ai::agent::api::RequestParams;
 use crate::ai::blocklist::SessionContext;
 use crate::ai::llms::LLMId;
@@ -31,7 +33,7 @@ fn request_params_with_ask_user_question_enabled(ask_user_question_enabled: bool
         should_redact_secrets: false,
         api_keys: None,
         custom_model_providers: None,
-        allow_use_of_warp_credits_with_byok: false,
+        allow_use_of_warp_credits: false,
         autonomy_level: api::AutonomyLevel::Supervised,
         isolation_level: api::IsolationLevel::None,
         web_search_enabled: false,
@@ -56,6 +58,44 @@ fn request_params_for_remote(remote_codebase_search_available: bool) -> RequestP
     params
 }
 
+#[test]
+fn api_keys_with_warp_credit_fallback_setting_returns_none_without_keys_or_fallback() {
+    let api_keys = api_keys_with_warp_credit_fallback_setting(None, false);
+
+    assert!(api_keys.is_none());
+}
+
+#[test]
+fn api_keys_with_warp_credit_fallback_setting_creates_fallback_only_api_keys() {
+    let api_keys = api_keys_with_warp_credit_fallback_setting(None, true)
+        .expect("fallback setting should create ApiKeys");
+
+    assert!(api_keys.allow_use_of_warp_credits);
+    assert!(api_keys.anthropic.is_empty());
+    assert!(api_keys.openai.is_empty());
+    assert!(api_keys.google.is_empty());
+    assert!(api_keys.open_router.is_empty());
+    assert!(api_keys.aws_credentials.is_none());
+}
+
+#[test]
+fn api_keys_with_warp_credit_fallback_setting_preserves_existing_keys() {
+    let api_keys = api_keys_with_warp_credit_fallback_setting(
+        Some(api::request::settings::ApiKeys {
+            anthropic: "anthropic-key".to_string(),
+            openai: String::new(),
+            google: String::new(),
+            open_router: String::new(),
+            allow_use_of_warp_credits: false,
+            aws_credentials: None,
+        }),
+        true,
+    )
+    .expect("existing ApiKeys should be preserved");
+
+    assert_eq!(api_keys.anthropic, "anthropic-key");
+    assert!(api_keys.allow_use_of_warp_credits);
+}
 #[test]
 fn supported_tools_omits_ask_user_question_when_disabled() {
     let params = request_params_with_ask_user_question_enabled(false);
