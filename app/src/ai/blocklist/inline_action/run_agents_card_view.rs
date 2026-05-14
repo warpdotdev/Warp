@@ -643,7 +643,8 @@ impl RunAgentsCardView {
         if self.handles.pickers.harness_picker.is_none() {
             let handle = oc::new_standard_picker_dropdown(&colors, ctx);
             Self::set_upward_menu_position(&handle, ctx);
-            oc::populate_harness_picker(&handle, &state.orch.harness_type, ctx);
+            let is_local = !state.orch.execution_mode.is_remote();
+            oc::populate_harness_picker(&handle, &state.orch.harness_type, is_local, ctx);
             Self::subscribe_picker_close(&handle, ctx);
             self.handles.pickers.harness_picker = Some(handle);
         }

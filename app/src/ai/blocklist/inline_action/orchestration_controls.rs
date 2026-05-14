@@ -133,8 +133,10 @@ impl OrchestrationEditState {
         }
     }
 
-    /// Toggle Local ↔ Cloud. Resets OpenCode to Oz when switching
-    /// to Cloud (unsupported combination).
+    /// Toggle Local ↔ Cloud.
+    /// - Switching to Cloud resets OpenCode to Oz (unsupported combination).
+    /// - Switching to Local resets any non-Oz harness to Oz, since local
+    ///   orchestration only supports the default Oz harness.
     pub fn toggle_execution_mode_to_remote(&mut self, is_remote: bool) {
         if is_remote {
             if self.harness_type.eq_ignore_ascii_case("opencode") {
@@ -148,6 +150,9 @@ impl OrchestrationEditState {
                 };
             }
         } else {
+            if !self.harness_type.is_empty() && !self.harness_type.eq_ignore_ascii_case("oz") {
+                self.harness_type = "oz".to_string();
+            }
             self.execution_mode = RunAgentsExecutionMode::Local;
         }
     }
@@ -521,6 +526,7 @@ pub fn first_filtered_model_id<V: View>(
 pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
     dropdown: &ViewHandle<Dropdown<A>>,
     initial_harness: &str,
+    is_local: bool,
     ctx: &mut ViewContext<V>,
 ) {
     let initial_harness = initial_harness.to_string();
@@ -532,9 +538,12 @@ pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
         // relative order within each group.
         // Filter out Gemini — it is not yet supported as a multi-agent
         // harness and causes an infinite "Spawning agents" hang.
+        // Local execution only supports the default Oz harness; hide all
+        // non-Oz harnesses from the local picker so they cannot be selected.
         let mut sorted: Vec<_> = harnesses
             .iter()
             .filter(|entry| entry.harness != Harness::Gemini)
+            .filter(|entry| !is_local || entry.harness == Harness::Oz)
             .collect();
         sorted.sort_by_key(|entry| !entry.enabled);
 
@@ -1014,12 +1023,12 @@ pub fn repopulate_all_pickers<A: OrchestrationControlAction, V: View>(
     handles: &OrchestrationPickerHandles<A>,
     ctx: &mut ViewContext<V>,
 ) {
+    let is_local = !state.execution_mode.is_remote();
     if let Some(handle) = &handles.harness_picker {
-        populate_harness_picker(handle, &state.harness_type, ctx);
+        populate_harness_picker(handle, &state.harness_type, is_local, ctx);
     }
     // Revalidate model_id: if the previously selected model is no longer
     // in the catalog (e.g. server removed it), reset to default.
-    let is_local = !state.execution_mode.is_remote();
     if !is_model_in_filtered_choices(&state.model_id, &state.harness_type, is_local, ctx) {
         if let Some(first_id) = first_filtered_model_id(&state.harness_type, ctx) {
             state.model_id = first_id;
