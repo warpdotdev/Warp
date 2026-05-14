@@ -141,7 +141,8 @@ impl AuthSecretFtuxDropdown {
             &HarnessAvailabilityModel::handle(ctx),
             |me, _, event, ctx| match event {
                 HarnessAvailabilityEvent::AuthSecretsLoaded
-                | HarnessAvailabilityEvent::AuthSecretCreated { .. } => {
+                | HarnessAvailabilityEvent::AuthSecretCreated { .. }
+                | HarnessAvailabilityEvent::AuthSecretsFetchFailed => {
                     me.refresh_menu(ctx);
                     ctx.notify();
                 }

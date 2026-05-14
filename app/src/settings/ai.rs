@@ -1696,7 +1696,10 @@ impl AISettings {
         if !self.is_any_ai_enabled(app) || *self.should_force_disable_cloud_handoff {
             return false;
         }
-        if !crate::ai::blocklist::is_local_to_cloud_handoff_available() {
+        if !FeatureFlag::OzHandoff.is_enabled()
+            || !FeatureFlag::HandoffLocalCloud.is_enabled()
+            || !cfg!(all(feature = "local_fs", not(target_family = "wasm")))
+        {
             return false;
         }
         let privacy = PrivacySettings::as_ref(app);

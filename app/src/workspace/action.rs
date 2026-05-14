@@ -164,7 +164,6 @@ pub enum WorkspaceAction {
     ToggleTabConfigsMenu,
     ToggleNewSessionMenu {
         position: Vector2F,
-        is_vertical_tabs: bool,
     },
     SelectNewSessionMenuItem(NewSessionMenuItem),
     AutoupdateFailureLink,

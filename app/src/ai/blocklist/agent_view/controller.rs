@@ -260,6 +260,13 @@ impl AgentViewState {
         }
     }
 
+    pub fn origin(&self) -> Option<AgentViewEntryOrigin> {
+        match self {
+            AgentViewState::Active { origin, .. } => Some(*origin),
+            AgentViewState::Inactive => None,
+        }
+    }
+
     /// Returns `true` if in an active agent view state.
     pub fn is_active(&self) -> bool {
         matches!(self, AgentViewState::Active { .. })

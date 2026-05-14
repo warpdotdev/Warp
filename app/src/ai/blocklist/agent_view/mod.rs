@@ -9,6 +9,7 @@ mod inline_agent_view_header;
 pub(crate) mod orchestration_avatar;
 pub(crate) mod orchestration_conversation_links;
 pub mod orchestration_pill_bar;
+pub mod orchestration_pin_model;
 pub mod shortcuts;
 mod zero_state_block;
 

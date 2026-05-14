@@ -2874,6 +2874,20 @@ pub enum TelemetryEvent {
         /// `"musl"`, `"unknown"`.
         detected_libc: String,
     },
+    /// Emitted when a reconnection attempt succeeds after a spontaneous disconnect.
+    RemoteServerReconnection {
+        attempt: u32,
+        remote_os: Option<String>,
+        remote_arch: Option<String>,
+    },
+    /// Emitted when all reconnection attempts are exhausted.
+    RemoteServerReconnectExhausted {
+        attempts: u32,
+        remote_os: Option<String>,
+        remote_arch: Option<String>,
+        exit_code: Option<i32>,
+        signal_killed: Option<bool>,
+    },
 }
 
 impl TelemetryEventTrait for TelemetryEvent {
@@ -5092,7 +5106,9 @@ impl TelemetryEvent {
             | TelemetryEvent::RemoteServerClientRequestError { .. }
             | TelemetryEvent::RemoteServerMessageDecodingError { .. }
             | TelemetryEvent::RemoteServerSetupDuration { .. }
-            | TelemetryEvent::RemoteServerHostUnsupported { .. } => false,
+            | TelemetryEvent::RemoteServerHostUnsupported { .. }
+            | TelemetryEvent::RemoteServerReconnection { .. }
+            | TelemetryEvent::RemoteServerReconnectExhausted { .. } => false,
             #[cfg(feature = "local_fs")]
             TelemetryEvent::CodePaneOpened { .. }
             | TelemetryEvent::CodePanelsFileOpened { .. }
@@ -5659,7 +5675,9 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::RemoteServerClientRequestError
             | Self::RemoteServerMessageDecodingError
             | Self::RemoteServerSetupDuration
-            | Self::RemoteServerHostUnsupported => {
+            | Self::RemoteServerHostUnsupported
+            | Self::RemoteServerReconnection
+            | Self::RemoteServerReconnectExhausted => {
                 EnablementState::Flag(FeatureFlag::SshRemoteServer)
             }
         }
@@ -6069,6 +6087,8 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::RemoteServerMessageDecodingError => "RemoteServer.MessageDecodingError",
             Self::RemoteServerSetupDuration => "RemoteServer.SetupDuration",
             Self::RemoteServerHostUnsupported => "RemoteServer.HostUnsupported",
+            Self::RemoteServerReconnection => "RemoteServer.Reconnection",
+            Self::RemoteServerReconnectExhausted => "RemoteServer.ReconnectExhausted",
             #[cfg(windows)]
             Self::WSLRegistryError => "WSL Distribution Registry Error",
             #[cfg(windows)]
@@ -7112,6 +7132,12 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::RemoteServerHostUnsupported => {
                 "Preinstall check classified the remote host as unsupported, \
                  falling back to the legacy SSH flow"
+            }
+            Self::RemoteServerReconnection => {
+                "A reconnection attempt succeeded after a spontaneous disconnect"
+            }
+            Self::RemoteServerReconnectExhausted => {
+                "All reconnection attempts were exhausted after a spontaneous disconnect"
             }
         }
     }

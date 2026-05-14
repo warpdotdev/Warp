@@ -1,9 +1,9 @@
+use super::{classify_renderable_error, map_cli_session_status, should_sync_task_status_to_server};
 use crate::ai::agent::RenderableAIError;
+use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
 use crate::server::server_api::ai::TaskStatusUpdate;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionStatus;
 use warp_graphql::ai::{AgentTaskState, PlatformErrorCode};
-
-use super::{classify_renderable_error, map_cli_session_status};
 
 /// Helper to assert a (state, Option<TaskStatusUpdate>) tuple.
 fn assert_update(
@@ -142,4 +142,22 @@ fn cli_blocked_without_message() {
     let (state, update) = map_cli_session_status(&CLIAgentSessionStatus::Blocked { message: None });
     assert_eq!(state, AgentTaskState::Blocked);
     assert!(update.is_none());
+}
+
+#[test]
+fn cloud_agent_view_origin_does_not_sync_task_status() {
+    assert!(!should_sync_task_status_to_server(Some(
+        AgentViewEntryOrigin::CloudAgent
+    )));
+    assert!(!should_sync_task_status_to_server(Some(
+        AgentViewEntryOrigin::ThirdPartyCloudAgent
+    )));
+}
+
+#[test]
+fn driver_and_unknown_view_origins_sync_task_status() {
+    assert!(should_sync_task_status_to_server(Some(
+        AgentViewEntryOrigin::Cli
+    )));
+    assert!(should_sync_task_status_to_server(None));
 }

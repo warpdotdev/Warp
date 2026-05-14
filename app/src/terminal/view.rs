@@ -395,7 +395,7 @@ use warpui::elements::new_scrollable::{
 use warpui::elements::{
     get_rich_content_position_id, ChildAnchor, ClippedScrollStateHandle, Container,
     CrossAxisAlignment, DispatchEventResult, DropTarget, DropTargetData, Empty, EventHandler,
-    Expanded, Flex, NewScrollable, OffsetPositioning, ParentAnchor, ParentElement,
+    Expanded, Flex, LiveElement, NewScrollable, OffsetPositioning, ParentAnchor, ParentElement,
     ParentOffsetBounds, PositionedElementAnchor, PositionedElementOffsetBounds, Radius,
     ScrollableElement, ScrollbarWidth, Shrinkable, Text,
 };
@@ -754,6 +754,9 @@ lazy_static! {
     /// `BlockList` or the `AltScreen`) should be rendered.
     pub static ref PADDING_LEFT: f32 = 16.;
 }
+
+/// Interval at which the live command duration counter repaints.
+const LIVE_COMMAND_DURATION_REPAINT_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Default)]
 pub struct ControlMasterErrorBannerState {
@@ -3031,6 +3034,20 @@ impl TerminalView {
         }
     }
 
+    /// Returns whether local input-editor CRDT edits should be published to the shared-session
+    /// sharer. Viewer-local editor events can still fire from ended/setup-only cloud agent surfaces,
+    /// where sending them upstream would be rejected and surfaced back as edit failures.
+    pub(crate) fn should_publish_shared_session_input_editor_update(
+        &self,
+        model: &TerminalModel,
+        app: &AppContext,
+    ) -> bool {
+        let input_is_visible = self.is_input_box_visible(model, app);
+        // If there is a conversation tombstone and the input is hidden, should not broadcast input updates as
+        // the cloud agent session is over.
+        self.conversation_ended_tombstone_view_id.is_none() || input_is_visible
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         resources: TerminalViewResources,
@@ -4388,7 +4405,12 @@ impl TerminalView {
                             );
                         }
                     }
-                    RemoteServerManagerEvent::SessionDisconnected { session_id, .. } => {
+                    RemoteServerManagerEvent::SessionDisconnected {
+                        session_id,
+                        exit_status,
+                        was_reconnect_attempt,
+                        ..
+                    } => {
                         let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
                             .as_ref(ctx)
                             .platform_for_session(*session_id)
@@ -4399,13 +4421,26 @@ impl TerminalView {
                                 )
                             })
                             .unwrap_or((None, None));
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::RemoteServerDisconnection {
-                                remote_os,
-                                remote_arch,
-                            },
-                            ctx
-                        );
+                        if *was_reconnect_attempt {
+                            send_telemetry_from_ctx!(
+                                TelemetryEvent::RemoteServerReconnectExhausted {
+                                    attempts: remote_server::manager::MAX_RECONNECT_ATTEMPTS,
+                                    remote_os,
+                                    remote_arch,
+                                    exit_code: exit_status.as_ref().and_then(|s| s.code),
+                                    signal_killed: exit_status.as_ref().map(|s| s.signal_killed),
+                                },
+                                ctx
+                            );
+                        } else {
+                            send_telemetry_from_ctx!(
+                                TelemetryEvent::RemoteServerDisconnection {
+                                    remote_os,
+                                    remote_arch,
+                                },
+                                ctx
+                            );
+                        }
                     }
                     RemoteServerManagerEvent::SessionDeregistered { session_id } => {
                         // Clean up any stale SSH remote-server choice block if the
@@ -4530,8 +4565,7 @@ impl TerminalView {
                     }
                     RemoteServerManagerEvent::NavigatedToDirectory {
                         session_id: nav_session_id,
-                        host_id,
-                        indexed_path,
+                        remote_path,
                         ..
                     } => {
                         // Check if this navigation belongs to our active session
@@ -4541,13 +4575,35 @@ impl TerminalView {
                             .is_some_and(|sid| sid == *nav_session_id);
                         if is_relevant {
                             ctx.emit(Event::Pane(PaneEvent::RemoteRepoNavigated {
-                                host_id: host_id.clone(),
-                                indexed_path: indexed_path.clone(),
+                                remote_path: remote_path.clone(),
                             }));
                         }
                     }
+                    RemoteServerManagerEvent::SessionReconnected {
+                        session_id,
+                        attempt,
+                        ..
+                    } => {
+                        let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
+                            .as_ref(ctx)
+                            .platform_for_session(*session_id)
+                            .map(|p| {
+                                (
+                                    Some(p.os.as_str().to_owned()),
+                                    Some(p.arch.as_str().to_owned()),
+                                )
+                            })
+                            .unwrap_or((None, None));
+                        send_telemetry_from_ctx!(
+                            TelemetryEvent::RemoteServerReconnection {
+                                attempt: *attempt,
+                                remote_os,
+                                remote_arch,
+                            },
+                            ctx
+                        );
+                    }
                     RemoteServerManagerEvent::SessionConnecting { .. }
-                    | RemoteServerManagerEvent::SessionReconnected { .. }
                     | RemoteServerManagerEvent::HostConnected { .. }
                     | RemoteServerManagerEvent::HostDisconnected { .. }
                     | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
@@ -7409,6 +7465,10 @@ impl TerminalView {
                 LongRunningCommandAgentInteractionState::NotInteracting
             }
         };
+        log::info!(
+            "emit_long_running_command_agent_interaction_state_changed: \
+             agent_has_control={agent_has_control}, emitting state={state:?}"
+        );
         ctx.emit(Event::LongRunningCommandAgentInteractionStateChanged { state });
     }
 
@@ -13563,9 +13623,28 @@ impl TerminalView {
             .input_mode
             .value();
         let inverted = input_mode.is_inverted_blocklist();
-        self.model
-            .lock()
-            .selection_to_string(semantic_selection, inverted, ctx)
+        let blocklist_selected_text =
+            self.model
+                .lock()
+                .selection_to_string(semantic_selection, inverted, ctx);
+        blocklist_selected_text.or_else(|| self.pending_user_query_selected_text(ctx))
+    }
+
+    /// Returns selected text from the pending user query block, if any.
+    fn pending_user_query_selected_text(&self, ctx: &AppContext) -> Option<String> {
+        let view_id = self.pending_user_query_view_id?;
+        self.rich_content_views
+            .iter()
+            .find_map(|rc| match rc.metadata() {
+                Some(RichContentMetadata::PendingUserQuery {
+                    pending_user_query_block_handle,
+                }) if pending_user_query_block_handle.id() == view_id => {
+                    pending_user_query_block_handle
+                        .as_ref(ctx)
+                        .selected_text(ctx)
+                }
+                _ => None,
+            })
     }
 
     /// Gets the selected text from the terminal input editor, if any.
@@ -15464,6 +15543,12 @@ impl TerminalView {
             }
         }
 
+        if let Some(selected_text) = self.pending_user_query_selected_text(ctx) {
+            ctx.clipboard()
+                .write(ClipboardContent::plain_text(selected_text));
+            return;
+        }
+
         let semantic_selection = SemanticSelection::as_ref(ctx);
         if let Some(selected) = self.model.lock().selection_to_string(
             semantic_selection,
@@ -17164,9 +17249,10 @@ impl TerminalView {
         let selection_settings = SelectionSettings::handle(ctx);
         let semantic_selection = SemanticSelection::as_ref(ctx);
         let model = self.model.lock();
-        if let Some(selected) =
-            model.selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
-        {
+        let selected_text = model
+            .selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
+            .or_else(|| self.pending_user_query_selected_text(ctx));
+        if let Some(selected) = selected_text {
             selection_settings.update(ctx, |selection_settings, ctx| {
                 selection_settings
                     .maybe_copy_on_select(ClipboardContent::plain_text(selected), ctx);
@@ -18871,6 +18957,18 @@ impl TerminalView {
                         env_var_collection_block.clear_selection(ctx);
                     });
                 }
+                Some(RichContentMetadata::PendingUserQuery {
+                    pending_user_query_block_handle,
+                }) => {
+                    if exempt_rich_content_view_id
+                        .is_some_and(|view_id| pending_user_query_block_handle.id() == view_id)
+                    {
+                        continue;
+                    }
+                    pending_user_query_block_handle.update(ctx, |block, ctx| {
+                        block.clear_selection(ctx);
+                    });
+                }
                 Some(RichContentMetadata::WarpifySuccessBlock { .. }) => {
                     // TODO(Simon): We should be checking for WarpifySuccessBlocks here as well.
                     // The `WarpifySuccessBlock` implements a `SelectableArea`.
@@ -19806,9 +19904,10 @@ impl TerminalView {
             send_telemetry_from_ctx!(TelemetryEvent::ContextMenuCopySelectedText, ctx);
             let semantic_selection = SemanticSelection::as_ref(ctx);
             let model = self.model.lock();
-            if let Some(selected_text) =
-                model.selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
-            {
+            let selected_text = model
+                .selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
+                .or_else(|| self.pending_user_query_selected_text(ctx));
+            if let Some(selected_text) = selected_text {
                 ctx.clipboard()
                     .write(ClipboardContent::plain_text(selected_text));
             }
@@ -21694,6 +21793,23 @@ impl TerminalView {
             .formatted_duration_string()
     }
 
+    fn is_block_duration_live(model: &TerminalModel, block_index: BlockIndex) -> bool {
+        model
+            .block_list()
+            .block_at(block_index)
+            .is_some_and(|block| block.is_duration_live())
+    }
+
+    /// Returns `true` when the block is actively executing (has started but not
+    /// yet completed). Used to kick off the repaint timer before the first
+    /// whole-second tick so the live duration counter appears promptly.
+    fn is_block_executing(model: &TerminalModel, block_index: BlockIndex) -> bool {
+        model
+            .block_list()
+            .block_at(block_index)
+            .is_some_and(|block| block.is_executing())
+    }
+
     fn block_start_and_completed_ts(model: &TerminalModel, block_index: BlockIndex) -> String {
         let block = match model.block_list().block_at(block_index) {
             None => return String::new(),
@@ -22020,6 +22136,7 @@ impl TerminalView {
 
         let mut label_row = Flex::row().with_child(prompt);
 
+        let is_live = Self::is_block_duration_live(model, index);
         if let Some(duration_string) = Self::block_duration_text(model, index) {
             let duration = Text::new_inline(
                 duration_string,
@@ -22029,6 +22146,14 @@ impl TerminalView {
             .with_style(Properties::default().weight(appearance.monospace_font_weight()))
             .with_color(terminal_theme_prompt)
             .finish();
+
+            // Wrap in LiveElement to trigger periodic repaints while the command
+            // is still running, so the counter updates live.
+            let duration: Box<dyn Element> = if is_live {
+                LiveElement::new(duration, LIVE_COMMAND_DURATION_REPAINT_INTERVAL).finish()
+            } else {
+                duration
+            };
 
             label_row.add_child(if let Some(state) = mouse_state {
                 Hoverable::new(state.clone(), |state| {
@@ -22068,6 +22193,20 @@ impl TerminalView {
             } else {
                 duration
             });
+        } else if Self::is_block_executing(model, index) {
+            // Block is executing but less than 1 second has elapsed — no duration
+            // text to show yet. Add an invisible LiveElement to kick off the
+            // repaint timer so the counter appears as soon as 1s elapses.
+            label_row.add_child(
+                LiveElement::new(
+                    ConstrainedBox::new(Empty::new().finish())
+                        .with_width(0.)
+                        .with_height(0.)
+                        .finish(),
+                    LIVE_COMMAND_DURATION_REPAINT_INTERVAL,
+                )
+                .finish(),
+            );
         }
 
         SavePosition::new(

@@ -1,9 +1,11 @@
 use super::history_model::{
     BlocklistAIHistoryEvent, BlocklistAIHistoryModel, ConversationStatusUpdate,
 };
+use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
 use crate::ai::agent::{AIAgentOutputStatus, FinishedAIAgentOutput, RenderableAIError};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
+use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
 use crate::server::server_api::ai::{AIClient, TaskStatusUpdate};
 use crate::server::server_api::ServerApiProvider;
 use crate::terminal::cli_agent_sessions::{
@@ -87,11 +89,12 @@ impl TaskStatusSyncModel {
         match event {
             BlocklistAIHistoryEvent::UpdatedConversationStatus {
                 conversation_id,
+                terminal_view_id,
                 update,
                 ..
             } => {
                 if matches!(update, ConversationStatusUpdate::Changed { .. }) {
-                    self.on_conversation_status_updated(*conversation_id, ctx);
+                    self.on_conversation_status_updated(*conversation_id, *terminal_view_id, ctx);
                 }
             }
             // When the server token (and thus task_id) is first assigned to a
@@ -99,9 +102,10 @@ impl TaskStatusSyncModel {
             // where ConversationStatus::InProgress fires before task_id is
             // available — we catch up here once the task_id arrives.
             BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
-                conversation_id, ..
+                conversation_id,
+                terminal_view_id,
             } => {
-                self.on_conversation_status_updated(*conversation_id, ctx);
+                self.on_conversation_status_updated(*conversation_id, *terminal_view_id, ctx);
             }
             _ => {}
         }
@@ -132,9 +136,16 @@ impl TaskStatusSyncModel {
     fn on_conversation_status_updated(
         &self,
         conversation_id: AIConversationId,
+        terminal_view_id: EntityId,
         ctx: &mut ModelContext<Self>,
     ) {
         let (task_id, task_state, status_message) = {
+            if !should_sync_task_status_to_server(
+                ActiveAgentViewsModel::as_ref(ctx)
+                    .agent_view_origin_for_terminal_view(terminal_view_id, ctx),
+            ) {
+                return;
+            }
             let Some(conversation) =
                 BlocklistAIHistoryModel::as_ref(ctx).conversation(&conversation_id)
             else {
@@ -201,6 +212,13 @@ impl TaskStatusSyncModel {
             |_, _, _| {},
         );
     }
+}
+
+pub(crate) fn should_sync_task_status_to_server(origin: Option<AgentViewEntryOrigin>) -> bool {
+    !matches!(
+        origin,
+        Some(AgentViewEntryOrigin::CloudAgent | AgentViewEntryOrigin::ThirdPartyCloudAgent)
+    )
 }
 
 impl Entity for TaskStatusSyncModel {

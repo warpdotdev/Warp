@@ -55,15 +55,17 @@ impl SshTransport {
 
     pub fn remote_daemon_socket_path(&self) -> String {
         format!(
-            "{}/server.sock",
-            remote_server_daemon_dir(&self.auth_context.remote_server_identity_key())
+            "{}/{}",
+            remote_server_daemon_dir(&self.auth_context.remote_server_identity_key()),
+            remote_server::setup::daemon_socket_name(),
         )
     }
 
     pub fn remote_daemon_pid_path(&self) -> String {
         format!(
-            "{}/server.pid",
-            remote_server_daemon_dir(&self.auth_context.remote_server_identity_key())
+            "{}/{}",
+            remote_server_daemon_dir(&self.auth_context.remote_server_identity_key()),
+            remote_server::setup::daemon_pid_name(),
         )
     }
 
@@ -304,11 +306,12 @@ impl RemoteTransport for SshTransport {
                 .take()
                 .ok_or_else(|| anyhow::anyhow!("Failed to capture child stderr"))?;
 
-            let (client, event_rx) =
+            let (client, event_rx, failure_rx) =
                 RemoteServerClient::from_child_streams(stdin, stdout, stderr, &executor);
             Ok(Connection {
                 client,
                 event_rx,
+                failure_rx,
                 child,
                 control_path: Some(socket_path),
             })

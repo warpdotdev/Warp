@@ -786,15 +786,33 @@ impl ProfileModelSelector {
 
         // Store all model choices for reasoning variant lookups
         self.all_model_choices = llm_preferences
-            .get_base_llm_choices_for_agent_mode()
+            .get_base_llm_choices_for_agent_mode(ctx)
             .cloned()
+            .collect();
+
+        // Partition into server-provided choices (subject to auto/reasoning collapsing) and
+        // custom-endpoint choices (rendered separately under a `Custom models` sub-header so
+        // the server-curated list stays visually distinct).
+        let custom_ids: std::collections::HashSet<LLMId> = llm_preferences
+            .custom_llm_choices(ctx)
+            .map(|info| info.id.clone())
+            .collect();
+        let server_choices: Vec<&LLMInfo> = self
+            .all_model_choices
+            .iter()
+            .filter(|llm| !custom_ids.contains(&llm.id))
+            .collect();
+        let custom_choices: Vec<&LLMInfo> = self
+            .all_model_choices
+            .iter()
+            .filter(|llm| custom_ids.contains(&llm.id))
             .collect();
 
         // Group models by base_model_name to collapse reasoning variants.
         // Use "auto" as the key for all auto models so they collapse together.
         // Only group models that have reasoning levels - others stay separate.
         let mut groups: IndexMap<String, Vec<&LLMInfo>> = IndexMap::new();
-        for llm in &self.all_model_choices {
+        for llm in &server_choices {
             let key = if is_auto(llm) {
                 "auto".to_string()
             } else if llm.has_reasoning_level() {
@@ -802,17 +820,24 @@ impl ProfileModelSelector {
             } else {
                 llm.id.to_string()
             };
-            groups.entry(key).or_default().push(llm);
+            groups.entry(key).or_default().push(*llm);
         }
 
-        // Build collapsed list: for each group, take first model (preserves server order)
-        let choices: Vec<_> = groups
-            .into_iter()
-            .filter_map(|(_, variants)| variants.into_iter().next())
-            .collect();
+        // Split collapsed choices so custom models can be placed right after auto models.
+        let mut auto_choices: Vec<&LLMInfo> = Vec::new();
+        let mut other_choices: Vec<&LLMInfo> = Vec::new();
+        for (_, variants) in groups {
+            if let Some(first) = variants.into_iter().next() {
+                if is_auto(first) {
+                    auto_choices.push(first);
+                } else {
+                    other_choices.push(first);
+                }
+            }
+        }
 
-        let items = available_model_menu_items(
-            choices,
+        let mut items = available_model_menu_items(
+            auto_choices,
             |llm| {
                 let all_refs: Vec<_> = self.all_model_choices.iter().collect();
                 if is_auto(llm) {
@@ -831,6 +856,58 @@ impl ProfileModelSelector {
             true,
             ctx,
         );
+
+        // Append the "Custom models" section when the user has any custom endpoints configured.
+        // Each row gets its own atomic `SelectModel(config_key)` action; no auto/reasoning
+        // collapsing applies.
+        if !custom_choices.is_empty() {
+            let appearance = Appearance::as_ref(ctx);
+            if !items.is_empty() {
+                items.push(MenuItem::Separator);
+            }
+            items.push(MenuItem::Header {
+                fields: MenuItemFields::new("Custom models").with_override_text_color(
+                    appearance
+                        .theme()
+                        .sub_text_color(appearance.theme().background())
+                        .into_solid(),
+                ),
+                clickable: false,
+                right_side_fields: None,
+            });
+            for llm in &custom_choices {
+                let fields = MenuItemFields::new(llm.menu_display_name())
+                    .with_right_side_icon(Icon::Key)
+                    .with_on_select_action(ProfileModelSelectorAction::SelectModel(llm.id.clone()));
+                items.push(MenuItem::Item(fields));
+            }
+        }
+
+        if !other_choices.is_empty() {
+            if !items.is_empty() {
+                items.push(MenuItem::Separator);
+            }
+            items.extend(available_model_menu_items(
+                other_choices,
+                |llm| {
+                    let all_refs: Vec<_> = self.all_model_choices.iter().collect();
+                    if is_auto(llm) {
+                        ProfileModelSelectorAction::SelectAutoModel
+                    } else if has_reasoning_variants(llm, &all_refs) {
+                        ProfileModelSelectorAction::SelectReasoningModel(
+                            llm.base_model_name().to_string(),
+                        )
+                    } else {
+                        ProfileModelSelectorAction::SelectModel(llm.id.clone())
+                    }
+                },
+                model_id_to_add_profile_default_label_to,
+                Some(&|llm_id| self.model_menu_item_position_id(llm_id)),
+                true,
+                true,
+                ctx,
+            ));
+        }
 
         let selected_index = Self::find_selected_index(&items, active_llm);
         self.model_dropdown.update(ctx, |menu, ctx| {
@@ -853,7 +930,7 @@ impl ProfileModelSelector {
 
         let items: Vec<MenuItem<ProfileModelSelectorAction>> = match kind {
             ModelSpecSidecarKind::Auto => llm_preferences
-                .get_base_llm_choices_for_agent_mode()
+                .get_base_llm_choices_for_agent_mode(ctx)
                 .filter(|llm| is_auto(llm))
                 .map(|llm| {
                     let is_selected = llm.id == active_llm_id;
@@ -1050,7 +1127,7 @@ impl ProfileModelSelector {
                             // Get the first "auto" variant as the generic auto model
                             let llm_prefs = LLMPreferences::as_ref(ctx);
                             llm_prefs
-                                .get_base_llm_choices_for_agent_mode()
+                                .get_base_llm_choices_for_agent_mode(ctx)
                                 .find(|llm| is_auto(llm))
                                 .cloned()
                         }
