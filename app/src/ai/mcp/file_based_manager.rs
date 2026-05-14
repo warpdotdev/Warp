@@ -177,6 +177,13 @@ impl FileBasedMCPManager {
             let Some(hash) = installation.hash() else {
                 continue;
             };
+            log::info!(
+                "Discovered file-based MCP server '{}' ({}) from {} config under {} with hash {hash}",
+                installation.templatable_mcp_server().name,
+                installation.uuid(),
+                provider.display_name(),
+                root_path.display()
+            );
             // TODO(APP-3429): Deduplicate file-based servers across provider directories.
             if let Entry::Vacant(e) = self.file_based_servers.entry(hash) {
                 // Detected a server that hasn't previously been spawned.
@@ -297,11 +304,24 @@ impl FileBasedMCPManager {
             let Some(hash) = installation.hash() else {
                 continue;
             };
-            if self.is_global_warp_server(hash) || (self.is_global_server(hash) && mcp_enabled) {
+            let installation_uuid = installation.uuid();
+            let server_name = installation.templatable_mcp_server().name.clone();
+            let is_global_warp_server = self.is_global_warp_server(hash);
+            let is_global_server = self.is_global_server(hash);
+            if is_global_warp_server || (is_global_server && mcp_enabled) {
+                log::info!(
+                    "Auto-spawning file-based MCP server '{server_name}' ({installation_uuid}); global_warp={is_global_warp_server}, global={is_global_server}, file_based_mcp_enabled={mcp_enabled}"
+                );
                 to_spawn.push(installation);
+            } else if is_global_server {
+                log::info!(
+                    "Not auto-spawning global file-based MCP server '{server_name}' ({installation_uuid}) because file-based MCP is disabled"
+                );
+            } else {
+                log::info!(
+                    "Not auto-spawning project-scoped file-based MCP server '{server_name}' ({installation_uuid}); project-scoped file-based MCP servers require explicit opt-in"
+                );
             }
-
-            // Project-scoped installations are intentionally dropped from auto-spawn.
         }
 
         if !to_spawn.is_empty() {
@@ -317,18 +337,34 @@ impl FileBasedMCPManager {
         ctx: &mut ModelContext<Self>,
     ) {
         // Retrieve UUIDs of all file-based MCP servers in the repository.
-        let server_uuids: Vec<Uuid> = self
-            .file_based_servers_by_root
-            .get(repo_path)
-            .map(|provider_map| {
-                provider_map
-                    .values()
-                    .flat_map(|hash_set| hash_set.iter())
-                    .filter_map(|hash| self.file_based_servers.get(hash))
-                    .map(|installation| installation.uuid())
-                    .collect()
-            })
-            .unwrap_or_default();
+        let mut server_uuids: Vec<Uuid> = Vec::new();
+        let mut server_details: Vec<String> = Vec::new();
+        if let Some(provider_map) = self.file_based_servers_by_root.get(repo_path) {
+            for (provider, hash_set) in provider_map {
+                for hash in hash_set {
+                    let Some(installation) = self.file_based_servers.get(hash) else {
+                        continue;
+                    };
+                    let uuid = installation.uuid();
+                    server_uuids.push(uuid);
+                    server_details.push(format!(
+                        "'{}' ({uuid}) from {} config with hash {hash}",
+                        installation.templatable_mcp_server().name,
+                        provider.display_name()
+                    ));
+                }
+            }
+        }
+        let server_details = if server_details.is_empty() {
+            "none".to_string()
+        } else {
+            server_details.join("; ")
+        };
+        log::info!(
+            "Cloud environment file-based MCP scan complete for {}: {} server(s): {server_details}",
+            repo_path.display(),
+            server_uuids.len()
+        );
 
         // Pass the UUIDs of all detected file-based MCP servers to the AgentDriver.
         ctx.emit(FileBasedMCPManagerEvent::CloudEnvMcpScanComplete {

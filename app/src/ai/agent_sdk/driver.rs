@@ -1188,7 +1188,9 @@ impl AgentDriver {
                     if pending_repos.is_empty() {
                         let uuids = collected_uuids.clone();
                         if let Some(sender) = tx.take() {
-                            log::info!("Waiting for file-based MCP servers to reach a terminal state: {uuids:?}");
+                            log::info!(
+                                "Collected file-based MCP server UUIDs from cloud environment repos: {uuids:?}"
+                            );
                             let _ = sender.send(uuids);
                         }
                         ctx.unsubscribe_from_model(&manager_clone);
@@ -1200,7 +1202,8 @@ impl AgentDriver {
         rx
     }
 
-    /// Wait for all file-based MCP servers with the given UUIDs to reach a terminal state
+    /// Wait for discovered file-based MCP servers that were actually scheduled to start
+    /// (active or pending in the templatable manager) to reach a terminal state
     /// (`Running` or `FailedToStart`). Non-fatal: always completes without returning an error.
     ///
     /// **Sequencing note:** `AgentDriver` supports only one active subscription to
@@ -1212,39 +1215,119 @@ impl AgentDriver {
         uuids: Vec<Uuid>,
         ctx: &mut ModelContext<Self>,
     ) -> impl Future<Output = ()> {
-        // Filter out UUIDs that have already reached a terminal state.
+        // Filter out UUIDs that have already reached a terminal state or were discovered but not
+        // scheduled to start (e.g. project-scoped file-based MCP servers, which require explicit
+        // opt-in and are intentionally not auto-spawned).
         let mut pending_uuids: HashSet<Uuid> = {
             let templatable_manager = TemplatableMCPServerManager::as_ref(ctx);
+            let file_based_manager = FileBasedMCPManager::as_ref(ctx);
             uuids
                 .into_iter()
                 .filter(|uuid| {
-                    !matches!(
+                    if matches!(
                         templatable_manager.get_server_state(*uuid),
                         Some(MCPServerState::Running) | Some(MCPServerState::FailedToStart)
-                    )
+                    ) {
+                        return false;
+                    }
+                    if templatable_manager.is_server_active_or_pending(*uuid) {
+                        return true;
+                    }
+                    let server_name = file_based_manager
+                        .get_installation_by_uuid(*uuid)
+                        .map(|installation| installation.templatable_mcp_server().name.as_str())
+                        .unwrap_or("<unknown>");
+                    log::info!(
+                        "Not waiting for discovered file-based MCP server '{server_name}' ({uuid}); it was not scheduled to start"
+                    );
+                    false
                 })
                 .collect()
         };
 
         if pending_uuids.is_empty() {
-            log::info!("All file-based MCP servers are already running; proceeding");
+            log::info!(
+                "No scheduled file-based MCP servers need to reach a terminal state; proceeding"
+            );
             return Either::Right(future::ready(()));
         }
+
+        let pending_state_details = {
+            let templatable_manager = TemplatableMCPServerManager::as_ref(ctx);
+            let file_based_manager = FileBasedMCPManager::as_ref(ctx);
+            Arc::new(Mutex::new(
+                pending_uuids
+                    .iter()
+                    .map(|uuid| {
+                        let server_name = file_based_manager
+                            .get_installation_by_uuid(*uuid)
+                            .map(|installation| installation.templatable_mcp_server().name.clone())
+                            .unwrap_or_else(|| "<unknown>".to_string());
+                        let state = templatable_manager
+                            .get_server_state(*uuid)
+                            .map(|state| format!("{state:?}"))
+                            .unwrap_or_else(|| "no state".to_string());
+                        let error = templatable_manager
+                            .get_server_error_message(*uuid)
+                            .map(|message| format!(", error={message}"))
+                            .unwrap_or_default();
+                        (*uuid, format!("{server_name} ({uuid}): {state}{error}"))
+                    })
+                    .collect::<HashMap<_, _>>(),
+            ))
+        };
+        let pending_details = pending_state_details
+            .lock()
+            .map(|details| details.values().cloned().join("; "))
+            .unwrap_or_else(|_| "<unable to read pending state>".to_string());
+        let file_based_mcp_names = {
+            let file_based_manager = FileBasedMCPManager::as_ref(ctx);
+            pending_uuids
+                .iter()
+                .map(|uuid| {
+                    let server_name = file_based_manager
+                        .get_installation_by_uuid(*uuid)
+                        .map(|installation| installation.templatable_mcp_server().name.clone())
+                        .unwrap_or_else(|| "<unknown>".to_string());
+                    (*uuid, server_name)
+                })
+                .collect::<HashMap<_, _>>()
+        };
+        log::info!(
+            "Waiting for {} file-based MCP server(s) to reach a terminal state: {pending_details}",
+            pending_uuids.len()
+        );
 
         let (tx, rx) = oneshot::channel::<()>();
         let mut tx = Some(tx);
 
         let templatable_manager_handle = TemplatableMCPServerManager::handle(ctx);
         let manager_clone = templatable_manager_handle.clone();
+        let pending_state_details_for_subscription = Arc::clone(&pending_state_details);
 
         ctx.subscribe_to_model(&templatable_manager_handle, move |_me, event, ctx| {
             if let TemplatableMCPServerManagerEvent::StateChanged { uuid, state } = event {
                 if !pending_uuids.contains(uuid) {
                     return;
                 }
+                log::info!("File-based MCP server {uuid} changed state to {state:?}");
+                let server_name = file_based_mcp_names
+                    .get(uuid)
+                    .map(String::as_str)
+                    .unwrap_or("<unknown>");
+                let error = TemplatableMCPServerManager::as_ref(ctx)
+                    .get_server_error_message(*uuid)
+                    .map(|message| format!(", error={message}"))
+                    .unwrap_or_default();
+                if let Ok(mut details) = pending_state_details_for_subscription.lock() {
+                    details.insert(*uuid, format!("{server_name} ({uuid}): {state:?}{error}"));
+                }
                 match state {
                     MCPServerState::Running | MCPServerState::FailedToStart => {
                         pending_uuids.remove(uuid);
+                        if let Ok(mut details) = pending_state_details_for_subscription.lock() {
+                            details.remove(uuid);
+                        }
                     }
                     _ => {
                         return;
@@ -1269,8 +1352,12 @@ impl AgentDriver {
                     );
                 }
                 Err(TimeoutError) => {
+                    let pending_details = pending_state_details
+                        .lock()
+                        .map(|details| details.values().cloned().join("; "))
+                        .unwrap_or_else(|_| "<unable to read pending state>".to_string());
                     log::warn!(
-                        "Timed out waiting for file-based MCP servers to reach a terminal state; proceeding without"
+                        "Timed out waiting for file-based MCP servers to reach a terminal state; proceeding without. Still pending: {pending_details}"
                     );
                 }
             }
@@ -1696,7 +1783,7 @@ impl AgentDriver {
                 // Wait for discovered servers to reach Running (non-fatal: always unblocks).
                 if !discovered_uuids.is_empty() {
                     log::info!(
-                        "Waiting for {} file-based MCP server(s) to reach a terminal state",
+                        "Checking readiness for {} discovered file-based MCP server(s)",
                         discovered_uuids.len()
                     );
                     foreground

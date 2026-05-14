@@ -5,7 +5,6 @@ use crate::ai::mcp::templatable_manager::oauth::{
 };
 use crate::ai::mcp::FileBasedMCPManager;
 use core::fmt;
-use itertools::Itertools;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::{collections::HashMap, future::Future};
@@ -409,7 +408,23 @@ impl TemplatableMCPServerManager {
         {
             return;
         }
-        self.server_states.insert(installation_uuid, new_state);
+        let previous_state = self.server_states.insert(installation_uuid, new_state);
+        let server_name = self
+            .get_installed_server_name(&installation_uuid)
+            .or_else(|| {
+                FileBasedMCPManager::as_ref(ctx)
+                    .get_installation_by_uuid(installation_uuid)
+                    .map(|installation| installation.templatable_mcp_server().name.clone())
+            })
+            .or_else(|| {
+                self.active_servers
+                    .get(&installation_uuid)
+                    .map(|server| server.name().to_string())
+            })
+            .unwrap_or_else(|| "<unknown>".to_string());
+        log::info!(
+            "Templatable MCP server '{server_name}' ({installation_uuid}) changed state from {previous_state:?} to {new_state:?}"
+        );
         ctx.emit(TemplatableMCPServerManagerEvent::StateChanged {
             uuid: installation_uuid,
             state: new_state,
@@ -1678,16 +1693,31 @@ impl TemplatableMCPServerManager {
         installations: &[TemplatableMCPServerInstallation],
         ctx: &mut ModelContext<Self>,
     ) {
+        log::info!(
+            "Templatable MCP manager received {} file-based MCP server(s) to spawn",
+            installations.len()
+        );
+
         // First, check if the servers are already spawned.
-        let new_installations = installations
-            .iter()
-            .filter(|installation| {
-                let uuid = installation.uuid();
-                !self.active_servers.contains_key(&uuid)
-                    && !self.spawned_servers.contains_key(&uuid)
-            })
-            .cloned()
-            .collect_vec();
+        let mut new_installations = Vec::new();
+        for installation in installations {
+            let uuid = installation.uuid();
+            let server_name = &installation.templatable_mcp_server().name;
+            if self.active_servers.contains_key(&uuid) {
+                log::info!(
+                    "Skipping file-based MCP server '{server_name}' ({uuid}); already running"
+                );
+                continue;
+            }
+            if self.spawned_servers.contains_key(&uuid) {
+                log::info!(
+                    "Skipping file-based MCP server '{server_name}' ({uuid}); already starting"
+                );
+                continue;
+            }
+            log::info!("Spawning file-based MCP server '{server_name}' ({uuid})");
+            new_installations.push(installation.clone());
+        }
 
         // If not, spawn them.
         for installation in new_installations {
