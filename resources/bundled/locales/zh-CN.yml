@@ -1854,6 +1854,17 @@ zh-CN:
     show_input_hint_text: "显示输入提示文本"
     hide_input_hint_text: "隐藏输入提示文本"
 
+  init_project:
+    skip_for_now: "暂时跳过"
+    skip_for_now_period: "暂时跳过。"
+    yes_index_codebase: "是，索引此代码库。"
+    generate_agents_file: "生成 AGENTS.md 文件"
+    skip_agents_generation: "暂时跳过 AGENTS.md 生成"
+    create_environment: "创建环境"
+    regenerate_agents_file: "重新生成 AGENTS.md 文件"
+    codebase_index_started: "代码库索引已开始"
+    view_index_status: "查看索引状态"
+
   # ── 查找 / 过滤 ──
   find:
     placeholder: "查找"

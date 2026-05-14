@@ -1854,6 +1854,17 @@ en:
     show_input_hint_text: "Show input hint text"
     hide_input_hint_text: "Hide input hint text"
 
+  init_project:
+    skip_for_now: "Skip for now"
+    skip_for_now_period: "Skip for now."
+    yes_index_codebase: "Yes, index this codebase."
+    generate_agents_file: "Generate AGENTS.md file"
+    skip_agents_generation: "Skip AGENTS.md generation for now"
+    create_environment: "Create an environment"
+    regenerate_agents_file: "Re-generate AGENTS.md file"
+    codebase_index_started: "Codebase index started"
+    view_index_status: "View index status"
+
   # ── Find / Filter ──
   find:
     placeholder: "Find"
