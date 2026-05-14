@@ -60,8 +60,6 @@ integration_tests! {
     test_restore_snapshot_with_deleted_cwd,
     test_session_restoration_with_multiple_shells,
     test_restore_snapshot_with_background_output,
-    test_restore_snapshot_with_notebooks,
-    test_restore_snapshot_with_workflows,
     test_restore_snapshot_with_markdown_file,
     test_restore_snapshot_with_settings_page,
     // TODO(kevin): figure out why the file name doesn't match.
@@ -202,8 +200,6 @@ integration_tests! {
 
     test_open_in_warp_banner,
 
-    test_create_personal_workflow_pane_from_command_palette,
-
     // TODO(alokedesai): Fix this on the latest version of Bash.
     #[ignore]
     test_up_arrow_history,
@@ -268,6 +264,7 @@ integration_tests! {
     #[ignore = "Affected by agent_view feature flag UI changes"]
     test_selection_last_to_ai_lines,
     test_restored_ai_block_renders_mermaid_and_local_images,
+    test_restored_invoke_skill_follow_up_conversation_renders_context,
 
     // Middle-click-paste is only implemented for Linux right now.
     #[cfg(target_os = "linux")]

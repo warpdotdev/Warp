@@ -2465,6 +2465,10 @@ impl CloneRepositoryURL {
         }
     }
 
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
     pub fn into_url(self) -> String {
         self.url
     }

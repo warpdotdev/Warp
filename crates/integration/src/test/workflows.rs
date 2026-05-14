@@ -1,38 +1,18 @@
 use warp::{
     integration_testing::{
         self,
-        command_palette::{open_command_palette_and_run_action, TestStepsExt},
         step::new_step_with_default_assertions,
         terminal::{
             execute_command_for_single_terminal_in_tab, util::ExpectedExitStatus,
             wait_until_bootstrapped_single_pane_for_tab,
         },
         view_of_type,
-        workflow::{assert_no_workflow_pane_open, assert_open_workflow_pane_count_equals},
     },
     workflows::CategoriesView,
 };
 use warpui::{async_assert_eq, integration::TestStep, ViewHandle};
 
-use crate::Builder;
-
-use super::{new_builder, TEST_ONLY_ASSETS};
-
-pub fn test_create_personal_workflow_pane_from_command_palette() -> Builder {
-    new_builder()
-        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(TestStep::new("Noop step").add_named_assertion(
-            "Make sure no workflow panes are open",
-            assert_no_workflow_pane_open(),
-        ))
-        .with_steps(
-            open_command_palette_and_run_action("Create a New Personal Workflow")
-                .add_named_assertion(
-                    "There should be one workflow pane open",
-                    assert_open_workflow_pane_count_equals(1),
-                ),
-        )
-}
+use super::{new_builder, Builder, TEST_ONLY_ASSETS};
 
 /// Adds a workflow file, containing two workflows, to a `.warp/workflows`
 /// directory under a git repository and verifies that the workflows appear

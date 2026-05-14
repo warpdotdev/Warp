@@ -185,6 +185,135 @@ fn restored_markdown_visuals_conversation_data() -> api::ConversationData {
     }
 }
 
+fn restored_skill(name: &str, content: &str) -> api::Skill {
+    api::Skill {
+        descriptor: Some(api::SkillDescriptor {
+            name: name.to_string(),
+            description: format!("{name} description"),
+            provider: None,
+            scope: None,
+            skill_reference: Some(api::skill_descriptor::SkillReference::BundledSkillId(
+                name.to_string(),
+            )),
+        }),
+        content: Some(api::FileContent {
+            file_path: format!("skills/{name}/SKILL.md"),
+            content: content.to_string(),
+            line_range: None,
+        }),
+    }
+}
+
+fn restored_invoke_skill_message(
+    task_id: &str,
+    request_id: &str,
+    skill_name: &str,
+    skill_content: &str,
+    query: &str,
+) -> api::Message {
+    api::Message {
+        id: "restored-invoke-skill".to_string(),
+        task_id: task_id.to_string(),
+        server_message_data: String::new(),
+        citations: vec![],
+        message: Some(api::message::Message::InvokeSkill(
+            api::message::InvokeSkill {
+                skill: Some(restored_skill(skill_name, skill_content)),
+                user_query: Some(api::message::UserQuery {
+                    query: query.to_string(),
+                    context: None,
+                    referenced_attachments: HashMap::new(),
+                    mode: None,
+                    intended_agent: Default::default(),
+                }),
+            },
+        )),
+        request_id: request_id.to_string(),
+        timestamp: None,
+    }
+}
+
+fn restored_plain_user_query_message(task_id: &str, request_id: &str, query: &str) -> api::Message {
+    api::Message {
+        id: "restored-follow-up-user-query".to_string(),
+        task_id: task_id.to_string(),
+        server_message_data: String::new(),
+        citations: vec![],
+        message: Some(api::message::Message::UserQuery(api::message::UserQuery {
+            query: query.to_string(),
+            context: None,
+            referenced_attachments: HashMap::new(),
+            mode: None,
+            intended_agent: Default::default(),
+        })),
+        request_id: request_id.to_string(),
+        timestamp: None,
+    }
+}
+
+fn restored_agent_output_message_with_id(
+    message_id: &str,
+    task_id: &str,
+    request_id: &str,
+    text: &str,
+) -> api::Message {
+    api::Message {
+        id: message_id.to_string(),
+        task_id: task_id.to_string(),
+        server_message_data: String::new(),
+        citations: vec![],
+        message: Some(api::message::Message::AgentOutput(
+            api::message::AgentOutput {
+                text: text.to_string(),
+            },
+        )),
+        request_id: request_id.to_string(),
+        timestamp: None,
+    }
+}
+
+fn restored_invoke_skill_follow_up_conversation_data() -> api::ConversationData {
+    let task_id = "restored-invoke-skill-follow-up-task";
+    let skill_request_id = "restored-invoke-skill-request";
+    let follow_up_request_id = "restored-follow-up-request";
+    api::ConversationData {
+        tasks: vec![api::Task {
+            id: task_id.to_string(),
+            messages: vec![
+                restored_invoke_skill_message(
+                    task_id,
+                    skill_request_id,
+                    "update-tab-config",
+                    "# update-tab-config\nUse tab-configs before editing.",
+                    "Update /tmp/tab.toml",
+                ),
+                restored_agent_output_message_with_id(
+                    "restored-invoke-skill-output",
+                    task_id,
+                    skill_request_id,
+                    "I read /update-tab-config and used its local instructions.",
+                ),
+                restored_plain_user_query_message(
+                    task_id,
+                    follow_up_request_id,
+                    "what was the first message i sent you?",
+                ),
+                restored_agent_output_message_with_id(
+                    "restored-follow-up-output",
+                    task_id,
+                    follow_up_request_id,
+                    "Your first message was: /update-tab-config Update /tmp/tab.toml.",
+                ),
+            ],
+            dependencies: None,
+            description: String::new(),
+            summary: String::new(),
+            server_data: String::new(),
+        }],
+        ..Default::default()
+    }
+}
+
 pub fn test_restored_ai_block_renders_mermaid_and_local_images() -> Builder {
     FeatureFlag::BlocklistMarkdownImages.set_enabled(true);
     FeatureFlag::MarkdownMermaid.set_enabled(true);
@@ -219,6 +348,48 @@ pub fn test_restored_ai_block_renders_mermaid_and_local_images() -> Builder {
                             view.last_ai_block().is_some(),
                             "Restored AI block should exist"
                         )
+                    })
+                }),
+        )
+}
+
+pub fn test_restored_invoke_skill_follow_up_conversation_renders_context() -> Builder {
+    new_builder()
+        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
+        .with_step(clear_blocklist_to_remove_bootstrapped_blocks())
+        .with_step(
+            new_step_with_default_assertions("Restore invoked skill follow-up conversation")
+                .with_action(|app, window_id, _| {
+                    let terminal_view = single_terminal_view_for_tab(app, window_id, 0);
+                    terminal_view.update(app, |view, ctx| {
+                        view.load_conversation_from_tasks(
+                            restored_invoke_skill_follow_up_conversation_data(),
+                            ctx,
+                        );
+                    });
+                }),
+        )
+        .with_step(
+            new_step_with_default_assertions("Assert restored follow-up AI block has context")
+                .add_named_assertion("restored follow-up prompt and output are visible", |app, window_id| {
+                    let terminal_view = single_terminal_view_for_tab(app, window_id, 0);
+                    terminal_view.read(app, |view, ctx| {
+                        let Some(ai_block) = view.last_ai_block() else {
+                            return warpui::integration::AssertionOutcome::failure(
+                                "Expected a restored AI block".to_string(),
+                            );
+                        };
+                        ai_block.read(ctx, |ai_block, ctx| {
+                            let prompt_text = ai_block.get_prompt_text(ctx);
+                            let output_text = ai_block.get_output_text(ctx);
+                            async_assert!(
+                                prompt_text.contains("what was the first message i sent you?")
+                                    && output_text.contains(
+                                        "Your first message was: /update-tab-config Update /tmp/tab.toml."
+                                    ),
+                                "Restored AI block should render the follow-up prompt and preserved first-turn context; prompt={prompt_text:?}, output={output_text:?}"
+                            )
+                        })
                     })
                 }),
         )

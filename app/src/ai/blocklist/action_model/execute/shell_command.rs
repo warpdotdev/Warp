@@ -39,6 +39,19 @@ use crate::{
 
 use super::{ActionExecution, AnyActionExecution, ExecuteActionInput, PreprocessActionInput};
 
+const AGENT_COMMAND_ENV: [(&str, &str); 10] = [
+    ("NO_COLOR", "1"),
+    ("TERM", "dumb"),
+    ("LANG", "C.UTF-8"),
+    ("LC_CTYPE", "C.UTF-8"),
+    ("LC_ALL", "C.UTF-8"),
+    ("COLORTERM", ""),
+    ("PAGER", "cat"),
+    ("GIT_PAGER", "cat"),
+    ("GH_PAGER", "cat"),
+    ("WARPER_CI", "1"),
+];
+
 pub struct ShellCommandExecutor {
     active_session: ModelHandle<ActiveSession>,
     block_finished_senders: HashMap<BlockSelector, oneshot::Sender<()>>,
@@ -172,20 +185,63 @@ impl ShellCommandExecutor {
         }
     }
 
-    /// Decorate the command so that we can turn off pager.
-    fn turn_off_pager_for_command(&self, command: &String, ctx: &mut ModelContext<Self>) -> String {
-        match self.active_session.as_ref(ctx).shell_type(ctx) {
-            // If it's a posix shell, we can use parentheses as the grouping character. Add command to
-            // avoid cases with aliases.
-            Some(ShellType::Zsh) | Some(ShellType::Bash) => format!("({command}) | command cat"),
-            // Fish doesn't have grouping characters. We need to use begin; and end; to ensure the command
-            // gets evaluated first.
-            Some(ShellType::Fish) => format!("begin; {command} ;end | command cat"),
-            // For powershell, we use Out-Host to send paged output to the
-            // console. Add a backslash to avoid executing an alias.
-            Some(ShellType::PowerShell) => format!("({command}) | \\Out-Host"),
-            // If we can't determine a shell type, run command as it is.
-            None => command.clone(),
+    /// Run AI-issued shell commands with a controlled non-paging environment.
+    fn command_with_agent_environment(
+        &self,
+        command: &str,
+        ctx: &mut ModelContext<Self>,
+    ) -> String {
+        Self::command_with_agent_environment_for_shell(
+            command,
+            self.active_session.as_ref(ctx).shell_type(ctx),
+        )
+    }
+
+    fn command_with_agent_environment_for_shell(
+        command: &str,
+        shell_type: Option<ShellType>,
+    ) -> String {
+        match shell_type {
+            Some(ShellType::Zsh) | Some(ShellType::Bash) => {
+                let exports = AGENT_COMMAND_ENV
+                    .iter()
+                    .map(|(key, value)| format!("{key}={}", shell_words::quote(value)))
+                    .join(" ");
+                format!("(export {exports}; {command})")
+            }
+            Some(ShellType::Fish) => {
+                let exports = AGENT_COMMAND_ENV
+                    .iter()
+                    .map(|(key, value)| format!("set -lx {key} {}", shell_words::quote(value)))
+                    .join("; ");
+                format!("begin; {exports}; {command}; end")
+            }
+            Some(ShellType::PowerShell) => {
+                let save_existing_values = AGENT_COMMAND_ENV
+                    .iter()
+                    .map(|(key, _)| {
+                        format!(
+                            "$__warper_had_{key} = Test-Path Env:{key}; $__warper_old_{key} = $env:{key}"
+                        )
+                    })
+                    .join("; ");
+                let assignments = AGENT_COMMAND_ENV
+                    .iter()
+                    .map(|(key, value)| format!("$env:{key} = '{}'", value.replace('\'', "''")))
+                    .join("; ");
+                let restore_existing_values = AGENT_COMMAND_ENV
+                    .iter()
+                    .map(|(key, _)| {
+                        format!(
+                            "if ($__warper_had_{key}) {{ $env:{key} = $__warper_old_{key} }} else {{ Remove-Item Env:{key} -ErrorAction SilentlyContinue }}"
+                        )
+                    })
+                    .join("; ");
+                format!(
+                    "& {{ {save_existing_values}; try {{ {assignments}; {command} }} finally {{ {restore_existing_values} }} }}"
+                )
+            }
+            None => command.to_owned(),
         }
     }
 
@@ -207,12 +263,7 @@ impl ShellCommandExecutor {
 
         let handle = ctx.handle();
         match &input.action.action {
-            AIAgentActionType::RequestCommandOutput {
-                command,
-                uses_pager,
-                wait_until_completion,
-                ..
-            } => {
+            AIAgentActionType::RequestCommandOutput { command, .. } => {
                 if model
                     .block_list()
                     .active_block()
@@ -223,15 +274,7 @@ impl ShellCommandExecutor {
                         RequestCommandOutputResult::CancelledBeforeExecution,
                     ));
                 }
-                // If the command might use pager and can't be interacted with,
-                // we pipe its output to cat so we can prevent activating the altscreen.
-                // The parentheses here ensures the command always gets evaluated first.
-                let decorated_command =
-                    if uses_pager.is_some_and(|uses_pager| uses_pager) && *wait_until_completion {
-                        self.turn_off_pager_for_command(command, ctx)
-                    } else {
-                        command.clone()
-                    };
+                let decorated_command = self.command_with_agent_environment(command, ctx);
                 ctx.emit(ShellCommandExecutorEvent::ExecuteCommand {
                     action_id: action_id.clone(),
                     command: decorated_command,
@@ -875,3 +918,7 @@ enum ActionResult {
     Cancelled,
     BlockNotFound,
 }
+
+#[cfg(test)]
+#[path = "shell_command_tests.rs"]
+mod tests;

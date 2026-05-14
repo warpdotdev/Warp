@@ -289,10 +289,10 @@ impl VoiceInputToggleKey {
     rename_all = "snake_case"
 )]
 pub enum DefaultSessionMode {
-    /// New sessions start in the terminal mode (default).
-    #[default]
+    /// New sessions start in the terminal mode.
     Terminal,
-    /// New sessions start in agent view.
+    /// New sessions start in agent view (default when AI is available).
+    #[default]
     Agent,
     /// New sessions open a user-defined tab config.
     /// The specific config is identified by the companion `default_tab_config_path` setting.
@@ -1391,10 +1391,6 @@ impl AISettings {
     }
 
     pub fn default_session_mode(&self, app: &AppContext) -> DefaultSessionMode {
-        if Self::is_oss_openrouter_configured(app) {
-            return DefaultSessionMode::Agent;
-        }
-
         let mode = *self.default_session_mode_internal.value();
         match mode {
             // Terminal and TabConfig don't require AI.

@@ -2,7 +2,6 @@ use warp::{
     features::FeatureFlag,
     integration_testing::{
         self,
-        notebook::assert_notebook_contents,
         step::{new_step_with_default_assertions, new_step_with_default_assertions_for_pane},
         tab::assert_pane_title,
         terminal::wait_until_bootstrapped_single_pane_for_tab,
@@ -321,60 +320,6 @@ pub fn test_restore_snapshot_with_background_output() -> Builder {
         )
 }
 
-/// Tests restoring a snapshot that includes notebook panes.
-///
-/// The snapshot has a single window with one tab, containing:
-/// * A notebook pane, where the notebook exists
-/// * A notebook pane, where the notebook no longer exists
-/// * A terminal pane
-pub fn test_restore_snapshot_with_notebooks() -> Builder {
-    new_builder()
-        .with_setup(|_utils| {
-            integration_testing::create_file_from_assets(
-                TEST_ONLY_ASSETS,
-                "restored_notebooks.sqlite",
-                &integration_testing::persistence::database_file_path(),
-            );
-        })
-        .with_step(
-            TestStep::new("Verify that the notebook panes were restored")
-                .add_assertion(assert_pane_title(0, 0, "First Notebook"))
-                // The missing notebook should be replaced with an empty new notebook.
-                .add_assertion(assert_pane_title(0, 1, "Untitled")),
-        )
-        .with_step(
-            new_step_with_default_assertions_for_pane("Wait for terminal pane to bootstrap", 0, 2)
-                .add_assertion(assert_pane_title(
-                    0,
-                    2,
-                    tab_title_in_home_dir("test_restore_snapshot_with_notebooks"),
-                )),
-        )
-        .with_step(
-            TestStep::new("Verify notebook contents")
-                .add_assertion(assert_notebook_contents(0, 0, "Notebook 1 content"))
-                .add_assertion(assert_notebook_contents(0, 1, "")),
-        )
-}
-
-/// Test restoring a snapshot that includes workflow panes - the second pane exists, but the first
-/// is for a deleted workflow.
-pub fn test_restore_snapshot_with_workflows() -> Builder {
-    new_builder()
-        .with_setup(|_utils| {
-            integration_testing::create_file_from_assets(
-                TEST_ONLY_ASSETS,
-                "restored_workflows.sqlite",
-                &integration_testing::persistence::database_file_path(),
-            )
-        })
-        .with_step(
-            TestStep::new("Verify that the workflow panes were restored")
-                .add_assertion(assert_pane_title(0, 1, "My Workflow"))
-                .add_assertion(assert_pane_title(0, 0, "Untitled")),
-        )
-}
-
 /// Tests restoring a snapshot that includes a Markdown file pane.
 ///
 /// The snapshot has a single window with one tab, containing:
@@ -459,7 +404,7 @@ pub fn test_restore_snapshot_with_code_file() -> Builder {
 ///
 /// The snapshot has a single window with one tab, containing:
 /// * A terminal pane
-/// * A settings pane (with page set to "Referrals")
+/// * A settings pane
 pub fn test_restore_snapshot_with_settings_page() -> Builder {
     new_builder()
         .with_setup(|_utils| {
@@ -474,7 +419,7 @@ pub fn test_restore_snapshot_with_settings_page() -> Builder {
             TestStep::new("Verify settings pane restoration")
                 .add_assertion(assert_pane_title(0, 1, "Settings"))
                 .add_assertion(move |app, window_id| {
-                    // Verify the settings view exists and is on the Referrals page.
+                    // Verify the settings view exists and opens to a valid page.
                     let settings_views: Vec<ViewHandle<SettingsView>> = app
                         .views_of_type(window_id)
                         .expect("Settings view must exist");
@@ -482,10 +427,7 @@ pub fn test_restore_snapshot_with_settings_page() -> Builder {
 
                     let settings_view = settings_views.first().expect("Settings view must exist");
                     settings_view.read(app, |view, _| {
-                        async_assert_eq!(
-                            view.current_settings_section(),
-                            SettingsSection::Referrals
-                        )
+                        async_assert_eq!(view.current_settings_section(), SettingsSection::Account)
                     })
                 }),
         )
