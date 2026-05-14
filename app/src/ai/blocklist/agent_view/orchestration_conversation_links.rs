@@ -94,8 +94,8 @@ pub(crate) fn dispatch_focus_or_open_child_agent_pane(
     ctx: &mut EventContext,
     app: &AppContext,
 ) {
-    if let Some(owner_view_id) = BlocklistAIHistoryModel::as_ref(app)
-        .terminal_view_id_for_conversation(&conversation_id)
+    if let Some(owner_view_id) =
+        BlocklistAIHistoryModel::as_ref(app).terminal_view_id_for_conversation(&conversation_id)
     {
         if owner_view_id != self_terminal_view_id {
             if let Some(owner_pane_group_id) =
@@ -104,9 +104,7 @@ pub(crate) fn dispatch_focus_or_open_child_agent_pane(
                 let self_pane_group_id =
                     pane_group_id_containing_terminal_view(self_terminal_view_id, app);
                 if Some(owner_pane_group_id) == self_pane_group_id {
-                    ctx.dispatch_typed_action(TerminalAction::RevealChildAgent {
-                        conversation_id,
-                    });
+                    ctx.dispatch_typed_action(TerminalAction::RevealChildAgent { conversation_id });
                 } else {
                     ctx.dispatch_typed_action(WorkspaceAction::FocusTerminalViewInWorkspace {
                         terminal_view_id: owner_view_id,
