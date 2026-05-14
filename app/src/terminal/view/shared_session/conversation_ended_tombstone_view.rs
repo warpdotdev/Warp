@@ -87,13 +87,15 @@ impl TombstoneDisplayData {
         };
 
         let conversation_status = conversation_output_status_from_conversation(conversation);
+        let is_error = matches!(
+            conversation_status,
+            Some(AmbientConversationStatus::Error { .. })
+        );
         let error_message = conversation_status
             .as_ref()
             .and_then(|status| match status {
                 AmbientConversationStatus::Error { error } => Some(error.to_string()),
-                AmbientConversationStatus::Success
-                | AmbientConversationStatus::Cancelled { .. }
-                | AmbientConversationStatus::Blocked { .. } => None,
+                _ => None,
             });
 
         // Calculate run time from exchanges
@@ -107,7 +109,7 @@ impl TombstoneDisplayData {
 
         Self {
             title: conversation.title(),
-            is_error: conversation.status().is_error() || error_message.is_some(),
+            is_error,
             error_message,
             conversation_is_transcript,
             source: None,
@@ -191,9 +193,7 @@ impl ConversationEndedTombstoneView {
     pub fn new(
         ctx: &mut ViewContext<Self>,
         terminal_view_id: EntityId,
-        #[cfg_attr(target_family = "wasm", allow(unused_variables))] task_id: Option<
-            AmbientAgentTaskId,
-        >,
+        task_id: Option<AmbientAgentTaskId>,
     ) -> Self {
         let conversation_id = BlocklistAIHistoryModel::handle(ctx)
             .as_ref(ctx)

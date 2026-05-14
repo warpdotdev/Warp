@@ -93,7 +93,7 @@ fn environment_setup_failure_hides_continue_actions() {
     task.state = AmbientAgentTaskState::Failed;
     task.status_message = Some(TaskStatusMessage {
         message: "Environment setup failed: Failed to run setup command: hi".to_string(),
-        error_code: Some("ENVIRONMENT_SETUP_FAILED".to_string()),
+        error_code: Some("environment_setup_failed".to_string()),
     });
     let mut data = TombstoneDisplayData::default();
 
