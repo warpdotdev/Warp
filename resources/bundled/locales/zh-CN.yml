@@ -913,6 +913,7 @@ zh-CN:
     go_to_line: "转到行"
     hunk_label: "Hunk:"
     reject: "拒绝"
+    accept_and_save: "接受并保存"
 
   code_file_tree:
     open_in_new_pane: "在新面板中打开"

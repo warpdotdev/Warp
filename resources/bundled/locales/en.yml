@@ -913,6 +913,7 @@ en:
     go_to_line: "Go to line"
     hunk_label: "Hunk:"
     reject: "Reject"
+    accept_and_save: "Accept and save"
 
   code_file_tree:
     open_in_new_pane: "Open in new pane"
