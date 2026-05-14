@@ -699,6 +699,7 @@ zh-CN:
     to_cycle_parameters: "切换参数"
     editing: "编辑中"
     viewing: "查看中"
+    default_alias: "默认"
     new_enum: "新建枚举"
     edit_enum: "编辑枚举"
     enum_name_placeholder: "名称"
@@ -710,6 +711,7 @@ zh-CN:
 
   command_search:
     placeholder: "搜索历史记录、工作流等"
+    current: "当前"
     result_executed: "结果已执行"
     result_executed_help: "按 Cmd-Up 跳转到命令输出。"
     result_accepted: "结果已接受。"

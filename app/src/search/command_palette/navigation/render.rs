@@ -104,7 +104,7 @@ fn render_current_session_pill(
 ) -> Box<dyn Element> {
     let current_session_pill = appearance
         .ui_builder()
-        .span("Current".to_string())
+        .span(t!("command_search.current").to_string())
         .with_style(UiComponentStyles {
             font_family_id: Some(appearance.monospace_font_family()),
             // The font size is scaled down to make sure the pill fits in the row with its padding.

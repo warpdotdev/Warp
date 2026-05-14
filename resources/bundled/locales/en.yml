@@ -699,6 +699,7 @@ en:
     to_cycle_parameters: "to cycle parameters"
     editing: "Editing"
     viewing: "Viewing"
+    default_alias: "Default"
     new_enum: "New enum"
     edit_enum: "Edit enum"
     enum_name_placeholder: "Name"
@@ -710,6 +711,7 @@ en:
 
   command_search:
     placeholder: "Search your history, workflows, and more"
+    current: "Current"
     result_executed: "Result executed"
     result_executed_help: "Press Cmd-Up to navigate to the command's output."
     result_accepted: "Result accepted."
