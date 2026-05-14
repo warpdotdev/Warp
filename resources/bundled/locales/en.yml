@@ -674,6 +674,7 @@ en:
     always_allow: "Always allow"
     always_ask: "Always ask"
     ask_on_first_write: "Ask on first write"
+    allow_specific_directories: "Allow in specific directories"
     ask_unless_auto_approve: "Ask unless auto-approve"
     never: "Never"
     never_ask: "Never ask"

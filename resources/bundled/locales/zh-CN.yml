@@ -674,6 +674,7 @@ zh-CN:
     always_allow: "始终允许"
     always_ask: "始终询问"
     ask_on_first_write: "首次写入时询问"
+    allow_specific_directories: "允许指定目录"
     ask_unless_auto_approve: "除自动批准外询问"
     never: "从不"
     never_ask: "从不询问"
