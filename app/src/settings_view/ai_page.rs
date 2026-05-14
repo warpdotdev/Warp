@@ -6646,24 +6646,22 @@ impl ApiKeysWidget {
         let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
         let is_enabled = is_any_ai_enabled && is_byo_enabled;
 
-        let mut column = Flex::column()
-            .with_spacing(16.)
-            .with_child(
-                Container::new(
-                    render_ai_setting_description(
-                        "Use your own API keys from model providers for the Warp Agent to use. API keys are stored locally and never synced to the cloud. Using auto models or models from providers you have not provided API keys for will consume Warp credits.",
-                        is_enabled,
-                        app,
-                    ))
-                // Remove the bottom margin of the description so that it doesn't
-                // create extra space between the description and the API key inputs.
-                .with_margin_bottom(-styles::DESCRIPTION_MARGIN_BOTTOM).finish()
-            );
+        let mut column = Flex::column().with_spacing(16.).with_child(
+            Container::new(render_ai_setting_description(
+                t!("ai_settings_page.api_keys_description").to_string(),
+                is_enabled,
+                app,
+            ))
+            // Remove the bottom margin of the description so that it doesn't
+            // create extra space between the description and the API key inputs.
+            .with_margin_bottom(-styles::DESCRIPTION_MARGIN_BOTTOM)
+            .finish(),
+        );
 
         /// Helper function to render the UI for an API key input field.
         fn render_api_key_input(
             appearance: &Appearance,
-            label: &'static str,
+            label: impl Into<Cow<'static, str>>,
             editor: ViewHandle<EditorView>,
             is_enabled: bool,
             app: &AppContext,
@@ -6698,23 +6696,26 @@ impl ApiKeysWidget {
                 .finish()
         }
 
+        let openai_api_key_label = t!("ai_settings_page.openai_api_key").to_string();
         column.add_child(render_api_key_input(
             appearance,
-            "OpenAI API Key",
+            openai_api_key_label,
             self.openai_api_key_editor.clone(),
             is_enabled,
             app,
         ));
+        let anthropic_api_key_label = t!("ai_settings_page.anthropic_api_key").to_string();
         column.add_child(render_api_key_input(
             appearance,
-            "Anthropic API Key",
+            anthropic_api_key_label,
             self.anthropic_api_key_editor.clone(),
             is_enabled,
             app,
         ));
+        let google_api_key_label = t!("ai_settings_page.google_api_key").to_string();
         column.add_child(render_api_key_input(
             appearance,
-            "Google API Key",
+            google_api_key_label,
             self.google_api_key_editor.clone(),
             is_enabled,
             app,
@@ -6821,7 +6822,7 @@ impl ApiKeysWidget {
         let ai_settings = AISettings::as_ref(app);
 
         let toggle = render_ai_setting_toggle::<CanUseWarpCreditsWithByok>(
-            "Warp credit fallback",
+            t!("ai_settings_page.warp_credit_fallback").to_string(),
             AISettingsPageAction::ToggleCanUseWarpCreditsWithByok,
             *ai_settings.can_use_warp_credits_with_byok,
             ai_settings.is_any_ai_enabled(app),
@@ -6831,7 +6832,7 @@ impl ApiKeysWidget {
         );
 
         let description = render_ai_setting_description(
-            "When enabled, agent requests may be routed to one of Warp's provided models in the event of an error. Warp will prioritize using your API keys over your Warp credits.",
+            t!("ai_settings_page.warp_credit_fallback_description").to_string(),
             ai_settings.is_any_ai_enabled(app),
             app,
         );
@@ -6865,7 +6866,7 @@ impl SettingsWidget for ApiKeysWidget {
             .with_child(
                 build_sub_header(
                     appearance,
-                    "API Keys",
+                    t!("ai_settings_page.api_keys").to_string(),
                     Some(styles::header_font_color(is_any_ai_enabled, app)),
                 )
                 .with_padding_bottom(HEADER_PADDING)
