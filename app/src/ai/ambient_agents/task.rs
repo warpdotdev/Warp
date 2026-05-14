@@ -527,8 +527,42 @@ pub struct TaskStatusMessage {
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatusErrorCode {
+    #[serde(alias = "AUTHENTICATION_REQUIRED")]
+    AuthenticationRequired,
+    #[serde(alias = "BUDGET_EXCEEDED")]
+    BudgetExceeded,
+    #[serde(alias = "CONFLICT")]
+    Conflict,
+    #[serde(alias = "CONTENT_POLICY_VIOLATION")]
+    ContentPolicyViolation,
     #[serde(alias = "ENVIRONMENT_SETUP_FAILED")]
     EnvironmentSetupFailed,
+    #[serde(alias = "EXTERNAL_AUTHENTICATION_REQUIRED")]
+    ExternalAuthenticationRequired,
+    #[serde(alias = "FEATURE_NOT_AVAILABLE")]
+    FeatureNotAvailable,
+    #[serde(alias = "INSUFFICIENT_CREDITS")]
+    InsufficientCredits,
+    #[serde(alias = "INTEGRATION_DISABLED")]
+    IntegrationDisabled,
+    #[serde(alias = "INTEGRATION_NOT_CONFIGURED")]
+    IntegrationNotConfigured,
+    #[serde(alias = "INTERNAL_ERROR")]
+    InternalError,
+    #[serde(alias = "INVALID_REQUEST")]
+    InvalidRequest,
+    #[serde(alias = "NOT_AUTHORIZED")]
+    NotAuthorized,
+    #[serde(alias = "OPERATION_NOT_SUPPORTED")]
+    OperationNotSupported,
+    #[serde(alias = "RESOURCE_NOT_FOUND")]
+    ResourceNotFound,
+    #[serde(alias = "RESOURCE_UNAVAILABLE")]
+    ResourceUnavailable,
+    #[serde(alias = "INFRASTRUCTURE_TIMEOUT")]
+    InfrastructureTimeout,
+    #[serde(alias = "AGENT_PROCESS_FAILED")]
+    AgentProcessFailed,
     #[serde(other)]
     Unknown,
 }
@@ -537,6 +571,31 @@ impl TaskStatusErrorCode {
     pub fn is_environment_setup_failure(&self) -> bool {
         matches!(self, TaskStatusErrorCode::EnvironmentSetupFailed)
     }
+
+    pub fn should_hide_continue_actions(&self) -> bool {
+        matches!(
+            self,
+            TaskStatusErrorCode::AuthenticationRequired
+                | TaskStatusErrorCode::BudgetExceeded
+                | TaskStatusErrorCode::Conflict
+                | TaskStatusErrorCode::ContentPolicyViolation
+                | TaskStatusErrorCode::EnvironmentSetupFailed
+                | TaskStatusErrorCode::ExternalAuthenticationRequired
+                | TaskStatusErrorCode::FeatureNotAvailable
+                | TaskStatusErrorCode::InsufficientCredits
+                | TaskStatusErrorCode::IntegrationDisabled
+                | TaskStatusErrorCode::IntegrationNotConfigured
+                | TaskStatusErrorCode::InternalError
+                | TaskStatusErrorCode::InvalidRequest
+                | TaskStatusErrorCode::NotAuthorized
+                | TaskStatusErrorCode::OperationNotSupported
+                | TaskStatusErrorCode::ResourceNotFound
+                | TaskStatusErrorCode::ResourceUnavailable
+                | TaskStatusErrorCode::InfrastructureTimeout
+                | TaskStatusErrorCode::AgentProcessFailed
+                | TaskStatusErrorCode::Unknown
+        )
+    }
 }
 
 impl TaskStatusMessage {
@@ -544,6 +603,12 @@ impl TaskStatusMessage {
         self.error_code
             .as_ref()
             .is_some_and(TaskStatusErrorCode::is_environment_setup_failure)
+    }
+
+    pub fn should_hide_continue_actions(&self) -> bool {
+        self.error_code
+            .as_ref()
+            .is_some_and(TaskStatusErrorCode::should_hide_continue_actions)
     }
 }
 

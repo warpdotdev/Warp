@@ -151,7 +151,7 @@ impl TombstoneDisplayData {
         if task.state.is_failure_like() {
             self.is_error = true;
             if let Some(status_message) = &task.status_message {
-                if status_message.is_environment_setup_failure() {
+                if status_message.should_hide_continue_actions() {
                     self.hide_continue_actions = true;
                 }
                 self.error_message = Some(status_message.message.clone());
