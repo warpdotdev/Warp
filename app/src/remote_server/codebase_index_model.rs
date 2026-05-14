@@ -45,14 +45,35 @@ impl RemoteCodebaseSearchAvailability {
     pub fn is_ready(&self) -> bool {
         matches!(self, Self::Ready(_))
     }
+    pub fn debug_label(&self) -> &'static str {
+        match self {
+            Self::NoConnectedHost => "NoConnectedHost",
+            Self::NoActiveRepo => "NoActiveRepo",
+            Self::NotIndexed { .. } => "NotIndexed",
+            Self::Indexing { .. } => "Indexing",
+            Self::Unavailable { .. } => "Unavailable",
+            Self::Ready(_) => "Ready",
+        }
+    }
 
-    fn repo_path(&self) -> Option<&str> {
+    pub fn repo_path(&self) -> Option<&str> {
         match self {
             Self::NoConnectedHost | Self::NoActiveRepo => None,
             Self::NotIndexed { remote_path }
             | Self::Indexing { remote_path }
             | Self::Unavailable { remote_path, .. } => Some(remote_path.path.as_str()),
             Self::Ready(context) => Some(context.remote_path.path.as_str()),
+        }
+    }
+
+    pub fn root_hash_for_debug(&self) -> Option<String> {
+        match self {
+            Self::Ready(context) => Some(context.root_hash.to_string()),
+            Self::NoConnectedHost
+            | Self::NoActiveRepo
+            | Self::NotIndexed { .. }
+            | Self::Indexing { .. }
+            | Self::Unavailable { .. } => None,
         }
     }
 }

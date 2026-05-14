@@ -193,14 +193,15 @@ fn get_supported_tools(params: &RequestParams) -> Vec<api::ToolType> {
             // after a successful connection handshake, so its presence is a
             // sufficient proxy for client availability.
             supported_tools.extend(&[api::ToolType::ReadFiles, api::ToolType::ApplyFileDiffs]);
-            if FeatureFlag::RemoteCodebaseIndexing.is_enabled()
-                && params.remote_codebase_search_available
-            {
+            if should_include_remote_search_codebase_tool("base", params) {
                 supported_tools.push(api::ToolType::SearchCodebase);
             }
         }
         Some(SessionType::WarpifiedRemote { host_id: None }) => {
             // Feature flag off or not yet connected — no remote tools.
+            log::info!(
+                "[Debugging Remote Codebase Indexing] Agent request omitted remote SearchCodebase tool: surface=base reason=missing_host_id"
+            );
         }
     }
 
@@ -259,16 +260,36 @@ fn get_supported_cli_agent_tools(params: &RequestParams) -> Vec<api::ToolType> {
         }
         Some(SessionType::WarpifiedRemote { host_id: Some(_) }) => {
             supported_cli_agent_tools.push(api::ToolType::ReadFiles);
-            if FeatureFlag::RemoteCodebaseIndexing.is_enabled()
-                && params.remote_codebase_search_available
-            {
+            if should_include_remote_search_codebase_tool("cli", params) {
                 supported_cli_agent_tools.push(api::ToolType::SearchCodebase);
             }
         }
-        Some(SessionType::WarpifiedRemote { host_id: None }) => {}
+        Some(SessionType::WarpifiedRemote { host_id: None }) => {
+            log::info!(
+                "[Debugging Remote Codebase Indexing] Agent request omitted remote SearchCodebase tool: surface=cli reason=missing_host_id"
+            );
+        }
     }
 
     supported_cli_agent_tools
+}
+
+fn should_include_remote_search_codebase_tool(surface: &str, params: &RequestParams) -> bool {
+    let remote_codebase_indexing_enabled = FeatureFlag::RemoteCodebaseIndexing.is_enabled();
+    let include_search_codebase =
+        remote_codebase_indexing_enabled && params.remote_codebase_search_available;
+    let reason = if include_search_codebase {
+        "included"
+    } else if !remote_codebase_indexing_enabled {
+        "remote_codebase_indexing_disabled"
+    } else {
+        "remote_codebase_search_unavailable"
+    };
+    log::info!(
+        "[Debugging Remote Codebase Indexing] Agent request remote SearchCodebase tool decision: surface={surface} remote_codebase_indexing_enabled={remote_codebase_indexing_enabled} remote_codebase_search_available={} include_search_codebase={include_search_codebase} reason={reason}",
+        params.remote_codebase_search_available
+    );
+    include_search_codebase
 }
 
 #[cfg(test)]

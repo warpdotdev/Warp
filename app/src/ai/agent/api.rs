@@ -290,10 +290,38 @@ impl RequestParams {
             .get_ask_user_question_setting(app, terminal_view_id)
             != crate::ai::execution_profiles::AskUserQuestionPermission::Never;
         #[cfg(not(target_family = "wasm"))]
-        let remote_codebase_search_available = FeatureFlag::RemoteCodebaseIndexing.is_enabled()
-            && RemoteCodebaseIndexModel::as_ref(app)
-                .active_repo_availability(&session_context, None)
-                .is_ready();
+        let remote_codebase_search_available = {
+            let remote_codebase_indexing_enabled = FeatureFlag::RemoteCodebaseIndexing.is_enabled();
+            let availability = RemoteCodebaseIndexModel::as_ref(app)
+                .active_repo_availability(&session_context, None);
+            let remote_codebase_search_available =
+                remote_codebase_indexing_enabled && availability.is_ready();
+            log::info!(
+                "[Debugging Remote Codebase Indexing] Agent request evaluated remote codebase search availability: session_is_remote={} host_id_present={} has_cwd={} remote_codebase_indexing_enabled={} availability={} remote_codebase_search_available={}",
+                session_context.is_remote(),
+                session_context.host_id().is_some(),
+                session_context.current_working_directory().is_some(),
+                remote_codebase_indexing_enabled,
+                availability.debug_label(),
+                remote_codebase_search_available
+            );
+            if let Some(cwd) = session_context.current_working_directory() {
+                log::debug!(
+                    "[Debugging Remote Codebase Indexing] Agent request session cwd for remote codebase search availability: cwd={cwd}"
+                );
+            }
+            if let Some(repo_path) = availability.repo_path() {
+                log::debug!(
+                    "[Debugging Remote Codebase Indexing] Agent request resolved repo path for remote codebase search availability: repo_path={repo_path}"
+                );
+            }
+            if let Some(root_hash) = availability.root_hash_for_debug() {
+                log::debug!(
+                    "[Debugging Remote Codebase Indexing] Agent request resolved root hash for remote codebase search availability: root_hash={root_hash}"
+                );
+            }
+            remote_codebase_search_available
+        };
         #[cfg(target_family = "wasm")]
         let remote_codebase_search_available = false;
 

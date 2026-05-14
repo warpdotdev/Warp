@@ -49,6 +49,9 @@ pub(super) fn send_request(
     ctx: &mut ModelContext<GetRelevantFilesController>,
 ) -> RemoteSearchRequest {
     if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
+        log::info!(
+            "[Debugging Remote Codebase Indexing] Remote SearchCodebase request unavailable: action_id={action_id:?} reason=remote_codebase_indexing_disabled"
+        );
         return RemoteSearchRequest::Ready(SearchCodebaseResult::Failed {
             reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
             message: "Remote codebase search is not enabled.".to_string(),
@@ -57,12 +60,48 @@ pub(super) fn send_request(
 
     let availability = RemoteCodebaseIndexModel::as_ref(ctx)
         .active_repo_availability(&session_context, explicit_repo_path.as_deref());
+    log::info!(
+        "[Debugging Remote Codebase Indexing] Remote SearchCodebase request evaluated availability: action_id={action_id:?} session_is_remote={} host_id_present={} has_cwd={} explicit_repo_path_present={} availability={}",
+        session_context.is_remote(),
+        session_context.host_id().is_some(),
+        session_context.current_working_directory().is_some(),
+        explicit_repo_path.is_some(),
+        availability.debug_label()
+    );
+    if let Some(cwd) = session_context.current_working_directory() {
+        log::debug!(
+            "[Debugging Remote Codebase Indexing] Remote SearchCodebase request session cwd: action_id={action_id:?} cwd={cwd}"
+        );
+    }
+    if let Some(explicit_repo_path) = explicit_repo_path.as_deref() {
+        log::debug!(
+            "[Debugging Remote Codebase Indexing] Remote SearchCodebase request explicit repo path: action_id={action_id:?} explicit_repo_path={explicit_repo_path}"
+        );
+    }
+    if let Some(repo_path) = availability.repo_path() {
+        log::debug!(
+            "[Debugging Remote Codebase Indexing] Remote SearchCodebase request resolved repo path: action_id={action_id:?} repo_path={repo_path}"
+        );
+    }
+    if let Some(root_hash) = availability.root_hash_for_debug() {
+        log::debug!(
+            "[Debugging Remote Codebase Indexing] Remote SearchCodebase request resolved root hash: action_id={action_id:?} root_hash={root_hash}"
+        );
+    }
     match availability {
         RemoteCodebaseSearchAvailability::Ready(search_context) => {
+            log::info!(
+                "[Debugging Remote Codebase Indexing] Remote SearchCodebase request ready: action_id={action_id:?} host={}",
+                search_context.remote_path.host_id
+            );
             let Some(client) = remote_server::manager::RemoteServerManager::as_ref(ctx)
                 .client_for_host(&search_context.remote_path.host_id)
                 .cloned()
             else {
+                log::info!(
+                    "[Debugging Remote Codebase Indexing] Remote SearchCodebase request missing remote client after ready availability: action_id={action_id:?} host={}",
+                    search_context.remote_path.host_id
+                );
                 return RemoteSearchRequest::Ready(SearchCodebaseResult::Failed {
                     reason: SearchCodebaseFailureReason::ClientError,
                     message: "Remote codebase search is unavailable because the remote server is not connected.".to_string(),
@@ -89,6 +128,9 @@ pub(super) fn send_request(
             RemoteSearchRequest::Pending(abort_handle)
         }
         availability @ RemoteCodebaseSearchAvailability::NotIndexed { .. } => {
+            log::info!(
+                "[Debugging Remote Codebase Indexing] Remote SearchCodebase request triggering index because availability is NotIndexed: action_id={action_id:?}"
+            );
             RemoteCodebaseIndexModel::handle(ctx).update(ctx, |model, ctx| {
                 model.request_active_repo_index(
                     &session_context,
@@ -98,10 +140,14 @@ pub(super) fn send_request(
             });
             RemoteSearchRequest::Ready(remote_availability_failure(availability))
         }
-        RemoteCodebaseSearchAvailability::NoConnectedHost
-        | RemoteCodebaseSearchAvailability::NoActiveRepo
-        | RemoteCodebaseSearchAvailability::Indexing { .. }
-        | RemoteCodebaseSearchAvailability::Unavailable { .. } => {
+        availability @ RemoteCodebaseSearchAvailability::NoConnectedHost
+        | availability @ RemoteCodebaseSearchAvailability::NoActiveRepo
+        | availability @ RemoteCodebaseSearchAvailability::Indexing { .. }
+        | availability @ RemoteCodebaseSearchAvailability::Unavailable { .. } => {
+            log::info!(
+                "[Debugging Remote Codebase Indexing] Remote SearchCodebase request unavailable after availability evaluation: action_id={action_id:?} availability={}",
+                availability.debug_label()
+            );
             RemoteSearchRequest::Ready(remote_availability_failure(availability))
         }
     }

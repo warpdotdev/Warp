@@ -27,7 +27,10 @@ use crate::{
         GenericCloudObject, GenericStringObjectFormat, JsonObjectType, ObjectType,
     },
     terminal::{
-        model::{block::BlockId, session::active_session::ActiveSession},
+        model::{
+            block::BlockId,
+            session::{active_session::ActiveSession, SessionType},
+        },
         TerminalView,
     },
 };
@@ -66,9 +69,12 @@ pub(super) fn input_context_for_request(
         context.push(AIAgentContext::ExecutionEnvironment(env));
     }
 
-    if FeatureFlag::FullSourceCodeEmbedding.is_enabled()
-        && FeatureFlag::CrossRepoContext.is_enabled()
-    {
+    let full_source_code_embedding_enabled = FeatureFlag::FullSourceCodeEmbedding.is_enabled();
+    let cross_repo_context_enabled = FeatureFlag::CrossRepoContext.is_enabled();
+    let session_type = active_session.session_type(app);
+    let session_is_remote = matches!(session_type, Some(SessionType::WarpifiedRemote { .. }));
+    let mut local_codebase_context_count = 0;
+    if full_source_code_embedding_enabled && cross_repo_context_enabled {
         for (codebase_path, status) in
             CodebaseIndexManager::as_ref(app).get_codebase_index_statuses(app)
         {
@@ -84,9 +90,18 @@ pub(super) fn input_context_for_request(
                 context.push(AIAgentContext::Codebase {
                     name: codebase_name.into(),
                     path: codebase_path.to_string_lossy().into(),
-                })
+                });
+                local_codebase_context_count += 1;
             }
         }
+    }
+    log::info!(
+        "[Debugging Remote Codebase Indexing] Agent request evaluated codebase input context: session_is_remote={session_is_remote} full_source_code_embedding_enabled={full_source_code_embedding_enabled} cross_repo_context_enabled={cross_repo_context_enabled} local_codebase_context_count={local_codebase_context_count}"
+    );
+    if session_is_remote {
+        log::info!(
+            "[Debugging Remote Codebase Indexing] Agent request codebase input context for remote session only includes local codebase contexts in this path: local_codebase_context_count={local_codebase_context_count}"
+        );
     }
 
     if FeatureFlag::ListSkills.is_enabled() {
