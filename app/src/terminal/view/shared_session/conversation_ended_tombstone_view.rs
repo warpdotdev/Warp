@@ -69,7 +69,6 @@ impl TombstoneDisplayData {
         conversation_id: AIConversationId,
         terminal_view_id: EntityId,
         has_task_id: bool,
-        initial_error_message: Option<String>,
         ctx: &ViewContext<ConversationEndedTombstoneView>,
     ) -> Self {
         let history_model = BlocklistAIHistoryModel::handle(ctx);
@@ -87,19 +86,14 @@ impl TombstoneDisplayData {
         };
 
         let conversation_status = conversation_output_status_from_conversation(conversation);
-        let is_error = matches!(
-            conversation_status,
-            Some(AmbientConversationStatus::Error { .. })
-        );
-        let initial_error_message = initial_error_message.filter(|message| !message.is_empty());
-        let error_message = initial_error_message.or_else(|| {
-            conversation_status
-                .as_ref()
-                .and_then(|status| match status {
-                    AmbientConversationStatus::Error { error } => Some(error.to_string()),
-                    _ => None,
-                })
-        });
+        let error_message = conversation_status
+            .as_ref()
+            .and_then(|status| match status {
+                AmbientConversationStatus::Error { error } => Some(error.to_string()),
+                AmbientConversationStatus::Success
+                | AmbientConversationStatus::Cancelled { .. }
+                | AmbientConversationStatus::Blocked { .. } => None,
+            });
 
         // Calculate run time from exchanges
         let run_time = (|| {
@@ -112,7 +106,7 @@ impl TombstoneDisplayData {
 
         Self {
             title: conversation.title(),
-            is_error: is_error || error_message.is_some(),
+            is_error: conversation.status().is_error() || error_message.is_some(),
             error_message,
             conversation_is_transcript,
             source: None,
@@ -195,36 +189,28 @@ impl ConversationEndedTombstoneView {
         #[cfg_attr(target_family = "wasm", allow(unused_variables))] task_id: Option<
             AmbientAgentTaskId,
         >,
-        initial_error_message: Option<String>,
     ) -> Self {
         let conversation_id = BlocklistAIHistoryModel::handle(ctx)
             .as_ref(ctx)
             .all_live_conversations_for_terminal_view(terminal_view_id)
             .next()
             .map(|c| c.id());
-        let initial_error_message = initial_error_message.filter(|message| !message.is_empty());
-        let is_initial_setup_failure = initial_error_message.is_some() && task_id.is_none();
-
-        let display_data = if is_initial_setup_failure {
-            TombstoneDisplayData {
-                title: Some("Cloud agent failed to start".to_string()),
-                is_error: true,
-                error_message: initial_error_message.clone(),
-                ..Default::default()
-            }
-        } else {
-            conversation_id
-                .map(|conversation_id| {
-                    TombstoneDisplayData::from_conversation(
-                        conversation_id,
-                        terminal_view_id,
-                        task_id.is_some(),
-                        initial_error_message.clone(),
-                        ctx,
-                    )
-                })
-                .unwrap_or_default()
-        };
+        let mut display_data = conversation_id
+            .map(|conversation_id| {
+                TombstoneDisplayData::from_conversation(
+                    conversation_id,
+                    terminal_view_id,
+                    task_id.is_some(),
+                    ctx,
+                )
+            })
+            .unwrap_or_default();
+        let failed_before_task_creation =
+            display_data.is_error && task_id.is_none() && !display_data.conversation_is_transcript;
+        if failed_before_task_creation {
+            display_data.title = Some("Cloud agent failed to start".to_string());
+            display_data.credits = None;
+        }
 
         let artifact_buttons_view =
             ctx.add_typed_action_view(|ctx| ArtifactButtonsRow::new(&display_data.artifacts, ctx));
@@ -244,7 +230,7 @@ impl ConversationEndedTombstoneView {
             });
 
         #[cfg(not(target_family = "wasm"))]
-        let continue_locally_button = if is_initial_setup_failure {
+        let continue_locally_button = if failed_before_task_creation {
             None
         } else {
             conversation_id.map(|conv_id| {

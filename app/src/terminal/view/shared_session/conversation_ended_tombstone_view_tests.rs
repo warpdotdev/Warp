@@ -68,7 +68,7 @@ fn data_with_conversation_values() -> TombstoneDisplayData {
 }
 
 #[test]
-fn task_failure_status_message_overrides_initial_error() {
+fn task_failure_status_message_overrides_conversation_error() {
     let mut task = task_with_run_time_and_credits();
     task.state = AmbientAgentTaskState::Failed;
     task.status_message = Some(TaskStatusMessage {

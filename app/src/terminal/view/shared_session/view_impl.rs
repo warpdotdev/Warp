@@ -1667,34 +1667,13 @@ impl TerminalView {
     }
 
     pub fn insert_conversation_ended_tombstone(&mut self, ctx: &mut ViewContext<Self>) {
-        self.insert_conversation_ended_tombstone_internal(None, ctx);
-    }
-
-    pub(in crate::terminal::view) fn insert_failed_conversation_ended_tombstone(
-        &mut self,
-        error_message: String,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.insert_conversation_ended_tombstone_internal(Some(error_message), ctx);
-    }
-
-    fn insert_conversation_ended_tombstone_internal(
-        &mut self,
-        initial_error_message: Option<String>,
-        ctx: &mut ViewContext<Self>,
-    ) {
         if self.conversation_ended_tombstone_view_id.is_some() {
             self.remove_conversation_ended_tombstone(ctx);
         }
         let task_id = self.ambient_agent_task_id_for_details_panel(ctx);
         let terminal_view_id = self.id();
         let tombstone_view_handle = ctx.add_typed_action_view(move |ctx| {
-            ConversationEndedTombstoneView::new(
-                ctx,
-                terminal_view_id,
-                task_id,
-                initial_error_message,
-            )
+            ConversationEndedTombstoneView::new(ctx, terminal_view_id, task_id)
         });
         #[cfg(not(target_family = "wasm"))]
         ctx.subscribe_to_view(&tombstone_view_handle, |me, _, event, ctx| match event {

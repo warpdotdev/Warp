@@ -232,7 +232,7 @@ impl TerminalView {
                 );
 
                 if FeatureFlag::CloudModeSetupV2.is_enabled() {
-                    self.insert_failed_conversation_ended_tombstone(error_message.clone(), ctx);
+                    self.insert_conversation_ended_tombstone(ctx);
                 }
 
                 // Refresh the details panel to show failed status

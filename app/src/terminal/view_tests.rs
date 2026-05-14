@@ -1039,6 +1039,10 @@ fn cloud_mode_failed_inserts_tombstone_and_hides_input() {
         let terminal = add_window_with_cloud_mode_terminal(&mut app);
 
         terminal.update(&mut app, |view, ctx| {
+            view.model
+                .lock()
+                .set_shared_session_status(SharedSessionStatus::ViewPending);
+            view.enter_ambient_agent_setup(None, ctx);
             view.insert_cloud_mode_queued_user_query_block("queued prompt".to_string(), ctx);
             assert!(has_pending_user_query_block(view));
 
@@ -1087,6 +1091,7 @@ fn cloud_mode_failed_inserts_tombstone_and_hides_input() {
         });
     });
 }
+
 #[test]
 fn cloud_mode_followup_dispatched_inserts_queued_user_query() {
     App::test((), |mut app| async move {
