@@ -1146,7 +1146,7 @@ impl AgentDriver {
     }
 
     /// Subscribe to [`FileBasedMCPManagerEvent::CloudEnvMcpScanComplete`]
-    /// paths and return a receiver that fires with all discovered server UUIDs once every repo
+    /// paths and return a receiver that fires with auto-start-requested server UUIDs once every repo
     /// reports in. Must be called **before** `prepare_environment` so no events are missed.
     fn setup_file_based_mcp_discovery(
         &self,
@@ -1167,7 +1167,7 @@ impl AgentDriver {
 
         let mut tx = Some(tx);
         let mut pending_repos: HashSet<PathBuf> = HashSet::from_iter(expected_repos);
-        let mut collected_uuids = Vec::<Uuid>::new();
+        let mut collected_wait_uuids = Vec::<Uuid>::new();
 
         let file_based_mcp_manager = FileBasedMCPManager::handle(ctx);
         let manager_clone = file_based_mcp_manager.clone();
@@ -1175,21 +1175,36 @@ impl AgentDriver {
         ctx.subscribe_to_model(&file_based_mcp_manager, move |_me, event, ctx| {
             if let FileBasedMCPManagerEvent::CloudEnvMcpScanComplete {
                 repo_path,
-                server_uuids,
+                detected_servers,
+                wait_server_uuids,
             } = event
             {
                 if pending_repos.remove(repo_path) {
-                    collected_uuids.extend(server_uuids.iter().copied());
+                    collected_wait_uuids.extend(wait_server_uuids.iter().copied());
+                    let detected_details = detected_servers
+                        .iter()
+                        .map(|server| {
+                            format!(
+                                "'{}' ({}) from {} config, hash={}, auto_start_eligible={}",
+                                server.name,
+                                server.uuid,
+                                server.provider.display_name(),
+                                server.hash,
+                                server.auto_start_eligible
+                            )
+                        })
+                        .join("; ");
                     log::info!(
-                        "Found file-based MCP server UUIDs in repo {repo_path:?}: {server_uuids:?}"
+                        "File-based MCP scan complete for repo {repo_path:?}: detected [{}], waiting for auto-started UUIDs {wait_server_uuids:?}",
+                        if detected_details.is_empty() { "none".to_string() } else { detected_details }
                     );
-                    // If we've received all UUIDs from all cloud environment repos, send it back to the caller
-                    // and begin waiting for file-based MCP initialization.
+                    // If we've received all scan results from all cloud environment repos, send
+                    // back the auto-start-requested UUIDs and begin waiting for initialization.
                     if pending_repos.is_empty() {
-                        let uuids = collected_uuids.clone();
+                        let uuids = collected_wait_uuids.clone();
                         if let Some(sender) = tx.take() {
                             log::info!(
-                                "Collected file-based MCP server UUIDs from cloud environment repos: {uuids:?}"
+                                "Collected auto-started file-based MCP server UUIDs from cloud environment repos: {uuids:?}"
                             );
                             let _ = sender.send(uuids);
                         }
@@ -1202,8 +1217,7 @@ impl AgentDriver {
         rx
     }
 
-    /// Wait for discovered file-based MCP servers that were actually scheduled to start
-    /// (active or pending in the templatable manager) to reach a terminal state
+    /// Wait for auto-start-requested file-based MCP servers to reach a terminal state
     /// (`Running` or `FailedToStart`). Non-fatal: always completes without returning an error.
     ///
     /// **Sequencing note:** `AgentDriver` supports only one active subscription to
@@ -1215,32 +1229,17 @@ impl AgentDriver {
         uuids: Vec<Uuid>,
         ctx: &mut ModelContext<Self>,
     ) -> impl Future<Output = ()> {
-        // Filter out UUIDs that have already reached a terminal state or were discovered but not
-        // scheduled to start (e.g. project-scoped file-based MCP servers, which require explicit
-        // opt-in and are intentionally not auto-spawned).
+        // Filter out UUIDs that have already reached a terminal state before the subscription is
+        // installed. Spawn eligibility is decided upstream by `FileBasedMCPManager`.
         let mut pending_uuids: HashSet<Uuid> = {
             let templatable_manager = TemplatableMCPServerManager::as_ref(ctx);
-            let file_based_manager = FileBasedMCPManager::as_ref(ctx);
             uuids
                 .into_iter()
                 .filter(|uuid| {
-                    if matches!(
+                    !matches!(
                         templatable_manager.get_server_state(*uuid),
                         Some(MCPServerState::Running) | Some(MCPServerState::FailedToStart)
-                    ) {
-                        return false;
-                    }
-                    if templatable_manager.is_server_active_or_pending(*uuid) {
-                        return true;
-                    }
-                    let server_name = file_based_manager
-                        .get_installation_by_uuid(*uuid)
-                        .map(|installation| installation.templatable_mcp_server().name.as_str())
-                        .unwrap_or("<unknown>");
-                    log::info!(
-                        "Not waiting for discovered file-based MCP server '{server_name}' ({uuid}); it was not scheduled to start"
-                    );
-                    false
+                    )
                 })
                 .collect()
         };
@@ -1760,8 +1759,9 @@ impl AgentDriver {
                 .map_err(AgentDriverError::from)?;
 
             if let Some(file_based_discovery_rx) = file_based_discovery_rx {
-                // Await discovery: collect UUIDs of file-based MCP servers found in cloned repos.
-                let discovered_uuids = match file_based_discovery_rx
+                // Await discovery: collect UUIDs of file-based MCP servers that were auto-started
+                // while scanning cloned repos.
+                let wait_uuids = match file_based_discovery_rx
                     .with_timeout(MCP_SERVER_STARTUP_TIMEOUT)
                     .await
                 {
@@ -1780,16 +1780,14 @@ impl AgentDriver {
                     }
                 };
 
-                // Wait for discovered servers to reach Running (non-fatal: always unblocks).
-                if !discovered_uuids.is_empty() {
+                // Wait for auto-started servers to reach Running (non-fatal: always unblocks).
+                if !wait_uuids.is_empty() {
                     log::info!(
-                        "Checking readiness for {} discovered file-based MCP server(s)",
-                        discovered_uuids.len()
+                        "Checking readiness for {} auto-started file-based MCP server(s)",
+                        wait_uuids.len()
                     );
                     foreground
-                        .spawn(move |me, ctx| {
-                            me.wait_for_file_based_mcps_running(discovered_uuids, ctx)
-                        })
+                        .spawn(move |me, ctx| me.wait_for_file_based_mcps_running(wait_uuids, ctx))
                         .await?
                         .await;
                 }
