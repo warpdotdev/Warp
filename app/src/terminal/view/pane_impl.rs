@@ -990,21 +990,32 @@ impl TerminalView {
     /// Selected conversation status for chrome, or [`ConversationStatus::InProgress`] while the
     /// active block is long-running (terminal-derived; not mirrored in history events) or while
     /// a cloud-mode ambient agent is still in its environment-setup phase.
+    ///
+    /// For viewers of shared ambient-agent sessions the `long_running` and
+    /// `cloud_setup` overrides are intentionally skipped — the harness CLI
+    /// is itself the long-running shell block on the sharer's side, so it
+    /// stays "active" for the entire session lifetime and would otherwise
+    /// pin the chrome indicator to `InProgress` even after the agent
+    /// finishes. The conversation's own status is the authoritative signal
+    /// in that case (driven by the controller's `StreamFinished` handler,
+    /// plus the orchestration viewer's REST poll for tracked children).
     pub fn selected_conversation_status(&self, ctx: &AppContext) -> Option<ConversationStatus> {
         let long_running = self.is_long_running();
         let cloud_setup = self.is_in_cloud_agent_setup_phase(ctx);
+        let is_shared_ambient = self.model.lock().is_shared_ambient_agent_session();
+        let busy_override = (long_running || cloud_setup) && !is_shared_ambient;
 
         let Some(conversation) = self.selected_conversation_for_user_facing_chrome(ctx) else {
             // Ambient agent tabs can show Oz chrome without a filtered "chrome" conversation;
             // still surface busy while a long-running shell command is active or the cloud
             // environment is spinning up.
-            if (long_running || cloud_setup) && self.is_ambient_agent_session(ctx) {
+            if busy_override && self.is_ambient_agent_session(ctx) {
                 return Some(ConversationStatus::InProgress);
             }
             return None;
         };
 
-        if long_running || cloud_setup {
+        if busy_override {
             return Some(ConversationStatus::InProgress);
         }
 
