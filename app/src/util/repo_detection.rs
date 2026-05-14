@@ -7,6 +7,7 @@
 
 use std::future::Future;
 
+use futures::future::{ready, Either};
 use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
 use warp_core::SessionId;
 use warp_util::local_or_remote_path::LocalOrRemotePath;
@@ -37,18 +38,24 @@ pub fn detect_possible_git_repo<V: View>(
     source: RepoDetectionSource,
     ctx: &mut ViewContext<V>,
 ) -> impl Future<Output = Option<LocalOrRemotePath>> {
-    // Build the remote detection future if this is a remote session with an
-    // active server connection. For local sessions or remote sessions without
-    // a connected server, pass None so DetectedRepositories uses the local path.
+    // Build the remote detection future if this is a remote session.
+    // For local sessions, pass None so DetectedRepositories uses the local path.
+    // For remote sessions without a connected server, pass a future that
+    // resolves to None immediately — this avoids falling through to local
+    // detection, which would misclassify a remote CWD as a local repo if
+    // the same absolute path happens to exist locally.
     let remote_detect = match session_type {
         RepoDetectionSessionType::Local => None,
         RepoDetectionSessionType::Remote { session_id } => {
             if RemoteServerManager::as_ref(ctx).is_session_potentially_active(session_id) {
-                Some(RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
-                    mgr.navigate_to_directory(session_id, active_directory.to_string(), ctx)
-                }))
+                Some(Either::Left(RemoteServerManager::handle(ctx).update(
+                    ctx,
+                    |mgr, ctx| {
+                        mgr.navigate_to_directory(session_id, active_directory.to_string(), ctx)
+                    },
+                )))
             } else {
-                None
+                Some(Either::Right(ready(None)))
             }
         }
     };

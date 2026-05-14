@@ -5,7 +5,7 @@ use std::{collections::HashSet, future::Future, path::PathBuf};
 use virtual_fs::{Stub, VirtualFS};
 use warp_util::host_id::HostId;
 use warp_util::local_or_remote_path::LocalOrRemotePath;
-use warp_util::remote_path::RemotePath;
+use warp_util::remote_path::{RemoteNavigationResult, RemotePath};
 use warp_util::standardized_path::StandardizedPath;
 #[cfg(test)]
 use warpui::r#async::FutureId;
@@ -59,7 +59,9 @@ impl DetectedRepositories {
     /// This design avoids a circular dependency between `repo_metadata` and
     /// `remote_server` — the caller in `app/` constructs the remote future
     /// and injects it here.
-    pub fn detect_possible_git_repo<F: Future<Output = Option<(RemotePath, bool)>> + 'static>(
+    pub fn detect_possible_git_repo<
+        F: Future<Output = Option<RemoteNavigationResult>> + 'static,
+    >(
         &mut self,
         active_directory: &str,
         source: RepoDetectionSource,
@@ -74,7 +76,10 @@ impl DetectedRepositories {
             }
             Some(remote_fut) => Either::Right(async move {
                 match remote_fut.await {
-                    Some((remote_path, true)) => Some(LocalOrRemotePath::Remote(remote_path)),
+                    Some(RemoteNavigationResult {
+                        remote_path,
+                        is_git: true,
+                    }) => Some(LocalOrRemotePath::Remote(remote_path)),
                     _ => None,
                 }
             }),

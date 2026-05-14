@@ -157,6 +157,7 @@ pub fn initialize_app(app: &mut App) {
     app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(DirectoryWatcher::new);
     app.add_singleton_model(|_| DetectedRepositories::default());
+    app.add_singleton_model(crate::remote_server::manager::RemoteServerManager::new);
     app.add_singleton_model(|_| crate::code_review::git_status_update::GitStatusUpdateModel::new());
     app.add_singleton_model(RepoMetadataModel::new);
     app.add_singleton_model(FileSearchModel::new);
