@@ -218,7 +218,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
     ));
 
     app.register_fixed_bindings(vec![FixedBinding::empty(
-        "Start Input at the Top".to_string(),
+        t!("appearance.start_input_at_top").to_string(),
         builder(SettingsAction::AppearancePageToggle(
             AppearancePageAction::SetInputMode {
                 new_mode: InputMode::Waterfall,
@@ -230,7 +230,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
     .with_group(bindings::BindingGroup::Settings.as_str())]);
 
     app.register_fixed_bindings(vec![FixedBinding::empty(
-        "Pin Input to the Top".to_string(),
+        t!("appearance.pin_input_to_top").to_string(),
         builder(SettingsAction::AppearancePageToggle(
             AppearancePageAction::SetInputMode {
                 new_mode: InputMode::PinnedToTop,
@@ -242,7 +242,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
     .with_group(bindings::BindingGroup::Settings.as_str())]);
 
     app.register_fixed_bindings(vec![FixedBinding::empty(
-        "Pin Input to the Bottom".to_string(),
+        t!("appearance.pin_input_to_bottom").to_string(),
         builder(SettingsAction::AppearancePageToggle(
             AppearancePageAction::SetInputMode {
                 new_mode: InputMode::PinnedToBottom,
@@ -254,7 +254,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
 
     // Add command palette entry for toggling between Warp and Classic input modes
     app.register_fixed_bindings(vec![FixedBinding::empty(
-        "Toggle Input Mode (Warp/Classic)".to_string(),
+        t!("appearance.toggle_input_mode").to_string(),
         builder(SettingsAction::AppearancePageToggle(
             AppearancePageAction::ToggleInputMode,
         )),
@@ -282,8 +282,8 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
         toggle_binding_pairs.push(
             ToggleSettingActionPair::custom(
                 SettingActionPairDescriptions::new(
-                    "Show code review button in tab bar",
-                    "Hide code review button in tab bar",
+                    t!("appearance.show_code_review_button_in_tab_bar").as_ref(),
+                    t!("appearance.hide_code_review_button_in_tab_bar").as_ref(),
                 ),
                 builder(SettingsAction::AppearancePageToggle(
                     AppearancePageAction::ToggleShowCodeReviewButton,
@@ -322,7 +322,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
         // Add bindings for each visibility option.
         app.register_fixed_bindings([
             FixedBinding::empty(
-                "Always show tab bar".to_string(),
+                t!("appearance.always_show_tab_bar").to_string(),
                 builder(SettingsAction::AppearancePageToggle(
                     AppearancePageAction::SetWorkspaceDecorationVisibility(
                         WorkspaceDecorationVisibility::AlwaysShow,
@@ -332,7 +332,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
             )
             .with_group(bindings::BindingGroup::Settings.as_str()),
             FixedBinding::empty(
-                "Hide tab bar if fullscreen".to_string(),
+                t!("appearance.hide_tab_bar_if_fullscreen").to_string(),
                 builder(SettingsAction::AppearancePageToggle(
                     AppearancePageAction::SetWorkspaceDecorationVisibility(
                         WorkspaceDecorationVisibility::HideFullscreen,
@@ -342,7 +342,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
             )
             .with_group(bindings::BindingGroup::Settings.as_str()),
             FixedBinding::empty(
-                "Only show tab bar on hover".to_string(),
+                t!("appearance.only_show_tab_bar_on_hover").to_string(),
                 builder(SettingsAction::AppearancePageToggle(
                     AppearancePageAction::SetWorkspaceDecorationVisibility(
                         WorkspaceDecorationVisibility::OnHover,
@@ -4306,7 +4306,7 @@ impl SettingsWidget for CursorTypeWidget {
         let cursor_display_types: Vec<CursorDisplayType> = all::<CursorDisplayType>().collect();
 
         render_body_item::<AppearancePageAction>(
-            "Cursor type".into(),
+            t!("appearance.cursor_type").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 CursorBlinkEnabled::storage_key(),
@@ -4375,7 +4375,7 @@ impl SettingsWidget for BlinkingCursorWidget {
         let settings = AppEditorSettings::as_ref(app);
         let cursor_blink = &settings.cursor_blink;
         render_body_item::<AppearancePageAction>(
-            "Blinking cursor".into(),
+            t!("appearance.blinking_cursor").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 CursorBlinkEnabled::storage_key(),
@@ -4417,7 +4417,7 @@ impl SettingsWidget for TabCloseButtonPositionWidget {
     ) -> Box<dyn Element> {
         render_dropdown_item(
             appearance,
-            "Tab close button position",
+            t!("appearance.tab_close_button_position").as_ref(),
             None,
             None,
             LocalOnlyIconState::for_setting(
@@ -4453,7 +4453,7 @@ impl SettingsWidget for TabIndicatorWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<AppearancePageAction>(
-            "Show tab indicators".into(),
+            t!("appearance.show_tab_indicators").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 ShowIndicatorsButton::storage_key(),
@@ -4498,7 +4498,7 @@ impl SettingsWidget for CodeReviewButtonWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<AppearancePageAction>(
-            "Show code review button".into(),
+            t!("appearance.show_code_review_button").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 ShowCodeReviewButton::storage_key(),
@@ -4543,7 +4543,7 @@ impl SettingsWidget for PreserveActiveTabColorWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<AppearancePageAction>(
-            "Preserve active tab color for new tabs".into(),
+            t!("appearance.preserve_active_tab_color").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 PreserveActiveTabColor::storage_key(),
@@ -4588,7 +4588,7 @@ impl SettingsWidget for VerticalTabsWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<AppearancePageAction>(
-            "Use vertical tab layout".into(),
+            t!("appearance.use_vertical_tab_layout").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 UseVerticalTabs::storage_key(),
@@ -4633,7 +4633,7 @@ impl SettingsWidget for ShowVerticalTabPanelInRestoredWindowsWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<AppearancePageAction>(
-            "Show vertical tabs panel in restored windows".into(),
+            t!("appearance.show_vertical_tabs_panel_restored").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 ShowVerticalTabPanelInRestoredWindows::storage_key(),
@@ -4654,10 +4654,7 @@ impl SettingsWidget for ShowVerticalTabPanelInRestoredWindowsWidget {
                     );
                 })
                 .finish(),
-            Some(
-                "When enabled, reopening or restoring a window opens the vertical tabs panel even if it was closed when the window was last saved."
-                    .to_string(),
-            ),
+            Some(t!("appearance.show_vertical_tabs_panel_restored_description").to_string()),
         )
     }
 }
@@ -4683,7 +4680,7 @@ impl SettingsWidget for UseLatestUserPromptAsConversationTitleInTabNamesWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<AppearancePageAction>(
-            "Use latest user prompt as conversation title in tab names".into(),
+            t!("appearance.use_latest_prompt_as_tab_title").to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 UseLatestUserPromptAsConversationTitleInTabNames::storage_key(),
@@ -4708,8 +4705,7 @@ impl SettingsWidget for UseLatestUserPromptAsConversationTitleInTabNamesWidget {
                 })
                 .finish(),
             Some(
-                "Show the latest user prompt instead of the generated conversation title for Oz and third-party agent sessions in vertical tabs."
-                    .to_string(),
+                t!("appearance.use_latest_prompt_as_tab_title_description").to_string(),
             ),
         )
     }
@@ -4732,7 +4728,7 @@ impl SettingsWidget for EditToolbarWidget {
         _app: &AppContext,
     ) -> Box<dyn Element> {
         let label = render_body_item_label::<AppearancePageAction>(
-            "Header toolbar layout".to_string(),
+            t!("appearance.header_toolbar_layout").to_string(),
             None,
             None,
             LocalOnlyIconState::Hidden,
@@ -4905,7 +4901,7 @@ impl SettingsWidget for DirectoryTabColorsWidget {
                 };
                 let is_selected = current_color == tab_color;
                 let tooltip_text = match ansi_id {
-                    None => "Default (no color)".to_string(),
+                    None => t!("appearance.default_no_color").to_string(),
                     Some(id) => id.to_string(),
                 };
                 let dir_path_clone = PathBuf::from(&dir_path);
@@ -4986,7 +4982,7 @@ impl SettingsWidget for ZenModeWidget {
     ) -> Box<dyn Element> {
         render_dropdown_item(
             appearance,
-            "Show the tab bar",
+            t!("appearance.show_tab_bar").as_ref(),
             None,
             None,
             LocalOnlyIconState::for_setting(
@@ -5023,7 +5019,7 @@ impl SettingsWidget for AltScreenPaddingWidget {
         let terminal_settings = &TerminalSettings::as_ref(app);
         let theme = appearance.theme();
         let mut column = Flex::column().with_child(render_body_item::<AppearancePageAction>(
-            "Use custom padding in alt-screen".into(),
+            t!("appearance.use_custom_padding_alt_screen").to_string(),
             Some(AdditionalInfo {
                 mouse_state: self.additional_info_mouse_state.clone(),
                 on_click_action: Some(AppearancePageAction::OpenUrl(
@@ -5142,8 +5138,8 @@ impl SettingsWidget for ZoomLevelWidget {
 
         render_dropdown_item(
             appearance,
-            "Zoom",
-            Some("Adjusts the default zoom level across all windows"),
+            t!("appearance.zoom").as_ref(),
+            Some(t!("appearance.zoom_description").as_ref()),
             Some(reset_button),
             LocalOnlyIconState::for_setting(
                 crate::window_settings::ZoomLevel::storage_key(),
