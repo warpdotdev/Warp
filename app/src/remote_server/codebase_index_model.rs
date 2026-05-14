@@ -81,6 +81,19 @@ fn remote_codebase_name(repo_path: &str) -> String {
 pub struct RemoteCodebaseIndexModel {
     statuses: HashMap<RemotePath, RemoteCodebaseIndexStatus>,
     active_repos_by_host: HashMap<HostId, RemotePath>,
+    host_labels: HashMap<HostId, String>,
+}
+
+#[derive(Clone, Debug)]
+pub enum RemoteCodebaseIndexModelEvent {
+    SettingsEntriesChanged,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RemoteCodebaseIndexSettingsEntry {
+    pub remote_path: RemotePath,
+    pub status: RemoteCodebaseIndexStatus,
+    pub host_label: String,
 }
 
 impl RemoteCodebaseIndexModel {
@@ -160,6 +173,39 @@ impl RemoteCodebaseIndexModel {
         entries
     }
 
+    pub fn request_index(&self, remote_path: RemotePath, ctx: &mut ModelContext<Self>) {
+        RemoteServerManager::handle(ctx).update(ctx, |manager, ctx| {
+            manager.resync_codebase(remote_path, ctx);
+        });
+    }
+
+    pub fn drop_index(&self, remote_path: RemotePath, ctx: &mut ModelContext<Self>) {
+        RemoteServerManager::handle(ctx).update(ctx, |manager, ctx| {
+            manager.drop_codebase_index(remote_path, ctx);
+        });
+    }
+
+    pub fn entries_for_settings(&self) -> Vec<RemoteCodebaseIndexSettingsEntry> {
+        let mut entries = self
+            .statuses
+            .iter()
+            .map(|(remote_path, status)| RemoteCodebaseIndexSettingsEntry {
+                remote_path: remote_path.clone(),
+                status: status.clone(),
+                host_label: self
+                    .host_labels
+                    .get(&remote_path.host_id)
+                    .cloned()
+                    .unwrap_or_else(|| remote_path.host_id.to_string()),
+            })
+            .collect::<Vec<_>>();
+        entries.sort_by(|a, b| {
+            a.host_label
+                .cmp(&b.host_label)
+                .then_with(|| a.remote_path.path.as_str().cmp(b.remote_path.path.as_str()))
+        });
+        entries
+    }
     fn handle_remote_server_manager_event(
         &mut self,
         event: &RemoteServerManagerEvent,
@@ -168,12 +214,14 @@ impl RemoteCodebaseIndexModel {
         match event {
             RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot { host_id, statuses } => {
                 self.apply_statuses_snapshot(host_id, statuses);
+                ctx.emit(RemoteCodebaseIndexModelEvent::SettingsEntriesChanged);
             }
             RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
                 remote_path,
                 status,
             } => {
                 self.apply_status_update(remote_path.clone(), status.clone());
+                ctx.emit(RemoteCodebaseIndexModelEvent::SettingsEntriesChanged);
             }
             RemoteServerManagerEvent::NavigatedToDirectory {
                 session_id: _,
@@ -181,6 +229,7 @@ impl RemoteCodebaseIndexModel {
                 is_git,
             } => {
                 self.record_navigated_directory(remote_path);
+                ctx.emit(RemoteCodebaseIndexModelEvent::SettingsEntriesChanged);
                 if *is_git
                     && should_auto_index_remote_codebase(ctx)
                     && self.should_request_auto_index_for_navigated_git_repo(remote_path)
@@ -195,13 +244,26 @@ impl RemoteCodebaseIndexModel {
                 }
             }
             RemoteServerManagerEvent::HostDisconnected { host_id } => {
-                self.remove_host(host_id);
+                self.mark_host_unavailable(host_id);
+                ctx.emit(RemoteCodebaseIndexModelEvent::SettingsEntriesChanged);
+            }
+            RemoteServerManagerEvent::SessionConnected {
+                session_id: _,
+                host_id,
+            }
+            | RemoteServerManagerEvent::SessionReconnected {
+                session_id: _,
+                host_id,
+                attempt: _,
+                client: _,
+            } => {
+                if self.record_host_label(host_id, ctx) {
+                    ctx.emit(RemoteCodebaseIndexModelEvent::SettingsEntriesChanged);
+                }
             }
             RemoteServerManagerEvent::SessionConnecting { .. }
-            | RemoteServerManagerEvent::SessionConnected { .. }
             | RemoteServerManagerEvent::SessionConnectionFailed { .. }
             | RemoteServerManagerEvent::SessionDisconnected { .. }
-            | RemoteServerManagerEvent::SessionReconnected { .. }
             | RemoteServerManagerEvent::SessionDeregistered { .. }
             | RemoteServerManagerEvent::HostConnected { .. }
             | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
@@ -258,8 +320,28 @@ impl RemoteCodebaseIndexModel {
             .insert(remote_path.host_id.clone(), remote_path.clone());
     }
 
-    fn remove_host(&mut self, host_id: &HostId) {
-        self.statuses.retain(|key, _| key.host_id != *host_id);
+    fn record_host_label(&mut self, host_id: &HostId, ctx: &mut ModelContext<Self>) -> bool {
+        let Some(host_label) = RemoteServerManager::as_ref(ctx)
+            .host_label(host_id)
+            .map(ToOwned::to_owned)
+        else {
+            return false;
+        };
+        if self.host_labels.get(host_id) == Some(&host_label) {
+            return false;
+        }
+        self.host_labels.insert(host_id.clone(), host_label);
+        true
+    }
+
+    fn mark_host_unavailable(&mut self, host_id: &HostId) {
+        for (remote_path, status) in &mut self.statuses {
+            if remote_path.host_id == *host_id {
+                status.state = RemoteCodebaseIndexState::Unavailable;
+                status.failure_message =
+                    Some("The remote host is currently disconnected.".to_string());
+            }
+        }
         self.active_repos_by_host.remove(host_id);
     }
 
@@ -352,7 +434,7 @@ impl RemoteCodebaseIndexModel {
 }
 
 impl Entity for RemoteCodebaseIndexModel {
-    type Event = ();
+    type Event = RemoteCodebaseIndexModelEvent;
 }
 
 impl SingletonEntity for RemoteCodebaseIndexModel {}
