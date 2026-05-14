@@ -19,18 +19,69 @@ use std::time::Duration;
 
 use super::super::setup;
 
-/// Path to the daemon's Unix domain socket.
+/// Path to the daemon's Unix domain socket, versioned on release channels.
 pub(super) fn socket_path(identity_key: &str) -> PathBuf {
     let dir = setup::remote_server_daemon_dir(identity_key);
     let expanded = shellexpand::tilde(&dir).into_owned();
-    PathBuf::from(expanded).join("server.sock")
+    PathBuf::from(expanded).join(setup::daemon_socket_name())
 }
 
-/// Path to the daemon's PID file (also used as the flock target).
+/// Path to the daemon's PID file (also used as the flock target),
+/// versioned on release channels.
 pub(super) fn pid_path(identity_key: &str) -> PathBuf {
     let dir = setup::remote_server_daemon_dir(identity_key);
     let expanded = shellexpand::tilde(&dir).into_owned();
-    PathBuf::from(expanded).join("server.pid")
+    PathBuf::from(expanded).join(setup::daemon_pid_name())
+}
+
+/// Daemon directory for the given identity key (expanded, no tilde).
+fn daemon_dir(identity_key: &str) -> PathBuf {
+    let dir = setup::remote_server_daemon_dir(identity_key);
+    let expanded = shellexpand::tilde(&dir).into_owned();
+    PathBuf::from(expanded)
+}
+
+/// Scans the identity-key daemon directory and removes socket/PID files
+/// from previous daemon versions.
+///
+/// Old daemons are **not** killed — they may still be serving active
+/// connections from an older Warp client. Removing their socket file
+/// prevents new proxies from accidentally connecting to them, and the
+/// daemon's built-in grace timer (10 min with no connections) will shut
+/// it down naturally after the last client disconnects.
+///
+/// Errors are logged but do not prevent the proxy from proceeding.
+fn cleanup_old_versions(identity_key: &str) {
+    let dir = daemon_dir(identity_key);
+    let current_socket = setup::daemon_socket_name();
+    let current_pid = setup::daemon_pid_name();
+
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name_str) = name.to_str() else {
+            continue;
+        };
+
+        // Remove old PID files: server*.pid that aren't the current version.
+        if name_str.ends_with(".pid") && name_str.starts_with("server") && name_str != current_pid {
+            log::info!("Proxy: removing old PID file {name_str}");
+            let _ = std::fs::remove_file(entry.path());
+        }
+
+        // Remove old socket files: server*.sock that aren't the current version.
+        if name_str.ends_with(".sock")
+            && name_str.starts_with("server")
+            && name_str != current_socket
+        {
+            log::info!("Proxy: removing old socket file {name_str}");
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
 }
 
 /// Ensures the daemon directory exists with owner-only permissions.
@@ -52,6 +103,10 @@ pub fn run(identity_key: &str) -> anyhow::Result<()> {
     if let Some(parent) = socket_path.parent() {
         ensure_private_daemon_dir(parent)?;
     }
+
+    // Clean up socket/PID files from previous daemon versions so stale
+    // daemons left over after autoupdate don't linger.
+    cleanup_old_versions(identity_key);
 
     // ---- Acquire exclusive flock on the PID file --------------------------------
     //

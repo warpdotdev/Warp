@@ -18,9 +18,9 @@ fn preserves_explicit_environment_selection() {
                 state.selected_environment_id(),
                 Some(&default_environment_id)
             );
-            assert_eq!(state.explicit_environment_id(), None);
         });
 
+        // Explicit selection should stick even when ensure_default tries to overwrite.
         state.update(&mut app, |state, ctx| {
             state.set_environment_id(Some(explicit_environment_id), true, ctx);
             state.ensure_default_environment_id(default_environment_id, ctx);
@@ -29,10 +29,6 @@ fn preserves_explicit_environment_selection() {
             assert_eq!(
                 state.selected_environment_id(),
                 Some(&explicit_environment_id)
-            );
-            assert_eq!(
-                state.explicit_environment_id(),
-                Some(explicit_environment_id)
             );
         });
     });

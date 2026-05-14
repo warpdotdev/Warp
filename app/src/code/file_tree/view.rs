@@ -739,9 +739,17 @@ impl FileTreeView {
     fn handle_code_event(&mut self, event: &ActiveFileEvent, ctx: &mut ViewContext<Self>) {
         // When a file is focused, scroll to show it in the file tree
         match event {
-            ActiveFileEvent::ActiveFileChanged { file_info } => {
-                let Ok(file_std) = StandardizedPath::try_from_local(file_info) else {
-                    return;
+            ActiveFileEvent::ActiveFileChanged { location } => {
+                let file_std = match location {
+                    crate::code::buffer_location::FileLocation::Local(path) => {
+                        match StandardizedPath::try_from_local(path) {
+                            Ok(std_path) => std_path,
+                            Err(_) => return,
+                        }
+                    }
+                    crate::code::buffer_location::FileLocation::Remote(remote) => {
+                        remote.path.clone()
+                    }
                 };
                 // Prefer the currently-selected item's root if the file lives under it;
                 // otherwise fall back to the deepest matching root directory.

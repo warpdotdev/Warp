@@ -35,6 +35,7 @@ use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
 use crate::ai::blocklist::AIBlockResponseRating;
 use crate::ai::blocklist::CommandExecutionPermissionAllowedReason;
 use crate::ai::blocklist::InputType;
+use crate::ai::execution_profiles::AskUserQuestionPermission;
 use crate::ai::mcp::TemplateVariable;
 use crate::ai::predict::generate_ai_input_suggestions::GenerateAIInputSuggestionsRequest;
 use crate::ai::predict::generate_ai_input_suggestions::GenerateAIInputSuggestionsResponseV2;
@@ -374,6 +375,8 @@ impl From<rmcp::RmcpError> for MCPServerTelemetryError {
                 // The enum is marked as non-exhaustive, so we need a catch-all.
                 _ => Self::InternalError(err.to_string()),
             },
+            // The enum is marked as non-exhaustive, so we need a catch-all.
+            _ => Self::InternalError(err.to_string()),
         }
     }
 }
@@ -2279,6 +2282,10 @@ pub enum TelemetryEvent {
         src: AutonomySettingToggleSource,
         new: AgentModeCodingPermissionsType,
     },
+    ChangedAgentModeAskUserQuestionPermission {
+        src: AutonomySettingToggleSource,
+        new: AskUserQuestionPermission,
+    },
     FullEmbedCodebaseContextSearchSuccess {
         action_id: AIAgentActionId,
         total_search_duration: Duration,
@@ -2866,6 +2873,20 @@ pub enum TelemetryEvent {
         /// Required minimum glibc reported by the script. Empty when
         /// the unsupported classification was not glibc-related.
         required_glibc: String,
+    },
+    /// Emitted when a reconnection attempt succeeds after a spontaneous disconnect.
+    RemoteServerReconnection {
+        attempt: u32,
+        remote_os: Option<String>,
+        remote_arch: Option<String>,
+    },
+    /// Emitted when all reconnection attempts are exhausted.
+    RemoteServerReconnectExhausted {
+        attempts: u32,
+        remote_os: Option<String>,
+        remote_arch: Option<String>,
+        exit_code: Option<i32>,
+        signal_killed: Option<bool>,
     },
 }
 
@@ -3847,6 +3868,10 @@ impl TelemetryEvent {
                 "source": src,
                 "new": new,
             })),
+            TelemetryEvent::ChangedAgentModeAskUserQuestionPermission { src, new } => Some(json!({
+                "source": src,
+                "new": new,
+            })),
             TelemetryEvent::FullEmbedCodebaseContextSearchSuccess {
                 action_id,
                 total_search_duration,
@@ -4241,6 +4266,28 @@ impl TelemetryEvent {
                 "remote_arch": remote_arch,
                 "detected_libc": detected_libc,
                 "required_glibc": required_glibc,
+            })),
+            TelemetryEvent::RemoteServerReconnection {
+                attempt,
+                remote_os,
+                remote_arch,
+            } => Some(json!({
+                "attempt": attempt,
+                "remote_os": remote_os,
+                "remote_arch": remote_arch,
+            })),
+            TelemetryEvent::RemoteServerReconnectExhausted {
+                attempts,
+                remote_os,
+                remote_arch,
+                exit_code,
+                signal_killed,
+            } => Some(json!({
+                "attempts": attempts,
+                "remote_os": remote_os,
+                "remote_arch": remote_arch,
+                "exit_code": exit_code,
+                "signal_killed": signal_killed,
             })),
             TelemetryEvent::ConversationListItemOpened { is_ambient_agent } => Some(json!({
                 "is_ambient_agent": is_ambient_agent,
@@ -4932,6 +4979,7 @@ impl TelemetryEvent {
             | TelemetryEvent::WorkflowAliasArgumentEdited { .. }
             | TelemetryEvent::ToggledAgentModeAutoexecuteReadonlyCommandsSetting { .. }
             | TelemetryEvent::ChangedAgentModeCodingPermissions { .. }
+            | TelemetryEvent::ChangedAgentModeAskUserQuestionPermission { .. }
             | TelemetryEvent::RepoOutlineConstructionSuccess { .. }
             | TelemetryEvent::RepoOutlineConstructionFailed { .. }
             | TelemetryEvent::AutoexecutedAgentModeRequestedCommand { .. }
@@ -5060,7 +5108,9 @@ impl TelemetryEvent {
             | TelemetryEvent::RemoteServerClientRequestError { .. }
             | TelemetryEvent::RemoteServerMessageDecodingError { .. }
             | TelemetryEvent::RemoteServerSetupDuration { .. }
-            | TelemetryEvent::RemoteServerHostUnsupported { .. } => false,
+            | TelemetryEvent::RemoteServerHostUnsupported { .. }
+            | TelemetryEvent::RemoteServerReconnection { .. }
+            | TelemetryEvent::RemoteServerReconnectExhausted { .. } => false,
             #[cfg(feature = "local_fs")]
             TelemetryEvent::CodePaneOpened { .. }
             | TelemetryEvent::CodePanelsFileOpened { .. }
@@ -5505,6 +5555,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             }
             Self::ToggledAgentModeAutoexecuteReadonlyCommandsSetting
             | Self::ChangedAgentModeCodingPermissions
+            | Self::ChangedAgentModeAskUserQuestionPermission
             | Self::AutoexecutedAgentModeRequestedCommand => EnablementState::Always,
             Self::AttachedImagesToAgentModeQuery => {
                 EnablementState::Flag(FeatureFlag::ImageAsContext)
@@ -5626,7 +5677,9 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::RemoteServerClientRequestError
             | Self::RemoteServerMessageDecodingError
             | Self::RemoteServerSetupDuration
-            | Self::RemoteServerHostUnsupported => {
+            | Self::RemoteServerHostUnsupported
+            | Self::RemoteServerReconnection
+            | Self::RemoteServerReconnectExhausted => {
                 EnablementState::Flag(FeatureFlag::SshRemoteServer)
             }
         }
@@ -6021,6 +6074,9 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ChangedAgentModeCodingPermissions => {
                 "AIAutonomy.ChangedAgentModeCodingPermissions"
             }
+            Self::ChangedAgentModeAskUserQuestionPermission => {
+                "AIAutonomy.ChangedAgentModeAskUserQuestionPermission"
+            }
             Self::AutoexecutedAgentModeRequestedCommand => {
                 "AIAutonomy.AutoexecutedRequestedCommand"
             }
@@ -6033,6 +6089,8 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::RemoteServerMessageDecodingError => "RemoteServer.MessageDecodingError",
             Self::RemoteServerSetupDuration => "RemoteServer.SetupDuration",
             Self::RemoteServerHostUnsupported => "RemoteServer.HostUnsupported",
+            Self::RemoteServerReconnection => "RemoteServer.Reconnection",
+            Self::RemoteServerReconnectExhausted => "RemoteServer.ReconnectExhausted",
             #[cfg(windows)]
             Self::WSLRegistryError => "WSL Distribution Registry Error",
             #[cfg(windows)]
@@ -6838,6 +6896,9 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ChangedAgentModeCodingPermissions => {
                 "Changed Agent Mode permissions for coding tasks"
             }
+            Self::ChangedAgentModeAskUserQuestionPermission => {
+                "Changed Agent Mode permission for asking user questions"
+            }
             Self::AutoexecutedAgentModeRequestedCommand => {
                 "Autoexecuted an Agent Mode requested command"
             }
@@ -7073,6 +7134,12 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::RemoteServerHostUnsupported => {
                 "Preinstall check classified the remote host as unsupported, \
                  falling back to the legacy SSH flow"
+            }
+            Self::RemoteServerReconnection => {
+                "A reconnection attempt succeeded after a spontaneous disconnect"
+            }
+            Self::RemoteServerReconnectExhausted => {
+                "All reconnection attempts were exhausted after a spontaneous disconnect"
             }
         }
     }

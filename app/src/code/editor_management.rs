@@ -1,6 +1,6 @@
 use std::{
     collections::{hash_map::Entry, HashMap},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use super::buffer_location::FileLocation;
@@ -286,17 +286,18 @@ impl CodeManager {
     pub fn deregister_pane(&mut self, source: &CodeSource) {
         self.source_to_pane_data.remove(&source.omit_line_col());
     }
-    /// Returns the locator for a code pane that already has `path` open in the given pane group.
-    pub fn get_locator_for_path_in_tab(
+    /// Returns the locator for a code pane that already has the given `FileLocation`
+    /// open in the given pane group. Works for both local and remote files.
+    pub fn get_locator_for_location_in_tab(
         &self,
         pane_group_id: EntityId,
-        path: &Path,
+        location: &FileLocation,
     ) -> Option<PaneViewLocator> {
         self.source_to_pane_data
             .iter()
             .find(|(source, data)| {
                 data.locator.pane_group_id == pane_group_id
-                    && source.path().is_some_and(|p| p.as_path() == path)
+                    && source.location().as_ref() == Some(location)
             })
             .map(|(_, data)| data.locator)
     }

@@ -245,6 +245,10 @@ pub struct SpawnAgentRequest {
     /// queued execution input and resolves the prefix in place at rehydration time.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub initial_snapshot_token: Option<InitialSnapshotToken>,
+    /// When `Some(true)`, the cloud agent skips the end-of-run snapshot upload.
+    /// Set by the client when cloud conversation storage is disabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot_disabled: Option<bool>,
 }
 
 /// Server-minted token returned by `POST /agent/handoff/upload-snapshot` that scopes a batch
@@ -2442,6 +2446,9 @@ impl From<warp_graphql::queries::get_feature_model_choices::LlmModelHost> for LL
             }
             warp_graphql::queries::get_feature_model_choices::LlmModelHost::AwsBedrock => {
                 LLMModelHost::AwsBedrock
+            }
+            warp_graphql::queries::get_feature_model_choices::LlmModelHost::CustomEndpoint => {
+                LLMModelHost::CustomEndpoint
             }
             warp_graphql::queries::get_feature_model_choices::LlmModelHost::Other(value) => {
                 report_error!(anyhow!(

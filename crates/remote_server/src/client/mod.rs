@@ -14,12 +14,14 @@ use futures::io::{AsyncRead, AsyncWrite};
 use warpui::r#async::{executor, FutureExt as _};
 
 use crate::proto::{
-    client_message, server_message, Abort, Authenticate, BufferEdit, ClientMessage, CloseBuffer,
-    DeleteFile, DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot, DropCodebaseIndex,
-    ErrorCode, IndexCodebase, Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
-    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextRequest,
-    ReadFileContextResponse, RunCommandRequest, RunCommandResponse, SaveBuffer, ServerMessage,
-    SessionBootstrapped, TextEdit, WriteFile,
+    client_message, get_fragment_metadata_from_hash_response, server_message, Abort, Authenticate,
+    BufferEdit, ClientMessage, CloseBuffer, DeleteFile, DiffStateFileDelta,
+    DiffStateMetadataUpdate, DiffStateSnapshot, DropCodebaseIndex, ErrorCode,
+    FragmentMetadataLookupErrorCode, GetFragmentMetadataFromHash,
+    GetFragmentMetadataFromHashSuccess, IndexCodebase, Initialize, InitializeResponse,
+    LoadRepoMetadataDirectoryResponse, NavigatedToDirectoryResponse, OpenBuffer,
+    OpenBufferResponse, ReadFileContextRequest, ReadFileContextResponse, RunCommandRequest,
+    RunCommandResponse, SaveBuffer, ServerMessage, SessionBootstrapped, TextEdit, WriteFile,
 };
 
 use crate::protocol::{self, ProtocolError, RequestId};
@@ -52,6 +54,12 @@ pub enum ClientError {
 
     #[error("File operation failed: {0}")]
     FileOperationFailed(String),
+
+    #[error("Fragment metadata lookup failed ({code:?}): {message}")]
+    FragmentMetadataLookup {
+        code: FragmentMetadataLookupErrorCode,
+        message: String,
+    },
 }
 
 /// Events received from the remote server, delivered through the event
@@ -108,6 +116,17 @@ pub struct InitializeParams {
     pub crash_reporting_enabled: bool,
 }
 
+/// A request-failure notification emitted by [`RemoteServerClient::send_request`].
+/// Delivered on a dedicated channel separate from the lifecycle
+/// [`ClientEvent`] stream so that holding this sender does not prevent
+/// the lifecycle stream from closing (which would block
+/// `mark_session_disconnected`).
+#[derive(Clone, Debug)]
+pub struct RequestFailedEvent {
+    pub operation: crate::manager::RemoteServerOperation,
+    pub error_kind: crate::manager::RemoteServerErrorKind,
+}
+
 /// Client for communicating with a `remote_server` process over the remote server protocol.
 ///
 /// Exposes async request/response APIs over generic I/O streams (child-process pipes,
@@ -138,6 +157,12 @@ pub struct RemoteServerClient {
     /// `send_request` after inserting into `pending_requests` to avoid hanging
     /// on a dead connection.
     disconnected: Arc<AtomicBool>,
+
+    /// Dedicated channel for `RequestFailed` telemetry events. Separate from
+    /// the lifecycle `event_tx` so that holding this sender does not keep the
+    /// lifecycle stream alive (which would prevent `spawn_stream_local`'s
+    /// completion callback from firing `mark_session_disconnected`).
+    failure_tx: async_channel::Sender<RequestFailedEvent>,
 }
 
 impl fmt::Debug for RemoteServerClient {
@@ -169,7 +194,11 @@ impl RemoteServerClient {
         stdout: async_process::ChildStdout,
         stderr: async_process::ChildStderr,
         executor: &executor::Background,
-    ) -> (Self, async_channel::Receiver<ClientEvent>) {
+    ) -> (
+        Self,
+        async_channel::Receiver<ClientEvent>,
+        async_channel::Receiver<RequestFailedEvent>,
+    ) {
         spawn_stderr_forwarder(stderr, executor);
         Self::new(stdout, stdin, executor)
     }
@@ -185,12 +214,17 @@ impl RemoteServerClient {
         reader: impl AsyncRead + TransportStream,
         writer: impl AsyncWrite + TransportStream,
         executor: &executor::Background,
-    ) -> (Self, async_channel::Receiver<ClientEvent>) {
+    ) -> (
+        Self,
+        async_channel::Receiver<ClientEvent>,
+        async_channel::Receiver<RequestFailedEvent>,
+    ) {
         let pending_requests: Arc<
             DashMap<RequestId, oneshot::Sender<Result<ServerMessage, ClientError>>>,
         > = Arc::new(DashMap::new());
         let (outbound_tx, outbound_rx) = async_channel::unbounded::<ClientMessage>();
         let (event_tx, event_rx) = async_channel::unbounded::<ClientEvent>();
+        let (failure_tx, failure_rx) = async_channel::unbounded::<RequestFailedEvent>();
         let disconnected = Arc::new(AtomicBool::new(false));
 
         executor
@@ -214,8 +248,10 @@ impl RemoteServerClient {
                 outbound_tx,
                 pending_requests,
                 disconnected,
+                failure_tx,
             },
             event_rx,
+            failure_rx,
         )
     }
 
@@ -236,7 +272,7 @@ impl RemoteServerClient {
             })),
         };
 
-        let response = self.send_request(request_id, msg).await?;
+        let response = self.send_request_internal(request_id, msg).await?;
 
         match response.message {
             Some(server_message::Message::InitializeResponse(resp)) => Ok(resp),
@@ -270,7 +306,13 @@ impl RemoteServerClient {
              repo_path={repo_path_for_log}"
         );
 
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::IndexCodebase,
+            )
+            .await?;
 
         match response.message {
             Some(server_message::Message::CodebaseIndexStatusUpdated(update)) => {
@@ -314,7 +356,13 @@ impl RemoteServerClient {
              repo_path={repo_path_for_log}"
         );
 
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::DropCodebaseIndex,
+            )
+            .await?;
 
         match response.message {
             Some(server_message::Message::CodebaseIndexStatusUpdated(update)) => {
@@ -331,6 +379,59 @@ impl RemoteServerClient {
             }
             other => {
                 log::error!("Unexpected response variant for DropCodebaseIndex: {other:?}");
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
+    }
+
+    /// Maps backend content hashes to server-local fragment metadata for a synced repo snapshot.
+    pub async fn get_fragment_metadata_from_hash(
+        &self,
+        repo_path: String,
+        root_hash: String,
+        content_hashes: Vec<String>,
+    ) -> Result<GetFragmentMetadataFromHashSuccess, ClientError> {
+        let request_id = RequestId::new();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::GetFragmentMetadataFromHash(
+                GetFragmentMetadataFromHash {
+                    repo_path,
+                    root_hash,
+                    content_hashes,
+                },
+            )),
+        };
+
+        let response = self
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::GetFragmentMetadataFromHash,
+            )
+            .await?;
+
+        match response.message {
+            Some(server_message::Message::GetFragmentMetadataFromHashResponse(resp)) => {
+                match resp.result {
+                    Some(get_fragment_metadata_from_hash_response::Result::Success(success)) => {
+                        Ok(success)
+                    }
+                    Some(get_fragment_metadata_from_hash_response::Result::Error(error)) => {
+                        let code = FragmentMetadataLookupErrorCode::try_from(error.code)
+                            .unwrap_or(FragmentMetadataLookupErrorCode::Unspecified);
+                        Err(ClientError::FragmentMetadataLookup {
+                            code,
+                            message: error.message,
+                        })
+                    }
+                    None => Err(ClientError::UnexpectedResponse),
+                }
+            }
+            other => {
+                log::error!(
+                    "Unexpected response variant for GetFragmentMetadataFromHash: {other:?}"
+                );
                 Err(ClientError::UnexpectedResponse)
             }
         }
@@ -396,7 +497,13 @@ impl RemoteServerClient {
             )),
         };
 
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::NavigateToDirectory,
+            )
+            .await?;
 
         match response.message {
             Some(server_message::Message::NavigatedToDirectoryResponse(resp)) => Ok(resp),
@@ -427,7 +534,13 @@ impl RemoteServerClient {
             )),
         };
 
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::LoadRepoMetadataDirectory,
+            )
+            .await?;
 
         match response.message {
             Some(server_message::Message::LoadRepoMetadataDirectoryResponse(resp)) => Ok(resp),
@@ -452,7 +565,13 @@ impl RemoteServerClient {
                 content,
             })),
         };
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::WriteFile,
+            )
+            .await?;
         match response.message {
             Some(server_message::Message::WriteFileResponse(resp)) => match resp.result {
                 Some(crate::proto::write_file_response::Result::Success(_)) | None => Ok(()),
@@ -485,7 +604,13 @@ impl RemoteServerClient {
             request_id: request_id.to_string(),
             message: Some(client_message::Message::ReadFileContext(request)),
         };
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::ReadFileContext,
+            )
+            .await?;
         match response.message {
             Some(server_message::Message::ReadFileContextResponse(resp)) => Ok(resp),
             other => {
@@ -515,7 +640,13 @@ impl RemoteServerClient {
                 force_reload,
             })),
         };
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::OpenBuffer,
+            )
+            .await?;
         match response.message {
             Some(server_message::Message::OpenBufferResponse(resp)) => Ok(resp),
             other => {
@@ -552,7 +683,13 @@ impl RemoteServerClient {
             request_id: request_id.to_string(),
             message: Some(client_message::Message::SaveBuffer(SaveBuffer { path })),
         };
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::SaveBuffer,
+            )
+            .await?;
         match response.message {
             Some(server_message::Message::SaveBufferResponse(resp)) => match resp.result {
                 Some(crate::proto::save_buffer_response::Result::Success(_)) | None => Ok(()),
@@ -583,7 +720,13 @@ impl RemoteServerClient {
             request_id: request_id.to_string(),
             message: Some(client_message::Message::DeleteFile(DeleteFile { path })),
         };
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::DeleteFile,
+            )
+            .await?;
         match response.message {
             Some(server_message::Message::DeleteFileResponse(resp)) => match resp.result {
                 Some(crate::proto::delete_file_response::Result::Success(_)) | None => Ok(()),
@@ -619,6 +762,20 @@ impl RemoteServerClient {
                      status_count={}",
                     statuses.len()
                 );
+                for status in &statuses {
+                    log::info!(
+                        "[Remote codebase indexing] Client received codebase index status in snapshot: \
+                         repo_path={} state={:?} root_hash_present={} \
+                         progress_completed={:?} progress_total={:?} \
+                         failure_message={:?}",
+                        status.repo_path,
+                        status.state,
+                        status.root_hash.is_some(),
+                        status.progress_completed,
+                        status.progress_total,
+                        status.failure_message,
+                    );
+                }
                 Some(ClientEvent::CodebaseIndexStatusesSnapshotReceived { statuses })
             }
             server_message::Message::CodebaseIndexStatusUpdated(update) => {
@@ -678,7 +835,13 @@ impl RemoteServerClient {
             })),
         };
 
-        let response = self.send_request(request_id, msg).await?;
+        let response = self
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::RunCommand,
+            )
+            .await?;
 
         match response.message {
             Some(server_message::Message::RunCommandResponse(resp)) => Ok(resp),
@@ -692,12 +855,33 @@ impl RemoteServerClient {
         }
     }
 
+    /// Wrapper around [`send_request_internal`] that automatically fires a
+    /// [`ClientEvent::RequestFailed`] event on error, so transport-level
+    /// failures are tracked for telemetry without requiring each caller
+    /// to instrument its own error path.
+    async fn send_request(
+        &self,
+        request_id: RequestId,
+        msg: ClientMessage,
+        operation: crate::manager::RemoteServerOperation,
+    ) -> Result<ServerMessage, ClientError> {
+        let result = self.send_request_internal(request_id, msg).await;
+        if let Err(ref e) = result {
+            let error_kind = crate::manager::RemoteServerErrorKind::from_client_error(e);
+            let _ = self.failure_tx.try_send(RequestFailedEvent {
+                operation,
+                error_kind,
+            });
+        }
+        result
+    }
+
     /// Generic request/response correlation.
     ///
     /// Registers a oneshot channel keyed by `request_id`, sends the message
     /// through the outbound channel, and awaits the correlated response.
     /// Times out after `REQUEST_TIMEOUT` and sends an `Abort` to the server.
-    async fn send_request(
+    async fn send_request_internal(
         &self,
         request_id: RequestId,
         msg: ClientMessage,

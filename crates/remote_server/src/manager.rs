@@ -28,13 +28,14 @@ use serde::Serialize;
 #[cfg(not(target_family = "wasm"))]
 use warp_core::channel::ChannelState;
 use warp_core::SessionId;
+use warp_util::remote_path::RemotePath;
+use warp_util::standardized_path::StandardizedPath;
 #[cfg(not(target_family = "wasm"))]
 use warpui::r#async::FutureExt as _;
 use warpui::{Entity, ModelContext, ModelSpawner, SingletonEntity};
 
 /// Maximum number of reconnection attempts after a spontaneous disconnect.
-#[cfg(not(target_family = "wasm"))]
-const MAX_RECONNECT_ATTEMPTS: u32 = 2;
+pub const MAX_RECONNECT_ATTEMPTS: u32 = 2;
 /// Delay between reconnection attempts.
 #[cfg(not(target_family = "wasm"))]
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
@@ -59,6 +60,7 @@ struct ReconnectParams {
 struct InitializeHandshake {
     host_id: HostId,
     event_rx: async_channel::Receiver<ClientEvent>,
+    failure_rx: async_channel::Receiver<crate::client::RequestFailedEvent>,
 }
 
 /// Error from [`RemoteServerManager::run_connect_and_handshake`] that
@@ -103,6 +105,13 @@ pub enum RemoteServerOperation {
     LoadRepoMetadataDirectory,
     IndexCodebase,
     DropCodebaseIndex,
+    OpenBuffer,
+    SaveBuffer,
+    WriteFile,
+    ReadFileContext,
+    DeleteFile,
+    RunCommand,
+    GetFragmentMetadataFromHash,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -162,7 +171,8 @@ impl RemoteServerErrorKind {
             ClientError::ServerError { .. } => Self::ServerError,
             ClientError::Protocol(_)
             | ClientError::UnexpectedResponse
-            | ClientError::FileOperationFailed(_) => Self::Other,
+            | ClientError::FileOperationFailed(_)
+            | ClientError::FragmentMetadataLookup { .. } => Self::Other,
         }
     }
 }
@@ -214,6 +224,21 @@ fn client_event_kind(event: &ClientEvent) -> &'static str {
         ClientEvent::DiffStateFileDeltaReceived { .. } => "diff_state_file_delta",
         ClientEvent::MessageDecodingError => "message_decoding_error",
     }
+}
+
+fn remote_path_for_status(
+    host_id: &HostId,
+    status: &RemoteCodebaseIndexStatus,
+) -> Option<RemotePath> {
+    StandardizedPath::try_new(&status.repo_path)
+        .ok()
+        .map(|path| RemotePath::new(host_id.clone(), path))
+}
+
+#[derive(Clone, Debug)]
+pub struct RemoteCodebaseIndexStatusWithPath {
+    pub remote_path: RemotePath,
+    pub status: RemoteCodebaseIndexStatus,
 }
 
 /// Per-session connection state. Encodes which data is available at each
@@ -336,6 +361,11 @@ pub enum RemoteServerManagerEvent {
         /// `None` when the session was explicitly deregistered or when
         /// the exit status could not be determined.
         exit_status: Option<RemoteServerExitStatus>,
+        /// `true` when this disconnect follows exhausted reconnection
+        /// attempts. `false` for first-time disconnects and explicit
+        /// deregistrations. Used by the view layer to distinguish
+        /// reconnect-exhausted telemetry from regular disconnections.
+        was_reconnect_attempt: bool,
     },
     /// A reconnection attempt succeeded. Downstream owners (e.g.
     /// `RemoteServerCommandExecutor`) should swap their client reference
@@ -368,8 +398,7 @@ pub enum RemoteServerManagerEvent {
     /// Response to a `navigate_to_directory` request.
     NavigatedToDirectory {
         session_id: SessionId,
-        host_id: HostId,
-        indexed_path: String,
+        remote_path: RemotePath,
         is_git: bool,
     },
     /// A full or lazy-loaded repo metadata snapshot was pushed by the server.
@@ -389,14 +418,12 @@ pub enum RemoteServerManagerEvent {
     },
     /// A full remote codebase-index status snapshot was pushed or requested.
     CodebaseIndexStatusesSnapshot {
-        remote_identity_key: String,
         host_id: HostId,
-        statuses: Vec<RemoteCodebaseIndexStatus>,
+        statuses: Vec<RemoteCodebaseIndexStatusWithPath>,
     },
     /// A single remote codebase-index status update was pushed by the daemon.
     CodebaseIndexStatusUpdated {
-        remote_identity_key: String,
-        host_id: HostId,
+        remote_path: RemotePath,
         status: RemoteCodebaseIndexStatus,
     },
     /// A buffer was updated on the remote host (file changed on disk).
@@ -974,6 +1001,7 @@ impl RemoteServerManager {
         let Connection {
             client,
             event_rx,
+            failure_rx,
             child,
             control_path,
         } = transport
@@ -1072,6 +1100,7 @@ impl RemoteServerManager {
         Ok(InitializeHandshake {
             host_id: HostId::new(resp.host_id),
             event_rx,
+            failure_rx,
         })
     }
 
@@ -1151,6 +1180,7 @@ impl RemoteServerManager {
                 session_id,
                 host_id: host_id.clone(),
                 exit_status: None,
+                was_reconnect_attempt: false,
             });
             if !self.host_to_sessions.contains_key(&host_id) {
                 ctx.emit(RemoteServerManagerEvent::HostDisconnected { host_id });
@@ -1290,34 +1320,25 @@ impl RemoteServerManager {
         })
     }
 
-    /// Sends an `IndexCodebase` request to a connected daemon for this host.
-    pub fn index_codebase(
-        &mut self,
-        host_id: HostId,
-        repo_path: String,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        self.mutate_codebase_index(host_id, repo_path, RemoteCodebaseIndexMutation::Index, ctx);
+    /// Sends an `IndexCodebase` request to a connected daemon for this remote path.
+    pub fn index_codebase(&mut self, remote_path: RemotePath, ctx: &mut ModelContext<Self>) {
+        self.mutate_codebase_index(remote_path, RemoteCodebaseIndexMutation::Index, ctx);
     }
 
-    /// Sends a `DropCodebaseIndex` request to a connected daemon for this host.
-    pub fn drop_codebase_index(
-        &mut self,
-        host_id: HostId,
-        repo_path: String,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        self.mutate_codebase_index(host_id, repo_path, RemoteCodebaseIndexMutation::Drop, ctx);
+    /// Sends a `DropCodebaseIndex` request to a connected daemon for this remote path.
+    pub fn drop_codebase_index(&mut self, remote_path: RemotePath, ctx: &mut ModelContext<Self>) {
+        self.mutate_codebase_index(remote_path, RemoteCodebaseIndexMutation::Drop, ctx);
     }
 
     fn mutate_codebase_index(
         &mut self,
-        host_id: HostId,
-        repo_path: String,
+        remote_path: RemotePath,
         mutation: RemoteCodebaseIndexMutation,
         ctx: &mut ModelContext<Self>,
     ) {
         let operation = mutation.operation();
+        let host_id = remote_path.host_id.clone();
+        let repo_path = remote_path.path.as_str().to_string();
 
         let Some(auth_context) = self.auth_context.clone() else {
             log::warn!(
@@ -1373,11 +1394,11 @@ impl RemoteServerManager {
                             status.repo_path,
                             status.state
                         );
+                        let remote_path = remote_path_for_status(&host_id, &status).unwrap_or(remote_path);
                         let _ = spawner
                             .spawn(move |_me, ctx| {
                                 ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
-                                    remote_identity_key,
-                                    host_id,
+                                    remote_path,
                                     status,
                                 });
                             })
@@ -1389,16 +1410,8 @@ impl RemoteServerManager {
                              operation={operation:?} host={host_id} session={session_id:?} \
                              repo_path={repo_path_for_log} error={e}"
                         );
-                        let error_kind = RemoteServerErrorKind::from_client_error(&e);
-                        let _ = spawner
-                            .spawn(move |_me, ctx| {
-                                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
-                                    session_id,
-                                    operation,
-                                    error_kind,
-                                });
-                            })
-                            .await;
+                        // Transport-level telemetry is emitted automatically
+                        // by send_tracked_request via ClientEvent::RequestFailed.
                     }
                 }
             })
@@ -1443,10 +1456,20 @@ impl RemoteServerManager {
                     Ok(resp) => {
                         let _ = spawner
                             .spawn(move |_me, ctx| {
+                                let Some(remote_path) = StandardizedPath::try_new(&resp.indexed_path)
+                                    .ok()
+                                    .map(|path| RemotePath::new(host_id, path))
+                                else {
+                                    log::warn!(
+                                        "Remote server dropped navigation event with invalid indexed path: \
+                                         session={session_id:?} indexed_path={}",
+                                        resp.indexed_path
+                                    );
+                                    return;
+                                };
                                 ctx.emit(RemoteServerManagerEvent::NavigatedToDirectory {
                                     session_id,
-                                    host_id,
-                                    indexed_path: resp.indexed_path,
+                                    remote_path,
                                     is_git: resp.is_git,
                                 });
                             })
@@ -1454,16 +1477,8 @@ impl RemoteServerManager {
                     }
                     Err(e) => {
                         log::warn!("Remote server navigate_to_directory failed: session={session_id:?} error={e}");
-                        let error_kind = RemoteServerErrorKind::from_client_error(&e);
-                        let _ = spawner
-                            .spawn(move |_me, ctx| {
-                                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
-                                    session_id,
-                                    operation: RemoteServerOperation::NavigateToDirectory,
-                                    error_kind,
-                                });
-                            })
-                            .await;
+                        // Transport-level telemetry is emitted automatically
+                        // by send_tracked_request via ClientEvent::RequestFailed.
                     }
                 }
             })
@@ -1549,16 +1564,8 @@ impl RemoteServerManager {
                         log::warn!(
                             "Remote server load_repo_metadata_directory failed: session={session_id:?} error={e}"
                         );
-                        let error_kind = RemoteServerErrorKind::from_client_error(&e);
-                        let _ = spawner
-                            .spawn(move |_me, ctx| {
-                                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
-                                    session_id,
-                                    operation: RemoteServerOperation::LoadRepoMetadataDirectory,
-                                    error_kind,
-                                });
-                            })
-                            .await;
+                        // Transport-level telemetry is emitted automatically
+                        // by send_tracked_request via ClientEvent::RequestFailed.
                     }
                 }
             })
@@ -1574,11 +1581,7 @@ impl RemoteServerManager {
         event: ClientEvent,
         ctx: &mut ModelContext<Self>,
     ) {
-        let Some(RemoteSessionState::Connected {
-            host_id,
-            identity_key,
-            ..
-        }) = self.sessions.get(&session_id)
+        let Some(RemoteSessionState::Connected { host_id, .. }) = self.sessions.get(&session_id)
         else {
             let event_kind = client_event_kind(&event);
             log::info!(
@@ -1588,7 +1591,6 @@ impl RemoteServerManager {
             return;
         };
         let host_id = host_id.clone();
-        let remote_identity_key = identity_key.clone();
 
         match event {
             ClientEvent::RepoMetadataSnapshotReceived { update } => {
@@ -1598,27 +1600,39 @@ impl RemoteServerManager {
                 ctx.emit(RemoteServerManagerEvent::RepoMetadataUpdated { host_id, update });
             }
             ClientEvent::CodebaseIndexStatusesSnapshotReceived { statuses } => {
-                log::info!(
-                    "[Remote codebase indexing] Remote server received codebase index statuses snapshot: \
-                     session={session_id:?} host={host_id} status_count={}",
-                    statuses.len()
-                );
+                let statuses = statuses
+                    .into_iter()
+                    .filter_map(|status| {
+                        let Some(remote_path) = remote_path_for_status(&host_id, &status) else {
+                            log::warn!(
+                                "Remote server dropped codebase index snapshot status with invalid repo path: \
+                                 host={host_id} repo_path={}",
+                                status.repo_path
+                            );
+                            return None;
+                        };
+                        Some(RemoteCodebaseIndexStatusWithPath {
+                            remote_path,
+                            status,
+                        })
+                    })
+                    .collect();
                 ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot {
-                    remote_identity_key,
                     host_id,
                     statuses,
                 });
             }
             ClientEvent::CodebaseIndexStatusUpdated { status } => {
-                log::info!(
-                    "[Remote codebase indexing] Remote server received codebase index status update: \
-                     session={session_id:?} host={host_id} repo_path={} state={:?}",
-                    status.repo_path,
-                    status.state,
-                );
+                let Some(remote_path) = remote_path_for_status(&host_id, &status) else {
+                    log::warn!(
+                        "Remote server dropped codebase index status update with invalid repo path: \
+                         host={host_id} repo_path={}",
+                        status.repo_path
+                    );
+                    return;
+                };
                 ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
-                    remote_identity_key,
-                    host_id,
+                    remote_path,
                     status,
                 });
             }
@@ -1671,7 +1685,11 @@ impl RemoteServerManager {
         transport: Arc<dyn RemoteTransport>,
         ctx: &mut ModelContext<Self>,
     ) {
-        let InitializeHandshake { host_id, event_rx } = handshake;
+        let InitializeHandshake {
+            host_id,
+            event_rx,
+            failure_rx,
+        } = handshake;
         log::info!("Remote server connected: session={session_id:?} host={host_id}");
 
         // Only transition if the session is still in Initializing state.
@@ -1708,6 +1726,20 @@ impl RemoteServerManager {
             move |me, ctx| {
                 me.mark_session_disconnected(session_id, ctx);
             },
+        );
+        // Drain the separate failure channel for request-failed telemetry.
+        // This stream is independent of the lifecycle stream above, so
+        // holding its sender on the client does not block disconnect.
+        ctx.spawn_stream_local(
+            failure_rx,
+            move |_me, event, ctx| {
+                ctx.emit(RemoteServerManagerEvent::ClientRequestFailed {
+                    session_id,
+                    operation: event.operation,
+                    error_kind: event.error_kind,
+                });
+            },
+            |_, _| {}, // no-op on done
         );
         if is_first_session {
             ctx.emit(RemoteServerManagerEvent::HostConnected {
@@ -2066,6 +2098,7 @@ impl RemoteServerManager {
                 session_id,
                 host_id: params.host_id,
                 exit_status: params.exit_status,
+                was_reconnect_attempt: true,
             });
             // Note: HostDisconnected was already emitted by
             // mark_session_disconnected when entering the reconnect flow.
@@ -2095,6 +2128,7 @@ impl RemoteServerManager {
             session_id,
             host_id: host_id.clone(),
             exit_status,
+            was_reconnect_attempt: false,
         });
         if !self.host_to_sessions.contains_key(&host_id) {
             ctx.emit(RemoteServerManagerEvent::HostDisconnected { host_id });

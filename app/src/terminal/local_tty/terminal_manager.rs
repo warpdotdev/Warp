@@ -273,22 +273,41 @@ impl TerminalManager {
         let session_sharer: Rc<RefCell<Option<ModelHandle<Network>>>> = Rc::new(RefCell::new(None));
         let wsl_name_or_shell_starter = ShellStarter::init(preferred_shell.clone());
 
-        // If we have explicit restored_blocks, prioritize those (these come from db on startup).
-        // Otherwise if there's a conversation we're restoring, get blocks from those.
-        let all_restored_blocks =
-            restored_blocks
-                .cloned()
-                .or_else(|| match &conversation_restoration {
-                    Some(ConversationRestorationInNewPaneType::Historical {
-                        conversation, ..
-                    })
-                    | Some(ConversationRestorationInNewPaneType::Forked { conversation, .. }) => {
-                        Some(conversation.to_serialized_blocklist_items())
+        // If we have explicit non-empty restored_blocks, prioritize those (these come from db on startup).
+        // Otherwise if there's a conversation we're restoring, get blocks from those (including when
+        // restored_blocks is missing or an empty vec).
+        let all_restored_blocks = restored_blocks
+            .filter(|blocks| !blocks.is_empty())
+            .cloned()
+            .or_else(|| match &conversation_restoration {
+                Some(ConversationRestorationInNewPaneType::Historical { conversation, .. })
+                | Some(ConversationRestorationInNewPaneType::Forked { conversation, .. }) => {
+                    Some(conversation.to_serialized_blocklist_items())
+                }
+                Some(ConversationRestorationInNewPaneType::Startup { conversations, .. }) => {
+                    let mut items: Vec<_> = conversations
+                        .iter()
+                        .flat_map(|c| c.to_serialized_blocklist_items())
+                        .collect();
+                    // Because there are multiple conversations that may have interleaved timestamps, we need to sort by start_ts
+                    items.sort_by_key(|item| item.start_ts());
+                    if items.is_empty() {
+                        None
+                    } else {
+                        Some(items)
                     }
-                    _ => None,
-                });
+                }
+                _ => None,
+            });
 
         // Create the terminal model with all restored blocks
+        log::info!(
+            "Creating terminal model with {} restored blocks",
+            all_restored_blocks
+                .as_ref()
+                .map(|blocks| blocks.len())
+                .unwrap_or(0)
+        );
         let model = terminal_manager::create_terminal_model(
             startup_directory.clone(),
             all_restored_blocks.as_ref(),
@@ -2128,6 +2147,10 @@ impl TerminalManager {
                     if let Some(interaction_state) =
                         context_update.long_running_command_agent_interaction_state
                     {
+                        log::info!(
+                            "[sharer] UniversalDeveloperInputContextUpdated: \
+                             applying LRC interaction_state={interaction_state:?}"
+                        );
                         terminal_view.update(ctx, |view, ctx| {
                             view.apply_long_running_command_agent_interaction_state(
                                 interaction_state,

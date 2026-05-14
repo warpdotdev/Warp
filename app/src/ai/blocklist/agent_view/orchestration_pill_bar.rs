@@ -535,7 +535,6 @@ impl OrchestrationPillBar {
         if children.is_empty() {
             return None;
         }
-
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
 
@@ -770,9 +769,6 @@ impl View for OrchestrationPillBar {
             return Empty::new().finish();
         };
 
-        let appearance = Appearance::as_ref(app);
-        let theme = appearance.theme();
-
         // The row uses `MainAxisSize::Max` so the bar's intrinsic width
         // is the parent's available width (i.e. the pane width passed in
         // by the wrapping `Flex::column` in `pane_impl.rs`), not the sum
@@ -834,8 +830,8 @@ impl View for OrchestrationPillBar {
         drop(overflow_states);
 
         // Wrap in a container with a touch of horizontal padding so the bar
-        // doesn't sit flush against the pane edges, and with the same overlay
-        // background as the rest of the agent view header so it merges visually.
+        // doesn't sit flush against the pane edges while leaving the row itself
+        // transparent so the pane's theme background shows through.
         //
         // Wrap the whole thing in a `Clipped` so when the orchestrator's
         // pane is narrower than the natural width of the pill row
@@ -851,7 +847,6 @@ impl View for OrchestrationPillBar {
                 .with_padding_right(12.)
                 .with_padding_top(4.)
                 .with_padding_bottom(4.)
-                .with_background(theme.surface_overlay_1())
                 .finish(),
         )
         .finish();

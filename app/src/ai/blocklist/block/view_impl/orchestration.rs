@@ -191,22 +191,81 @@ fn render_transcript_row(
     let font_size = appearance.monospace_font_size();
     let metadata_color = blended_colors::text_disabled(theme, theme.surface_2());
     let body_color: ColorU = theme.main_text_color(theme.background()).into();
-    let chevron = if data.body.is_empty() {
+    let collapsible_state = if data.body.is_empty() {
         None
     } else {
-        render_collapse_chevron(data.message_id, props, app)
+        props.collapsible_block_states.get(data.message_id)
     };
 
     let name = FormattedTextFragment::bold(&data.participant.display_name);
-    let header = render_formatted_text_element(vec![name], app).finish();
-    let mut header_row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
-    header_row.add_child(Shrinkable::new(1., header).finish());
-    if let Some(chevron) = chevron {
-        header_row.add_child(Container::new(chevron).with_margin_left(6.).finish());
-    }
+    let header_row_element: Box<dyn Element> = if let Some(state) = collapsible_state {
+        // When the row is collapsible, wrap the bold name and chevron in a single
+        // Hoverable so clicking either toggles the expansion state. Make the text
+        // non-selectable so click events are reliably captured by the Hoverable,
+        // and disable mouse interaction so the text element doesn't reset the
+        // pointing-hand cursor set by the Hoverable.
+        let header = render_formatted_text_element(vec![name], app)
+            .set_selectable(false)
+            .disable_mouse_interaction()
+            .finish();
+        let text_color = theme.foreground();
+        let icon_sz = icon_size(app);
+        let is_expanded = matches!(
+            state.expansion_state,
+            CollapsibleExpansionState::Expanded { .. }
+        );
+        let chevron_icon = if is_expanded {
+            Icon::ChevronDown
+        } else {
+            Icon::ChevronRight
+        };
+        let toggle_mouse_state = state.expansion_toggle_mouse_state.clone();
+        let message_id_clone = data.message_id.clone();
+
+        let expandable = Hoverable::new(toggle_mouse_state, move |_| {
+            // Make the bold name a Shrinkable child so very long agent names
+            // shrink within the available width instead of pushing the chevron
+            // past the transcript column.
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(Shrinkable::new(1., header).finish())
+                .with_child(
+                    Container::new(
+                        ConstrainedBox::new(chevron_icon.to_warpui_icon(text_color).finish())
+                            .with_width(icon_sz)
+                            .with_height(icon_sz)
+                            .finish(),
+                    )
+                    .with_margin_left(6.)
+                    .finish(),
+                )
+                .finish()
+        })
+        .with_cursor(Cursor::PointingHand)
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(AIBlockAction::ToggleCollapsibleBlockExpanded(
+                message_id_clone.clone(),
+            ));
+        });
+
+        // Wrap the Hoverable in a Shrinkable inside an outer row so it
+        // receives a bounded width constraint from the parent column. This
+        // lets the inner Shrinkable around the bold name actually shrink
+        // when the name is long, while the Hoverable's click bounds still
+        // size to its content (bold name + chevron) when it fits.
+        Flex::row()
+            .with_child(Shrinkable::new(1., expandable.finish()).finish())
+            .finish()
+    } else {
+        let header = render_formatted_text_element(vec![name], app).finish();
+        Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(Shrinkable::new(1., header).finish())
+            .finish()
+    };
 
     let mut content = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
-    content.add_child(header_row.finish());
+    content.add_child(header_row_element);
     if let Some(metadata) = transcript_metadata(data.recipients, data.subject) {
         content.add_child(
             Container::new(
