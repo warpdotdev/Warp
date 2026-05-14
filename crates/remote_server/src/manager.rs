@@ -748,7 +748,6 @@ impl RemoteServerManager {
                                 &spawner, session_id, platform, preinstall,
                             )
                             .await;
-                            return;
                         }
                         preinstall => {
                             Self::check_if_binary_is_installed(
