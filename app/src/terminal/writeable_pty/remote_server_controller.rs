@@ -247,26 +247,13 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         else {
             unreachable!("just matched AwaitingCheck above");
         };
-
-        // Preinstall gate. Runs **before** any user-visible install
-        // affordance: if the script positively classified the host as
-        // unsupported, skip the install/prompt entirely and fall back to
-        // the legacy ControlMaster-backed SSH flow.
-        let unsupported = preinstall_check
-            .as_ref()
-            .and_then(|check| match &check.status {
-                PreinstallStatus::Unsupported { reason } => Some((check, reason.clone())),
-                PreinstallStatus::Supported | PreinstallStatus::Unknown => None,
-            });
-        if let Some((check, reason)) = unsupported {
-            log::info!(
-                "Remote server preinstall check classified as unsupported, falling back to legacy SSH: session={session_id:?} status={:?}",
-                check.status
-            );
-            send_unsupported_telemetry(self.remote_platform.as_ref(), check, ctx);
-            RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
-                mgr.mark_setup_unsupported(session_id, reason, ctx);
-            });
+        if let Some(PreinstallCheckResult {
+            status: PreinstallStatus::Unsupported { reason },
+            libc,
+            ..
+        }) = preinstall_check.as_ref()
+        {
+            send_unsupported_telemetry(self.remote_platform.as_ref(), reason, Some(libc), ctx);
             self.flush_stashed_bootstrap(session_info, ctx);
             return;
         }
@@ -559,7 +546,8 @@ fn describe_libc(libc: &RemoteLibc) -> String {
 
 fn send_unsupported_telemetry<T: EventLoopSender>(
     remote_platform: Option<&RemotePlatform>,
-    check: &PreinstallCheckResult,
+    unsupported_reason: &UnsupportedReason,
+    detected_libc: Option<&RemoteLibc>,
     ctx: &mut ModelContext<RemoteServerController<T>>,
 ) {
     let (remote_os, remote_arch) = remote_platform
@@ -570,18 +558,15 @@ fn send_unsupported_telemetry<T: EventLoopSender>(
             )
         })
         .unwrap_or((None, None));
-    let required_glibc = match &check.status {
-        remote_server::setup::PreinstallStatus::Unsupported {
-            reason: UnsupportedReason::GlibcTooOld { required, .. },
-        } => required.to_string(),
-        _ => String::new(),
-    };
+    let detected_libc = detected_libc
+        .map(describe_libc)
+        .unwrap_or_else(|| "unknown".to_string());
     send_telemetry_from_ctx!(
         TelemetryEvent::RemoteServerHostUnsupported {
             remote_os,
             remote_arch,
-            detected_libc: describe_libc(&check.libc),
-            required_glibc,
+            unsupported_reason: unsupported_reason.clone(),
+            detected_libc,
         },
         ctx
     );

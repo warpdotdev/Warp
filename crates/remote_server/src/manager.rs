@@ -13,12 +13,12 @@ use crate::client::InitializeParams;
 use crate::client::RemoteServerClient;
 use crate::codebase_index_proto::RemoteCodebaseIndexStatus;
 use crate::proto::{DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot};
-use crate::setup::PreinstallCheckResult;
 #[cfg(not(target_family = "wasm"))]
 use crate::setup::RemoteOs;
 use crate::setup::RemotePlatform;
 use crate::setup::RemoteServerSetupState;
 use crate::setup::UnsupportedReason;
+use crate::setup::{PreinstallCheckResult, PreinstallStatus};
 #[cfg(not(target_family = "wasm"))]
 use crate::transport::Connection;
 use crate::transport::{Error, InstallSource, RemoteTransport};
@@ -438,7 +438,8 @@ pub enum RemoteServerManagerEvent {
     },
     /// Result of [`RemoteServerManager::check_binary`]. Returns a result where:
     /// - `Ok(true)` means the binary is installed and executable,
-    /// - `Ok(false)` means it is definitively not installed, and
+    /// - `Ok(false)` means it is not installed, or the preinstall gate
+    ///   classified the host as unsupported, and
     /// - `Err(_)` means the check itself failed (e.g. SSH error or timeout).
     BinaryCheckComplete {
         session_id: SessionId,
@@ -594,7 +595,8 @@ impl RemoteServerManager {
     /// Emits `BinaryCheckComplete { result }`.
     ///
     /// Returns Ok(true) if the binary is installed and executable,
-    /// Ok(false) if it is definitively not installed, and
+    /// Ok(false) if it is definitively not installed or unsupported setup
+    /// should skip install decisions, and
     /// Err(_) if the check failed (e.g. SSH timeout/unreachable).
     #[cfg_attr(target_family = "wasm", allow(unused_variables))]
     pub fn check_binary<T>(
@@ -619,31 +621,33 @@ impl RemoteServerManager {
             let spawner = self.spawner.clone();
             ctx.background_executor()
                 .spawn(async move {
-                    // Run platform detection, binary check, and old-binary
-                    // check sequentially so that each step reuses the
-                    // same SSH ControlMaster connection instead of
-                    // opening parallel channels. The old-binary check
-                    // lets the controller distinguish fresh install (no
-                    // prior versioned binary) from update (prior
-                    // versioned binary present), so it can skip the
-                    // install prompt in the update case.
+                    // Run platform detection and the preinstall gate before
+                    // any binary, update, prompt, or install decision. The
+                    // later binary and old-binary checks run sequentially on
+                    // supported hosts so each step reuses the same SSH
+                    // ControlMaster connection instead of opening parallel
+                    // channels.
                     let platform_result = transport.detect_platform().await;
-                    let check_result = transport.check_binary().await;
-                    let old_binary_result = transport.check_has_old_binary().await;
                     let platform = match platform_result {
                         Ok(p) => Some(p),
                         Err(e) => {
-                            log::warn!("Remote server platform detection failed: session={session_id:?} error={e}");
-                            None
-                        }
-                    };
-                    let has_old_binary = match old_binary_result {
-                        Ok(has) => has,
-                        Err(e) => {
+                            if let Some(reason) = UnsupportedReason::from_transport_error(&e) {
+                                log::info!(
+                                    "Remote server platform is unsupported, falling back to legacy SSH: session={session_id:?} error={e}"
+                                );
+                                Self::emit_unsupported_preinstall_check(
+                                    &spawner,
+                                    session_id,
+                                    None,
+                                    PreinstallCheckResult::unsupported(reason),
+                                )
+                                .await;
+                                return;
+                            }
                             log::warn!(
-                                "Remote server old-binary detection failed, treating as fresh install: session={session_id:?} error={e}"
+                                "Remote server platform detection failed: session={session_id:?} error={e}"
                             );
-                            false
+                            None
                         }
                     };
                     // Run the preinstall check after platform detection
@@ -665,64 +669,110 @@ impl RemoteServerManager {
                         }
                         _ => None,
                     };
-                    let _ = spawner
-                        .spawn(move |me, ctx| {
-                            if let Some(p) = &platform {
-                                me.session_platforms.insert(session_id, p.clone());
-                            }
-                            if let Err(error) = &check_result {
-                                ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
-                                    session_id,
-                                    state: RemoteServerSetupState::Failed {
-                                        error: error.to_string(),
-                                    },
-                                });
-                            }
-                            ctx.emit(RemoteServerManagerEvent::BinaryCheckComplete {
-                                session_id,
-                                result: check_result.map_err(Arc::new),
-                                remote_platform: platform,
-                                preinstall_check: preinstall,
-                                has_old_binary,
-                            });
-                        })
+                    if let Some(PreinstallCheckResult {
+                        status: PreinstallStatus::Unsupported { reason },
+                        ..
+                    }) = &preinstall
+                    {
+                        let reason = reason.clone();
+                        log::info!(
+                            "Remote server preinstall check classified as unsupported, falling back to legacy SSH: session={session_id:?} reason={reason:?}"
+                        );
+                        Self::emit_unsupported_preinstall_check(
+                            &spawner,
+                            session_id,
+                            platform,
+                            preinstall.expect("just matched Some above"),
+                        )
                         .await;
+                        return;
+                    }
+                    Self::check_if_binary_is_installed(
+                        &spawner, session_id, transport, platform, preinstall,
+                    )
+                    .await;
                 })
                 .detach();
         }
     }
 
-    /// Marks a session as unsupported by the prebuilt remote-server
-    /// binary, based on a positive classification from the preinstall
-    /// check. The setup state transitions to `Unsupported`, which the
-    /// downstream UI treats as a clean fall-back to the legacy SSH flow.
-    ///
-    /// No-op on WASM (remote server connections use a different transport).
-    #[cfg(target_family = "wasm")]
-    pub fn mark_setup_unsupported(
-        &mut self,
-        _session_id: SessionId,
-        _reason: UnsupportedReason,
-        _ctx: &mut ModelContext<Self>,
-    ) {
-        log::warn!("Remote server mark_setup_unsupported is a no-op on WASM");
-    }
-
-    /// Marks a session as unsupported by the prebuilt remote-server
-    /// binary, based on a positive classification from the preinstall
-    /// check. The setup state transitions to `Unsupported`, which the
-    /// downstream UI treats as a clean fall-back to the legacy SSH flow.
+    /// Checks whether the remote server binary is already installed on a host
+    /// that has passed the support gate. Callers must only invoke this after
+    /// platform detection and the preinstall check have ruled out unsupported
+    /// OS, architecture, and libc cases.
     #[cfg(not(target_family = "wasm"))]
-    pub fn mark_setup_unsupported(
-        &mut self,
+    async fn check_if_binary_is_installed<T>(
+        spawner: &ModelSpawner<Self>,
         session_id: SessionId,
-        reason: UnsupportedReason,
-        ctx: &mut ModelContext<Self>,
+        transport: T,
+        platform: Option<RemotePlatform>,
+        preinstall: Option<PreinstallCheckResult>,
+    ) where
+        T: RemoteTransport,
+    {
+        let check_result = transport.check_binary().await;
+        let old_binary_result = transport.check_has_old_binary().await;
+        let has_old_binary = match old_binary_result {
+            Ok(has) => has,
+            Err(e) => {
+                log::warn!(
+                    "Remote server old-binary detection failed, treating as fresh install: session={session_id:?} error={e}"
+                );
+                false
+            }
+        };
+        let _ = spawner
+            .spawn(move |me, ctx| {
+                if let Some(p) = &platform {
+                    me.session_platforms.insert(session_id, p.clone());
+                }
+                if let Err(error) = &check_result {
+                    ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
+                        session_id,
+                        state: RemoteServerSetupState::from(error),
+                    });
+                }
+                ctx.emit(RemoteServerManagerEvent::BinaryCheckComplete {
+                    session_id,
+                    result: check_result.map_err(Arc::new),
+                    remote_platform: platform,
+                    preinstall_check: preinstall,
+                    has_old_binary,
+                });
+            })
+            .await;
+    }
+    #[cfg(not(target_family = "wasm"))]
+    async fn emit_unsupported_preinstall_check(
+        spawner: &ModelSpawner<Self>,
+        session_id: SessionId,
+        platform: Option<RemotePlatform>,
+        preinstall: PreinstallCheckResult,
     ) {
-        ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
-            session_id,
-            state: RemoteServerSetupState::Unsupported { reason },
-        });
+        let PreinstallStatus::Unsupported { reason } = &preinstall.status else {
+            return;
+        };
+        let reason = reason.clone();
+        let _ = spawner
+            .spawn(move |me, ctx| {
+                if let Some(p) = &platform {
+                    me.session_platforms.insert(session_id, p.clone());
+                }
+                ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
+                    session_id,
+                    state: RemoteServerSetupState::Unsupported {
+                        reason: reason.clone(),
+                    },
+                });
+                ctx.emit(RemoteServerManagerEvent::BinaryCheckComplete {
+                    session_id,
+                    result: Ok(false),
+                    remote_platform: platform,
+                    preinstall_check: Some(preinstall),
+                    has_old_binary: false,
+                });
+            })
+            .await;
     }
 
     /// Installs the remote server binary.
@@ -767,9 +817,7 @@ impl RemoteServerManager {
                             if let Err(error) = &outcome.result {
                                 ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
                                     session_id,
-                                    state: RemoteServerSetupState::Failed {
-                                        error: error.to_string(),
-                                    },
+                                    state: RemoteServerSetupState::from(error),
                                 });
                             }
                             ctx.emit(RemoteServerManagerEvent::BinaryInstallComplete {
