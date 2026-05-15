@@ -402,6 +402,7 @@ use futures::Future;
 use itertools::Itertools;
 use parking_lot::FairMutex;
 use pathfinder_geometry::rect::RectF;
+#[cfg(feature = "local_fs")]
 use repo_metadata::repositories::DetectedRepositories;
 use session_sharing_protocol::common::SessionId as SharedSessionId;
 use std::collections::{HashMap, HashSet};
@@ -8671,19 +8672,28 @@ impl Workspace {
     }
 
     fn should_include_worktree_sidecar_repo(repo_path: &Path, ctx: &AppContext) -> bool {
-        // This performs one repo-metadata lookup per persisted workspace while the
-        // sidecar items are rebuilt. That's acceptable for now given the expected
-        // repo counts here, and it keeps linked-worktree filtering scoped to the
-        // only UI that currently needs it.
-        let Some(repository) =
-            DetectedRepositories::as_ref(ctx).get_local_watched_repo_for_path(repo_path, ctx)
-        else {
-            return true;
-        };
-        // Linked worktrees (and submodules) have an external gitdir; exclude
-        // them so only primary repository checkouts appear in the list.
+        #[cfg(not(feature = "local_fs"))]
+        {
+            let _ = (repo_path, ctx);
+            true
+        }
 
-        repository.as_ref(ctx).external_git_directory().is_none()
+        #[cfg(feature = "local_fs")]
+        {
+            // This performs one repo-metadata lookup per persisted workspace while the
+            // sidecar items are rebuilt. That's acceptable for now given the expected
+            // repo counts here, and it keeps linked-worktree filtering scoped to the
+            // only UI that currently needs it.
+            let Some(repository) =
+                DetectedRepositories::as_ref(ctx).get_local_watched_repo_for_path(repo_path, ctx)
+            else {
+                return true;
+            };
+            // Linked worktrees (and submodules) have an external gitdir; exclude
+            // them so only primary repository checkouts appear in the list.
+
+            repository.as_ref(ctx).external_git_directory().is_none()
+        }
     }
 
     fn build_worktree_sidecar_items(
