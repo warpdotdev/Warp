@@ -54,6 +54,8 @@ pub enum ThemeKind {
     #[default]
     #[schemars(description = "Dark")]
     Dark,
+    #[schemars(description = "High Contrast")]
+    HighContrast,
     #[schemars(description = "Dracula")]
     Dracula,
     #[schemars(description = "Fancy Dracula")]
@@ -114,6 +116,7 @@ impl std::fmt::Display for ThemeKind {
         let value = match &self {
             ThemeKind::Light => "Light",
             ThemeKind::Dark => "Dark",
+            ThemeKind::HighContrast => "High Contrast",
             ThemeKind::Dracula => "Dracula",
             ThemeKind::SolarizedDark => "Solarized Dark",
             ThemeKind::SolarizedLight => "Solarized Light",
@@ -301,6 +304,7 @@ impl WarpThemeConfig {
                 received_referral_reward(),
             ),
             (ThemeKind::Dark, dark_theme()),
+            (ThemeKind::HighContrast, high_contrast()),
             (ThemeKind::Light, light_theme()),
             (ThemeKind::SolarizedDark, solarized_dark()),
             (ThemeKind::SolarizedLight, solarized_light()),

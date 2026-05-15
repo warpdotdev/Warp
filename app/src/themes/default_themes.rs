@@ -29,6 +29,27 @@ const DARK_MODE_BRIGHT_COLORS: AnsiColors = AnsiColors::new(
     AnsiColor::from_u32(0xFEFFFFFF),
 );
 
+const HIGH_CONTRAST_NORMAL_COLORS: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0x7A7A7AFF),
+    AnsiColor::from_u32(0xFF3B30FF),
+    AnsiColor::from_u32(0x00FF66FF),
+    AnsiColor::from_u32(0xFFFF00FF),
+    AnsiColor::from_u32(0x5AB4FFFF),
+    AnsiColor::from_u32(0xFF66FFFF),
+    AnsiColor::from_u32(0x00FFFFFF),
+    AnsiColor::from_u32(0xFFFFFFFF),
+);
+const HIGH_CONTRAST_BRIGHT_COLORS: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0xB0B0B0FF),
+    AnsiColor::from_u32(0xFF6B60FF),
+    AnsiColor::from_u32(0x66FF99FF),
+    AnsiColor::from_u32(0xFFFF66FF),
+    AnsiColor::from_u32(0x8CCBFFFF),
+    AnsiColor::from_u32(0xFF99FFFF),
+    AnsiColor::from_u32(0x66FFFFFF),
+    AnsiColor::from_u32(0xFFFFFFFF),
+);
+
 const LIGHT_MODE_NORMAL_COLORS: AnsiColors = AnsiColors::new(
     AnsiColor::from_u32(0x212121FF),
     AnsiColor::from_u32(0xC30771FF),
@@ -226,6 +247,10 @@ pub(super) fn dark_mode_colors() -> TerminalColors {
     TerminalColors::new(DARK_MODE_NORMAL_COLORS, DARK_MODE_BRIGHT_COLORS)
 }
 
+pub(super) fn high_contrast_colors() -> TerminalColors {
+    TerminalColors::new(HIGH_CONTRAST_NORMAL_COLORS, HIGH_CONTRAST_BRIGHT_COLORS)
+}
+
 pub(super) fn solarized_light_colors() -> TerminalColors {
     TerminalColors::new(SOLARIZED_LIGHT_NORMAL_COLORS, SOLARIZED_LIGHT_BRIGHT_COLORS)
 }
@@ -269,6 +294,32 @@ pub fn dark_theme() -> WarpTheme {
         dark_mode_colors(),
         None,
         Some("Dark".to_string()),
+    )
+}
+
+pub(super) fn high_contrast() -> WarpTheme {
+    let details = CustomDetails {
+        main_text_opacity: 100,
+        sub_text_opacity: 85,
+        hint_text_opacity: 75,
+        disabled_text_opacity: 60,
+        foreground_button_opacity: 45,
+        accent_button_opacity: 0,
+        button_hover_opacity: 25,
+        button_click_opacity: 35,
+        keybinding_row_overlay_opacity: 65,
+        welcome_tips_completion_overlay_opacity: 100,
+    };
+
+    WarpTheme::new(
+        Fill::Solid(ColorU::black()),
+        ColorU::white(),
+        Fill::Solid(ColorU::from_u32(0xFFFF00FF)),
+        None,
+        Some(Details::Custom(details)),
+        high_contrast_colors(),
+        None,
+        Some("High Contrast".to_string()),
     )
 }
 

@@ -1,5 +1,6 @@
 use super::*;
 use crate::util::color::OPAQUE;
+use warp_core::ui::color::contrast::{high_enough_contrast, MinimumAllowedContrast};
 
 #[test]
 #[cfg(not(target_family = "wasm"))]
@@ -66,4 +67,51 @@ fn in_memory_theme_generation_test() {
             Some("mountains".to_string()),
         )
     );
+}
+
+#[test]
+fn high_contrast_theme_uses_accessible_text_colors() {
+    let theme = WarpThemeConfig::new().theme(&ThemeKind::HighContrast);
+    let background = theme.background().into_solid();
+    let foreground = theme.foreground().into_solid();
+
+    assert_eq!(theme.name().as_deref(), Some("High Contrast"));
+    assert!(high_enough_contrast(
+        foreground,
+        background,
+        MinimumAllowedContrast::Text
+    ));
+    assert!(high_enough_contrast(
+        theme.accent().into_solid(),
+        background,
+        MinimumAllowedContrast::Text
+    ));
+
+    let terminal_colors = theme.terminal_colors();
+    let ansi_colors = [
+        terminal_colors.normal.black,
+        terminal_colors.normal.red,
+        terminal_colors.normal.green,
+        terminal_colors.normal.yellow,
+        terminal_colors.normal.blue,
+        terminal_colors.normal.magenta,
+        terminal_colors.normal.cyan,
+        terminal_colors.normal.white,
+        terminal_colors.bright.black,
+        terminal_colors.bright.red,
+        terminal_colors.bright.green,
+        terminal_colors.bright.yellow,
+        terminal_colors.bright.blue,
+        terminal_colors.bright.magenta,
+        terminal_colors.bright.cyan,
+        terminal_colors.bright.white,
+    ];
+
+    for ansi_color in ansi_colors {
+        assert!(high_enough_contrast(
+            ColorU::from(ansi_color),
+            background,
+            MinimumAllowedContrast::Text
+        ));
+    }
 }
