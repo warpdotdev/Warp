@@ -23,8 +23,16 @@ cfg_if::cfg_if! {
     if #[cfg(not(feature = "v2"))] {
         use std::collections::HashSet;
         use crate::signatures::testing::add_content_signature;
+        use warp_command_signatures::{
+            Argument, ArgumentType, CommandBuilder, CommandSignatureGenerators, Generator,
+            GeneratorName, GeneratorResults, IsArgumentOptional, Signature,
+            Suggestion as MetadataSuggestion,
+        };
     }
 }
+
+#[cfg(not(feature = "v2"))]
+const PKILL_TEST_COMMAND: &str = "ps names";
 
 #[cfg(windows)]
 mod windows_constants {
@@ -269,6 +277,80 @@ pub fn test_files_includes_directories() {
         complete_at_end_of_line("cat ", &ctx),
         vec!["foo/", "foobar"],
     );
+}
+
+#[cfg(not(feature = "v2"))]
+#[test]
+pub fn test_pkill_completes_process_names_not_paths() {
+    let path_ctx = MockPathCompletionContext::default().with_entries_in_pwd([
+        EngineDirEntry::test_dir("Desktop"),
+        EngineDirEntry::test_file("warp.md"),
+    ]);
+    let generator_ctx =
+        MockGeneratorContext::new().with_expected_command(PKILL_TEST_COMMAND, "Finder\nlogin\n");
+    let ctx = FakeCompletionContext::new(pkill_test_registry())
+        .with_path_completion_context(path_ctx)
+        .with_generator_context(generator_ctx);
+
+    assert_eq!(
+        complete_at_end_of_line("pkill ", &ctx),
+        vec!["Finder", "login"],
+    );
+}
+
+#[cfg(not(feature = "v2"))]
+#[test]
+pub fn test_pkill_does_not_fallback_to_paths_without_generator_context() {
+    let path_ctx = MockPathCompletionContext::default().with_entries_in_pwd([
+        EngineDirEntry::test_dir("Desktop"),
+        EngineDirEntry::test_file("warp.md"),
+    ]);
+    let ctx =
+        FakeCompletionContext::new(pkill_test_registry()).with_path_completion_context(path_ctx);
+
+    assert!(complete_at_end_of_line("pkill ", &ctx).is_empty());
+}
+
+#[cfg(not(feature = "v2"))]
+fn pkill_test_registry() -> CommandRegistry {
+    let generators = HashMap::from([CommandSignatureGenerators::new("pkill")
+        .add_generator(
+            "process_name",
+            Generator::script(
+                CommandBuilder::single_command(PKILL_TEST_COMMAND),
+                |output| GeneratorResults {
+                    suggestions: output.lines().map(MetadataSuggestion::new).collect(),
+                    is_ordered: false,
+                },
+            ),
+        )
+        .into()]);
+
+    CommandRegistry::new_for_test([pkill_test_signature()], generators)
+}
+
+#[cfg(not(feature = "v2"))]
+fn pkill_test_signature() -> Signature {
+    Signature {
+        name: "pkill".to_string(),
+        alias_generator: None,
+        description: None,
+        arguments: Some(vec![Argument {
+            display_name: Some("process_name".to_string()),
+            description: None,
+            is_variadic: false,
+            is_command: false,
+            argument_types: vec![ArgumentType::Generator(GeneratorName(
+                "process_name".to_string(),
+            ))],
+            optional: IsArgumentOptional::Required,
+            skip_generator_validation: false,
+        }]),
+        subcommands: None,
+        options: None,
+        priority: Default::default(),
+        parser_directives: Default::default(),
+    }
 }
 
 #[test]

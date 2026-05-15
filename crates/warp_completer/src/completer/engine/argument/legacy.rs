@@ -38,7 +38,7 @@ use crate::parsers::{
     ArgumentError::{MissingMandatoryPositional, MissingValueForName, UnexpectedArgument},
 };
 
-use super::add_extra_positional;
+use super::{add_extra_positional, should_use_file_path_fallback};
 
 #[allow(clippy::too_many_arguments)]
 pub async fn complete(
@@ -102,6 +102,7 @@ pub async fn complete(
     // a completion spec we attempted, fallback to the fallback type (if any).
     if suggestions.is_empty()
         && !arg_has_spec
+        && should_use_file_path_fallback(tokens_from_command)
         && matches!(
             options.fallback_strategy,
             CompletionsFallbackStrategy::FilePaths

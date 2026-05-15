@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use itertools::Itertools;
 use smol_str::SmolStr;
 
-use super::add_extra_positional;
+use super::{add_extra_positional, should_use_file_path_fallback};
 use crate::completer::GeneratorContext;
 use crate::{
     completer::{
@@ -95,6 +95,7 @@ pub async fn complete(
     // a completion spec we attempted, fallback to the fallback type (if any).
     if suggestions.is_empty()
         && !arg_has_spec
+        && should_use_file_path_fallback(tokens_without_last_editing)
         && matches!(
             options.fallback_strategy,
             CompletionsFallbackStrategy::FilePaths

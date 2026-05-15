@@ -31,3 +31,9 @@ fn add_extra_positional(shell_command: &mut ShellCommand, cursor: &Span) {
         None => shell_command.args.positionals = Some(positional),
     };
 }
+
+fn should_use_file_path_fallback(tokens_from_command: &[&str]) -> bool {
+    !tokens_from_command
+        .first()
+        .is_some_and(|command| command.eq_ignore_ascii_case("pkill"))
+}

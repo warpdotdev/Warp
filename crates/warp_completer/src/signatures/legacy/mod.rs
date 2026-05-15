@@ -1,12 +1,14 @@
 use std::sync::{Arc, OnceLock};
 
+use warp_command_signatures::{
+    Argument, ArgumentType, CommandBuilder, CommandSignatureGenerators, Generator, GeneratorName,
+    GeneratorResults, IsArgumentOptional, Signature, Suggestion as MetadataSuggestion,
+};
 use warp_core::channel::Channel;
 
 pub mod registry;
 
 pub use registry::CommandRegistry;
-#[cfg(feature = "test-util")]
-use warp_command_signatures::Signature;
 
 static GLOBAL_REGISTRY: OnceLock<Arc<CommandRegistry>> = OnceLock::new();
 
@@ -30,6 +32,13 @@ impl CommandRegistry {
     /// Returns a new [`CommandRegistry`] that looks up commands in the embedded
     /// set of command signatures.
     fn new_with_embedded_signatures() -> Self {
+        let mut dynamic_completion_data = warp_command_signatures::dynamic_command_signature_data();
+        let (pkill_command_name, pkill_completion_data): (
+            String,
+            warp_command_signatures::DynamicCompletionData,
+        ) = pkill_dynamic_completion_data().into();
+        dynamic_completion_data.insert(pkill_command_name, pkill_completion_data);
+
         let registry = CommandRegistry::new(
             |command| {
                 let start = instant::Instant::now();
@@ -40,10 +49,11 @@ impl CommandRegistry {
                 );
                 signature
             },
-            warp_command_signatures::dynamic_command_signature_data(),
+            dynamic_completion_data,
         );
 
         Self::register_warp_signatures(&registry);
+        registry.register_signature(pkill_signature());
 
         registry
     }
@@ -90,6 +100,85 @@ impl CommandRegistry {
             .into_iter()
             .for_each(|signature| registry.register_signature(signature));
         registry
+    }
+}
+
+fn pkill_signature() -> Signature {
+    Signature {
+        name: "pkill".to_string(),
+        alias_generator: None,
+        description: Some("signal processes by name".to_string()),
+        arguments: Some(vec![Argument {
+            display_name: Some("process_name".to_string()),
+            description: Some("Process name or pattern".to_string()),
+            is_variadic: false,
+            is_command: false,
+            argument_types: vec![ArgumentType::Generator(GeneratorName(
+                "process_name".to_string(),
+            ))],
+            optional: IsArgumentOptional::Required,
+            skip_generator_validation: false,
+        }]),
+        subcommands: None,
+        options: None,
+        priority: Default::default(),
+        parser_directives: Default::default(),
+    }
+}
+
+fn pkill_dynamic_completion_data() -> CommandSignatureGenerators {
+    CommandSignatureGenerators::new("pkill").add_generator(
+        "process_name",
+        Generator::script(
+            CommandBuilder::pipe(
+                CommandBuilder::single_command("ps -A -o comm"),
+                CommandBuilder::single_command("sort -u"),
+            ),
+            |output| GeneratorResults {
+                suggestions: output
+                    .trim()
+                    .lines()
+                    .filter_map(pkill_process_suggestion)
+                    .collect(),
+                is_ordered: false,
+            },
+        ),
+    )
+}
+
+fn pkill_process_suggestion(path: &str) -> Option<MetadataSuggestion> {
+    let name = path.rsplit_once('/').map_or(path, |(_, name)| name);
+
+    if name.is_empty() || name == "COMM" {
+        return None;
+    }
+
+    Some(MetadataSuggestion::with_description(name, path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pkill_process_suggestion;
+
+    #[test]
+    fn pkill_process_suggestion_uses_basename() {
+        let suggestion = pkill_process_suggestion("/usr/bin/login").unwrap();
+
+        assert_eq!(suggestion.exact_string, "login");
+        assert_eq!(suggestion.description.as_deref(), Some("/usr/bin/login"));
+    }
+
+    #[test]
+    fn pkill_process_suggestion_allows_bare_process_names() {
+        let suggestion = pkill_process_suggestion("zsh").unwrap();
+
+        assert_eq!(suggestion.exact_string, "zsh");
+        assert_eq!(suggestion.description.as_deref(), Some("zsh"));
+    }
+
+    #[test]
+    fn pkill_process_suggestion_skips_ps_header() {
+        assert!(pkill_process_suggestion("COMM").is_none());
     }
 }
 
