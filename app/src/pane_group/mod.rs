@@ -4028,7 +4028,10 @@ impl PaneGroup {
         }
 
         match cloud_conversation {
-            CloudConversationData::Oz(conversation) => {
+            CloudConversationData::Oz(mut conversation) => {
+                if ambient_agent_task_id.is_some() {
+                    conversation.set_is_viewing_shared_session(true);
+                }
                 terminal_view.update(ctx, |view, ctx| {
                     view.restore_conversation_after_view_creation(
                         RestoredAIConversation::new(*conversation),
@@ -5460,8 +5463,9 @@ impl PaneGroup {
                 .set_is_executing_oz_environment_startup_commands(false);
 
             match cloud_conversation {
-                CloudConversationData::Oz(conversation) => {
+                CloudConversationData::Oz(mut conversation) => {
                     let id = conversation.id();
+                    conversation.set_is_viewing_shared_session(true);
                     view.restore_conversation_after_view_creation(
                         RestoredAIConversation::new(*conversation),
                         true,
