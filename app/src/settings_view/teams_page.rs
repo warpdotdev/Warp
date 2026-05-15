@@ -1862,10 +1862,8 @@ impl TeamsWidget {
                 if billing_metadata.is_on_build_business_plan() {
                     return GrowTeamWarningCta::ContactSales;
                 }
-                // similar idea for enterprises... although we usually don't limit
-                // enterprises' seats in practice
                 if billing_metadata.is_enterprise_plan() {
-                    return GrowTeamWarningCta::ContactSales;
+                    return GrowTeamWarningCta::None;
                 }
                 let Some(policy) = billing_metadata.tier.workspace_size_policy else {
                     return GrowTeamWarningCta::None;
@@ -2210,7 +2208,7 @@ impl TeamsWidget {
             appearance,
         ));
 
-        // 6.5) Optional outgrow CTA
+        // 6) Optional outgrow CTA
         let pricing_info_model = view.pricing_info_model.as_ref(app);
         if let Some(cta) = self.render_outgrow_cta(
             team_metadata,
@@ -2225,7 +2223,7 @@ impl TeamsWidget {
             );
         }
 
-        // 6) Deleting/leaving teams
+        // 7) Deleting/leaving teams
         let mut button_row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
         let is_enterprise_team =
             team_metadata.billing_metadata.customer_type == CustomerType::Enterprise;
@@ -2921,10 +2919,7 @@ impl TeamsWidget {
             .finish()
     }
 
-    /// Footer CTA below the team-members list. Reuses `grow_team_warning_cta`
-    /// (with a synthetic `SeatCapReached` so we get the cap-related branches)
-    /// so the page speaks with one voice. Skipped while the team is delinquent
-    /// because the top warning banner already owns that messaging.
+    // "Want to upgrade your team? <Do X>"
     fn render_outgrow_cta(
         &self,
         team: &Team,
