@@ -166,6 +166,7 @@ pub struct ConversationEndedTombstoneView {
 }
 
 impl ConversationEndedTombstoneView {
+    #[cfg_attr(target_family = "wasm", allow(unused_variables))]
     pub fn new(
         ctx: &mut ViewContext<Self>,
         terminal_view_id: EntityId,

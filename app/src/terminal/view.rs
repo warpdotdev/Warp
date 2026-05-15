@@ -5351,14 +5351,19 @@ impl TerminalView {
         if self.pending_user_query_kind != Some(PendingUserQueryKind::CloudMode) {
             return;
         }
+        let Some(pending_prompt) = self.pending_user_query_prompt(ctx) else {
+            return;
+        };
 
         let initial_conversation_query = ai_block_model
             .conversation(ctx)
             .and_then(|conversation| conversation.initial_user_query());
         let has_renderable_user_query = ai_block_model.inputs_to_render(ctx).iter().any(|input| {
-            input
-                .display_user_query(initial_conversation_query.as_ref())
-                .is_some()
+            input.user_query().as_deref() == Some(pending_prompt)
+                || input
+                    .display_user_query(initial_conversation_query.as_ref())
+                    .as_deref()
+                    == Some(pending_prompt)
         });
         if has_renderable_user_query {
             self.remove_pending_user_query_block(ctx);

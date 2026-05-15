@@ -1,5 +1,5 @@
 use warp_core::features::FeatureFlag;
-use warpui::{SingletonEntity, ViewContext};
+use warpui::{AppContext, SingletonEntity, ViewContext};
 
 use crate::{
     ai::{
@@ -13,6 +13,20 @@ use crate::{
 use super::rich_content::RichContentMetadata;
 
 impl TerminalView {
+    pub(super) fn pending_user_query_prompt<'a>(&'a self, ctx: &'a AppContext) -> Option<&'a str> {
+        let view_id = self.pending_user_query_view_id?;
+        self.rich_content_views
+            .iter()
+            .find_map(|rich_content| match rich_content.metadata() {
+                Some(RichContentMetadata::PendingUserQuery {
+                    pending_user_query_block_handle,
+                }) if pending_user_query_block_handle.id() == view_id => {
+                    Some(pending_user_query_block_handle.as_ref(ctx).prompt())
+                }
+                _ => None,
+            })
+    }
+
     pub(super) fn pending_user_query_conversation_id(&self) -> Option<AIConversationId> {
         let view_id = self.pending_user_query_view_id?;
         self.rich_content_views
