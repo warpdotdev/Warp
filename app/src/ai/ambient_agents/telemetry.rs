@@ -83,6 +83,7 @@ pub enum CloudAgentTelemetryEvent {
         error: String,
     },
     /// User initiated a local-to-cloud handoff.
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
     HandoffInitiated {
         /// How the handoff was triggered.
         entry_point: HandoffEntryPoint,

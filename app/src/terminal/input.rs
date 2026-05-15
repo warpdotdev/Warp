@@ -3710,7 +3710,7 @@ impl Input {
         environment_id: Option<SyncId>,
         ctx: &mut ViewContext<Self>,
     ) {
-        self.activate_cloud_handoff_compose(HandoffEntryPoint::default(), ctx);
+        self.activate_cloud_handoff_compose(HandoffEntryPoint::Ampersand, ctx);
         self.editor.update(ctx, |editor, ctx| {
             editor.set_buffer_text(&launch.prompt, ctx);
         });
@@ -3811,6 +3811,11 @@ impl Input {
                 }
             },
         );
+    }
+
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    pub(crate) fn handoff_entry_point(&self, ctx: &AppContext) -> HandoffEntryPoint {
+        self.handoff_compose_state.as_ref(ctx).entry_point()
     }
 
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]

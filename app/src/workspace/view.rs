@@ -47,9 +47,9 @@ use crate::ai::agent_management::view::{AgentManagementView, AgentManagementView
 use crate::ai::agent_management::AgentManagementEvent;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::agent_sdk::driver::upload_snapshot_for_handoff;
-use crate::ai::ambient_agents::telemetry::{CloudAgentTelemetryEvent, CloudModeEntryPoint};
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::ambient_agents::telemetry::HandoffEntryPoint;
+use crate::ai::ambient_agents::telemetry::{CloudAgentTelemetryEvent, CloudModeEntryPoint};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::blocklist::agent_view::agent_input_footer::editor::AgentToolbarEditorMode;
 use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
@@ -13218,7 +13218,7 @@ impl Workspace {
                 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
                 {
                     if let Some(source_view) = source_view.as_ref() {
-                        let launch = source_view.update(ctx, |view, ctx| {
+                        let (launch, entry_point) = source_view.update(ctx, |view, ctx| {
                             let input = view.input().clone();
                             input.update(ctx, |input, ctx| {
                                 let prompt = input
@@ -13228,22 +13228,24 @@ impl Workspace {
                                     .trim()
                                     .to_owned();
                                 let attachments = input.collect_cloud_launch_attachments(ctx);
+                                let entry_point = input.handoff_entry_point(ctx);
                                 input.exit_cloud_handoff_compose_and_clear(ctx);
-                                if prompt.is_empty() {
+                                let launch = if prompt.is_empty() {
                                     None
                                 } else {
                                     Some(PendingCloudLaunch {
                                         prompt,
                                         attachments,
                                     })
-                                }
+                                };
+                                (launch, entry_point)
                             })
                         });
                         ctx.dispatch_typed_action_deferred(
                             WorkspaceAction::OpenLocalToCloudHandoffPane {
                                 launch,
                                 environment_id: Some(env_id),
-                                entry_point: HandoffEntryPoint::default(),
+                                entry_point,
                             },
                         );
                     }

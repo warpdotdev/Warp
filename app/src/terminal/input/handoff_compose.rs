@@ -37,6 +37,7 @@ impl HandoffComposeState {
         ctx.emit(HandoffComposeStateEvent::ActiveChanged);
     }
 
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pub(crate) fn entry_point(&self) -> HandoffEntryPoint {
         self.entry_point
     }
