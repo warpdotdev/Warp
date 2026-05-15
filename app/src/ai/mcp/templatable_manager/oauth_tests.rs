@@ -32,28 +32,6 @@ fn make_test_store(
     (store, rx)
 }
 
-#[test]
-fn persisted_oauth_client_config_allows_public_clients() {
-    let config = persisted_oauth_client_config("client-id".to_string(), None, "warp://callback");
-
-    assert_eq!(config.client_id, "client-id");
-    assert_eq!(config.client_secret, None);
-    assert_eq!(config.redirect_uri, "warp://callback");
-}
-
-#[test]
-fn persisted_oauth_client_config_preserves_client_secret() {
-    let config = persisted_oauth_client_config(
-        "client-id".to_string(),
-        Some("client-secret".to_string()),
-        "warp://callback",
-    );
-
-    assert_eq!(config.client_id, "client-id");
-    assert_eq!(config.client_secret, Some("client-secret".to_string()));
-    assert_eq!(config.redirect_uri, "warp://callback");
-}
-
 /// Backward compatibility: credentials persisted by older Warp versions do not
 /// have the `token_received_at` field. Deserializing them must succeed and
 /// default to `None` so the next refresh can populate it. Failing this test

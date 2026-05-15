@@ -198,33 +198,6 @@ pub enum CallbackResult {
     Success { code: String, csrf_token: String },
     Error { error: Option<String> },
 }
-fn persisted_oauth_client_config(
-    client_id: String,
-    client_secret: Option<String>,
-    redirect_uri: &str,
-) -> OAuthClientConfig {
-    let config = OAuthClientConfig::new(client_id, redirect_uri);
-    if let Some(client_secret) = client_secret {
-        config.with_client_secret(client_secret)
-    } else {
-        config
-    }
-}
-
-async fn configure_auth_manager_for_persisted_credentials(
-    auth_manager: &mut AuthorizationManager,
-    client_id: String,
-    client_secret: Option<String>,
-    redirect_uri: &str,
-) -> Result<(), AuthError> {
-    let metadata = auth_manager.discover_metadata().await?;
-    auth_manager.set_metadata(metadata);
-    auth_manager.configure_client(persisted_oauth_client_config(
-        client_id,
-        client_secret,
-        redirect_uri,
-    ))
-}
 
 /// Makes an authenticated client for the given authorization server.
 ///
@@ -254,7 +227,7 @@ pub async fn make_authenticated_client(
 
     // Create the auth manager and initialize it with a backing credential store that persists
     // new credentials to secure storage.
-    let persisted_client_id = persisted_credentials
+    let client_id = persisted_credentials
         .as_ref()
         .map(|c| c.credentials.client_id.clone());
     let client_secret = persisted_credentials
@@ -269,20 +242,17 @@ pub async fn make_authenticated_client(
     )
     .await;
 
-    // If we have a valid access token (or successfully refreshed a valid refresh token),
-    // we're already authorized and good to go.
-    if let Some(client_id) = persisted_client_id {
-        configure_auth_manager_for_persisted_credentials(
-            &mut auth_manager,
-            client_id,
-            client_secret,
-            &redirect_uri,
-        )
-        .await?;
-        if auth_manager.get_access_token().await.is_ok() {
-            return Ok((AuthClient::new(reqwest::Client::new(), auth_manager), false));
+    // If we loaded persisted credentials from the store, and we have a valid access token
+    // (or successfully refreshed a valid refresh token), we're already authorized and good
+    // to go.
+    if auth_manager.initialize_from_store().await? && auth_manager.get_access_token().await.is_ok()
+    {
+        if let (Some(client_id), Some(client_secret)) = (client_id, client_secret) {
+            auth_manager.configure_client(
+                OAuthClientConfig::new(client_id, redirect_uri.clone())
+                    .with_client_secret(client_secret),
+            )?;
         }
-    } else if auth_manager.get_access_token().await.is_ok() {
         return Ok((AuthClient::new(reqwest::Client::new(), auth_manager), false));
     }
 
