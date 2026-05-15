@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use anyhow::anyhow;
 use warp_core::channel::{Channel, ChannelState};
+pub const REMOTE_SERVER_ARTIFACT_VERSION_UNPINNED: &str = "unversioned";
 
 /// State machine for the remote server install → launch → initialize flow.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,6 +64,18 @@ impl RemoteServerSetupState {
     }
 }
 
+impl From<&crate::transport::Error> for RemoteServerSetupState {
+    fn from(error: &crate::transport::Error) -> Self {
+        if let Some(reason) = UnsupportedReason::from_transport_error(error) {
+            Self::Unsupported { reason }
+        } else {
+            Self::Failed {
+                error: error.to_string(),
+            }
+        }
+    }
+}
+
 /// Outcome of [`crate::transport::RemoteTransport::run_preinstall_check`].
 ///
 /// The script runs over the existing SSH socket before any install UI
@@ -100,9 +113,47 @@ pub enum UnsupportedReason {
     NonGlibc {
         name: String,
     },
+    UnsupportedOs {
+        os: String,
+    },
+    UnsupportedArch {
+        arch: String,
+    },
+}
+
+impl UnsupportedReason {
+    pub fn from_transport_error(error: &crate::transport::Error) -> Option<Self> {
+        match error {
+            crate::transport::Error::UnsupportedOs { os } => {
+                Some(Self::UnsupportedOs { os: os.clone() })
+            }
+            crate::transport::Error::UnsupportedArch { arch } => {
+                Some(Self::UnsupportedArch { arch: arch.clone() })
+            }
+            crate::transport::Error::TimedOut
+            | crate::transport::Error::ScriptFailed { .. }
+            | crate::transport::Error::Other(_) => None,
+        }
+    }
+
+    pub fn as_telemetry_reason(&self) -> &'static str {
+        match self {
+            Self::GlibcTooOld { .. } => "glibc_too_old",
+            Self::NonGlibc { .. } => "non_glibc",
+            Self::UnsupportedOs { .. } => "unsupported_os",
+            Self::UnsupportedArch { .. } => "unsupported_arch",
+        }
+    }
 }
 
 impl PreinstallCheckResult {
+    pub fn unsupported(reason: UnsupportedReason) -> Self {
+        Self {
+            status: PreinstallStatus::Unsupported { reason },
+            libc: RemoteLibc::Unknown,
+            raw: String::new(),
+        }
+    }
     /// Whether the host is supported. Both `Supported` and `Unknown`
     /// return true — only positive detection of an incompatible libc
     /// triggers the silent fall-back.
@@ -271,7 +322,7 @@ pub fn parse_uname_output(
 
     let arch = match arch_str {
         "x86_64" | "amd64" => RemoteArch::X86_64,
-        "aarch64" | "arm64" | "armv8l" => RemoteArch::Aarch64,
+        "aarch64" | "arm64" => RemoteArch::Aarch64,
         other => {
             return Err(Error::UnsupportedArch {
                 arch: other.to_string(),
@@ -343,6 +394,30 @@ pub fn remote_server_daemon_data_dir(identity_key: &str) -> String {
     format!("{}/data", remote_server_daemon_dir(identity_key))
 }
 
+/// Returns the daemon socket filename, versioned when a release tag is
+/// baked in.
+///
+/// - With `GIT_RELEASE_TAG`:    `server-{version}.sock`
+/// - Without (plain cargo run): `server.sock`
+pub fn daemon_socket_name() -> String {
+    match ChannelState::app_version() {
+        Some(version) => format!("server-{version}.sock"),
+        None => "server.sock".to_string(),
+    }
+}
+
+/// Returns the daemon PID filename, versioned when a release tag is
+/// baked in.
+///
+/// - With `GIT_RELEASE_TAG`:    `server-{version}.pid`
+/// - Without (plain cargo run): `server.pid`
+pub fn daemon_pid_name() -> String {
+    match ChannelState::app_version() {
+        Some(version) => format!("server-{version}.pid"),
+        None => "server.pid".to_string(),
+    }
+}
+
 /// Returns the binary name, keyed by channel.
 ///
 /// Matches the CLI command names: `oz` (stable), `oz-preview`, `oz-dev`.
@@ -400,6 +475,20 @@ pub fn binary_check_command() -> String {
 /// fall through to the unversioned (Local/Oss-only) path.
 fn pinned_version() -> &'static str {
     ChannelState::app_version().unwrap_or(env!("CARGO_PKG_VERSION"))
+}
+
+/// Returns the version key used to identify remote-server download artifacts.
+///
+/// This must match the versioning used by [`download_tarball_url`] and
+/// [`install_script`], so versioned download URLs do not reuse stale tarballs
+/// from a previous client version.
+pub fn remote_server_artifact_version() -> &'static str {
+    match ChannelState::channel() {
+        Channel::Local | Channel::Oss => REMOTE_SERVER_ARTIFACT_VERSION_UNPINNED,
+        Channel::Stable | Channel::Preview | Channel::Dev | Channel::Integration => {
+            pinned_version()
+        }
+    }
 }
 
 /// The install script template, loaded from a standalone `.sh` file for

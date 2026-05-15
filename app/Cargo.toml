@@ -296,10 +296,10 @@ aws-credential-types = "1"
 aws-sdk-sts = { version = "1", default-features = false, features = ["default-https-client", "rt-tokio"] }
 aws-types = "1"
 
+mcp.workspace = true
 rmcp = { workspace = true, features = [
     "auth",
     "transport-streamable-http-client-reqwest",
-    "transport-sse-client-reqwest",
     "transport-child-process",
 ] }
 notify-debouncer-full.workspace = true
@@ -629,6 +629,9 @@ default = [
     "settings_file",
     "directory_tab_colors",
     "configurable_context_window",
+    "oz_handoff",
+    "handoff_local_cloud",
+    "pending_user_query_indicator",
 ]
 # Enable this feature to automatically perform heap profiling.  NOTE: This will
 # substantially slow down program execution.
@@ -659,8 +662,10 @@ grep_tool = []
 # For the most part, including GUI code in headless builds is fine; the main use case is
 # for things that pull in external dependencies.
 gui = ["voice_input"]
-nld_classifier_v1 = ["input_classifier/onnx_candle"]
-nld_classifier_v2 = ["input_classifier/onnx_candle"]
+nld_classifier_v1 = ["input_classifier/nld_classifier_v1"]
+nld_classifier_v2 = ["input_classifier/nld_classifier_v2"]
+nld_heuristic_v1 = ["input_classifier/nld_heuristic_v1"]
+nld_heuristic_v2 = ["input_classifier/nld_heuristic_v2"]
 msys2_shells = []
 file_retrieval_tools = []
 welcome_tab = []
@@ -706,6 +711,7 @@ list_skills = []
 # include dependencies that should only exist in such environments.
 local_tty = []
 local_computer_use = []
+local_claude_codex_child_harnesses = []
 # This feature is enabled in build.rs when compiling for platforms which
 # have APIs for interacting with a local filesystem.  It can be used to
 # conditionally include dependencies that should only exist in such

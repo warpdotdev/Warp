@@ -26,6 +26,7 @@ pub use host_selector::{
     Host, HostSelector, HostSelectorAction, HostSelectorEvent, NakedHeaderButtonTheme,
 };
 pub use loading_screen::{render_cloud_mode_error_screen, render_cloud_mode_loading_screen};
+pub(crate) use model::should_disable_snapshot;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 pub(crate) use model::PendingHandoff;
 pub use model::{AgentProgress, AmbientAgentViewModel, AmbientAgentViewModelEvent, Status};
@@ -50,13 +51,12 @@ use crate::terminal::TerminalModel;
 use crate::terminal::TerminalView;
 
 /// Creates a cloud mode terminal view and manager for ambient agent sessions.
-///
-/// This is used when pushing a new ambient agent view onto an existing pane's navigation stack,
-/// or when creating a standalone ambient agent pane.
+/// See `viewer::TerminalManager::enable_orchestration_polling` for the flag.
 pub fn create_cloud_mode_view(
     resources: TerminalViewResources,
     view_bounds_size: Vector2F,
     window_id: WindowId,
+    enable_orchestration_polling: bool,
     ctx: &mut AppContext,
 ) -> (
     ViewHandle<TerminalView>,
@@ -70,6 +70,7 @@ pub fn create_cloud_mode_view(
             resources,
             view_bounds_size,
             window_id,
+            enable_orchestration_polling,
             ctx,
         )) as Box<dyn TerminalManager>
     });

@@ -322,7 +322,7 @@ fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
                         ],
                         active_tab_index: 1,
                         source: Some(CodeSource::FileTree {
-                            location: crate::code::buffer_location::FileLocation::Local(
+                            location: crate::code::buffer_location::LocalOrRemotePath::Local(
                                 PathBuf::from("/tmp/main.rs"),
                             ),
                         }),

@@ -1067,7 +1067,7 @@ impl AIDocumentModel {
         };
         let content = doc.editor.as_ref(ctx).markdown(ctx);
         UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
-            update_manager.update_notebook_data(content.into(), sync_id.into(), ctx);
+            update_manager.update_notebook_data(content.into(), sync_id, ctx);
         });
     }
 

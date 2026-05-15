@@ -55,6 +55,7 @@ use crate::terminal::session_settings::AgentToolbarChipSelection;
 use crate::terminal::shared_session::SharedSessionStatus;
 use crate::terminal::view::ambient_agent::AmbientAgentViewModelEvent;
 use crate::terminal::view::load_ai_conversation::RestoredAIConversation;
+use crate::terminal::view::shared_session::ConversationEndedTombstoneView;
 use crate::terminal::CLIAgent;
 
 use crate::terminal::{MockTerminalManager, TerminalManager, TerminalModel};
@@ -129,7 +130,7 @@ fn append_exchange_with_inputs_and_handle_event(
     let (conversation_id, task_id, exchange_id, response_stream_id) =
         history_model.update(ctx, |history_model, ctx| {
             let conversation_id =
-                history_model.start_new_conversation(view.view_id, false, false, ctx);
+                history_model.start_new_conversation(view.view_id, false, false, false, ctx);
             let task_id = history_model
                 .conversation(&conversation_id)
                 .expect("conversation should exist")
@@ -1015,6 +1016,7 @@ fn cloud_mode_dispatched_agent_inserts_queued_user_query() {
                             referenced_attachments: vec![],
                             conversation_id: None,
                             initial_snapshot_token: None,
+                            snapshot_disabled: None,
                         },
                         ctx,
                     );
@@ -1022,6 +1024,71 @@ fn cloud_mode_dispatched_agent_inserts_queued_user_query() {
             view.handle_ambient_agent_event(&AmbientAgentViewModelEvent::DispatchedAgent, ctx);
 
             assert!(has_pending_user_query_block(view));
+        });
+    });
+}
+
+#[test]
+fn cloud_mode_failed_inserts_tombstone_and_hides_input() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cloud_mode = FeatureFlag::CloudMode.override_enabled(true);
+        let _setup_v2 = FeatureFlag::CloudModeSetupV2.override_enabled(true);
+
+        let terminal = add_window_with_cloud_mode_terminal(&mut app);
+
+        terminal.update(&mut app, |view, ctx| {
+            view.model
+                .lock()
+                .set_shared_session_status(SharedSessionStatus::ViewPending);
+            view.enter_ambient_agent_setup(None, ctx);
+            view.insert_cloud_mode_queued_user_query_block("queued prompt".to_string(), ctx);
+            assert!(has_pending_user_query_block(view));
+
+            view.handle_ambient_agent_event(
+                &AmbientAgentViewModelEvent::Failed {
+                    error_message: "setup failed".to_string(),
+                },
+                ctx,
+            );
+
+            assert!(!has_pending_user_query_block(view));
+            assert!(view.conversation_ended_tombstone_view_id.is_some());
+            assert_eq!(view.rich_content_views.len(), 1);
+            {
+                let model = view.model.lock();
+                assert!(!view.is_input_box_visible(&model, ctx));
+            }
+
+            view.handle_ambient_agent_event(
+                &AmbientAgentViewModelEvent::Failed {
+                    error_message: "setup failed again".to_string(),
+                },
+                ctx,
+            );
+            assert_eq!(view.rich_content_views.len(), 1);
+        });
+
+        let window_id = app.read(|ctx| terminal.window_id(ctx));
+        let tombstones = app
+            .views_of_type::<ConversationEndedTombstoneView>(window_id)
+            .expect("window should have tombstone views");
+        let tombstone = tombstones
+            .last()
+            .expect("failed cloud mode should insert a tombstone");
+        tombstone.read(&app, |tombstone, _| {
+            assert_eq!(
+                tombstone.title_for_test(),
+                Some("Cloud agent failed to start")
+            );
+            assert_eq!(
+                tombstone.error_message_for_test(),
+                Some("setup failed again")
+            );
+            assert_eq!(tombstone.credits_for_test(), None);
+            assert!(!tombstone.has_continue_in_cloud_button_for_test());
+            assert!(!tombstone.has_continue_locally_button_for_test());
         });
     });
 }
@@ -4362,6 +4429,109 @@ fn ctrl_g_closes_cli_agent_rich_input_when_editor_is_focused() {
     })
 }
 
+/// Verifies that Ctrl-G closes CLI agent rich input when dispatched from the
+/// terminal context alone (no editor in the responder chain). Regression test
+/// for #9916 where the keybinding only opened rich input but did not close it
+/// in scenarios where focus was outside the embedded editor and the active
+/// block had transitioned out of `LongRunningCommand` — for example, when the
+/// CLI agent has paused waiting for user input.
+#[test]
+fn ctrl_g_closes_cli_agent_rich_input_from_terminal_context() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        app.add_singleton_model(ImportedConfigModel::new);
+        // Register keybindings so keystroke dispatch can match the Ctrl-G binding.
+        app.update(|ctx| {
+            crate::terminal::init(ctx);
+            crate::editor::init(ctx);
+        });
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cli_rich = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+
+        let (window_id, terminal) =
+            open_cli_agent_rich_input_for_agent_with_window_id(&mut app, CLIAgent::OpenCode);
+
+        // Dispatch Ctrl-G with only the terminal view in the responder chain.
+        // This simulates the case where focus is not on the embedded editor
+        // (e.g., on the block list) and the previous Case 1 / Case 2 predicates
+        // would both fail to match.
+        let handled = app
+            .dispatch_keystroke(
+                window_id,
+                &[terminal.id()],
+                &warpui::keymap::Keystroke::parse("ctrl-g").expect("valid keystroke"),
+                false,
+            )
+            .expect("dispatch should succeed");
+
+        assert!(
+            handled,
+            "ctrl-g should be handled from the terminal context when rich input is open"
+        );
+        terminal.read(&app, |view, ctx| {
+            assert!(
+                !view.has_active_cli_agent_input_session(ctx),
+                "rich input should be closed after Ctrl-G from terminal context"
+            );
+        });
+    })
+}
+
+/// Verifies that Ctrl-G is a true toggle: opens then closes rich input from
+/// the terminal context. Regression test for #9916.
+#[test]
+fn ctrl_g_toggles_cli_agent_rich_input_from_terminal_context() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        app.add_singleton_model(ImportedConfigModel::new);
+        app.update(|ctx| {
+            crate::terminal::init(ctx);
+            crate::editor::init(ctx);
+        });
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cli_rich = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+
+        // Start with rich input open, then close via Ctrl-G, then re-open via
+        // direct call (Ctrl-G open path requires LongRunningCommand which is
+        // tricky to simulate in a unit test), then close via Ctrl-G again.
+        let (window_id, terminal) =
+            open_cli_agent_rich_input_for_agent_with_window_id(&mut app, CLIAgent::OpenCode);
+
+        let keystroke = warpui::keymap::Keystroke::parse("ctrl-g").expect("valid keystroke");
+
+        // First close: rich input is open → Ctrl-G should close.
+        let handled = app
+            .dispatch_keystroke(window_id, &[terminal.id()], &keystroke, false)
+            .expect("dispatch should succeed");
+        assert!(handled, "first ctrl-g should be handled (close)");
+        terminal.read(&app, |view, ctx| {
+            assert!(
+                !view.has_active_cli_agent_input_session(ctx),
+                "rich input should be closed after first Ctrl-G"
+            );
+        });
+
+        // Re-open programmatically (mirrors the user re-triggering open via
+        // Ctrl-G in a long-running context).
+        terminal.update(&mut app, |view, ctx| {
+            view.open_cli_agent_rich_input(CLIAgentInputEntrypoint::CtrlG, ctx);
+            assert!(view.has_active_cli_agent_input_session(ctx));
+        });
+
+        // Second close: rich input is open again → Ctrl-G should close again.
+        let handled = app
+            .dispatch_keystroke(window_id, &[terminal.id()], &keystroke, false)
+            .expect("dispatch should succeed");
+        assert!(handled, "second ctrl-g should be handled (close again)");
+        terminal.read(&app, |view, ctx| {
+            assert!(
+                !view.has_active_cli_agent_input_session(ctx),
+                "rich input should be closed after second Ctrl-G"
+            );
+        });
+    })
+}
+
 #[test]
 fn cli_agent_rich_input_hint_text_mentions_active_cli_agent() {
     App::test((), |mut app| async move {
@@ -4978,7 +5148,7 @@ fn cli_session_status_updates_active_child_conversation() {
         let child_conversation_id = terminal.update(&mut app, |view, ctx| {
             let parent_conversation_id =
                 BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                    history_model.start_new_conversation(view.view_id, false, false, ctx)
+                    history_model.start_new_conversation(view.view_id, false, false, false, ctx)
                 });
             let child_conversation_id =
                 BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
@@ -5126,7 +5296,7 @@ fn cli_session_status_updates_single_child_conversation_without_agent_view() {
         let child_conversation_id = terminal.update(&mut app, |view, ctx| {
             let parent_conversation_id =
                 BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                    history_model.start_new_conversation(view.view_id, false, false, ctx)
+                    history_model.start_new_conversation(view.view_id, false, false, false, ctx)
                 });
             let child_conversation_id =
                 BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {

@@ -161,8 +161,9 @@ impl AuthSecretFtuxView {
                         ctx.notify();
                     }
                 }
-                HarnessAvailabilityEvent::Changed | HarnessAvailabilityEvent::AuthSecretsLoaded => {
-                }
+                HarnessAvailabilityEvent::Changed
+                | HarnessAvailabilityEvent::AuthSecretsLoaded
+                | HarnessAvailabilityEvent::AuthSecretsFetchFailed => {}
             },
         );
 

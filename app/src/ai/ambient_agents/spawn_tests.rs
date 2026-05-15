@@ -166,6 +166,7 @@ async fn followup_terminal_failure_surfaces_status_message() {
             let mut task = task_with(AmbientAgentTaskState::Error, None, None);
             task.status_message = Some(TaskStatusMessage {
                 message: "failed to provision runtime".to_string(),
+                error_code: None,
             });
             Ok(task)
         });
@@ -374,6 +375,7 @@ async fn poll_retries_transient_429_errors() {
         referenced_attachments: vec![],
         conversation_id: None,
         initial_snapshot_token: None,
+        snapshot_disabled: None,
     };
 
     let mut stream = Box::pin(spawn_task(request, ai_client, None));
@@ -441,6 +443,7 @@ async fn poll_fails_on_permanent_http_error() {
         referenced_attachments: vec![],
         conversation_id: None,
         initial_snapshot_token: None,
+        snapshot_disabled: None,
     };
 
     let mut stream = Box::pin(spawn_task(request, ai_client, None));
@@ -508,6 +511,7 @@ async fn poll_gives_up_after_max_transient_retries() {
         referenced_attachments: vec![],
         conversation_id: None,
         initial_snapshot_token: None,
+        snapshot_disabled: None,
     };
 
     let mut stream = Box::pin(spawn_task(request, ai_client, None));
@@ -570,6 +574,7 @@ async fn poll_stops_on_terminal_failure_like_state() {
         referenced_attachments: vec![],
         conversation_id: None,
         initial_snapshot_token: None,
+        snapshot_disabled: None,
     };
 
     let mut stream = Box::pin(spawn_task(request, ai_client, None));
@@ -715,6 +720,7 @@ async fn poll_for_session_join_info_waits_until_link_is_available() {
         referenced_attachments: vec![],
         conversation_id: None,
         initial_snapshot_token: None,
+        snapshot_disabled: None,
     };
 
     let mut stream = Box::pin(spawn_task(request, ai_client, None));

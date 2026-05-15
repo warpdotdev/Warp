@@ -172,7 +172,6 @@ pub enum WorkspaceAction {
     ToggleTabConfigsMenu,
     ToggleNewSessionMenu {
         position: Vector2F,
-        is_vertical_tabs: bool,
     },
     SelectNewSessionMenuItem(NewSessionMenuItem),
     AutoupdateFailureLink,
@@ -503,8 +502,11 @@ pub enum WorkspaceAction {
         launch: Option<crate::ai::blocklist::handoff::PendingCloudLaunch>,
         #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
         launch: Option<()>,
-        explicit_environment_id: Option<crate::server::ids::SyncId>,
+        environment_id: Option<crate::server::ids::SyncId>,
     },
+    /// Show the environment creation modal during `&` handoff compose when no
+    /// environments exist.
+    ShowHandoffEnvironmentCreationModal,
     /// Summarize the active AI conversation in the focused pane.
     SummarizeAIConversation {
         prompt: Option<String>,
@@ -965,6 +967,7 @@ impl WorkspaceAction {
             | OpenSettingsFile
             | FixSettingsWithOz { .. }
             | OpenLocalToCloudHandoffPane { .. }
+            | ShowHandoffEnvironmentCreationModal
             | OpenNetworkLogPane => false,
             #[cfg(debug_assertions)]
             ShowHoaOnboardingFlow => false,

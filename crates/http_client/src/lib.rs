@@ -145,9 +145,7 @@ impl Client {
         let client_builder = reqwest::ClientBuilder::new()
             // Don't load any SSL/TLS certificates, as doing so can be slow and we should
             // never be making real requests in tests.
-            .tls_built_in_native_certs(false)
-            .tls_built_in_root_certs(false)
-            .tls_built_in_webpki_certs(false)
+            .tls_certs_only([])
             // Disable proxy usage in tests, as loading system proxy configuration can be
             // slow.
             .no_proxy();
@@ -551,6 +549,16 @@ impl<'a> RequestBuilder<'a> {
         Self {
             wrapped: self.wrapped.form(form),
             serialized_payload,
+            ..self
+        }
+    }
+
+    /// Attach a `multipart/form-data` body.
+    /// Not available on wasm because reqwest's multipart builder API is native-only.
+    #[cfg(not(target_family = "wasm"))]
+    pub fn multipart(self, form: reqwest::multipart::Form) -> RequestBuilder<'a> {
+        Self {
+            wrapped: self.wrapped.multipart(form),
             ..self
         }
     }
