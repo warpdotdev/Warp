@@ -63,32 +63,42 @@ fn load_translations() -> Translations {
 `load_dir` reads all `.yml`/`.yaml` files in a directory, parses them with `serde_yaml`, identifies the locale from the top-level key, and recursively flattens nested YAML into dot-separated keys via `flatten_value`.
 
 **File discovery order** (non-WASM):
-1. `$WARP_LOCALES_DIR` env var (if set)
+1. `$WARP_LOCALES_DIR` env var (if set). **Trust boundary:** this path is intended for development and testing only. It is not used in production builds — the bundled resources path (priority 2) is the sole source of locale files in shipped binaries. No integrity validation is performed on locale files loaded from this path. If a file is malformed (e.g., invalid YAML, wrong locale key), it is silently skipped and the next discovery path is tried.
 2. Platform bundled resources: `<exe_dir>/resources/bundled/locales`
 3. `$CARGO_MANIFEST_DIR/../resources/bundled/locales` (and up to 4 ancestor levels)
 4. `$PWD/resources/bundled/locales`
 
 ### 2. `t!()` macro (defined in `app/src/lib.rs`)
 
-A `macro_rules!` macro with three match arms:
+A `macro_rules!` macro with three match arms. The actual expansion uses `match` (not combinator chains) to preserve `Cow<'static, str>` type flow:
 
 ```rust
 // Arm 1: Simple lookup
 t!("menu.file")
-// Expands to: i18n::t("menu.file")
+// Expands to:
+match i18n::t("menu.file") {
+    value if value == "menu.file" => Cow::Owned("menu.file".to_string()),
+    value => value,
+}
 
 // Arm 2: Explicit interpolation
 t!("terminal.hand_off", environment = name)
-// Expands to: i18n::t("terminal.hand_off")
-//               .map(|v| i18n::interpolate(&v, &[("environment", format!("{}", name))]))
+// Expands to:
+match i18n::t("terminal.hand_off") {
+    value if value == "terminal.hand_off" => Cow::Owned("terminal.hand_off".to_string()),
+    value => i18n::interpolate(value.as_ref(), &[("environment", format!("{}", name))]),
+}
 
 // Arm 3: Implicit interpolation (variable name = key name)
 t!("some.key", count)
-// Expands to: i18n::t("some.key")
-//               .map(|v| i18n::interpolate(&v, &[("count", format!("{}", count))]))
+// Expands to:
+match i18n::t("some.key") {
+    value if value == "some.key" => Cow::Owned("some.key".to_string()),
+    value => i18n::interpolate(value.as_ref(), &[("count", format!("{}", count))]),
+}
 ```
 
-All arms include the English fallback check: if `t()` returns the key itself (meaning no translation was found), no interpolation is performed — the raw key is returned.
+The match guard `value if value == key` detects when `t()` returned the key itself (translation missing). In that case, the key string is returned as `Cow::Owned` — interpolation is skipped because there is no template to interpolate into.
 
 A duplicate `t!()` macro exists in `crates/onboarding/src/lib.rs` so the onboarding binary can use translations without depending on the full `app` crate.
 
@@ -128,6 +138,12 @@ The `app/src/i18n.rs` file re-exports `warp_i18n::*` so the rest of the applicat
 `windows-rs` crate macros generate code referencing `i18n::t()` on the `app` crate. Windows resource compilation works correctly because no i18n call appears in a const-evaluation context.
 
 ## Testing and validation
+
+### Locale file integrity (automated)
+- Every key present in `en.yml` must have a corresponding key in `zh-CN.yml`. A script or build-time check verifies this invariant — missing keys in `zh-CN.yml` should cause a CI failure.
+- Both YAML files must parse successfully as valid YAML and produce the expected top-level locale key (`en:` / `zh-CN:`).
+- No orphaned keys: every key referenced by a `t!()` call in the codebase must exist in `en.yml`. A static analysis script (e.g., `rg 't!\("([^"]+)"' --only-matching | sort -u` diffed against keys extracted from `en.yml`) should be runnable locally and in CI to catch callsite-locale drift.
+- The number of keys in `en.yml` and `zh-CN.yml` must be equal (after accounting for any intentionally untranslatable keys).
 
 ### Unit tests
 
