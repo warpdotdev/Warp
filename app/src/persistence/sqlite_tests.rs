@@ -1,9 +1,9 @@
 use std::{path::PathBuf, sync::Arc};
 
-use diesel::connection::SimpleConnection;
-use pathfinder_geometry::{rect::RectF, vector::Vector2F};
 use ai::workspace::WorkspaceMetadata;
 use chrono::Utc;
+use diesel::connection::SimpleConnection;
+use pathfinder_geometry::{rect::RectF, vector::Vector2F};
 use warp_core::features::FeatureFlag;
 use warp_graphql::scalars::time::ServerTimestamp;
 
