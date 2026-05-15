@@ -21,6 +21,8 @@ use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::notebooks::notebook::NotebookView;
 use crate::pane_group::{Direction, PaneGroupAction, PaneId};
 use crate::pricing::PricingInfoModel;
+#[cfg(not(target_family = "wasm"))]
+use crate::remote_server::codebase_index_model::RemoteCodebaseIndexModel;
 use crate::suggestions::ignored_suggestions_model::IgnoredSuggestionsModel;
 #[cfg(feature = "local_fs")]
 use crate::user_config::tab_configs_dir;
@@ -174,6 +176,8 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| IgnoredSuggestionsModel::new(vec![]));
     app.add_singleton_model(|_| crate::code_review::git_status_update::GitStatusUpdateModel::new());
     app.add_singleton_model(remote_server::manager::RemoteServerManager::new);
+    #[cfg(not(target_family = "wasm"))]
+    app.add_singleton_model(RemoteCodebaseIndexModel::new);
 
     #[cfg(feature = "local_fs")]
     app.add_singleton_model(RepoMetadataModel::new);
