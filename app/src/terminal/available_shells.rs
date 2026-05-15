@@ -80,6 +80,16 @@ enum Config {
         /// image".
         base_image: Option<String>,
     },
+    /// A shell running inside a Dev Container via the `devcontainer` CLI.
+    #[cfg_attr(not(feature = "local_tty"), allow(dead_code))]
+    DevContainer {
+        /// Path to the `devcontainer` CLI binary on the host.
+        devcontainer_cli_path: PathBuf,
+        /// Host workspace folder containing the selected Dev Container config.
+        workspace_folder: PathBuf,
+        /// Selected devcontainer config path.
+        config_path: PathBuf,
+    },
 }
 
 // The concept of specifying an available shell does not exist on non-local filesystems. So we allow
@@ -127,6 +137,7 @@ impl AvailableShell {
             Config::Wsl { distro } => Cow::from(distro),
             Config::Custom(_) => Cow::from("Custom"),
             Config::DockerSandbox { .. } => Cow::from("Docker Sandbox"),
+            Config::DevContainer { .. } => Cow::from("Dev Container"),
         }
     }
 
@@ -144,6 +155,9 @@ impl AvailableShell {
                 executable_path, ..
             }) => Cow::from(format!("Custom: {}", executable_path.display())),
             Config::DockerSandbox { .. } => Cow::from("Docker Sandbox"),
+            Config::DevContainer { config_path, .. } => {
+                Cow::from(format!("Dev Container: {}", config_path.display()))
+            }
         }
     }
 
@@ -156,6 +170,7 @@ impl AvailableShell {
             Config::Wsl { .. } => "WSL".to_string(),
             Config::Custom(_) => "Custom".to_string(),
             Config::DockerSandbox { .. } => "DockerSandbox".to_string(),
+            Config::DevContainer { .. } => "DevContainer".to_string(),
         }
     }
 
@@ -187,6 +202,9 @@ impl AvailableShell {
                 executable_path, ..
             }) => format!("{} ({})", self.short_name(), executable_path.display()),
             Config::DockerSandbox { .. } => "Docker Sandbox".to_string(),
+            Config::DevContainer { config_path, .. } => {
+                format!("Dev Container ({})", config_path.display())
+            }
         }
     }
 
@@ -230,6 +248,7 @@ impl AvailableShell {
     /// | [`Config::Custom`]         | Yes        | [`ShellLaunchData::Executable`]    |
     /// | [`Config::MSYS2`]          | No         | [`ShellLaunchData::MSYS2`]         |
     /// | [`Config::DockerSandbox`]  | No         | [`ShellLaunchData::DockerSandbox`] |
+    /// | [`Config::DevContainer`]   | No         | [`ShellLaunchData::DevContainer`]  |
     ///
     /// For `KnownLocal` and `Custom` we validate that the executable path
     /// is still valid.
@@ -270,6 +289,15 @@ impl AvailableShell {
             } => Some(ShellLaunchData::DockerSandbox {
                 sbx_path: sbx_path.clone(),
                 base_image: base_image.clone(),
+            }),
+            Config::DevContainer {
+                devcontainer_cli_path,
+                workspace_folder,
+                config_path,
+            } => Some(ShellLaunchData::DevContainer {
+                devcontainer_cli_path: devcontainer_cli_path.clone(),
+                workspace_folder: workspace_folder.clone(),
+                config_path: config_path.clone(),
             }),
         }
     }
@@ -334,8 +362,27 @@ impl AvailableShell {
         }
     }
 
+    pub(crate) fn new_dev_container_shell(
+        devcontainer_cli_path: PathBuf,
+        workspace_folder: PathBuf,
+        config_path: PathBuf,
+    ) -> Self {
+        Self {
+            id: None,
+            state: Arc::new(Config::DevContainer {
+                devcontainer_cli_path,
+                workspace_folder,
+                config_path,
+            }),
+        }
+    }
+
     pub fn is_docker_sandbox(&self) -> bool {
         matches!(self.state.as_ref(), Config::DockerSandbox { .. })
+    }
+
+    pub fn is_dev_container(&self) -> bool {
+        matches!(self.state.as_ref(), Config::DevContainer { .. })
     }
 }
 
@@ -353,13 +400,15 @@ impl From<AvailableShell> for NewSessionShell {
             Config::MSYS2(local_config) => {
                 NewSessionShell::MSYS2(local_config.executable_path.display().to_string())
             }
-            // Docker sandbox isn't a persistable "preferred shell" today —
-            // it's always launched on-demand via a tab action or slash
+            // Docker sandbox and Dev Container aren't persistable "preferred shells" today —
+            // they're always launched on-demand via a tab action or slash
             // command. Round-trip through settings falls back to the system
             // default.
-            // TODO(advait): If we ever let users pin the sandbox as their
-            // default shell, add a `NewSessionShell::DockerSandbox` variant.
-            Config::DockerSandbox { .. } => NewSessionShell::SystemDefault,
+            // TODO(advait): If we ever let users pin a container shell as
+            // their default shell, add matching `NewSessionShell` variants.
+            Config::DockerSandbox { .. } | Config::DevContainer { .. } => {
+                NewSessionShell::SystemDefault
+            }
         }
     }
 }
@@ -378,9 +427,9 @@ impl From<AvailableShell> for StartupShell {
                 StartupShell::from(Some(local_config.shell_type.name().to_string()))
             }
             // See the matching comment on `From<AvailableShell> for
-            // NewSessionShell`: the sandbox isn't persistable as a startup
-            // shell today, so fall back to default.
-            Config::DockerSandbox { .. } => StartupShell::Default,
+            // NewSessionShell`: container shells aren't persistable as startup
+            // shells today, so fall back to default.
+            Config::DockerSandbox { .. } | Config::DevContainer { .. } => StartupShell::Default,
         }
     }
 }
@@ -574,6 +623,17 @@ impl AvailableShells {
                         executable_path.file_name()?.to_str()?.to_string(),
                         executable_path.clone(),
                         *shell_type,
+                    ))
+                } else if let ShellLaunchData::DevContainer {
+                    devcontainer_cli_path,
+                    workspace_folder,
+                    config_path,
+                } = config
+                {
+                    Some(AvailableShell::new_dev_container_shell(
+                        devcontainer_cli_path.clone(),
+                        workspace_folder.clone(),
+                        config_path.clone(),
                     ))
                 } else {
                     None
@@ -940,7 +1000,8 @@ impl AvailableShells {
                     Config::Custom(_)
                     | Config::SystemDefault
                     | Config::Wsl { .. }
-                    | Config::DockerSandbox { .. } => {
+                    | Config::DockerSandbox { .. }
+                    | Config::DevContainer { .. } => {
                         return false;
                     }
                 };

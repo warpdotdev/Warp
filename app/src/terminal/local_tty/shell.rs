@@ -14,7 +14,9 @@ use crate::{
     terminal::{
         available_shells::AvailableShell,
         bootstrap::init_shell_script_for_shell,
-        local_tty::docker_sandbox::DockerSandboxShellStarter,
+        local_tty::{
+            dev_container::DevContainerShellStarter, docker_sandbox::DockerSandboxShellStarter,
+        },
         shell::{ShellName, ShellType},
         ShellLaunchData,
     },
@@ -66,6 +68,8 @@ pub enum ShellStarter {
     /// the resolved workspace path, read-only init-script mount, and base
     /// Docker image (`--template <base_image>`).
     DockerSandbox(DockerSandboxShellStarter),
+    /// Bootstrap a shell inside a Dev Container via the `devcontainer` CLI.
+    DevContainer(DevContainerShellStarter),
 }
 
 impl ShellStarter {
@@ -148,6 +152,26 @@ impl ShellStarter {
                                     shell_type: ShellType::Bash,
                                 },
                                 base_image,
+                            ),
+                        ))
+                        .into(),
+                    );
+                }
+                ShellLaunchData::DevContainer {
+                    devcontainer_cli_path,
+                    workspace_folder,
+                    config_path,
+                } => {
+                    return Some(
+                        ShellStarterSource::Override(ShellStarter::DevContainer(
+                            DevContainerShellStarter::new(
+                                DirectShellStarter {
+                                    args: Vec::new(),
+                                    shell_path: devcontainer_cli_path,
+                                    shell_type: ShellType::Bash,
+                                },
+                                workspace_folder,
+                                config_path,
                             ),
                         ))
                         .into(),
@@ -253,6 +277,7 @@ impl ShellStarter {
         match self {
             ShellStarter::Direct(starter) | ShellStarter::MSYS2(starter) => starter.shell_type(),
             ShellStarter::DockerSandbox(starter) => starter.shell_type(),
+            ShellStarter::DevContainer(starter) => starter.shell_type(),
             ShellStarter::Wsl(starter) => starter.shell_type(),
         }
     }
@@ -265,10 +290,15 @@ impl ShellStarter {
         matches!(self, ShellStarter::DockerSandbox(_))
     }
 
+    pub fn is_dev_container(&self) -> bool {
+        matches!(self, ShellStarter::DevContainer(_))
+    }
+
     fn display_name(&self) -> &str {
         match self {
             Self::Direct(starter) => starter.display_name(),
             Self::DockerSandbox(starter) => starter.display_name(),
+            Self::DevContainer(starter) => starter.display_name(),
             Self::Wsl(starter) => starter.distribution(),
             Self::MSYS2(starter) => {
                 if starter
@@ -292,6 +322,9 @@ impl ShellStarter {
                 starter.logical_shell_path().to_string_lossy().into_owned()
             }
             Self::DockerSandbox(starter) => {
+                starter.logical_shell_path().to_string_lossy().into_owned()
+            }
+            Self::DevContainer(starter) => {
                 starter.logical_shell_path().to_string_lossy().into_owned()
             }
             Self::Wsl(starter) => starter.distribution().to_owned(),

@@ -366,6 +366,7 @@ pub enum DisplayChipKind {
         directory_fetcher: ModelHandle<DirectoryFetcher>,
     },
     Ssh,
+    DevContainer,
     Subshell,
     VirtualEnvironment,
     CondaEnvironment,
@@ -396,6 +397,7 @@ impl DisplayChipKind {
             | DisplayChipKind::GitDiffStats { .. }
             | DisplayChipKind::Text
             | DisplayChipKind::Ssh
+            | DisplayChipKind::DevContainer
             | DisplayChipKind::Subshell
             | DisplayChipKind::VirtualEnvironment
             | DisplayChipKind::CondaEnvironment
@@ -706,6 +708,7 @@ impl DisplayChip {
                 }
             }
             ContextChipKind::Ssh => DisplayChipKind::Ssh,
+            ContextChipKind::DevContainer => DisplayChipKind::DevContainer,
             ContextChipKind::Subshell => DisplayChipKind::Subshell,
             ContextChipKind::VirtualEnvironment => DisplayChipKind::VirtualEnvironment,
             ContextChipKind::CondaEnvironment => DisplayChipKind::CondaEnvironment,
@@ -898,6 +901,7 @@ impl DisplayChip {
             DisplayChipKind::GitDiffStats { .. }
             | DisplayChipKind::Text
             | DisplayChipKind::Ssh
+            | DisplayChipKind::DevContainer
             | DisplayChipKind::Subshell
             | DisplayChipKind::VirtualEnvironment
             | DisplayChipKind::CondaEnvironment
@@ -1378,6 +1382,21 @@ impl DisplayChip {
         render_udi_chip(config, appearance)
     }
 
+    fn dev_container_chip(&self, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let color = if self.is_in_agent_view {
+            agent_view_chip_color(appearance)
+        } else {
+            appearance.theme().ansi_fg_green()
+        };
+
+        let mut config = UdiChipConfig::new_with_icon(Icon::Docker, color, self.text.clone());
+        if self.is_in_agent_view {
+            config = config.for_agent_view();
+        }
+        render_udi_chip(config, appearance)
+    }
+
     fn subshell_chip(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let color = if self.is_in_agent_view {
@@ -1491,6 +1510,7 @@ impl DisplayChip {
                 ..
             } => Some(self.working_directory_chip(*show_menu, menu, *menu_open, app)),
             DisplayChipKind::Ssh => Some(self.ssh_chip(app)),
+            DisplayChipKind::DevContainer => Some(self.dev_container_chip(app)),
             DisplayChipKind::Subshell => Some(self.subshell_chip(app)),
             DisplayChipKind::VirtualEnvironment => Some(self.virtual_environment_chip(app)),
             DisplayChipKind::NodeVersion { popup, popup_open } => {
@@ -1591,6 +1611,7 @@ impl TypedActionView for DisplayChip {
                     ctx.notify();
                 }
                 DisplayChipKind::Ssh
+                | DisplayChipKind::DevContainer
                 | DisplayChipKind::Subshell
                 | DisplayChipKind::VirtualEnvironment
                 | DisplayChipKind::CondaEnvironment
