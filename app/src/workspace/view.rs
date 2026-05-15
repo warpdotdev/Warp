@@ -13391,9 +13391,12 @@ impl Workspace {
     /// Resolves the terminal view that should receive the handoff cloud-mode
     /// pane push and prepares it for the transition:
     ///
-    /// 1. If the active session slot holds a swapped-in child agent, reverts
+    /// 1. Finds the pane group that owns `source_view` (rather than the
+    ///    currently-active tab) so focus changes during an async fork RPC
+    ///    cannot mis-target the handoff.
+    /// 2. If the active session slot holds a swapped-in child agent, reverts
     ///    the swap so the push lands on the orchestrator's PaneStack.
-    /// 2. If the resolved view's agent view is fullscreen, exits it so the
+    /// 3. If the resolved view's agent view is fullscreen, exits it so the
     ///    cloud pane is visible at the terminal level.
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn prepare_handoff_target(
@@ -13401,7 +13404,17 @@ impl Workspace {
         source_view: &ViewHandle<TerminalView>,
         ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<TerminalView> {
-        let pane_group = self.active_tab_pane_group().clone();
+        let source_view_id = source_view.id();
+        let pane_group = self
+            .tabs
+            .iter()
+            .find(|tab| {
+                tab.pane_group
+                    .as_ref(ctx)
+                    .contains_terminal_view(source_view_id, ctx)
+            })
+            .map(|tab| tab.pane_group.clone())
+            .unwrap_or_else(|| self.active_tab_pane_group().clone());
         let target = if let Some((original_pane_id, orchestrator_view)) =
             pane_group.as_ref(ctx).original_session_if_swapped(ctx)
         {
