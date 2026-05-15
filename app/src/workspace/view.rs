@@ -11778,12 +11778,22 @@ impl Workspace {
                 .map(|t| t.as_str().to_string());
             let title_for_fork = source_conversation.title();
 
+            // Compute retained message IDs for exchange-based forks so the
+            // server can truncate its copy to match the local truncation point.
+            let message_ids_for_server = fork_from_exchange.as_ref().map(|fork_from| {
+                BlocklistAIHistoryModel::compute_retained_message_ids(
+                    &source_conversation,
+                    fork_from.exchange_id,
+                    fork_from.fork_from_exact_exchange,
+                )
+            });
+
             if let Some(source_token) = source_server_token.filter(|_| cloud_storage_enabled) {
                 let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
                 ctx.spawn(
                     async move {
                         ai_client
-                            .fork_conversation(source_token, title_for_fork)
+                            .fork_conversation(source_token, title_for_fork, message_ids_for_server)
                             .await
                     },
                     move |workspace, result, ctx| {
@@ -13677,7 +13687,7 @@ impl Workspace {
         ctx.spawn(
             async move {
                 ai_client
-                    .fork_conversation(source_conversation_id, title_for_fork)
+                    .fork_conversation(source_conversation_id, title_for_fork, None)
                     .await
             },
             move |me, result, ctx| match result {

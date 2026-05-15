@@ -1214,6 +1214,36 @@ impl BlocklistAIHistoryModel {
         Ok(forked_conversation)
     }
 
+    /// Computes the flattened set of message IDs that would be retained when forking
+    /// a conversation at a specific exchange boundary. Used to tell the server which
+    /// messages to keep when truncating the server-side fork.
+    pub fn compute_retained_message_ids(
+        source_conversation: &AIConversation,
+        from_exchange_id: AIAgentExchangeId,
+        fork_from_exact_exchange: bool,
+    ) -> Vec<String> {
+        let exchanges_by_task = source_conversation.all_exchanges_by_task();
+        let root_task_id = source_conversation.get_root_task_id().clone();
+
+        let mut all_ids: Vec<String> = Vec::new();
+        let mut found_from_exchange_id = false;
+        'outer: for (task_id, task_exchanges) in exchanges_by_task.into_iter() {
+            for exchange in task_exchanges {
+                if found_from_exchange_id && task_id == root_task_id && exchange.has_user_query() {
+                    break 'outer;
+                }
+                all_ids.extend(exchange.added_message_ids.iter().map(|id| id.to_string()));
+                if exchange.id == from_exchange_id {
+                    if fork_from_exact_exchange {
+                        break 'outer;
+                    }
+                    found_from_exchange_id = true;
+                }
+            }
+        }
+        all_ids
+    }
+
     /// Forks an existing conversation at a specific exchange boundary. When `exact_exchange`
     /// is true, the fork includes all messages up to and including the selected exchange.
     /// Otherwise, it extends through the full response (every message after the user's query

@@ -296,6 +296,8 @@ pub struct UploadLocalHandoffSnapshotResponse {
 pub(crate) struct ForkConversationRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message_ids: Option<Vec<String>>,
 }
 
 /// Response body for `POST /agent/conversations/{conversation_id}/fork`. The returned id is sent
@@ -943,6 +945,7 @@ pub trait AIClient: 'static + Send + Sync {
         &self,
         conversation_id: String,
         title: Option<String>,
+        message_ids: Option<Vec<String>>,
     ) -> anyhow::Result<ForkConversationResponse, anyhow::Error>;
 
     async fn list_ambient_agent_tasks(
@@ -1714,8 +1717,9 @@ impl AIClient for ServerApi {
         &self,
         conversation_id: String,
         title: Option<String>,
+        message_ids: Option<Vec<String>>,
     ) -> anyhow::Result<ForkConversationResponse, anyhow::Error> {
-        let request = ForkConversationRequest { title };
+        let request = ForkConversationRequest { title, message_ids };
         let response: ForkConversationResponse = self
             .post_public_api(&build_fork_conversation_url(&conversation_id), &request)
             .await?;
