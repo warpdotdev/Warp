@@ -567,12 +567,14 @@ impl<'a> RequestBuilder<'a> {
     }
 }
 
-/// An error returned from `Response::error_for_status` that includes response headers.
-/// This allows callers to inspect headers (like X-Warp-Error-Code) when handling errors.
+/// An error returned from `Response::error_for_status` that includes response metadata.
+/// This allows callers to inspect headers (like X-Warp-Error-Code) and the response body when
+/// handling errors.
 #[derive(Debug)]
 pub struct ResponseError {
     pub source: reqwest::Error,
     pub headers: HeaderMap,
+    pub body: Option<String>,
 }
 
 impl std::fmt::Display for ResponseError {
@@ -619,7 +621,28 @@ impl Response {
         let headers = self.0.headers().clone();
         match self.0.error_for_status() {
             Ok(response) => Ok(Self(response)),
-            Err(source) => Err(ResponseError { source, headers }),
+            Err(source) => Err(ResponseError {
+                source,
+                headers,
+                body: None,
+            }),
+        }
+    }
+
+    /// Checks the response status and returns an error if it's not successful.
+    /// Unlike `error_for_status`, this also reads and preserves the response body on errors.
+    pub async fn error_for_status_with_body(self) -> Result<Self, ResponseError> {
+        let headers = self.0.headers().clone();
+        match self.0.error_for_status_ref() {
+            Ok(_) => Ok(self),
+            Err(source) => {
+                let body = self.text().await.ok();
+                Err(ResponseError {
+                    source,
+                    headers,
+                    body,
+                })
+            }
         }
     }
 
@@ -629,7 +652,11 @@ impl Response {
         let headers = self.0.headers().clone();
         match self.0.error_for_status_ref() {
             Ok(response) => Ok(response),
-            Err(source) => Err(ResponseError { source, headers }),
+            Err(source) => Err(ResponseError {
+                source,
+                headers,
+                body: None,
+            }),
         }
     }
 
