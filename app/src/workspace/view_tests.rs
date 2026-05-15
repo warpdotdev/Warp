@@ -1,4 +1,5 @@
 use super::*;
+use crate::ai::blocklist::agent_view::orchestration_pill_bar_model::OrchestrationPillBarModel;
 use crate::ai::blocklist::{BlocklistAIHistoryModel, BlocklistAIPermissions};
 use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
@@ -135,6 +136,7 @@ fn initialize_app(app: &mut App) {
         )
     });
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+    app.add_singleton_model(|ctx| OrchestrationPillBarModel::new(Default::default(), ctx));
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
     app.add_singleton_model(|_| ActiveAgentViewsModel::new());
     app.add_singleton_model(AgentNotificationsModel::new);
@@ -2413,6 +2415,41 @@ fn test_vertical_tabs_panel_restored_open_when_show_in_restored_windows_enabled(
 }
 
 #[test]
+fn test_vertical_tabs_panel_closed_when_disabled_even_if_persisted_open() {
+    // Regression for #9505: when `vertical_tabs_panel_open=true` is persisted
+    // and the user then disables vertical tabs, restoring the workspace must
+    // not honor the stale snapshot — otherwise a dismiss underlay paints over
+    // the window and silently swallows every click.
+    let _vertical_tabs_guard = FeatureFlag::VerticalTabs.override_enabled(true);
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        // Snapshot the workspace with the panel open while vertical tabs are enabled.
+        app.update(|ctx| {
+            TabSettings::handle(ctx).update(ctx, |settings, ctx| {
+                report_if_error!(settings.use_vertical_tabs.set_value(true, ctx));
+            });
+        });
+        let workspace = mock_workspace(&mut app);
+        let open_snapshot = workspace.update(&mut app, |workspace, ctx| {
+            workspace.vertical_tabs_panel_open = true;
+            workspace.snapshot(ctx.window_id(), false, ctx)
+        });
+
+        // Disable vertical tabs, then restore. The panel must stay closed.
+        app.update(|ctx| {
+            TabSettings::handle(ctx).update(ctx, |settings, ctx| {
+                report_if_error!(settings.use_vertical_tabs.set_value(false, ctx));
+            });
+        });
+        let restored = restored_workspace(&mut app, open_snapshot);
+        restored.read(&app, |workspace, _| {
+            assert!(!workspace.vertical_tabs_panel_open);
+        });
+    });
+}
+
+#[test]
 fn test_vertical_tabs_panel_defaults_open_for_new_window_when_vertical_tabs_enabled() {
     let _vertical_tabs_guard = FeatureFlag::VerticalTabs.override_enabled(true);
 
@@ -2553,7 +2590,7 @@ fn test_pointer_opened_tab_configs_menu_does_not_select_top_item() {
         let workspace = mock_workspace(&mut app);
 
         workspace.update(&mut app, |workspace, ctx| {
-            workspace.toggle_new_session_dropdown_menu(Vector2F::zero(), false, ctx);
+            workspace.toggle_new_session_dropdown_menu(Vector2F::zero(), ctx);
 
             assert!(workspace.show_new_session_dropdown_menu.is_some());
             assert_eq!(

@@ -193,6 +193,7 @@ use warpui::platform::app::ApproveTerminateResult;
 use window_settings::WindowSettings;
 use workflows::manager::WorkflowManager;
 
+use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier;
 use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::ai::facts::manager::AIFactManager;
@@ -221,6 +222,7 @@ use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::notebooks::manager::NotebookManager;
 use crate::notebooks::CloudNotebook;
 use crate::palette::PaletteMode;
+use crate::persistence::model::AgentConversationData;
 use crate::persistence::PersistenceWriter;
 use crate::projects::ProjectManagementModel;
 use crate::server::cloud_objects::{listener::Listener, update_manager::UpdateManager};
@@ -1665,10 +1667,34 @@ pub(crate) fn initialize_app(
         )
     });
 
+    // Seed the orchestration pin set from persisted conversation data
+    // before the conversations vec is consumed by the singletons below.
+    // Each conversation's `AgentConversationData.pinned` is the source of
+    // truth; the singleton mirrors them in memory for fast cross-pane lookups.
+    let initial_pinned_conversations: HashSet<AIConversationId> = multi_agent_conversations
+        .iter()
+        .filter_map(|conv| {
+            let data =
+                serde_json::from_str::<AgentConversationData>(&conv.conversation.conversation_data)
+                    .ok()?;
+            if !data.pinned {
+                return None;
+            }
+            AIConversationId::try_from(conv.conversation.conversation_id.clone()).ok()
+        })
+        .collect();
     {
         let conversations = &multi_agent_conversations;
         ctx.add_singleton_model(move |_| BlocklistAIHistoryModel::new(ai_queries, conversations));
     }
+    // Cross-pane UI state for the orchestration pill bar. Registered
+    // after the history model since it subscribes to history events.
+    ctx.add_singleton_model(move |ctx| {
+        ai::blocklist::agent_view::orchestration_pill_bar_model::OrchestrationPillBarModel::new(
+            initial_pinned_conversations,
+            ctx,
+        )
+    });
     ctx.add_singleton_model(move |_| RestoredAgentConversations::new(multi_agent_conversations));
     ctx.add_singleton_model(|_| CLIAgentSessionsModel::new());
     // ActiveAgentViewsModel is used to track active agent conversations and notify listeners when they change.
@@ -2788,6 +2814,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::AgentModeComputerUse,
         #[cfg(feature = "local_computer_use")]
         FeatureFlag::LocalComputerUse,
+        #[cfg(feature = "local_claude_codex_child_harnesses")]
+        FeatureFlag::LocalClaudeCodexChildHarnesses,
         #[cfg(feature = "team_api_keys")]
         FeatureFlag::TeamApiKeys,
         #[cfg(feature = "cloud_conversations")]

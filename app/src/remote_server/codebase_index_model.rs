@@ -176,6 +176,7 @@ impl RemoteCodebaseIndexModel {
             | RemoteServerManagerEvent::DiffStateSnapshotReceived { .. }
             | RemoteServerManagerEvent::DiffStateMetadataUpdateReceived { .. }
             | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. }
+            | RemoteServerManagerEvent::GetBranchesResponse { .. }
             | RemoteServerManagerEvent::SetupStateChanged { .. }
             | RemoteServerManagerEvent::BinaryCheckComplete { .. }
             | RemoteServerManagerEvent::BinaryInstallComplete { .. }

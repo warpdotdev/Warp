@@ -31,6 +31,7 @@ pub use self::handoff_compose::{HandoffComposeState, HandoffComposeStateEvent};
 use crate::ai::active_agent_views_model::{ActiveAgentViewsModel, ConversationOrTaskId};
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::{AIAgentExchangeId, CancellationReason};
+use crate::ai::ambient_agents::telemetry::HandoffEntryPoint;
 use crate::ai::blocklist::agent_view::shortcuts::AgentShortcutViewModel;
 use crate::ai::blocklist::agent_view::{AgentViewEntryOrigin, EphemeralMessageModel};
 use crate::ai::blocklist::block::cli_controller::CLISubagentController;
@@ -112,7 +113,7 @@ use crate::ai::block_context::BlockContext;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::agent_view::agent_input_footer::sort_environments_by_recency;
 use crate::ai::blocklist::agent_view::{
-    AgentInputFooter, AgentInputFooterEvent, AgentViewController,
+    is_in_cloud_context, AgentInputFooter, AgentInputFooterEvent, AgentViewController,
 };
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::handoff::touched_repos::{
@@ -120,8 +121,6 @@ use crate::ai::blocklist::handoff::touched_repos::{
 };
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::handoff::{HandoffLaunchAttachments, PendingCloudLaunch};
-#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-use crate::ai::blocklist::is_local_to_cloud_handoff_available;
 use crate::ai::blocklist::AttachmentType;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::PendingAttachment;
@@ -1131,6 +1130,7 @@ pub enum Event {
     OpenShareSessionModal,
     StartRemoteControl,
     OpenHandoffEnvironmentCreationModal,
+    OpenCloudModeV2EnvironmentCreationModal,
 }
 
 pub enum InputState {
@@ -1218,6 +1218,9 @@ pub enum InputAction {
 
     /// Fired when the "Enable Figma MCP" contextual button is clicked.
     FigmaEnableButtonClicked,
+
+    /// Activates `&` cloud handoff compose mode from the message bar hint.
+    ActivateCloudHandoff,
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
@@ -2570,7 +2573,7 @@ impl Input {
                     ctx.emit(Event::OpenPluginInstructionsPane(*agent, *kind));
                 }
                 AgentInputFooterEvent::OpenHandoffPane => {
-                    me.activate_cloud_handoff_compose(ctx);
+                    me.activate_cloud_handoff_compose(HandoffEntryPoint::FooterChip, ctx);
                 }
             }
         });
@@ -3735,7 +3738,7 @@ impl Input {
         environment_id: Option<SyncId>,
         ctx: &mut ViewContext<Self>,
     ) {
-        self.activate_cloud_handoff_compose(ctx);
+        self.activate_cloud_handoff_compose(HandoffEntryPoint::Ampersand, ctx);
         self.editor.update(ctx, |editor, ctx| {
             editor.set_buffer_text(&launch.prompt, ctx);
         });
@@ -3768,7 +3771,11 @@ impl Input {
 
     /// Switches the input into cloud handoff compose mode, locking it to AI input
     /// and activating the handoff compose state.
-    fn activate_cloud_handoff_compose(&mut self, ctx: &mut ViewContext<Self>) {
+    fn activate_cloud_handoff_compose(
+        &mut self,
+        entry_point: HandoffEntryPoint,
+        ctx: &mut ViewContext<Self>,
+    ) {
         if self.prefix_mode(ctx) == InputPrefixMode::CloudHandoff {
             return;
         }
@@ -3787,7 +3794,7 @@ impl Input {
         });
 
         self.handoff_compose_state
-            .update(ctx, |state, ctx| state.activate(ctx));
+            .update(ctx, |state, ctx| state.activate(entry_point, ctx));
         self.is_editor_empty_on_last_edit = is_input_buffer_empty;
 
         #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
@@ -3835,6 +3842,11 @@ impl Input {
         );
     }
 
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    pub(crate) fn handoff_entry_point(&self, ctx: &AppContext) -> HandoffEntryPoint {
+        self.handoff_compose_state.as_ref(ctx).entry_point()
+    }
+
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pub(crate) fn exit_cloud_handoff_compose_and_clear(&mut self, ctx: &mut ViewContext<Self>) {
         self.exit_cloud_handoff_compose(ctx);
@@ -3875,11 +3887,22 @@ impl Input {
         edit_origin: &EditOrigin,
         ctx: &AppContext,
     ) -> bool {
+        let is_powershell_with_nld_enabled = self.editor.as_ref(ctx).shell_family()
+            == Some(ShellFamily::PowerShell)
+            && AISettings::as_ref(ctx).is_ai_autodetection_enabled(ctx);
+        let is_cloud = {
+            let terminal_model = self.model.lock();
+            is_in_cloud_context(
+                terminal_model.block_list().agent_view_state(),
+                &terminal_model,
+            )
+        };
         *edit_origin == EditOrigin::UserTyped
             && AISettings::as_ref(ctx).is_ampersand_handoff_enabled(ctx)
+            && !is_powershell_with_nld_enabled
             && FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(ctx).is_fullscreen()
-            && self.ambient_agent_view_model().is_none()
+            && !is_cloud
             && !CLIAgentSessionsModel::as_ref(ctx).is_input_open(self.terminal_view_id)
             && self.prefix_mode(ctx) == InputPrefixMode::None
     }
@@ -3923,8 +3946,9 @@ impl Input {
             );
         });
 
-        self.handoff_compose_state
-            .update(ctx, |state, ctx| state.activate(ctx));
+        self.handoff_compose_state.update(ctx, |state, ctx| {
+            state.activate(HandoffEntryPoint::Ampersand, ctx)
+        });
         self.is_editor_empty_on_last_edit = is_input_buffer_empty;
 
         #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
@@ -4007,7 +4031,9 @@ impl Input {
 
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn maybe_launch_cloud_handoff_request(&mut self, ctx: &mut ViewContext<Self>) -> bool {
-        if !is_local_to_cloud_handoff_available()
+        if !FeatureFlag::OzHandoff.is_enabled()
+            || !FeatureFlag::HandoffLocalCloud.is_enabled()
+            || !cfg!(all(feature = "local_fs", not(target_family = "wasm")))
             || self.prefix_mode(ctx) != InputPrefixMode::CloudHandoff
         {
             return false;
@@ -4029,6 +4055,7 @@ impl Input {
             .as_ref(ctx)
             .selected_environment_id()
             .cloned();
+        let entry_point = self.handoff_compose_state.as_ref(ctx).entry_point();
         let launch = PendingCloudLaunch {
             prompt,
             attachments,
@@ -4039,6 +4066,7 @@ impl Input {
         ctx.dispatch_typed_action_deferred(WorkspaceAction::OpenLocalToCloudHandoffPane {
             launch: Some(launch),
             environment_id,
+            entry_point,
         });
         true
     }
@@ -5791,6 +5819,10 @@ impl Input {
 
     pub fn editor(&self) -> &ViewHandle<EditorView> {
         &self.editor
+    }
+
+    pub(crate) fn ai_context_model(&self) -> &ModelHandle<BlocklistAIContextModel> {
+        &self.ai_context_model
     }
 
     pub fn buffer_text(&self, ctx: &AppContext) -> String {
@@ -10445,8 +10477,12 @@ impl Input {
                                     .and_then(|pwd| {
                                         // Find git repo and construct absolute path
                                         use repo_metadata::repositories::DetectedRepositories;
+                                        use warp_util::local_or_remote_path::LocalOrRemotePath;
                                         let git_repo_path = DetectedRepositories::as_ref(ctx)
-                                            .get_root_for_path(Path::new(pwd))?;
+                                            .get_root_for_path(&LocalOrRemotePath::Local(
+                                                Path::new(pwd).to_path_buf(),
+                                            ))
+                                            .and_then(|r| PathBuf::try_from(r).ok())?;
                                         let absolute_path = git_repo_path.join(file_path);
 
                                         // Try to get relative path if it's shorter
@@ -12709,6 +12745,19 @@ impl Input {
                 let prompt = command.trim().to_owned();
                 if prompt.is_empty() {
                     return;
+                }
+
+                if self.is_cloud_mode_input_v2_composing(ctx) {
+                    if let Some(ambient_agent_view_model) = self.ambient_agent_view_model() {
+                        let needs_env_modal = ambient_agent_view_model
+                            .as_ref(ctx)
+                            .selected_environment_id()
+                            .is_none();
+                        if needs_env_modal {
+                            ctx.emit(Event::OpenCloudModeV2EnvironmentCreationModal);
+                            return;
+                        }
+                    }
                 }
 
                 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
@@ -15033,6 +15082,9 @@ impl TypedActionView for Input {
             }
             InputAction::ClearAttachedContext => {
                 self.clear_attached_context(ctx);
+            }
+            InputAction::ActivateCloudHandoff => {
+                self.activate_cloud_handoff_compose(HandoffEntryPoint::Ampersand, ctx);
             }
         }
     }

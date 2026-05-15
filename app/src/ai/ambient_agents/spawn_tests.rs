@@ -166,6 +166,7 @@ async fn followup_terminal_failure_surfaces_status_message() {
             let mut task = task_with(AmbientAgentTaskState::Error, None, None);
             task.status_message = Some(TaskStatusMessage {
                 message: "failed to provision runtime".to_string(),
+                error_code: None,
             });
             Ok(task)
         });

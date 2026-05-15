@@ -6,6 +6,7 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use warp_core::features::FeatureFlag;
+use warp_util::local_or_remote_path::LocalOrRemotePath;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use crate::{
@@ -75,7 +76,9 @@ impl FileBasedMCPManager {
         cwd: &Path,
         app: &AppContext,
     ) -> Vec<&TemplatableMCPServerInstallation> {
-        let repo_root = DetectedRepositories::as_ref(app).get_root_for_path(cwd);
+        let repo_root = DetectedRepositories::as_ref(app)
+            .get_root_for_path(&LocalOrRemotePath::Local(cwd.to_path_buf()))
+            .and_then(|r| PathBuf::try_from(r).ok());
         let candidate_roots = [dirs::home_dir(), repo_root];
 
         let mut servers = Vec::new();
