@@ -125,6 +125,9 @@ pub struct Menu<A: Action + Clone = ()> {
     /// Optional overrides for the depth-0 menu content padding.
     content_top_padding_override: Option<f32>,
     content_bottom_padding_override: Option<f32>,
+    /// Optional override for the menu surface background. Defaults to
+    /// `theme.surface_2()`.
+    background: Option<Fill>,
     /// If false, selecting a menu item updates selection and emits menu events
     /// without dispatching the item's typed action directly from the menu.
     dispatch_item_actions: bool,
@@ -2144,6 +2147,7 @@ impl<A: Action + Clone> Menu<A> {
             pinned_header_builder: None,
             content_top_padding_override: None,
             content_bottom_padding_override: None,
+            background: None,
             dispatch_item_actions: true,
         }
     }
@@ -2269,6 +2273,10 @@ impl<A: Action + Clone> Menu<A> {
     ) {
         self.content_top_padding_override = top_padding;
         self.content_bottom_padding_override = bottom_padding;
+    }
+
+    pub fn set_background(&mut self, background: Option<Fill>) {
+        self.background = background;
     }
 
     pub fn set_height(&mut self, height: f32) {
@@ -2616,13 +2624,13 @@ impl<A: Action + Clone> SubMenu<A> {
         pinned_header_builder: Option<&PinnedHeaderBuilder>,
         content_top_padding_override: Option<f32>,
         content_bottom_padding_override: Option<f32>,
+        background: Option<Fill>,
         app: &AppContext,
     ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let selected_row_index = self.selected_row_index;
         let selected_item_index = self.selected_item_index;
-
-        let background_color = appearance.theme().surface_2();
+        let background_color = background.unwrap_or_else(|| appearance.theme().surface_2());
         let submenus = self.render_submenus(
             submenu_width,
             background_color,
@@ -2794,6 +2802,7 @@ impl<A: Action + Clone> View for Menu<A> {
             self.pinned_header_builder.as_deref(),
             self.content_top_padding_override,
             self.content_bottom_padding_override,
+            self.background,
             app,
         )
     }

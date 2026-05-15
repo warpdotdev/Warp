@@ -22,6 +22,7 @@ use warpui::{
 use crate::{
     appearance::Appearance,
     menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields, MenuVariant},
+    themes::theme::Fill as ThemeFill,
 };
 
 pub const TOP_MENU_BAR_HEIGHT: f32 = 30.;
@@ -269,6 +270,13 @@ where
 
     pub fn set_background(&mut self, background: Fill, ctx: &mut ViewContext<Self>) {
         self.background = Some(background);
+        ctx.notify();
+    }
+    pub fn set_menu_background(&mut self, background: ThemeFill, ctx: &mut ViewContext<Self>) {
+        self.dropdown.update(ctx, |menu, ctx| {
+            menu.set_background(Some(background));
+            ctx.notify();
+        });
         ctx.notify();
     }
 
