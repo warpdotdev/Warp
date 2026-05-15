@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use warp_cli::agent::Harness;
 use warp_graphql::managed_secrets::ManagedSecretType;
 use warp_managed_secrets::ManagedSecretValue;
@@ -88,13 +88,13 @@ static CODEX_AUTH_SECRET_TYPES: [AuthSecretTypeInfo; 1] = [AuthSecretTypeInfo {
     fields: &[
         AuthSecretTypeField {
             label: "OPENAI_API_KEY",
-            placeholder: None,
+            placeholder: Some("OpenAI API key"),
             optional: false,
             sensitive: true,
         },
         AuthSecretTypeField {
             label: "BASE_URL",
-            placeholder: Some("BASE_URL (e.g. https://us.api.openai.com/v1)"),
+            placeholder: Some("Base URL (e.g. https://us.api.openai.com/v1)"),
             optional: true,
             sensitive: false,
         },
@@ -107,7 +107,7 @@ static CLAUDE_AUTH_SECRET_TYPES: [AuthSecretTypeInfo; 3] = [
         secret_type: ManagedSecretType::AnthropicApiKey,
         fields: &[AuthSecretTypeField {
             label: "ANTHROPIC_API_KEY",
-            placeholder: None,
+            placeholder: Some("Anthropic API key"),
             optional: false,
             sensitive: true,
         }],
@@ -118,13 +118,13 @@ static CLAUDE_AUTH_SECRET_TYPES: [AuthSecretTypeInfo; 3] = [
         fields: &[
             AuthSecretTypeField {
                 label: "AWS_BEARER_TOKEN_BEDROCK",
-                placeholder: None,
+                placeholder: Some("Bedrock API key"),
                 optional: false,
                 sensitive: true,
             },
             AuthSecretTypeField {
                 label: "AWS_REGION",
-                placeholder: None,
+                placeholder: Some("AWS region"),
                 optional: false,
                 sensitive: false,
             },
@@ -136,25 +136,25 @@ static CLAUDE_AUTH_SECRET_TYPES: [AuthSecretTypeInfo; 3] = [
         fields: &[
             AuthSecretTypeField {
                 label: "AWS_ACCESS_KEY_ID",
-                placeholder: None,
+                placeholder: Some("AWS access key ID"),
                 optional: false,
                 sensitive: true,
             },
             AuthSecretTypeField {
                 label: "AWS_SECRET_ACCESS_KEY",
-                placeholder: None,
+                placeholder: Some("AWS secret access key"),
                 optional: false,
                 sensitive: true,
             },
             AuthSecretTypeField {
                 label: "AWS_SESSION_TOKEN",
-                placeholder: None,
+                placeholder: Some("AWS session token"),
                 optional: true,
                 sensitive: true,
             },
             AuthSecretTypeField {
                 label: "AWS_REGION",
-                placeholder: None,
+                placeholder: Some("AWS region"),
                 optional: false,
                 sensitive: false,
             },
