@@ -78,6 +78,7 @@ mod main_page;
 pub mod mcp_servers;
 pub mod mcp_servers_page;
 mod nav;
+mod network_page;
 pub mod pane_manager;
 // OpenWarp Wave 3-1:`platform` / `platform_page` 随 `OzCloudAPIKeys` settings 入口 +
 // Warp Inc 云端 API key 管理 UI 一同物理删。
@@ -184,6 +185,8 @@ pub enum SettingsSection {
     AgentProviders,
     Knowledge,
     ThirdPartyCLIAgents,
+    /// 全局 HTTP 代理设置页。受 `FeatureFlag::HttpProxySettings` 门控。
+    Network,
     /// Internal backing-page identifier for CodeSettingsPageView. EditorAndCodeReview
     /// is currently the only sub-page label, but we keep `Code` as the backing-page
     /// key so that page lookup still works after the LSP-management subpage was
@@ -221,8 +224,12 @@ impl Display for SettingsSection {
             SettingsSection::Code => crate::t!("settings-section-code"),
             SettingsSection::EditorAndCodeReview => {
                 crate::t!("settings-section-editor-and-code-review")
-            } // OpenWarp Wave 3-1:`OzCloudAPIKeys` Display arm 随 variant 一同物理删。
-              // OpenWarp Wave 7-3:`CloudEnvironments` Display arm 随 variant 物理删。
+            }
+            // 代理设置页面。由于 t! 宏依赖 i18n bundle,先用硬码中文;
+            // 有 i18n key 后可换成 crate::t!("settings-section-network")。
+            SettingsSection::Network => "网络".to_string(),
+            // OpenWarp Wave 3-1:`OzCloudAPIKeys` Display arm 随 variant 一同物理删。
+            // OpenWarp Wave 7-3:`CloudEnvironments` Display arm 随 variant 物理删。
         };
         write!(f, "{s}")
     }
@@ -299,6 +306,7 @@ impl FromStr for SettingsSection {
             "Knowledge" => Ok(Self::Knowledge),
             "Third party CLI agents" | "ThirdPartyCLIAgents" => Ok(Self::ThirdPartyCLIAgents),
             "Editor and Code Review" | "EditorAndCodeReview" => Ok(Self::EditorAndCodeReview),
+            "Network" | "网络" => Ok(Self::Network),
             // OpenWarp Wave 3-1:`OzCloudAPIKeys` 随 UI 一同物理删。
             // OpenWarp Wave 7-3:`CloudEnvironments` FromStr arm 随 variant 物理删。
             _ => Err(()),
@@ -918,6 +926,8 @@ macro_rules! update_page {
             SettingsPageViewHandle::Code(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::MCPServers(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::WarpDrive(handle) => $ctx.update_view(handle, $update),
+            // Issue #72: 全局 HTTP 代理设置页。
+            SettingsPageViewHandle::Network(handle) => $ctx.update_view(handle, $update),
         }
     };
 }
@@ -1027,6 +1037,10 @@ impl SettingsView {
             me.handle_mcp_servers_page_event(event, ctx);
         });
 
+        // Network (HTTP 代理) 设置页。受 FeatureFlag::HttpProxySettings 门控。
+        let network_page_handle =
+            ctx.add_typed_action_view(network_page::NetworkPageView::new);
+
         let font_family = Appearance::as_ref(ctx).ui_font_family();
         let search_editor = ctx.add_typed_action_view(|ctx| {
             let options = SingleLineEditorOptions {
@@ -1072,6 +1086,11 @@ impl SettingsView {
             SettingsPage::new(about_page_handle),
         ]);
 
+        // 仅在 flag 启用时装配 Network page。
+        if warp_core::features::FeatureFlag::HttpProxySettings.is_enabled() {
+            settings_pages.push(SettingsPage::new(network_page_handle));
+        }
+
         // 去中心化分支:本地模式下移除所有云端账号 / 计费 / 团队 / 同步 / 分享相关的
         // 设置入口。
         let mut nav_items = vec![
@@ -1086,6 +1105,15 @@ impl SettingsView {
             SettingsNavItem::Page(SettingsSection::Warpify),
             SettingsNavItem::Page(SettingsSection::About),
         ];
+
+        // 仅在 flag 启用时在侧栏加 Network 页。插在 About 之前。
+        if warp_core::features::FeatureFlag::HttpProxySettings.is_enabled() {
+            let about_pos = nav_items
+                .iter()
+                .position(|i| matches!(i, SettingsNavItem::Page(SettingsSection::About)))
+                .unwrap_or(nav_items.len());
+            nav_items.insert(about_pos, SettingsNavItem::Page(SettingsSection::Network));
+        }
 
         // Resolve the initial page: map internal backing-page sections to their default subpage.
         let initial_page = match page {
@@ -1683,6 +1711,8 @@ impl SettingsView {
             SettingsPageViewHandle::MCPServers(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Code(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::WarpDrive(v) => v.as_ref(app).should_render(app),
+            // Issue #72: 全局 HTTP 代理设置页。
+            SettingsPageViewHandle::Network(v) => v.as_ref(app).should_render(app),
         }
     }
 

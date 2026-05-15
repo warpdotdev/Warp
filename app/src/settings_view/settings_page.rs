@@ -14,6 +14,7 @@ use super::{
     keybindings::KeybindingsView,
     main_page::MainSettingsPageView,
     mcp_servers_page::MCPServersSettingsPageView,
+    network_page::NetworkPageView,
     warp_drive_page::WarpDriveSettingsPageView,
     warpify_page::WarpifyPageView,
     SettingsSection,
@@ -112,6 +113,8 @@ pub enum SettingsPageViewHandle {
     AI(ViewHandle<AISettingsPageView>),
     MCPServers(ViewHandle<MCPServersSettingsPageView>),
     WarpDrive(ViewHandle<WarpDriveSettingsPageView>),
+    /// 全局 HTTP 代理设置页。
+    Network(ViewHandle<NetworkPageView>),
 }
 
 impl SettingsPageViewHandle {
@@ -131,6 +134,7 @@ impl SettingsPageViewHandle {
             AI(view_handle) => ChildView::new(view_handle).finish(),
             MCPServers(view_handle) => ChildView::new(view_handle).finish(),
             WarpDrive(view_handle) => ChildView::new(view_handle).finish(),
+            Network(view_handle) => ChildView::new(view_handle).finish(),
         }
     }
 }
