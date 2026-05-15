@@ -224,3 +224,74 @@ fn simple_logger_without_rotation_does_not_rotate_even_at_high_volume() {
         let _ = std::fs::remove_dir_all(parent);
     }
 }
+
+/// When `perform_rotation` fails (e.g. the rename of the active file to its
+/// `.1` slot fails because that path is occupied by a non-empty directory),
+/// the active log content must survive. Previously the callback fell through
+/// to `open_truncated`, which destroyed the data rotation was meant to
+/// preserve. The fix opens append-mode on failure and seeds the byte counter
+/// from the existing file size.
+#[test]
+fn simple_logger_rotation_failure_preserves_active_log_content() {
+    let mut manager = LogManager::new();
+    let executor = Arc::new(Background::default());
+    let dir = temp_path("rotation-failure-preserves");
+    let log_path = dir.join("server.log");
+
+    // Pre-stage `server.log.1` as a non-empty directory so the rename in
+    // `perform_rotation` (step 3) will fail with a real I/O error rather than
+    // succeed. This is the only error path the rotation callback observes.
+    //
+    // Use `max_rotation = 1` so step 2's "shift older slots up" loop is empty
+    // (`1..1` is empty) — otherwise step 2 would silently rename the blocking
+    // directory out of the way before step 3 ran.
+    let blocked_target = path_with_suffix(&log_path, 1);
+    std::fs::create_dir_all(&blocked_target).expect("create blocking dir");
+    std::fs::write(blocked_target.join("placeholder"), b"sentinel").expect("populate blocking dir");
+
+    let rotation = RotationConfig::new(256, 1).expect("config should construct");
+    let logger = manager
+        .register_resolved_path(log_path.clone(), executor.clone(), Some(rotation))
+        .expect("registration should succeed");
+
+    // Write enough to push past the 256-byte threshold and trigger rotation.
+    for i in 0..10 {
+        logger.log(format!(
+            "log line {i} padded out so each entry is comfortably over fifty bytes"
+        ));
+    }
+    logger.close();
+    drop(logger);
+
+    // After draining, the active log must still exist and contain the
+    // pre-rotation content (because rotation could not move it aside). The
+    // blocking directory must also still be intact — rotation didn't somehow
+    // clobber it.
+    wait_for(2000, "active log to flush", || {
+        std::fs::metadata(&log_path)
+            .ok()
+            .filter(|m| m.len() > 0)
+            .map(|_| ())
+    });
+
+    let preserved = std::fs::read_to_string(&log_path).expect("read active log");
+    assert!(
+        preserved.contains("log line"),
+        "active log content must be preserved when rotation fails; got: {preserved:?}",
+    );
+
+    assert!(
+        blocked_target.is_dir(),
+        "blocking directory must remain intact after failed rotation",
+    );
+    assert!(
+        blocked_target.join("placeholder").is_file(),
+        "blocking directory's contents must be unchanged",
+    );
+
+    let _ = std::fs::remove_file(&log_path);
+    let _ = std::fs::remove_dir_all(&blocked_target);
+    if let Some(parent) = log_path.parent() {
+        let _ = std::fs::remove_dir_all(parent);
+    }
+}
