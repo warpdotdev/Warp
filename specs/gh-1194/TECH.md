@@ -63,10 +63,17 @@ fn load_translations() -> Translations {
 `load_dir` reads all `.yml`/`.yaml` files in a directory, parses them with `serde_yaml`, identifies the locale from the top-level key, and recursively flattens nested YAML into dot-separated keys via `flatten_value`.
 
 **File discovery order** (non-WASM):
-1. `$WARP_LOCALES_DIR` env var (if set). **Trust boundary:** this path is an override for development and testing only. The implementation must gate this path behind `#[cfg(debug_assertions)]` or an equivalent compile-time check so it is never compiled into release/production binaries. In shipped builds, the bundled resources path (priority 2) is the sole source of locale files. No integrity validation is performed on locale files loaded from this path; if a file is malformed (e.g., invalid YAML, wrong locale key), it is silently skipped and the next discovery path is tried.
-2. Platform bundled resources: `<exe_dir>/resources/bundled/locales`
-3. `$CARGO_MANIFEST_DIR/../resources/bundled/locales` (and up to 4 ancestor levels)
-4. `$PWD/resources/bundled/locales`
+
+Release builds (`#[cfg(not(debug_assertions))]`) only search the platform bundled resources path. Dev builds add the following higher-priority paths for rapid iteration:
+
+| Priority | Path | Gate |
+|----------|------|------|
+| 1 | `$WARP_LOCALES_DIR` env var | `#[cfg(debug_assertions)]` |
+| 2 | Platform bundled resources: `<exe_dir>/resources/bundled/locales` | Always enabled |
+| 3 | `$CARGO_MANIFEST_DIR/../resources/bundled/locales` (and up to 4 ancestor levels) | `#[cfg(debug_assertions)]` |
+| 4 | `$PWD/resources/bundled/locales` | `#[cfg(debug_assertions)]` |
+
+**Security:** Paths 1, 3, and 4 are compiled out of release binaries. This prevents shipped builds from loading arbitrary YAML from environment variables or the current working directory into the startup parsing and UI rendering pipeline. If a file loaded from a dev-only path is malformed (e.g., invalid YAML, wrong locale key), it is silently skipped and the next discovery path is tried — the application does not crash.
 
 ### 2. `t!()` macro (defined in `app/src/lib.rs`)
 
@@ -100,7 +107,7 @@ match i18n::t("some.key") {
 
 The match guard `value if value == key` detects when `t()` returned the key itself (translation missing). In that case, the key string is returned as `Cow::Owned` — interpolation is skipped because there is no template to interpolate into.
 
-A duplicate `t!()` macro exists in `crates/onboarding/src/lib.rs` so the onboarding binary can use translations without depending on the full `app` crate.
+A duplicate `t!()` macro exists in `crates/onboarding/src/lib.rs` so the onboarding binary can use translations without depending on the full `app` crate. The two macros are structurally identical — same three match arms, same fallback logic, same interpolation semantics. The only difference is the function reference: `$crate::i18n::t` in the app crate vs `warp_i18n::t` in onboarding. When changes to the macro are needed, both copies must be updated in the same commit. A code comment at each macro location references the other copy's file path to prevent drift.
 
 ### 3. Locale files
 

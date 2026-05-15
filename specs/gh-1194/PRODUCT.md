@@ -35,12 +35,13 @@ Warp's UI is entirely hardcoded in English. Non-English-speaking developers must
     - Any locale starting with `"zh"` (e.g., `zh-CN`, `zh-TW`, `zh-HK`, `zh`) resolves to `zh-CN` (Simplified Chinese). This is an intentional simplification: zh-CN is the only Chinese locale shipped, so all Chinese-language systems receive Simplified Chinese.
     - All other locales — including explicit non-Chinese values of `WARP_LANG` — resolve to `en` (English).
     - The explicit `WARP_LANG` override is NOT passed through as a raw locale string. Setting `WARP_LANG=fr` results in `en`, not `fr`.
+    - The `WARP_LANG` variable takes precedence over system locale only when its value starts with `"zh"`. On a Chinese-system machine (where the OS locale is `zh-CN`), setting `WARP_LANG=fr` still yields `en`; unsetting `WARP_LANG` restores `zh-CN`.
 
 1.3. The application ships with exactly two locale files: `en.yml` and `zh-CN.yml`.
 
 ### 2. Translation rendering
 
-2.1. Every user-facing text string in the Warp UI is wrapped in a translation call (`t!()` macro in Rust source). English strings serve as both the translation key and the fallback value — the lookup key is a dot-separated path into a YAML locale file.
+2.1. Every user-facing text string in the Warp UI is translated via the `t!("dot.path")` macro. The argument to `t!()` is a dot-separated path into a YAML locale file — this path is the lookup key. The English value at that path in `en.yml` serves as the fallback text when no translation exists for the active locale. The Chinese value at the same path in `zh-CN.yml` is shown when zh-CN is active.
 
 2.2. When a translation is requested for a given key:
     1. The active locale file is checked first.
