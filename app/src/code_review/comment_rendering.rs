@@ -3,7 +3,6 @@
 //! These functions are used by both the `CommentListView` (in the code review panel)
 //! and the blocklist's imported comments rendering.
 
-use std::path::Path;
 use std::rc::Rc;
 
 use chrono::{Duration, Local};
@@ -230,7 +229,7 @@ fn render_comment_text_section(
 /// highlighting is set based on the file path.
 fn create_static_diff_content_editor<V: View>(
     content: &LineDiffContent,
-    file_path: Option<&Path>,
+    file_path: Option<&LocalOrRemotePath>,
     ctx: &mut ViewContext<V>,
 ) -> ViewHandle<CodeEditorView> {
     let editor = ctx.add_typed_action_view(|ctx| {
@@ -254,7 +253,8 @@ fn create_static_diff_content_editor<V: View>(
         let state = InitialBufferState::plain_text(original_text.trim());
         view.reset(state, ctx);
         if let Some(file_path) = file_path {
-            view.set_language_with_path(file_path, ctx);
+            let language_path = file_path.path_component();
+            view.set_language_with_path(&language_path, ctx);
         }
     });
     editor
@@ -336,10 +336,9 @@ impl CommentViewCard {
         } = &comment.target
         {
             if always_use_static_diff || comment.outdated {
-                let language_path = absolute_file_path.path_component().to_local_path();
                 Some(CommentDiffContent::StaticEditor(
                     // Language detection only needs the path component (extension).
-                    create_static_diff_content_editor(content, language_path.as_deref(), ctx),
+                    create_static_diff_content_editor(content, Some(absolute_file_path), ctx),
                 ))
             } else {
                 Some(CommentDiffContent::EditorLens)

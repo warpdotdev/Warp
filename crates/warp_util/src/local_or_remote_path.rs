@@ -131,6 +131,27 @@ impl From<RemotePath> for LocalOrRemotePath {
     }
 }
 
+impl TryFrom<LocalOrRemotePath> for PathBuf {
+    type Error = RemotePath;
+
+    fn try_from(location: LocalOrRemotePath) -> Result<Self, Self::Error> {
+        match location {
+            LocalOrRemotePath::Local(path) => Ok(path),
+            LocalOrRemotePath::Remote(remote) => Err(remote),
+        }
+    }
+}
+
+impl TryFrom<&LocalOrRemotePath> for PathBuf {
+    type Error = ();
+
+    fn try_from(location: &LocalOrRemotePath) -> Result<Self, Self::Error> {
+        match location {
+            LocalOrRemotePath::Local(path) => Ok(path.clone()),
+            LocalOrRemotePath::Remote(_) => Err(()),
+        }
+    }
+}
 #[cfg(test)]
 #[path = "local_or_remote_path_tests.rs"]
 mod tests;

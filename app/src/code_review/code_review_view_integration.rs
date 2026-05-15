@@ -366,7 +366,7 @@ impl CodeReviewView {
         let editor = if let Some(editor) = self.editor_for_path(&local_path, ctx) {
             editor
         } else {
-            let absolute_path = self.repo_path()?.join(path);
+            let absolute_path = self.repo_path()?.join(&path.to_string_lossy());
             self.editor_for_path(&absolute_path, ctx)?
         };
         let text = editor

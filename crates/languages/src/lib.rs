@@ -1,7 +1,6 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
-    path::Path,
     sync::{Arc, Mutex},
 };
 
@@ -10,6 +9,7 @@ use lazy_static::lazy_static;
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use warp_editor::content::text::IndentUnit;
+use warp_util::standardized_path::StandardizedPath;
 
 #[derive(RustEmbed)]
 #[folder = "grammars"]
@@ -113,9 +113,9 @@ pub fn language_by_name(name: &str) -> Option<Arc<Language>> {
 }
 
 /// Find the corresponding language entry by the filename.
-pub fn language_by_filename(path: &Path) -> Option<Arc<Language>> {
+pub fn language_by_filename(path: &StandardizedPath) -> Option<Arc<Language>> {
     // First check for specific filenames that don't use extensions.
-    if let Some(filename) = path.file_name().and_then(|name| name.to_str()) {
+    if let Some(filename) = path.file_name() {
         match filename {
             // Bash config files
             ".bashrc" | ".bash_profile" => {
@@ -142,7 +142,7 @@ pub fn language_by_filename(path: &Path) -> Option<Arc<Language>> {
         }
     }
 
-    let extension = path.extension()?.to_str()?;
+    let extension = path.extension()?;
     match extension {
         "rs" => language_by_name("rust"),
         "go" => language_by_name("golang"),

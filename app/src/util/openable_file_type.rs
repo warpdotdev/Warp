@@ -5,6 +5,7 @@ use crate::util::file::external_editor::{settings::EditorChoice, Editor, EditorS
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 pub use warp_util::file_type::{is_binary_file, is_file_content_binary, is_markdown_file};
+use warp_util::standardized_path::StandardizedPath;
 
 #[derive(
     Debug,
@@ -60,7 +61,14 @@ pub enum FileTarget {
 #[cfg(feature = "local_fs")]
 pub fn is_supported_code_file(path: impl AsRef<Path>) -> bool {
     let path = path.as_ref();
-    languages::language_by_filename(path).is_some()
+    let standardized_path = if path.is_absolute() {
+        StandardizedPath::try_from_local(path).ok()
+    } else {
+        StandardizedPath::try_new(&format!("/{}", path.to_string_lossy())).ok()
+    };
+    standardized_path
+        .and_then(|path| languages::language_by_filename(&path))
+        .is_some()
 }
 
 #[cfg(not(feature = "local_fs"))]

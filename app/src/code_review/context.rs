@@ -5,10 +5,10 @@ use warp_editor::render::model::LineCount;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
-        use std::path::Path;
         use crate::ai::agent::{AIAgentAttachment, CurrentHead, DiffBase};
         use crate::ai::blocklist::BlocklistAIContextModel;
         use crate::code_review::{diff_state::DiffMode, DiffSetScope};
+        use warp_util::standardized_path::StandardizedPath;
         use warpui::{AppContext, ModelHandle};
     }
 }
@@ -73,7 +73,7 @@ pub fn create_attachment_reference_and_key(
     scope: &DiffSetScope,
     diff_mode: &DiffMode,
     main_branch_name: Option<&str>,
-    repo_path: &Path,
+    repo_path: &StandardizedPath,
 ) -> (String, String) {
     match scope {
         DiffSetScope::All => {
@@ -91,15 +91,14 @@ pub fn create_attachment_reference_and_key(
             (format!("<change:{key}>"), key)
         }
         DiffSetScope::File(file_path) => {
-            let relative_path = if file_path.is_absolute() {
-                file_path
-                    .strip_prefix(repo_path)
-                    .unwrap_or(file_path)
-                    .to_path_buf()
+            let key = if file_path.is_absolute() {
+                StandardizedPath::try_from_local(file_path)
+                    .ok()
+                    .and_then(|path| path.strip_prefix(repo_path).map(str::to_owned))
+                    .unwrap_or_else(|| file_path.display().to_string())
             } else {
-                file_path.clone()
+                file_path.display().to_string()
             };
-            let key = relative_path.display().to_string();
             (format!("<change:{key}>"), key)
         }
     }

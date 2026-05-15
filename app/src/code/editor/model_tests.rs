@@ -1,9 +1,9 @@
 use futures::channel::oneshot;
-use std::path::Path;
 use vec1::vec1;
 use warp_editor::content::buffer::{InitialBufferState, SelectionOffsets};
 use warp_editor::multiline::MultilineString;
 use warp_util::content_version::ContentVersion;
+use warp_util::standardized_path::StandardizedPath;
 use warpui::App;
 
 use crate::{
@@ -24,7 +24,8 @@ fn mock_model(app: &mut App, text: &str, version: ContentVersion) -> ModelHandle
         let mut model = CodeEditorModel::new(styles, None, false, None, ctx);
         let state = InitialBufferState::plain_text(text).with_version(version);
         model.reset_content(state, ctx);
-        model.set_language_with_path(Path::new("test.rs"), ctx);
+        let path = StandardizedPath::try_new("/test.rs").expect("test path should be absolute");
+        model.set_language_with_path(&path, ctx);
         model
     })
 }
@@ -40,7 +41,8 @@ fn mock_model_with_diff(
         let mut model = CodeEditorModel::new(styles, None, false, None, ctx);
         let state = InitialBufferState::plain_text(current_text).with_version(version);
         model.reset_content(state, ctx);
-        model.set_language_with_path(Path::new("test.rs"), ctx);
+        let path = StandardizedPath::try_new("/test.rs").expect("test path should be absolute");
+        model.set_language_with_path(&path, ctx);
 
         // Set up diff model with base text
         model.diff().update(ctx, |diff, _| {

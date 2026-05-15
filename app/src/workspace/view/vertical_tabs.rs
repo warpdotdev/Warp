@@ -66,6 +66,7 @@ use warp_core::ui::color::coloru_with_opacity;
 use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::{AnsiColorIdentifier, Fill as WarpThemeFill, WarpTheme};
 use warp_core::ui::Icon as WarpIcon;
+use warp_util::standardized_path::StandardizedPath;
 use warpui::elements::DispatchEventResult;
 use warpui::elements::{
     resizable_state_handle, Border, ChildAnchor, Clipped, ClippedScrollStateHandle,
@@ -5844,7 +5845,10 @@ fn render_warp_drive_object_detail_section(
 }
 
 fn code_detail_kind_label(file_name: &str) -> Option<String> {
-    language_by_filename(Path::new(file_name)).map(|language| language.display_name().to_string())
+    StandardizedPath::try_new(&format!("/{file_name}"))
+        .ok()
+        .and_then(|path| language_by_filename(&path))
+        .map(|language| language.display_name().to_string())
 }
 
 fn typed_pane_warp_drive_object_type(typed: &TypedPane<'_>) -> Option<DriveObjectType> {

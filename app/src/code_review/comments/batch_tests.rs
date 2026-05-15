@@ -112,15 +112,11 @@ fn file_and_line_queries_filter_by_suffix() {
         });
 
         model.read(&app, |batch, _| {
-            let file_comments: Vec<_> = batch
-                .file_comments(std::path::Path::new("src/lib.rs"))
-                .collect();
+            let file_path = LocalOrRemotePath::Local(PathBuf::from("/repo/src/lib.rs"));
+            let file_comments: Vec<_> = batch.file_comments(&file_path).collect();
             assert_eq!(file_comments.len(), 1);
             assert_eq!(file_comments[0].content, "a");
-
-            let line_numbers: Vec<_> = batch
-                .comment_line_numbers_for_file(std::path::Path::new("src/lib.rs"))
-                .collect();
+            let line_numbers: Vec<_> = batch.comment_line_numbers_for_file(&file_path).collect();
             assert_eq!(line_numbers, vec![LineCount::from(3)]);
         });
     });
@@ -149,8 +145,9 @@ fn editor_comments_for_file_includes_only_line_comments() {
         });
 
         model.read(&app, |batch, _| {
-            let editor_comments =
-                batch.editor_comments_for_file(std::path::Path::new("src/lib.rs"));
+            let editor_comments = batch.editor_comments_for_file(&LocalOrRemotePath::Local(
+                PathBuf::from("/repo/src/lib.rs"),
+            ));
             assert_eq!(editor_comments.len(), 1);
             assert_eq!(editor_comments[0].id, comment_a.id);
             assert_eq!(editor_comments[0].comment_content, "a");

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use chrono::Local;
@@ -13,6 +13,7 @@ use super::{
     build_selection_substring_prompt, CLIAgent, UBER_TEAM_UID,
 };
 use crate::ai::agent::{AgentReviewCommentBatch, DiffSetHunk};
+use crate::code::buffer_location::LocalOrRemotePath;
 use crate::code::editor::line::EditorLineLocation;
 use crate::code_review::comments::{
     AttachedReviewComment, AttachedReviewCommentTarget, CommentOrigin, LineDiffContent,
@@ -60,6 +61,10 @@ fn batch(comments: Vec<AttachedReviewComment>) -> AgentReviewCommentBatch {
     }
 }
 
+fn local_path(path: &str) -> LocalOrRemotePath {
+    LocalOrRemotePath::Local(path.into())
+}
+
 // ---------------------------------------------------------------------------
 // build_review_prompt tests
 // ---------------------------------------------------------------------------
@@ -70,7 +75,7 @@ fn test_build_review_prompt_current_line_is_1_indexed() {
     let comment = make_comment(
         "fix this",
         AttachedReviewCommentTarget::Line {
-            absolute_file_path: PathBuf::from("/repo/src/main.rs"),
+            absolute_file_path: local_path("/repo/src/main.rs"),
             line: EditorLineLocation::Current {
                 line_number: LineCount::from(0),
                 line_range: LineCount::from(0)..LineCount::from(1),
@@ -92,7 +97,7 @@ fn test_build_review_prompt_removed_line_is_1_indexed() {
     let comment = make_comment(
         "why was this deleted?",
         AttachedReviewCommentTarget::Line {
-            absolute_file_path: PathBuf::from("/repo/old.rs"),
+            absolute_file_path: local_path("/repo/old.rs"),
             line: EditorLineLocation::Removed {
                 line_number: LineCount::from(9),
                 line_range: LineCount::from(9)..LineCount::from(10),
@@ -114,7 +119,7 @@ fn test_build_review_prompt_collapsed_range_is_1_indexed_start() {
     let comment = make_comment(
         "check this hunk",
         AttachedReviewCommentTarget::Line {
-            absolute_file_path: PathBuf::from("/repo/lib.rs"),
+            absolute_file_path: local_path("/repo/lib.rs"),
             line: EditorLineLocation::Collapsed {
                 line_range: LineCount::from(4)..LineCount::from(10),
             },
@@ -132,7 +137,7 @@ fn test_build_review_prompt_file_level_comment() {
     let comment = make_comment(
         "needs refactoring",
         AttachedReviewCommentTarget::File {
-            absolute_file_path: PathBuf::from("/repo/src/utils.rs"),
+            absolute_file_path: local_path("/repo/src/utils.rs"),
         },
         false,
     );
@@ -147,7 +152,7 @@ fn test_build_review_prompt_deleted_file_comment() {
     let comment = make_comment(
         "why remove this?",
         AttachedReviewCommentTarget::File {
-            absolute_file_path: PathBuf::from("/repo/src/old.rs"),
+            absolute_file_path: local_path("/repo/src/old.rs"),
         },
         false,
     );
@@ -193,7 +198,7 @@ fn test_build_review_prompt_multiple_comments() {
     let c1 = make_comment(
         "first",
         AttachedReviewCommentTarget::Line {
-            absolute_file_path: PathBuf::from("/repo/a.rs"),
+            absolute_file_path: local_path("/repo/a.rs"),
             line: EditorLineLocation::Current {
                 line_number: LineCount::from(4),
                 line_range: LineCount::from(4)..LineCount::from(5),

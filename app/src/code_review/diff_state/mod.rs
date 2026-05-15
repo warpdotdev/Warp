@@ -108,7 +108,7 @@ pub struct DiffHunk {
 /// This matches Git Desktop's FileDiff structure.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FileDiff {
-    pub file_path: PathBuf,
+    pub file_path: String, // move to StandardizedPath if this is abs, String if relative 
     pub status: GitFileStatus,
     pub hunks: Arc<Vec<DiffHunk>>,
     pub is_binary: bool,

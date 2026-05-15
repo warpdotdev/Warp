@@ -7,7 +7,6 @@ use num_traits::SaturatingSub;
 use rangemap::{RangeMap, RangeSet};
 use std::future::Future;
 use std::ops::Range;
-use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::{cmp, mem};
@@ -67,6 +66,7 @@ use warp_editor::{
     },
     selection::{SelectionMode, SelectionModel, TextUnit},
 };
+use warp_util::standardized_path::StandardizedPath;
 use warpui::elements::{
     AnchorPair, OffsetPositioning, OffsetType, PositionedElementOffsetBounds, PositioningAxis,
     XAxisAnchor, YAxisAnchor,
@@ -1151,7 +1151,11 @@ impl CodeEditorModel {
     }
 
     /// Set the language of the syntax map based on the file path.
-    pub fn set_language_with_path(&mut self, path: &Path, ctx: &mut ModelContext<Self>) {
+    pub fn set_language_with_path(
+        &mut self,
+        path: &StandardizedPath,
+        ctx: &mut ModelContext<Self>,
+    ) {
         let language = language_by_filename(path);
 
         if let Some(language) = language {
