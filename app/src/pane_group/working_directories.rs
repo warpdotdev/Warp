@@ -483,8 +483,7 @@ impl WorkingDirectoriesModel {
         // Resolve a path to its detected repository root, or keep the path as-is if no repo is found.
         let root_for_path = |path: PathBuf| {
             DetectedRepositories::as_ref(ctx)
-                .get_root_for_path(&LocalOrRemotePath::Local(path.clone()))
-                .and_then(|r| PathBuf::try_from(r).ok())
+                .get_root_for_path(&path)
                 .unwrap_or(path)
         };
 
@@ -614,9 +613,7 @@ impl WorkingDirectoriesModel {
 
     /// Get the repository root for a given path.
     fn get_repo_root_for_path(&self, path: &Path, ctx: &AppContext) -> Option<PathBuf> {
-        DetectedRepositories::as_ref(ctx)
-            .get_root_for_path(&LocalOrRemotePath::Local(path.to_path_buf()))
-            .and_then(|r| PathBuf::try_from(r).ok())
+        DetectedRepositories::as_ref(ctx).get_root_for_path(path)
     }
 
     /// Emit a DirectoriesChanged event with the current state for a specific pane group.
