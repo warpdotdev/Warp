@@ -37,6 +37,7 @@ message ClientMessage {
     IndexCodebase index_codebase = 21;
     DropCodebaseIndex drop_codebase_index = 22;
     GetFragmentMetadataFromHash get_fragment_metadata_from_hash = 23;
+    GetBranches get_branches = 24;
   }
 }
 // Top-level envelope for all server → client messages.
@@ -68,6 +69,7 @@ message ServerMessage {
     DiscardFilesResponse discard_files_response = 22;
     BufferConflictDetected buffer_conflict_detected = 23;
     GetFragmentMetadataFromHashResponse get_fragment_metadata_from_hash_response = 24;
+    GetBranchesResponse get_branches_response = 25;
   }
 }
 

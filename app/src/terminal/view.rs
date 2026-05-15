@@ -172,6 +172,7 @@ pub use self::link_detection::GridHighlightedLink;
 pub use self::link_detection::{RichContentLink, RichContentLinkTooltipInfo};
 use crate::ai::llms::{LLMId, LLMModelHost, LLMPreferences};
 use crate::settings::CodeSettings;
+use crate::util::repo_detection::{detect_possible_git_repo, RepoDetectionSessionType};
 pub use action::{AgentOnboardingVersion, OnboardingIntention, OnboardingVersion, TerminalAction};
 use ai::api_keys::{ApiKeyManager, AwsCredentialsState};
 use ai::index::full_source_code_embedding::manager::{BuildSource, CodebaseIndexManager};
@@ -185,13 +186,14 @@ pub use init::{
     TOGGLE_HIDE_CLI_RESPONSES_KEYBINDING, TOGGLE_QUEUE_NEXT_PROMPT_KEYBINDING,
 };
 pub use inline_banner::{NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction};
-#[cfg(feature = "local_fs")]
-use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
+use repo_metadata::repositories::DetectedRepositories;
+use repo_metadata::repositories::RepoDetectionSource;
 use session_sharing_protocol::common::LongRunningCommandAgentInteractionState;
 use session_sharing_protocol::sharer::{RoleUpdateReason, SessionEndedReason, SessionSourceType};
 use ssh_file_upload::{FileUpload, FileUploadEvent};
 use uuid::Uuid;
 use warp_core::channel::ChannelState;
+use warp_util::local_or_remote_path::LocalOrRemotePath;
 use warpui::elements::{shimmering_text::ShimmeringTextStateHandle, Border, ChildView};
 use warpui::fonts::Properties;
 use warpui::{ViewHandle, WeakModelHandle};
@@ -2008,6 +2010,16 @@ pub enum Event {
     SwapPaneToConversation {
         conversation_id: AIConversationId,
     },
+    /// Emitted by `OrchestrationViewerModel` when a child of a shared-session
+    /// orchestration first reports a `session_id`. The pane group materializes
+    /// a dedicated hidden shared-session viewer pane for the child, with its
+    /// own `TerminalView`, `BlocklistAIController`, and viewer-side `Network`
+    /// joining the child's session. Subsequent pill clicks navigate to the
+    /// hidden pane via the existing `SwapPaneToConversation` mechanism.
+    EnsureSharedSessionViewerChildPane {
+        conversation_id: AIConversationId,
+        session_id: session_sharing_protocol::common::SessionId,
+    },
     /// Emitted when "Open in new tab" is picked from a child pill's 3-dot menu.
     /// Bubbles up to the workspace to create the new tab.
     OpenChildAgentInNewTab {
@@ -2785,7 +2797,7 @@ pub struct TerminalView {
     conversation_completed_callbacks: Vec<ConversationFinishedCallback>,
 
     /// Path to the current repository, or None if not currently in a repo.
-    current_repo_path: Option<PathBuf>,
+    current_repo_path: Option<LocalOrRemotePath>,
 
     /// The title of the terminal view to show when there is no selected conversation.
     terminal_title: String,
@@ -2919,8 +2931,16 @@ pub struct BlockSelectionDetails {
 
 impl TerminalView {
     /// Returns the path to the current repository, if any.
-    pub fn current_repo_path(&self) -> Option<&PathBuf> {
+    pub fn current_repo_path(&self) -> Option<&LocalOrRemotePath> {
         self.current_repo_path.as_ref()
+    }
+
+    /// Returns the local repo path, if the current repo is local.
+    /// Remote repo paths return None — full remote support is a follow-up.
+    pub fn current_local_repo_path(&self) -> Option<&Path> {
+        self.current_repo_path
+            .as_ref()
+            .and_then(|p| p.to_local_path())
     }
 
     fn is_nested_cloud_mode(&self, app: &AppContext) -> bool {
@@ -3132,7 +3152,7 @@ impl TerminalView {
                                 );
                             if should_insert_zero_state_block {
                                 let mut should_show_init_callout = false;
-                                if let Some(directory) = me.current_repo_path.as_ref() {
+                                if let Some(directory) = me.current_local_repo_path() {
                                     should_show_init_callout = me
                                         .should_show_agent_mode_setup_for_directory(directory, ctx);
                                     if should_show_init_callout {
@@ -4488,8 +4508,7 @@ impl TerminalView {
                         session_id,
                         result,
                         remote_platform,
-                        preinstall_check: _,
-                        has_old_binary: _,
+                        ..
                     } => {
                         let (remote_os, remote_arch) = remote_platform
                             .as_ref()
@@ -4567,8 +4586,10 @@ impl TerminalView {
                     RemoteServerManagerEvent::NavigatedToDirectory {
                         session_id: nav_session_id,
                         remote_path,
-                        ..
+                        is_git: _,
                     } => {
+                        // Repo registration is now handled by the unified
+                        // detect_possible_git_repo callback in BlockMetadataReceived.
                         // Check if this navigation belongs to our active session
                         // using exact session_id match (no CWD heuristics).
                         let is_relevant = me
@@ -4604,9 +4625,13 @@ impl TerminalView {
                             ctx
                         );
                     }
+                    RemoteServerManagerEvent::HostDisconnected { host_id } => {
+                        DetectedRepositories::handle(ctx).update(ctx, |repos, _| {
+                            repos.remove_roots_for_host(host_id);
+                        });
+                    }
                     RemoteServerManagerEvent::SessionConnecting { .. }
                     | RemoteServerManagerEvent::HostConnected { .. }
-                    | RemoteServerManagerEvent::HostDisconnected { .. }
                     | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
                     | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
                     | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
@@ -4616,7 +4641,8 @@ impl TerminalView {
                     | RemoteServerManagerEvent::BufferConflictDetected { .. }
                     | RemoteServerManagerEvent::DiffStateSnapshotReceived { .. }
                     | RemoteServerManagerEvent::DiffStateMetadataUpdateReceived { .. }
-                    | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. } => {}
+                    | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. }
+                    | RemoteServerManagerEvent::GetBranchesResponse { .. } => {}
                 }
             });
         }
@@ -4862,7 +4888,7 @@ impl TerminalView {
         if should_subscribe {
             // Subscribe if we have a repo path but no active subscription.
             if self.git_repo_status.is_none() {
-                if let Some(repo_path) = self.current_repo_path.clone() {
+                if let Some(repo_path) = self.current_local_repo_path().map(Path::to_path_buf) {
                     let result = GitStatusUpdateModel::handle(ctx)
                         .update(ctx, |model, ctx| model.subscribe(&repo_path, ctx));
                     match result {
@@ -6243,7 +6269,7 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         let arg = CodeReviewPanelArg {
-            repo_path: self.current_repo_path.clone(),
+            repo_path: self.current_local_repo_path().map(Path::to_path_buf),
             terminal_view: self.view_handle.clone(),
             entrypoint,
             focus_new_pane,
@@ -6316,7 +6342,7 @@ impl TerminalView {
 
     #[cfg(feature = "local_fs")]
     fn handle_attach_diffset_context(&mut self, diff_mode: DiffMode, ctx: &mut ViewContext<Self>) {
-        let Some(repo_path) = self.current_repo_path.clone() else {
+        let Some(repo_path) = self.current_local_repo_path().map(Path::to_path_buf) else {
             return;
         };
 
@@ -9658,8 +9684,8 @@ impl TerminalView {
             AgentModeSetupSpeedbumpBannerAction::SetupAgentMode => {
                 send_telemetry_from_ctx!(TelemetryEvent::AgentModeSetupBannerAccepted, ctx);
                 #[cfg(feature = "local_fs")]
-                if let Some(repo_path) = self.current_repo_path.clone() {
-                    self.mark_agent_init_callout_as_shown_for_directory(&repo_path, ctx);
+                if let Some(repo_path) = self.current_local_repo_path() {
+                    self.mark_agent_init_callout_as_shown_for_directory(repo_path, ctx);
                 }
                 self.remove_agent_setup_speedbump_banner(ctx);
                 self.init_project(false, ctx)
@@ -11467,114 +11493,165 @@ impl TerminalView {
                     }
 
                     // Check if the block is done bootstrapping and the directory is set.
-                    #[cfg(feature = "local_fs")]
                     if let Some(active_directory) = block_metadata_received_event
                         .block_metadata
                         .current_working_directory()
                     {
-                        // Check if we need to index the directory
                         if block_metadata_received_event.is_done_bootstrapping {
-                            #[cfg(feature = "local_fs")]
-                            {
-                                // Convert the shell-native CWD (e.g. "/c/Users/..." for
-                                // Git Bash/MSYS2) to a Windows-native path before passing
-                                // it to repo detection, which requires an OS-native path.
-                                let native_directory = block_metadata_received_event
+                            let is_local = self.active_session_is_local(ctx) == Some(true);
+                            let session_type = if is_local {
+                                Some(RepoDetectionSessionType::Local)
+                            } else {
+                                block_metadata.session_id().map(|session_id| {
+                                    RepoDetectionSessionType::Remote { session_id }
+                                })
+                            };
+                            let Some(session_type) = session_type else {
+                                // Skip detection entirely when session type can't be determined.
+                                self.active_block_metadata = Some(block_metadata.clone());
+                                self.input.update(ctx, |view, ctx| {
+                                    view.set_active_block_metadata(
+                                        block_metadata.clone(),
+                                        block_metadata_received_event.is_after_in_band_command,
+                                        ctx,
+                                    );
+                                    ctx.notify();
+                                });
+                                return;
+                            };
+
+                            // For local sessions, convert the shell-native CWD
+                            // (e.g. "/c/Users/..." for Git Bash/MSYS2) to a
+                            // Windows-native path before repo detection.
+                            let directory_for_detection = if is_local {
+                                block_metadata_received_event
                                     .block_metadata
                                     .session_id()
-                                    .and_then(|session_id| {
-                                        self.sessions.as_ref(ctx).get(session_id)
-                                    })
+                                    .and_then(|sid| self.sessions.as_ref(ctx).get(sid))
                                     .and_then(|session| {
                                         session.launch_data().and_then(|data| {
                                             data.maybe_convert_absolute_path(active_directory)
                                         })
                                     })
-                                    .map(|path| path.to_string_lossy().into_owned());
-                                let directory_for_detection =
-                                    native_directory.as_deref().unwrap_or(active_directory);
+                                    .map(|path| path.to_string_lossy().into_owned())
+                                    .unwrap_or_else(|| active_directory.to_string())
+                            } else {
+                                active_directory.to_string()
+                            };
 
-                                let fut = DetectedRepositories::handle(ctx).update(
-                                    ctx,
-                                    |updater, ctx| {
-                                        updater.detect_possible_git_repo(
-                                            directory_for_detection,
-                                            RepoDetectionSource::TerminalNavigation,
+                            let fut = detect_possible_git_repo(
+                                session_type,
+                                &directory_for_detection,
+                                RepoDetectionSource::TerminalNavigation,
+                                ctx,
+                            );
+
+                            ctx.spawn(fut, move |me, repo_path_opt, ctx| {
+                                let old_repo_path = me.current_repo_path.clone();
+                                me.current_repo_path = repo_path_opt.clone();
+
+                                if old_repo_path != me.current_repo_path {
+                                    ctx.emit(Event::Pane(PaneEvent::RepoChanged));
+                                }
+
+                                let callbacks = me.block_completed_callbacks.drain(..).collect_vec();
+                                for callback in callbacks {
+                                    callback(me, ctx);
+                                }
+
+                                match &repo_path_opt {
+                                    Some(LocalOrRemotePath::Remote(remote_path)) => {
+                                        DetectedRepositories::handle(ctx).update(
                                             ctx,
-                                        )
-                                    },
-                                );
-
-                                ctx.spawn(fut, move |me, repo_path_opt, ctx| {
-                                    let old_repo_path = me.current_repo_path.clone();
-                                    // Update the current repo path
-                                    me.current_repo_path = repo_path_opt.clone();
-
-                                    // Notify the pane group that the detected repo
-                                    // changed so the code review panel can
-                                    // (re-)initialize with the correct context.
-                                    if old_repo_path != me.current_repo_path {
-                                        ctx.emit(Event::Pane(PaneEvent::RepoChanged));
+                                            |repos, _| {
+                                                repos.register_remote_repo_root(
+                                                    remote_path.clone(),
+                                                );
+                                            },
+                                        );
+                                        ctx.emit(Event::Pane(PaneEvent::RemoteRepoNavigated {
+                                            remote_path: remote_path.clone(),
+                                        }));
                                     }
+                                    Some(LocalOrRemotePath::Local(repo_path)) => {
+                                        #[cfg(feature = "local_fs")]
+                                        {
+                                            let Some(active_directory) =
+                                                me.active_session_path_if_local(ctx)
+                                            else {
+                                                me.clear_git_repo_status(ctx);
+                                                return;
+                                            };
 
-                                    let callbacks = me.block_completed_callbacks.drain(..).collect_vec();
-                                    for callback in callbacks {
-                                        callback(me, ctx);
-                                    }
+                                            let Ok(active_directory) =
+                                                repo_metadata::CanonicalizedPath::try_from(
+                                                    active_directory,
+                                                )
+                                            else {
+                                                return;
+                                            };
 
-                                    let Some(active_directory) = me.active_session_path_if_local(ctx) else {
-                                        me.clear_git_repo_status(ctx);
-                                        return;
-                                    };
+                                            let is_ancestor = active_directory
+                                                .as_path_buf()
+                                                .ancestors()
+                                                .any(|ancestor| {
+                                                    ancestor == repo_path.as_path()
+                                                });
+                                            if !is_ancestor {
+                                                return;
+                                            }
 
-                                    if let Some(repo_path) = &repo_path_opt {
-                                        let Ok(active_directory) = repo_metadata::CanonicalizedPath::try_from(active_directory) else {
-                                            return;
-                                        };
+                                            PersistedWorkspace::handle(ctx).update(
+                                                ctx,
+                                                |manager, _| {
+                                                    manager.navigated_to_path(
+                                                        active_directory.as_path_buf(),
+                                                    );
+                                                },
+                                            );
 
-                                        // Make sure the repo path is still an ancestor of the active directory.
-                                        let is_ancestor = active_directory.as_path_buf().ancestors().any(|ancestor| ancestor == repo_path.as_path());
-                                        if !is_ancestor {
-                                            return;
-                                        }
+                                            if old_repo_path
+                                                .as_ref()
+                                                .and_then(|p| p.to_local_path())
+                                                != Some(repo_path.as_path())
+                                            {
+                                                me.git_repo_status = None;
+                                                me.update_git_status_subscription(ctx);
+                                            }
 
-                                        PersistedWorkspace::handle(ctx).update(ctx, |manager, _| {
-                                            manager.navigated_to_path(active_directory.as_path_buf());
-                                        });
-
-                                        // Subscribe to GitRepoStatusModel if the repo changed
-                                        // and git status updates are needed.
-                                        if old_repo_path.as_ref() != Some(repo_path) {
-                                            // Drop old handle (unsubscribes automatically).
-                                            me.git_repo_status = None;
-                                            me.update_git_status_subscription(ctx);
-                                        }
-
-                                        // Notify chips of the new repo path.
-                                        me.input.update(ctx, |input, ctx| {
-                                            input.update_repo_path(Some(repo_path.clone()), ctx);
-                                        });
-
-                                        if FeatureFlag::AIContextMenuEnabled.is_enabled() {
                                             me.input.update(ctx, |input, ctx| {
-                                                input.check_and_update_ai_context_menu_disabled_state(
+                                                input.update_repo_path(
+                                                    Some(repo_path.clone()),
                                                     ctx,
                                                 );
                                             });
+
+                                            if FeatureFlag::AIContextMenuEnabled.is_enabled() {
+                                                me.input.update(ctx, |input, ctx| {
+                                                    input
+                                                        .check_and_update_ai_context_menu_disabled_state(
+                                                            ctx,
+                                                        );
+                                                });
+                                            }
+
+                                            me.start_lsp_server_in_active_pwd(ctx);
+
+                                            me.update_repo_banner_state(
+                                                repo_path.clone(),
+                                                ctx,
+                                            );
                                         }
-
-                                        me.start_lsp_server_in_active_pwd(ctx);
-
-                                        me.update_repo_banner_state(
-                                            repo_path.clone(),
-                                            ctx,
-                                        );
-                                    } else {
+                                        #[cfg(not(feature = "local_fs"))]
+                                        let _ = repo_path;
+                                    }
+                                    None => {
+                                        #[cfg(feature = "local_fs")]
                                         me.clear_git_repo_status(ctx);
                                         ctx.notify();
                                     }
-                                });
-                            }
+                                }
+                            });
                         }
                     }
                 }
@@ -12993,9 +13070,8 @@ impl TerminalView {
     pub fn maybe_set_pending_repo_init_path(&mut self, path: PathBuf) {
         self.on_next_block_completed(move |me, ctx| {
             if me
-                .current_repo_path
-                .as_ref()
-                .is_some_and(|repo_path| repo_path == &path)
+                .current_local_repo_path()
+                .is_some_and(|repo_path| repo_path == path)
             {
                 me.init_project_and_suppress_banners(path, ctx);
             }
@@ -13344,7 +13420,7 @@ impl TerminalView {
                     .and_then(|pwd| Path::new(&pwd).canonicalize().ok())
                 {
                     DetectedRepositories::as_ref(ctx)
-                        .get_root_for_path(&pwd_path)
+                        .get_root_for_path(&LocalOrRemotePath::Local(pwd_path))
                         .is_some()
                 } else {
                     false
@@ -13453,7 +13529,7 @@ impl TerminalView {
                 .and_then(|pwd| Path::new(&pwd).canonicalize().ok())
                 .is_some_and(|pwd_path| {
                     DetectedRepositories::as_ref(ctx)
-                        .get_root_for_path(&pwd_path)
+                        .get_root_for_path(&LocalOrRemotePath::Local(pwd_path))
                         .is_some()
                 });
 
@@ -13539,7 +13615,7 @@ impl TerminalView {
             .iter()
             .any(|shown_path| shown_path == directory);
         let is_repo = DetectedRepositories::as_ref(ctx)
-            .get_root_for_path(directory)
+            .get_root_for_path(&LocalOrRemotePath::Local(directory.to_path_buf()))
             .is_some();
         let is_any_ai_enabled =
             FeatureFlag::AgentMode.is_enabled() && AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
@@ -13624,9 +13700,28 @@ impl TerminalView {
             .input_mode
             .value();
         let inverted = input_mode.is_inverted_blocklist();
-        self.model
-            .lock()
-            .selection_to_string(semantic_selection, inverted, ctx)
+        let blocklist_selected_text =
+            self.model
+                .lock()
+                .selection_to_string(semantic_selection, inverted, ctx);
+        blocklist_selected_text.or_else(|| self.pending_user_query_selected_text(ctx))
+    }
+
+    /// Returns selected text from the pending user query block, if any.
+    fn pending_user_query_selected_text(&self, ctx: &AppContext) -> Option<String> {
+        let view_id = self.pending_user_query_view_id?;
+        self.rich_content_views
+            .iter()
+            .find_map(|rc| match rc.metadata() {
+                Some(RichContentMetadata::PendingUserQuery {
+                    pending_user_query_block_handle,
+                }) if pending_user_query_block_handle.id() == view_id => {
+                    pending_user_query_block_handle
+                        .as_ref(ctx)
+                        .selected_text(ctx)
+                }
+                _ => None,
+            })
     }
 
     /// Gets the selected text from the terminal input editor, if any.
@@ -15525,6 +15620,12 @@ impl TerminalView {
             }
         }
 
+        if let Some(selected_text) = self.pending_user_query_selected_text(ctx) {
+            ctx.clipboard()
+                .write(ClipboardContent::plain_text(selected_text));
+            return;
+        }
+
         let semantic_selection = SemanticSelection::as_ref(ctx);
         if let Some(selected) = self.model.lock().selection_to_string(
             semantic_selection,
@@ -17225,9 +17326,10 @@ impl TerminalView {
         let selection_settings = SelectionSettings::handle(ctx);
         let semantic_selection = SemanticSelection::as_ref(ctx);
         let model = self.model.lock();
-        if let Some(selected) =
-            model.selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
-        {
+        let selected_text = model
+            .selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
+            .or_else(|| self.pending_user_query_selected_text(ctx));
+        if let Some(selected) = selected_text {
             selection_settings.update(ctx, |selection_settings, ctx| {
                 selection_settings
                     .maybe_copy_on_select(ClipboardContent::plain_text(selected), ctx);
@@ -18932,6 +19034,18 @@ impl TerminalView {
                         env_var_collection_block.clear_selection(ctx);
                     });
                 }
+                Some(RichContentMetadata::PendingUserQuery {
+                    pending_user_query_block_handle,
+                }) => {
+                    if exempt_rich_content_view_id
+                        .is_some_and(|view_id| pending_user_query_block_handle.id() == view_id)
+                    {
+                        continue;
+                    }
+                    pending_user_query_block_handle.update(ctx, |block, ctx| {
+                        block.clear_selection(ctx);
+                    });
+                }
                 Some(RichContentMetadata::WarpifySuccessBlock { .. }) => {
                     // TODO(Simon): We should be checking for WarpifySuccessBlocks here as well.
                     // The `WarpifySuccessBlock` implements a `SelectableArea`.
@@ -19328,7 +19442,7 @@ impl TerminalView {
 
     fn imported_comments_panel_arg(&self) -> CodeReviewPanelArg {
         CodeReviewPanelArg {
-            repo_path: self.current_repo_path.clone(),
+            repo_path: self.current_local_repo_path().map(Path::to_path_buf),
             terminal_view: self.view_handle.clone(),
             entrypoint: CodeReviewPaneEntrypoint::AgentModeRunning,
             focus_new_pane: true,
@@ -19867,9 +19981,10 @@ impl TerminalView {
             send_telemetry_from_ctx!(TelemetryEvent::ContextMenuCopySelectedText, ctx);
             let semantic_selection = SemanticSelection::as_ref(ctx);
             let model = self.model.lock();
-            if let Some(selected_text) =
-                model.selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
-            {
+            let selected_text = model
+                .selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
+                .or_else(|| self.pending_user_query_selected_text(ctx));
+            if let Some(selected_text) = selected_text {
                 ctx.clipboard()
                     .write(ClipboardContent::plain_text(selected_text));
             }
@@ -20460,7 +20575,7 @@ impl TerminalView {
             }
             InputEvent::OpenCodeReviewPane => {
                 ctx.emit(Event::OpenCodeReviewPane(CodeReviewPanelArg {
-                    repo_path: self.current_repo_path.clone(),
+                    repo_path: self.current_local_repo_path().map(Path::to_path_buf),
                     terminal_view: self.view_handle.clone(),
                     entrypoint: CodeReviewPaneEntrypoint::GitDiffChip,
                     focus_new_pane: true,
@@ -25705,7 +25820,7 @@ impl TypedActionView for TerminalView {
             }
             ToggleCodeReviewPane { entrypoint } => {
                 ctx.emit(Event::ToggleCodeReviewPane(CodeReviewPanelArg {
-                    repo_path: self.current_repo_path.clone(),
+                    repo_path: self.current_local_repo_path().map(Path::to_path_buf),
                     terminal_view: self.view_handle.clone(),
                     entrypoint: *entrypoint,
                     focus_new_pane: true,
@@ -25957,8 +26072,7 @@ impl TypedActionView for TerminalView {
                 });
             }
             SwitchAgentViewToConversation { conversation_id } => {
-                // Pill-bar nav: swap visibility instead of cloning the
-                // conversation into this pane.
+                // Pill-bar nav: every child has a hidden pane, so swap to it.
                 ctx.emit(Event::SwapPaneToConversation {
                     conversation_id: *conversation_id,
                 });

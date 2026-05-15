@@ -51,13 +51,12 @@ use crate::terminal::TerminalModel;
 use crate::terminal::TerminalView;
 
 /// Creates a cloud mode terminal view and manager for ambient agent sessions.
-///
-/// This is used when pushing a new ambient agent view onto an existing pane's navigation stack,
-/// or when creating a standalone ambient agent pane.
+/// See `viewer::TerminalManager::enable_orchestration_polling` for the flag.
 pub fn create_cloud_mode_view(
     resources: TerminalViewResources,
     view_bounds_size: Vector2F,
     window_id: WindowId,
+    enable_orchestration_polling: bool,
     ctx: &mut AppContext,
 ) -> (
     ViewHandle<TerminalView>,
@@ -71,6 +70,7 @@ pub fn create_cloud_mode_view(
             resources,
             view_bounds_size,
             window_id,
+            enable_orchestration_polling,
             ctx,
         )) as Box<dyn TerminalManager>
     });

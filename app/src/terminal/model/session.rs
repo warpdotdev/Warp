@@ -186,7 +186,8 @@ impl Sessions {
                 | RemoteServerManagerEvent::ServerMessageDecodingError { .. }
                 | RemoteServerManagerEvent::DiffStateSnapshotReceived { .. }
                 | RemoteServerManagerEvent::DiffStateMetadataUpdateReceived { .. }
-                | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. } => {}
+                | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. }
+                | RemoteServerManagerEvent::GetBranchesResponse { .. } => {}
                 RemoteServerManagerEvent::SessionReconnected {
                     session_id: sid,
                     client,

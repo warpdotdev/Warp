@@ -249,38 +249,24 @@ impl BlocklistAIController {
         let Some(conversation_id) = existing_conversation_id else {
             return false;
         };
-        let model = self.terminal_model.lock();
-        if !model.is_receiving_agent_conversation_replay()
+        if !self
+            .terminal_model
+            .lock()
+            .is_receiving_agent_conversation_replay()
             || !self
                 .shared_session_state
                 .should_suppress_replayed_response_for_existing_conversation
         {
             return false;
         }
-        drop(model);
 
-        // Only skip the replayed response when we already have a local exchange whose
-        // `server_output_id` matches `request_id`. New exchanges (e.g. the user's first
-        // post-handoff prompt) carry unseen request_ids and must flow through normally.
+        // Only skip the replayed response when our local task already has the given request_id.
+        // New exchanges (e.g. the user's first post-handoff prompt) carry unseen request_ids and must flow through normally.
         let history = BlocklistAIHistoryModel::as_ref(ctx);
-        let known_server_output_ids: Vec<String> = history
-            .conversation(&conversation_id)
-            .map(|conversation| {
-                conversation
-                    .all_exchanges()
-                    .into_iter()
-                    .filter_map(|exchange| {
-                        exchange
-                            .output_status
-                            .server_output_id()
-                            .map(|sid| sid.to_string())
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        known_server_output_ids
-            .iter()
-            .any(|sid| sid == init_request_id)
+        history.conversation(&conversation_id).is_some_and(|conv| {
+            conv.all_tasks()
+                .any(|task| task.messages().any(|msg| msg.request_id == init_request_id))
+        })
     }
 
     fn on_shared_client_actions(

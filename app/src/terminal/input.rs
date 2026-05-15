@@ -112,7 +112,7 @@ use crate::ai::block_context::BlockContext;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::agent_view::agent_input_footer::sort_environments_by_recency;
 use crate::ai::blocklist::agent_view::{
-    AgentInputFooter, AgentInputFooterEvent, AgentViewController,
+    is_in_cloud_context, AgentInputFooter, AgentInputFooterEvent, AgentViewController,
 };
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::handoff::touched_repos::{
@@ -120,8 +120,6 @@ use crate::ai::blocklist::handoff::touched_repos::{
 };
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::handoff::{HandoffLaunchAttachments, PendingCloudLaunch};
-#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-use crate::ai::blocklist::is_local_to_cloud_handoff_available;
 use crate::ai::blocklist::AttachmentType;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::PendingAttachment;
@@ -3852,12 +3850,19 @@ impl Input {
         let is_powershell_with_nld_enabled = self.editor.as_ref(ctx).shell_family()
             == Some(ShellFamily::PowerShell)
             && AISettings::as_ref(ctx).is_ai_autodetection_enabled(ctx);
+        let is_cloud = {
+            let terminal_model = self.model.lock();
+            is_in_cloud_context(
+                terminal_model.block_list().agent_view_state(),
+                &terminal_model,
+            )
+        };
         *edit_origin == EditOrigin::UserTyped
             && AISettings::as_ref(ctx).is_ampersand_handoff_enabled(ctx)
             && !is_powershell_with_nld_enabled
             && FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(ctx).is_fullscreen()
-            && self.ambient_agent_view_model().is_none()
+            && !is_cloud
             && !CLIAgentSessionsModel::as_ref(ctx).is_input_open(self.terminal_view_id)
             && self.prefix_mode(ctx) == InputPrefixMode::None
     }
@@ -3984,7 +3989,9 @@ impl Input {
 
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn maybe_launch_cloud_handoff_request(&mut self, ctx: &mut ViewContext<Self>) -> bool {
-        if !is_local_to_cloud_handoff_available()
+        if !FeatureFlag::OzHandoff.is_enabled()
+            || !FeatureFlag::HandoffLocalCloud.is_enabled()
+            || !cfg!(all(feature = "local_fs", not(target_family = "wasm")))
             || self.prefix_mode(ctx) != InputPrefixMode::CloudHandoff
         {
             return false;
@@ -10382,8 +10389,12 @@ impl Input {
                                     .and_then(|pwd| {
                                         // Find git repo and construct absolute path
                                         use repo_metadata::repositories::DetectedRepositories;
+                                        use warp_util::local_or_remote_path::LocalOrRemotePath;
                                         let git_repo_path = DetectedRepositories::as_ref(ctx)
-                                            .get_root_for_path(Path::new(pwd))?;
+                                            .get_root_for_path(&LocalOrRemotePath::Local(
+                                                Path::new(pwd).to_path_buf(),
+                                            ))
+                                            .and_then(|r| PathBuf::try_from(r).ok())?;
                                         let absolute_path = git_repo_path.join(file_path);
 
                                         // Try to get relative path if it's shorter

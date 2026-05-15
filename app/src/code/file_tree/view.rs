@@ -1290,8 +1290,9 @@ impl FileTreeView {
                     remote_host_id: None,
                 });
             let root_local = root_path.to_local_path_lossy();
-            if let Some(repo_root) =
-                DetectedRepositories::as_ref(ctx).get_root_for_path(&root_local)
+            if let Some(repo_root) = DetectedRepositories::as_ref(ctx)
+                .get_root_for_path(&LocalOrRemotePath::Local(root_local))
+                .and_then(|r| PathBuf::try_from(r).ok())
             {
                 let repo_entry = {
                     let repo_metadata = RepoMetadataModel::as_ref(ctx);

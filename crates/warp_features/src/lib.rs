@@ -716,6 +716,13 @@ pub enum FeatureFlag {
     /// behavior between siblings.
     OrchestrationPillBar,
 
+    /// Enables the orchestration pill bar in shared session viewers (web and
+    /// native). When enabled, viewing a shared session that used orchestration
+    /// shows a pill bar above the agent view header with the orchestrator and
+    /// each child agent. Clicking a child pill joins the child's shared session
+    /// and switches the view to its transcript.
+    OrchestrationViewerPillBar,
+
     /// Shows a pending user query indicator during summarization when a follow-up
     /// prompt is queued via `/fork-and-compact` or `/compact-and`.
     PendingUserQueryIndicator,
@@ -918,7 +925,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::AgentViewBlockContext,
     FeatureFlag::OzLaunchModal,
     FeatureFlag::OzChangelogUpdates,
-    FeatureFlag::PendingUserQueryIndicator,
     FeatureFlag::QueueSlashCommand,
     // These are enabled via 100% experiment on prod warp-server,
     // but we need to enable here for dogfood builds.
@@ -930,17 +936,16 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::EditableMarkdownMermaid,
     FeatureFlag::CodeReviewScrollPreservation,
     FeatureFlag::AgentHarness,
-    FeatureFlag::OzHandoff,
     FeatureFlag::ConversationApi,
     FeatureFlag::RememberFastForwardState,
     FeatureFlag::HOANotifications,
+    FeatureFlag::OrchestrationViewerPillBar,
     FeatureFlag::GeminiNotifications,
     FeatureFlag::LocalDockerSandbox,
     FeatureFlag::CloudModeSetupV2,
     #[cfg(not(windows))]
     FeatureFlag::SshRemoteServer,
     FeatureFlag::CloudModeInputV2,
-    FeatureFlag::HandoffLocalCloud,
     FeatureFlag::DragTabsToWindows,
     FeatureFlag::OrchestrationLaunchModal,
     FeatureFlag::NamedAgents,
@@ -956,6 +961,7 @@ pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::Orchestration,
     FeatureFlag::OrchestrationV2,
     FeatureFlag::OrchestrationPillBar,
+    FeatureFlag::OrchestrationViewerPillBar,
     FeatureFlag::RunAgentsTool,
     FeatureFlag::BlocklistMarkdownTableRendering,
     FeatureFlag::MarkdownTables,

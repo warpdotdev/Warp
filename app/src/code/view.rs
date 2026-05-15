@@ -232,7 +232,7 @@ impl TabData {
     pub fn local_path(&self) -> Option<PathBuf> {
         self.location
             .as_ref()
-            .and_then(|loc| loc.to_local_path().map(|p| p.to_path_buf()))
+            .and_then(|loc| loc.to_local_path().map(Path::to_path_buf))
     }
 }
 

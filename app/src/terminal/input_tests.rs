@@ -137,6 +137,14 @@ pub fn initialize_app(app: &mut App) {
         AIRequestUsageModel::new_for_test(ServerApiProvider::as_ref(ctx).get_ai_client(), ctx)
     });
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+    // Pill bar model subscribes to history events; register after the
+    // history model is in place.
+    app.add_singleton_model(|ctx| {
+        crate::ai::blocklist::agent_view::orchestration_pill_bar_model::OrchestrationPillBarModel::new(
+            Default::default(),
+            ctx,
+        )
+    });
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
     app.add_singleton_model(|_| ActiveAgentViewsModel::new());
     app.add_singleton_model(AgentNotificationsModel::new);
@@ -149,6 +157,7 @@ pub fn initialize_app(app: &mut App) {
     app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(DirectoryWatcher::new);
     app.add_singleton_model(|_| DetectedRepositories::default());
+    app.add_singleton_model(crate::remote_server::manager::RemoteServerManager::new);
     app.add_singleton_model(|_| crate::code_review::git_status_update::GitStatusUpdateModel::new());
     app.add_singleton_model(RepoMetadataModel::new);
     app.add_singleton_model(FileSearchModel::new);

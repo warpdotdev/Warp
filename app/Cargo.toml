@@ -629,6 +629,9 @@ default = [
     "settings_file",
     "directory_tab_colors",
     "configurable_context_window",
+    "oz_handoff",
+    "handoff_local_cloud",
+    "pending_user_query_indicator",
 ]
 # Enable this feature to automatically perform heap profiling.  NOTE: This will
 # substantially slow down program execution.
@@ -661,6 +664,8 @@ grep_tool = []
 gui = ["voice_input"]
 nld_classifier_v1 = ["input_classifier/nld_classifier_v1"]
 nld_classifier_v2 = ["input_classifier/nld_classifier_v2"]
+nld_heuristic_v1 = ["input_classifier/nld_heuristic_v1"]
+nld_heuristic_v2 = ["input_classifier/nld_heuristic_v2"]
 msys2_shells = []
 file_retrieval_tools = []
 welcome_tab = []

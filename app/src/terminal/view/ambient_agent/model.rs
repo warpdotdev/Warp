@@ -228,6 +228,7 @@ pub struct AmbientAgentViewModel {
     /// Used as the previous session ID when submitting a follow-up so polling can wait for a
     /// different fresh session after the prior execution has ended.
     last_ended_execution_session_id: Option<SessionId>,
+
     /// Prompt text for a follow-up that has been submitted but not yet attached to a new session.
     pending_followup_prompt: Option<String>,
 

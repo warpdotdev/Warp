@@ -29,10 +29,14 @@ fn parse_uname_darwin_x86_64() {
 }
 
 #[test]
-fn parse_uname_linux_armv8l() {
-    let platform = parse_uname_output("Linux armv8l").unwrap();
-    assert_eq!(platform.os, RemoteOs::Linux);
-    assert_eq!(platform.arch, RemoteArch::Aarch64);
+fn parse_uname_unsupported_armv8l() {
+    let result = parse_uname_output("Linux armv8l");
+    match result {
+        Err(crate::transport::Error::UnsupportedArch { arch }) => {
+            assert_eq!(arch, "armv8l");
+        }
+        other => panic!("expected UnsupportedArch, got {other:?}"),
+    }
 }
 
 #[test]
@@ -83,6 +87,7 @@ fn parse_uname_missing_arch() {
     let result = parse_uname_output("Linux");
     assert!(result.is_err());
 }
+
 #[test]
 fn remote_server_identity_data_dir_uses_encoded_identity_directory() {
     let data_dir = remote_server_daemon_data_dir("user@example.com/ssh host");

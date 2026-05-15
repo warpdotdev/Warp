@@ -51,10 +51,10 @@ pub async fn generate_multi_agent_output(
         redaction::redact_inputs(&mut params.input);
     }
 
-    let mut api_keys = params.api_keys;
-    if let Some(api_keys) = &mut api_keys {
-        api_keys.allow_use_of_warp_credits = params.allow_use_of_warp_credits_with_byok;
-    }
+    let api_keys = api_keys_with_warp_credit_fallback_setting(
+        params.api_keys,
+        params.allow_use_of_warp_credits,
+    );
 
     let request = api::Request {
         task_context: Some(api::request::TaskContext {
@@ -151,6 +151,22 @@ pub async fn generate_multi_agent_output(
     }
 }
 
+fn api_keys_with_warp_credit_fallback_setting(
+    api_keys: Option<api::request::settings::ApiKeys>,
+    allow_use_of_warp_credits: bool,
+) -> Option<api::request::settings::ApiKeys> {
+    match api_keys {
+        Some(mut api_keys) => {
+            api_keys.allow_use_of_warp_credits = allow_use_of_warp_credits;
+            Some(api_keys)
+        }
+        None if allow_use_of_warp_credits => Some(api::request::settings::ApiKeys {
+            allow_use_of_warp_credits: true,
+            ..Default::default()
+        }),
+        None => None,
+    }
+}
 fn get_supported_tools(params: &RequestParams) -> Vec<api::ToolType> {
     let mut supported_tools = vec![
         api::ToolType::Grep,

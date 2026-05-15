@@ -728,8 +728,13 @@ impl TerminalView {
         };
 
         // TODO: Use self.size_info
-        let (terminal_view, terminal_manager) =
-            super::create_cloud_mode_view(resources, Vector2F::zero(), ctx.window_id(), ctx);
+        let (terminal_view, terminal_manager) = super::create_cloud_mode_view(
+            resources,
+            Vector2F::zero(),
+            ctx.window_id(),
+            true, // root orchestrator viewer
+            ctx,
+        );
 
         // Only insert an ambient agent entry block once the agent is actually dispatched.
         // This avoids persisting an empty "New cloud agent" entry when the user enters cloud mode

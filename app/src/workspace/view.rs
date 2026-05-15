@@ -31,7 +31,6 @@ use crate::workspace::cross_window_tab_drag::{
 pub(crate) use onboarding::OnboardingTutorial;
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::agent::conversation::AIConversation;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::agent::CancellationReason;
@@ -271,8 +270,6 @@ use crate::pane_group::{
     TabBarHoverIndex,
 };
 use crate::remote_server::manager::RemoteServerManager;
-#[cfg(feature = "local_fs")]
-use crate::remote_server::manager::RemoteServerManagerEvent;
 use crate::terminal::keys_settings::KeysSettings;
 use crate::terminal::shared_session::SharedSessionActionSource;
 
@@ -2861,28 +2858,6 @@ impl Workspace {
             &SessionSettings::handle(ctx),
             Self::handle_session_settings_event,
         );
-
-        // When a remote server session finishes its initialize handshake, re-run
-        // update_active_session so navigate_to_directory fires now that the
-        // client is connected (it may have been skipped on the initial pwd change
-        // because the handshake was still in progress).
-        #[cfg(feature = "local_fs")]
-        if FeatureFlag::SshRemoteServer.is_enabled() {
-            ctx.subscribe_to_model(
-                &RemoteServerManager::handle(ctx),
-                |me, _handle, event, ctx| match event {
-                    RemoteServerManagerEvent::SessionConnected { .. } => {
-                        me.update_active_session(ctx);
-                    }
-                    RemoteServerManagerEvent::SetupStateChanged { state, .. }
-                        if state.is_failed() =>
-                    {
-                        me.update_active_session(ctx);
-                    }
-                    _ => {}
-                },
-            );
-        }
 
         ctx.subscribe_to_model(&WindowSettings::handle(ctx), |me, _handle, event, ctx| {
             me.handle_window_settings_changed_event(event, ctx);
@@ -6465,7 +6440,7 @@ impl Workspace {
 
     /// Opens a tab config, showing the param-fill modal when the config has parameters,
     /// or opening the tab directly when there are no parameters.
-    fn open_tab_config(
+    pub(crate) fn open_tab_config(
         &mut self,
         tab_config: crate::tab_configs::TabConfig,
         ctx: &mut ViewContext<Self>,
@@ -8129,7 +8104,10 @@ impl Workspace {
             // Read repo_path and terminal_view from the pane group (immutable context).
             let read_result = active_pane_group.read(ctx, |pane_group, ctx| {
                 pane_group.active_session_view(ctx).map(|terminal_view| {
-                    let repo_path = terminal_view.as_ref(ctx).current_repo_path().cloned();
+                    let repo_path = terminal_view
+                        .as_ref(ctx)
+                        .current_local_repo_path()
+                        .map(Path::to_path_buf);
                     (repo_path, terminal_view.downgrade())
                 })
             });
@@ -8294,7 +8272,10 @@ impl Workspace {
         // Read repo_path and terminal_view from pane group (immutable context).
         let read_result = pane_group_handle.read(ctx, |pane_group, ctx| {
             pane_group.active_session_view(ctx).map(|terminal_view| {
-                let repo_path = terminal_view.as_ref(ctx).current_repo_path().cloned();
+                let repo_path = terminal_view
+                    .as_ref(ctx)
+                    .current_local_repo_path()
+                    .map(Path::to_path_buf);
                 (repo_path, terminal_view.downgrade())
             })
         });
@@ -8693,7 +8674,7 @@ impl Workspace {
         // repo counts here, and it keeps linked-worktree filtering scoped to the
         // only UI that currently needs it.
         let Some(repository) =
-            DetectedRepositories::as_ref(ctx).get_watched_repo_for_path(repo_path, ctx)
+            DetectedRepositories::as_ref(ctx).get_local_watched_repo_for_path(repo_path, ctx)
         else {
             return true;
         };
@@ -11719,6 +11700,9 @@ impl Workspace {
 
     /// Fork an existing AI conversation.
     /// Optionally summarizes the conversation after forking and/or sends an initial prompt.
+    /// When cloud conversation storage is enabled and the source has a server token,
+    /// a server-side fork is created first so the new conversation immediately gets
+    /// cloud storage and a server identity.
     #[allow(clippy::too_many_arguments)]
     fn fork_ai_conversation(
         &mut self,
@@ -11757,6 +11741,9 @@ impl Workspace {
         // `ephemeral_message_model.current_message().is_none()` gate.
         let has_initial_query = summarize_after_fork || initial_prompt.is_some();
 
+        let cloud_storage_enabled =
+            PrivacySettings::as_ref(ctx).is_cloud_conversation_storage_enabled;
+
         // Load the conversation data asynchronously
         let future = history_model
             .as_ref(ctx)
@@ -11774,147 +11761,181 @@ impl Workspace {
                 return;
             };
 
-            let history_model = BlocklistAIHistoryModel::handle(ctx);
-            let fork_result = history_model.update(ctx, |history_model, ctx| {
-                if let Some(fork_from) = fork_from_exchange {
-                    history_model.fork_conversation_at_exchange(
-                        &source_conversation,
-                        fork_from.exchange_id,
-                        fork_from.fork_from_exact_exchange,
-                        FORK_PREFIX,
-                        None,
-                        ctx,
-                    )
-                } else {
-                    history_model.fork_conversation(
-                        &source_conversation,
-                        FORK_PREFIX,
-                        false, /* preserve_task_ids */
-                        None,
-                        ctx,
-                    )
-                }
-            });
+            let source_server_token = source_conversation
+                .server_conversation_token()
+                .map(|t| t.as_str().to_string());
+            let title_for_fork = source_conversation.title();
 
-            let forked_conversation = match fork_result {
-                Ok(forked_conversation) => forked_conversation,
-                Err(e) => {
-                    log::error!("Conversation forking failed. {e}.");
-                    WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                        let toast =
-                            DismissibleToast::error("Conversation forking failed.".to_owned());
-                        toast_stack.add_ephemeral_toast(toast, window_id, ctx);
-                    });
-                    return;
-                }
-            };
-
-            // Handle forking into the current pane
-            if destination.is_current_pane() {
-                if let Some(terminal_view) = workspace.active_session_view(ctx) {
-                    let forked_conversation_id = forked_conversation.id();
-                    terminal_view.update(ctx, move |terminal_view, ctx| {
-                        terminal_view.restore_conversation_after_view_creation(
-                            RestoredAIConversation::new(forked_conversation.clone()),
-                            true,
+            if let Some(source_token) = source_server_token.filter(|_| cloud_storage_enabled) {
+                let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
+                ctx.spawn(
+                    async move {
+                        ai_client
+                            .fork_conversation(source_token, title_for_fork)
+                            .await
+                    },
+                    move |workspace, result, ctx| {
+                        let server_forked_id = match result {
+                            Ok(response) => Some(response.forked_conversation_id),
+                            Err(err) => {
+                                log::warn!("Server-side fork failed, proceeding with local-only fork: {err:#}");
+                                None
+                            }
+                        };
+                        workspace.create_local_fork(
+                            source_conversation,
+                            conversation_id,
+                            fork_from_exchange,
+                            summarize_after_fork,
+                            summarization_prompt,
+                            initial_prompt,
+                            destination,
+                            has_initial_query,
+                            source_terminal_view_id,
+                            server_forked_id,
+                            window_id,
                             ctx,
                         );
-                        terminal_view
-                            .maybe_show_restore_context_hint(RestorationDirState::Unchanged, ctx);
-
-                        terminal_view.redetermine_global_focus(ctx);
-                    });
-
-                    Self::handle_forked_conversation_prompts(
-                        terminal_view,
-                        summarize_after_fork,
-                        summarization_prompt,
-                        initial_prompt,
-                        forked_conversation_id,
-                        ctx,
-                    );
-
-                    Self::show_fork_toast(conversation_id, window_id, ctx);
-                    return;
-                }
-                // If no active session view, fall through to create a new pane
-                log::warn!("CurrentPane fork requested with no active session view");
-            }
-
-            // Respect the explicit destination: SplitPane opens a split pane, NewTab opens a
-            // new tab. `open_conversation_layout_preference` is only consulted as a fallback by
-            // `restore_or_navigate_to_conversation`; fork callers always pass an explicit
-            // destination, so overriding SplitPane with NewTab here would silently defeat the
-            // user's choice (e.g. `/fork` with Enter explicitly picks SplitPane).
-            let should_open_in_new_tab = destination.is_new_tab();
-
-            if should_open_in_new_tab {
-                let forked_conversation_id = forked_conversation.id();
-                workspace.add_new_session_tab_with_default_mode(
-                    NewSessionSource::Tab,
-                    Some(window_id),
+                    },
+                );
+            } else {
+                workspace.create_local_fork(
+                    source_conversation,
+                    conversation_id,
+                    fork_from_exchange,
+                    summarize_after_fork,
+                    summarization_prompt,
+                    initial_prompt,
+                    destination,
+                    has_initial_query,
+                    source_terminal_view_id,
                     None,
-                    Some(ConversationRestorationInNewPaneType::Forked {
-                        conversation: forked_conversation,
-                        has_initial_query,
-                    }),
-                    false,
+                    window_id,
                     ctx,
                 );
+            }
+        });
+    }
 
-                // Handle sending summarize and/or initial prompt to the forked conversation
-                if let Some(terminal_view) = workspace
-                    .active_tab_pane_group()
-                    .as_ref(ctx)
-                    .active_session_view(ctx)
-                {
-                    // Copy model selection and execution profile from source to new terminal view
-                    if let Some(source_id) = source_terminal_view_id {
-                        Self::copy_model_and_profile_to_terminal_view(
-                            source_id,
-                            terminal_view.id(),
-                            ctx,
-                        );
-                    }
+    /// Completes the fork by creating the local conversation and restoring it into a pane.
+    /// If `server_forked_conversation_id` is provided, the local fork is bound to the
+    /// server-side fork so it immediately has cloud storage and a server identity.
+    #[allow(clippy::too_many_arguments)]
+    fn create_local_fork(
+        &mut self,
+        source_conversation: Box<AIConversation>,
+        conversation_id: AIConversationId,
+        fork_from_exchange: Option<ForkFromExchange>,
+        summarize_after_fork: bool,
+        summarization_prompt: Option<String>,
+        initial_prompt: Option<String>,
+        destination: ForkedConversationDestination,
+        has_initial_query: bool,
+        source_terminal_view_id: Option<EntityId>,
+        server_forked_conversation_id: Option<String>,
+        window_id: WindowId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let history_model = BlocklistAIHistoryModel::handle(ctx);
+        let fork_result = history_model.update(ctx, |history_model, ctx| {
+            if let Some(fork_from) = fork_from_exchange {
+                history_model.fork_conversation_at_exchange(
+                    &source_conversation,
+                    fork_from.exchange_id,
+                    fork_from.fork_from_exact_exchange,
+                    FORK_PREFIX,
+                    None,
+                    ctx,
+                )
+            } else {
+                history_model.fork_conversation(
+                    &source_conversation,
+                    FORK_PREFIX,
+                    true, /* preserve_task_ids */
+                    None,
+                    ctx,
+                )
+            }
+        });
 
-                    Self::handle_forked_conversation_prompts(
-                        terminal_view,
-                        summarize_after_fork,
-                        summarization_prompt,
-                        initial_prompt,
-                        forked_conversation_id,
+        let mut forked_conversation = match fork_result {
+            Ok(forked_conversation) => forked_conversation,
+            Err(e) => {
+                log::error!("Conversation forking failed. {e}.");
+                WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                    let toast = DismissibleToast::error("Conversation forking failed.".to_owned());
+                    toast_stack.add_ephemeral_toast(toast, window_id, ctx);
+                });
+                return;
+            }
+        };
+
+        if let Some(server_id) = server_forked_conversation_id {
+            let forked_id = forked_conversation.id();
+            forked_conversation.set_server_conversation_token(server_id.clone());
+            history_model.update(ctx, |history_model, _| {
+                history_model.set_server_conversation_token_for_conversation(forked_id, server_id);
+            });
+        }
+
+        // Handle forking into the current pane
+        if destination.is_current_pane() {
+            if let Some(terminal_view) = self.active_session_view(ctx) {
+                let forked_conversation_id = forked_conversation.id();
+                terminal_view.update(ctx, move |terminal_view, ctx| {
+                    terminal_view.restore_conversation_after_view_creation(
+                        RestoredAIConversation::new(forked_conversation.clone()),
+                        true,
                         ctx,
                     );
-                }
+                    terminal_view
+                        .maybe_show_restore_context_hint(RestorationDirState::Unchanged, ctx);
+
+                    terminal_view.redetermine_global_focus(ctx);
+                });
+
+                Self::handle_forked_conversation_prompts(
+                    terminal_view,
+                    summarize_after_fork,
+                    summarization_prompt,
+                    initial_prompt,
+                    forked_conversation_id,
+                    ctx,
+                );
 
                 Self::show_fork_toast(conversation_id, window_id, ctx);
                 return;
             }
+            // If no active session view, fall through to create a new pane
+            log::warn!("CurrentPane fork requested with no active session view");
+        }
 
-            let active_pane_group = workspace.active_tab_pane_group();
-            let active_pane_group_id = active_pane_group.id();
-            let created_pane_id: PaneId = active_pane_group.update(ctx, |pane_group, ctx| {
-                let active_pane_id = pane_group.focused_pane_id(ctx);
+        // Respect the explicit destination: SplitPane opens a split pane, NewTab opens a
+        // new tab. `open_conversation_layout_preference` is only consulted as a fallback by
+        // `restore_or_navigate_to_conversation`; fork callers always pass an explicit
+        // destination, so overriding SplitPane with NewTab here would silently defeat the
+        // user's choice (e.g. `/fork` with Enter explicitly picks SplitPane).
+        let should_open_in_new_tab = destination.is_new_tab();
 
-                let new_pane_id = pane_group.add_session(
-                    PaneGroupDirection::Right,
-                    Some(active_pane_id),
-                    active_pane_id.as_terminal_pane_id(),
-                    None, /* chosen_shell */
-                    Some(ConversationRestorationInNewPaneType::Forked {
-                        conversation: forked_conversation.clone(),
-                        has_initial_query,
-                    }),
-                    ctx,
-                );
-
-                new_pane_id.into()
-            });
+        if should_open_in_new_tab {
+            let forked_conversation_id = forked_conversation.id();
+            self.add_new_session_tab_with_default_mode(
+                NewSessionSource::Tab,
+                Some(window_id),
+                None,
+                Some(ConversationRestorationInNewPaneType::Forked {
+                    conversation: forked_conversation,
+                    has_initial_query,
+                }),
+                false,
+                ctx,
+            );
 
             // Handle sending summarize and/or initial prompt to the forked conversation
-            let forked_conversation_id = forked_conversation.id();
-            let tab_pane_group_handle = active_pane_group.clone();
-            if let Some(terminal_view) = tab_pane_group_handle.as_ref(ctx).focused_session_view(ctx)
+            if let Some(terminal_view) = self
+                .active_tab_pane_group()
+                .as_ref(ctx)
+                .active_session_view(ctx)
             {
                 // Copy model selection and execution profile from source to new terminal view
                 if let Some(source_id) = source_terminal_view_id {
@@ -11934,15 +11955,57 @@ impl Workspace {
                     ctx,
                 );
             }
-            // After splitting, focus the newly created pane
-            let locator = PaneViewLocator {
-                pane_group_id: active_pane_group_id,
-                pane_id: created_pane_id,
-            };
-            workspace.focus_pane(locator, ctx);
 
             Self::show_fork_toast(conversation_id, window_id, ctx);
+            return;
+        }
+
+        let active_pane_group = self.active_tab_pane_group();
+        let active_pane_group_id = active_pane_group.id();
+        let created_pane_id: PaneId = active_pane_group.update(ctx, |pane_group, ctx| {
+            let active_pane_id = pane_group.focused_pane_id(ctx);
+
+            let new_pane_id = pane_group.add_session(
+                PaneGroupDirection::Right,
+                Some(active_pane_id),
+                active_pane_id.as_terminal_pane_id(),
+                None, /* chosen_shell */
+                Some(ConversationRestorationInNewPaneType::Forked {
+                    conversation: forked_conversation.clone(),
+                    has_initial_query,
+                }),
+                ctx,
+            );
+
+            new_pane_id.into()
         });
+
+        // Handle sending summarize and/or initial prompt to the forked conversation
+        let forked_conversation_id = forked_conversation.id();
+        let tab_pane_group_handle = active_pane_group.clone();
+        if let Some(terminal_view) = tab_pane_group_handle.as_ref(ctx).focused_session_view(ctx) {
+            // Copy model selection and execution profile from source to new terminal view
+            if let Some(source_id) = source_terminal_view_id {
+                Self::copy_model_and_profile_to_terminal_view(source_id, terminal_view.id(), ctx);
+            }
+
+            Self::handle_forked_conversation_prompts(
+                terminal_view,
+                summarize_after_fork,
+                summarization_prompt,
+                initial_prompt,
+                forked_conversation_id,
+                ctx,
+            );
+        }
+        // After splitting, focus the newly created pane
+        let locator = PaneViewLocator {
+            pane_group_id: active_pane_group_id,
+            pane_id: created_pane_id,
+        };
+        self.focus_pane(locator, ctx);
+
+        Self::show_fork_toast(conversation_id, window_id, ctx);
     }
 
     /// Handle sending summarize and/or initial prompt to a forked conversation.
@@ -12336,17 +12399,6 @@ impl Workspace {
         ctx.notify();
     }
 
-    fn open_recent_repos_and_convos_palette(&mut self, ctx: &mut ViewContext<Self>) {
-        self.palette.update(ctx, |view, ctx| {
-            view.reset(ctx);
-            view.set_fixed_query_filters(
-                "Search recent repos and conversations".to_string(),
-                vec![QueryFilter::HistoricalConversations, QueryFilter::Repos],
-                ctx,
-            );
-        });
-    }
-
     fn open_conversations_palette(&mut self, ctx: &mut ViewContext<Self>) {
         self.palette.update(ctx, |view, ctx| {
             view.reset(ctx);
@@ -12592,7 +12644,6 @@ impl Workspace {
             PaletteMode::WarpDrive => self.open_warp_drive_palette(ctx),
             PaletteMode::Files => self.open_files_palette(ctx),
             PaletteMode::Conversations => self.open_conversations_palette(ctx),
-            PaletteMode::ConversationsAndRepos => self.open_recent_repos_and_convos_palette(ctx),
         }
 
         ctx.focus(&self.palette);
@@ -15010,33 +15061,24 @@ impl Workspace {
 
         if let Some(terminal_handle) = pane_group_handle.as_ref(ctx).active_session_view(ctx) {
             #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]
-            let (
-                session,
-                path_if_local,
-                is_local,
-                is_wsl_session,
-                session_id,
-                pwd,
-                has_pending_ssh,
-            ) = terminal_handle.read(ctx, |terminal, ctx| {
-                let active_session_id = terminal.active_block_session_id();
-                let session =
-                    active_session_id.and_then(|id| terminal.sessions_model().as_ref(ctx).get(id));
-                let path_if_local = terminal.active_session_path_if_local(ctx);
-                let is_local = terminal.active_session_is_local(ctx);
-                let is_wsl_session = session.as_ref().map(|s| s.is_wsl()).unwrap_or(false);
-                let pwd = terminal.pwd();
-                let has_pending_ssh = terminal.has_pending_ssh_command();
-                (
-                    session,
-                    path_if_local,
-                    is_local,
-                    is_wsl_session,
-                    active_session_id,
-                    pwd,
-                    has_pending_ssh,
-                )
-            });
+            let (session, path_if_local, is_local, is_wsl_session, session_id, has_pending_ssh) =
+                terminal_handle.read(ctx, |terminal, ctx| {
+                    let active_session_id = terminal.active_block_session_id();
+                    let session = active_session_id
+                        .and_then(|id| terminal.sessions_model().as_ref(ctx).get(id));
+                    let path_if_local = terminal.active_session_path_if_local(ctx);
+                    let is_local = terminal.active_session_is_local(ctx);
+                    let is_wsl_session = session.as_ref().map(|s| s.is_wsl()).unwrap_or(false);
+                    let has_pending_ssh = terminal.has_pending_ssh_command();
+                    (
+                        session,
+                        path_if_local,
+                        is_local,
+                        is_wsl_session,
+                        active_session_id,
+                        has_pending_ssh,
+                    )
+                });
 
             let window_id = ctx.window_id();
             let working_directory_clone = path_if_local.clone();
@@ -15069,17 +15111,6 @@ impl Workspace {
                 && session_id.is_some_and(|sid| {
                     RemoteServerManager::as_ref(ctx).is_session_potentially_active(sid)
                 });
-
-            // When the session has a remote server, tell it about the current
-            // directory so it can start indexing and push repo metadata back.
-            #[cfg(feature = "local_fs")]
-            if has_remote_server {
-                if let (Some(sid), Some(cwd)) = (session_id, pwd) {
-                    RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
-                        mgr.navigate_to_directory(sid, cwd, ctx);
-                    });
-                }
-            }
 
             let enablement = CodingPanelEnablementState::from_session_env(
                 file_tree_and_global_search_are_enabled,
@@ -21196,8 +21227,10 @@ impl TypedActionView for Workspace {
                         pane_group
                             .terminal_view_from_pane_id(locator.pane_id, ctx)
                             .map(|terminal_view| {
-                                let repo_path =
-                                    terminal_view.as_ref(ctx).current_repo_path().cloned();
+                                let repo_path = terminal_view
+                                    .as_ref(ctx)
+                                    .current_local_repo_path()
+                                    .map(Path::to_path_buf);
                                 (repo_path, terminal_view.downgrade())
                             })
                     });

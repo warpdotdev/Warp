@@ -122,7 +122,7 @@ pub struct RequestParams {
     /// User-provided custom model providers (BYOK endpoints).
     pub custom_model_providers:
         Option<warp_multi_agent_api::request::settings::CustomModelProviders>,
-    pub allow_use_of_warp_credits_with_byok: bool,
+    pub allow_use_of_warp_credits: bool,
     pub autonomy_level: warp_multi_agent_api::AutonomyLevel,
     pub isolation_level: warp_multi_agent_api::IsolationLevel,
     pub web_search_enabled: bool,
@@ -254,8 +254,7 @@ impl RequestParams {
                 api_key_manager.custom_model_providers_for_request(is_custom_inference_enabled)
             })
             .flatten();
-        let allow_use_of_warp_credits_with_byok =
-            *AISettings::as_ref(app).can_use_warp_credits_with_byok;
+        let allow_use_of_warp_credits = *AISettings::as_ref(app).can_use_warp_credits_for_fallback;
 
         let app_execution_mode = AppExecutionMode::as_ref(app);
         let autonomy_level = if app_execution_mode.is_autonomous() {
@@ -344,7 +343,7 @@ impl RequestParams {
             should_redact_secrets,
             api_keys,
             custom_model_providers,
-            allow_use_of_warp_credits_with_byok,
+            allow_use_of_warp_credits,
             autonomy_level,
             isolation_level,
             web_search_enabled,

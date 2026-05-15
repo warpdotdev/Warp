@@ -2767,7 +2767,9 @@ fn build_vertical_tabs_summary_data(
                 }
 
                 if let (Some(repo_path), Some(branch_name)) = (
-                    terminal_view.current_repo_path().cloned(),
+                    terminal_view
+                        .current_local_repo_path()
+                        .map(Path::to_path_buf),
                     terminal_view
                         .current_git_branch(app)
                         .and_then(|branch| normalize_summary_text(&branch)),

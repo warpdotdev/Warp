@@ -1322,7 +1322,7 @@ impl RightPanelView {
     ) -> ReviewTerminalStatus {
         tv.read(ctx, |t, ctx| {
             let active_session_path = t.active_session_path_if_local(ctx);
-            let current_repo_path = t.current_repo_path().cloned();
+            let current_repo_path = t.current_local_repo_path().map(Path::to_path_buf);
             let active_cli_agent = t.active_cli_agent(ctx).map(|agent| format!("{agent:?}"));
             let model = t.model.lock();
             let is_executing = model.block_list().active_block().is_executing();
