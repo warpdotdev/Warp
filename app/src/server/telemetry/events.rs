@@ -27,6 +27,7 @@ use crate::ai::agent::AIAgentInput as FullAIAgentInput;
 use crate::ai::agent::AIIdentifiers;
 use crate::ai::agent::EntrypointType;
 use crate::ai::agent::PassiveSuggestionTrigger;
+use crate::ai::agent::SearchCodebaseFailureReason;
 use crate::ai::agent::ServerOutputId;
 use crate::ai::agent::SuggestedLoggingId;
 use crate::ai::agent_management::notifications::NotificationSourceAgent;
@@ -997,6 +998,33 @@ pub enum CodeContextDestination {
     Pty,
     AgentInput,
     RichInput,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteCodebaseSearchTelemetryResult {
+    Success,
+    Empty,
+    CodebaseNotIndexed,
+    InvalidFilePaths,
+    GetRelevantFilesError,
+    ClientError,
+    MissingCurrentWorkingDirectory,
+    Cancelled,
+}
+
+impl From<SearchCodebaseFailureReason> for RemoteCodebaseSearchTelemetryResult {
+    fn from(reason: SearchCodebaseFailureReason) -> Self {
+        match reason {
+            SearchCodebaseFailureReason::CodebaseNotIndexed => Self::CodebaseNotIndexed,
+            SearchCodebaseFailureReason::InvalidFilePaths => Self::InvalidFilePaths,
+            SearchCodebaseFailureReason::GetRelevantFilesError => Self::GetRelevantFilesError,
+            SearchCodebaseFailureReason::ClientError => Self::ClientError,
+            SearchCodebaseFailureReason::MissingCurrentWorkingDirectory => {
+                Self::MissingCurrentWorkingDirectory
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -2444,6 +2472,22 @@ pub enum TelemetryEvent {
     SearchCodebaseRepoUnavailable {
         action_id: AIAgentActionId,
         error: String,
+    },
+    RemoteCodebaseSearch {
+        action_id: AIAgentActionId,
+        result: RemoteCodebaseSearchTelemetryResult,
+        total_search_duration: Duration,
+        candidate_hash_count: Option<usize>,
+        returned_file_count: Option<usize>,
+        embedding_config: Option<ai::index::full_source_code_embedding::EmbeddingConfig>,
+    },
+    RemoteCodebaseIndexMutation {
+        mutation_kind: remote_server::manager::RemoteCodebaseIndexMutationKind,
+        state: Option<remote_server::codebase_index_proto::RemoteCodebaseIndexState>,
+        error_type: Option<remote_server::manager::RemoteServerErrorKind>,
+        embedding_config: Option<remote_server::codebase_index_proto::RemoteCodebaseEmbeddingConfig>,
+        remote_os: Option<String>,
+        remote_arch: Option<String>,
     },
     /// User changed the input UX mode (e.g. Universal Developer Input, UDI, mode or Classic)
     InputUXModeChanged {
@@ -4015,6 +4059,36 @@ impl TelemetryEvent {
                 "action_id": action_id,
                 "error": error,
             })),
+            TelemetryEvent::RemoteCodebaseSearch {
+                action_id,
+                result,
+                total_search_duration,
+                candidate_hash_count,
+                returned_file_count,
+                embedding_config,
+            } => Some(json!({
+                "action_id": action_id,
+                "result": result,
+                "total_search_duration": total_search_duration,
+                "candidate_hash_count": candidate_hash_count,
+                "returned_file_count": returned_file_count,
+                "embedding_config": embedding_config,
+            })),
+            TelemetryEvent::RemoteCodebaseIndexMutation {
+                mutation_kind,
+                state,
+                error_type,
+                embedding_config,
+                remote_os,
+                remote_arch,
+            } => Some(json!({
+                "mutation_kind": mutation_kind,
+                "state": state,
+                "error_type": error_type,
+                "embedding_config": embedding_config,
+                "remote_os": remote_os,
+                "remote_arch": remote_arch,
+            })),
             TelemetryEvent::InputUXModeChanged {
                 is_udi_enabled,
                 origin,
@@ -5047,6 +5121,8 @@ impl TelemetryEvent {
             | TelemetryEvent::FullEmbedCodebaseContextSearchSuccess { .. }
             | TelemetryEvent::SearchCodebaseRequested { .. }
             | TelemetryEvent::SearchCodebaseRepoUnavailable { .. }
+            | TelemetryEvent::RemoteCodebaseSearch { .. }
+            | TelemetryEvent::RemoteCodebaseIndexMutation { .. }
             | TelemetryEvent::InputUXModeChanged { .. }
             | TelemetryEvent::ContextChipInteracted { .. }
             | TelemetryEvent::VoiceInputUsed { .. }
@@ -5202,6 +5278,9 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::FullEmbedCodebaseContextSearchFailed { .. }
             | Self::FullEmbedCodebaseContextSearchSuccess { .. } => {
                 EnablementState::Flag(FeatureFlag::FullSourceCodeEmbedding)
+            }
+            Self::RemoteCodebaseSearch { .. } | Self::RemoteCodebaseIndexMutation { .. } => {
+                EnablementState::Flag(FeatureFlag::RemoteCodebaseIndexing)
             }
             Self::ObjectLinkCopied => EnablementState::Always,
             Self::FileTreeToggled => EnablementState::Flag(FeatureFlag::FileTree),
@@ -6168,6 +6247,8 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::SearchCodebaseRepoUnavailable { .. } => {
                 "AgentMode.SearchCodebase.RepoUnavailable"
             }
+            Self::RemoteCodebaseSearch { .. } => "AgentMode.RemoteCodebaseSearch",
+            Self::RemoteCodebaseIndexMutation { .. } => "RemoteCodebaseIndex.Mutation",
             Self::InputUXModeChanged { .. } => "Input.InputUXModeChanged",
             Self::ContextChipInteracted { .. } => "Input.ContextChipInteracted",
             Self::VoiceInputUsed { .. } => "Input.VoiceInputUsed",
@@ -6996,6 +7077,12 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::SearchCodebaseRequested { .. } => "Ran the Search Codebase tool",
             Self::SearchCodebaseRepoUnavailable { .. } => {
                 "Tried to use the Search Codebase tool on a repo that is unavailable"
+            }
+            Self::RemoteCodebaseSearch { .. } => {
+                "Remote codebase search completed with success or failure metadata"
+            }
+            Self::RemoteCodebaseIndexMutation { .. } => {
+                "Remote codebase index mutation completed with status or failure metadata"
             }
             Self::InputUXModeChanged { .. } => "Changed the input UX mode",
             Self::ContextChipInteracted { .. } => "Interacted with a context chip",

@@ -17,8 +17,6 @@ use warp_core::features::FeatureFlag;
 
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
-#[cfg(not(target_family = "wasm"))]
-use crate::ai::agent::SearchCodebaseFailureReason;
 use crate::{
     ai::{
         agent::{AIAgentActionId, SearchCodebaseResult},
@@ -374,6 +372,8 @@ impl GetRelevantFilesController {
                     .insert(action_id, RequestHandle::AbortHandle(abort_handle));
             }
             remote_search::RemoteSearchRequest::Ready(result) => {
+                let remote_search::RemoteSearchResponse { result, telemetry } = result;
+                Self::emit_remote_search_telemetry(&action_id, telemetry, ctx);
                 ctx.emit(GetRelevantFilesControllerEvent::Success {
                     action_id,
                     result: GetRelevantFilesControllerResult::SearchResult(result),
@@ -409,22 +409,37 @@ impl GetRelevantFilesController {
     #[cfg(not(target_family = "wasm"))]
     fn handle_remote_search_result(
         &mut self,
-        search_result: anyhow::Result<SearchCodebaseResult>,
+        search_result: remote_search::RemoteSearchResponse,
         action_id: AIAgentActionId,
         ctx: &mut ModelContext<Self>,
     ) {
         if self.pending_requests.remove(&action_id).is_none() {
             return;
         }
-
-        let result = search_result.unwrap_or_else(|e| SearchCodebaseResult::Failed {
-            reason: SearchCodebaseFailureReason::ClientError,
-            message: e.to_string(),
-        });
+        let remote_search::RemoteSearchResponse { result, telemetry } = search_result;
+        Self::emit_remote_search_telemetry(&action_id, telemetry, ctx);
         ctx.emit(GetRelevantFilesControllerEvent::Success {
             action_id,
             result: GetRelevantFilesControllerResult::SearchResult(result),
         });
+    }
+
+    fn emit_remote_search_telemetry(
+        action_id: &AIAgentActionId,
+        telemetry: remote_search::RemoteSearchTelemetry,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        send_telemetry_from_ctx!(
+            TelemetryEvent::RemoteCodebaseSearch {
+                action_id: action_id.clone(),
+                result: telemetry.result,
+                total_search_duration: telemetry.total_search_duration,
+                candidate_hash_count: telemetry.candidate_hash_count,
+                returned_file_count: telemetry.returned_file_count,
+                embedding_config: telemetry.embedding_config,
+            },
+            ctx
+        );
     }
 
     /// Returns the path to the root directory for a codebase search where pwd is `directory`.

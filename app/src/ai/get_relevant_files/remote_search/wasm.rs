@@ -1,4 +1,6 @@
-use std::path::PathBuf;
+use ai::index::full_source_code_embedding::EmbeddingConfig;
+use instant::Instant;
+use std::{path::PathBuf, time::Duration};
 
 use warpui::{AppContext, ModelContext};
 
@@ -6,11 +8,25 @@ use crate::ai::{
     agent::{AIAgentActionId, SearchCodebaseFailureReason, SearchCodebaseResult},
     blocklist::SessionContext,
 };
+use crate::server::telemetry::RemoteCodebaseSearchTelemetryResult;
 
 use crate::ai::get_relevant_files::controller::GetRelevantFilesController;
 
 pub(super) enum RemoteSearchRequest {
-    Ready(SearchCodebaseResult),
+    Ready(RemoteSearchResponse),
+}
+
+pub(super) struct RemoteSearchResponse {
+    pub result: SearchCodebaseResult,
+    pub telemetry: RemoteSearchTelemetry,
+}
+
+pub(super) struct RemoteSearchTelemetry {
+    pub result: RemoteCodebaseSearchTelemetryResult,
+    pub total_search_duration: Duration,
+    pub candidate_hash_count: Option<usize>,
+    pub returned_file_count: Option<usize>,
+    pub embedding_config: Option<EmbeddingConfig>,
 }
 
 pub(super) fn root_directory_for_search(
@@ -29,8 +45,18 @@ pub(super) fn send_request(
     _action_id: AIAgentActionId,
     _ctx: &mut ModelContext<GetRelevantFilesController>,
 ) -> RemoteSearchRequest {
-    RemoteSearchRequest::Ready(SearchCodebaseResult::Failed {
-        reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
-        message: "Remote codebase search is not available in this environment.".to_string(),
+    let search_start = Instant::now();
+    RemoteSearchRequest::Ready(RemoteSearchResponse {
+        result: SearchCodebaseResult::Failed {
+            reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
+            message: "Remote codebase search is not available in this environment.".to_string(),
+        },
+        telemetry: RemoteSearchTelemetry {
+            result: RemoteCodebaseSearchTelemetryResult::CodebaseNotIndexed,
+            total_search_duration: search_start.elapsed(),
+            candidate_hash_count: None,
+            returned_file_count: None,
+            embedding_config: None,
+        },
     })
 }

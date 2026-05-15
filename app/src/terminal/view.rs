@@ -4583,6 +4583,61 @@ impl TerminalView {
                             ctx
                         );
                     }
+                    RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
+                        session_id: Some(session_id),
+                        status,
+                        mutation_kind: Some(mutation_kind),
+                        ..
+                    } => {
+                        let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
+                            .as_ref(ctx)
+                            .platform_for_session(*session_id)
+                            .map(|p| {
+                                (
+                                    Some(p.os.as_str().to_owned()),
+                                    Some(p.arch.as_str().to_owned()),
+                                )
+                            })
+                            .unwrap_or((None, None));
+                        send_telemetry_from_ctx!(
+                            TelemetryEvent::RemoteCodebaseIndexMutation {
+                                mutation_kind: *mutation_kind,
+                                state: Some(status.state),
+                                error_type: None,
+                                embedding_config: None,
+                                remote_os,
+                                remote_arch,
+                            },
+                            ctx
+                        );
+                    }
+                    RemoteServerManagerEvent::CodebaseIndexMutationFailed {
+                        session_id,
+                        mutation_kind,
+                        error_kind,
+                    } => {
+                        let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
+                            .as_ref(ctx)
+                            .platform_for_session(*session_id)
+                            .map(|p| {
+                                (
+                                    Some(p.os.as_str().to_owned()),
+                                    Some(p.arch.as_str().to_owned()),
+                                )
+                            })
+                            .unwrap_or((None, None));
+                        send_telemetry_from_ctx!(
+                            TelemetryEvent::RemoteCodebaseIndexMutation {
+                                mutation_kind: *mutation_kind,
+                                state: None,
+                                error_type: Some(*error_kind),
+                                embedding_config: None,
+                                remote_os,
+                                remote_arch,
+                            },
+                            ctx
+                        );
+                    }
                     RemoteServerManagerEvent::ServerMessageDecodingError { session_id } => {
                         let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
                             .as_ref(ctx)

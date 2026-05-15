@@ -1,12 +1,13 @@
 use ::ai::index::full_source_code_embedding::{
-    store_client::StoreClient, ContentHash, Fragment, RepoMetadata,
+    store_client::StoreClient, ContentHash, EmbeddingConfig, Fragment, RepoMetadata,
 };
+use instant::Instant;
 use itertools::Itertools;
 use remote_server::proto::{
     file_context_proto, FragmentMetadata, LineRange, ReadFileContextFile, ReadFileContextRequest,
     ReadFileContextResponse,
 };
-use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc, time::Duration};
 use string_offset::ByteOffset;
 use warpui::{AppContext, ModelContext, SingletonEntity};
 
@@ -20,13 +21,27 @@ use crate::{
         RemoteCodebaseIndexModel, RemoteCodebaseSearchAvailability, RemoteCodebaseSearchContext,
     },
     server::server_api::{ServerApi, ServerApiProvider},
+    server::telemetry::RemoteCodebaseSearchTelemetryResult,
 };
 
 use crate::ai::get_relevant_files::controller::GetRelevantFilesController;
 
 pub(super) enum RemoteSearchRequest {
     Pending(futures_util::stream::AbortHandle),
-    Ready(SearchCodebaseResult),
+    Ready(RemoteSearchResponse),
+}
+
+pub(super) struct RemoteSearchResponse {
+    pub result: SearchCodebaseResult,
+    pub telemetry: RemoteSearchTelemetry,
+}
+
+pub(super) struct RemoteSearchTelemetry {
+    pub result: RemoteCodebaseSearchTelemetryResult,
+    pub total_search_duration: Duration,
+    pub candidate_hash_count: Option<usize>,
+    pub returned_file_count: Option<usize>,
+    pub embedding_config: Option<EmbeddingConfig>,
 }
 
 pub(super) fn root_directory_for_search(
@@ -53,11 +68,18 @@ pub(super) fn send_request(
     action_id: crate::ai::agent::AIAgentActionId,
     ctx: &mut ModelContext<GetRelevantFilesController>,
 ) -> RemoteSearchRequest {
+    let search_start = Instant::now();
     if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
-        return RemoteSearchRequest::Ready(SearchCodebaseResult::Failed {
+        let result = SearchCodebaseResult::Failed {
             reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
             message: "Remote codebase search is not enabled.".to_string(),
-        });
+        };
+        return RemoteSearchRequest::Ready(remote_search_response_from_result(
+            result,
+            search_start.elapsed(),
+            None,
+            None,
+        ));
     }
 
     let availability = RemoteCodebaseIndexModel::as_ref(ctx)
@@ -68,10 +90,16 @@ pub(super) fn send_request(
                 .client_for_host(&search_context.remote_path.host_id)
                 .cloned()
             else {
-                return RemoteSearchRequest::Ready(SearchCodebaseResult::Failed {
+                let result = SearchCodebaseResult::Failed {
                     reason: SearchCodebaseFailureReason::ClientError,
                     message: "Remote codebase search is unavailable because the remote server is not connected.".to_string(),
-                });
+                };
+                return RemoteSearchRequest::Ready(remote_search_response_from_result(
+                    result,
+                    search_start.elapsed(),
+                    None,
+                    None,
+                ));
             };
             let store_client = ServerApiProvider::as_ref(ctx).get();
             let abort_handle = ctx
@@ -101,13 +129,25 @@ pub(super) fn send_request(
                     ctx,
                 );
             });
-            RemoteSearchRequest::Ready(remote_availability_failure(availability))
+            let result = remote_availability_failure(availability);
+            RemoteSearchRequest::Ready(remote_search_response_from_result(
+                result,
+                search_start.elapsed(),
+                None,
+                None,
+            ))
         }
         RemoteCodebaseSearchAvailability::NoConnectedHost
         | RemoteCodebaseSearchAvailability::NoActiveRepo
         | RemoteCodebaseSearchAvailability::Indexing { .. }
         | RemoteCodebaseSearchAvailability::Unavailable { .. } => {
-            RemoteSearchRequest::Ready(remote_availability_failure(availability))
+            let result = remote_availability_failure(availability);
+            RemoteSearchRequest::Ready(remote_search_response_from_result(
+                result,
+                search_start.elapsed(),
+                None,
+                None,
+            ))
         }
     }
 }
@@ -121,6 +161,55 @@ async fn execute_remote_codebase_search(
     search_context: RemoteCodebaseSearchContext,
     client: Arc<remote_server::client::RemoteServerClient>,
     store_client: Arc<ServerApi>,
+) -> RemoteSearchResponse {
+    let search_start = Instant::now();
+    let mut candidate_hash_count = None;
+    let embedding_config = match store_client.codebase_context_config().await {
+        Ok(config) => config.embedding_config,
+        Err(error) => {
+            let result = SearchCodebaseResult::Failed {
+                reason: SearchCodebaseFailureReason::ClientError,
+                message: error.to_string(),
+            };
+            return remote_search_response_from_result(
+                result,
+                search_start.elapsed(),
+                candidate_hash_count,
+                None,
+            );
+        }
+    };
+    let result = execute_remote_codebase_search_inner(
+        query,
+        partial_paths,
+        search_context,
+        client,
+        store_client,
+        embedding_config,
+        &mut candidate_hash_count,
+    )
+    .await
+    .unwrap_or_else(|e| SearchCodebaseResult::Failed {
+        reason: SearchCodebaseFailureReason::ClientError,
+        message: e.to_string(),
+    });
+
+    remote_search_response_from_result(
+        result,
+        search_start.elapsed(),
+        candidate_hash_count,
+        Some(embedding_config),
+    )
+}
+
+async fn execute_remote_codebase_search_inner(
+    query: String,
+    partial_paths: Option<Vec<String>>,
+    search_context: RemoteCodebaseSearchContext,
+    client: Arc<remote_server::client::RemoteServerClient>,
+    store_client: Arc<ServerApi>,
+    embedding_config: EmbeddingConfig,
+    candidate_hash_count: &mut Option<usize>,
 ) -> Result<SearchCodebaseResult, anyhow::Error> {
     let root_hash = search_context.root_hash;
     let root_hash_string = root_hash.to_string();
@@ -142,6 +231,7 @@ async fn execute_remote_codebase_search(
             },
         )
         .await?;
+    *candidate_hash_count = Some(candidate_hashes.len());
     if candidate_hashes.is_empty() {
         return Ok(SearchCodebaseResult::Success { files: vec![] });
     }
@@ -213,6 +303,42 @@ async fn execute_remote_codebase_search(
         .collect_vec();
 
     Ok(SearchCodebaseResult::Success { files })
+}
+
+fn remote_search_response_from_result(
+    result: SearchCodebaseResult,
+    total_search_duration: Duration,
+    candidate_hash_count: Option<usize>,
+    embedding_config: Option<EmbeddingConfig>,
+) -> RemoteSearchResponse {
+    let returned_file_count = match &result {
+        SearchCodebaseResult::Success { files } => Some(files.len()),
+        SearchCodebaseResult::Failed { .. } | SearchCodebaseResult::Cancelled => None,
+    };
+    let telemetry_result = remote_search_telemetry_result(&result);
+    RemoteSearchResponse {
+        result,
+        telemetry: RemoteSearchTelemetry {
+            result: telemetry_result,
+            total_search_duration,
+            candidate_hash_count,
+            returned_file_count,
+            embedding_config,
+        },
+    }
+}
+
+fn remote_search_telemetry_result(
+    result: &SearchCodebaseResult,
+) -> RemoteCodebaseSearchTelemetryResult {
+    match result {
+        SearchCodebaseResult::Success { files } if files.is_empty() => {
+            RemoteCodebaseSearchTelemetryResult::Empty
+        }
+        SearchCodebaseResult::Success { .. } => RemoteCodebaseSearchTelemetryResult::Success,
+        SearchCodebaseResult::Failed { reason, .. } => (*reason).into(),
+        SearchCodebaseResult::Cancelled => RemoteCodebaseSearchTelemetryResult::Cancelled,
+    }
 }
 
 fn read_fragment_metadata_request(metadata: &[FragmentMetadata]) -> ReadFileContextRequest {

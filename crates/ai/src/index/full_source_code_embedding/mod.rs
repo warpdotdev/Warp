@@ -85,7 +85,8 @@ pub enum InconsistentStateError {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EmbeddingConfig {
     OpenAiTextSmall3_256,
     VoyageCode3_512,

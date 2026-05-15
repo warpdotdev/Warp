@@ -14,7 +14,8 @@ use crate::settings::CodeSettings;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
 use super::manager::{
-    RemoteCodebaseIndexStatusWithPath, RemoteServerManager, RemoteServerManagerEvent,
+    RemoteCodebaseIndexMutationKind, RemoteCodebaseIndexStatusWithPath, RemoteServerManager,
+    RemoteServerManagerEvent,
 };
 
 #[derive(Clone, Debug)]
@@ -148,7 +149,7 @@ impl RemoteCodebaseIndexModel {
         };
 
         RemoteServerManager::handle(ctx).update(ctx, |manager, ctx| {
-            manager.ensure_codebase_indexed(remote_path, ctx);
+            manager.ensure_codebase_indexed(remote_path, RemoteCodebaseIndexMutationKind::Request, ctx);
         });
         true
     }
@@ -174,7 +175,7 @@ impl RemoteCodebaseIndexModel {
 
     pub fn request_index(&self, remote_path: RemotePath, ctx: &mut ModelContext<Self>) {
         RemoteServerManager::handle(ctx).update(ctx, |manager, ctx| {
-            manager.ensure_codebase_indexed(remote_path, ctx);
+            manager.ensure_codebase_indexed(remote_path, RemoteCodebaseIndexMutationKind::Request, ctx);
         });
     }
 
@@ -225,6 +226,7 @@ impl RemoteCodebaseIndexModel {
             RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
                 remote_path,
                 status,
+                ..
             } => {
                 if self.apply_status_update(remote_path.clone(), status.clone()) {
                     ctx.emit(RemoteCodebaseIndexModelEvent::SettingsEntriesChanged);
@@ -244,7 +246,7 @@ impl RemoteCodebaseIndexModel {
                     // only when the shared auto-index setting allows it.
                     let remote_path = remote_path.clone();
                     RemoteServerManager::handle(ctx).update(ctx, |manager, ctx| {
-                        manager.ensure_codebase_indexed(remote_path, ctx);
+                        manager.ensure_codebase_indexed(remote_path, RemoteCodebaseIndexMutationKind::AutoIndex, ctx);
                     });
                 }
             }
@@ -285,6 +287,7 @@ impl RemoteCodebaseIndexModel {
             | RemoteServerManagerEvent::BinaryCheckComplete { .. }
             | RemoteServerManagerEvent::BinaryInstallComplete { .. }
             | RemoteServerManagerEvent::ClientRequestFailed { .. }
+            | RemoteServerManagerEvent::CodebaseIndexMutationFailed { .. }
             | RemoteServerManagerEvent::ServerMessageDecodingError { .. } => {}
         }
     }
