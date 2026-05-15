@@ -163,10 +163,9 @@ use voice::transcriber::VoiceTranscriber;
 use warp_cli::GlobalOptions;
 use warp_cli::{agent::AgentCommand, CliCommand};
 
+use repo_metadata::repositories::DetectedRepositories;
 #[cfg(feature = "local_fs")]
-use repo_metadata::{
-    repositories::DetectedRepositories, watcher::DirectoryWatcher, RepoMetadataModel,
-};
+use repo_metadata::{watcher::DirectoryWatcher, RepoMetadataModel};
 #[cfg(feature = "local_fs")]
 use watcher::HomeDirectoryWatcher;
 
@@ -1458,10 +1457,11 @@ pub(crate) fn initialize_app(
         );
     }
 
-    #[cfg(not(target_family = "wasm"))]
+    ctx.add_singleton_model(|_| DetectedRepositories::default());
+
+    #[cfg(all(not(target_family = "wasm"), feature = "local_fs"))]
     {
         ctx.add_singleton_model(DirectoryWatcher::new);
-        ctx.add_singleton_model(|_| DetectedRepositories::default());
         if let Some(home_dir) = dirs::home_dir() {
             ctx.add_singleton_model(|ctx| HomeDirectoryWatcher::new(home_dir, ctx));
         } else {
