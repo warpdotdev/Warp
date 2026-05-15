@@ -123,6 +123,7 @@ pub enum RemoteServerOperation {
     GetFragmentMetadataFromHash,
     GetDiffState,
     DiscardFiles,
+    GetBranches,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -476,6 +477,15 @@ pub enum RemoteServerManagerEvent {
         delta: DiffStateFileDelta,
     },
 
+    // --- Branch listing ---
+    /// Response to a `GetBranches` request.
+    GetBranchesResponse {
+        session_id: SessionId,
+        repo_path: StandardizedPath,
+        /// Branch list on success, error message on failure.
+        result: Result<Vec<crate::proto::BranchInfo>, String>,
+    },
+
     // --- Setup events ---
     /// Intermediate state change during the binary check/install flow.
     SetupStateChanged {
@@ -546,9 +556,8 @@ impl RemoteServerManagerEvent {
             | RemoteServerManagerEvent::BinaryCheckComplete { session_id, .. }
             | RemoteServerManagerEvent::BinaryInstallComplete { session_id, .. }
             | RemoteServerManagerEvent::ClientRequestFailed { session_id, .. }
-            | RemoteServerManagerEvent::ServerMessageDecodingError { session_id } => {
-                Some(*session_id)
-            }
+            | RemoteServerManagerEvent::ServerMessageDecodingError { session_id }
+            | RemoteServerManagerEvent::GetBranchesResponse { session_id, .. } => Some(*session_id),
             RemoteServerManagerEvent::HostConnected { .. }
             | RemoteServerManagerEvent::HostDisconnected { .. }
             | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
@@ -1745,6 +1754,43 @@ impl RemoteServerManager {
                             .await;
                     }
                 }
+            })
+            .detach();
+    }
+
+    /// Sends a `GetBranches` request to the remote server for the given
+    /// session and emits the result as a manager event.
+    pub fn get_branches(
+        &mut self,
+        session_id: SessionId,
+        remote_path: RemotePath,
+        max_branch_count: Option<u32>,
+        include_remotes: bool,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(client) = self.client_for_session(session_id).cloned() else {
+            log::warn!("Remote server get_branches: no connected client session={session_id:?}");
+            return;
+        };
+
+        let repo_path = remote_path.path;
+        let repo_path_for_event = repo_path.clone();
+        let spawner = self.spawner.clone();
+        ctx.background_executor()
+            .spawn(async move {
+                let result = client
+                    .get_branches(&repo_path, max_branch_count, include_remotes)
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = spawner
+                    .spawn(move |_me, ctx| {
+                        ctx.emit(RemoteServerManagerEvent::GetBranchesResponse {
+                            session_id,
+                            repo_path: repo_path_for_event,
+                            result,
+                        });
+                    })
+                    .await;
             })
             .detach();
     }

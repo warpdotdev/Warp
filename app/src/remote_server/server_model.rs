@@ -37,21 +37,21 @@ use super::diff_state_tracker::{
 use super::proto::{
     client_message, delete_file_response, discard_files_response, get_diff_state_response,
     get_fragment_metadata_from_hash_response, resolve_conflict_response, run_command_response,
-    save_buffer_response, server_message, write_file_response, Abort, Authenticate, BufferEdit,
-    BufferUpdatedPush, ClientMessage, CloseBuffer, CodebaseIndexStatusState,
+    save_buffer_response, server_message, write_file_response, Abort, Authenticate, BranchInfo,
+    BufferEdit, BufferUpdatedPush, ClientMessage, CloseBuffer, CodebaseIndexStatusState,
     CodebaseIndexStatusUpdated, CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse,
     DeleteFileSuccess, DiscardFilesError, DiscardFilesResponse, DiscardFilesSuccess,
     DropCodebaseIndex, ErrorCode, ErrorResponse, FailedFileRead, FileContextProto,
     FileOperationError, FragmentMetadata as ProtoFragmentMetadata,
     FragmentMetadataLookupError as ProtoFragmentMetadataLookupError,
-    FragmentMetadataLookupErrorCode, GetDiffStateResponse, GetFragmentMetadataFromHash,
-    GetFragmentMetadataFromHashResponse, GetFragmentMetadataFromHashSuccess, IndexCodebase,
-    Initialize, InitializeResponse, MissingFragmentMetadata, NavigatedToDirectory,
-    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextResponse,
-    ResolveConflict, ResolveConflictResponse, ResolveConflictSuccess, RunCommandError,
-    RunCommandErrorCode, RunCommandRequest, RunCommandResponse, RunCommandSuccess, SaveBuffer,
-    SaveBufferResponse, SaveBufferSuccess, ServerMessage, SessionBootstrapped, TextEdit, WriteFile,
-    WriteFileResponse, WriteFileSuccess,
+    FragmentMetadataLookupErrorCode, GetBranchesError, GetBranchesResponse, GetBranchesSuccess,
+    GetDiffStateResponse, GetFragmentMetadataFromHash, GetFragmentMetadataFromHashResponse,
+    GetFragmentMetadataFromHashSuccess, IndexCodebase, Initialize, InitializeResponse,
+    MissingFragmentMetadata, NavigatedToDirectory, NavigatedToDirectoryResponse, OpenBuffer,
+    OpenBufferResponse, ReadFileContextResponse, ResolveConflict, ResolveConflictResponse,
+    ResolveConflictSuccess, RunCommandError, RunCommandErrorCode, RunCommandRequest,
+    RunCommandResponse, RunCommandSuccess, SaveBuffer, SaveBufferResponse, SaveBufferSuccess,
+    ServerMessage, SessionBootstrapped, TextEdit, WriteFile, WriteFileResponse, WriteFileSuccess,
 };
 use super::server_buffer_tracker::{PendingBufferRequestKind, ServerBufferTracker};
 
@@ -704,6 +704,9 @@ impl ServerModel {
             Some(client_message::Message::UnsubscribeDiffState(msg)) => {
                 self.handle_unsubscribe_diff_state(msg, conn_id, ctx);
                 return; // fire-and-forget notification
+            }
+            Some(client_message::Message::GetBranches(msg)) => {
+                self.handle_get_branches(msg, &request_id, conn_id, ctx)
             }
             Some(client_message::Message::DiscardFiles(msg)) => {
                 self.handle_discard_files(msg, &request_id, ctx)
@@ -2262,6 +2265,80 @@ impl ServerModel {
                 }
             }
         }
+    }
+
+    /// Handles `GetBranches` — request/response.
+    ///
+    /// Runs `get_all_branches` on the remote filesystem and responds with
+    /// the branch list.
+    fn handle_get_branches(
+        &mut self,
+        msg: super::proto::GetBranches,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) -> HandlerOutcome {
+        let repo_path = match StandardizedPath::from_local_canonicalized(Path::new(&msg.repo_path))
+        {
+            Ok(p) => p.to_local_path_lossy(),
+            Err(e) => {
+                return HandlerOutcome::Sync(server_message::Message::GetBranchesResponse(
+                    GetBranchesResponse {
+                        result: Some(super::proto::get_branches_response::Result::Error(
+                            GetBranchesError {
+                                message: format!("Invalid repo_path: {e}"),
+                            },
+                        )),
+                    },
+                ));
+            }
+        };
+
+        let max_branch_count = msg.max_branch_count.map(|c| c as usize);
+        let include_remotes = msg.include_remotes;
+
+        log::info!(
+            "Handling GetBranches repo={} (request_id={request_id})",
+            msg.repo_path,
+        );
+
+        let request_id_for_response = request_id.clone();
+        let handle = self.spawn_request_handler(
+            request_id.clone(),
+            async move {
+                crate::util::git::get_all_branches(&repo_path, max_branch_count, include_remotes)
+                    .await
+            },
+            move |me, branches_result, _ctx| {
+                let message = match branches_result {
+                    Ok(branches) => {
+                        server_message::Message::GetBranchesResponse(GetBranchesResponse {
+                            result: Some(super::proto::get_branches_response::Result::Success(
+                                GetBranchesSuccess {
+                                    branches: branches
+                                        .into_iter()
+                                        .map(|entry| BranchInfo {
+                                            name: entry.name,
+                                            is_main: entry.is_main,
+                                        })
+                                        .collect(),
+                                },
+                            )),
+                        })
+                    }
+                    Err(e) => server_message::Message::GetBranchesResponse(GetBranchesResponse {
+                        result: Some(super::proto::get_branches_response::Result::Error(
+                            GetBranchesError {
+                                message: format!("{e:#}"),
+                            },
+                        )),
+                    }),
+                };
+                me.send_server_message(Some(conn_id), Some(&request_id_for_response), message);
+            },
+            ctx,
+        );
+        HandlerOutcome::Async(Some(handle))
     }
 
     /// Handles `DiscardFilesRequest` — request/response.

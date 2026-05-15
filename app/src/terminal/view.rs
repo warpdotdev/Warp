@@ -4641,7 +4641,8 @@ impl TerminalView {
                     | RemoteServerManagerEvent::BufferConflictDetected { .. }
                     | RemoteServerManagerEvent::DiffStateSnapshotReceived { .. }
                     | RemoteServerManagerEvent::DiffStateMetadataUpdateReceived { .. }
-                    | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. } => {}
+                    | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. }
+                    | RemoteServerManagerEvent::GetBranchesResponse { .. } => {}
                 }
             });
         }

@@ -94,7 +94,7 @@ use crate::terminal::cli_agent::{
 };
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
-use crate::util::git::get_all_branches;
+use crate::util::git::{get_all_branches, BranchEntry};
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::resolve_file_target_with_editor_choice;
 #[cfg(feature = "local_fs")]
@@ -587,7 +587,7 @@ struct PendingPreciseScroll {
 struct RepositoryState {
     repo_path: PathBuf,
     state: CodeReviewViewState,
-    available_branches: Vec<(String, bool)>, // (branch_name, is_main_branch)
+    available_branches: Vec<BranchEntry>,
 
     /// Whether a file has been explicitly expanded (true) or collapsed (false).
     file_expanded: HashMap<PathBuf, bool>,
@@ -1556,7 +1556,7 @@ impl CodeReviewView {
             let already_present = repo
                 .available_branches
                 .iter()
-                .any(|(name, _)| name == branch_name);
+                .any(|entry| entry.name == *branch_name);
             if !already_present {
                 targets.push(DiffTarget::new(
                     branch_name.clone(),
@@ -1567,10 +1567,10 @@ impl CodeReviewView {
         }
 
         // 3. Main branch, if known.
-        let main_branch = repo.available_branches.iter().find(|(_, is_main)| *is_main);
-        if let Some((main_branch_name, _)) = main_branch {
+        let main_branch = repo.available_branches.iter().find(|entry| entry.is_main);
+        if let Some(main_entry) = main_branch {
             targets.push(DiffTarget::new(
-                main_branch_name.clone(),
+                main_entry.name.clone(),
                 DiffMode::MainBranch,
                 matches!(current_mode, DiffMode::MainBranch),
             ));
@@ -1579,22 +1579,22 @@ impl CodeReviewView {
         // 4. Other branches, filtered to exclude main and the currently
         // checked-out branch (the latter is functionally the same as
         // "Uncommitted changes").
-        for (branch_name, is_main) in repo.available_branches.iter() {
-            if *is_main {
+        for entry in repo.available_branches.iter() {
+            if entry.is_main {
                 continue;
             }
             if let Some(current_name) = &current_branch_name {
-                if branch_name == current_name {
+                if entry.name == *current_name {
                     continue;
                 }
             }
             let is_selected = match &current_mode {
-                DiffMode::OtherBranch(name) => name == branch_name,
+                DiffMode::OtherBranch(name) => name == &entry.name,
                 DiffMode::Head | DiffMode::MainBranch => false,
             };
             targets.push(DiffTarget::new(
-                branch_name.clone(),
-                DiffMode::OtherBranch(branch_name.clone()),
+                entry.name.clone(),
+                DiffMode::OtherBranch(entry.name.clone()),
                 is_selected,
             ));
         }
