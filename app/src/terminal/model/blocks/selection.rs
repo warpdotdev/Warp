@@ -11,7 +11,7 @@ use warpui::{
 };
 
 use crate::{
-    ai::blocklist::{block::PendingUserQueryBlock, AIBlock},
+    ai::blocklist::AIBlock,
     env_vars::env_var_collection_block::EnvVarCollectionBlock,
     terminal::{
         event::Event as TerminalEvent,
@@ -952,12 +952,6 @@ impl BlockList {
                             {
                                 selected_texts.push(selected_text);
                             }
-                            if let Some(selected_text) =
-                                read_selected_text_from_pending_user_query_block(*view_id, app)
-                            {
-                                selected_texts.push(selected_text);
-                            }
-
                             if let Some(active_window_id) = app.windows().active_window() {
                                 if let Some(ssh_block) = app
                                     .view_with_id::<WarpifySuccessBlock>(active_window_id, *view_id)
@@ -1020,11 +1014,6 @@ impl BlockList {
                             {
                                 selected_texts.push(selected_text);
                             }
-                            if let Some(selected_text) =
-                                read_selected_text_from_pending_user_query_block(item.view_id, app)
-                            {
-                                selected_texts.push(selected_text);
-                            }
                         }
                         selection_start_cursor.next();
                     }
@@ -1043,11 +1032,6 @@ impl BlockList {
                     {
                         if let Some(selected_text) =
                             read_selected_text_from_ai_block(item.view_id, app)
-                        {
-                            selected_texts.push(selected_text);
-                        }
-                        if let Some(selected_text) =
-                            read_selected_text_from_pending_user_query_block(item.view_id, app)
                         {
                             selected_texts.push(selected_text);
                         }
@@ -1091,12 +1075,6 @@ impl BlockList {
                                 selected_texts.push(selected_text);
                             }
                         }
-                    }
-
-                    if let Some(selected_text) =
-                        read_selected_text_from_pending_user_query_block(view_id, app)
-                    {
-                        selected_texts.push(selected_text);
                     }
                 }
 
@@ -1539,19 +1517,6 @@ fn read_selected_text_from_ai_block(view_id: EntityId, app: &AppContext) -> Opti
     let ai_block = app.view_with_id::<AIBlock>(active_window_id, view_id)?;
     let ai_block_view = app.view(&ai_block);
     ai_block_view.selected_text(app)
-}
-
-/// Given the view id of a pending user query block, return the active selected text in that block.
-fn read_selected_text_from_pending_user_query_block(
-    view_id: EntityId,
-    app: &AppContext,
-) -> Option<String> {
-    let active_window_id = app.windows().active_window()?;
-
-    let pending_user_query_block =
-        app.view_with_id::<PendingUserQueryBlock>(active_window_id, view_id)?;
-    let pending_user_query_block_view = app.view(&pending_user_query_block);
-    pending_user_query_block_view.selected_text(app)
 }
 
 #[cfg(test)]

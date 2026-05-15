@@ -114,7 +114,7 @@ use crate::ai::agent::{
     AIAgentPtyWriteMode, AgentReviewCommentBatch, CancellationReason, PassiveSuggestionTrigger,
     ServerOutputId, ShellCommandCompletedTrigger,
 };
-use crate::ai::blocklist::block::{AIBlockAction, FinishReason};
+use crate::ai::blocklist::block::{AIBlockAction, FinishReason, PendingUserQueryBlock};
 use crate::ai::blocklist::codebase_index_speedbump_banner::{
     CodebaseIndexSpeedbumpBannerAction, CodebaseIndexSpeedbumpBannerState, VisibilityState,
 };
@@ -2881,9 +2881,9 @@ pub struct TerminalView {
 
     ephemeral_message_model: ModelHandle<EphemeralMessageModel>,
 
-    /// Tracks the view ID of an inserted pending user query block, if any.
-    /// Used to remove the block when summarization completes or is cancelled.
-    pending_user_query_view_id: Option<EntityId>,
+    /// Tracks the pending user query block handle, if any.
+    /// Rendered as a column banner between the blocklist and the input.
+    pending_user_query_handle: Option<ViewHandle<PendingUserQueryBlock>>,
     pending_user_query_kind: Option<PendingUserQueryKind>,
 
     /// Callback for the queued prompt that fires when the current conversation finishes.
@@ -4321,7 +4321,7 @@ impl TerminalView {
             pending_cloud_mode_start_callback: None,
             pending_cloud_mode_start_abort_handle: None,
             ephemeral_message_model,
-            pending_user_query_view_id: None,
+            pending_user_query_handle: None,
             pending_user_query_kind: None,
             queued_prompt_callback: None,
             pty_recorder: ctx
@@ -4973,7 +4973,7 @@ impl TerminalView {
                 let pending_query_conversation_id = self.pending_user_query_conversation_id();
                 let is_same_conversation = pending_query_conversation_id
                     .is_some_and(|id| id == active_block_conversation_id);
-                if self.pending_user_query_view_id.is_some() && !is_same_conversation {
+                if self.pending_user_query_handle.is_some() && !is_same_conversation {
                     self.remove_pending_user_query_block(ctx);
                 }
             } else if !has_active_subagent() {
@@ -13763,21 +13763,10 @@ impl TerminalView {
         blocklist_selected_text.or_else(|| self.pending_user_query_selected_text(ctx))
     }
 
-    /// Returns selected text from the pending user query block, if any.
     fn pending_user_query_selected_text(&self, ctx: &AppContext) -> Option<String> {
-        let view_id = self.pending_user_query_view_id?;
-        self.rich_content_views
-            .iter()
-            .find_map(|rc| match rc.metadata() {
-                Some(RichContentMetadata::PendingUserQuery {
-                    pending_user_query_block_handle,
-                }) if pending_user_query_block_handle.id() == view_id => {
-                    pending_user_query_block_handle
-                        .as_ref(ctx)
-                        .selected_text(ctx)
-                }
-                _ => None,
-            })
+        self.pending_user_query_handle
+            .as_ref()
+            .and_then(|h| h.as_ref(ctx).selected_text(ctx))
     }
 
     /// Gets the selected text from the terminal input editor, if any.
@@ -19134,18 +19123,6 @@ impl TerminalView {
                         env_var_collection_block.clear_selection(ctx);
                     });
                 }
-                Some(RichContentMetadata::PendingUserQuery {
-                    pending_user_query_block_handle,
-                }) => {
-                    if exempt_rich_content_view_id
-                        .is_some_and(|view_id| pending_user_query_block_handle.id() == view_id)
-                    {
-                        continue;
-                    }
-                    pending_user_query_block_handle.update(ctx, |block, ctx| {
-                        block.clear_selection(ctx);
-                    });
-                }
                 Some(RichContentMetadata::WarpifySuccessBlock { .. }) => {
                     // TODO(Simon): We should be checking for WarpifySuccessBlocks here as well.
                     // The `WarpifySuccessBlock` implements a `SelectableArea`.
@@ -19157,6 +19134,12 @@ impl TerminalView {
         // When this function is invoked because of an ongoing text selection within a nested
         // rich content view component (i.e. `CodeEditorView`), setting `is_selecting` to false
         // will prevent the selection from "spilling" into neighbouring blocks.
+        if let Some(handle) = &self.pending_user_query_handle {
+            if !exempt_rich_content_view_id.is_some_and(|id| id == handle.id()) {
+                handle.update(ctx, |block, ctx| block.clear_selection(ctx));
+            }
+        }
+
         self.is_selecting = false;
 
         // TODO(Simon): This doesn't work as intended for nested inline SelectableAreas.
@@ -19644,7 +19627,7 @@ impl TerminalView {
             .rich_content_views
             .iter()
             .rev()
-            .find(|rc| !rc.is_usage_footer() && !rc.is_pending_user_query());
+            .find(|rc| !rc.is_usage_footer());
 
         candidate.and_then(|rich_content| {
             let ai_metadata = rich_content.ai_block_metadata()?;
@@ -21687,7 +21670,7 @@ impl TerminalView {
         self.rich_content_views
             .iter()
             .rev()
-            .find(|rc| !rc.is_usage_footer() && !rc.is_pending_user_query())
+            .find(|rc| !rc.is_usage_footer())
             .and_then(|rich_content| rich_content.ai_block_metadata())
             .map(|ai_metadata| ai_metadata.ai_block_handle.clone())
     }
@@ -26314,6 +26297,10 @@ impl View for TerminalView {
                         && self.should_render_use_agent_footer(&model, app)
                     {
                         column.add_child(ChildView::new(&self.use_agent_footer).finish());
+                    }
+
+                    if let Some(pending_query_handle) = &self.pending_user_query_handle {
+                        column.add_child(ChildView::new(pending_query_handle).finish());
                     }
 
                     if self.is_input_box_visible(&model, app) {

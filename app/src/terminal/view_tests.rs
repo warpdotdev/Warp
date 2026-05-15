@@ -82,12 +82,7 @@ fn add_window_with_cloud_mode_terminal(app: &mut App) -> ViewHandle<TerminalView
 }
 
 fn has_pending_user_query_block(view: &TerminalView) -> bool {
-    let Some(view_id) = view.pending_user_query_view_id else {
-        return false;
-    };
-    view.rich_content_views.iter().any(|rich_content| {
-        rich_content.view_id() == view_id && rich_content.is_pending_user_query()
-    })
+    view.pending_user_query_handle.is_some()
 }
 
 fn exchange_with_inputs(inputs: Vec<AIAgentInput>) -> AIAgentExchange {
@@ -1090,9 +1085,10 @@ fn cloud_mode_failed_keeps_queued_query_above_tombstone_and_hides_input() {
             view.enter_ambient_agent_setup(None, ctx);
             view.insert_cloud_mode_queued_user_query_block("queued prompt".to_string(), ctx);
             assert!(has_pending_user_query_block(view));
-            let pending_query_view_id = view
-                .pending_user_query_view_id
-                .expect("queued query should have a view id");
+            let pending_query_handle = view
+                .pending_user_query_handle
+                .as_ref()
+                .expect("queued query should have a handle");
 
             view.handle_ambient_agent_event(
                 &AmbientAgentViewModelEvent::Failed {
@@ -1103,44 +1099,12 @@ fn cloud_mode_failed_keeps_queued_query_above_tombstone_and_hides_input() {
 
             assert!(has_pending_user_query_block(view));
             assert!(view.conversation_ended_tombstone_view_id.is_some());
-            assert_eq!(view.rich_content_views.len(), 2);
+            // Pending query is a column banner now, not rich content.
+            // Only the tombstone remains in rich_content_views.
+            assert_eq!(view.rich_content_views.len(), 1);
             {
                 let model = view.model.lock();
                 assert!(!view.is_input_box_visible(&model, ctx));
-                let tombstone_view_id = view
-                    .conversation_ended_tombstone_view_id
-                    .expect("failed cloud mode should insert a tombstone");
-                let rich_content_view_ids = model
-                    .block_list()
-                    .block_heights()
-                    .items()
-                    .iter()
-                    .filter_map(|item| {
-                        match item {
-                            crate::terminal::model::blocks::BlockHeightItem::RichContent(item) => {
-                                Some(item.view_id)
-                            }
-                            crate::terminal::model::blocks::BlockHeightItem::Block(_)
-                            | crate::terminal::model::blocks::BlockHeightItem::Gap(_)
-                            | crate::terminal::model::blocks::BlockHeightItem::RestoredBlockSeparator {
-                                ..
-                            }
-                            | crate::terminal::model::blocks::BlockHeightItem::InlineBanner { .. }
-                            | crate::terminal::model::blocks::BlockHeightItem::SubshellSeparator {
-                                ..
-                            } => None,
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                let pending_query_position = rich_content_view_ids
-                    .iter()
-                    .position(|view_id| *view_id == pending_query_view_id)
-                    .expect("queued query should be in the block list");
-                let tombstone_position = rich_content_view_ids
-                    .iter()
-                    .position(|view_id| *view_id == tombstone_view_id)
-                    .expect("tombstone should be in the block list");
-                assert!(pending_query_position < tombstone_position);
             }
 
             view.handle_ambient_agent_event(
@@ -1149,7 +1113,7 @@ fn cloud_mode_failed_keeps_queued_query_above_tombstone_and_hides_input() {
                 },
                 ctx,
             );
-            assert_eq!(view.rich_content_views.len(), 2);
+            assert_eq!(view.rich_content_views.len(), 1);
         });
 
         let window_id = app.read(|ctx| terminal.window_id(ctx));

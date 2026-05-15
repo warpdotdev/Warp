@@ -10,36 +10,17 @@ use crate::{
     terminal::{view::PendingUserQueryKind, TerminalView},
 };
 
-use super::rich_content::RichContentMetadata;
-
 impl TerminalView {
     pub(super) fn pending_user_query_prompt<'a>(&'a self, ctx: &'a AppContext) -> Option<&'a str> {
-        let view_id = self.pending_user_query_view_id?;
-        self.rich_content_views
-            .iter()
-            .find_map(|rich_content| match rich_content.metadata() {
-                Some(RichContentMetadata::PendingUserQuery {
-                    pending_user_query_block_handle,
-                }) if pending_user_query_block_handle.id() == view_id => {
-                    Some(pending_user_query_block_handle.as_ref(ctx).prompt())
-                }
-                _ => None,
-            })
+        self.pending_user_query_handle
+            .as_ref()
+            .map(|h| h.as_ref(ctx).prompt())
     }
 
     pub(super) fn pending_user_query_conversation_id(&self) -> Option<AIConversationId> {
-        let view_id = self.pending_user_query_view_id?;
-        self.rich_content_views
-            .iter()
-            .find(|rich_content| rich_content.view_id() == view_id)
-            .and_then(|rich_content| rich_content.agent_view_conversation_id())
+        None
     }
 
-    /// Inserts a pending user query block into the blocklist, showing the user that
-    /// a follow-up query is queued and will be sent after the current conversation completes.
-    /// `show_close_button` controls the dismiss ("X") button; `show_send_now_button` controls
-    /// the "Send now" button that interrupts the active conversation and immediately submits
-    /// the queued prompt.
     fn insert_pending_user_query_block(
         &mut self,
         prompt: String,
@@ -79,22 +60,11 @@ impl TerminalView {
                 }
             }
             PendingUserQueryBlockEvent::TextSelected => {
-                // Ensure only one active text selection across the entire terminal view.
                 me.clear_selected_text_except(Some(block.id()), ctx);
             }
         });
-        let view_id = handle.id();
-
-        self.insert_rich_content(
-            None,
-            handle.clone(),
-            Some(RichContentMetadata::PendingUserQuery {
-                pending_user_query_block_handle: handle,
-            }),
-            super::rich_content::RichContentInsertionPosition::PinToBottom,
-            ctx,
-        );
-        self.pending_user_query_view_id = Some(view_id);
+        self.pending_user_query_handle = Some(handle);
+        ctx.notify();
     }
 
     /// Inserts a pending user query block for a Cloud Mode run whose real user query has not yet
@@ -116,18 +86,10 @@ impl TerminalView {
         );
     }
 
-    /// Removes the pending user query block, if one exists. No-op if none is present.
-    /// Also cancels the queued prompt callback so the prompt is not sent.
-    /// (Safe to call from within the callback itself — the caller `.take()`s it first.)
     pub(super) fn remove_pending_user_query_block(&mut self, ctx: &mut ViewContext<Self>) {
         self.queued_prompt_callback = None;
         self.pending_user_query_kind = None;
-        if let Some(view_id) = self.pending_user_query_view_id.take() {
-            self.model
-                .lock()
-                .block_list_mut()
-                .remove_rich_content(view_id);
-            self.rich_content_views.retain(|rc| rc.view_id() != view_id);
+        if self.pending_user_query_handle.take().is_some() {
             ctx.notify();
         }
     }

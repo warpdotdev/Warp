@@ -5,8 +5,8 @@ use warp_core::features::FeatureFlag;
 use warp_core::semantic_selection::SemanticSelection;
 use warpui::{
     elements::{
-        get_rich_content_position_id, ChildView, Container, CrossAxisAlignment, Expanded, Flex,
-        ParentElement, SavePosition, SelectableArea, SelectionHandle, Text,
+        ChildView, Container, CrossAxisAlignment, Expanded, Flex, ParentElement, SelectableArea,
+        SelectionHandle, Text,
     },
     fonts::{Properties, Style, Weight},
     AppContext, Element, Entity, EntityId, SingletonEntity, TypedActionView, View, ViewContext,
@@ -18,7 +18,6 @@ use crate::{
         common::render_user_avatar, CONTENT_HORIZONTAL_PADDING, CONTENT_ITEM_VERTICAL_MARGIN,
     },
     appearance::Appearance,
-    terminal::{block_list_element::BlockListMenuSource, view::TerminalAction},
     ui_components::{blended_colors, icons::Icon},
     view_components::action_button::{ActionButton, ButtonSize, NakedTheme},
 };
@@ -31,6 +30,7 @@ pub struct PendingUserQueryBlock {
     prompt: String,
     user_display_name: String,
     profile_image_path: Option<String>,
+    #[allow(dead_code)]
     view_id: EntityId,
     selection_handle: SelectionHandle,
     /// In an `RwLock` so the `SelectableArea` can update it synchronously when a selection ends,
@@ -187,30 +187,17 @@ impl View for PendingUserQueryBlock {
 
         let semantic_selection = SemanticSelection::as_ref(app);
         let selected_text = self.selected_text.clone();
-        let view_id = self.view_id;
         let mut text_column = SelectableArea::new(
             self.selection_handle.clone(),
             move |selection_args, _, _| {
                 *selected_text.write() = selection_args.selection;
             },
-            SavePosition::new(
-                selectable_child,
-                get_rich_content_position_id(&view_id).as_str(),
-            )
-            .finish(),
+            selectable_child,
         )
         .with_word_boundaries_policy(semantic_selection.word_boundary_policy())
         .with_smart_select_fn(semantic_selection.smart_select_fn())
         .on_selection_updated(|ctx, _| {
             ctx.dispatch_typed_action(PendingUserQueryBlockAction::SelectText)
-        })
-        .on_selection_right_click(move |ctx, position| {
-            ctx.dispatch_typed_action(TerminalAction::BlockListContextMenu(
-                BlockListMenuSource::RichContentTextRightClick {
-                    rich_content_view_id: view_id,
-                    position_in_rich_content: position,
-                },
-            ))
         });
 
         if FeatureFlag::RectSelection.is_enabled() {
