@@ -627,39 +627,47 @@ impl SettingsWidget for NetworkPageWidget {
                             clear_action: NetworkPageAction|
          -> Box<dyn Element> {
             let editor_element = warpui::elements::ChildView::new(editor).finish();
-            // 与 BYOP 提供商设置页的卡片按钮保持一致的样式:
-            // font_size 12 + uniform padding 6,按钮宽度随文字自适应,不设固定宽。
-            // (参考 agent_providers_widget::render_provider_card 的 save_button)
-            let save_button = appearance
-                .ui_builder()
-                .button(ButtonVariant::Accent, save_state.clone())
-                .with_style(UiComponentStyles {
-                    font_size: Some(BUTTON_FONT_SIZE),
-                    padding: Some(Coords::uniform(BUTTON_PADDING)),
-                    margin: Some(Coords::default().left(6.)),
-                    ..Default::default()
-                })
-                .with_centered_text_label(crate::t!("settings-network-save"))
-                .build()
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(save_action.clone());
-                })
-                .finish();
-            let clear_button = appearance
-                .ui_builder()
-                .button(ButtonVariant::Text, clear_state.clone())
-                .with_style(UiComponentStyles {
-                    font_size: Some(BUTTON_FONT_SIZE),
-                    padding: Some(Coords::uniform(BUTTON_PADDING)),
-                    margin: Some(Coords::default().left(4.)),
-                    ..Default::default()
-                })
-                .with_centered_text_label(crate::t!("settings-network-clear"))
-                .build()
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(clear_action.clone());
-                })
-                .finish();
+            // 注意:不要把 `margin` 写进 button 的 `UiComponentStyles`。
+            // `WrappableText::build()`(`Span::new(text, styles).build()` 内部)
+            // 会把同一份 `styles.margin` 应用到 label 容器上,导致按钮**内部**
+            // label 也被左推同样的距离,视觉表现为「文字偏右」。
+            // 这里改用外层 Container 设置按钮与编辑器/相邻按钮的水平间距。
+            let save_button = Container::new(
+                appearance
+                    .ui_builder()
+                    .button(ButtonVariant::Accent, save_state.clone())
+                    .with_style(UiComponentStyles {
+                        font_size: Some(BUTTON_FONT_SIZE),
+                        padding: Some(Coords::uniform(BUTTON_PADDING)),
+                        ..Default::default()
+                    })
+                    .with_text_label(crate::t!("settings-network-save"))
+                    .build()
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(save_action.clone());
+                    })
+                    .finish(),
+            )
+            .with_margin_left(6.)
+            .finish();
+            let clear_button = Container::new(
+                appearance
+                    .ui_builder()
+                    .button(ButtonVariant::Text, clear_state.clone())
+                    .with_style(UiComponentStyles {
+                        font_size: Some(BUTTON_FONT_SIZE),
+                        padding: Some(Coords::uniform(BUTTON_PADDING)),
+                        ..Default::default()
+                    })
+                    .with_text_label(crate::t!("settings-network-clear"))
+                    .build()
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(clear_action.clone());
+                    })
+                    .finish(),
+            )
+            .with_margin_left(4.)
+            .finish();
 
             let input_area = ConstrainedBox::new(
                 Flex::row()
