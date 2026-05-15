@@ -1452,15 +1452,15 @@ impl BlocklistAIHistoryModel {
             |_, _, _| {},
         );
 
-        // Only emit the event if we have a terminal_view_id, since the event is
-        // filtered by terminal_view_id in handlers.
-        if let Some(terminal_view_id) = terminal_view_id {
-            ctx.emit(BlocklistAIHistoryEvent::DeletedConversation {
-                terminal_view_id,
-                conversation_id,
-                conversation_title,
-            });
-        }
+        // Always emit the event so subscribers (e.g. AgentConversationsModel,
+        // the conversation list UI) can refresh their caches. Historical-only
+        // conversations have no terminal_view_id; handlers that filter on it
+        // already tolerate `None`.
+        ctx.emit(BlocklistAIHistoryEvent::DeletedConversation {
+            terminal_view_id,
+            conversation_id,
+            conversation_title,
+        });
     }
 
     /// Remove a conversation from all in-memory storage.
@@ -2009,8 +2009,11 @@ pub enum BlocklistAIHistoryEvent {
     },
 
     /// This is emitted when a user explicitly deletes an existing conversation.
+    /// `terminal_view_id` is `None` when deleting a historical-only conversation that
+    /// is not currently bound to any terminal view (e.g. right-click delete from the
+    /// conversation list for a session that was never opened in this run).
     DeletedConversation {
-        terminal_view_id: EntityId,
+        terminal_view_id: Option<EntityId>,
         conversation_id: AIConversationId,
         conversation_title: Option<String>,
     },
@@ -2085,9 +2088,6 @@ impl BlocklistAIHistoryEvent {
             | BlocklistAIHistoryEvent::RemoveConversation {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::DeletedConversation {
-                terminal_view_id, ..
-            }
             | BlocklistAIHistoryEvent::CreatedSubtask {
                 terminal_view_id, ..
             }
@@ -2105,6 +2105,10 @@ impl BlocklistAIHistoryEvent {
             } => Some(*terminal_view_id),
             // UpdatedConversationMetadata can have None when updating historical-only conversations
             BlocklistAIHistoryEvent::UpdatedConversationMetadata {
+                terminal_view_id, ..
+            } => *terminal_view_id,
+            // DeletedConversation can have None when deleting historical-only conversations
+            BlocklistAIHistoryEvent::DeletedConversation {
                 terminal_view_id, ..
             } => *terminal_view_id,
         }

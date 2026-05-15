@@ -697,13 +697,20 @@ impl Entity for AgentConversationsModel {
 impl SingletonEntity for AgentConversationsModel {}
 
 impl AgentConversationsModel {
-    pub fn new(_ctx: &mut ModelContext<Self>) -> Self {
+    pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         // OpenWarp(本地化,Phase 3b-1 / Wave 6-6):AgentConversationsModel 原本负责轮询/探听
         // 远端 ambient agent tasks 与 conversation metadata。本地化场景下:
-        //   - 不订阅任何事件
         //   - 无轮询子系统(Wave 6-6 物理删)
         //   - has_finished_initial_load 直接为 true,使 UI 查询以空集合返回
-        // BYOP agent 本地运行不依赖该模型,零影响。
+        // BYOP agent 本地运行不依赖该模型。
+        //
+        // Issue #93 修复:必须订阅 BlocklistAIHistoryModel 的事件,否则用户在历史对话
+        // 列表中删除对话后,本模型缓存的 conversations 不会刷新,UI 将持续展示已删除的项。
+        let history_model = BlocklistAIHistoryModel::handle(ctx);
+        ctx.subscribe_to_model(&history_model, |me, event, ctx| {
+            me.handle_history_event(event, ctx);
+        });
+
         Self {
             tasks: HashMap::new(),
             conversations: HashMap::new(),
