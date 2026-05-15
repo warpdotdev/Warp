@@ -865,7 +865,9 @@ impl TerminalView {
             )
         } else {
             // Show loading screen - determine the message based on progress state
-            let message = if progress.harness_started_at.is_some() {
+            let message = if let Some(message) = ambient_agent_model.handoff_connection_message() {
+                message
+            } else if progress.harness_started_at.is_some() {
                 "Starting Environment (Step 3/3)"
             } else if progress.claimed_at.is_some() {
                 "Creating Environment (Step 2/3)"

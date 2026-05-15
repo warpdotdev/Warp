@@ -2,6 +2,7 @@ use warpui::{App, EntityId};
 
 use super::*;
 use crate::ai::blocklist::handoff::HandoffLaunchAttachments;
+use crate::system::SystemStats;
 use crate::test_util::terminal::initialize_app_for_terminal_view;
 
 fn attachment() -> AttachmentInput {
@@ -29,6 +30,7 @@ fn pending_handoff() -> PendingHandoff {
         touched_workspace: None,
         snapshot_upload: SnapshotUploadStatus::Pending,
         submission_state: HandoffSubmissionState::Idle,
+        connection_state: HandoffConnectionState::Connected,
         auto_submit: Some(pending_launch()),
     }
 }
@@ -40,6 +42,7 @@ fn pending_handoff_fresh_launch() -> PendingHandoff {
         touched_workspace: None,
         snapshot_upload: SnapshotUploadStatus::Pending,
         submission_state: HandoffSubmissionState::Idle,
+        connection_state: HandoffConnectionState::Connected,
         auto_submit: Some(pending_launch()),
     }
 }
@@ -185,6 +188,45 @@ fn snapshot_failure_is_treated_as_settled_for_auto_submit() {
                 .expect("Failed snapshot should be treated as settled");
             assert_eq!(launch.prompt, "fix tests");
             assert!(model.maybe_auto_submit_handoff(ctx).is_none());
+        });
+    });
+}
+
+#[test]
+fn handoff_connection_message_updates_after_sleep_and_wake() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let model = add_model(&mut app);
+
+        model.update(&mut app, |model, ctx| {
+            model.set_pending_handoff(Some(pending_handoff()), ctx);
+        });
+        assert!(model.update(&mut app, |model, ctx| {
+            model.queue_handoff_auto_submit(ctx)
+        }));
+
+        model.read(&app, |model, _| {
+            assert_eq!(model.handoff_connection_message(), None);
+        });
+
+        SystemStats::handle(&app).update(&mut app, |system, ctx| {
+            system.dispatch_cpu_will_sleep(ctx);
+        });
+        model.read(&app, |model, _| {
+            assert_eq!(
+                model.handoff_connection_message(),
+                Some("Local handoff interrupted. Waiting to reconnect...")
+            );
+        });
+
+        SystemStats::handle(&app).update(&mut app, |system, ctx| {
+            system.dispatch_cpu_was_awakened(ctx);
+        });
+        model.read(&app, |model, _| {
+            assert_eq!(
+                model.handoff_connection_message(),
+                Some("Reconnecting local handoff to cloud...")
+            );
         });
     });
 }
