@@ -5,21 +5,21 @@ use std::rc::Rc;
 use warp_cli::agent::Harness;
 use warp_terminal::model::BlockId;
 
+use crate::ai::AIRequestUsageModel;
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
 use crate::ai::agent::display_user_query_with_mode;
-use crate::ai::AIRequestUsageModel;
 use warp_core::features::FeatureFlag;
 use warp_core::send_telemetry_from_ctx;
 use warpui::prelude::{Empty, Vector2F};
 use warpui::{ModelHandle, ViewHandle};
 
 use crate::ai::ambient_agents::telemetry::{CloudAgentTelemetryEvent, CloudModeEntryPoint};
-use crate::ai::blocklist::{agent_view::AgentViewEntryOrigin, BlocklistAIHistoryModel};
+use crate::ai::blocklist::{BlocklistAIHistoryModel, agent_view::AgentViewEntryOrigin};
 use crate::ai::conversation_details_panel::ConversationDetailsData;
 use crate::pane_group::TerminalViewResources;
-use crate::terminal::view::rich_content::{RichContentInsertionPosition, RichContentMetadata};
-use crate::terminal::view::TerminalView;
 use crate::terminal::CLIAgent;
+use crate::terminal::view::TerminalView;
+use crate::terminal::view::rich_content::{RichContentInsertionPosition, RichContentMetadata};
 use crate::workspace::view::cloud_agent_capacity_modal::CloudAgentCapacityModalVariant;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use warp_core::ui::appearance::Appearance;
