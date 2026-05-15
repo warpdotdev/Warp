@@ -153,12 +153,13 @@ impl TerminalView {
             let conversation_id_copy = conversation_id;
             let future = history_model.load_conversation_data(conversation_id_copy, ctx);
             ctx.spawn(future, move |me, conversation, ctx| {
-                let Some(conversation) = conversation else {
-                    me.show_error_toast(
-                        format!("Failed to load conversation with id: {conversation_id}"),
-                        ctx,
-                    );
-                    return;
+                let conversation = match conversation {
+                    Ok(conversation) => conversation,
+                    Err(err) => {
+                        log::warn!("Failed to load conversation {conversation_id}: {err:?}");
+                        me.show_error_toast(err.user_message(), ctx);
+                        return;
+                    }
                 };
                 // For Oz conversations, restore data and then re-enter agent view (the
                 // conversation will be in memory after restoration).

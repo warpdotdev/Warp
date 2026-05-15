@@ -4067,15 +4067,16 @@ impl Workspace {
                 load_conversation_from_server(local_conversation_id, server_token, ai_client).await
             },
             move |me, cloud_conversation, ctx| {
-                let Some(cloud_conversation) = cloud_conversation else {
-                    log::error!("Failed to load conversation from server");
-                    me.toast_stack.update(ctx, |view, ctx| {
-                        let new_toast = DismissibleToast::error(
-                            "Failed to load conversation data.".to_string(),
-                        );
-                        view.add_ephemeral_toast(new_toast, ctx);
-                    });
-                    return;
+                let cloud_conversation = match cloud_conversation {
+                    Ok(cloud_conversation) => cloud_conversation,
+                    Err(err) => {
+                        log::error!("Failed to load conversation from server: {err:?}");
+                        me.toast_stack.update(ctx, |view, ctx| {
+                            let new_toast = DismissibleToast::error(err.user_message());
+                            view.add_ephemeral_toast(new_toast, ctx);
+                        });
+                        return;
+                    }
                 };
 
                 // Update the pane group with the loaded conversation
@@ -11505,21 +11506,24 @@ impl Workspace {
         let terminal_view_for_closure = terminal_view.clone();
         let window_id = ctx.window_id();
         ctx.spawn(future, move |_workspace, conversation, ctx| {
-            let Some(conversation) = conversation else {
-                log::warn!("Failed to load conversation {conversation_id}");
-                // Unset the loading status
-                terminal_view_for_closure.update(ctx, |terminal_view, ctx| {
-                    terminal_view
-                        .model
-                        .lock()
-                        .set_conversation_transcript_viewer_status(None);
-                    ctx.notify();
-                });
-                WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    let toast = DismissibleToast::error("Failed to load conversation.".to_owned());
-                    toast_stack.add_ephemeral_toast(toast, window_id, ctx);
-                });
-                return;
+            let conversation = match conversation {
+                Ok(conversation) => conversation,
+                Err(err) => {
+                    log::warn!("Failed to load conversation {conversation_id}: {err:?}");
+                    // Unset the loading status
+                    terminal_view_for_closure.update(ctx, |terminal_view, ctx| {
+                        terminal_view
+                            .model
+                            .lock()
+                            .set_conversation_transcript_viewer_status(None);
+                        ctx.notify();
+                    });
+                    WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                        let toast = DismissibleToast::error(err.user_message());
+                        toast_stack.add_ephemeral_toast(toast, window_id, ctx);
+                    });
+                    return;
+                }
             };
 
             terminal_view_for_closure.update(ctx, |terminal_view, ctx| {
@@ -11566,19 +11570,24 @@ impl Workspace {
             .as_ref(ctx)
             .load_conversation_data(conversation_id, ctx);
         ctx.spawn(future, move |_workspace, conversation, ctx| {
-            let Some(conversation) = conversation else {
-                log::warn!("Failed to load conversation {conversation_id}");
-                WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    let toast = DismissibleToast::error("Failed to load conversation.".to_owned());
-                    toast_stack.add_ephemeral_toast(toast, window_id, ctx);
-                });
-                // Close the loading pane
-                if let Some(pane_group) = ctx.view_with_id::<PaneGroup>(window_id, pane_group_id) {
-                    pane_group.update(ctx, |pane_group, ctx| {
-                        pane_group.close_pane(loading_pane_id, ctx);
+            let conversation = match conversation {
+                Ok(conversation) => conversation,
+                Err(err) => {
+                    log::warn!("Failed to load conversation {conversation_id}: {err:?}");
+                    WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                        let toast = DismissibleToast::error(err.user_message());
+                        toast_stack.add_ephemeral_toast(toast, window_id, ctx);
                     });
+                    // Close the loading pane
+                    if let Some(pane_group) =
+                        ctx.view_with_id::<PaneGroup>(window_id, pane_group_id)
+                    {
+                        pane_group.update(ctx, |pane_group, ctx| {
+                            pane_group.close_pane(loading_pane_id, ctx);
+                        });
+                    }
+                    return;
                 }
-                return;
             };
 
             // Replace the loading pane with real terminal
@@ -11635,21 +11644,24 @@ impl Workspace {
             .load_conversation_data(conversation_id, ctx);
 
         ctx.spawn(future, move |workspace, conversation, ctx| {
-            let Some(conversation) = conversation else {
-                log::warn!("Failed to load conversation {conversation_id}");
-                WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    let toast = DismissibleToast::error("Failed to load conversation.".to_owned());
-                    toast_stack.add_ephemeral_toast(toast, window_id, ctx);
-                });
-                // Close the loading tab
-                if let Some(tab_index) = workspace
-                    .tabs
-                    .iter()
-                    .position(|tab| tab.pane_group.id() == pane_group_id)
-                {
-                    workspace.close_tab(tab_index, true, false, ctx);
+            let conversation = match conversation {
+                Ok(conversation) => conversation,
+                Err(err) => {
+                    log::warn!("Failed to load conversation {conversation_id}: {err:?}");
+                    WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                        let toast = DismissibleToast::error(err.user_message());
+                        toast_stack.add_ephemeral_toast(toast, window_id, ctx);
+                    });
+                    // Close the loading tab
+                    if let Some(tab_index) = workspace
+                        .tabs
+                        .iter()
+                        .position(|tab| tab.pane_group.id() == pane_group_id)
+                    {
+                        workspace.close_tab(tab_index, true, false, ctx);
+                    }
+                    return;
                 }
-                return;
             };
 
             // Find the tab with this pane_group_id and replace its loading pane
@@ -11752,15 +11764,28 @@ impl Workspace {
             .load_conversation_data(conversation_id, ctx);
 
         ctx.spawn(future, move |workspace, source_conversation, ctx| {
-            let Some(CloudConversationData::Oz(source_conversation)) = source_conversation else {
-                log::error!("Failed to load Oz conversation {conversation_id} for forking.");
-                WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    let toast = DismissibleToast::error(
-                        "Failed to load conversation for forking.".to_owned(),
+            let source_conversation = match source_conversation {
+                Ok(CloudConversationData::Oz(source_conversation)) => source_conversation,
+                Ok(CloudConversationData::CLIAgent(_)) => {
+                    log::error!("Cannot fork CLI agent conversation {conversation_id}.");
+                    WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                        let toast = DismissibleToast::error(
+                            "Failed to load conversation for forking.".to_owned(),
+                        );
+                        toast_stack.add_ephemeral_toast(toast, window_id, ctx);
+                    });
+                    return;
+                }
+                Err(err) => {
+                    log::error!(
+                        "Failed to load Oz conversation {conversation_id} for forking: {err:?}"
                     );
-                    toast_stack.add_ephemeral_toast(toast, window_id, ctx);
-                });
-                return;
+                    WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                        let toast = DismissibleToast::error(err.user_message());
+                        toast_stack.add_ephemeral_toast(toast, window_id, ctx);
+                    });
+                    return;
+                }
             };
 
             let source_server_token = source_conversation

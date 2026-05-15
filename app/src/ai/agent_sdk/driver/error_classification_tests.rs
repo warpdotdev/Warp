@@ -128,6 +128,18 @@ fn conversation_resume_state_missing_is_failed_with_resource_not_found() {
     assert!(update.message.contains("claude"));
 }
 
+#[test]
+fn conversation_too_large_to_resume_is_failed_with_recovery_message() {
+    let (state, update) = classify_driver_error(&AgentDriverError::ConversationTooLargeToResume {
+        conversation_id: "conv-123".into(),
+    });
+    assert_eq!(state, AgentTaskState::Failed);
+    assert_eq!(update.error_code, Some(PlatformErrorCode::InvalidRequest));
+    assert!(update.message.contains("conv-123"));
+    assert!(update.message.contains("too large"));
+    assert!(update.message.contains("Start a new conversation"));
+}
+
 // --- ShareSessionFailed variants ---
 
 #[test]
