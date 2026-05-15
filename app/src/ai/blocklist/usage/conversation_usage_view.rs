@@ -22,6 +22,7 @@ use warp_core::ui::Icon;
 use warpui::elements::ConstrainedBox;
 use warpui::fonts::{Properties, Weight};
 use warpui::platform::Cursor;
+use warpui::text_layout::ClipConfig;
 use warpui::{
     elements::{
         Border, Container, CornerRadius, CrossAxisAlignment, Empty, Flex, Hoverable, MainAxisSize,
@@ -585,8 +586,13 @@ impl ConversationUsageView {
         }
         if total_entries > shown_entries {
             let hidden_count = total_entries - shown_entries;
+            // "Show N more" sits on a row of its own. We push a value-
+            // side placeholder that mirrors the link's natural line
+            // height so the right column stays in lock-step with the
+            // left and the subsequent "Tool calls" / value row pair
+            // doesn't slip out of alignment.
             labels.push(self.render_show_more_link(hidden_count, appearance));
-            values.push(Empty::new().finish());
+            values.push(render_value_text_placeholder(appearance));
         }
     }
 
@@ -666,12 +672,28 @@ impl ConversationUsageView {
     /// Renders the avatar + label cell for a per-agent breakdown row,
     /// plus the credit value cell, returned as a `(label, value)` pair so
     /// the caller can append them to the existing two-column flex layout.
+    ///
+    /// Color choices:
+    /// * Agent name uses the same color as the "USAGE SUMMARY" section
+    ///   header (the disabled-text token) so the rollup rows read as a
+    ///   sub-list of that section rather than competing with primary
+    ///   labels.
+    /// * Credit value uses the label-row color (`text_sub`) so it
+    ///   visually echoes the "Credits spent" label rather than the
+    ///   primary credit count beside it.
+    ///
+    /// Name length: agent names are clipped to the same max width and
+    /// ellipsis treatment used by the orchestration pill bar
+    /// ([`PER_AGENT_LABEL_MAX_WIDTH`]) so a long child-agent name in the
+    /// footer doesn't push the credit-value column off-screen.
     fn render_per_agent_row(
         &self,
         entry: &PerAgentCreditEntry,
         appearance: &Appearance,
     ) -> (Box<dyn Element>, Box<dyn Element>) {
         let theme = appearance.theme();
+        let bg = theme.surface_2();
+        let font_size = appearance.ui_font_size() + 2.;
         const ROW_AVATAR_SIZE: f32 = 16.;
         let avatar = match entry.avatar {
             AgentAvatar::Orchestrator => {
@@ -681,14 +703,32 @@ impl ConversationUsageView {
                 render_agent_avatar_disc(&entry.display_name, ROW_AVATAR_SIZE, theme, appearance)
             }
         };
+        let name_text = Text::new(
+            entry.display_name.clone(),
+            appearance.ui_font_family(),
+            font_size,
+        )
+        .with_color(blended_colors::text_disabled(theme, bg))
+        .soft_wrap(false)
+        .with_clip(ClipConfig::ellipsis())
+        .finish();
+        let name_element = ConstrainedBox::new(name_text)
+            .with_max_width(PER_AGENT_LABEL_MAX_WIDTH)
+            .finish();
         let label = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(8.)
             .with_child(avatar)
-            .with_child(render_label_text(&entry.display_name, appearance))
+            .with_child(name_element)
             .finish();
-        let value = render_value_text(format_credits(entry.credits_spent), appearance);
+        let value = Text::new(
+            format_credits(entry.credits_spent),
+            appearance.ui_font_family(),
+            font_size,
+        )
+        .with_color(blended_colors::text_sub(theme, bg))
+        .finish();
         (label, value)
     }
 
@@ -844,6 +884,28 @@ fn render_value_text(text: String, appearance: &Appearance) -> Box<dyn Element> 
         .with_color(text_color)
         .finish()
 }
+
+/// Renders a placeholder value cell that occupies one full line of the
+/// value column without painting any visible text. Used opposite the
+/// "Show N more" link so the two-column flex stays row-aligned for the
+/// subsequent rows.
+///
+/// A simple `Empty` element would also keep the slot count matched, but
+/// `Empty` has zero height, so the value column collapses by one line
+/// and "Tool calls" ends up paired with "Show N more" instead of with
+/// the next labels-column row. Pushing a `Text` element with a
+/// single-space content forces a real line-height equal to the link's
+/// own line-height.
+fn render_value_text_placeholder(appearance: &Appearance) -> Box<dyn Element> {
+    let font_size = appearance.ui_font_size() + 2.;
+    Text::new(" ".to_string(), appearance.ui_font_family(), font_size).finish()
+}
+
+/// Maximum rendered width of an agent name in a per-agent breakdown row.
+/// Mirrors `PILL_LABEL_MAX_WIDTH` in the orchestration pill bar so the
+/// footer's name treatment never exceeds what the pill bar already
+/// enforces at the top of the agent view.
+const PER_AGENT_LABEL_MAX_WIDTH: f32 = 110.;
 
 #[cfg(test)]
 #[path = "conversation_usage_view_tests.rs"]
