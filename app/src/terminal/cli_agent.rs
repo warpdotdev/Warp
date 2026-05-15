@@ -5,7 +5,6 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::path::Path;
 
 use ai::skills::SkillProvider;
 use enum_iterator::Sequence;
@@ -491,15 +490,14 @@ fn export_review_comment_for_cli_prompt(comment: &str) -> String {
 /// `<path> L<start>-L<end>` where `start` and `end` are 1-indexed and both
 /// ends are **inclusive**.
 pub fn build_diff_hunk_prompt(
-    file_path: &Path,
+    file_path: &str,
     start_line: usize,
     end_line: usize,
     lines_added: u32,
     lines_removed: u32,
 ) -> String {
-    let path = file_path.display();
     format!(
-        "{path} L{start_line}-L{end_line} (+{lines_added} -{lines_removed}) \
+        "{file_path} L{start_line}-L{end_line} (+{lines_added} -{lines_removed}) \
          -- run `git diff` to see the full context."
     )
 }

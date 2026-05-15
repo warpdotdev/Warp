@@ -3,7 +3,6 @@ use crate::code_review::diff_size_limits::DiffSize;
 use crate::code_review::diff_state::{
     DiffMetadata, DiffMetadataAgainstBase, FileDiff, FileStatusInfo, GitFileStatus,
 };
-use std::path::PathBuf;
 use std::sync::Arc;
 use warp_util::standardized_path::StandardizedPath;
 
@@ -93,7 +92,7 @@ fn diff_metadata_against_base_requires_stats() {
 #[test]
 fn file_diff_to_proto_standardizes_relative_path_against_repo() {
     let file_diff = FileDiff {
-        file_path: PathBuf::from("src/main.rs"),
+        file_path: "src/main.rs".to_string(),
         status: GitFileStatus::Modified,
         hunks: Arc::new(vec![]),
         is_binary: false,

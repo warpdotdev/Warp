@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::Arc;
 
 use chrono::Local;
@@ -227,7 +226,7 @@ fn test_build_review_prompt_exports_internal_markdown_without_punctuation_escape
 
 #[test]
 fn test_build_diff_hunk_prompt_format() {
-    let prompt = build_diff_hunk_prompt(Path::new("/repo/src/main.rs"), 10, 20, 3, 2);
+    let prompt = build_diff_hunk_prompt("/repo/src/main.rs", 10, 20, 3, 2);
     assert_eq!(
         prompt,
         "/repo/src/main.rs L10-L20 (+3 -2) -- run `git diff` to see the full context.",

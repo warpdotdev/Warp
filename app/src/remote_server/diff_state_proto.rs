@@ -6,7 +6,6 @@
 //! This module lives in `app/` (rather than in the `remote_server` crate alongside
 //! `repo_metadata_proto`) because it depends on app-level types
 //! (`code_review::diff_state`, `util::git`) that are not available in the crate.
-use std::path::Path;
 use std::sync::Arc;
 
 use super::proto;
@@ -237,10 +236,8 @@ impl TryFrom<&proto::FileDiff> for FileDiff {
             .map_err(|_| format!("invalid DiffSize value {}", file.size))
             .and_then(DiffSize::try_from)?;
 
-        let file_path = StandardizedPath::try_new(&file.file_path).map_err(|e| e.to_string())?;
-
         Ok(FileDiff {
-            file_path: file_path.to_local_path_lossy(),
+            file_path: file.file_path.clone(),
             status,
             hunks: Arc::new(hunks),
             is_binary: file.is_binary,
@@ -552,16 +549,20 @@ impl From<&DiffState> for proto::DiffState {
     }
 }
 
-fn standardized_file_path_for_proto(repo_path: &str, file_path: &Path) -> String {
+fn standardized_file_path_for_proto(
+    repo_path: &str,
+    repo_relative_or_absolute_path: &str,
+) -> String {
+    let file_path = std::path::Path::new(repo_relative_or_absolute_path);
     if file_path.is_absolute() {
-        return StandardizedPath::try_new(&file_path.to_string_lossy())
+        return StandardizedPath::try_new(repo_relative_or_absolute_path)
             .map(|path| path.to_string())
-            .unwrap_or_else(|_| file_path.to_string_lossy().to_string());
+            .unwrap_or_else(|_| repo_relative_or_absolute_path.to_string());
     }
 
     StandardizedPath::try_new(repo_path)
-        .map(|repo_path| repo_path.join(&file_path.to_string_lossy()).to_string())
-        .unwrap_or_else(|_| file_path.to_string_lossy().to_string())
+        .map(|repo_path| repo_path.join(repo_relative_or_absolute_path).to_string())
+        .unwrap_or_else(|_| repo_relative_or_absolute_path.to_string())
 }
 
 /// Converts a `FileDiff` to proto with an optional `content_at_base`.
@@ -644,14 +645,14 @@ pub fn build_diff_state_metadata_update(
 pub fn build_diff_state_file_delta(
     repo_path: &str,
     mode: &DiffMode,
-    file_path: &Path,
+    repo_relative_path: &str,
     diff: Option<&FileDiffAndContent>,
     metadata: Option<&DiffMetadata>,
 ) -> proto::DiffStateFileDelta {
     proto::DiffStateFileDelta {
         repo_path: repo_path.to_string(),
         mode: Some(mode.into()),
-        file_path: standardized_file_path_for_proto(repo_path, file_path),
+        file_path: standardized_file_path_for_proto(repo_path, repo_relative_path),
         diff: diff.map(|diff| file_diff_and_content_to_proto(repo_path, diff)),
         metadata: metadata.map(proto::DiffMetadata::from),
     }
