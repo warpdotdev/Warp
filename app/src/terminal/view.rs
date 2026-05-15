@@ -4755,11 +4755,12 @@ impl TerminalView {
 
     /// Exits the active agent, either:
     /// * Exiting agent view for the selected conversation
-    /// * Popping the current view off the navigation stack (for cloud mode agents)
+    /// * Popping the current view off the navigation stack (for nested cloud mode agents)
+    /// Root cloud-mode panes (stack depth ≤ 1) are a no-op — there is nowhere to return to.
     fn exit_agent_view(&mut self, ctx: &mut ViewContext<Self>) {
         // For nested ambient agent sessions (cloud mode), pop from pane stack.
-        // Root cloud-mode panes have no parent terminal to return to, so exit
-        // the fullscreen agent view in place instead.
+        // Root cloud-mode panes have no parent terminal to return to, so escape
+        // is a no-op to avoid leaving the app in a borked state.
         if self.is_ambient_agent_session(ctx) {
             if let Some(pane_stack) = self
                 .pane_stack
@@ -4769,10 +4770,6 @@ impl TerminalView {
             {
                 pane_stack.update(ctx, |stack, ctx| {
                     stack.pop(ctx);
-                });
-            } else {
-                self.agent_view_controller.update(ctx, |controller, ctx| {
-                    controller.exit_agent_view_without_confirmation(ctx);
                 });
             }
         } else {

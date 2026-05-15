@@ -714,7 +714,7 @@ fn escape_pops_nested_cloud_agent_view_with_long_running_command() {
 }
 
 #[test]
-fn escape_exits_root_cloud_agent_view_with_long_running_command() {
+fn escape_does_not_exit_root_cloud_agent_view_with_long_running_command() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
         let _agent_view = FeatureFlag::AgentView.override_enabled(true);
@@ -728,16 +728,11 @@ fn escape_exits_root_cloud_agent_view_with_long_running_command() {
                 .lock()
                 .simulate_long_running_block("claude", "running");
 
-            assert_eq!(
-                view.agent_view_controller()
-                    .as_ref(ctx)
-                    .can_exit_agent_view(),
-                Ok(())
-            );
-
             view.handle_input_event(&InputEvent::Escape, ctx);
 
-            assert!(!view.agent_view_controller().as_ref(ctx).is_active());
+            // Root cloud-mode pane has no parent terminal to return to,
+            // so Escape is a no-op and agent view stays active.
+            assert!(view.agent_view_controller().as_ref(ctx).is_active());
         });
     })
 }
