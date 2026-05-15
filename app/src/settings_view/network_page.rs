@@ -105,18 +105,27 @@ impl NetworkPageView {
         mode_dropdown.update(ctx, |dropdown, ctx| {
             dropdown.set_items(
                 vec![
-                    DropdownItem::new("System", NetworkPageAction::SetProxyMode(ProxyMode::System)),
-                    DropdownItem::new("Custom", NetworkPageAction::SetProxyMode(ProxyMode::Custom)),
-                    DropdownItem::new("Off", NetworkPageAction::SetProxyMode(ProxyMode::Off)),
+                    DropdownItem::new(
+                        crate::t!("settings-network-mode-system"),
+                        NetworkPageAction::SetProxyMode(ProxyMode::System),
+                    ),
+                    DropdownItem::new(
+                        crate::t!("settings-network-mode-custom"),
+                        NetworkPageAction::SetProxyMode(ProxyMode::Custom),
+                    ),
+                    DropdownItem::new(
+                        crate::t!("settings-network-mode-off"),
+                        NetworkPageAction::SetProxyMode(ProxyMode::Off),
+                    ),
                 ],
                 ctx,
             );
         });
 
-        // 三个文本输入(每个独立 SubmittableTextInput;submit 时由 view 持久化)。
+        // 四个文本输入(每个独立 SubmittableTextInput;submit 时由 view 持久化)。
         let url_input = ctx.add_typed_action_view(|ctx| {
             let mut input = SubmittableTextInput::new(ctx);
-            input.set_placeholder_text("http://proxy.example.com:8080", ctx);
+            input.set_placeholder_text(crate::t!("settings-network-url-placeholder"), ctx);
             input
         });
         ctx.subscribe_to_view(&url_input, |me: &mut Self, _, event, ctx| {
@@ -127,7 +136,7 @@ impl NetworkPageView {
 
         let username_input = ctx.add_typed_action_view(|ctx| {
             let mut input = SubmittableTextInput::new(ctx);
-            input.set_placeholder_text("用户名(可选)", ctx);
+            input.set_placeholder_text(crate::t!("settings-network-username-placeholder"), ctx);
             input
         });
         ctx.subscribe_to_view(&username_input, |me: &mut Self, _, event, ctx| {
@@ -138,7 +147,7 @@ impl NetworkPageView {
 
         let password_input = ctx.add_typed_action_view(|ctx| {
             let mut input = SubmittableTextInput::new(ctx);
-            input.set_placeholder_text("密码(提交后保存到系统密钥库)", ctx);
+            input.set_placeholder_text(crate::t!("settings-network-password-placeholder"), ctx);
             input
         });
         ctx.subscribe_to_view(&password_input, |me: &mut Self, _, event, ctx| {
@@ -149,7 +158,7 @@ impl NetworkPageView {
 
         let no_proxy_input = ctx.add_typed_action_view(|ctx| {
             let mut input = SubmittableTextInput::new(ctx);
-            input.set_placeholder_text("localhost,127.0.0.1,.internal", ctx);
+            input.set_placeholder_text(crate::t!("settings-network-no-proxy-placeholder"), ctx);
             input
         });
         ctx.subscribe_to_view(&no_proxy_input, |me: &mut Self, _, event, ctx| {
@@ -314,31 +323,28 @@ impl SettingsWidget for NetworkPageWidget {
         // 密码不明文显示;仅提示"已设置 / 未设置"。
         let has_password = !ProxyCredentials::as_ref(app).password().is_empty();
 
+        let page_title = crate::t!("settings-network-page-title");
+        let header = crate::t!("settings-network-header");
+        let description = crate::t!("settings-network-description");
+
         let mut content = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
-            .with_child(render_page_title(
-                "Network",
-                HEADER_FONT_SIZE,
-                appearance,
-            ))
+            .with_child(render_page_title(&page_title, HEADER_FONT_SIZE, appearance))
             .with_child(render_sub_header_with_description(
                 appearance,
-                "HTTP 代理",
-                "为所有出站 HTTP / WebSocket 请求配置全局代理。改完字段后按回车保存。",
+                header,
+                description,
             ));
 
         // 1. 模式 dropdown
         content.add_child(render_body_item::<NetworkPageAction>(
-            "代理模式".to_string(),
+            crate::t!("settings-network-mode-label"),
             None::<AdditionalInfo<NetworkPageAction>>,
             LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             warpui::elements::ChildView::new(&view.mode_dropdown).finish(),
-            Some(
-                "System 跟随系统 / 环境变量(默认);Custom 使用下方 URL;Off 完全禁用代理。"
-                    .to_string(),
-            ),
+            Some(crate::t!("settings-network-mode-description")),
         ));
 
         // 仅当 mode == Custom 时后续字段才可用。由于 `ToggleState` 未实现 `Clone`,
@@ -346,70 +352,81 @@ impl SettingsWidget for NetworkPageWidget {
         let custom_enabled = matches!(mode, ProxyMode::Custom);
 
         // 2. URL
+        let url_description = if url_value.is_empty() {
+            crate::t!("settings-network-url-description")
+        } else {
+            format!(
+                "{} — {}",
+                crate::t!("settings-network-url-description"),
+                crate::t!("settings-network-url-current", value = url_value.clone())
+            )
+        };
         content.add_child(render_body_item::<NetworkPageAction>(
-            format!("代理 URL{}", if url_value.is_empty() { "" } else { " " }),
+            crate::t!("settings-network-url-label"),
             None::<AdditionalInfo<NetworkPageAction>>,
             LocalOnlyIconState::Hidden,
             ToggleState::from(custom_enabled),
             appearance,
             warpui::elements::ChildView::new(&view.url_input).finish(),
-            Some(format!(
-                "例:http://proxy.corp:8080{}",
-                if url_value.is_empty() {
-                    String::new()
-                } else {
-                    format!(" — 当前已保存:{url_value}")
-                }
-            )),
+            Some(url_description),
         ));
 
         // 3. 用户名
+        let username_current = if username_value.is_empty() {
+            crate::t!("settings-network-empty")
+        } else {
+            username_value.clone()
+        };
+        let username_description = format!(
+            "{} {}",
+            crate::t!("settings-network-username-description"),
+            crate::t!("settings-network-username-current", value = username_current)
+        );
         content.add_child(render_body_item::<NetworkPageAction>(
-            "用户名".to_string(),
+            crate::t!("settings-network-username-label"),
             None::<AdditionalInfo<NetworkPageAction>>,
             LocalOnlyIconState::Hidden,
             ToggleState::from(custom_enabled),
             appearance,
             warpui::elements::ChildView::new(&view.username_input).finish(),
-            Some(format!(
-                "若代理需要 Basic Auth,在此填用户名。当前已保存:{}",
-                if username_value.is_empty() {
-                    "(空)".to_string()
-                } else {
-                    username_value
-                }
-            )),
+            Some(username_description),
         ));
 
         // 4. 密码。提交后密码存入 OS 密钥库,不出现在 settings.toml 中。
+        let password_status = if has_password {
+            crate::t!("settings-network-password-set")
+        } else {
+            crate::t!("settings-network-password-unset")
+        };
         content.add_child(render_body_item::<NetworkPageAction>(
-            "密码".to_string(),
+            crate::t!("settings-network-password-label"),
             None::<AdditionalInfo<NetworkPageAction>>,
             LocalOnlyIconState::Hidden,
             ToggleState::from(custom_enabled),
             appearance,
             warpui::elements::ChildView::new(&view.password_input).finish(),
-            Some(format!(
-                "提交后保存到 OS 密钥库。当前:{}",
-                if has_password { "••••••••(已设置)" } else { "(未设置)" }
+            Some(crate::t!(
+                "settings-network-password-description",
+                value = password_status
             )),
         ));
 
         // 5. no_proxy
+        let no_proxy_current = if no_proxy_value.is_empty() {
+            crate::t!("settings-network-empty")
+        } else {
+            no_proxy_value.clone()
+        };
         content.add_child(render_body_item::<NetworkPageAction>(
-            "例外列表 (no_proxy)".to_string(),
+            crate::t!("settings-network-no-proxy-label"),
             None::<AdditionalInfo<NetworkPageAction>>,
             LocalOnlyIconState::Hidden,
             ToggleState::from(custom_enabled),
             appearance,
             warpui::elements::ChildView::new(&view.no_proxy_input).finish(),
-            Some(format!(
-                "逗号分隔。当前:{}",
-                if no_proxy_value.is_empty() {
-                    "(空)".to_string()
-                } else {
-                    no_proxy_value
-                }
+            Some(crate::t!(
+                "settings-network-no-proxy-description",
+                value = no_proxy_current
             )),
         ));
 
@@ -417,7 +434,7 @@ impl SettingsWidget for NetworkPageWidget {
         let test_button = appearance
             .ui_builder()
             .button(ButtonVariant::Secondary, view.test_button_state.clone())
-            .with_text_label("测试连接".to_string())
+            .with_text_label(crate::t!("settings-network-test-button"))
             .with_style(
                 UiComponentStyles::default()
                     .set_padding(Coords::uniform(8.))
@@ -429,12 +446,14 @@ impl SettingsWidget for NetworkPageWidget {
             });
 
         let result_text: String = match &view.test_state {
-            TestState::Idle => format!(
-                "用当前已保存的代理配置发起一次 GET {TEST_CONNECTION_URL} 请求。"
-            ),
-            TestState::Running => "测试中…".to_string(),
-            TestState::Success { status } => format!("✅ 成功(HTTP {status})"),
-            TestState::Failed { message } => format!("❌ 失败:{message}"),
+            TestState::Idle => crate::t!("settings-network-test-idle", url = TEST_CONNECTION_URL),
+            TestState::Running => crate::t!("settings-network-test-running"),
+            TestState::Success { status } => {
+                crate::t!("settings-network-test-success", status = (*status as i64))
+            }
+            TestState::Failed { message } => {
+                crate::t!("settings-network-test-failed", error = message.clone())
+            }
         };
 
         let result_text_element = Text::new(
