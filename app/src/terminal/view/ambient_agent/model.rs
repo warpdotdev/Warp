@@ -851,6 +851,7 @@ impl AmbientAgentViewModel {
         self.task_id = Some(task_id);
 
         self.status = Status::AgentRunning;
+        ctx.emit(AmbientAgentViewModelEvent::RunLifecycleChanged);
 
         // Fetch the task so we can set the correct environment (instead of defaulting to the most
         // recently-used one) and the correct harness (so non-oz viewers know to use the
@@ -881,9 +882,14 @@ impl AmbientAgentViewModel {
         );
     }
 
-    pub fn record_ambient_execution_ended(&mut self, session_id: SessionId) {
+    pub fn record_ambient_execution_ended(
+        &mut self,
+        session_id: SessionId,
+        ctx: &mut ModelContext<Self>,
+    ) {
         if self.active_execution_session_id.as_ref() == Some(&session_id) {
             self.active_execution_session_id = None;
+            ctx.emit(AmbientAgentViewModelEvent::RunLifecycleChanged);
         }
         self.last_ended_execution_session_id = Some(session_id);
     }
@@ -1628,6 +1634,11 @@ pub enum AmbientAgentViewModelEvent {
     UpdatedSetupCommandVisibility,
     /// The selected harness auth secret changed.
     AuthSecretSelected,
+    /// The run's task association or execution liveness changed in a way that
+    /// may affect lock-dependent UI (e.g. the model selector). Fired when
+    /// a task is attached to the view (transcript restore) or when an
+    /// execution ends.
+    RunLifecycleChanged,
 }
 
 pub(crate) fn should_disable_snapshot(ctx: &AppContext) -> bool {

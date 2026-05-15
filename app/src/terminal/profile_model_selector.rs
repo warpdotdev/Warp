@@ -505,6 +505,20 @@ impl ProfileModelSelector {
             },
         );
 
+        if let Some(ref ambient_model) = ambient_agent_view_model {
+            ctx.subscribe_to_model(ambient_model, |me, _, event, ctx| {
+                use crate::terminal::view::ambient_agent::AmbientAgentViewModelEvent;
+                if matches!(
+                    event,
+                    AmbientAgentViewModelEvent::RunLifecycleChanged
+                        | AmbientAgentViewModelEvent::SessionReady { .. }
+                        | AmbientAgentViewModelEvent::FollowupDispatched
+                ) {
+                    me.refresh_state(ctx);
+                }
+            });
+        }
+
         let manage_api_key_button = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new("Manage", SecondaryTheme)
                 .with_tooltip("Manage API keys")
@@ -595,6 +609,24 @@ impl ProfileModelSelector {
         format!("{PROFILE_SELECTOR_POSITION_ID}_{llm_id}")
     }
 
+    /// Returns true when the model selector should be locked (disabled and
+    /// non-interactive). The selector is locked when either:
+    /// - The session has ended and the user is composing a follow-up (all
+    ///   harnesses), because the server inherits the original task's config.
+    /// - A non-Oz cloud run has been spawned (live or ended), because
+    ///   changing the harness model locally has no effect.
+    fn is_model_locked(&self, app: &AppContext) -> bool {
+        self.ambient_agent_view_model.as_ref().is_some_and(|m| {
+            let model = m.as_ref(app);
+            model.is_ready_for_cloud_followup_prompt()
+                || (model.task_id().is_some()
+                    && !matches!(
+                        model.selected_harness(),
+                        warp_cli::agent::Harness::Oz | warp_cli::agent::Harness::Unknown
+                    ))
+        })
+    }
+
     fn refresh_state(&mut self, ctx: &mut ViewContext<Self>) {
         self.refresh_profile_menu(ctx);
         self.refresh_model_menu(ctx);
@@ -633,8 +665,21 @@ impl ProfileModelSelector {
                 active_llm.display_name.clone()
             }
         };
+
+        let locked = self.is_model_locked(ctx);
+        let model_tooltip = if locked {
+            "Model is locked for follow-up runs"
+        } else {
+            "Choose an agent model"
+        };
         self.model_button.update(ctx, |button, ctx| {
             button.set_label(model_name, ctx);
+            button.set_disabled(locked, ctx);
+            button.set_tooltip(Some(model_tooltip), ctx);
+        });
+        self.model_compact_button.update(ctx, |button, ctx| {
+            button.set_disabled(locked, ctx);
+            button.set_tooltip(Some(model_tooltip), ctx);
         });
         ctx.notify();
     }
@@ -1542,8 +1587,11 @@ impl ProfileModelSelector {
         let button_with_save_position =
             SavePosition::new(button, "profile_model_selector_model_button").finish();
 
+        let is_locked = self.is_model_locked(app);
+        let can_interact = has_edit_access && !is_locked;
+
         let hoverable = Hoverable::new(self.model_mouse_state.clone(), move |state| {
-            if state.is_hovered() {
+            if state.is_hovered() && can_interact {
                 let button_with_hover = Container::new(button_with_save_position)
                     .with_background(theme.surface_2())
                     .with_corner_radius(CornerRadius::with_right(Radius::Pixels(
@@ -1551,15 +1599,31 @@ impl ProfileModelSelector {
                     )))
                     .finish();
 
-                let tooltip_text = if !has_edit_access {
-                    "Request edit access to change model".to_owned()
-                } else {
-                    "Choose an agent model".to_owned()
-                };
+                let tooltip_text = "Choose an agent model".to_owned();
 
                 let tooltip = appearance.ui_builder().tool_tip(tooltip_text);
                 let mut stack = Stack::new();
                 stack.add_child(button_with_hover);
+                stack.add_positioned_child(
+                    tooltip.build().finish(),
+                    OffsetPositioning::offset_from_parent(
+                        vec2f(0., -10.),
+                        ParentOffsetBounds::Unbounded,
+                        ParentAnchor::TopLeft,
+                        ChildAnchor::BottomLeft,
+                    ),
+                );
+                stack.finish()
+            } else if state.is_hovered() {
+                let tooltip_text = if is_locked {
+                    "Model is locked for follow-up runs"
+                } else {
+                    "Request edit access to change model"
+                };
+
+                let tooltip = appearance.ui_builder().tool_tip(tooltip_text.to_owned());
+                let mut stack = Stack::new();
+                stack.add_child(button_with_save_position);
                 stack.add_positioned_child(
                     tooltip.build().finish(),
                     OffsetPositioning::offset_from_parent(
@@ -1575,16 +1639,15 @@ impl ProfileModelSelector {
             }
         });
 
-        // Only make clickable if the user can click to open the menu (i.e. has edit access)
-        if !has_edit_access {
-            hoverable.finish()
-        } else {
+        if can_interact {
             hoverable
                 .on_click(|ctx, _app, _position| {
                     ctx.dispatch_typed_action(ProfileModelSelectorAction::ToggleModelMenu);
                 })
                 .with_cursor(Cursor::PointingHand)
                 .finish()
+        } else {
+            hoverable.finish()
         }
     }
 
@@ -1913,6 +1976,9 @@ impl TypedActionView for ProfileModelSelector {
                 self.set_profile_menu_visibility(!self.is_profile_menu_open, ctx);
             }
             ProfileModelSelectorAction::ToggleModelMenu => {
+                if self.is_model_locked(ctx) {
+                    return;
+                }
                 if FeatureFlag::InlineMenuHeaders.is_enabled() {
                     ctx.emit(ProfileModelSelectorEvent::ToggleInlineModelSelector);
                 } else {
