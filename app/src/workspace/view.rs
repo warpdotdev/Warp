@@ -8146,12 +8146,7 @@ impl Workspace {
 
         if let Some((repo, diff_state_model, terminal_view)) = context_data {
             self.right_panel_view.update(ctx, |right_pane_view, ctx| {
-                right_pane_view.open_code_review(
-                    repo,
-                    diff_state_model,
-                    terminal_view,
-                    ctx,
-                );
+                right_pane_view.open_code_review(repo, diff_state_model, terminal_view, ctx);
             });
         } else {
             self.right_panel_view.update(ctx, |right_panel_view, ctx| {
@@ -8172,8 +8167,7 @@ impl Workspace {
                 .repo_path
                 .as_ref()
                 .is_some_and(|target_repo_path| {
-                    self.right_panel_view.as_ref(ctx).selected_repo_path()
-                        == Some(target_repo_path)
+                    self.right_panel_view.as_ref(ctx).selected_repo_path() == Some(target_repo_path)
                 });
         if panel_already_showing_repo {
             return;
@@ -13117,7 +13111,7 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         let pane_group_id = pane_group.id();
-        let terminal_cwds: Vec<(EntityId, String)> = pane_group
+        let terminal_cwds: Vec<(EntityId, LocalOrRemotePath)> = pane_group
             .as_ref(ctx)
             .terminal_view_working_directories(ctx)
             .filter_map(|(id, cwd)| cwd.map(|c| (id, c)))
@@ -14495,17 +14489,12 @@ impl Workspace {
                 // Also map the repo to the terminal that navigated there so
                 // `find_review_terminal` can resolve the preferred terminal.
                 let repo_key = LocalOrRemotePath::Remote(remote_path.clone());
-                let terminal_view_id = pane_group.read(ctx, |pg, ctx| {
-                    pg.active_session_view(ctx).map(|tv| tv.id())
-                });
+                let terminal_view_id =
+                    pane_group.read(ctx, |pg, ctx| pg.active_session_view(ctx).map(|tv| tv.id()));
                 self.working_directories_model.update(ctx, |model, ctx| {
                     model.register_remote_repo(pane_group_id, repo_key.clone(), ctx);
                     if let Some(terminal_id) = terminal_view_id {
-                        model.register_terminal_for_repo(
-                            pane_group_id,
-                            repo_key,
-                            terminal_id,
-                        );
+                        model.register_terminal_for_repo(pane_group_id, repo_key, terminal_id);
                     }
                 });
             }

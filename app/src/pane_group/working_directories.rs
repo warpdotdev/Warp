@@ -382,7 +382,11 @@ impl WorkingDirectoriesModel {
     /// Persist the repository the user manually selected for the code review panel
     /// in a given pane group. This is only called for explicit user-driven
     /// selections (e.g. via the dropdown), not for auto-selected defaults.
-    pub fn set_selected_review_repo(&mut self, pane_group_id: EntityId, repo_path: LocalOrRemotePath) {
+    pub fn set_selected_review_repo(
+        &mut self,
+        pane_group_id: EntityId,
+        repo_path: LocalOrRemotePath,
+    ) {
         self.selected_review_repo.insert(pane_group_id, repo_path);
     }
 
@@ -466,15 +470,14 @@ impl WorkingDirectoriesModel {
         }
     }
 
-    /// Refreshes the working directories for a pane group from **local** terminal CWDs
-    /// and code editor paths. Remote repositories are not processed here — they enter
-    /// through [`Self::register_remote_repo`] instead.
+    /// Refreshes the working directories for a pane group from terminal CWDs
+    /// (both local and remote) and code editor paths.
     ///
     /// If `focused_terminal_id` is provided, the repo_to_terminal map will prioritize
     pub fn refresh_working_directories_for_pane_group(
         &mut self,
         pane_group_id: EntityId,
-        terminal_cwds: Vec<(EntityId, String)>,
+        terminal_cwds: Vec<(EntityId, LocalOrRemotePath)>,
         local_paths: Vec<(EntityId, String)>,
         focused_terminal_id: Option<EntityId>,
         ctx: &mut ModelContext<Self>,
@@ -506,7 +509,7 @@ impl WorkingDirectoriesModel {
         let old_focused_repo: Option<LocalOrRemotePath> =
             self.focused_repo.get(&pane_group_id).cloned().flatten();
 
-        // Resolve a path to its detected repository root, or keep the path as-is if no repo is found.
+        // Resolve a local path to its detected repository root, or keep the path as-is if no repo is found.
         let root_for_path = |path: PathBuf| {
             DetectedRepositories::as_ref(ctx)
                 .get_root_for_path(&LocalOrRemotePath::Local(path.clone()))
@@ -516,8 +519,22 @@ impl WorkingDirectoriesModel {
 
         let root_for_raw_path = |raw_path: &str| normalize_cwd(raw_path).map(root_for_path);
 
+        // Split terminal CWDs into local and remote buckets.
+        let mut local_terminal_cwds: Vec<(EntityId, String)> = Vec::new();
+        let mut remote_terminal_cwds: Vec<(EntityId, RemotePath)> = Vec::new();
+        for (terminal_id, cwd) in &terminal_cwds {
+            match cwd {
+                LocalOrRemotePath::Local(path) => {
+                    local_terminal_cwds.push((*terminal_id, path.to_string_lossy().into_owned()));
+                }
+                LocalOrRemotePath::Remote(remote_path) => {
+                    remote_terminal_cwds.push((*terminal_id, remote_path.clone()));
+                }
+            }
+        }
+
         // Collapse working directories to their nearest repository root (when detected).
-        let mut file_path_ancestors: HashSet<PathBuf> = terminal_cwds
+        let mut file_path_ancestors: HashSet<PathBuf> = local_terminal_cwds
             .iter()
             .filter_map(|(_, cwd)| root_for_raw_path(cwd))
             .collect();
@@ -538,12 +555,8 @@ impl WorkingDirectoriesModel {
             })
             .collect();
 
-        // FYI we have the 3 entity types terminal, code, and notebook below but we're merging them in a way that we only care about the actual paths
-        // Be careful to not mix the entity IDs if we end up using them in the future!!!
-        //
-        // NOTE: We intentionally collapse paths to their repo root when possible, so this is a
-        // "working roots" list rather than raw per-pane working directories.
-        let new_root_paths: Vec<PathBuf> = terminal_cwds
+        // Build the local root paths (for pane_groups / file tree — local only).
+        let new_root_paths: Vec<PathBuf> = local_terminal_cwds
             .iter()
             .chain(local_cwds.iter())
             .filter_map(|(_, cwd)| root_for_raw_path(cwd))
@@ -555,22 +568,21 @@ impl WorkingDirectoriesModel {
         update_index_set(pane_group_roots, new_root_paths.clone());
 
         // Build repo roots and their terminal associations
-        // First pass: collect all repo roots and build initial mapping
-        let new_repo_roots: Vec<PathBuf> = self
+        // First pass: collect all local repo roots and build initial mapping
+        let new_local_repo_roots: Vec<PathBuf> = self
             .pane_groups
             .get(&pane_group_id)
             .into_iter()
             .flat_map(|dirs| dirs.iter())
             .filter_map(|dir| self.get_repo_root_for_path(dir, ctx))
             .collect();
-        let mut new_roots: HashSet<PathBuf> = HashSet::from_iter(new_repo_roots.iter().cloned());
+        let mut new_roots: HashSet<PathBuf> =
+            HashSet::from_iter(new_local_repo_roots.iter().cloned());
         new_roots.extend(new_root_paths.iter().cloned());
 
         // Build mapping from directories to their terminal IDs (keyed by LocalOrRemotePath).
-        // All paths here are local — they come from `root_for_raw_path` → `normalize_cwd`
-        // which canonicalizes local filesystem paths. Remote terminal-to-repo mappings are
-        // not tracked here; remote repos use `register_remote_repo` instead.
-        let mut new_root_to_terminal: HashMap<LocalOrRemotePath, EntityId> = terminal_cwds
+        // Local paths come from `root_for_raw_path` → `normalize_cwd`.
+        let mut new_root_to_terminal: HashMap<LocalOrRemotePath, EntityId> = local_terminal_cwds
             .iter()
             .filter_map(|(terminal_id, cwd)| {
                 root_for_raw_path(cwd).map(|p| (LocalOrRemotePath::Local(p), *terminal_id))
@@ -579,6 +591,22 @@ impl WorkingDirectoriesModel {
         new_root_to_terminal
             .retain(|cwd, _terminal_id| cwd.to_local_path().is_some_and(|p| new_roots.contains(p)));
 
+        // Resolve remote terminal CWDs to their repo roots and add to mappings.
+        let mut new_remote_repo_roots: Vec<LocalOrRemotePath> = Vec::new();
+        for (terminal_id, remote_path) in &remote_terminal_cwds {
+            let remote_key = LocalOrRemotePath::Remote(remote_path.clone());
+            if let Some(repo_root) =
+                DetectedRepositories::as_ref(ctx).get_root_for_path(&remote_key)
+            {
+                new_root_to_terminal.insert(repo_root.clone(), *terminal_id);
+                new_remote_repo_roots.push(repo_root);
+            } else {
+                // No repo detected — still track the CWD → terminal mapping
+                // so `find_review_terminal` can resolve it.
+                new_root_to_terminal.insert(remote_key, *terminal_id);
+            }
+        }
+
         // Second pass: if we have a focused terminal, ensure its repo maps to it
         // This ensures the dropdown selects the correct repo when a pane is focused or CD'd
         let mut focused_repo: Option<LocalOrRemotePath> = None;
@@ -586,11 +614,22 @@ impl WorkingDirectoriesModel {
             let mut repos_to_insert = Vec::new();
             for (dir, terminal_id) in &new_root_to_terminal {
                 if *terminal_id == focused_id {
-                    if let Some(local_path) = dir.to_local_path() {
-                        if let Some(repo_root) = self.get_repo_root_for_path(local_path, ctx) {
-                            let repo_key = LocalOrRemotePath::Local(repo_root);
-                            repos_to_insert.push((repo_key.clone(), focused_id));
-                            focused_repo = Some(repo_key);
+                    match dir {
+                        LocalOrRemotePath::Local(local_path) => {
+                            if let Some(repo_root) = self.get_repo_root_for_path(local_path, ctx) {
+                                let repo_key = LocalOrRemotePath::Local(repo_root);
+                                repos_to_insert.push((repo_key.clone(), focused_id));
+                                focused_repo = Some(repo_key);
+                            }
+                        }
+                        LocalOrRemotePath::Remote(remote_path) => {
+                            let remote_key = LocalOrRemotePath::Remote(remote_path.clone());
+                            if let Some(repo_root) =
+                                DetectedRepositories::as_ref(ctx).get_root_for_path(&remote_key)
+                            {
+                                repos_to_insert.push((repo_root.clone(), focused_id));
+                                focused_repo = Some(repo_root);
+                            }
                         }
                     }
                 }
@@ -600,31 +639,23 @@ impl WorkingDirectoriesModel {
             }
         }
 
-        // Get or create the IndexSet for repository roots.
-        // Carry forward existing Remote entries — this function only processes
-        // local CWDs; remote repos are managed by `register_remote_repo`.
-        let mut new_repo_roots_wrapped: Vec<LocalOrRemotePath> = new_repo_roots
+        // Build the unified set of repo roots (local + remote).
+        let mut new_repo_roots_wrapped: Vec<LocalOrRemotePath> = new_local_repo_roots
             .into_iter()
             .map(LocalOrRemotePath::Local)
+            .chain(new_remote_repo_roots)
             .collect();
-        if let Some(existing_repos) = self.repository_roots.get(&pane_group_id) {
-            for repo in existing_repos {
-                if repo.is_remote() {
-                    new_repo_roots_wrapped.push(repo.clone());
-                }
-            }
-        }
+        // Deduplicate (IndexSet handles this, but avoid duplicates in the input).
+        let seen: HashSet<_> = new_repo_roots_wrapped.iter().cloned().collect();
+        new_repo_roots_wrapped.retain({
+            let mut first_seen = HashSet::new();
+            move |item| first_seen.insert(item.clone())
+        });
+        let _ = seen; // consumed by retain closure above
+
         let pane_group_repos = self.repository_roots.entry(pane_group_id).or_default();
         update_repo_index_set(pane_group_repos, new_repo_roots_wrapped);
 
-        // Update the repo to terminal mapping, preserving remote entries.
-        if let Some(old_mapping) = self.directory_to_terminal.get(&pane_group_id) {
-            for (key, terminal_id) in old_mapping {
-                if key.is_remote() {
-                    new_root_to_terminal.insert(key.clone(), *terminal_id);
-                }
-            }
-        }
         self.directory_to_terminal
             .insert(pane_group_id, new_root_to_terminal);
 
@@ -828,7 +859,7 @@ impl WorkingDirectoriesModel {
     pub fn refresh_working_directories_for_pane_group(
         &mut self,
         _pane_group_id: EntityId,
-        _terminal_cwds: Vec<(EntityId, String)>,
+        _terminal_cwds: Vec<(EntityId, LocalOrRemotePath)>,
         _local_paths: Vec<(EntityId, String)>,
         _focused_terminal_id: Option<EntityId>,
         _ctx: &mut ModelContext<Self>,

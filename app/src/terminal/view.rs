@@ -22175,6 +22175,42 @@ impl TerminalView {
             .map(|path| path.to_string_lossy().into_owned())
     }
 
+    /// Returns the active session's CWD as a `LocalOrRemotePath`.
+    ///
+    /// For local sessions the CWD is canonicalized via `dunce::canonicalize`
+    /// and wrapped as `Local`. For remote sessions the CWD is read from
+    /// `active_block_metadata` and paired with the session's `host_id` to
+    /// form a `Remote` path. Returns `None` when no CWD is available or
+    /// (for remote sessions) the `host_id` has not been established yet.
+    pub fn pwd_as_local_or_remote(&self, ctx: &AppContext) -> Option<LocalOrRemotePath> {
+        let session_id = self.active_block_session_id()?;
+        let session = self.sessions.as_ref(ctx).get(session_id)?;
+        let cwd_str = self
+            .active_block_metadata
+            .as_ref()
+            .and_then(BlockMetadata::current_working_directory)?;
+
+        if self.session_is_local(session_id, ctx) {
+            // Local session: canonicalize to resolve symlinks / normalize.
+            let path = session
+                .launch_data()
+                .and_then(|data| data.maybe_convert_absolute_path(cwd_str))
+                .unwrap_or_else(|| PathBuf::from(cwd_str));
+            let canonical = dunce::canonicalize(&path).ok()?;
+            Some(LocalOrRemotePath::Local(canonical))
+        } else {
+            // Remote session: pair CWD with the session's host_id.
+            let host_id = match session.session_type() {
+                SessionType::WarpifiedRemote { host_id } => host_id,
+                SessionType::Local => return None,
+            }?;
+            let std_path = warp_util::standardized_path::StandardizedPath::try_new(cwd_str).ok()?;
+            Some(LocalOrRemotePath::Remote(
+                warp_util::remote_path::RemotePath::new(host_id, std_path),
+            ))
+        }
+    }
+
     pub fn shell_launch_data_if_local(&self, ctx: &AppContext) -> Option<ShellLaunchData> {
         if !FeatureFlag::ShellSelector.is_enabled() {
             return None;

@@ -49,8 +49,8 @@ fn refresh_working_directories_collapses_subroots_to_nearest_repo_root() {
             model.refresh_working_directories_for_pane_group(
                 pane_group_id,
                 vec![
-                    (terminal_1, repo_a.to_string_lossy().to_string()),
-                    (terminal_2, repo_b.to_string_lossy().to_string()),
+                    (terminal_1, LocalOrRemotePath::Local(repo_a.clone())),
+                    (terminal_2, LocalOrRemotePath::Local(repo_b.clone())),
                 ],
                 vec![],
                 Some(terminal_1),
@@ -95,10 +95,10 @@ fn refresh_working_directories_preserves_non_repo_paths_and_dedupes() {
             model.refresh_working_directories_for_pane_group(
                 pane_group_id,
                 vec![
-                    (terminal_1, dir_1.to_string_lossy().to_string()),
-                    (terminal_2, dir_2.to_string_lossy().to_string()),
+                    (terminal_1, LocalOrRemotePath::Local(dir_1.clone())),
+                    (terminal_2, LocalOrRemotePath::Local(dir_2.clone())),
                     // Duplicate root should be deduped.
-                    (terminal_3, dir_1.to_string_lossy().to_string()),
+                    (terminal_3, LocalOrRemotePath::Local(dir_1.clone())),
                 ],
                 vec![],
                 Some(terminal_1),
