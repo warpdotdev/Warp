@@ -6,6 +6,8 @@ use crate::ai::agent::{
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use chrono::Local;
 use parking_lot::FairMutex;
+use session_sharing_protocol::common::CLIAgentSessionState;
+use session_sharing_protocol::sharer::SessionSourceType;
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -13,6 +15,7 @@ use std::pin::pin;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::Arc;
+use warp_cli::agent::Harness;
 use warp_terminal::model::escape_sequences::{BRACKETED_PASTE_END, BRACKETED_PASTE_START};
 use warpui::{
     notification::UserNotification, platform::WindowStyle, Presenter, WindowInvalidation,
@@ -22,8 +25,8 @@ use warpui::{App, ReadModel};
 use crate::ai::blocklist::agent_view::toolbar_item::AgentToolbarItemKind;
 use crate::ai::blocklist::block::cli_controller::UserTakeOverReason;
 use crate::ai::blocklist::{
-    agent_view::AgentViewEntryOrigin, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
-    InputConfig, InputType, ResponseStreamId,
+    agent_view::{AgentViewEntryOrigin, AgentViewState},
+    BlocklistAIHistoryEvent, BlocklistAIHistoryModel, InputConfig, InputType, ResponseStreamId,
 };
 use crate::ai::llms::LLMId;
 use crate::context_chips::prompt::Prompt;
@@ -48,10 +51,14 @@ use crate::terminal::cli_agent_sessions::{
 
 use crate::terminal::model::ansi::{self, InitShellValue};
 use crate::terminal::model::ansi::{BootstrappedValue, PreexecValue};
+use crate::terminal::model::block::AgentViewVisibility;
 use crate::terminal::model::blocks::{insert_block, TotalIndex};
 use crate::terminal::model::grid::Dimensions as _;
 use crate::terminal::model::terminal_model::WithinBlock;
 use crate::terminal::session_settings::AgentToolbarChipSelection;
+use crate::terminal::shared_session::shared_handlers::{
+    apply_cli_agent_state_update, RemoteUpdateGuard,
+};
 use crate::terminal::shared_session::SharedSessionStatus;
 use crate::terminal::view::ambient_agent::AmbientAgentViewModelEvent;
 use crate::terminal::view::load_ai_conversation::RestoredAIConversation;
@@ -916,6 +923,152 @@ fn fresh_cloud_mode_setup_enters_agent_view_when_view_pending() {
     });
 }
 
+#[test]
+fn shared_third_party_viewer_sync_enters_agent_view_and_retags_existing_block() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _agent_harness = FeatureFlag::AgentHarness.override_enabled(true);
+
+        let terminal = add_window_with_cloud_mode_terminal(&mut app);
+
+        terminal.update(&mut app, |view, ctx| {
+            let harness_block_id = {
+                let mut model = view.model.lock();
+                model.set_shared_session_source_type(SessionSourceType::AmbientAgent {
+                    task_id: None,
+                });
+                model.set_shared_session_status(SharedSessionStatus::ActiveViewer {
+                    role: Default::default(),
+                });
+                model.simulate_block("claude", "running");
+                model
+                    .block_list()
+                    .blocks()
+                    .iter()
+                    .find(|block| block.command_to_string() == "claude")
+                    .expect("harness block should exist")
+                    .id()
+                    .clone()
+            };
+
+            view.ambient_agent_view_model()
+                .expect("cloud mode terminal should have ambient model")
+                .update(ctx, |model, ctx| {
+                    model.set_harness(Harness::Claude, ctx);
+                });
+
+            let conversation_id = view
+                .sync_agent_view_for_shared_third_party_viewer(ctx)
+                .expect("shared third-party viewer should sync");
+            let idempotent_conversation_id = view
+                .sync_agent_view_for_shared_third_party_viewer(ctx)
+                .expect("sync should be idempotent");
+            assert_eq!(conversation_id, idempotent_conversation_id);
+
+            match view.agent_view_controller().as_ref(ctx).agent_view_state() {
+                AgentViewState::Active {
+                    conversation_id: active_conversation_id,
+                    origin,
+                    ..
+                } => {
+                    assert_eq!(*active_conversation_id, conversation_id);
+                    assert_eq!(*origin, AgentViewEntryOrigin::ThirdPartyCloudAgent);
+                }
+                state => panic!("expected active agent view, got {state:?}"),
+            }
+
+            let model = view.model.lock();
+            let block = model
+                .block_list()
+                .block_with_id(&harness_block_id)
+                .expect("harness block should still exist");
+            assert!(!block.should_hide_block(model.block_list().agent_view_state()));
+            match block.agent_view_visibility() {
+                AgentViewVisibility::Terminal {
+                    conversation_ids,
+                    pending_conversation_ids,
+                } => {
+                    assert!(pending_conversation_ids.is_empty());
+                    assert!(conversation_ids.contains(&conversation_id));
+                }
+                visibility => panic!("expected terminal block visibility, got {visibility:?}"),
+            }
+        });
+    });
+}
+
+#[test]
+fn shared_third_party_viewer_syncs_from_cli_agent_state_without_ambient_model() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _agent_harness = FeatureFlag::AgentHarness.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        let harness_block_id = terminal.update(&mut app, |view, _| {
+            assert!(view.ambient_agent_view_model().is_none());
+            let mut model = view.model.lock();
+            model.set_shared_session_source_type(SessionSourceType::AmbientAgent { task_id: None });
+            model.set_shared_session_status(SharedSessionStatus::ActiveViewer {
+                role: Default::default(),
+            });
+            model.simulate_block("claude", "running");
+            model
+                .block_list()
+                .blocks()
+                .iter()
+                .find(|block| block.command_to_string() == "claude")
+                .expect("harness block should exist")
+                .id()
+                .clone()
+        });
+
+        app.update(|ctx| {
+            let guard = RemoteUpdateGuard::new();
+            let active_update = guard.start_remote_update();
+            apply_cli_agent_state_update(
+                &terminal.downgrade(),
+                &CLIAgentSessionState::Active {
+                    cli_agent: CLIAgent::Claude.to_serialized_name(),
+                    is_rich_input_open: false,
+                },
+                &active_update,
+                ctx,
+            );
+        });
+
+        terminal.read(&app, |view, ctx| {
+            let AgentViewState::Active {
+                conversation_id,
+                origin,
+                ..
+            } = view.agent_view_controller().as_ref(ctx).agent_view_state()
+            else {
+                panic!("expected active agent view");
+            };
+            assert_eq!(*origin, AgentViewEntryOrigin::ThirdPartyCloudAgent);
+
+            let model = view.model.lock();
+            let block = model
+                .block_list()
+                .block_with_id(&harness_block_id)
+                .expect("harness block should still exist");
+            assert!(!block.should_hide_block(model.block_list().agent_view_state()));
+            match block.agent_view_visibility() {
+                AgentViewVisibility::Terminal {
+                    conversation_ids,
+                    pending_conversation_ids,
+                } => {
+                    assert!(pending_conversation_ids.is_empty());
+                    assert!(conversation_ids.contains(conversation_id));
+                }
+                visibility => panic!("expected terminal block visibility, got {visibility:?}"),
+            }
+        });
+    });
+}
 #[test]
 fn cloud_mode_followup_input_uses_explicit_submit_event_even_when_view_pending() {
     App::test((), |mut app| async move {

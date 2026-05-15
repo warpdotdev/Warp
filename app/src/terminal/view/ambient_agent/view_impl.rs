@@ -17,6 +17,7 @@ use crate::ai::ambient_agents::telemetry::{CloudAgentTelemetryEvent, CloudModeEn
 use crate::ai::blocklist::{agent_view::AgentViewEntryOrigin, BlocklistAIHistoryModel};
 use crate::ai::conversation_details_panel::ConversationDetailsData;
 use crate::pane_group::TerminalViewResources;
+use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::view::rich_content::{RichContentInsertionPosition, RichContentMetadata};
 use crate::terminal::view::TerminalView;
 use crate::terminal::CLIAgent;
@@ -297,7 +298,7 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::HarnessSelected => {
-                self.maybe_enter_agent_view_for_shared_third_party_viewer(ctx);
+                self.sync_agent_view_for_shared_third_party_viewer(ctx);
                 self.update_pane_configuration(ctx);
                 ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
@@ -490,10 +491,30 @@ impl TerminalView {
         );
     }
 
-    /// Enters agent view for a live shared-session viewer of a non-oz cloud run, so every
+    /// Returns whether this view is a live shared-session viewer for a non-Oz cloud run.
+    fn is_third_party_cloud_agent_viewer(&self, ctx: &AppContext) -> bool {
+        // We try to detect a third-party harness however we can; because there are a few different
+		// events that may cause it to be set when viewing a shared session, we handle multiple below.
+        let has_third_party_harness = match self.ambient_agent_view_model.as_ref() {
+            // We set the harness on the AmbientAgentViewModel after fetching task data from the server.
+            Some(model) => model.as_ref(ctx).is_third_party_harness(),
+            // When we join a shared session, if the harness is currently active in the sharer,
+			// we should be starting a new CLI agent via the CLIAgentSessionsModel.
+            None => {
+                FeatureFlag::AgentHarness.is_enabled()
+                    && CLIAgentSessionsModel::as_ref(ctx)
+                        .session(self.view_id)
+                        .is_some()
+            }
+        };
+
+        has_third_party_harness && self.is_shared_ambient_agent_session()
+    }
+
+    /// Syncs agent view for a live shared-session viewer of a non-oz cloud run, so every
     /// viewer lands in the same agent-view chrome regardless of which entry point opened the
-    /// conversation. Called from the `HarnessSelected` handler once the viewer has resolved
-    /// the run's harness asynchronously.
+    /// conversation. Called once the viewer has resolved the run's harness asynchronously, and
+    /// after later shared-session block starts.
     ///
     /// Transcript viewer entry is handled directly in `load_data_into_transcript_viewer` so
     /// the snapshot block exists before we retag — we intentionally do not trigger that path
@@ -502,31 +523,21 @@ impl TerminalView {
     /// The viewer-context guard is load-bearing: `HarnessSelected` also fires when the local
     /// spawner picks a harness from the dropdown, and in that case the cloud-mode setup flow
     /// handles agent view entry instead.
-    fn maybe_enter_agent_view_for_shared_third_party_viewer(
+    pub(crate) fn sync_agent_view_for_shared_third_party_viewer(
         &mut self,
         ctx: &mut ViewContext<Self>,
-    ) {
-        if self
+    ) -> Option<AIConversationId> {
+        if !self.is_third_party_cloud_agent_viewer(ctx) {
+            return None;
+        }
+        if let Some(conversation_id) = self
             .agent_view_controller
             .as_ref(ctx)
             .agent_view_state()
-            .is_active()
+            .active_conversation_id()
         {
-            return;
+            return Some(conversation_id);
         }
-        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.as_ref() else {
-            return;
-        };
-        if !ambient_agent_view_model
-            .as_ref(ctx)
-            .is_third_party_harness()
-        {
-            return;
-        }
-        if !self.is_shared_ambient_agent_session() {
-            return;
-        }
-
         self.enter_agent_view_for_new_conversation(
             None,
             AgentViewEntryOrigin::ThirdPartyCloudAgent,
@@ -539,7 +550,7 @@ impl TerminalView {
             .agent_view_state()
             .active_conversation_id()
         else {
-            return;
+            return None;
         };
 
         // Retag existing non-setup blocks so the harness content passes the agent view filter.
@@ -561,6 +572,8 @@ impl TerminalView {
         for view_id in ids_to_retag {
             self.set_rich_content_agent_view_conversation_id(view_id, vehicle_conversation_id);
         }
+
+        Some(vehicle_conversation_id)
     }
 
     /// Returns `true` when the block's command is the CLI for the run's configured
