@@ -11778,7 +11778,14 @@ impl Workspace {
                 .map(|t| t.as_str().to_string());
             let title_for_fork = source_conversation.title();
 
-            if let Some(source_token) = source_server_token.filter(|_| cloud_storage_enabled) {
+            // Skip the server-side fork when forking from a specific exchange.
+            // The server's ForkConversation copies the entire GCS conversation
+            // data, which includes exchanges after the fork point. This creates
+            // a mismatch with the locally-truncated fork and causes TaskNotFound
+            // errors during cloud-to-cloud handoff replay.
+            let should_server_fork =
+                cloud_storage_enabled && fork_from_exchange.is_none();
+            if let Some(source_token) = source_server_token.filter(|_| should_server_fork) {
                 let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
                 ctx.spawn(
                     async move {
