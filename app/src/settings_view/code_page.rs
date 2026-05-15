@@ -18,7 +18,10 @@ use crate::{
         EnablementState, LspRepoStatus, PersistedWorkspace, PersistedWorkspaceEvent,
     },
     appearance::Appearance,
-    code::lsp_telemetry::{LspControlActionType, LspEnablementSource, LspTelemetryEvent},
+    code::{
+        buffer_location::LocalOrRemotePath,
+        lsp_telemetry::{LspControlActionType, LspEnablementSource, LspTelemetryEvent},
+    },
     send_telemetry_from_ctx,
     settings::{AISettings, CodeSettings},
     terminal::general_settings::GeneralSettings,
@@ -154,13 +157,6 @@ struct IndexingStatusPresentation {
     icon: Option<Icon>,
     show_retry: bool,
     show_delete: bool,
-}
-
-#[derive(Clone)]
-enum IndexingActionTarget {
-    Local(PathBuf),
-    #[cfg(not(target_family = "wasm"))]
-    Remote(RemotePath),
 }
 
 pub struct CodeSettingsPageView {
@@ -1412,30 +1408,8 @@ impl CodePageWidget {
         let workspace_rule_paths =
             ProjectContextModel::as_ref(app).rules_for_workspace(workspace_path);
 
-        let workspace_header_label = Shrinkable::new(
-            1.,
-            ui_builder
-                .span(user_friendly)
-                .with_style(UiComponentStyles {
-                    font_family_id: Some(appearance.monospace_font_family()),
-                    font_size: Some(appearance.ui_font_size()),
-                    font_weight: Some(Weight::Bold),
-                    font_color: Some(theme.active_ui_text_color().into()),
-                    ..Default::default()
-                })
-                .build()
-                .finish(),
-        )
-        .finish();
-
-        let mut header_row = Flex::row()
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center);
-        header_row.add_child(Expanded::new(1., workspace_header_label).finish());
-
         // Only show "Open project rules" button if rules exist for this workspace
-        if !workspace_rule_paths.is_empty() {
+        let open_rules_button: Option<Box<dyn Element>> = if !workspace_rule_paths.is_empty() {
             let open_rules_button = ui_builder
                 .button(ButtonVariant::Secondary, open_rules_mouse)
                 .with_style(UiComponentStyles {
@@ -1474,10 +1448,16 @@ impl CodePageWidget {
                     });
                 })
                 .finish();
-            header_row.add_child(open_rules_button);
-        }
+            Some(open_rules_button)
+        } else {
+            None
+        };
 
-        workspace_content.add_child(header_row.finish());
+        workspace_content.add_child(self.render_workspace_header(
+            user_friendly,
+            open_rules_button,
+            appearance,
+        ));
 
         // Indexing section (always rendered per design)
         workspace_content.add_child(self.render_indexing_subsection(
@@ -1501,12 +1481,7 @@ impl CodePageWidget {
             ));
         }
 
-        Container::new(workspace_content.finish())
-            .with_uniform_padding(MAIN_SECTION_MARGIN)
-            .with_background(theme.surface_1())
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-            .with_margin_bottom(MAIN_SECTION_MARGIN)
-            .finish()
+        self.render_workspace_row_container(workspace_content.finish(), appearance)
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -1517,16 +1492,38 @@ impl CodePageWidget {
         delete_mouse: MouseStateHandle,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        let ui_builder = appearance.ui_builder();
-        let theme = appearance.theme();
-
         let mut workspace_content = Flex::column().with_spacing(MAIN_SECTION_MARGIN);
 
         let remote_path_label = format!("{}:{}", entry.host_label, entry.remote_path.path.as_str());
+        workspace_content.add_child(self.render_workspace_header(
+            remote_path_label,
+            None,
+            appearance,
+        ));
+
+        workspace_content.add_child(self.render_indexing_subsection_for_target(
+            self.remote_indexing_status_presentation(&entry.status, appearance),
+            Some(LocalOrRemotePath::Remote(entry.remote_path.clone())),
+            resync_mouse,
+            delete_mouse,
+            appearance,
+        ));
+
+        self.render_workspace_row_container(workspace_content.finish(), appearance)
+    }
+
+    fn render_workspace_header(
+        &self,
+        label: String,
+        action_button: Option<Box<dyn Element>>,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let theme = appearance.theme();
         let path_label = Shrinkable::new(
             1.,
-            ui_builder
-                .span(remote_path_label)
+            appearance
+                .ui_builder()
+                .span(label)
                 .with_style(UiComponentStyles {
                     font_family_id: Some(appearance.monospace_font_family()),
                     font_size: Some(appearance.ui_font_size()),
@@ -1539,24 +1536,24 @@ impl CodePageWidget {
         )
         .finish();
 
-        workspace_content.add_child(
-            Flex::row()
-                .with_main_axis_size(MainAxisSize::Max)
-                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_child(Expanded::new(1., path_label).finish())
-                .finish(),
-        );
+        let mut header_row = Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+        header_row.add_child(Expanded::new(1., path_label).finish());
+        if let Some(action_button) = action_button {
+            header_row.add_child(action_button);
+        }
+        header_row.finish()
+    }
 
-        workspace_content.add_child(self.render_indexing_subsection_for_target(
-            self.remote_indexing_status_presentation(&entry.status, appearance),
-            Some(IndexingActionTarget::Remote(entry.remote_path.clone())),
-            resync_mouse,
-            delete_mouse,
-            appearance,
-        ));
-
-        Container::new(workspace_content.finish())
+    fn render_workspace_row_container(
+        &self,
+        workspace_content: Box<dyn Element>,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        Container::new(workspace_content)
             .with_uniform_padding(MAIN_SECTION_MARGIN)
             .with_background(theme.surface_1())
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
@@ -1575,7 +1572,7 @@ impl CodePageWidget {
     ) -> Box<dyn Element> {
         self.render_indexing_subsection_for_target(
             self.local_indexing_status_presentation(index_status, appearance),
-            Some(IndexingActionTarget::Local(workspace_path.to_path_buf())),
+            Some(LocalOrRemotePath::Local(workspace_path.to_path_buf())),
             resync_mouse,
             delete_mouse,
             appearance,
@@ -1585,7 +1582,7 @@ impl CodePageWidget {
     fn render_indexing_subsection_for_target(
         &self,
         presentation: IndexingStatusPresentation,
-        action_target: Option<IndexingActionTarget>,
+        action_target: Option<LocalOrRemotePath>,
         resync_mouse: MouseStateHandle,
         delete_mouse: MouseStateHandle,
         appearance: &Appearance,
@@ -1789,7 +1786,7 @@ impl CodePageWidget {
     fn render_index_status_parts(
         &self,
         presentation: IndexingStatusPresentation,
-        action_target: Option<IndexingActionTarget>,
+        action_target: Option<LocalOrRemotePath>,
         manual_resync_mouse_state: MouseStateHandle,
         delete_mouse_state: MouseStateHandle,
         appearance: &Appearance,
@@ -1843,17 +1840,19 @@ impl CodePageWidget {
                         })
                         .build()
                         .on_click(move |ctx, _, _| match &action_target {
-                            IndexingActionTarget::Local(codebase_path) => {
+                            LocalOrRemotePath::Local(codebase_path) => {
                                 ctx.dispatch_typed_action(CodeSettingsPageAction::ManualResync(
                                     codebase_path.clone(),
                                 ));
                             }
                             #[cfg(not(target_family = "wasm"))]
-                            IndexingActionTarget::Remote(remote_path) => {
+                            LocalOrRemotePath::Remote(remote_path) => {
                                 ctx.dispatch_typed_action(
                                     CodeSettingsPageAction::ManualResyncRemote(remote_path.clone()),
                                 );
                             }
+                            #[cfg(target_family = "wasm")]
+                            LocalOrRemotePath::Remote(_) => {}
                         })
                         .finish(),
                 );
@@ -1870,17 +1869,19 @@ impl CodePageWidget {
                         })
                         .build()
                         .on_click(move |ctx, _, _| match &action_target {
-                            IndexingActionTarget::Local(codebase_path) => {
+                            LocalOrRemotePath::Local(codebase_path) => {
                                 ctx.dispatch_typed_action(CodeSettingsPageAction::DeleteIndex(
                                     codebase_path.clone(),
                                 ));
                             }
                             #[cfg(not(target_family = "wasm"))]
-                            IndexingActionTarget::Remote(remote_path) => {
+                            LocalOrRemotePath::Remote(remote_path) => {
                                 ctx.dispatch_typed_action(
                                     CodeSettingsPageAction::DeleteRemoteIndex(remote_path.clone()),
                                 );
                             }
+                            #[cfg(target_family = "wasm")]
+                            LocalOrRemotePath::Remote(_) => {}
                         })
                         .finish(),
                 );
