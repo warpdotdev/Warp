@@ -6983,21 +6983,26 @@ impl TerminalView {
         })
     }
 
+    /// Returns whether a specific session is local, treating shared-session
+    /// viewers and conversation transcript viewers as non-local even when
+    /// their session hasn't been joined yet.
+    pub fn session_is_local<C: ModelAsRef>(&self, session_id: SessionId, ctx: &C) -> bool {
+        let forced_non_local = {
+            let model = self.model.lock();
+            model.is_shared_session_viewer() || model.is_conversation_transcript_viewer()
+        };
+        !forced_non_local
+            && self
+                .sessions
+                .as_ref(ctx)
+                .get(session_id)
+                .is_some_and(|session| session.is_local())
+    }
+
     /// Returns whether or not the active session is a local session.  Returns
     /// None if there is no active session.
     pub fn active_session_is_local<C: ModelAsRef>(&self, ctx: &C) -> Option<bool> {
-        // Ensure shared session viewers and conversation transcript viewers are not
-        // considered local, even if the session hasn't been joined yet.
-        let model = self.model.lock();
-        if model.is_shared_session_viewer() || model.is_conversation_transcript_viewer() {
-            return Some(false);
-        }
-        drop(model);
-
-        self.active_block_session_id().and_then(|session_id| {
-            let current_session = self.sessions.as_ref(ctx).get(session_id)?;
-            Some(current_session.is_local())
-        })
+        Some(self.session_is_local(self.active_block_session_id()?, ctx))
     }
 
     /// Returns the active session's launch shell, if it is specified.
@@ -11498,25 +11503,22 @@ impl TerminalView {
                         .current_working_directory()
                     {
                         if block_metadata_received_event.is_done_bootstrapping {
-                            // Determine session locality from the new block's session_id
-                            // directly. We cannot use `active_session_is_local(ctx)` here
-                            // because `active_block_metadata` was just consumed via
-                            // `take()` above, so it would always return `None` and
-                            // misclassify every local session as Remote.
+                            // Derive locality directly from the incoming block's
+                            // session_id. We cannot use `active_session_is_local(ctx)`
+                            // here because `active_block_metadata` was just consumed
+                            // via `take()` above, so it would always return `None`
+                            // and misclassify every local session as Remote.
                             //
-                            // Defaults to local when the session cannot be looked up.
-                            let is_local = block_metadata
-                                .session_id()
-                                .and_then(|sid| self.sessions.as_ref(ctx).get(sid))
-                                .map(|session| session.is_local())
-                                .unwrap_or(true);
-                            let session_type = if is_local {
-                                Some(RepoDetectionSessionType::Local)
-                            } else {
-                                block_metadata.session_id().map(|session_id| {
-                                    RepoDetectionSessionType::Remote { session_id }
-                                })
-                            };
+                            // `session_is_local` keeps the shared-session viewer /
+                            // conversation-transcript guard intact.
+                            let session_id = block_metadata.session_id();
+                            let session_type = session_id.map(|sid| {
+                                if self.session_is_local(sid, ctx) {
+                                    RepoDetectionSessionType::Local
+                                } else {
+                                    RepoDetectionSessionType::Remote { session_id: sid }
+                                }
+                            });
                             let Some(session_type) = session_type else {
                                 // Skip detection entirely when session type can't be determined.
                                 self.active_block_metadata = Some(block_metadata.clone());
@@ -11530,6 +11532,7 @@ impl TerminalView {
                                 });
                                 return;
                             };
+                            let is_local = matches!(session_type, RepoDetectionSessionType::Local);
 
                             // For local sessions, convert the shell-native CWD
                             // (e.g. "/c/Users/..." for Git Bash/MSYS2) to a
