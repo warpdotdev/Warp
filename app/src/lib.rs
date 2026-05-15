@@ -1190,6 +1190,18 @@ fn initialize_app(
     // 与 ApiKeyManager (BYOK 转发给 warp-server) 解耦。
     ctx.add_singleton_model(crate::ai::agent_providers::AgentProviderSecrets::new);
 
+    // Issue #72: 全局 HTTP 代理的 Basic Auth 密码走 OS 密钥库。
+    // 注册后立即 reapply,让 settings::init 阶段以空串占位的全局 slot 被真实密码覆盖。
+    ctx.add_singleton_model(crate::settings::network_secrets::ProxyCredentials::new);
+    crate::settings::reapply_network_settings_preserving_password(ctx);
+    // 订阅密码变更(UI 写入时),同步重推全局 slot。
+    ctx.subscribe_to_model(
+        &crate::settings::network_secrets::ProxyCredentials::handle(ctx),
+        |_model, _event, ctx| {
+            crate::settings::reapply_network_settings_preserving_password(ctx);
+        },
+    );
+
     ctx.add_singleton_model(AntivirusInfo::new);
 
     cfg_if::cfg_if! {
@@ -2235,6 +2247,10 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
     if ChannelState::is_release_bundle() {
         flags.extend(features::RELEASE_FLAGS);
     }
+
+    // Issue #72: HTTP 代理设置页面。不走 channel 判断,所有 channel 含 warp-oss
+    // 默认启用,作为企业 VPN / 公司代理场景的基本能力。
+    flags.insert(FeatureFlag::HttpProxySettings);
 
     let extra_flags: &[FeatureFlag] = &[
         #[cfg(feature = "autoupdate")]

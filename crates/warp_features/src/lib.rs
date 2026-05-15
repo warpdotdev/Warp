@@ -672,6 +672,11 @@ pub enum FeatureFlag {
     /// `base_model_context_window_limit` is not sent on outbound requests, so
     /// the server falls back to its default.
     ConfigurableContextWindow,
+
+    /// 启用全局 HTTP 代理设置页面与 `Client::new()` 中的代理覆盖逻辑。
+    /// 关闭时,UI 入口隐藏,`Client::new()` 退回 reqwest 默认(读环境变量)。
+    /// 见 Issue #72。
+    HttpProxySettings,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =

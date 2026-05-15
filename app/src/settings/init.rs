@@ -33,12 +33,12 @@ use warp_core::semantic_selection::SemanticSelection;
 use super::{
     app_icon::AppIconSettings, app_installation_detection::UserAppInstallDetectionSettings,
     cloud_preferences::PreferencesSettings, initializer::SettingsInitializer,
-    language::LanguageSettings, native_preference::NativePreferenceSettings, AISettings,
-    AccessibilitySettings, AliasExpansionSettings, AppEditorSettings, AutoupdateSettings,
-    BlockVisibilitySettings, CodeSettings, DebugSettings, EmacsBindingsSettings, FontSettings,
-    FontSettingsChangedEvent, GPUSettings, InputBoxType, InputModeSettings, InputSettings,
-    PaneSettings, SameLinePromptBlockSettings, ScrollSettings, SelectionSettings, SshSettings,
-    ThemeSettings, VimBannerSettings, WarpDrivePrivacySettings,
+    language::LanguageSettings, native_preference::NativePreferenceSettings,
+    network::NetworkSettings, AISettings, AccessibilitySettings, AliasExpansionSettings,
+    AppEditorSettings, AutoupdateSettings, BlockVisibilitySettings, CodeSettings, DebugSettings,
+    EmacsBindingsSettings, FontSettings, FontSettingsChangedEvent, GPUSettings, InputBoxType,
+    InputModeSettings, InputSettings, PaneSettings, SameLinePromptBlockSettings, ScrollSettings,
+    SelectionSettings, SshSettings, ThemeSettings, VimBannerSettings, WarpDrivePrivacySettings,
 };
 
 pub struct UserDefaultsOnStartup {
@@ -79,6 +79,7 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     ThemeSettings::register(ctx);
     AccessibilitySettings::register(ctx);
     NativePreferenceSettings::register(ctx);
+    NetworkSettings::register(ctx);
     AutoupdateSettings::register(ctx);
     PreferencesSettings::register(ctx);
     WarpDrivePrivacySettings::register(ctx);
@@ -210,6 +211,19 @@ pub fn init(
 
     appearance::register(ctx);
 
+    // 全局 HTTP 代理(见 Issue #72):这里只读 NetworkSettings 中的非敏感字段,
+    // 密码从 OS 密钥库读取的 ProxyCredentials 由 `initialize_app` 后期注册后再推。
+    apply_network_settings_to_global_slots(ctx, "");
+    ctx.subscribe_to_model(
+        &NetworkSettings::handle(ctx),
+        |_model, _event, ctx| {
+            // 变更时密码可能已由 ProxyCredentials 提供。lib.rs 会额外订阅那个
+            // singleton 并推送带 password 的 apply。这里仅推非密码字段,
+            // 保持密码不变即可。
+            crate::settings::reapply_network_settings_preserving_password(ctx);
+        },
+    );
+
     // Set up hot-reload for the settings file. When the WarpConfig watcher
     // detects a change to settings.toml, reload preferences from disk and
     // push changed values into setting models.
@@ -225,6 +239,46 @@ pub fn init(
     }
 
     user_defaults_on_startup
+}
+
+/// 读取当前 `NetworkSettings` + 外部传入的 `password`,同时更新
+/// `http_client::set_global_proxy_config` 与 `websocket::set_global_proxy_config`,
+/// 使两者保持同一代理语义(见 Issue #72)。
+///
+/// 密码参数是以 `&str` 传入而不是从 `ProxyCredentials` 的 singleton 里读,是为了
+/// 避免该 singleton 在 settings::init 阶段还未注册。调用方责任:启动早期传
+/// 空串(后续 UI / ProxyCredentials 事件会重推),后期传真实密码。重建已有
+/// `Client` 实例是调用方责任。
+pub(crate) fn apply_network_settings_to_global_slots(ctx: &mut AppContext, password: &str) {
+    use super::network::NetworkSettings;
+    let net = NetworkSettings::as_ref(ctx);
+    let mode = *net.proxy_mode.value();
+    let url = net.proxy_url.value().clone();
+    let username = net.proxy_username.value().clone();
+    let no_proxy = net.proxy_no_proxy.value().clone();
+
+    http_client::set_global_proxy_config(http_client::ProxyConfig {
+        mode: mode.to_http_client_mode(),
+        url: url.clone(),
+        username: username.clone(),
+        password: password.to_string(),
+        no_proxy: no_proxy.clone(),
+    });
+    websocket::set_global_proxy_config(websocket::ProxyConfig {
+        mode: mode.to_websocket_mode(),
+        url,
+        username,
+        password: password.to_string(),
+        no_proxy,
+    });
+}
+
+/// 在 `initialize_app` 之后(`ProxyCredentials` 已注册)调用:读当前密码后重推
+/// 全局代理设置。也用于 NetworkSettings 变更订阅以保持密码不丢。
+pub(crate) fn reapply_network_settings_preserving_password(ctx: &mut AppContext) {
+    use super::network_secrets::ProxyCredentials;
+    let password = ProxyCredentials::as_ref(ctx).password().to_string();
+    apply_network_settings_to_global_slots(ctx, &password);
 }
 
 /// Handles a `WarpConfig` change event, reloading settings from disk when

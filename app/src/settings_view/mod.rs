@@ -29,7 +29,6 @@ use code_page::{CodeSettingsPageAction, CodeSettingsPageEvent};
 use features_page::{FeaturesPageView, FeaturesSettingsPageEvent};
 use itertools::Itertools as _;
 use keybindings::KeybindingsView;
-use main_page::{MainSettingsPageEvent, MainSettingsPageView};
 use mcp_servers_page::MCPServersSettingsPageView;
 use nav::{SettingsNavItem, SettingsUmbrella};
 use pathfinder_geometry::vector::Vector2F;
@@ -74,10 +73,10 @@ mod execution_profile_view;
 mod features;
 mod features_page;
 pub mod keybindings;
-mod main_page;
 pub mod mcp_servers;
 pub mod mcp_servers_page;
 mod nav;
+mod network_page;
 pub mod pane_manager;
 // OpenWarp Wave 3-1:`platform` / `platform_page` 随 `OzCloudAPIKeys` settings 入口 +
 // Warp Inc 云端 API key 管理 UI 一同物理删。
@@ -143,8 +142,8 @@ pub(super) fn editor_text_colors(appearance: &Appearance) -> TextColors {
 pub enum SettingsViewEvent {
     Pane(PaneEvent),
     StartResize,
-    CheckForUpdate,
-    OpenWarpDrive,
+    // OpenWarp 去中心化分支:`CheckForUpdate` / `OpenWarpDrive` 变体随 Account
+    // 主设置页唯一发射者(`MainSettingsPageView`)一同物理删。
     ShowToast {
         message: String,
         flavor: ToastFlavor,
@@ -161,8 +160,6 @@ pub enum SettingsViewEvent {
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub enum SettingsSection {
     About,
-    // 去中心化分支:Account 不再作为默认页(已从侧栏移除),保留枚举值避免外部引用断裂。
-    Account,
     MCPServers,
     Appearance,
     Features,
@@ -184,6 +181,8 @@ pub enum SettingsSection {
     AgentProviders,
     Knowledge,
     ThirdPartyCLIAgents,
+    /// 全局 HTTP 代理设置页。受 `FeatureFlag::HttpProxySettings` 门控。
+    Network,
     /// Internal backing-page identifier for CodeSettingsPageView. EditorAndCodeReview
     /// is currently the only sub-page label, but we keep `Code` as the backing-page
     /// key so that page lookup still works after the LSP-management subpage was
@@ -202,7 +201,6 @@ impl Display for SettingsSection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s: String = match self {
             SettingsSection::About => crate::t!("settings-section-about"),
-            SettingsSection::Account => crate::t!("settings-section-account"),
             SettingsSection::MCPServers => crate::t!("settings-section-mcp-servers"),
             SettingsSection::Appearance => crate::t!("settings-section-appearance"),
             SettingsSection::Features => crate::t!("settings-section-features"),
@@ -221,8 +219,12 @@ impl Display for SettingsSection {
             SettingsSection::Code => crate::t!("settings-section-code"),
             SettingsSection::EditorAndCodeReview => {
                 crate::t!("settings-section-editor-and-code-review")
-            } // OpenWarp Wave 3-1:`OzCloudAPIKeys` Display arm 随 variant 一同物理删。
-              // OpenWarp Wave 7-3:`CloudEnvironments` Display arm 随 variant 物理删。
+            }
+            // 代理设置页面。由于 t! 宏依赖 i18n bundle,先用硬码中文;
+            // 有 i18n key 后可换成 crate::t!("settings-section-network")。
+            SettingsSection::Network => "网络".to_string(),
+            // OpenWarp Wave 3-1:`OzCloudAPIKeys` Display arm 随 variant 一同物理删。
+            // OpenWarp Wave 7-3:`CloudEnvironments` Display arm 随 variant 物理删。
         };
         write!(f, "{s}")
     }
@@ -282,7 +284,6 @@ impl FromStr for SettingsSection {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "About" => Ok(Self::About),
-            "Account" => Ok(Self::Account),
             "AI" => Ok(Self::AI),
             "MCP Servers" => Ok(Self::MCPServers),
             "Appearance" => Ok(Self::Appearance),
@@ -299,6 +300,7 @@ impl FromStr for SettingsSection {
             "Knowledge" => Ok(Self::Knowledge),
             "Third party CLI agents" | "ThirdPartyCLIAgents" => Ok(Self::ThirdPartyCLIAgents),
             "Editor and Code Review" | "EditorAndCodeReview" => Ok(Self::EditorAndCodeReview),
+            "Network" | "网络" => Ok(Self::Network),
             // OpenWarp Wave 3-1:`OzCloudAPIKeys` 随 UI 一同物理删。
             // OpenWarp Wave 7-3:`CloudEnvironments` FromStr arm 随 variant 物理删。
             _ => Err(()),
@@ -905,7 +907,6 @@ fn next_stop_index(current: usize, len: usize, direction: CycleDirection) -> usi
 macro_rules! update_page {
     ($handle:expr, $update:expr, $ctx:expr) => {
         match $handle {
-            SettingsPageViewHandle::Main(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Appearance(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Features(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Keybindings(handle) => $ctx.update_view(handle, $update),
@@ -918,6 +919,8 @@ macro_rules! update_page {
             SettingsPageViewHandle::Code(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::MCPServers(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::WarpDrive(handle) => $ctx.update_view(handle, $update),
+            // Issue #72: 全局 HTTP 代理设置页。
+            SettingsPageViewHandle::Network(handle) => $ctx.update_view(handle, $update),
         }
     };
 }
@@ -960,11 +963,6 @@ impl SettingsView {
             ctx.add_model(|_ctx| PaneConfiguration::new(crate::t!("settings-title")));
 
         let global_resource_handles = GlobalResourceHandlesProvider::as_ref(ctx).get().clone();
-        // Main settings page with accounts info
-        let main_page_handle = ctx.add_typed_action_view(MainSettingsPageView::new);
-        ctx.subscribe_to_view(&main_page_handle, |me, _, event, ctx| {
-            me.handle_main_page_event(event, ctx);
-        });
 
         // Appearance & themes page
         let appearance_page_handle = ctx.add_typed_action_view(AppearanceSettingsPageView::new);
@@ -1027,6 +1025,10 @@ impl SettingsView {
             me.handle_mcp_servers_page_event(event, ctx);
         });
 
+        // Network (HTTP 代理) 设置页。受 FeatureFlag::HttpProxySettings 门控。
+        let network_page_handle =
+            ctx.add_typed_action_view(network_page::NetworkPageView::new);
+
         let font_family = Appearance::as_ref(ctx).ui_font_family();
         let search_editor = ctx.add_typed_action_view(|ctx| {
             let options = SingleLineEditorOptions {
@@ -1056,7 +1058,6 @@ impl SettingsView {
         });
 
         let mut settings_pages = vec![
-            SettingsPage::new(main_page_handle),
             SettingsPage::new(ai_page_handle),
             SettingsPage::new(code_page_handle),
             SettingsPage::new(appearance_page_handle),
@@ -1072,6 +1073,11 @@ impl SettingsView {
             SettingsPage::new(about_page_handle),
         ]);
 
+        // 仅在 flag 启用时装配 Network page。
+        if warp_core::features::FeatureFlag::HttpProxySettings.is_enabled() {
+            settings_pages.push(SettingsPage::new(network_page_handle));
+        }
+
         // 去中心化分支:本地模式下移除所有云端账号 / 计费 / 团队 / 同步 / 分享相关的
         // 设置入口。
         let mut nav_items = vec![
@@ -1086,6 +1092,15 @@ impl SettingsView {
             SettingsNavItem::Page(SettingsSection::Warpify),
             SettingsNavItem::Page(SettingsSection::About),
         ];
+
+        // 仅在 flag 启用时在侧栏加 Network 页。插在 About 之前。
+        if warp_core::features::FeatureFlag::HttpProxySettings.is_enabled() {
+            let about_pos = nav_items
+                .iter()
+                .position(|i| matches!(i, SettingsNavItem::Page(SettingsSection::About)))
+                .unwrap_or(nav_items.len());
+            nav_items.insert(about_pos, SettingsNavItem::Page(SettingsSection::Network));
+        }
 
         // Resolve the initial page: map internal backing-page sections to their default subpage.
         let initial_page = match page {
@@ -1436,16 +1451,6 @@ impl SettingsView {
             .collect();
     }
 
-    fn handle_main_page_event(
-        &mut self,
-        event: &MainSettingsPageEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let MainSettingsPageEvent::CheckForUpdate = event {
-            ctx.emit(SettingsViewEvent::CheckForUpdate)
-        }
-    }
-
     fn handle_appearance_page_event(
         &mut self,
         event: &SettingsPageEvent,
@@ -1671,7 +1676,6 @@ impl SettingsView {
 
     fn should_render_page(&self, settings_page: &SettingsPage, app: &AppContext) -> bool {
         match &settings_page.view_handle {
-            SettingsPageViewHandle::Main(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Keybindings(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Features(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Appearance(v) => v.as_ref(app).should_render(app),
@@ -1683,6 +1687,8 @@ impl SettingsView {
             SettingsPageViewHandle::MCPServers(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Code(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::WarpDrive(v) => v.as_ref(app).should_render(app),
+            // Issue #72: 全局 HTTP 代理设置页。
+            SettingsPageViewHandle::Network(v) => v.as_ref(app).should_render(app),
         }
     }
 

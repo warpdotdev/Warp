@@ -552,7 +552,7 @@ language-restart-required-body = Warp 的界面语言已更新。部分文字会
 
 # 侧边栏 / SettingsSection 标签（Display impl）
 settings-section-about = 关于
-settings-section-account = 账户
+# OpenWarp: settings-section-account 随 Account 设置页一同删除。
 settings-section-mcp-servers = MCP 服务器
 settings-section-billing-and-usage = 账单与用量
 settings-section-appearance = 外观
@@ -562,6 +562,7 @@ settings-section-referrals = 推荐
 settings-section-shared-blocks = 共享命令块
 settings-section-warp-drive = Warp Drive
 settings-section-warpify = Warpify
+settings-section-network = 网络
 settings-section-ai = AI
 settings-section-warp-agent = Warp 智能体
 settings-section-agent-profiles = 配置
@@ -600,34 +601,8 @@ settings-about-update-available = 发现新版本 { $version }。
 settings-about-update-check-now = 检查更新
 settings-about-update-open-release = 前往 GitHub 下载
 
-# main_page.rs — referral / account
-settings-main-referral-cta = 与朋友和同事分享 Warp，获得奖励
-settings-main-refer-a-friend = 推荐朋友
-settings-main-sign-up = 本地配置
-settings-main-local-profile = 本地配置
-settings-main-plan-free = 免费版
-settings-main-compare-plans = 对比方案
-settings-main-contact-support = 联系支持
-settings-main-manage-billing = 管理账单
-settings-main-upgrade-to-turbo = 升级到 Turbo 方案
-settings-main-upgrade-to-lightspeed = 升级到 Lightspeed 方案
+# OpenWarp：main_page.rs 相关文案随 Account 设置页一同删除。
 
-# main_page.rs — settings sync
-settings-main-settings-sync-label = 设置同步
-
-# main_page.rs — version / autoupdate
-settings-main-version-label = 版本
-settings-main-status-up-to-date = 已是最新
-settings-main-cta-check-for-updates = 检查更新
-settings-main-status-checking = 正在检查更新...
-settings-main-status-downloading = 正在下载更新...
-settings-main-status-update-available = 有可用更新
-settings-main-cta-relaunch-warp = 重启 Warp
-settings-main-status-updating = 正在更新...
-settings-main-status-installed-update = 更新已安装
-settings-main-status-cant-install = 有新版本的 Warp 可用，但无法安装
-settings-main-status-cant-launch = 新版本的 Warp 已安装，但无法启动。
-settings-main-cta-update-manually = 手动更新 Warp
 
 # --- ANCHOR-SUB-MCP (agent-settings-mcp) ---
 settings-mcp-page-title = MCP 服务器
@@ -822,6 +797,39 @@ settings-warpify-install-ssh-extension-description = 控制远程主机未安装
 settings-warpify-use-tmux = 使用 Tmux Warpify
 settings-warpify-tmux-description = tmux ssh 包装器在许多默认方式无效的场景下能正常工作，但可能需要你手动点击按钮才能 Warpify。在新标签页中生效。
 settings-warpify-ssh-tmux-toggle-binding-label = 用于 Warpify 的 SSH 会话检测
+
+# --- ANCHOR-SUB-NETWORK (network-settings) ---
+# 全局 HTTP 代理设置页(见 Issue #72)。
+settings-network-page-title = 网络
+settings-network-header = HTTP 代理
+settings-network-description = 为所有出站 HTTP / WebSocket 请求配置全局代理。改完字段后按回车保存。\n新发起的请求(BYOP 拉模型列表 / 测试连接 / 对话加载 等)立即生效;autoupdate / changelog 等启动时构造的长周期 Client 需重启应用后生效。
+settings-network-mode-label = 代理模式
+settings-network-mode-description = System 跟随系统 / 环境变量(默认);Custom 使用下方 URL;Off 完全禁用代理。
+settings-network-mode-system = 系统代理
+settings-network-mode-custom = 自定义
+settings-network-mode-off = 关闭
+settings-network-url-label = 代理 URL
+settings-network-url-placeholder = http://proxy.example.com:8080
+settings-network-url-description = 例:http://proxy.corp:8080
+settings-network-username-label = 用户名
+settings-network-username-placeholder = 用户名(可选)
+settings-network-username-description = 若代理需要 Basic Auth,在此填用户名。
+settings-network-password-label = 密码
+settings-network-password-placeholder = 密码(提交后保存到系统密钥库)
+settings-network-password-description = 提交后保存到 OS 密钥库(不写入 settings.toml)。
+settings-network-no-proxy-label = 例外列表 (no_proxy)
+settings-network-no-proxy-placeholder = localhost,127.0.0.1,.internal
+settings-network-no-proxy-description = 逗号分隔的 host 列表。
+settings-network-save = 保存
+settings-network-clear = 清除
+settings-network-test-button = 测试连接
+settings-network-test-idle-tcp = 对代理 host:port 做 TCP 探测,只验证代理本身可达不验证出网 — 适合只能走内网的代理。
+settings-network-test-idle-http = 用当前配置对 {$url} 发一次 GET。验证出网连通性。
+settings-network-test-running = 测试中…
+settings-network-test-success-tcp = ✅ 代理可达(耗时 {$latency} 毫秒)
+settings-network-test-success-http = ✅ 出网正常(耗时 {$latency} 毫秒)
+settings-network-test-failed-tcp = ❌ 代理不可达:{$error}
+settings-network-test-failed-http = ❌ 连接失败:{$error}
 
 # --- ANCHOR-SUB-AI-PAGE (agent-settings-ai-page) ---
 # 章节 / 副标题
@@ -1656,7 +1664,7 @@ keybinding-desc-workspace-toggle-notification-mailbox = 切换通知邮箱
 # 设置页面
 keybinding-desc-workspace-show-settings = 打开设置
 keybinding-desc-workspace-show-settings-menu = 设置
-keybinding-desc-workspace-show-settings-account = 打开设置：账户
+# OpenWarp：keybinding-desc-workspace-show-settings-account 随 Account 设置页一同删除。
 keybinding-desc-workspace-show-settings-appearance = 打开设置：外观
 keybinding-desc-workspace-show-settings-appearance-menu = 外观...
 keybinding-desc-workspace-show-settings-features = 打开设置：功能

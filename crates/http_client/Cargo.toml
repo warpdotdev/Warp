@@ -30,3 +30,8 @@ warp_core.workspace = true
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 gloo.workspace = true
 wasm-bindgen-futures.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+# 仅用于单测: 装载 rustls 默认 crypto provider,避免 reqwest::ClientBuilder::build()
+# 在裸单测进程里 panic。生产代码中该安装动作由 `app/src/lib.rs::init_common` 负责。
+rustls.workspace = true

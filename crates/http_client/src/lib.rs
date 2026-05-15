@@ -22,6 +22,9 @@ use warp_core::{
     report_error,
 };
 
+pub mod proxy;
+pub use proxy::{current_proxy_config, set_global_proxy_config, ProxyConfig, ProxyMode};
+
 pub mod headers {
     /// Custom Warp header indicating the version of the Warp app.
     pub const CLIENT_RELEASE_VERSION_HEADER_KEY: &str = "X-Warp-Client-Version";
@@ -135,6 +138,13 @@ impl Client {
                 // Send these even when there aren't active streams, to ensure that we detect
                 // dead connections before we attempt to use them.
                 .http2_keep_alive_while_idle(true);
+        }
+
+        // 应用全局 HTTP 代理配置(见 Issue #72)。
+        // WASM 目标上 reqwest::Proxy API 不可用,跳过。
+        #[cfg(not(target_family = "wasm"))]
+        {
+            builder = proxy::current_proxy_config().apply(builder);
         }
 
         Self::from_client_builder(builder).expect("should not fail to create client")

@@ -17,7 +17,7 @@ use tokio_rustls::TlsConnector;
 
 use crate::WebsocketMessage;
 
-mod proxy;
+pub mod proxy;
 
 pub use async_tungstenite::tungstenite::Message;
 

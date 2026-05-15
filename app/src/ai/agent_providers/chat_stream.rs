@@ -225,12 +225,14 @@ fn xml_attr(s: &str) -> String {
 ///
 /// **thinking-mode reasoning_content 回传 gate**(双向)。
 ///
-/// `force_echo_reasoning` 同时控制两件事,语义统一为「这个 endpoint 接受/需要
-/// `reasoning_content` 顶层字段」:
+/// `force_echo_reasoning` 同时控制两件事,语义统一为「这个 model 的 capability 声明了
+/// `interleaved.field = reasoning_content`」(对齐 opencode `model.capabilities.interleaved`):
 ///
-/// - `true`(DeepSeek api_type / OpenAI+kimi|moonshot):每条 assistant 必挂
-///   `reasoning_content`(有真实 reasoning 用之,无则挂非空占位)— 满足
-///   DeepSeek-v4-flash / Kimi 等 thinking-mode 服务端「字段必须存在」校验。
+/// - `true`(model_id 命中 `reasoning::INTERLEAVED_RULES` 子串表 — DeepSeek / Kimi /
+///   MiMo / Qwen3 / GLM thinking / MiniMax / Hunyuan / Ernie / Doubao / Yi 等;
+///   或 api_type 为 DeepSeek 整体 adapter):每条 assistant 必挂 `reasoning_content`
+///   (有真实 reasoning 用之,无则挂非空占位)— 满足 thinking-mode 服务端
+///   「字段必须存在」校验。
 /// - `false`(其他):**即便 stream 收到了真实 reasoning_content,回放时也丢弃**,
 ///   不在历史 assistant 上挂 `with_reasoning_content`。
 ///
@@ -873,7 +875,26 @@ fn build_chat_request(
     // 这里统一兜底:末尾若是 assistant,追加一条隐式 user 消息让上游继续。
     ensure_ends_with_user(&mut messages);
 
-    let tools_array = build_tools_array(params);
+    let mut tools_array = build_tools_array(params);
+
+    // Anthropic 路径:给 tools 数组**最后一个 tool**打 1h cache_control breakpoint,
+    // 使整个 tools 段成为长 TTL 的静态前缀(对齐 Zed
+    // `crates/anthropic/src/completion.rs::254-258`)。
+    //
+    // 处理顺序 `tools → system → messages`,长 TTL 必须在短 TTL 之前。本路径下:
+    // - tools 末尾 1h(此处)
+    // - system 1h(`apply_caching_anthropic` 给 ChatRole::System message)
+    // - messages 尾部 5m(`apply_caching_anthropic` 给 last 2 non-system)
+    //
+    // tools 段在 session 内变化最少(切 web_search / plan_mode / LRC 才变),命中率
+    // 极高,1h 写入 2× base 摊到多次复用,等效近 0 — 同时挡住外部反代在 system
+    // 上注入 5m 引发的 1h-after-5m 排序错误(让 tools 1h 这一个 breakpoint 接管
+    // 整个 tools+system 静态前缀)。
+    if matches!(api_type, AgentProviderApiType::Anthropic) {
+        if let Some(last_tool) = tools_array.last_mut() {
+            last_tool.cache_control = Some(CacheControl::Ephemeral1h);
+        }
+    }
 
     // 出站消息文本透传给 `serde_json` 处理 JSON escape,不再做激进的字符级
     // sanitize(参考 zed `into_anthropic` / opencode `provider/transform.ts`,
@@ -922,41 +943,31 @@ fn build_chat_request(
 /// `MessageOptions::cache_control` 落到该 message 最后一个 content part 上,
 /// 行为与 opencode 给 lastContent.providerOptions.anthropic.cacheControl 一致。
 ///
-/// **TTL 选择 / P0-4**:统一使用 `Ephemeral1h`(1 小时 TTL)。
+/// **TTL 选择(修订自 P0-4,对齐 Zed `crates/anthropic/src/completion.rs:219-274`)**:
+/// 静态前缀 system 用 1h;会话尾部 last 2 non-system 用 5m;同时 `build_chat_request`
+/// 在 Anthropic 路径给 tools 末尾打 1h(genai Tool struct 已加 cache_control 字段)。
 ///
-/// 决策依据(2026-05 Anthropic 官方文档):
-/// - 5m TTL 适合「使用频率高于每 5 分钟」的场景,refresh 不另外计费。
-/// - 1h TTL 官方原话:
-///   > The 1-hour cache is best used in the following scenarios:
-///   > * when an agentic side-agent will take longer than 5 minutes,
-///   > * when storing a long chat conversation with a user and you generally
-///   >   expect that user may not respond in the next 5 minutes.
-///   > * When latency is important and your follow up prompts may be sent
-///   >   beyond 5 minutes.
-/// - OpenWarp BYOP 是终端 agent 场景:工具长任务、用户思考间隔、agent
-///   step-by-step 都可能 > 5min;Claude Code CLI 在同类场景实际默认就是 1h。
+/// **混合策略动机**:
+/// - 旧策略"全部 1h"无法和外部 5m breakpoint 共存。BYOP 反代 / 上游网关在更早
+///   位置(tools/system)注入默认 5m 时,Anthropic 排序约束会拒绝随后的 1h:
+///   `a ttl='1h' cache_control block must not come after a ttl='5m'`,触发 400。
+/// - 新策略:长 TTL 全部前置(tools / system 1h),短 TTL 落在序列尾(messages 5m),
+///   严格符合 Anthropic 处理顺序 `tools → system → messages`,外部如果在 tools/
+///   system 上多塞 5m 也只会变成"两个 5m 在前 + tail 5m",不再触发 1h-after-5m。
 ///
-/// **成本影响**:1h cache 写入价 2× base(对比 5m 的 1.25×),read 价不变
-/// (0.1× base)。只要同一 prefix 在 1h 内复用 ≥ 1 次,就比 5m 反复 refresh 划算
-/// (5m 模式每 5min 必须有请求触发 refresh,否则失效;1h 模式 1 小时内任意请求
-/// 都直接命中)。
+/// **成本影响**:
+/// - tools/system 是 session 内的静态前缀,1h 写入 2× base 摊到整个 session 内多次
+///   命中,等效近 0(对比"全 1h"反复重写 tail 的总成本明显下降)。
+/// - messages 尾部每轮变,5m 写入 1.25× base,5min 内下一轮命中即免费续期,不会
+///   反复重写,且无需提交 1h 的高额一次性写入。
 ///
 /// **TTL 排序约束**:Anthropic API 要求长 TTL 的 breakpoint 必须排在短 TTL 之前
 /// (`https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
-///  #mixing-different-ttls`)。这里全部统一 1h,无混用,天然合规。
+///  #mixing-different-ttls`)。本函数把 system 标 1h、非 system 末尾标 5m,顺序
+///  天然 system(1h) → messages(5m) 合规;`build_chat_request` 给 tools 末尾打 1h
+///  也在 system 之前,整体顺序 tools(1h) → system(1h) → messages(5m) 仍合规。
 /// genai 在 `into_anthropic_request_parts` 内会按顺序检查,违反时 warn(见
 /// `lib/rust-genai/src/adapter/adapters/anthropic/adapter_impl.rs`)。
-///
-/// **为什么不给 tools 打独立 breakpoint(P1-11 调研后决定推迟)**:
-/// Anthropic API 原生支持 tools 数组末尾独立 cache_control,但 vendored
-/// `lib/rust-genai` 的 `Tool` struct 不带 cache_control 字段,要启用需:
-/// 1. 修改 genai `Tool` 加 `cache_control: Option<CacheControl>`
-/// 2. 修改 `tool_to_anthropic_tool` 输出 `cache_control` 到 JSON
-/// 3. 这里调整为“1 system + 2 messages tail + 1 tools” 总计 4 个 breakpoint
-/// 实测现有 4 breakpoint(2 system + 2 tail)在典型场景中命中率已达 99.9%,
-/// tools 段独立 breakpoint 仅在 system 字段频繁变动(如切 web_search 开关)
-/// 时才能带来额外复用,边际收益小,暂不实施。如后期出现 tools 失效问题
-/// 再走 P1-11 未使用路径(需同步 patch genai 上游)。
 fn apply_caching_anthropic(messages: &mut Vec<ChatMessage>) {
     let n = messages.len();
     if n == 0 {
@@ -997,8 +1008,15 @@ fn apply_caching_anthropic(messages: &mut Vec<ChatMessage>) {
                 // `MessageOptions` 上,通过 `with_options` 注入。
                 // `MessageOptions: From<CacheControl>` 由 genai 提供
                 // (`chat_message.rs::impl From<CacheControl> for MessageOptions`)。
-                // P0-4:全部统一 1h,顺序天然 system→messages 兼容 genai 排序约束。
-                m.with_options(CacheControl::Ephemeral1h)
+                // 混合 TTL:system 用 1h(静态前缀,session 内多次命中摊薄写入),
+                // 非 system 用 5m(会话尾部每轮变,5min 内下一轮命中即免费续期)。
+                // 顺序 system(1h) → messages(5m) 满足 Anthropic 排序约束。
+                let ttl = if matches!(m.role, ChatRole::System) {
+                    CacheControl::Ephemeral1h
+                } else {
+                    CacheControl::Ephemeral5m
+                };
+                m.with_options(ttl)
             } else {
                 m
             }
@@ -2417,6 +2435,11 @@ pub async fn generate_byop_output(
                 ChatStreamEvent::ReasoningChunk(c) if !c.content.is_empty() => {
                     reasoning_count += 1;
                     reasoning_bytes += c.content.len();
+                    // 运行时 latch:该 (api_type, model_id) 发过 reasoning chunk →
+                    // 标记下一轮起强制 echo reasoning_content,覆盖 INTERLEAVED_RULES
+                    // 静态表外的任意国产/第三方 thinking 模型(对齐 opencode 数据驱动思路,
+                    // 用 stream 探测代替外置 catalog)。
+                    super::reasoning::note_reasoning_seen(api_type, &model_id);
                     if let Some(id) = reasoning_msg_id.clone() {
                         yield Ok(make_append_event(&current_task_id, &id, AppendKind::Reasoning(c.content)));
                     } else {
@@ -4203,19 +4226,25 @@ mod cache_boundary_stability_tests {
         );
     }
 
-    /// **P0-4 TTL 验收**:全部走 1h(Ephemeral1h)而非旧版的 5m(Ephemeral)。
+    /// **TTL 混合策略验收**:system 走 1h(静态前缀),非 system 走 5m(会话尾)。
+    /// 顺序 system(1h) → messages(5m) 满足 Anthropic 排序约束,且对外部注入 5m 免疫。
     #[test]
-    fn anthropic_cache_uses_1h_ttl() {
+    fn anthropic_cache_uses_mixed_ttl() {
         let mut msgs = build_three_turn_conversation();
         apply_caching_anthropic(&mut msgs);
-        let tagged: Vec<_> = msgs.iter().filter_map(extract_cache_control).collect();
+        let tagged: Vec<_> = msgs
+            .iter()
+            .filter(|m| extract_cache_control(m).is_some())
+            .collect();
         assert!(!tagged.is_empty(), "必须至少打一个 breakpoint");
-        for cc in &tagged {
-            assert!(
-                matches!(cc, CacheControl::Ephemeral1h),
-                "P0-4 要求全部使用 1h TTL,实际={:?}",
-                cc
-            );
+        for m in &tagged {
+            let cc = extract_cache_control(m).unwrap();
+            let expected = if matches!(m.role, ChatRole::System) {
+                CacheControl::Ephemeral1h
+            } else {
+                CacheControl::Ephemeral5m
+            };
+            assert_eq!(cc, expected, "role={:?} 的 TTL 不匹配预期", m.role);
         }
     }
 

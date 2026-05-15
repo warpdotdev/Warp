@@ -18,6 +18,12 @@ use thiserror::Error;
 #[cfg(not(target_family = "wasm"))]
 pub use async_tungstenite::tungstenite;
 
+// Issue #72:把 native::proxy 模块的全局代理类型重导出到 crate root,供
+// `app::settings::network` / `app::settings::init` 通过 `websocket::ProxyMode`
+// 直接引用。
+#[cfg(not(target_family = "wasm"))]
+pub use imp::proxy::{set_global_proxy_config, ProxyConfig, ProxyMode};
+
 use crate::sink_map_err::map_err;
 
 // Unfortunately, `anyhow::Error` does not implement `std::error::Error`, which is required by the

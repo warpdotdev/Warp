@@ -562,7 +562,7 @@ language-restart-required-body = Warp's UI language has been updated. Some text 
 
 # Sidebar / SettingsSection labels (Display impl)
 settings-section-about = About
-settings-section-account = Account
+# OpenWarp: settings-section-account removed alongside the Account settings page.
 settings-section-mcp-servers = MCP Servers
 settings-section-billing-and-usage = Billing and usage
 settings-section-appearance = Appearance
@@ -572,6 +572,7 @@ settings-section-referrals = Referrals
 settings-section-shared-blocks = Shared blocks
 settings-section-warp-drive = Warp Drive
 settings-section-warpify = Warpify
+settings-section-network = Network
 settings-section-ai = AI
 settings-section-warp-agent = Warp Agent
 settings-section-agent-profiles = Profiles
@@ -612,29 +613,9 @@ settings-about-update-available = New version { $version } is available.
 settings-about-update-check-now = Check for updates
 settings-about-update-open-release = Download from GitHub
 
-# main_page.rs — account
-settings-main-sign-up = Local profile
-settings-main-local-profile = Local profile
-settings-main-plan-free = Free
-settings-main-compare-plans = Compare plans
-settings-main-contact-support = Contact support
-settings-main-manage-billing = Manage billing
-settings-main-upgrade-to-turbo = Upgrade to Turbo plan
-settings-main-upgrade-to-lightspeed = Upgrade to Lightspeed plan
+# OpenWarp: main_page.rs (Account / version / autoupdate) strings removed alongside
+# the Account settings page. The About page now owns version / update CTAs.
 
-# main_page.rs — version / autoupdate
-settings-main-version-label = Version
-settings-main-status-up-to-date = Up to date
-settings-main-cta-check-for-updates = Check for updates
-settings-main-status-checking = checking for update...
-settings-main-status-downloading = downloading update...
-settings-main-status-update-available = Update available
-settings-main-cta-relaunch-warp = Relaunch Warp
-settings-main-status-updating = Updating...
-settings-main-status-installed-update = Installed update
-settings-main-status-cant-install = A new version of Warp is available but can't be installed
-settings-main-status-cant-launch = A new version of Warp is installed but can't be launched.
-settings-main-cta-update-manually = Update Warp manually
 
 # --- ANCHOR-SUB-MCP (agent-settings-mcp) ---
 # 此锚点下放 settings_view/mcp_servers_page.rs 字符串
@@ -833,6 +814,39 @@ settings-warpify-install-ssh-extension-description = Controls the installation b
 settings-warpify-use-tmux = Use Tmux Warpification
 settings-warpify-tmux-description = The tmux ssh wrapper works in many situations where the default one does not, but may require you to hit a button to warpify. Takes effect in new tabs.
 settings-warpify-ssh-tmux-toggle-binding-label = SSH session detection for Warpification
+
+# --- ANCHOR-SUB-NETWORK (network-settings) ---
+# Global HTTP proxy settings page (see Issue #72).
+settings-network-page-title = Network
+settings-network-header = HTTP proxy
+settings-network-description = Configure a global proxy for all outbound HTTP / WebSocket requests. Press Enter after editing a field to save.\nNew requests (BYOP model list, test connection, conversation loading, etc.) take effect immediately; long-lived clients constructed at startup (autoupdate, changelog) require an app restart.
+settings-network-mode-label = Proxy mode
+settings-network-mode-description = System follows OS / env vars (default); Custom uses the URL below; Off disables all proxying.
+settings-network-mode-system = System
+settings-network-mode-custom = Custom
+settings-network-mode-off = Off
+settings-network-url-label = Proxy URL
+settings-network-url-placeholder = http://proxy.example.com:8080
+settings-network-url-description = e.g. http://proxy.corp:8080
+settings-network-username-label = Username
+settings-network-username-placeholder = Username (optional)
+settings-network-username-description = If the proxy requires Basic Auth, fill in the username here.
+settings-network-password-label = Password
+settings-network-password-placeholder = Password (saved to the OS keyring on submit)
+settings-network-password-description = Submitted password is stored in the OS keyring (not in settings.toml).
+settings-network-no-proxy-label = No-proxy list
+settings-network-no-proxy-placeholder = localhost,127.0.0.1,.internal
+settings-network-no-proxy-description = Comma-separated hosts.
+settings-network-save = Save
+settings-network-clear = Clear
+settings-network-test-button = Test connection
+settings-network-test-idle-tcp = Probes the proxy host:port via TCP. Tests reachability of the proxy itself, not internet egress — suitable for intranet-only proxies.
+settings-network-test-idle-http = Sends a GET to {$url} through the current configuration. Tests internet egress.
+settings-network-test-running = Testing…
+settings-network-test-success-tcp = ✅ Proxy reachable ({$latency} ms)
+settings-network-test-success-http = ✅ Internet reachable ({$latency} ms)
+settings-network-test-failed-tcp = ❌ Cannot reach proxy: {$error}
+settings-network-test-failed-http = ❌ Connection failed: {$error}
 
 # --- ANCHOR-SUB-AI-PAGE (agent-settings-ai-page) ---
 # Section / sub-headers
@@ -1726,7 +1740,8 @@ keybinding-desc-workspace-toggle-notification-mailbox = Toggle notification mail
 # Settings pages
 keybinding-desc-workspace-show-settings = Open Settings
 keybinding-desc-workspace-show-settings-menu = Settings
-keybinding-desc-workspace-show-settings-account = Open Settings: Account
+# OpenWarp: keybinding-desc-workspace-show-settings-account removed alongside the
+# Account settings page.
 keybinding-desc-workspace-show-settings-appearance = Open Settings: Appearance
 keybinding-desc-workspace-show-settings-appearance-menu = Appearance...
 keybinding-desc-workspace-show-settings-features = Open Settings: Features
