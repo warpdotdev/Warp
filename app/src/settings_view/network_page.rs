@@ -10,7 +10,7 @@ use std::time::Duration;
 use settings::Setting;
 use warpui::{
     elements::{
-        ConstrainedBox, Container, CrossAxisAlignment, Element, Flex, MainAxisAlignment,
+        Align, ConstrainedBox, Container, CrossAxisAlignment, Element, Flex, MainAxisAlignment,
         MainAxisSize, MouseStateHandle, ParentElement, Text,
     },
     fonts::{Properties, Weight},
@@ -473,10 +473,11 @@ impl SettingsWidget for NetworkPageWidget {
                             clear_action: NetworkPageAction|
          -> Box<dyn Element> {
             let editor_element = warpui::elements::ChildView::new(editor).finish();
+            // 使用 with_centered_text_label 让按钮文字水平居中。
             let save_button = appearance
                 .ui_builder()
                 .button(ButtonVariant::Accent, save_state.clone())
-                .with_text_label(crate::t!("settings-network-save"))
+                .with_centered_text_label(crate::t!("settings-network-save"))
                 .with_style(
                     UiComponentStyles::default()
                         .set_padding(Coords {
@@ -495,7 +496,7 @@ impl SettingsWidget for NetworkPageWidget {
             let clear_button = appearance
                 .ui_builder()
                 .button(ButtonVariant::Text, clear_state.clone())
-                .with_text_label(crate::t!("settings-network-clear"))
+                .with_centered_text_label(crate::t!("settings-network-clear"))
                 .with_style(
                     UiComponentStyles::default()
                         .set_padding(Coords {
@@ -585,11 +586,11 @@ impl SettingsWidget for NetworkPageWidget {
             NetworkPageAction::ClearProxyNoProxy,
         ));
 
-        // 6. 测试连接
+        // 6. 测试连接 — 文字水平居中。用 with_centered_text_label 避免默认左对齐。
         let mut test_button = appearance
             .ui_builder()
             .button(ButtonVariant::Accent, view.test_button_state.clone())
-            .with_text_label(crate::t!("settings-network-test-button"))
+            .with_centered_text_label(crate::t!("settings-network-test-button"))
             .with_style(
                 UiComponentStyles::default()
                     .set_padding(Coords {
@@ -597,8 +598,7 @@ impl SettingsWidget for NetworkPageWidget {
                         bottom: 6.,
                         left: 14.,
                         right: 14.,
-                    })
-                    .set_margin(Coords::default().top(20.)),
+                    }),
             )
             .build()
             .on_click(|ctx, _, _| {
@@ -627,18 +627,25 @@ impl SettingsWidget for NetworkPageWidget {
         .with_style(Properties::default().weight(Weight::Normal))
         .finish();
 
+        // 外层用 Align(left)包裹,防止父级 Flex 在 cross-axis 上 stretch 把按钮拉高;
+        // 内层 Flex::row 带 MainAxisSize::Min,只占据实际安全需要的宽度。
         content.add_child(
             Container::new(
-                Flex::row()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_main_axis_alignment(MainAxisAlignment::Start)
-                    .with_child(test_button.finish())
-                    .with_child(
-                        Container::new(result_element)
-                            .with_padding_left(12.)
-                            .finish(),
-                    )
-                    .finish(),
+                Align::new(
+                    Flex::row()
+                        .with_main_axis_size(MainAxisSize::Min)
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_main_axis_alignment(MainAxisAlignment::Start)
+                        .with_child(test_button.finish())
+                        .with_child(
+                            Container::new(result_element)
+                                .with_padding_left(12.)
+                                .finish(),
+                        )
+                        .finish(),
+                )
+                .left()
+                .finish(),
             )
             .with_margin_top(20.)
             .finish(),
