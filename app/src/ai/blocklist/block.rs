@@ -35,7 +35,6 @@ use crate::ai::blocklist::BlocklistAIContextModel;
 use crate::ai::blocklist::SuggestionDismissButtonTheme;
 #[cfg(not(target_family = "wasm"))]
 use repo_metadata::repositories::DetectedRepositories;
-#[cfg(not(target_family = "wasm"))]
 use warp_util::local_or_remote_path::LocalOrRemotePath;
 
 #[cfg(feature = "local_fs")]
@@ -127,7 +126,9 @@ use serde::Serialize;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(feature = "local_fs")]
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::{cell::OnceCell, sync::Arc};
 use warp_util::path::ShellFamily;
