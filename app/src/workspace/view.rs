@@ -11717,18 +11717,10 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         match event {
-            SettingsViewEvent::CheckForUpdate => {
-                self.manual_check_for_update(ctx);
-            }
-            SettingsViewEvent::OpenWarpDrive => {
-                self.close_all_overlays(ctx);
-                self.open_or_toggle_warp_drive(
-                    false, /* toggle */
-                    false, /* explicit_user_action */
-                    ctx,
-                );
-                ctx.notify();
-            }
+            // OpenWarp 去中心化分支:`CheckForUpdate` / `OpenWarpDrive` 事件 arm 随
+            // `SettingsViewEvent` 中同名 variant 一同物理删。手动检查更新仍可
+            // 由 `WorkspaceAction::CheckForUpdate`(`workspace:check_for_updates` binding)
+            // 触发;Warp Drive 仍可由 `WorkspaceAction::OpenWarpDrive` 触发。
             SettingsViewEvent::Pane(_) | SettingsViewEvent::StartResize => {}
             SettingsViewEvent::ShowToast { message, flavor } => {
                 self.toast_stack.update(ctx, |toast_stack, ctx| {

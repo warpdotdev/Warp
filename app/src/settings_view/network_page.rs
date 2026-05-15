@@ -44,8 +44,6 @@ const TEST_CONNECTION_TIMEOUT_SECS: u64 = 8;
 /// 输入框区域(editor + 两个按钮)的最大宽度,与字段标签右侧的槽位约束对齐。
 const INPUT_AREA_MAX_WIDTH: f32 = 420.0;
 
-/// 页内所有动作按钮(保存 / 清除 / 测试连接)的字号与 padding,与 BYOP 设置页
-/// 卡片按钮(`agent_providers_widget::CARD_BUTTON_*`)保持一致。
 const BUTTON_FONT_SIZE: f32 = 12.0;
 const BUTTON_PADDING: f32 = 6.0;
 

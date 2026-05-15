@@ -1323,14 +1323,6 @@ fn add_open_setting_pages_as_editable_binding(app: &mut AppContext) {
         .with_group(bindings::BindingGroup::Settings.as_str())
         .with_custom_action(CustomAction::ShowSettings),
         EditableBinding::new(
-            "workspace:show_settings_account_page",
-            crate::t!("keybinding-desc-workspace-show-settings-account"),
-            WorkspaceAction::ShowSettingsPage(SettingsSection::Account),
-        )
-        .with_context_predicate(id!("Workspace"))
-        .with_group(bindings::BindingGroup::Settings.as_str())
-        .with_custom_action(CustomAction::ShowAccount),
-        EditableBinding::new(
             "workspace:show_settings_appearance_page",
             BindingDescription::new(crate::t!(
                 "keybinding-desc-workspace-show-settings-appearance"
