@@ -430,6 +430,7 @@ impl AgentViewController {
                 .block_list()
                 .active_block()
                 .is_active_and_long_running();
+
         // Cloud agent panes do not have the same underlying terminal ownership
         // constraint (no local shell process), so long-running third party agent
         // commands should not trap the user in agent view.

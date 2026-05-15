@@ -26,6 +26,7 @@ use warpui::{
 use warpui::{App, ReadModel};
 
 use crate::ai::blocklist::agent_view::toolbar_item::AgentToolbarItemKind;
+use crate::ai::blocklist::agent_view::ExitAgentViewError;
 use crate::ai::blocklist::block::cli_controller::UserTakeOverReason;
 use crate::ai::blocklist::{
     agent_view::AgentViewEntryOrigin, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
@@ -77,6 +78,9 @@ fn add_window_with_cloud_mode_terminal(app: &mut App) -> ViewHandle<TerminalView
     let tips_model = app.add_model(|_| Default::default());
     let (_, terminal) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
         TerminalView::new_for_test_with_cloud_mode(tips_model, None, true, ctx)
+    });
+    terminal.update(app, |view, _| {
+        view.model.lock().set_is_dummy_cloud_mode_session(true);
     });
     terminal
 }
@@ -685,7 +689,12 @@ fn escape_pops_nested_cloud_agent_view_with_long_running_command() {
 
             assert!(view.is_ambient_agent_session(ctx));
             assert!(view.is_nested_cloud_mode(ctx));
-            assert_eq!(view.can_exit_agent_view_for_terminal_view(ctx), Ok(()));
+            assert_eq!(
+                view.agent_view_controller()
+                    .as_ref(ctx)
+                    .can_exit_agent_view(),
+                Ok(())
+            );
         });
 
         assert_eq!(
@@ -719,7 +728,12 @@ fn escape_exits_root_cloud_agent_view_with_long_running_command() {
                 .lock()
                 .simulate_long_running_block("claude", "running");
 
-            assert_eq!(view.can_exit_agent_view_for_terminal_view(ctx), Ok(()));
+            assert_eq!(
+                view.agent_view_controller()
+                    .as_ref(ctx)
+                    .can_exit_agent_view(),
+                Ok(())
+            );
 
             view.handle_input_event(&InputEvent::Escape, ctx);
 
@@ -749,7 +763,9 @@ fn escape_does_not_exit_local_agent_view_with_long_running_command() {
                 .simulate_long_running_block("sleep 10", "running");
 
             assert!(matches!(
-                view.can_exit_agent_view_for_terminal_view(ctx),
+                view.agent_view_controller()
+                    .as_ref(ctx)
+                    .can_exit_agent_view(),
                 Err(ExitAgentViewError::LongRunningCommand)
             ));
 

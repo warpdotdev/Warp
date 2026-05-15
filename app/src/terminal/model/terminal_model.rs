@@ -1438,6 +1438,11 @@ impl TerminalModel {
         self.is_dummy_cloud_mode_session
     }
 
+    #[cfg(test)]
+    pub fn set_is_dummy_cloud_mode_session(&mut self, value: bool) {
+        self.is_dummy_cloud_mode_session = value;
+    }
+
     pub fn is_shared_ambient_agent_session(&self) -> bool {
         matches!(
             self.shared_session_source_type,
