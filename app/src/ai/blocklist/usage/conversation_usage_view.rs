@@ -284,6 +284,14 @@ impl ConversationUsageView {
             ));
         }
 
+        // Per-agent breakdown rows render immediately beneath the
+        // "Credits spent (total)" row so they read as a drill-down of
+        // that value, not as a separate section appended at the bottom
+        // of the card. The rows are pushed into the same two-column
+        // label/value layout as the rest of the usage summary; the
+        // existing flex spacing handles indentation.
+        self.append_per_agent_rows(&mut labels, &mut values, rollup.as_ref(), appearance);
+
         labels.push(render_label_text("Tool calls", appearance));
         values.push(render_value_text(
             format_value_text(self.usage_info.tool_calls, "call"),
@@ -534,33 +542,6 @@ impl ConversationUsageView {
             }
         }
 
-        // Emit the per-agent breakdown rows beneath the value column when
-        // the rollup is active and the user has toggled "View details" on.
-        // The rows are appended as additional label/value pairs so the
-        // existing two-column flex layout handles spacing for free. The
-        // label column carries the avatar + display name; the value
-        // column carries the credit value.
-        if let Some(rollup) = &rollup {
-            if self.details_expanded {
-                let total_entries = rollup.per_agent.len();
-                let shown_entries: usize = if total_entries > 5 && !self.show_all_clicked {
-                    5
-                } else {
-                    total_entries
-                };
-                for entry in rollup.per_agent.iter().take(shown_entries) {
-                    let (label_el, value_el) = self.render_per_agent_row(entry, appearance);
-                    labels.push(label_el);
-                    values.push(value_el);
-                }
-                if total_entries > shown_entries {
-                    let hidden_count = total_entries - shown_entries;
-                    labels.push(self.render_show_more_link(hidden_count, appearance));
-                    values.push(Empty::new().finish());
-                }
-            }
-        }
-
         Container::new(
             Flex::row()
                 .with_spacing(8.)
@@ -570,6 +551,43 @@ impl ConversationUsageView {
         )
         .with_uniform_margin(16.)
         .finish()
+    }
+
+    /// Pushes the per-agent breakdown rows (and the optional "Show N
+    /// more" link) into the two-column layout when the rollup is active
+    /// and the user has expanded the details. Pushed in two-column
+    /// (label, value) pairs so they slot into the existing flex layout.
+    /// The label column carries the avatar + display name; the value
+    /// column carries the credit value.
+    fn append_per_agent_rows(
+        &self,
+        labels: &mut Vec<Box<dyn Element>>,
+        values: &mut Vec<Box<dyn Element>>,
+        rollup: Option<&OrchestrationCreditRollup>,
+        appearance: &Appearance,
+    ) {
+        let Some(rollup) = rollup else {
+            return;
+        };
+        if !self.details_expanded {
+            return;
+        }
+        let total_entries = rollup.per_agent.len();
+        let shown_entries: usize = if total_entries > 5 && !self.show_all_clicked {
+            5
+        } else {
+            total_entries
+        };
+        for entry in rollup.per_agent.iter().take(shown_entries) {
+            let (label_el, value_el) = self.render_per_agent_row(entry, appearance);
+            labels.push(label_el);
+            values.push(value_el);
+        }
+        if total_entries > shown_entries {
+            let hidden_count = total_entries - shown_entries;
+            labels.push(self.render_show_more_link(hidden_count, appearance));
+            values.push(Empty::new().finish());
+        }
     }
 
     /// Renders the "Credits spent (total)" value cell. When a rollup
@@ -596,15 +614,20 @@ impl ConversationUsageView {
             .finish()
     }
 
-    /// Renders the "View details ▾" / "Hide details ▴" toggle link rendered
-    /// to the right of the "Credits spent (total)" value when a rollup
-    /// applies. The link uses the standard sub-text color so it reads as a
-    /// secondary affordance rather than a primary value.
+    /// Renders the "View details ▾" / "Hide details ▴" toggle link
+    /// rendered to the right of the "Credits spent (total)" value when
+    /// a rollup applies. The link is styled in the theme's hyperlink
+    /// color (`ansi_fg_blue`) — the same color the `FormattedTextElement`
+    /// uses for in-line hyperlinks throughout Agent Mode — so it reads
+    /// as a clickable affordance rather than a passive label. The
+    /// `Hoverable` carries a `PointingHand` cursor on hover; we don't
+    /// also flip the color or weight on hover because `Text` doesn't
+    /// expose an underline knob and changing color in this two-token
+    /// theme system tends to push the link into the accent space.
     fn render_details_toggle(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
         let font_size = appearance.ui_font_size() + 2.;
-        let bg = theme.surface_2();
-        let text_color = blended_colors::text_sub(theme, bg);
+        let link_color = theme.ansi_fg_blue();
         let icon_size = font_size;
         let (label, icon) = if self.details_expanded {
             ("Hide details", Icon::ChevronUp)
@@ -613,19 +636,14 @@ impl ConversationUsageView {
         };
         Hoverable::new(
             self.details_toggle_mouse_state.clone(),
-            move |hover_state| {
-                let active_text_color = if hover_state.is_hovered() || hover_state.is_clicked() {
-                    blended_colors::text_main(theme, bg)
-                } else {
-                    text_color
-                };
+            move |_hover_state| {
                 let text_element =
                     Text::new(label.to_string(), appearance.ui_font_family(), font_size)
-                        .with_color(active_text_color)
+                        .with_color(link_color)
                         .with_selectable(false)
                         .finish();
                 let icon_element =
-                    ConstrainedBox::new(icon.to_warpui_icon(active_text_color.into()).finish())
+                    ConstrainedBox::new(icon.to_warpui_icon(link_color.into()).finish())
                         .with_width(icon_size)
                         .with_height(icon_size)
                         .finish();
@@ -677,7 +695,9 @@ impl ConversationUsageView {
     /// Renders the "Show N more" link row shown beneath the first 5
     /// per-agent rows when the breakdown has more entries than the
     /// truncation cap. Clicking the link replaces the truncated list with
-    /// the full list on the next render (PRODUCT invariant 5f).
+    /// the full list on the next render (PRODUCT invariant 5f). Uses the
+    /// same hyperlink-blue color as the "View details" toggle so the
+    /// affordances visually match.
     fn render_show_more_link(
         &self,
         hidden_count: usize,
@@ -685,17 +705,11 @@ impl ConversationUsageView {
     ) -> Box<dyn Element> {
         let theme = appearance.theme();
         let font_size = appearance.ui_font_size() + 2.;
-        let bg = theme.surface_2();
-        let text_color = blended_colors::text_sub(theme, bg);
+        let link_color = theme.ansi_fg_blue();
         let label = format!("Show {hidden_count} more");
-        Hoverable::new(self.show_more_mouse_state.clone(), move |hover_state| {
-            let active_color = if hover_state.is_hovered() || hover_state.is_clicked() {
-                blended_colors::text_main(theme, bg)
-            } else {
-                text_color
-            };
+        Hoverable::new(self.show_more_mouse_state.clone(), move |_hover_state| {
             Text::new(label.clone(), appearance.ui_font_family(), font_size)
-                .with_color(active_color)
+                .with_color(link_color)
                 .with_style(Properties {
                     weight: Weight::Normal,
                     ..Default::default()
