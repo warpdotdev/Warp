@@ -103,6 +103,7 @@ email_address = { git = "https://github.com/warpdotdev/rust-email_address", bran
 embed_plist = "1.2"
 enclose = "1.1.8"
 enum-iterator.workspace = true
+event-listener.workspace = true
 field_mask.workspace = true
 firebase.workspace = true
 flate2 = "1.0.17"
