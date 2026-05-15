@@ -16,7 +16,9 @@ use crate::{
         inline_action::inline_action_icons,
         BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
     },
-    terminal::view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent},
+    terminal::view::ambient_agent::{
+        block::SETUP_TEXT_BOTTOM_MARGIN, AmbientAgentViewModel, AmbientAgentViewModelEvent,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -218,6 +220,7 @@ impl View for CloudModeSetupTextBlock {
             &self.ambient_agent_view_model,
             app,
         )
+        .with_margin_top(8.)
         .finish()
     }
 }
