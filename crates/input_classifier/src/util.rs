@@ -26,10 +26,17 @@ lazy_static! {
     /// A set of words that should trigger an AI classification if they are the entire input
     /// and the input is a follow-up to an agent response.
     static ref AGENT_FOLLOW_UP_INPUTS: HashSet<&'static str> = HashSet::from(["yes", "continue", "do it"]);
+
+    /// A set of words that should trigger a shell classification if they are the entire input
+    /// and the input is a follow-up to an agent response.
+    static ref AGENT_FOLLOW_UP_SHELL_INPUTS: HashSet<&'static str> = HashSet::from(["approve"]);
 }
 
 pub fn is_agent_follow_up_input(input: &str) -> bool {
     AGENT_FOLLOW_UP_INPUTS.contains(input)
+}
+pub fn is_agent_follow_up_shell_input(input: &str) -> bool {
+    AGENT_FOLLOW_UP_SHELL_INPUTS.contains(input.trim().to_lowercase().as_str())
 }
 
 pub fn is_one_off_shell_command_keyword(word: &str) -> bool {
@@ -132,6 +139,6 @@ pub fn is_installed_binary(input: &ParsedTokensSnapshot) -> bool {
         .unwrap_or(false)
 }
 
-#[cfg(all(test, any(feature = "nld_heuristic_v1", feature = "nld_heuristic_v2")))]
+#[cfg(test)]
 #[path = "util_tests.rs"]
 mod tests;

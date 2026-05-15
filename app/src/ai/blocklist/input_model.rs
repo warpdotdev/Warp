@@ -8,7 +8,9 @@
 use std::sync::Arc;
 
 use futures::stream::AbortHandle;
-use input_classifier::util::{is_agent_follow_up_input, is_one_off_natural_language_word};
+use input_classifier::util::{
+    is_agent_follow_up_input, is_agent_follow_up_shell_input, is_one_off_natural_language_word,
+};
 use instant::Instant;
 use parking_lot::FairMutex;
 use serde::{Deserialize, Serialize};
@@ -701,6 +703,9 @@ impl BlocklistAIInputModel {
                         && is_one_off_natural_language_word(first_token_str.to_lowercase().as_str())
                     {
                         return InputType::AI;
+                    }
+                    if is_agent_follow_up && is_agent_follow_up_shell_input(&buffer_cloned) {
+                        return InputType::Shell;
                     }
 
                     // If this is clearly intended to be a follow-up to an AI block, classify it as AI.

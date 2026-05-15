@@ -16,6 +16,12 @@ fn clear_all_token_descriptions(snapshot: &mut ParsedTokensSnapshot) {
         token.token_description = None;
     }
 }
+#[test]
+fn test_agent_follow_up_shell_input() {
+    assert!(is_agent_follow_up_shell_input("approve"));
+    assert!(is_agent_follow_up_shell_input(" APPROVE "));
+    assert!(!is_agent_follow_up_shell_input("yes"));
+}
 
 async fn one_off_keyword_short_circuits() {
     let mut token = mock_parsed_input_token("sudo apt update".to_string()).await;

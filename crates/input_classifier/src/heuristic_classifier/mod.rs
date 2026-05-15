@@ -9,7 +9,8 @@ use crate::{
     ClassificationResult, Context, InputClassifier, InputType,
     parser::parse_query_into_tokens,
     util::{
-        is_installed_binary, is_likely_shell_command, is_one_off_natural_language_word_or_prefix,
+        is_agent_follow_up_shell_input, is_installed_binary, is_likely_shell_command,
+        is_one_off_natural_language_word_or_prefix,
     },
 };
 
@@ -42,6 +43,9 @@ impl InputClassifier for HeuristicClassifier {
     async fn detect_input_type(&self, input: ParsedTokensSnapshot, context: &Context) -> InputType {
         let word_tokens = parse_query_into_tokens(input.buffer_text.as_str());
         let total_word_token_count = word_tokens.len();
+        if context.is_agent_follow_up && is_agent_follow_up_shell_input(&input.buffer_text) {
+            return InputType::Shell;
+        }
 
         if total_word_token_count == 1
             && is_one_off_natural_language_word_or_prefix(&word_tokens[0].to_lowercase())
