@@ -235,11 +235,6 @@ impl Network {
         let scrollback = scrollback_type.to_scrollback(&model.lock());
         let num_bytes_scrollback = scrollback.num_bytes();
         let max_session_size = max_session_size(ctx);
-        log::info!(
-            "Initializing session sharer network: scrollback_bytes={}, max_session_size={}",
-            num_bytes_scrollback.as_u64(),
-            max_session_size.as_u64()
-        );
         let (selection_throttled_tx, selection_rx) = async_channel::unbounded();
         let selection_throttled_rx = throttle(SELECTION_THROTTLE_PERIOD, selection_rx);
         let init_block_id = model.lock().block_list().active_block_id().clone();
@@ -288,7 +283,6 @@ impl Network {
                 cause: None,
             });
         } else {
-            log::info!("Starting session sharing websocket task");
             network.start_ordered_terminal_events_listener(ordered_events_rx, ctx);
             network.start_websocket(
                 ws_proxy_rx,
