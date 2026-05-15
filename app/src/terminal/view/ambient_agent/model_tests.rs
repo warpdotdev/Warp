@@ -73,6 +73,7 @@ fn retry_request(prompt: impl Into<String>) -> SpawnAgentRequest {
         initial_snapshot_token: Some(
             serde_json::from_str("\"snapshot-token-123\"").expect("snapshot token should parse"),
         ),
+        snapshot_disabled: Some(true),
     }
 }
 
@@ -154,6 +155,7 @@ fn github_auth_completed_retries_stored_initial_run_request() {
                     .map(|token| token.as_str()),
                 Some("snapshot-token-123")
             );
+            assert_eq!(request.snapshot_disabled, Some(true));
             let config = request.config.as_ref().expect("config should be preserved");
             assert_eq!(config.environment_id.as_deref(), Some("env-123"));
             assert_eq!(config.model_id.as_deref(), Some("model-123"));
