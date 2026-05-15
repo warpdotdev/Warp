@@ -13324,15 +13324,6 @@ impl Workspace {
     }
 
     #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-    fn show_handoff_prepare_failed_toast(window_id: WindowId, ctx: &mut ViewContext<Self>) {
-        WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-            let toast =
-                DismissibleToast::error("Failed to prepare handoff. Please try again.".to_owned());
-            toast_stack.add_ephemeral_toast(toast, window_id, ctx);
-        });
-    }
-
-    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     fn restore_source_handoff_draft(
         source_view: &ViewHandle<TerminalView>,
         launch: Option<PendingCloudLaunch>,
@@ -13505,9 +13496,21 @@ impl Workspace {
         let Some((new_pane_view, model_handle)) =
             handoff_target.update(ctx, |view, view_ctx| view.start_cloud_mode(None, view_ctx))
         else {
-            log::warn!("start_local_to_cloud_handoff: failed to push fresh cloud-mode pane");
+            log::warn!(
+                "start_local_to_cloud_handoff: failed to push fresh cloud-mode pane over the active session"
+            );
             Self::restore_source_handoff_draft(&source_view, launch, environment_id, ctx);
-            Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
+            let window_id = ctx.window_id();
+            WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                toast_stack.add_ephemeral_toast(
+                    DismissibleToast::error(
+                        "Couldn't open a cloud pane for handoff. Try again, or restart Warp if this keeps happening."
+                            .to_owned(),
+                    ),
+                    window_id,
+                    ctx,
+                );
+            });
             return;
         };
 
@@ -13557,7 +13560,20 @@ impl Workspace {
             .as_ref(ctx)
             .active_session_view(ctx)
         else {
-            Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
+            log::warn!(
+                "start_local_to_cloud_handoff: no active session view in the active tab to hand off"
+            );
+            let window_id = ctx.window_id();
+            WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                toast_stack.add_ephemeral_toast(
+                    DismissibleToast::error(
+                        "No active terminal session to hand off. Focus a pane and try again."
+                            .to_owned(),
+                    ),
+                    window_id,
+                    ctx,
+                );
+            });
             return;
         };
 
@@ -13624,8 +13640,22 @@ impl Workspace {
         }
 
         let Some(source_token) = source_conversation.server_conversation_token().cloned() else {
+            log::warn!(
+                "start_local_to_cloud_handoff: source conversation {:?} has no server token yet; cloud sync may not have completed",
+                source_conversation.id()
+            );
             Self::restore_source_handoff_draft(&source_view, launch, environment_id, ctx);
-            Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
+            let window_id = ctx.window_id();
+            WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                toast_stack.add_ephemeral_toast(
+                    DismissibleToast::error(
+                        "Your conversation hasn't synced to the cloud yet. Try sending another message, then hand off again."
+                            .to_owned(),
+                    ),
+                    window_id,
+                    ctx,
+                );
+            });
             return;
         };
 
@@ -13652,9 +13682,21 @@ impl Workspace {
                     );
                 }
                 Err(err) => {
-                    log::warn!("fork_conversation failed: {err:#}");
+                    log::warn!(
+                        "start_local_to_cloud_handoff: fork_conversation RPC failed: {err:#}"
+                    );
                     Self::restore_source_handoff_draft(&source_view, launch, environment_id, ctx);
-                    Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
+                    let window_id = ctx.window_id();
+                    WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                        toast_stack.add_ephemeral_toast(
+                            DismissibleToast::error(
+                                "Couldn't start the handoff. Check your network connection and try again."
+                                    .to_owned(),
+                            ),
+                            window_id,
+                            ctx,
+                        );
+                    });
                 }
             },
         );
@@ -13688,8 +13730,21 @@ impl Workspace {
         }) {
             Ok(forked) => forked,
             Err(err) => {
-                log::warn!("Failed to materialize local fork for handoff: {err:#}");
-                Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
+                log::warn!(
+                    "complete_local_to_cloud_handoff_open: failed to materialize local fork of conversation {:?} for handoff: {err:#}",
+                    source_conversation.id()
+                );
+                let window_id = ctx.window_id();
+                WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                    toast_stack.add_ephemeral_toast(
+                        DismissibleToast::error(
+                        "Couldn't save your conversation locally. Try sending another message, then hand off again."
+                                .to_owned(),
+                        ),
+                        window_id,
+                        ctx,
+                    );
+                });
                 return;
             }
         };
@@ -13699,8 +13754,20 @@ impl Workspace {
         let Some((new_pane_view, model_handle)) =
             handoff_target.update(ctx, |view, view_ctx| view.start_cloud_mode(None, view_ctx))
         else {
-            log::warn!("start_local_to_cloud_handoff: failed to push cloud-mode pane");
-            Self::show_handoff_prepare_failed_toast(ctx.window_id(), ctx);
+            log::warn!(
+                "complete_local_to_cloud_handoff_open: failed to push cloud-mode pane after forking conversation"
+            );
+            let window_id = ctx.window_id();
+            WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                toast_stack.add_ephemeral_toast(
+                    DismissibleToast::error(
+                        "Couldn't open a cloud pane for handoff. Try again, or restart Warp if this keeps happening."
+                            .to_owned(),
+                    ),
+                    window_id,
+                    ctx,
+                );
+            });
             return;
         };
         // Restore the forked conversation into the newly-created pane.
