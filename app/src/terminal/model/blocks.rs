@@ -3815,14 +3815,7 @@ impl ansi::Handler for BlockList {
     }
 
     fn handle_completed_iterm_image(&mut self, image: ITermImage) {
-        let active_block_was_started = self.active_block().started();
-        delegate!(self.handle_completed_iterm_image(image));
-        if self.bootstrap_stage == BootstrapStage::ScriptExecution
-            && !active_block_was_started
-            && self.active_block().started()
-        {
-            self.update_active_block_height();
-        }
+        delegate!(self.handle_completed_iterm_image(image))
     }
 
     fn handle_completed_kitty_action(
@@ -3830,15 +3823,7 @@ impl ansi::Handler for BlockList {
         action: KittyAction,
         metadata: &mut HashMap<u32, StoredImageMetadata>,
     ) -> Option<KittyResponse> {
-        let active_block_was_started = self.active_block().started();
-        let retval = delegate!(self.handle_completed_kitty_action(action, metadata));
-        if self.bootstrap_stage == BootstrapStage::ScriptExecution
-            && !active_block_was_started
-            && self.active_block().started()
-        {
-            self.update_active_block_height();
-        }
-        retval
+        delegate!(self.handle_completed_kitty_action(action, metadata))
     }
 
     fn set_keyboard_enhancement_flags(

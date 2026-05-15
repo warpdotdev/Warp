@@ -249,6 +249,7 @@ impl BlockGrid {
     /// grid-finish time (precmd or preexec), leaving the grid contentless. If the grid_cursor
     /// is not at (0,0), we can assume the grid contains content that will persist through finish.
     pub fn should_show_as_empty_when_finished(&self) -> bool {
+        // Non-moving Kitty placements can render an image while leaving the cursor at the origin.
         let has_visible_images = self.grid_handler().has_visible_images();
 
         (self.finished_len() == 0 && !has_visible_images)
