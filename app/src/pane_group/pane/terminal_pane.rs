@@ -1,7 +1,9 @@
 //! Implementation of terminal panes.
 #[cfg(feature = "local_fs")]
 use crate::pane_group::CodeSource;
-use std::{collections::HashMap, sync::mpsc::SyncSender};
+#[cfg(not(target_family = "wasm"))]
+use std::collections::HashMap;
+use std::sync::mpsc::SyncSender;
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use url::Url;
@@ -17,7 +19,7 @@ use crate::{
         active_agent_views_model::ActiveAgentViewsModel,
         agent::{
             conversation::{AIConversationId, ConversationStatus},
-            LifecycleEventType, StartAgentExecutionMode,
+            StartAgentExecutionMode,
         },
         ambient_agents::{task::HarnessConfig, AgentConfigSnapshot, AmbientAgentTaskId},
         blocklist::{
@@ -33,9 +35,7 @@ use crate::{
     app_state::{AmbientAgentPaneSnapshot, LeafContents, TerminalPaneSnapshot},
     features::FeatureFlag,
     pane_group::child_agent::{
-        create_error_child_agent_conversation, create_hidden_child_agent_conversation,
-        ErrorChildAgentConversationRequest, HiddenChildAgentConversation,
-        HiddenChildAgentConversationRequest, HiddenChildAgentTaskContext,
+        create_error_child_agent_conversation, ErrorChildAgentConversationRequest,
     },
     pane_group::{self, Direction, Event::OpenConversationHistory, PaneGroup},
     persistence::{BlockCompleted, ModelEvent},
@@ -49,7 +49,7 @@ use crate::{
             join_link,
             manager::{Manager, ManagerEvent},
             role_change_modal::RoleChangeOpenSource,
-            IsSharedSessionCreator, SharedSessionStatus,
+            SharedSessionStatus,
         },
         view::Event,
         TerminalManager, TerminalView,
@@ -59,11 +59,24 @@ use crate::{
     AIExecutionProfilesModel,
 };
 
+// Imports below are only consumed by the non-wasm `launch_local_*_child`
+// dispatch helpers; gating them keeps the wasm build warning-clean.
+#[cfg(not(target_family = "wasm"))]
+use crate::{
+    ai::agent::LifecycleEventType,
+    pane_group::child_agent::{
+        create_hidden_child_agent_conversation, HiddenChildAgentConversation,
+        HiddenChildAgentConversationRequest, HiddenChildAgentTaskContext,
+    },
+    terminal::shared_session::IsSharedSessionCreator,
+};
+
 #[cfg(feature = "local_fs")]
 use crate::ai::blocklist::BlocklistAIHistoryEvent;
 #[cfg(not(target_family = "wasm"))]
 use crate::server::server_api::ServerApiProvider;
 
+#[cfg(not(target_family = "wasm"))]
 use session_sharing_protocol::sharer::SessionSourceType;
 use warp_core::execution_mode::AppExecutionMode;
 
@@ -124,6 +137,7 @@ fn serialize_proto_to_base64<M: prost::Message>(message: &M) -> String {
 
 /// Overrides the child's preferred agent-mode LLM. `None` is a no-op
 /// (inherits the parent's LLM via `propagate_parent_agent_settings`).
+#[cfg(not(target_family = "wasm"))]
 fn apply_child_model_id_override(
     child_terminal_view_id: EntityId,
     model_id: Option<&str>,
@@ -138,6 +152,7 @@ fn apply_child_model_id_override(
     });
 }
 
+#[cfg(not(target_family = "wasm"))]
 fn register_legacy_local_lifecycle_subscription(
     parent_conversation_id: AIConversationId,
     child_conversation_id: AIConversationId,
@@ -169,6 +184,7 @@ fn register_legacy_local_lifecycle_subscription(
 /// `local_tty::TerminalManager::shared_session_source_type` but reads the
 /// model directly via the host's `TerminalView` so the dispatch helpers in
 /// this module don't need to downcast through the `TerminalManager` trait.
+#[cfg(not(target_family = "wasm"))]
 fn host_terminal_shared_session_source_type(
     parent_terminal_view: &ViewHandle<TerminalView>,
     ctx: &AppContext,
@@ -192,21 +208,38 @@ fn host_terminal_shared_session_source_type(
 
 /// Builds the `IsSharedSessionCreator` value for a child pane being spawned
 /// by `run_agents(local)`. Returns `Yes` (with the child's own `task_id`
-/// stamped onto the source type) iff the host terminal is itself sharing
-/// and `FeatureFlag::OrchestrationViewerPillBar` is enabled; otherwise
-/// `No`.
+/// stamped onto the source type) iff:
+///   1. `FeatureFlag::OrchestrationViewerPillBar` is enabled, and
+///   2. the host terminal is itself sharing as a
+///      `SessionSourceType::AmbientAgent` (i.e. the host is a cloud
+///      orchestrator worker or a desktop session that was already shared
+///      under an ambient-agent task).
+///
+/// Non-`AmbientAgent` host shares (e.g. a user manually sharing their own
+/// terminal via the share modal) explicitly do NOT cascade to child panes:
+/// the viewer-side pill bar at
+/// `shared_session/viewer/terminal_manager.rs:803` only materializes for
+/// `AmbientAgent` host source types, so auto-sharing children of a manual
+/// share would consume share-server capacity and publish a child session
+/// transcript without producing any pill-bar UI for the host's viewers to
+/// reach it — strictly worse than leaving children unshared.
+#[cfg(not(target_family = "wasm"))]
 fn inherit_share_for_local_child(
     host_source_type: Option<&SessionSourceType>,
     child_task_id: AmbientAgentTaskId,
 ) -> IsSharedSessionCreator {
-    if FeatureFlag::OrchestrationViewerPillBar.is_enabled() {
-        host_source_type
-            .map(|_| IsSharedSessionCreator::Yes {
-                source_type: SessionSourceType::AmbientAgent {
-                    task_id: Some(child_task_id.to_string()),
-                },
-            })
-            .unwrap_or(IsSharedSessionCreator::No)
+    if !FeatureFlag::OrchestrationViewerPillBar.is_enabled() {
+        return IsSharedSessionCreator::No;
+    }
+    if matches!(
+        host_source_type,
+        Some(SessionSourceType::AmbientAgent { .. })
+    ) {
+        IsSharedSessionCreator::Yes {
+            source_type: SessionSourceType::AmbientAgent {
+                task_id: Some(child_task_id.to_string()),
+            },
+        }
     } else {
         IsSharedSessionCreator::No
     }
@@ -1573,6 +1606,7 @@ fn dispatch_start_agent_conversation(
     ctx: &mut ViewContext<PaneGroup>,
 ) {
     match request.execution_mode.clone() {
+        #[cfg(not(target_family = "wasm"))]
         StartAgentExecutionMode::Local {
             harness_type: None,
             model_id,
@@ -1604,7 +1638,7 @@ fn dispatch_start_agent_conversation(
                     parent_conversation_id: request.parent_conversation_id,
                     request_id: Some(request.id),
                     orchestration_harness: None,
-                    error_message: "Local harness child agents are not supported in WASM builds."
+                    error_message: "Local child agents are not supported in WASM builds."
                         .to_string(),
                 },
                 ctx,
@@ -1650,6 +1684,11 @@ fn dispatch_start_agent_conversation(
 /// bootstraps) and onto the child's `BlocklistAIController` via the
 /// `HiddenChildAgentTaskContext` (so the agent UI reflects it). On failure
 /// the child surfaces as an error conversation instead.
+///
+/// Gated to non-wasm because `ServerApiProvider` is `cfg(not(wasm))`-only.
+/// `dispatch_start_agent_conversation`'s wasm wildcard arm routes the Oz
+/// path through `create_error_child_agent_conversation` instead.
+#[cfg(not(target_family = "wasm"))]
 fn launch_local_no_harness_child(
     group: &mut PaneGroup,
     parent_pane_id: PaneId,
