@@ -213,15 +213,17 @@ impl RemoteCodebaseIndexModel {
     ) {
         match event {
             RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot { host_id, statuses } => {
-                self.apply_statuses_snapshot(host_id, statuses);
-                ctx.emit(RemoteCodebaseIndexModelEvent::SettingsEntriesChanged);
+                if self.apply_statuses_snapshot(host_id, statuses) {
+                    ctx.emit(RemoteCodebaseIndexModelEvent::SettingsEntriesChanged);
+                }
             }
             RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
                 remote_path,
                 status,
             } => {
-                self.apply_status_update(remote_path.clone(), status.clone());
-                ctx.emit(RemoteCodebaseIndexModelEvent::SettingsEntriesChanged);
+                if self.apply_status_update(remote_path.clone(), status.clone()) {
+                    ctx.emit(RemoteCodebaseIndexModelEvent::SettingsEntriesChanged);
+                }
             }
             RemoteServerManagerEvent::NavigatedToDirectory {
                 session_id: _,
@@ -229,7 +231,6 @@ impl RemoteCodebaseIndexModel {
                 is_git,
             } => {
                 self.record_navigated_directory(remote_path);
-                ctx.emit(RemoteCodebaseIndexModelEvent::SettingsEntriesChanged);
                 if *is_git
                     && should_auto_index_remote_codebase(ctx)
                     && self.should_request_auto_index_for_navigated_git_repo(remote_path)
@@ -244,8 +245,9 @@ impl RemoteCodebaseIndexModel {
                 }
             }
             RemoteServerManagerEvent::HostDisconnected { host_id } => {
-                self.mark_host_unavailable(host_id);
-                ctx.emit(RemoteCodebaseIndexModelEvent::SettingsEntriesChanged);
+                if self.mark_host_unavailable(host_id) {
+                    ctx.emit(RemoteCodebaseIndexModelEvent::SettingsEntriesChanged);
+                }
             }
             RemoteServerManagerEvent::SessionConnected {
                 session_id: _,
@@ -301,18 +303,77 @@ impl RemoteCodebaseIndexModel {
         &mut self,
         host_id: &HostId,
         statuses: &[RemoteCodebaseIndexStatusWithPath],
-    ) {
-        self.statuses.retain(|key, _| key.host_id != *host_id);
+    ) -> bool {
+        let status_count = statuses.len();
+        log::info!(
+            "[Remote codebase indexing] Client received bootstrap codebase index statuses snapshot: host_id={host_id} status_count={status_count}"
+        );
         for status_with_path in statuses {
-            self.apply_status_update(
-                status_with_path.remote_path.clone(),
-                status_with_path.status.clone(),
+            log::debug!(
+                "[Remote codebase indexing] Client received bootstrap codebase index status: repo_path={} state={:?} has_root_hash={}",
+                status_with_path.status.repo_path,
+                status_with_path.status.state,
+                status_with_path
+                    .status
+                    .root_hash
+                    .as_deref()
+                    .is_some_and(|root_hash| !root_hash.is_empty()),
             );
         }
+        let incoming_statuses = statuses
+            .iter()
+            .map(|status_with_path| {
+                (
+                    status_with_path.remote_path.clone(),
+                    status_with_path.status.clone(),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        let existing_status_count = self
+            .statuses
+            .keys()
+            .filter(|remote_path| remote_path.host_id == *host_id)
+            .count();
+        let snapshot_is_unchanged = existing_status_count == incoming_statuses.len()
+            && self
+                .statuses
+                .iter()
+                .filter(|(remote_path, _)| remote_path.host_id == *host_id)
+                .all(|(remote_path, status)| incoming_statuses.get(remote_path) == Some(status));
+        if snapshot_is_unchanged {
+            return false;
+        }
+        self.statuses.retain(|key, _| key.host_id != *host_id);
+        for (remote_path, status) in incoming_statuses {
+            self.apply_status_update(remote_path, status);
+        }
+        true
     }
 
-    fn apply_status_update(&mut self, remote_path: RemotePath, status: RemoteCodebaseIndexStatus) {
+    fn apply_status_update(
+        &mut self,
+        remote_path: RemotePath,
+        status: RemoteCodebaseIndexStatus,
+    ) -> bool {
+        if self.statuses.get(&remote_path) == Some(&status) {
+            return false;
+        }
+        log::info!(
+            "[Remote codebase indexing] Client applying codebase index status update: host_id={} state={:?} has_root_hash={}",
+            remote_path.host_id,
+            status.state,
+            status
+                .root_hash
+                .as_deref()
+                .is_some_and(|root_hash| !root_hash.is_empty()),
+        );
+        log::debug!(
+            "[Remote codebase indexing] Client applying codebase index status update: repo_path={} state={:?}",
+            status.repo_path,
+            status.state,
+        );
         self.statuses.insert(remote_path, status);
+        true
     }
 
     fn record_navigated_directory(&mut self, remote_path: &RemotePath) {
@@ -334,15 +395,22 @@ impl RemoteCodebaseIndexModel {
         true
     }
 
-    fn mark_host_unavailable(&mut self, host_id: &HostId) {
+    fn mark_host_unavailable(&mut self, host_id: &HostId) -> bool {
+        let mut updated = false;
         for (remote_path, status) in &mut self.statuses {
             if remote_path.host_id == *host_id {
-                status.state = RemoteCodebaseIndexState::Unavailable;
-                status.failure_message =
-                    Some("The remote host is currently disconnected.".to_string());
+                let failure_message = "The remote host is currently disconnected.".to_string();
+                if status.state != RemoteCodebaseIndexState::Unavailable
+                    || status.failure_message.as_ref() != Some(&failure_message)
+                {
+                    status.state = RemoteCodebaseIndexState::Unavailable;
+                    status.failure_message = Some(failure_message);
+                    updated = true;
+                }
             }
         }
         self.active_repos_by_host.remove(host_id);
+        updated
     }
 
     fn availability_for_remote(

@@ -15,7 +15,6 @@ set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
 cd "${REPO_ROOT}"
-export SKILLS=0
 
 OS_TYPE="$(uname -s)"
 

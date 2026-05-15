@@ -49,10 +49,40 @@ fn snapshot_replaces_statuses_for_host() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
     model.apply_status_update(remote_path("/old"), ready_status("/old"));
-    model.apply_statuses_snapshot(&host, &[status_with_path("/new")]);
+    assert!(model.apply_statuses_snapshot(&host, &[status_with_path("/new")]));
 
     assert!(model.status_for_repo(&remote_path("/old")).is_none());
     assert!(model.status_for_repo(&remote_path("/new")).is_some());
+}
+#[test]
+fn status_update_reports_only_actual_changes() {
+    let mut model = RemoteCodebaseIndexModel::default();
+    let remote_path = remote_path("/repo");
+    let status = ready_status("/repo");
+
+    assert!(model.apply_status_update(remote_path.clone(), status.clone()));
+    assert!(!model.apply_status_update(remote_path.clone(), status));
+    assert!(model.apply_status_update(
+        remote_path,
+        status_with_state("/repo", RemoteCodebaseIndexState::Stale),
+    ));
+}
+
+#[test]
+fn snapshot_reports_only_actual_changes_for_host() {
+    let mut model = RemoteCodebaseIndexModel::default();
+    let host = host();
+    let snapshot = [status_with_path("/repo")];
+
+    assert!(model.apply_statuses_snapshot(&host, &snapshot));
+    assert!(!model.apply_statuses_snapshot(&host, &snapshot));
+    assert!(model.apply_statuses_snapshot(
+        &host,
+        &[RemoteCodebaseIndexStatusWithPath {
+            remote_path: remote_path("/repo"),
+            status: status_with_state("/repo", RemoteCodebaseIndexState::Stale),
+        }],
+    ));
 }
 
 #[test]
@@ -119,8 +149,8 @@ fn host_disconnect_marks_settings_entries_unavailable_without_removing_them() {
     let host = host();
     model.apply_status_update(remote_path("/repo"), ready_status("/repo"));
     model.record_navigated_directory(&remote_path("/repo"));
-
-    model.mark_host_unavailable(&host);
+    assert!(model.mark_host_unavailable(&host));
+    assert!(!model.mark_host_unavailable(&host));
 
     let status = model.status_for_repo(&remote_path("/repo")).unwrap();
     assert_eq!(status.state, RemoteCodebaseIndexState::Unavailable);
