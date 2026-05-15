@@ -14937,7 +14937,7 @@ impl TypedActionView for Input {
                 self.clear_attached_context(ctx);
             }
             InputAction::ActivateCloudHandoff => {
-                self.activate_cloud_handoff_compose(ctx);
+                self.activate_cloud_handoff_compose(HandoffEntryPoint::Ampersand, ctx);
             }
         }
     }
