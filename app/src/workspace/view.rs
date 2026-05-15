@@ -14500,6 +14500,25 @@ impl Workspace {
                         view.set_remote_root_directories(std::slice::from_ref(&remote_id), ctx);
                     });
                 }
+
+                // Register the remote repo in WorkingDirectoriesModel so it
+                // appears in the code review dropdown via RepositoriesChanged.
+                // Also map the repo to the terminal that navigated there so
+                // `find_review_terminal` can resolve the preferred terminal.
+                let repo_key = LocalOrRemotePath::Remote(remote_path.clone());
+                let terminal_view_id = pane_group.read(ctx, |pg, ctx| {
+                    pg.active_session_view(ctx).map(|tv| tv.id())
+                });
+                self.working_directories_model.update(ctx, |model, ctx| {
+                    model.register_remote_repo(pane_group_id, repo_key.clone(), ctx);
+                    if let Some(terminal_id) = terminal_view_id {
+                        model.register_terminal_for_repo(
+                            pane_group_id,
+                            repo_key,
+                            terminal_id,
+                        );
+                    }
+                });
             }
             #[cfg(not(feature = "local_fs"))]
             pane_group::Event::RemoteRepoNavigated { .. } => {}

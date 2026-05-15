@@ -6313,6 +6313,19 @@ impl TerminalView {
                 ctx.emit(event_constructor(arg));
             }
             GitDeltaPreference::OnlyDirty => {
+                // For remote repos, skip the dirty check — there's no local
+                // GitRepoStatusModel, so the deferred open would never resolve.
+                // The diff chip only appears when the remote shell reports changes,
+                // so the user intent is clear.
+                if self
+                    .current_repo_path
+                    .as_ref()
+                    .is_some_and(|p| p.is_remote())
+                {
+                    ctx.emit(event_constructor(arg));
+                    return;
+                }
+
                 // Check if repo has uncommitted changes via the per-repo sub-model.
                 #[cfg(feature = "local_fs")]
                 {

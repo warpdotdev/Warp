@@ -531,7 +531,11 @@ impl RightPanelView {
                     .and_then(|s| s.selected_repo_path.clone());
 
                 if let Some(state) = self.code_review_state.as_mut() {
-                    state.set_available_repos(repositories.to_owned(), ctx);
+                    let local_repos: Vec<PathBuf> = repositories
+                        .iter()
+                        .filter_map(|r| r.to_local_path().map(Path::to_path_buf))
+                        .collect();
+                    state.set_available_repos(local_repos, ctx);
                 }
 
                 let new_selected = self
@@ -568,7 +572,10 @@ impl RightPanelView {
                 // When the focused terminal changes repos (via CD or pane focus),
                 // update the dropdown to match the focused terminal's repo
                 if let Some(state) = self.code_review_state.as_mut() {
-                    state.set_focused_repo(focused_repo.clone(), ctx);
+                    let local_focused = focused_repo
+                        .as_ref()
+                        .and_then(|r| r.to_local_path().map(Path::to_path_buf));
+                    state.set_focused_repo(local_focused, ctx);
                 }
 
                 self.recompute_terminal_availability(ctx);
@@ -602,7 +609,11 @@ impl RightPanelView {
                 working_directories_model.read(ctx, |model, _| {
                     let repos: Vec<PathBuf> = model
                         .most_recent_repositories_for_pane_group(pane_group_id)
-                        .map(|repos| repos.collect())
+                        .map(|repos| {
+                            repos
+                                .filter_map(|r| r.to_local_path().map(Path::to_path_buf))
+                                .collect()
+                        })
                         .unwrap_or_default();
                     let saved = model
                         .get_selected_review_repo(pane_group_id)
@@ -1426,9 +1437,10 @@ impl RightPanelView {
         let focused_pane_id =
             pane_group.read(ctx, |pane_group, ctx| pane_group.focused_pane_id(ctx));
         let preferred_terminal_id = selected_repo_path.as_ref().and_then(|repo_path| {
+            let lor = LocalOrRemotePath::Local(repo_path.clone());
             self.working_directories_model
                 .as_ref(ctx)
-                .get_terminal_id_for_root_path(pane_group_id, repo_path)
+                .get_terminal_id_for_root_path(pane_group_id, &lor)
         });
         let chosen_terminal_id = selected_repo_path.as_ref().and_then(|repo_path| {
             self.find_review_terminal(pane_group, repo_path, ai_enabled, ctx)
@@ -1571,10 +1583,11 @@ impl RightPanelView {
         let terminal_views = pane_group.read(ctx, |pg, ctx| pg.terminal_views(ctx));
         let focused_terminal = pane_group.read(ctx, |pg, ctx| pg.focused_session_view(ctx));
         let pane_group_id = pane_group.id();
+        let lor = LocalOrRemotePath::Local(repo_path.to_path_buf());
         let preferred_terminal_id = self
             .working_directories_model
             .as_ref(ctx)
-            .get_terminal_id_for_root_path(pane_group_id, repo_path);
+            .get_terminal_id_for_root_path(pane_group_id, &lor);
 
         Self::find_available_terminal_for_review(
             &terminal_views,
@@ -1666,15 +1679,16 @@ impl RightPanelView {
                 return;
             };
             let working_directories_model = self.working_directories_model.as_ref(ctx);
+            let lor = LocalOrRemotePath::Local(repo_path.to_path_buf());
             let Some(terminal_view_id) =
-                working_directories_model.get_terminal_id_for_root_path(pane_group_id, repo_path)
+                working_directories_model.get_terminal_id_for_root_path(pane_group_id, &lor)
             else {
                 return;
             };
 
             if working_directories_model
                 .most_recent_repositories_for_pane_group(pane_group_id)
-                .is_some_and(|mut repos| repos.contains(repo_path))
+                .is_some_and(|mut repos| repos.any(|r| r.to_local_path() == Some(repo_path)))
             {
                 if let Some(terminal_view) =
                     ctx.view_with_id::<TerminalView>(ctx.window_id(), terminal_view_id)
