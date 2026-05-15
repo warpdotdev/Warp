@@ -305,21 +305,21 @@ impl StartAgentExecutor {
                 harness_type: None,
                 model_id,
             } => {
-                // Legacy local Oz child agents do not use
-                // StartAgentRequest.parent_run_id. Instead, the child
-                // conversation is linked back to its parent on the first
-                // request via Request.metadata.parent_agent_id, sourced
-                // from the conversation's versioned orchestration_agent_id()
-                // (run_id in v2, server conversation token in v1). Remote
-                // child agents and local third-party harness children need
-                // parent_run_id here because their run is spawned before that
-                // first child request exists.
+                // Oz local children resolve their parent's run id from the
+                // parent conversation. This mirrors the third-party-harness
+                // and remote-child branches below; the child task row is
+                // created eagerly at dispatch (see
+                // `launch_local_no_harness_child`) using this value as the
+                // `parent_run_id` on `CreateAgentTask`.
+                let parent_run_id = BlocklistAIHistoryModel::as_ref(ctx)
+                    .conversation(&parent_conversation_id)
+                    .and_then(|conversation| conversation.run_id());
                 (
                     StartAgentExecutionMode::Local {
                         harness_type: None,
                         model_id,
                     },
-                    None,
+                    parent_run_id,
                 )
             }
             StartAgentExecutionMode::Local {

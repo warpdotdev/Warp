@@ -66,7 +66,8 @@ use crate::{
         keys::TerminalKeybindings,
         local_tty::{spawner::PtySpawner, TerminalManager},
         shared_session::{
-            SharedSessionActionSource, SharedSessionScrollbackType, SharedSessionStatus,
+            IsSharedSessionCreator, SharedSessionActionSource, SharedSessionScrollbackType,
+            SharedSessionStatus,
         },
     },
     test_util::settings::initialize_settings_for_tests,
@@ -110,7 +111,7 @@ use warpui::{
     App, ModelHandle,
 };
 
-fn initialize_app(app: &mut App) {
+pub(super) fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
 
     app.add_singleton_model(|_ctx| ServerApiProvider::new_for_test());
@@ -209,9 +210,9 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(remote_server::manager::RemoteServerManager::new);
 }
 
-struct MockOptions {
-    layout: PanesLayout,
-    window_bounds: WindowBounds,
+pub(super) struct MockOptions {
+    pub(super) layout: PanesLayout,
+    pub(super) window_bounds: WindowBounds,
 }
 
 impl Default for MockOptions {
@@ -226,7 +227,7 @@ impl Default for MockOptions {
     }
 }
 
-fn mock_pane_group(app: &mut App, options: MockOptions) -> ViewHandle<PaneGroup> {
+pub(super) fn mock_pane_group(app: &mut App, options: MockOptions) -> ViewHandle<PaneGroup> {
     let tips_model = app.add_model(|_| TipsCompleted::default());
     let (_, pane_group) =
         app.add_window_with_bounds(WindowStyle::NotStealFocus, options.window_bounds, |ctx| {
@@ -246,7 +247,7 @@ fn mock_pane_group(app: &mut App, options: MockOptions) -> ViewHandle<PaneGroup>
     pane_group
 }
 
-fn get_newly_created_pane_id(panes: &PaneGroup, existing_ids: &[PaneId]) -> PaneId {
+pub(super) fn get_newly_created_pane_id(panes: &PaneGroup, existing_ids: &[PaneId]) -> PaneId {
     panes
         .pane_ids()
         .find(|id| !existing_ids.contains(id))
@@ -268,7 +269,7 @@ fn new_notebook(ctx: &mut ViewContext<PaneGroup>) -> ViewHandle<NotebookView> {
     ctx.add_typed_action_view(NotebookView::new)
 }
 
-fn new_ambient_agent_task_id() -> AmbientAgentTaskId {
+pub(super) fn new_ambient_agent_task_id() -> AmbientAgentTaskId {
     Uuid::new_v4().to_string().parse().unwrap()
 }
 
@@ -356,7 +357,7 @@ fn cloud_conversation_with_ambient_task(task_id: AmbientAgentTaskId) -> CloudCon
     CloudConversationData::Oz(Box::new(conversation))
 }
 
-fn start_parent_conversation(
+pub(super) fn start_parent_conversation(
     panes: &PaneGroup,
     parent_pane_id: PaneId,
     ctx: &mut ViewContext<PaneGroup>,
@@ -368,7 +369,7 @@ fn start_parent_conversation(
     start_parent_conversation_for_terminal_view(parent_terminal_view_id, ctx)
 }
 
-fn start_parent_conversation_for_terminal_view(
+pub(super) fn start_parent_conversation_for_terminal_view(
     terminal_view_id: EntityId,
     ctx: &mut ViewContext<PaneGroup>,
 ) -> AIConversationId {
@@ -428,8 +429,14 @@ fn create_already_fullscreen_parent_pane_data(
     panes: &PaneGroup,
     ctx: &mut ViewContext<PaneGroup>,
 ) -> (TerminalPane, PaneId, AIConversationId) {
-    let (pane_data, terminal_view) =
-        panes.create_terminal_pane_data(None, HashMap::new(), None, None, ctx);
+    let (pane_data, terminal_view) = panes.create_terminal_pane_data(
+        None,
+        HashMap::new(),
+        IsSharedSessionCreator::No,
+        None,
+        None,
+        ctx,
+    );
     let pane_id = pane_data.terminal_pane_id().into();
     let parent_conversation_id =
         start_parent_conversation_for_terminal_view(terminal_view.id(), ctx);
@@ -635,6 +642,7 @@ fn test_insert_hidden_child_agent_pane_keeps_focus_and_active_session() {
             let child_pane_id = panes.insert_terminal_pane_hidden_for_child_agent(
                 parent_pane_id,
                 HashMap::new(),
+                IsSharedSessionCreator::No,
                 ctx,
             );
 
@@ -680,6 +688,7 @@ fn test_hidden_child_creation_applies_ambient_task_id_to_controller() {
                         task_id,
                         working_dir: None,
                     }),
+                    is_shared_session_creator: IsSharedSessionCreator::No,
                 },
                 ctx,
             )

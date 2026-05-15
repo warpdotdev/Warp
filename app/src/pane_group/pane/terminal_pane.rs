@@ -35,7 +35,7 @@ use crate::{
     pane_group::child_agent::{
         create_error_child_agent_conversation, create_hidden_child_agent_conversation,
         ErrorChildAgentConversationRequest, HiddenChildAgentConversation,
-        HiddenChildAgentConversationRequest,
+        HiddenChildAgentConversationRequest, HiddenChildAgentTaskContext,
     },
     pane_group::{self, Direction, Event::OpenConversationHistory, PaneGroup},
     persistence::{BlockCompleted, ModelEvent},
@@ -49,7 +49,7 @@ use crate::{
             join_link,
             manager::{Manager, ManagerEvent},
             role_change_modal::RoleChangeOpenSource,
-            SharedSessionStatus,
+            IsSharedSessionCreator, SharedSessionStatus,
         },
         view::Event,
         TerminalManager, TerminalView,
@@ -64,6 +64,7 @@ use crate::ai::blocklist::BlocklistAIHistoryEvent;
 #[cfg(not(target_family = "wasm"))]
 use crate::server::server_api::ServerApiProvider;
 
+use session_sharing_protocol::sharer::SessionSourceType;
 use warp_core::execution_mode::AppExecutionMode;
 
 #[cfg(not(target_family = "wasm"))]
@@ -158,6 +159,56 @@ fn register_legacy_local_lifecycle_subscription(
                 lifecycle_subscription,
             );
         });
+    }
+}
+
+/// Returns the `SessionSourceType` the host terminal is sharing as, or
+/// `None` if it is not currently a shared-session creator. The host of a
+/// `run_agents(local)` dispatch is always a `local_tty::TerminalManager`,
+/// so this mirrors the logic of
+/// `local_tty::TerminalManager::shared_session_source_type` but reads the
+/// model directly via the host's `TerminalView` so the dispatch helpers in
+/// this module don't need to downcast through the `TerminalManager` trait.
+fn host_terminal_shared_session_source_type(
+    parent_terminal_view: &ViewHandle<TerminalView>,
+    ctx: &AppContext,
+) -> Option<SessionSourceType> {
+    let model = parent_terminal_view.as_ref(ctx).model.lock();
+    // `start_sharing_session` sets this once the share is active.
+    if let Some(source_type) = model.shared_session_source_type() {
+        return Some(source_type);
+    }
+    // Pre-bootstrap: the source type is carried inside
+    // `SharedSessionStatus::SharePendingPreBootstrap` (set by the terminal
+    // manager constructor when `IsSharedSessionCreator::Yes` is plumbed
+    // through).
+    if let SharedSessionStatus::SharePendingPreBootstrap { source_type } =
+        model.shared_session_status()
+    {
+        return Some(source_type.clone());
+    }
+    None
+}
+
+/// Builds the `IsSharedSessionCreator` value for a child pane being spawned
+/// by `run_agents(local)`. Returns `Yes` (with the child's own `task_id`
+/// stamped onto the source type) iff the host terminal is itself sharing
+/// and `FeatureFlag::OrchestrationViewerPillBar` is enabled; otherwise
+/// `No`.
+fn inherit_share_for_local_child(
+    host_source_type: Option<&SessionSourceType>,
+    child_task_id: AmbientAgentTaskId,
+) -> IsSharedSessionCreator {
+    if FeatureFlag::OrchestrationViewerPillBar.is_enabled() {
+        host_source_type
+            .map(|_| IsSharedSessionCreator::Yes {
+                source_type: SessionSourceType::AmbientAgent {
+                    task_id: Some(child_task_id.to_string()),
+                },
+            })
+            .unwrap_or(IsSharedSessionCreator::No)
+    } else {
+        IsSharedSessionCreator::No
     }
 }
 
@@ -1589,65 +1640,154 @@ fn dispatch_start_agent_conversation(
     }
 }
 
-/// Sets up a hidden child pane for a Local-no-harness agent and
-/// dispatches the prompt. Returns the child `AIConversationId` on
-/// success.
+/// Sets up a hidden child pane for a Local-no-harness (Oz) agent and
+/// dispatches the prompt. Asynchronously creates the server-side `ai_tasks`
+/// row via `AIClient::create_agent_task` at dispatch time, mirroring the
+/// third-party-harness path (see [`launch_local_harness_child`]). The
+/// resulting `task_id` is stamped onto the child's `AIConversation` (so the
+/// per-`Network` share-reporter at `local_tty/terminal_manager.rs:1531-1563`
+/// can link the shared session id to the child task once the shell
+/// bootstraps) and onto the child's `BlocklistAIController` via the
+/// `HiddenChildAgentTaskContext` (so the agent UI reflects it). On failure
+/// the child surfaces as an error conversation instead.
 fn launch_local_no_harness_child(
     group: &mut PaneGroup,
     parent_pane_id: PaneId,
     request: StartAgentRequest,
     model_id: Option<String>,
     ctx: &mut ViewContext<PaneGroup>,
-) -> Option<AIConversationId> {
-    // model_id is applied below via apply_child_model_id_override.
+) {
+    let ai_client = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
     let request_id = request.id;
-    let HiddenChildAgentConversation {
-        terminal_view: new_terminal_view,
-        terminal_view_id,
-        conversation_id,
-        ..
-    } = create_hidden_child_agent_conversation(
-        group,
-        HiddenChildAgentConversationRequest {
-            parent_pane_id,
-            name: request.name,
-            parent_conversation_id: request.parent_conversation_id,
-            orchestration_harness: Some(Harness::Oz),
-            env_vars: HashMap::new(),
-            task_context: None,
+    let request_name = request.name.clone();
+    let parent_conversation_id = request.parent_conversation_id;
+    let parent_run_id = request.parent_run_id.clone();
+    let prompt = request.prompt.clone();
+    let lifecycle_subscription = request.lifecycle_subscription.clone();
+
+    // Snapshot the host terminal's shared-session source type now (before
+    // the spawn) so we can stamp the resulting child task id onto the
+    // child's source type after the spawn returns. Gated on the viewer
+    // pill-bar flag is applied at the call site in
+    // `inherit_share_for_local_child`.
+    let host_source_type = group
+        .terminal_view_from_pane_id(parent_pane_id, ctx)
+        .and_then(|view| host_terminal_shared_session_source_type(&view, ctx));
+
+    let prompt_for_create = prompt.clone();
+    let _ = ctx.spawn(
+        async move {
+            ai_client
+                .create_agent_task(prompt_for_create, None, parent_run_id, None)
+                .await
         },
-        ctx,
-    )?;
+        move |group, result, ctx| match result {
+            Ok(child_task_id) => {
+                let is_shared_session_creator =
+                    inherit_share_for_local_child(host_source_type.as_ref(), child_task_id);
 
-    apply_child_model_id_override(terminal_view_id, model_id.as_deref(), ctx);
+                if let Some(HiddenChildAgentConversation {
+                    terminal_view: new_terminal_view,
+                    terminal_view_id,
+                    conversation_id,
+                    ..
+                }) = create_hidden_child_agent_conversation(
+                    group,
+                    HiddenChildAgentConversationRequest {
+                        parent_pane_id,
+                        name: request_name.clone(),
+                        parent_conversation_id,
+                        orchestration_harness: Some(Harness::Oz),
+                        env_vars: HashMap::new(),
+                        task_context: Some(HiddenChildAgentTaskContext {
+                            task_id: child_task_id,
+                            working_dir: None,
+                        }),
+                        is_shared_session_creator,
+                    },
+                    ctx,
+                ) {
+                    apply_child_model_id_override(terminal_view_id, model_id.as_deref(), ctx);
 
-    BlocklistAIHistoryModel::handle(ctx).update(ctx, |model, ctx| {
-        model.record_new_conversation_request_complete(request_id, conversation_id, ctx);
-    });
+                    // Stamp the task id on the child conversation directly so
+                    // the share-reporter at
+                    // `local_tty/terminal_manager.rs:1531-1563` can resolve
+                    // it from the selected conversation when the share
+                    // handshake succeeds. Mirrors the pattern used by
+                    // `OrchestrationViewerModel::apply_children_fetch`.
+                    BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, _ctx| {
+                        if let Some(conversation) = history_model.conversation_mut(&conversation_id)
+                        {
+                            conversation.set_task_id(child_task_id);
+                        }
+                    });
 
-    register_legacy_local_lifecycle_subscription(
-        request.parent_conversation_id,
-        conversation_id,
-        request.lifecycle_subscription,
-        ctx,
+                    BlocklistAIHistoryModel::handle(ctx).update(ctx, |model, ctx| {
+                        model.record_new_conversation_request_complete(
+                            request_id,
+                            conversation_id,
+                            ctx,
+                        );
+                    });
+
+                    register_legacy_local_lifecycle_subscription(
+                        parent_conversation_id,
+                        conversation_id,
+                        lifecycle_subscription.clone(),
+                        ctx,
+                    );
+
+                    new_terminal_view.update(ctx, |terminal_view, ctx| {
+                        terminal_view
+                            .ai_controller()
+                            .update(ctx, |controller, ctx| {
+                                controller.send_agent_query_in_conversation(
+                                    prompt.clone(),
+                                    conversation_id,
+                                    ctx,
+                                );
+                            });
+
+                        terminal_view.enter_agent_view(
+                            None,
+                            Some(conversation_id),
+                            AgentViewEntryOrigin::ChildAgent,
+                            ctx,
+                        );
+                    });
+                } else {
+                    let _ = create_error_child_agent_conversation(
+                        group,
+                        ErrorChildAgentConversationRequest {
+                            parent_pane_id,
+                            name: request_name,
+                            parent_conversation_id,
+                            request_id: Some(request_id),
+                            orchestration_harness: Some(Harness::Oz),
+                            error_message:
+                                "Failed to create a hidden pane for the local child agent."
+                                    .to_string(),
+                        },
+                        ctx,
+                    );
+                }
+            }
+            Err(error) => {
+                let _ = create_error_child_agent_conversation(
+                    group,
+                    ErrorChildAgentConversationRequest {
+                        parent_pane_id,
+                        name: request_name,
+                        parent_conversation_id,
+                        request_id: Some(request_id),
+                        orchestration_harness: Some(Harness::Oz),
+                        error_message: format!("Failed to create local child task: {error}"),
+                    },
+                    ctx,
+                );
+            }
+        },
     );
-
-    new_terminal_view.update(ctx, |terminal_view, ctx| {
-        terminal_view
-            .ai_controller()
-            .update(ctx, |controller, ctx| {
-                controller.send_agent_query_in_conversation(request.prompt, conversation_id, ctx);
-            });
-
-        terminal_view.enter_agent_view(
-            None,
-            Some(conversation_id),
-            AgentViewEntryOrigin::ChildAgent,
-            ctx,
-        );
-    });
-
-    Some(conversation_id)
 }
 
 /// Asynchronously prepares a local harness launch, then creates the
@@ -1677,6 +1817,14 @@ fn launch_local_harness_child(
         .terminal_view_from_pane_id(parent_pane_id, ctx)
         .and_then(|terminal_view| terminal_view.as_ref(ctx).active_session_shell_type(ctx));
 
+    // Snapshot the host terminal's shared-session source type now (before
+    // the spawn) so we can stamp the prepared child task id onto the
+    // child's source type after the spawn returns. Gated on the viewer
+    // pill-bar flag in `inherit_share_for_local_child`.
+    let host_source_type = group
+        .terminal_view_from_pane_id(parent_pane_id, ctx)
+        .and_then(|view| host_terminal_shared_session_source_type(&view, ctx));
+
     let model_id_for_harness_env = model_id.clone();
     let _ = ctx.spawn(
         async move {
@@ -1699,6 +1847,8 @@ fn launch_local_harness_child(
                     run_id,
                     task_id,
                 } = launch;
+                let is_shared_session_creator =
+                    inherit_share_for_local_child(host_source_type.as_ref(), task_id);
                 if let Some(HiddenChildAgentConversation {
                     terminal_view: new_terminal_view,
                     terminal_view_id,
@@ -1713,6 +1863,7 @@ fn launch_local_harness_child(
                         orchestration_harness: Some(orchestration_harness),
                         env_vars,
                         task_context: None,
+                        is_shared_session_creator,
                     },
                     ctx,
                 ) {
@@ -2139,3 +2290,7 @@ fn handle_ai_history_event(
         | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => (),
     }
 }
+
+#[cfg(test)]
+#[path = "terminal_pane_local_child_tests.rs"]
+mod tests;
