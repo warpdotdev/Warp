@@ -198,6 +198,33 @@ pub enum CallbackResult {
     Success { code: String, csrf_token: String },
     Error { error: Option<String> },
 }
+fn persisted_oauth_client_config(
+    client_id: String,
+    client_secret: Option<String>,
+    redirect_uri: &str,
+) -> OAuthClientConfig {
+    let config = OAuthClientConfig::new(client_id, redirect_uri);
+    if let Some(client_secret) = client_secret {
+        config.with_client_secret(client_secret)
+    } else {
+        config
+    }
+}
+
+async fn configure_auth_manager_for_persisted_credentials(
+    auth_manager: &mut AuthorizationManager,
+    client_id: String,
+    client_secret: Option<String>,
+    redirect_uri: &str,
+) -> Result<(), AuthError> {
+    let metadata = auth_manager.discover_metadata().await?;
+    auth_manager.set_metadata(metadata);
+    auth_manager.configure_client(persisted_oauth_client_config(
+        client_id,
+        client_secret,
+        redirect_uri,
+    ))
+}
 
 /// Makes an authenticated client for the given authorization server.
 ///
@@ -244,12 +271,33 @@ pub async fn make_authenticated_client(
 
     // If we have a valid access token (or successfully refreshed a valid refresh token),
     // we're already authorized and good to go.
-    if auth_manager.get_access_token().await.is_ok() {
-        if let (Some(client_id), Some(client_secret)) = (client_id, client_secret) {
-            auth_manager.configure_client(
-                OAuthClientConfig::new(client_id, redirect_uri.clone())
-                    .with_client_secret(client_secret),
-            )?;
+    let mut configured_persisted_client = false;
+    let mut access_token_result = auth_manager.get_access_token().await;
+    if access_token_result.is_err() {
+        if let Some(client_id) = client_id.clone() {
+            configure_auth_manager_for_persisted_credentials(
+                &mut auth_manager,
+                client_id,
+                client_secret.clone(),
+                &redirect_uri,
+            )
+            .await?;
+            configured_persisted_client = true;
+            access_token_result = auth_manager.get_access_token().await;
+        }
+    }
+
+    if access_token_result.is_ok() {
+        if !configured_persisted_client {
+            if let Some(client_id) = client_id {
+                configure_auth_manager_for_persisted_credentials(
+                    &mut auth_manager,
+                    client_id,
+                    client_secret,
+                    &redirect_uri,
+                )
+                .await?;
+            }
         }
         return Ok((AuthClient::new(reqwest::Client::new(), auth_manager), false));
     }
@@ -541,6 +589,28 @@ mod tests {
         (store, rx)
     }
 
+    #[test]
+    fn persisted_oauth_client_config_allows_public_clients() {
+        let config =
+            persisted_oauth_client_config("client-id".to_string(), None, "warp://callback");
+
+        assert_eq!(config.client_id, "client-id");
+        assert_eq!(config.client_secret, None);
+        assert_eq!(config.redirect_uri, "warp://callback");
+    }
+
+    #[test]
+    fn persisted_oauth_client_config_preserves_client_secret() {
+        let config = persisted_oauth_client_config(
+            "client-id".to_string(),
+            Some("client-secret".to_string()),
+            "warp://callback",
+        );
+
+        assert_eq!(config.client_id, "client-id");
+        assert_eq!(config.client_secret, Some("client-secret".to_string()));
+        assert_eq!(config.redirect_uri, "warp://callback");
+    }
     /// Backward compatibility: credentials persisted by older Warp versions do not
     /// have the `token_received_at` field. Deserializing them must succeed and
     /// default to `None` so the next refresh can populate it. Failing this test
