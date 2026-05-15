@@ -220,9 +220,8 @@ impl Display for SettingsSection {
             SettingsSection::EditorAndCodeReview => {
                 crate::t!("settings-section-editor-and-code-review")
             }
-            // 代理设置页面。由于 t! 宏依赖 i18n bundle,先用硬码中文;
-            // 有 i18n key 后可换成 crate::t!("settings-section-network")。
-            SettingsSection::Network => "网络".to_string(),
+            // 代理设置页面。i18n key `settings-section-network` 已在 en / zh-CN / ja 三种语言中齐全。
+            SettingsSection::Network => crate::t!("settings-section-network"),
             // OpenWarp Wave 3-1:`OzCloudAPIKeys` Display arm 随 variant 一同物理删。
             // OpenWarp Wave 7-3:`CloudEnvironments` Display arm 随 variant 物理删。
         };
