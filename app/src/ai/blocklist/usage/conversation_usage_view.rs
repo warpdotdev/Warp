@@ -830,3 +830,7 @@ fn render_value_text(text: String, appearance: &Appearance) -> Box<dyn Element> 
         .with_color(text_color)
         .finish()
 }
+
+#[cfg(test)]
+#[path = "conversation_usage_view_tests.rs"]
+mod tests;

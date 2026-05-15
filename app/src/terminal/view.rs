@@ -6177,7 +6177,13 @@ impl TerminalView {
         // rollup feature flag is on, route through the rollup-aware
         // constructor so the view subscribes to history events and
         // re-renders when any contributing agent's usage updates.
-        let usage_view = ctx.add_view(|ctx| {
+        //
+        // Use `add_typed_action_view` (not `add_view`) so the framework
+        // registers `ConversationUsageView::handle_action`. Without this,
+        // typed actions like `ToggleDetailsExpanded` / `ShowAllAgentRows`
+        // dispatched from the view's own click handlers would be logged
+        // as `Dispatched action has no handlers` and silently ignored.
+        let usage_view = ctx.add_typed_action_view(|ctx| {
             if FeatureFlag::OrchestrationCreditRollup.is_enabled() {
                 ConversationUsageView::new_footer_with_rollup(
                     conversation_usage_info,
