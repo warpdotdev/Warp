@@ -671,10 +671,8 @@ impl RunAgentsCardView {
                 RunAgentsExecutionMode::Local => oc::ORCHESTRATION_WARP_WORKER_HOST,
             };
             let handle = ctx.add_typed_action_view(HostPicker::new);
-            // Flip the menu upward so it doesn't visually overlap the
-            // Environment / Base model pickers rendered directly below the
-            // host picker. Matches the other dropdowns in this card, which
-            // use `set_upward_menu_position` for the same reason.
+            // Open upward so the menu doesn't overlap pickers below it,
+            // matching the other dropdowns in this card.
             handle.update(ctx, |picker, picker_ctx| {
                 picker.set_menu_position(
                     warpui::elements::PositionedElementAnchor::TopLeft,

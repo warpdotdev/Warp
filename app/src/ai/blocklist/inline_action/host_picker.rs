@@ -1,25 +1,10 @@
-//! Custom host picker used in the orchestration UI.
+//! Picker for the cloud-agent worker host slug.
 //!
-//! Two display modes:
-//! - **List mode (default):** behaves like a standard orchestration picker —
-//!   a styled top bar opens a `Menu` of known options (workspace default
-//!   first when set and badged "Default", then `warp`, then the most-
-//!   recent custom host as a plain slug, plus a `Custom host…` entry).
-//! - **Custom mode:** swaps the top bar for an inline [`EditorView`] so the
-//!   user can type an arbitrary self-hosted worker slug. Enter or blur
-//!   commits the trimmed value; the small `×` button or Escape reverts to
-//!   list mode.
-//!
-//! Layout mirrors the Oz webapp's `HostSelector`: workspace default sits
-//! at the top with a "Default" badge so admin-configured teams get their
-//! preferred host pre-selected. Recent custom hosts render as plain
-//! slugs (no "Recent" badge) because the compact dropdown doesn't have
-//! room for the extra chip.
-//!
-//! The picker is non-generic and reports value changes via
-//! [`HostPickerEvent::HostChanged`]. Card views subscribe and re-dispatch
-//! their own `WorkerHostChanged` action so the existing edit-state plumbing
-//! continues to work unchanged.
+//! In list mode it shows a dropdown styled to match the other orchestration
+//! pickers; in custom mode it swaps the top bar for an inline editor that
+//! accepts a self-hosted worker slug. The layout mirrors the Oz webapp's
+//! host selector: workspace default first (badged "Default"), then warp,
+//! then the user's most recent custom slug, then a "Custom host…" entry.
 
 use warpui::elements::{
     Border, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
@@ -51,14 +36,13 @@ use crate::view_components::dropdown::{
 
 // ── Public API types ────────────────────────────────────────────────
 
-/// Public events emitted by [`HostPicker`].
 #[derive(Debug, Clone)]
 pub enum HostPickerEvent {
-    /// User selected a value from the menu or committed a custom entry.
-    /// `slug` is non-empty and trimmed.
+    /// Emitted with a non-empty, trimmed slug whenever the user picks a
+    /// known host or commits a custom entry.
     HostChanged { slug: String },
-    /// The menu closed (selection made, dismissed) or the custom-mode
-    /// editor blurred. Parent views use this to refocus their input.
+    /// Emitted when the menu closes or the inline editor blurs, so the
+    /// parent can refocus its own input.
     Closed,
 }
 
@@ -68,11 +52,10 @@ const EDITOR_PLACEHOLDER: &str = "my-worker-host";
 
 // ── Internal action plumbing ────────────────────────────────────────
 
-/// Action dispatched by the inner `Dropdown<InternalAction>` items and
-/// the inline `×` button. Handled by [`HostPicker`] itself.
+/// Dispatched by the inner dropdown items and the inline cancel button.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InternalAction {
-    /// Pick a known host (Warp, workspace default, recent slug).
+    /// Pick a known host (warp, workspace default, or a recent slug).
     SelectKnown(String),
     /// Switch to custom-mode text input.
     EnterCustomMode,
@@ -83,24 +66,17 @@ pub enum InternalAction {
 // ── View ────────────────────────────────────────────────────────────
 
 pub struct HostPicker {
-    /// Currently displayed slug. Always equal to what would be sent to
-    /// the server if the picker were dispatched right now.
+    /// The slug that would be sent to the server if dispatched now.
     current_slug: String,
-    /// Workspace-configured default, when set. Shown badged as "Default"
-    /// and surfaced as the top row, matching the Oz webapp.
+    /// Admin-configured workspace default, when set.
     default_host: Option<String>,
-    /// User's most-recent custom host (excluding warp / default).
+    /// User's most-recent custom host, deduped against warp / default.
     recent_host: Option<String>,
-    /// Inner menu-based dropdown rendered in list mode.
     dropdown: ViewHandle<Dropdown<InternalAction>>,
-    /// Inline editor used in custom mode.
     editor: ViewHandle<EditorView>,
-    /// Mouse state for the small `×` clear button.
     clear_mouse_state: MouseStateHandle,
-    /// Whether we're currently showing the inline editor.
     is_custom_mode: bool,
-    /// Snapshot of `current_slug` taken when the editor was opened, so
-    /// Escape / `×` can revert without committing.
+    /// Snapshot taken when the editor was opened so cancel can revert.
     slug_before_edit: Option<String>,
 }
 
@@ -108,8 +84,7 @@ impl HostPicker {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let (_styles, colors) = oc::picker_styles(Appearance::as_ref(ctx));
 
-        // Inner dropdown — styled identically to the other orchestration
-        // pickers so the row stays visually uniform.
+        // Inner dropdown — styled to match the other orchestration pickers.
         let dropdown = ctx.add_typed_action_view(|ctx_dropdown| {
             let mut dropdown = Dropdown::<InternalAction>::new(ctx_dropdown);
             dropdown.set_use_overlay_layer(false, ctx_dropdown);
@@ -126,13 +101,10 @@ impl HostPicker {
         });
         ctx.subscribe_to_view(&dropdown, |me, _, event, ctx| {
             if let DropdownEvent::Close = event {
-                // Suppress the propagated Closed event when we're
-                // transitioning into custom mode. Otherwise the parent's
-                // `refocus_after_picker_close` would steal focus from the
-                // editor we just focused, the editor would fire `Blurred`,
-                // and `commit_custom` would immediately revert us out of
-                // custom mode — making the "Custom host…" menu item
-                // look like a no-op to the user.
+                // Don't propagate Closed while transitioning into custom
+                // mode — the parent would refocus itself, blur the editor
+                // we just focused, and the resulting commit-on-blur would
+                // immediately revert us back out of custom mode.
                 if me.is_custom_mode {
                     return;
                 }
@@ -141,7 +113,6 @@ impl HostPicker {
             }
         });
 
-        // Inline editor for custom mode.
         let editor = ctx.add_typed_action_view(|ctx_editor| {
             let appearance = Appearance::as_ref(ctx_editor);
             let mut editor = EditorView::single_line(
@@ -178,8 +149,7 @@ impl HostPicker {
 
     // ── Public API ──────────────────────────────────────────────────
 
-    /// Replaces the workspace default and recent-host options shown in
-    /// the menu. Pass `None` to omit a given row.
+    /// Replaces the default and recent menu rows. Pass `None` to omit one.
     pub fn set_options(
         &mut self,
         default_host: Option<String>,
@@ -193,22 +163,15 @@ impl HostPicker {
         ctx.notify();
     }
 
-    /// Forwards to the inner dropdown's [`Dropdown::set_use_overlay_layer`].
-    /// Callers in the plan card pass `true` so the open menu paints in the
-    /// overlay layer above sibling pickers (matching the other orchestration
-    /// pickers in that view); callers in the confirmation card leave it at
-    /// the default `false` and instead flip the menu upward via
-    /// [`Self::set_menu_position`].
+    /// Pass `true` to paint the open menu in the overlay layer (avoids
+    /// being visually covered by sibling pickers below the host picker).
     pub fn set_use_overlay_layer(&mut self, use_overlay_layer: bool, ctx: &mut ViewContext<Self>) {
         self.dropdown.update(ctx, |dropdown, ctx_dropdown| {
             dropdown.set_use_overlay_layer(use_overlay_layer, ctx_dropdown);
         });
     }
 
-    /// Forwards to the inner dropdown's [`Dropdown::set_menu_position`].
-    /// The confirmation card uses this to open the menu upward, avoiding
-    /// visual overlap with the Environment / Base model pickers rendered
-    /// directly below the host picker.
+    /// Anchors the open menu (e.g. flip upward to avoid covering siblings).
     pub fn set_menu_position(
         &mut self,
         element_anchor: PositionedElementAnchor,
@@ -220,19 +183,10 @@ impl HostPicker {
         });
     }
 
-    /// Sets the currently-displayed slug. If the slug doesn't match any
-    /// known menu option (Warp, default, recent), the picker switches to
-    /// custom mode pre-filled with the slug. Empty input falls back to
-    /// `"warp"`.
+    /// Sets the displayed slug. Unknown slugs switch the picker into custom
+    /// mode pre-filled with the slug. Empty input falls back to `"warp"`.
     pub fn set_selected(&mut self, slug: &str, ctx: &mut ViewContext<Self>) {
-        let effective = {
-            let trimmed = slug.trim();
-            if trimmed.is_empty() {
-                ORCHESTRATION_WARP_WORKER_HOST.to_string()
-            } else {
-                trimmed.to_string()
-            }
-        };
+        let effective = normalize_slug(slug);
         let is_known = self.is_known_option(&effective);
         self.current_slug = effective.clone();
         if is_known {
@@ -267,11 +221,7 @@ impl HostPicker {
     }
 
     fn sync_dropdown_selection(&mut self, ctx: &mut ViewContext<Self>) {
-        let label = menu_label_for(
-            &self.current_slug,
-            self.default_host.as_deref(),
-            self.recent_host.as_deref(),
-        );
+        let label = menu_label_for(&self.current_slug, self.default_host.as_deref());
         self.dropdown.update(ctx, |dropdown, ctx_dropdown| {
             dropdown.set_selected_by_name(&label, ctx_dropdown);
         });
@@ -291,10 +241,22 @@ impl HostPicker {
         ctx.focus(&self.editor);
     }
 
-    /// Commits whatever is in the editor right now. Empty input is
-    /// treated as a no-op revert (stays at the previous slug).
+    /// Commits the editor contents. Empty input reverts to the previous slug.
     fn commit_custom(&mut self, ctx: &mut ViewContext<Self>) {
-        let raw = self.editor.as_ref(ctx).buffer_text(ctx).trim().to_string();
+        let raw = normalize_slug(&self.editor.as_ref(ctx).buffer_text(ctx));
+        if raw.eq_ignore_ascii_case(ORCHESTRATION_WARP_WORKER_HOST) {
+            // Treat "warp" typed in custom mode as a normal warp selection.
+            self.current_slug = ORCHESTRATION_WARP_WORKER_HOST.to_string();
+            self.is_custom_mode = false;
+            self.slug_before_edit = None;
+            self.sync_dropdown_selection(ctx);
+            ctx.emit(HostPickerEvent::HostChanged {
+                slug: self.current_slug.clone(),
+            });
+            ctx.emit(HostPickerEvent::Closed);
+            ctx.notify();
+            return;
+        }
         if raw.is_empty() {
             self.cancel_custom(ctx);
             return;
@@ -302,10 +264,8 @@ impl HostPicker {
         self.current_slug = raw.clone();
         self.is_custom_mode = false;
         self.slug_before_edit = None;
-        // If the committed slug isn't already one of the known options,
-        // surface it as the new "Recent" entry so it's available in the
-        // list on the next paint. The parent will also persist it
-        // out-of-band so it survives across cards.
+        // Promote an unknown slug to the "recent" row so it stays visible
+        // in the list on the next paint.
         if !self.is_known_option(&raw) {
             self.recent_host = Some(raw.clone());
             self.repopulate_menu(ctx);
@@ -347,11 +307,9 @@ impl HostPicker {
         let background: Fill = theme.surface_overlay_1();
         let border_color = theme.outline();
 
-        // Wrap the editor in a column with `MainAxisAlignment::Center` so its
-        // text baseline sits at the vertical center of the picker box. Without
-        // this, the surrounding row's tight cross-axis constraint stretches the
-        // editor to fill the full content height and the glyphs render flush
-        // to the top.
+        // Center the editor vertically — without this, the row's tight
+        // cross-axis constraint stretches it to fill the content height and
+        // the glyphs render flush to the top.
         let centered_editor = Flex::column()
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::Center)
@@ -368,10 +326,8 @@ impl HostPicker {
             .with_child(cancel_button)
             .finish();
 
-        // The standard `Dropdown` view (used by every other picker in the
-        // row) wraps its top bar in a Container with `DROPDOWN_PADDING`
-        // top/bottom margins. Mirror that here so custom mode sits at the
-        // same y offset as the other pickers instead of riding ~6px higher.
+        // Mirror the dropdown's outer vertical margin so custom mode
+        // lines up with the other pickers instead of riding higher.
         Container::new(
             ConstrainedBox::new(
                 Container::new(row)
@@ -419,10 +375,19 @@ impl HostPicker {
 
 // ── Pure helpers (also exercised by unit tests) ─────────────────────
 
-/// Builds the menu items shown in list mode. Items appear in this order:
-/// workspace default (if set, badged "Default"), `warp`, recent custom
-/// host (if set and not a duplicate, plain slug), then "Custom host…".
-/// Mirrors the Oz webapp's `HostSelector` layout.
+/// Trims `slug` and falls back to `"warp"` when empty.
+fn normalize_slug(slug: &str) -> String {
+    let trimmed = slug.trim();
+    if trimmed.is_empty() {
+        ORCHESTRATION_WARP_WORKER_HOST.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Builds the menu items shown in list mode, in the order: workspace default
+/// (badged "Default" if set), warp, recent custom slug (if any and not a
+/// duplicate), then a "Custom host…" entry.
 pub(crate) fn build_menu_items(
     default_host: Option<&str>,
     recent_host: Option<&str>,
@@ -444,9 +409,8 @@ pub(crate) fn build_menu_items(
     if let Some(slug) = recent_host {
         if default_host != Some(slug) && !slug.eq_ignore_ascii_case(ORCHESTRATION_WARP_WORKER_HOST)
         {
-            // Recent custom hosts render as plain slugs — no "(Recent)"
-            // suffix. The "Default" badge stays because it carries a
-            // distinct admin-policy meaning.
+            // Recent hosts render as plain slugs; only the workspace
+            // default carries a badge.
             items.push(menu_item_for_known(
                 slug,
                 None,
@@ -463,15 +427,9 @@ pub(crate) fn build_menu_items(
     items
 }
 
-/// Returns the menu label that corresponds to `slug` (so callers can
-/// re-select it via `set_selected_by_name`). The label includes the
-/// "Default" badge when the slug matches the workspace default; recent
-/// custom hosts render as plain slugs.
-pub(crate) fn menu_label_for(
-    slug: &str,
-    default_host: Option<&str>,
-    _recent_host: Option<&str>,
-) -> String {
+/// Returns the menu label corresponding to `slug`, including the "Default"
+/// badge when it matches the workspace default.
+pub(crate) fn menu_label_for(slug: &str, default_host: Option<&str>) -> String {
     if default_host == Some(slug) {
         format_known_label(slug, Some(DEFAULT_BADGE))
     } else {
@@ -513,11 +471,8 @@ impl TypedActionView for HostPicker {
                 self.current_slug = slug.clone();
                 self.is_custom_mode = false;
                 self.slug_before_edit = None;
-                // Intentionally NOT calling sync_dropdown_selection: this
-                // action was dispatched FROM the inner dropdown, which
-                // already updated its own `selected_item` via
-                // `MenuEvent::ItemSelected`. Re-entering its view from
-                // here would panic with `Circular view update`.
+                // The inner dropdown already updated its own selection;
+                // re-entering it here would trigger a circular update.
                 ctx.emit(HostPickerEvent::HostChanged { slug });
                 ctx.notify();
             }

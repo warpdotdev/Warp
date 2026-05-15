@@ -1,9 +1,9 @@
-//! Unit tests for the pure helpers in `host_picker.rs`. These exercise
-//! menu-item composition and label formatting without spinning up a view
-//! context — those code paths are covered by manual smoke testing.
+//! Unit tests for the pure helpers in `host_picker.rs`. View-driven
+//! behaviors (custom-mode commit, blur, etc.) are covered by manual smoke
+//! testing.
 
 use super::{
-    build_menu_items, menu_label_for, DropdownAction, InternalAction, MenuItem,
+    build_menu_items, menu_label_for, normalize_slug, DropdownAction, InternalAction, MenuItem,
     ORCHESTRATION_WARP_WORKER_HOST,
 };
 
@@ -93,31 +93,26 @@ fn build_menu_items_custom_entry_dispatches_enter_custom_mode() {
 
 #[test]
 fn menu_label_for_picks_default_badge_when_slug_matches_default() {
-    let label = menu_label_for("my-corp", Some("my-corp"), None);
+    let label = menu_label_for("my-corp", Some("my-corp"));
     assert_eq!(label, "my-corp  (Default)");
 }
 
 #[test]
-fn menu_label_for_returns_plain_slug_when_slug_matches_recent_only() {
-    // Recent hosts render as plain slugs — only the workspace default
-    // gets a badge.
-    let label = menu_label_for("other-host", Some("my-corp"), Some("other-host"));
-    assert_eq!(label, "other-host");
-}
-
-#[test]
 fn menu_label_for_returns_plain_slug_for_warp() {
-    let label = menu_label_for(
-        ORCHESTRATION_WARP_WORKER_HOST,
-        Some("my-corp"),
-        Some(ORCHESTRATION_WARP_WORKER_HOST),
-    );
+    let label = menu_label_for(ORCHESTRATION_WARP_WORKER_HOST, Some("my-corp"));
     assert_eq!(label, ORCHESTRATION_WARP_WORKER_HOST);
 }
 
 #[test]
 fn menu_label_for_returns_plain_slug_for_unknown_value() {
     // A slug typed via custom mode that we haven't promoted to "recent" yet.
-    let label = menu_label_for("typed-once", Some("my-corp"), None);
+    let label = menu_label_for("typed-once", Some("my-corp"));
     assert_eq!(label, "typed-once");
+}
+
+#[test]
+fn normalize_slug_trims_whitespace_and_falls_back_to_warp_when_empty() {
+    assert_eq!(normalize_slug("  my-corp  "), "my-corp");
+    assert_eq!(normalize_slug(""), ORCHESTRATION_WARP_WORKER_HOST);
+    assert_eq!(normalize_slug("   "), ORCHESTRATION_WARP_WORKER_HOST);
 }

@@ -333,9 +333,8 @@ impl OrchestrationConfigBlockView {
             RunAgentsExecutionMode::Local => oc::ORCHESTRATION_WARP_WORKER_HOST,
         };
         let host_handle = ctx.add_typed_action_view(HostPicker::new);
-        // Match the overlay-layer behavior of the other pickers in this view
-        // so the open menu paints above siblings instead of being visually
-        // overlapped by the Environment / Base model pickers below it.
+        // Paint the open menu in the overlay layer so it doesn't get covered
+        // by sibling pickers, matching the other pickers in this view.
         host_handle.update(ctx, |picker, picker_ctx| {
             picker.set_use_overlay_layer(true, picker_ctx);
         });
