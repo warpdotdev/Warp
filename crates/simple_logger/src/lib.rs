@@ -139,16 +139,33 @@ impl SimpleLogger {
                                 // succeed, and so the subsequent reopen receives a fresh
                                 // inode.
                                 drop(log_file);
-                                if let Err(e) =
-                                    perform_rotation(&log_path, config.max_rotation).await
-                                {
-                                    log::warn!(
-                                        "SimpleLogger: rotation failed for {:?}: {e}; \
-                                         continuing with truncated active file",
-                                        &log_path,
-                                    );
-                                }
-                                log_file = match open_truncated(&log_path).await {
+                                let rotation_failed =
+                                    match perform_rotation(&log_path, config.max_rotation).await {
+                                        Ok(()) => false,
+                                        Err(e) => {
+                                            // The only path through `perform_rotation` that
+                                            // surfaces an error is step 3's rename of the
+                                            // active file. That rename only runs when the
+                                            // active file exists, so on Err the original
+                                            // content is still on disk at `log_path`. Open
+                                            // in append mode rather than truncating so we
+                                            // don't destroy the log data rotation was meant
+                                            // to preserve.
+                                            log::warn!(
+                                                "SimpleLogger: rotation failed for {:?}: {e}; \
+                                             preserving existing log content and continuing \
+                                             in append mode",
+                                                &log_path,
+                                            );
+                                            true
+                                        }
+                                    };
+                                let reopen = if rotation_failed {
+                                    open_append(&log_path).await
+                                } else {
+                                    open_truncated(&log_path).await
+                                };
+                                log_file = match reopen {
                                     Ok(f) => f,
                                     Err(e) => {
                                         log::warn!(
@@ -159,7 +176,17 @@ impl SimpleLogger {
                                         return;
                                     }
                                 };
-                                written_bytes = 0;
+                                // Seed the counter from the file's current size so the
+                                // next rotation threshold check stays meaningful even
+                                // after the preserve-on-failure path.
+                                written_bytes = if rotation_failed {
+                                    async_fs::metadata(&log_path)
+                                        .await
+                                        .map(|m| m.len())
+                                        .unwrap_or(0)
+                                } else {
+                                    0
+                                };
                             }
                         }
                     }
@@ -214,6 +241,17 @@ async fn open_truncated(path: &Path) -> std::io::Result<async_fs::File> {
         .write(true)
         .create(true)
         .truncate(true)
+        .open(path)
+        .await
+}
+
+/// Open `path` for appending. Used by the rotation-failure recovery path so
+/// existing log data is preserved when `perform_rotation` could not move the
+/// active file to its rotated slot.
+async fn open_append(path: &Path) -> std::io::Result<async_fs::File> {
+    OpenOptions::new()
+        .create(true)
+        .append(true)
         .open(path)
         .await
 }
