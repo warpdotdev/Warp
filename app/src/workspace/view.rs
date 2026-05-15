@@ -8145,13 +8145,9 @@ impl Workspace {
         };
 
         if let Some((repo, diff_state_model, terminal_view)) = context_data {
-            let local_repo_path = repo
-                .as_ref()
-                .and_then(LocalOrRemotePath::to_local_path)
-                .map(Path::to_path_buf);
             self.right_panel_view.update(ctx, |right_pane_view, ctx| {
                 right_pane_view.open_code_review(
-                    local_repo_path,
+                    repo,
                     diff_state_model,
                     terminal_view,
                     ctx,
@@ -8177,10 +8173,7 @@ impl Workspace {
                 .as_ref()
                 .is_some_and(|target_repo_path| {
                     self.right_panel_view.as_ref(ctx).selected_repo_path()
-                        == target_repo_path
-                            .to_local_path()
-                            .map(Path::to_path_buf)
-                            .as_ref()
+                        == Some(target_repo_path)
                 });
         if panel_already_showing_repo {
             return;
@@ -8343,11 +8336,9 @@ impl Workspace {
     ) {
         if pane_group_handle.as_ref(ctx).right_panel_open {
             if let Some(repo_path) = &context.repo_path {
-                if let Some(local_repo_path) = repo_path.to_local_path() {
-                    self.right_panel_view.update(ctx, |right_panel, ctx| {
-                        right_panel.update_selected_repo(local_repo_path.to_path_buf(), ctx);
-                    });
-                }
+                self.right_panel_view.update(ctx, |right_panel, ctx| {
+                    right_panel.update_selected_repo(repo_path.clone(), ctx);
+                });
             }
             return;
         }
@@ -8363,11 +8354,9 @@ impl Workspace {
             ctx,
         );
         if let Some(repo_path) = &context.repo_path {
-            if let Some(local_repo_path) = repo_path.to_local_path() {
-                self.right_panel_view.update(ctx, |right_panel, ctx| {
-                    right_panel.update_selected_repo(local_repo_path.to_path_buf(), ctx);
-                });
-            }
+            self.right_panel_view.update(ctx, |right_panel, ctx| {
+                right_panel.update_selected_repo(repo_path.clone(), ctx);
+            });
         }
     }
 
@@ -15117,13 +15106,10 @@ impl Workspace {
                         );
                     });
 
-                let Some(local_repo_path) = repo_path.to_local_path() else {
-                    return;
-                };
                 let Some(code_review_view) = self
                     .working_directories_model
                     .as_ref(ctx)
-                    .get_code_review_view(pane_group.id(), local_repo_path)
+                    .get_code_review_view(pane_group.id(), repo_path)
                 else {
                     return;
                 };
@@ -15150,13 +15136,10 @@ impl Workspace {
                         );
                     });
 
-                let Some(local_repo_path) = repo_path.to_local_path() else {
-                    return;
-                };
                 if let Some(code_review_view) = self
                     .working_directories_model
                     .as_ref(ctx)
-                    .get_code_review_view(pane_group.id(), local_repo_path)
+                    .get_code_review_view(pane_group.id(), repo_path)
                 {
                     code_review_view.update(ctx, |code_review_view, ctx| {
                         code_review_view.set_diff_base(diff_mode.clone(), ctx);

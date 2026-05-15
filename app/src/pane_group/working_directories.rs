@@ -146,16 +146,16 @@ pub struct WorkingDirectoriesModel {
     /// Like the DiffStateModel mapping, comments are inherently tied to git diffs
     /// and are shared across all pane groups viewing the same repo.
     comment_models: HashMap<LocalOrRemotePath, ModelHandle<ReviewCommentBatch>>,
-    /// Per-pane-group mapping from repository root paths to their CodeReviewView.
+    /// Per-pane-group mapping from repository root locations to their CodeReviewView.
     /// This allows reusing code review views across multiple requests for the same repo.
-    code_review_views: HashMap<EntityId, HashMap<PathBuf, ViewHandle<CodeReviewView>>>,
+    code_review_views: HashMap<EntityId, HashMap<LocalOrRemotePath, ViewHandle<CodeReviewView>>>,
     /// Per-pane-group tracking of the focused repository root path.
     focused_repo: HashMap<EntityId, Option<LocalOrRemotePath>>,
     /// Per-pane-group tracking of the repository the user has manually selected for the
     /// code review (right) panel. This is the repo that should be restored when the user
     /// leaves the pane group's session and returns to it later, even if the auto-selection
     /// logic would otherwise pick a different default.
-    selected_review_repo: HashMap<EntityId, PathBuf>,
+    selected_review_repo: HashMap<EntityId, LocalOrRemotePath>,
     global_search_views: HashMap<EntityId, ViewHandle<GlobalSearchView>>,
     file_tree_views: HashMap<EntityId, ViewHandle<FileTreeView>>,
 }
@@ -336,7 +336,7 @@ impl WorkingDirectoriesModel {
     pub fn store_code_review_view(
         &mut self,
         pane_group_id: EntityId,
-        repo_path: PathBuf,
+        repo_path: LocalOrRemotePath,
         view: ViewHandle<CodeReviewView>,
     ) {
         let pane_group_views = self.code_review_views.entry(pane_group_id).or_default();
@@ -356,10 +356,7 @@ impl WorkingDirectoriesModel {
             return;
         };
 
-        code_review_views.retain(|path, _| {
-            let lor = LocalOrRemotePath::Local(path.clone());
-            terminal_mapping.contains_key(&lor)
-        });
+        code_review_views.retain(|path, _| terminal_mapping.contains_key(path));
     }
 
     /// Get an existing CodeReviewView for a specific repository in a pane group.
@@ -367,7 +364,7 @@ impl WorkingDirectoriesModel {
     pub fn get_code_review_view(
         &self,
         pane_group_id: EntityId,
-        repo_path: &Path,
+        repo_path: &LocalOrRemotePath,
     ) -> Option<ViewHandle<CodeReviewView>> {
         self.code_review_views
             .get(&pane_group_id)
@@ -378,16 +375,14 @@ impl WorkingDirectoriesModel {
     /// Get the repository path the user has manually selected for the code review
     /// panel in a given pane group, if any. Used to restore the selection when the
     /// user navigates back to the pane group's session.
-    pub fn get_selected_review_repo(&self, pane_group_id: EntityId) -> Option<&Path> {
-        self.selected_review_repo
-            .get(&pane_group_id)
-            .map(PathBuf::as_path)
+    pub fn get_selected_review_repo(&self, pane_group_id: EntityId) -> Option<&LocalOrRemotePath> {
+        self.selected_review_repo.get(&pane_group_id)
     }
 
     /// Persist the repository the user manually selected for the code review panel
     /// in a given pane group. This is only called for explicit user-driven
     /// selections (e.g. via the dropdown), not for auto-selected defaults.
-    pub fn set_selected_review_repo(&mut self, pane_group_id: EntityId, repo_path: PathBuf) {
+    pub fn set_selected_review_repo(&mut self, pane_group_id: EntityId, repo_path: LocalOrRemotePath) {
         self.selected_review_repo.insert(pane_group_id, repo_path);
     }
 
@@ -761,20 +756,16 @@ impl WorkingDirectoriesModel {
         diff_mode: &DiffMode,
         ctx: &mut ModelContext<Self>,
     ) {
-        if let Some(local_repo_path) = repo_path.to_local_path() {
-            if let Some(code_review_view) =
-                self.get_code_review_view(pane_group_id, local_repo_path)
-            {
-                code_review_view.update(ctx, |code_review_view, ctx| {
-                    code_review_view.set_diff_base(diff_mode.to_owned(), ctx);
-                    code_review_view.expand_comment_list(ctx);
-                })
-            } else {
-                log::error!(
-                    "WorkingDirectoriesModel did not find CodeReviewView for repo path {:?}",
-                    repo_path
-                );
-            }
+        if let Some(code_review_view) = self.get_code_review_view(pane_group_id, repo_path) {
+            code_review_view.update(ctx, |code_review_view, ctx| {
+                code_review_view.set_diff_base(diff_mode.to_owned(), ctx);
+                code_review_view.expand_comment_list(ctx);
+            })
+        } else {
+            log::error!(
+                "WorkingDirectoriesModel did not find CodeReviewView for repo path {:?}",
+                repo_path
+            );
         }
 
         if let Some(comment_batch) = self.get_or_create_code_review_comments(repo_path, ctx) {
@@ -863,7 +854,7 @@ impl WorkingDirectoriesModel {
     pub fn store_code_review_view(
         &mut self,
         _pane_group_id: EntityId,
-        _repo_path: PathBuf,
+        _repo_path: LocalOrRemotePath,
         _view: ViewHandle<CodeReviewView>,
     ) {
     }
@@ -871,16 +862,21 @@ impl WorkingDirectoriesModel {
     pub fn get_code_review_view(
         &self,
         _pane_group_id: EntityId,
-        _repo_path: &Path,
+        _repo_path: &LocalOrRemotePath,
     ) -> Option<ViewHandle<CodeReviewView>> {
         None
     }
 
-    pub fn get_selected_review_repo(&self, _pane_group_id: EntityId) -> Option<&Path> {
+    pub fn get_selected_review_repo(&self, _pane_group_id: EntityId) -> Option<&LocalOrRemotePath> {
         None
     }
 
-    pub fn set_selected_review_repo(&mut self, _pane_group_id: EntityId, _repo_path: PathBuf) {}
+    pub fn set_selected_review_repo(
+        &mut self,
+        _pane_group_id: EntityId,
+        _repo_path: LocalOrRemotePath,
+    ) {
+    }
 
     pub fn clear_selected_review_repo(&mut self, _pane_group_id: EntityId) {}
 
