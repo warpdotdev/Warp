@@ -125,14 +125,6 @@ const INVALID_EMAILS_INSTRUCTIONS: &str =
 
 const OFFLINE_TEXT: &str = "You are offline.";
 
-const DELINQUENT_ADMIN_NON_SELF_SERVE_TEXT: &str = "Team invites have been restricted due to a payment issue. Please contact support@warp.dev to restore access.";
-const DELINQUENT_NON_ADMIN_TEXT: &str = "Team invites have been restricted due to a payment issue. Please contact a team admin to restore access.";
-const DELINQUENT_ADMIN_SELF_SERVE_LINE_1_TEXT: &str =
-    "Team invites have been restricted due to a subscription payment issue.";
-const DELINQUENT_ADMIN_SELF_SERVE_LINE_2_PREFIX_TEXT: &str = "Please ";
-const DELINQUENT_ADMIN_SELF_SERVE_LINE_2_LINK_TEXT: &str = "update your payment information";
-const DELINQUENT_ADMIN_SELF_SERVE_LINE_2_SUFFIX_TEXT: &str = " to restore access.";
-
 const MAX_CHIP_WIDTH: f32 = 280.;
 
 lazy_static! {
@@ -310,12 +302,10 @@ struct TeamsWidgetMouseHandles {
     stripe_billing_portal_link: MouseStateHandle,
     manage_plan_link: MouseStateHandle,
     enterprise_contact_us_link: MouseStateHandle,
-    invite_by_email_billing_portal_link: MouseStateHandle,
     discoverable_team_toggle_state: SwitchStateHandle,
     checkbox_mouse_state: MouseStateHandle,
     admin_panel_button: MouseStateHandle,
-    contact_sales_button: MouseStateHandle,
-    seat_cap_upgrade_button: MouseStateHandle,
+    grow_team_warning_cta_button: MouseStateHandle,
     team_members_count_tooltip: MouseStateHandle,
     outgrow_upgrade_link: MouseStateHandle,
     outgrow_contact_sales_link: MouseStateHandle,
@@ -352,14 +342,35 @@ impl Tabs for TeamsInviteOption {
     }
 }
 
+/// What's blocking the team from growing right now. Resolved by
+/// `grow_team_warning`; consumed by `render_grow_team_warning_alert` and
+/// `grow_team_warning_cta`. Priority order is delinquency > over-cap > at-cap.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum SeatCapCta {
+enum GrowTeamWarning {
+    /// Team size equals the workspace size policy limit.
+    SeatCapReached,
+    /// Team size exceeds the workspace size policy limit.
+    SeatCapExceeded,
+    /// Subscription has a past-due payment.
+    PaymentPastDue,
+    /// Subscription is unpaid.
+    PaymentUnpaid,
+}
+
+/// The action an admin can take to resolve a `GrowTeamWarning`. `None`
+/// indicates no actionable path (non-admin viewer, enterprise with no
+/// self-serve option, or no higher-cap plan available).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum GrowTeamWarningCta {
     /// Self-serve upgrade is available; route to `/upgrade`.
     Upgrade,
     /// Team is on the highest self-serve plan; needs sales for more capacity.
     ContactSales,
-    /// No actionable CTA: viewer is non-admin, team is delinquent, or no
-    /// higher-cap plan exists.
+    /// Self-serve admin can resolve billing via the Stripe portal.
+    UpdateBilling,
+    /// Non-self-serve admin (e.g. enterprise) should reach out to support.
+    ContactSupport,
+    /// No actionable CTA from this viewer in this state.
     None,
 }
 
@@ -1233,20 +1244,17 @@ impl TeamsPageView {
         self.update_email_editor_interaction_state(ctx);
     }
 
-    /// Disables the invite-by-email chip editor when the team is at its
-    /// seat cap. Visual styling is unchanged; only interaction is blocked.
+    /// Disables the invite-by-email chip editor whenever the grow-team
+    /// warning banner is showing (seat cap reached, delinquent billing,
+    /// etc.). Visual styling is unchanged; only interaction is blocked.
     fn update_email_editor_interaction_state(&mut self, ctx: &mut ViewContext<Self>) {
-        let cap_reached = self
+        let blocked = self
             .user_workspaces
             .as_ref(ctx)
             .current_team()
-            .and_then(|team| {
-                let policy = team.billing_metadata.tier.workspace_size_policy?;
-                let team_size = i64::try_from(team.members.len()).unwrap_or(0);
-                Some(!policy.is_unlimited && team_size >= policy.limit)
-            })
+            .map(|team| TeamsWidget::grow_team_warning(team).is_some())
             .unwrap_or(false);
-        let state = if cap_reached {
+        let state = if blocked {
             InteractionState::Disabled
         } else {
             InteractionState::Editable
@@ -1805,34 +1813,69 @@ impl TeamsWidget {
         Some((monthly_cost, yearly_cost))
     }
 
-    /// Maps an admin's actionable path out of a seat-cap warning
-    fn seat_cap_cta(
+    fn grow_team_warning(team: &Team) -> Option<GrowTeamWarning> {
+        match team.billing_metadata.delinquency_status {
+            DelinquencyStatus::PastDue => return Some(GrowTeamWarning::PaymentPastDue),
+            DelinquencyStatus::Unpaid => return Some(GrowTeamWarning::PaymentUnpaid),
+            DelinquencyStatus::NoDelinquency
+            // team limit is split into 2 cases below
+            | DelinquencyStatus::TeamLimitExceeded
+            | DelinquencyStatus::Unknown => {}
+        }
+        let policy = team.billing_metadata.tier.workspace_size_policy?;
+        if policy.is_unlimited {
+            return None;
+        }
+        let team_size = i64::try_from(team.members.len()).unwrap_or(i64::MAX);
+        if team_size > policy.limit {
+            return Some(GrowTeamWarning::SeatCapExceeded);
+        }
+        if team_size >= policy.limit {
+            return Some(GrowTeamWarning::SeatCapReached);
+        }
+        None
+    }
+
+    /// Maps an admin's actionable path out of a `GrowTeamWarning`.
+    fn grow_team_warning_cta(
+        warning: GrowTeamWarning,
         has_admin_permissions: bool,
         billing_metadata: &BillingMetadata,
-        workspace_size_policy: &WorkspaceSizePolicy,
         pricing_info: &PricingInfoModel,
-    ) -> SeatCapCta {
+    ) -> GrowTeamWarningCta {
         if !has_admin_permissions {
-            return SeatCapCta::None;
+            return GrowTeamWarningCta::None;
         }
-        if matches!(
-            billing_metadata.delinquency_status,
-            DelinquencyStatus::PastDue | DelinquencyStatus::Unpaid,
-        ) {
-            return SeatCapCta::None;
-        }
-        // Build Business is the top of the self-serve ladder; the only path to
-        // more seats is an enterprise / sales conversation.
-        if billing_metadata.is_on_build_business_plan() {
-            return SeatCapCta::ContactSales;
-        }
-        let is_enterprise = billing_metadata.customer_type == CustomerType::Enterprise;
-        if !is_enterprise
-            && Self::has_higher_seat_cap_plan_available(workspace_size_policy, pricing_info)
-        {
-            SeatCapCta::Upgrade
-        } else {
-            SeatCapCta::None
+        match warning {
+            GrowTeamWarning::PaymentPastDue | GrowTeamWarning::PaymentUnpaid => {
+                // Self-serve admins should be able to fix billing themselves;
+                // everyone else (enterprise / legacy) needs to reach support.
+                if billing_metadata.is_on_stripe_paid_plan() {
+                    GrowTeamWarningCta::UpdateBilling
+                } else {
+                    GrowTeamWarningCta::ContactSupport
+                }
+            }
+            GrowTeamWarning::SeatCapReached | GrowTeamWarning::SeatCapExceeded => {
+                // Build Business is the top of the self-serve ladder; the only
+                // path to more seats is an enterprise / sales conversation.
+                if billing_metadata.is_on_build_business_plan() {
+                    return GrowTeamWarningCta::ContactSales;
+                }
+                // similar idea for enterprises... although we usually don't limit
+                // enterprises' seats in practice
+                if billing_metadata.is_enterprise_plan() {
+                    return GrowTeamWarningCta::ContactSales;
+                }
+                let Some(policy) = billing_metadata.tier.workspace_size_policy else {
+                    return GrowTeamWarningCta::None;
+                };
+                if Self::has_higher_seat_cap_plan_available(&policy, pricing_info) {
+                    GrowTeamWarningCta::Upgrade
+                } else {
+                    GrowTeamWarningCta::None
+                }
+            }
         }
     }
 
@@ -1850,15 +1893,12 @@ impl TeamsWidget {
             .any(|max| i64::from(max) > workspace_size_policy.limit)
     }
 
-    /// Renders the red "Your team is full" alert. CTA only shown when
-    /// `seat_cap_cta` is `Upgrade` or `ContactSales` (admin + actionable path).
-    /// Non-admins / delinquent teams / teams at the top of the self-serve
-    /// ladder with no higher-cap plan just see the body copy.
-    fn render_seat_cap_alert(
+    /// Renders the red warning alert at the top of the invite section.
+    fn render_grow_team_warning_alert(
         &self,
         team: &Team,
+        warning: GrowTeamWarning,
         has_admin_permissions: bool,
-        workspace_size_policy: &WorkspaceSizePolicy,
         pricing_info: &PricingInfoModel,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
@@ -1879,34 +1919,60 @@ impl TeamsWidget {
         .with_margin_right(horizontal_padding)
         .finish();
 
-        let team_size = i64::try_from(team.members.len()).unwrap_or(i64::MAX);
-        let is_over_cap = team_size > workspace_size_policy.limit;
-
-        let title = if is_over_cap {
-            "You've exceeded your member limit"
-        } else {
-            "Your team is full"
+        let title = match warning {
+            GrowTeamWarning::SeatCapReached => "Your team is full",
+            GrowTeamWarning::SeatCapExceeded => "You've exceeded your member limit",
+            GrowTeamWarning::PaymentPastDue => "Payment past due",
+            GrowTeamWarning::PaymentUnpaid => "Subscription unpaid",
         };
         let title_element = self.render_subsection_header(title.to_owned(), appearance);
 
-        let cta = Self::seat_cap_cta(
+        let cta = Self::grow_team_warning_cta(
+            warning,
             has_admin_permissions,
             &team.billing_metadata,
-            workspace_size_policy,
             pricing_info,
         );
-        let cta_sentence = if !has_admin_permissions {
-            "Contact a team admin to grow the team."
-        } else {
-            match cta {
-                SeatCapCta::Upgrade => "Upgrade to grow your team.",
-                SeatCapCta::ContactSales | SeatCapCta::None => "Contact sales to grow your team.",
+
+        let body_prefix = match warning {
+            GrowTeamWarning::SeatCapReached => "You've reached your plan's member limit.",
+            GrowTeamWarning::SeatCapExceeded => {
+                "You've exceeded your plan's member limit. Existing team members keep their access, but you won't be able to add new members."
+            }
+            GrowTeamWarning::PaymentPastDue => {
+                "Team invites have been restricted due to a past-due payment."
+            }
+            GrowTeamWarning::PaymentUnpaid => {
+                "Team invites have been restricted due to an unpaid subscription."
             }
         };
-        let body_prefix = if is_over_cap {
-            "You've exceeded your plan's member limit. Existing team members keep their access, but you won't be able to add new members."
+
+        let is_delinquency = matches!(
+            warning,
+            GrowTeamWarning::PaymentPastDue | GrowTeamWarning::PaymentUnpaid
+        );
+        let cta_sentence = if !has_admin_permissions {
+            if is_delinquency {
+                "Contact a team admin to restore access."
+            } else {
+                "Contact a team admin to grow the team."
+            }
         } else {
-            "You've reached your plan's member limit."
+            match cta {
+                GrowTeamWarningCta::Upgrade => "Upgrade to grow your team.",
+                GrowTeamWarningCta::ContactSales => "Contact sales to grow your team.",
+                GrowTeamWarningCta::UpdateBilling => {
+                    "Update your payment information to restore access."
+                }
+                GrowTeamWarningCta::ContactSupport => "Contact support to restore access.",
+                GrowTeamWarningCta::None => {
+                    if is_delinquency {
+                        "Contact support to restore access."
+                    } else {
+                        "Contact sales to grow your team."
+                    }
+                }
+            }
         };
         let body_text = format!("{body_prefix} {cta_sentence}");
         let body = self.render_sub_text(body_text, appearance, None);
@@ -1929,20 +1995,29 @@ impl TeamsWidget {
             .with_main_axis_size(MainAxisSize::Max)
             .with_child(Shrinkable::new(1., left_content).finish());
 
-        // CTA button only renders when there's an actionable path.
-        if let Some((cta_label, cta_action, cta_mouse_state)) = match cta {
-            SeatCapCta::Upgrade => Some((
+        // CTA button only renders when there's an actionable path. A single
+        // mouse state handle is fine because at most one CTA shows at a time.
+        if let Some((cta_label, cta_action)) = match cta {
+            GrowTeamWarningCta::Upgrade => Some((
                 "Upgrade",
                 TeamsPageAction::GenerateUpgradeLink { team_uid: team.uid },
-                self.mouse_state_handles.seat_cap_upgrade_button.clone(),
             )),
-            SeatCapCta::ContactSales => Some((
-                "Contact sales",
-                TeamsPageAction::ContactSales,
-                self.mouse_state_handles.contact_sales_button.clone(),
+            GrowTeamWarningCta::ContactSales => {
+                Some(("Contact sales", TeamsPageAction::ContactSales))
+            }
+            GrowTeamWarningCta::UpdateBilling => Some((
+                "Update billing",
+                TeamsPageAction::GenerateStripeBillingPortalLink { team_uid: team.uid },
             )),
-            SeatCapCta::None => None,
+            GrowTeamWarningCta::ContactSupport => {
+                Some(("Contact support", TeamsPageAction::ContactSupport))
+            }
+            GrowTeamWarningCta::None => None,
         } {
+            let cta_mouse_state = self
+                .mouse_state_handles
+                .grow_team_warning_cta_button
+                .clone();
             let cta_styles = UiComponentStyles {
                 font_weight: Some(Weight::Medium),
                 font_size: Some(13.),
@@ -2109,19 +2184,14 @@ impl TeamsWidget {
         );
 
         // 3) Team invitation flows (invite link / email invites / discovery)
-        if let Some(workspace_size_policy) =
-            team_metadata.billing_metadata.tier.workspace_size_policy
-        {
-            main_content.add_child(self.render_team_invitation_section(
-                team_metadata,
-                has_admin_permissions,
-                view,
-                appearance,
-                chip_editor_style,
-                workspace_size_policy,
-                app,
-            ));
-        };
+        main_content.add_child(self.render_team_invitation_section(
+            team_metadata,
+            has_admin_permissions,
+            view,
+            appearance,
+            chip_editor_style,
+            app,
+        ));
 
         // 4) Horizontal separator between the invite flows and the team members
         // list. 32px of breathing room above and below to match the design.
@@ -2482,7 +2552,6 @@ impl TeamsWidget {
         section.finish()
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_team_invitation_section(
         &self,
         team_metadata: &Team,
@@ -2490,26 +2559,23 @@ impl TeamsWidget {
         view: &TeamsPageView,
         appearance: &Appearance,
         chip_editor_style: UiComponentStyles,
-        workspace_size_policy: WorkspaceSizePolicy,
         app: &AppContext,
     ) -> Box<dyn Element> {
         let mut invitation_section = Flex::column();
 
-        // Optional "Team is full" warning box.
-        let team_size_i64 = i64::try_from(team_metadata.members.len()).unwrap_or(1);
-        let is_full =
-            !workspace_size_policy.is_unlimited && team_size_i64 >= workspace_size_policy.limit;
+        // "team is full" or "billing issue" or some other alert thats restricting you from adding team members
+        let warning = Self::grow_team_warning(team_metadata);
         let pricing_info_model = view.pricing_info_model.as_ref(app);
-        if is_full {
-            let cap_alert = self.render_seat_cap_alert(
+        if let Some(warning) = warning {
+            let alert = self.render_grow_team_warning_alert(
                 team_metadata,
+                warning,
                 has_admin_permissions,
-                &workspace_size_policy,
                 pricing_info_model,
                 appearance,
             );
             invitation_section
-                .add_child(Container::new(cap_alert).with_padding_bottom(24.).finish());
+                .add_child(Container::new(alert).with_padding_bottom(24.).finish());
         }
 
         invitation_section.add_child(
@@ -2546,14 +2612,14 @@ impl TeamsWidget {
             ));
         }
 
-        // Invite by email
+        // Invite by email. Disabled whenever the warning banner is showing —
+        // the banner owns the explanation + recovery CTA.
         invitation_section.add_child(self.render_invite_by_email_section(
             team_metadata,
             view,
             appearance,
             chip_editor_style,
-            has_admin_permissions,
-            is_full,
+            warning.is_some(),
         ));
 
         // By discovery — third invitation method, same hierarchical level as
@@ -2678,15 +2744,13 @@ impl TeamsWidget {
         section.finish()
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_invite_by_email_section(
         &self,
         team: &Team,
         view: &TeamsPageView,
         appearance: &Appearance,
         chip_editor_style: UiComponentStyles,
-        has_admin_permissions: bool,
-        cap_reached: bool,
+        force_disabled: bool,
     ) -> Box<dyn Element> {
         let mut section = Flex::column();
 
@@ -2698,139 +2762,58 @@ impl TeamsWidget {
                 .finish(),
         );
 
-        match team.billing_metadata.delinquency_status {
-            DelinquencyStatus::Unknown
-            | DelinquencyStatus::NoDelinquency
-            | DelinquencyStatus::TeamLimitExceeded => {
-                // Form stays visually unchanged at seat cap; the chip editor
-                // is disabled via `update_email_editor_interaction_state` and
-                // the send button is force-disabled below.
-                section.add_child(
-                    Container::new(self.render_sub_text(
-                        INVITE_BY_EMAIL_EXPIRY_INSTRUCTIONS.into(),
-                        appearance,
-                        Some(Coords::uniform(0.).right(48.)),
-                    ))
-                    .with_padding_bottom(TEXT_FIELD_TOP_PADDING)
+        // Form stays visually unchanged when blocked; the chip editor is
+        // disabled via `update_email_editor_interaction_state` and the send
+        // button is force-disabled below. The warning banner at the top of
+        // the invitation section owns the explanation + recovery CTA.
+        section.add_child(
+            Container::new(self.render_sub_text(
+                INVITE_BY_EMAIL_EXPIRY_INSTRUCTIONS.into(),
+                appearance,
+                Some(Coords::uniform(0.).right(48.)),
+            ))
+            .with_padding_bottom(TEXT_FIELD_TOP_PADDING)
+            .finish(),
+        );
+
+        section.add_child(
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(
+                    Shrinkable::new(
+                        1.,
+                        TextInput::new(
+                            view.email_invites_block_editor.clone(),
+                            chip_editor_style,
+                        )
+                        .build()
+                        .finish(),
+                    )
                     .finish(),
-                );
+                )
+                .with_child(self.render_send_email_invites_button(
+                    team.uid,
+                    view,
+                    appearance,
+                    force_disabled,
+                ))
+                .finish(),
+        );
 
-                section.add_child(
-                    Flex::row()
-                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                        .with_child(
-                            Shrinkable::new(
-                                1.,
-                                TextInput::new(
-                                    view.email_invites_block_editor.clone(),
-                                    chip_editor_style,
-                                )
-                                .build()
-                                .finish(),
-                            )
-                            .finish(),
-                        )
-                        .with_child(self.render_send_email_invites_button(
-                            team.uid,
-                            view,
-                            appearance,
-                            cap_reached,
-                        ))
-                        .finish(),
-                );
-
-                // Skip the "invalid emails" hint when the form is disabled.
-                if !cap_reached
-                    && !view.email_invites_block_editor_state.is_valid
-                    && !view.email_invites_block_editor_state.is_empty
-                    && view.email_invites_block_editor_state.num_chips > 0
-                {
-                    section.add_child(
-                        Container::new(
-                            self.render_error_sub_text(
-                                INVALID_EMAILS_INSTRUCTIONS.into(),
-                                appearance,
-                            ),
-                        )
-                        .with_padding_top(8.)
-                        .finish(),
-                    )
-                }
-            }
-            DelinquencyStatus::PastDue | DelinquencyStatus::Unpaid => {
-                let delinquent_text = if has_admin_permissions {
-                    // If the user is an admin, and team is on paid stripe plan,
-                    // then provide a clickable link to manage their billing.
-                    if team.billing_metadata.is_on_stripe_paid_plan() {
-                        let mut limit_exceeded_with_upgrade_text = Flex::column();
-
-                        limit_exceeded_with_upgrade_text.add_child(self.render_sub_text(
-                            DELINQUENT_ADMIN_SELF_SERVE_LINE_1_TEXT.into(),
-                            appearance,
-                            None,
-                        ));
-
-                        let mut manage_billing_link_line = Flex::row();
-                        manage_billing_link_line.add_child(self.render_sub_text(
-                            DELINQUENT_ADMIN_SELF_SERVE_LINE_2_PREFIX_TEXT.into(),
-                            appearance,
-                            None,
-                        ));
-                        let team_uid = team.uid;
-                        manage_billing_link_line.add_child(
-                            appearance
-                                .ui_builder()
-                                .link(
-                                    DELINQUENT_ADMIN_SELF_SERVE_LINE_2_LINK_TEXT.into(),
-                                    None,
-                                    Some(Box::new(move |ctx| {
-                                        ctx.dispatch_typed_action(
-                                            TeamsPageAction::GenerateStripeBillingPortalLink {
-                                                team_uid,
-                                            },
-                                        );
-                                    })),
-                                    self.mouse_state_handles
-                                        .invite_by_email_billing_portal_link
-                                        .clone(),
-                                )
-                                .soft_wrap(false)
-                                .build()
-                                .finish(),
-                        );
-                        manage_billing_link_line.add_child(self.render_sub_text(
-                            DELINQUENT_ADMIN_SELF_SERVE_LINE_2_SUFFIX_TEXT.into(),
-                            appearance,
-                            None,
-                        ));
-
-                        limit_exceeded_with_upgrade_text
-                            .add_child(manage_billing_link_line.finish());
-                        limit_exceeded_with_upgrade_text.finish()
-                    } else {
-                        // Otherwise, they're in delinquent state, but are not able to
-                        // update their billing information like self-serve tier (e.g.
-                        // delinquent enterprise customer). In that case show message to
-                        // contact support instead.
-                        self.render_sub_text(
-                            DELINQUENT_ADMIN_NON_SELF_SERVE_TEXT.into(),
-                            appearance,
-                            Some(Coords::uniform(0.).right(48.)),
-                        )
-                    }
-                } else {
-                    // If user is not admin, show them a message that asks them to contact
-                    // their admin to fix their billing instead.
-                    self.render_sub_text(
-                        DELINQUENT_NON_ADMIN_TEXT.into(),
-                        appearance,
-                        Some(Coords::uniform(0.).right(48.)),
-                    )
-                };
-
-                section.add_child(delinquent_text);
-            }
-        };
+        // Skip the "invalid emails" hint when the form is disabled.
+        if !force_disabled
+            && !view.email_invites_block_editor_state.is_valid
+            && !view.email_invites_block_editor_state.is_empty
+            && view.email_invites_block_editor_state.num_chips > 0
+        {
+            section.add_child(
+                Container::new(
+                    self.render_error_sub_text(INVALID_EMAILS_INSTRUCTIONS.into(), appearance),
+                )
+                .with_padding_top(8.)
+                .finish(),
+            )
+        }
 
         section.finish()
     }
@@ -2938,8 +2921,10 @@ impl TeamsWidget {
             .finish()
     }
 
-    /// Footer CTA below the team-members list. Reuses `seat_cap_cta` so the
-    /// page speaks with one voice; omitted when the CTA is `None`.
+    /// Footer CTA below the team-members list. Reuses `grow_team_warning_cta`
+    /// (with a synthetic `SeatCapReached` so we get the cap-related branches)
+    /// so the page speaks with one voice. Skipped while the team is delinquent
+    /// because the top warning banner already owns that messaging.
     fn render_outgrow_cta(
         &self,
         team: &Team,
@@ -2947,26 +2932,25 @@ impl TeamsWidget {
         pricing_info: &PricingInfoModel,
         appearance: &Appearance,
     ) -> Option<Box<dyn Element>> {
-        // Fall back to an unlimited policy when tier data is missing; this
-        // yields no Upgrade path but still surfaces ContactSales on Business.
-        let policy =
-            team.billing_metadata
-                .tier
-                .workspace_size_policy
-                .unwrap_or(WorkspaceSizePolicy {
-                    is_unlimited: true,
-                    limit: 0,
-                });
-        let cta = Self::seat_cap_cta(
+        if team.billing_metadata.is_delinquent_due_to_payment_issue() {
+            return None;
+        }
+        let cta = Self::grow_team_warning_cta(
+            GrowTeamWarning::SeatCapReached,
             has_admin_permissions,
             &team.billing_metadata,
-            &policy,
             pricing_info,
         );
         match cta {
-            SeatCapCta::Upgrade => Some(self.render_outgrow_upgrade_line(team.uid, appearance)),
-            SeatCapCta::ContactSales => Some(self.render_outgrow_contact_sales_line(appearance)),
-            SeatCapCta::None => None,
+            GrowTeamWarningCta::Upgrade => {
+                Some(self.render_outgrow_upgrade_line(team.uid, appearance))
+            }
+            GrowTeamWarningCta::ContactSales => {
+                Some(self.render_outgrow_contact_sales_line(appearance))
+            }
+            GrowTeamWarningCta::UpdateBilling
+            | GrowTeamWarningCta::ContactSupport
+            | GrowTeamWarningCta::None => None,
         }
     }
 
