@@ -12,7 +12,7 @@ StartupWMClass=dev.openwarp.OpenWarp
 
 Keywords=shell;prompt;command;commandline;cmd;
 
-Icon=dev.warp.OpenWarp
+Icon=dev.openwarp.OpenWarp
 
 Categories=System;TerminalEmulator;
 

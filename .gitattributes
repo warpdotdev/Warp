@@ -20,7 +20,7 @@ input_classifier/models/**/*tokenizer.json linguist-generated=true
 # 用法:本地需先注册驱动 `git config merge.openwarp-ours.driver true`
 # CI / 新克隆者执行 `script/setup-merge-drivers.sh` 自动配置
 .github/workflows/openwarp_release.yml merge=openwarp-ours
-app/channels/oss/dev.warp.OpenWarp.desktop merge=openwarp-ours
+app/channels/oss/dev.openwarp.OpenWarp.desktop merge=openwarp-ours
 lib/rust-genai/** merge=openwarp-ours
 
 # openWarp 自治区(BYOP / cloud 清理 / i18n / footer 删改 等已永久分叉)

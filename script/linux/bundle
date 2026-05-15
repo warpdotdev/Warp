@@ -197,7 +197,15 @@ elif [[ "$ARTIFACT" == "app" ]]; then
   FEATURES="$FEATURES,gui,nld_improvements"
 fi
 
-BUNDLE_ID="dev.warp.$APP_NAME"
+if [[ $RELEASE_CHANNEL = "oss" ]]; then
+  # OSS(OpenWarp) bundle id 与运行时 app id (`dev.openwarp.OpenWarp`, 见
+  # `app/src/bin/oss.rs` / Cargo bundle metadata) 对齐, 否则 Linux 桌面
+  # (尤其是 Wayland) 会按 desktop-file ID 而非 StartupWMClass 关联窗口,
+  # 导致 icon 找不到.
+  BUNDLE_ID="dev.openwarp.OpenWarp"
+else
+  BUNDLE_ID="dev.warp.$APP_NAME"
+fi
 EXECUTABLE_PATH="$CARGO_TARGET_OUTPUT_DIR/$WARP_BIN"
 DEBUG_EXECUTABLE_PATH="$EXECUTABLE_PATH.debug"
 
