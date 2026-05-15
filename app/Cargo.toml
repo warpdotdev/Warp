@@ -546,6 +546,7 @@ default = [
     "agent_shared_sessions",
     "integration_command",
     "artifact_command",
+    "conversation_api",
     "cloud_environments",
     "create_environment_slash_command",
     "code_review_find",
@@ -561,6 +562,7 @@ default = [
     "classic_completions",
     "force_classic_completions",
     "team_api_keys",
+    "named_agents",
     "agent_tips",
     "pluggable_notifications",
     "agent_onboarding",
@@ -846,6 +848,7 @@ pr_comments_v2 = []
 pr_comments_skill = []
 conversation_artifacts = []
 conversations_as_context = []
+conversation_api = []
 sync_ambient_plans = []
 projects = []
 vim_code_editor = []
@@ -888,6 +891,7 @@ cloud_conversations = []
 agent_view_prompt_chip = ["agent_view"]
 ambient_agents_rtc = []
 team_api_keys = []
+named_agents = []
 classic_completions = []
 cloud_mode = []
 cloud_mode_from_local_session = []
