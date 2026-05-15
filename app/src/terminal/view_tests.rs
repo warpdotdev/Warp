@@ -2754,7 +2754,7 @@ fn run_find_test(input_mode: InputMode) {
             );
             assert_eq!(
                 view.find_model.as_ref(ctx).visible_block_list_match_count(),
-                4
+                1
             );
             assert_eq!(
                 view.find_model
@@ -2783,7 +2783,8 @@ fn run_find_test(input_mode: InputMode) {
                     2.into()
                 );
             } else {
-                // should loop to earliest block
+                // Search starts with the first match only; moving opposite the lazy
+                // discovery direction keeps focus on that first match.
                 assert_eq!(
                     view.find_model
                         .as_ref(ctx)
@@ -2791,7 +2792,7 @@ fn run_find_test(input_mode: InputMode) {
                         .expect("BlockListFindRun exists.")
                         .focused_match_block_index()
                         .expect("Focused match exists."),
-                    1.into()
+                    3.into()
                 );
             }
 
@@ -2805,9 +2806,8 @@ fn run_find_test(input_mode: InputMode) {
             );
             assert_eq!(
                 view.find_model.as_ref(ctx).visible_block_list_match_count(),
-                2
+                1
             );
-            assert_block_has_find_match(view.find_model.as_ref(ctx), 1.into());
             assert_block_has_find_match(view.find_model.as_ref(ctx), 3.into());
 
             // Test with find_in_block enabled
@@ -2852,9 +2852,8 @@ fn run_find_test(input_mode: InputMode) {
             );
             assert_eq!(
                 view.find_model.as_ref(ctx).visible_block_list_match_count(),
-                3
+                1
             );
-            assert_block_has_find_match(view.find_model.as_ref(ctx), 2.into());
             assert_block_has_find_match(view.find_model.as_ref(ctx), 3.into());
         });
     })
