@@ -1,12 +1,15 @@
 //! HTTP proxy support for WebSocket connections.
 //!
-//! Reads standard proxy environment variables (`HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`)
-//! and establishes tunneled connections via HTTP CONNECT.
+//! 优先读取 `http_client::current_proxy_config()` 这个全局单例。如果是
+//! `ProxyMode::Custom` 或 `Off`,则直接应用;如果是 `ProxyMode::System`,则
+//! fallback 到原有的环境变量解析逻辑(`HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` /
+//! `NO_PROXY`)。这样设置页的 Custom URL / Off 能覆盖到 WebSocket。见 Issue #72。
 //!
 //! TODO: Switch to tungstenite's native proxy support once it is available and remove this
 //! module: <https://github.com/snapview/tungstenite-rs/pull/530>
 
 use std::env;
+use std::sync::{OnceLock, RwLock};
 use std::time::Duration;
 
 use anyhow::{bail, Context};
@@ -18,6 +21,54 @@ use percent_encoding::percent_decode_str;
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use url::Url;
+
+/// 代理模式镜像。与 `http_client::ProxyMode` 一一对应,只是为了避免
+/// `websocket -> http_client -> warp_core -> websocket` 的循环依赖,这里本地镜像一份。
+/// `app` 启动 / 设置变更时同时调用 `http_client::set_global_proxy_config` 和
+/// `websocket::set_global_proxy_config` 保证两路保持一致。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ProxyMode {
+    #[default]
+    System,
+    Custom,
+    Off,
+}
+
+/// `http_client::ProxyConfig` 的镜像,参见 [`ProxyMode`] 的说明。
+#[derive(Clone, Debug, Default)]
+pub struct ProxyConfig {
+    pub mode: ProxyMode,
+    pub url: String,
+    pub username: String,
+    pub password: String,
+    pub no_proxy: String,
+}
+
+static GLOBAL_PROXY_CONFIG: OnceLock<RwLock<ProxyConfig>> = OnceLock::new();
+
+fn slot() -> &'static RwLock<ProxyConfig> {
+    GLOBAL_PROXY_CONFIG.get_or_init(|| RwLock::new(ProxyConfig::default()))
+}
+
+/// 安装全局 WebSocket 代理配置。应在启动与设置变更时同时调用
+/// `http_client::set_global_proxy_config`。
+pub fn set_global_proxy_config(cfg: ProxyConfig) {
+    if let Ok(mut guard) = slot().write() {
+        *guard = cfg;
+    } else {
+        log::error!("写入 WebSocket 代理配置失败:RwLock 已 poison");
+    }
+}
+
+fn current_proxy_config() -> ProxyConfig {
+    match slot().read() {
+        Ok(guard) => guard.clone(),
+        Err(err) => {
+            log::error!("读取 WebSocket 代理配置失败:RwLock 已 poison({err})");
+            ProxyConfig::default()
+        }
+    }
+}
 
 const PROXY_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const PROXY_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -31,17 +82,53 @@ pub struct ProxyInfo {
     pub basic_auth: Option<String>,
 }
 
-/// Reads proxy environment variables and returns proxy info if a proxy should be used
-/// for the given target URI.
+/// Returns proxy info if a proxy should be used for the given target URI.
 ///
-/// Env var precedence:
-/// - For TLS targets (`wss://`): `HTTPS_PROXY` / `https_proxy`, then `ALL_PROXY` / `all_proxy`.
-/// - For plain targets (`ws://`): `HTTP_PROXY` / `http_proxy`, then `ALL_PROXY` / `all_proxy`.
-/// - `NO_PROXY` / `no_proxy` is checked to bypass the proxy for specific hosts.
+/// 优先级:
+/// 1. 读取 `http_client::current_proxy_config()`:
+///    - `Custom`: 使用设置页填入的 URL / auth / no_proxy。
+///    - `Off`: 返回 `None`。
+///    - `System`: 落到环境变量解析。
+/// 2. 环境变量解析(保持向后兼容):
+///    - For TLS targets (`wss://`): `HTTPS_PROXY` / `https_proxy`, then `ALL_PROXY` / `all_proxy`.
+///    - For plain targets (`ws://`): `HTTP_PROXY` / `http_proxy`, then `ALL_PROXY` / `all_proxy`.
+///    - `NO_PROXY` / `no_proxy` is checked to bypass the proxy for specific hosts.
 pub fn resolve_proxy(uri: &http::Uri) -> anyhow::Result<Option<ProxyInfo>> {
-    let is_tls = uri.scheme_str() == Some("wss") || uri.scheme_str() == Some("https");
     let target_host = uri.host().unwrap_or_default();
 
+    // 优先走全局设置(与 http_client 镇 mirror,避免循环依赖)。
+    let global_cfg = current_proxy_config();
+    match global_cfg.mode {
+        ProxyMode::Off => return Ok(None),
+        ProxyMode::Custom => {
+            // 重用 settings 中的 no_proxy 列表(以逗号分隔)。
+            if !global_cfg.no_proxy.trim().is_empty()
+                && host_matches_no_proxy_list(target_host, &global_cfg.no_proxy)
+            {
+                return Ok(None);
+            }
+            let trimmed = global_cfg.url.trim();
+            if trimmed.is_empty() {
+                // Custom 但 URL 为空: 与 http_client 一致,静默退回环境变量解析。
+                log::warn!(
+                    "WebSocket: HTTP 代理设置为 Custom 但 URL 为空,退回环境变量"
+                );
+            } else {
+                let info = parse_proxy_url_with_optional_auth(
+                    trimmed,
+                    &global_cfg.username,
+                    &global_cfg.password,
+                )
+                .context("Invalid custom proxy URL configured in settings")?;
+                return Ok(Some(info));
+            }
+        }
+        ProxyMode::System => {
+            // 落入环境变量解析。
+        }
+    }
+
+    let is_tls = uri.scheme_str() == Some("wss") || uri.scheme_str() == Some("https");
     let proxy_env = if is_tls {
         read_env_var("HTTPS_PROXY").or_else(|| read_env_var("ALL_PROXY"))
     } else {
@@ -59,6 +146,44 @@ pub fn resolve_proxy(uri: &http::Uri) -> anyhow::Result<Option<ProxyInfo>> {
     parse_proxy_url(&proxy_url)
         .with_context(|| format!("Invalid proxy URL configured in {proxy_env_name}"))
         .map(Some)
+}
+
+/// 拆分逗号分隔的 no_proxy 列表并多 apply `is_no_proxy` 中的同样规则。
+fn host_matches_no_proxy_list(target_host: &str, no_proxy: &str) -> bool {
+    let target = target_host.to_lowercase();
+    for entry in no_proxy.split(',') {
+        let entry = entry.trim().to_lowercase();
+        if entry.is_empty() {
+            continue;
+        }
+        if entry == "*" {
+            return true;
+        }
+        if target == entry {
+            return true;
+        }
+        if entry.starts_with('.') && target.ends_with(&entry) {
+            return true;
+        }
+        if target.ends_with(&format!(".{entry}")) {
+            return true;
+        }
+    }
+    false
+}
+
+/// `parse_proxy_url` 的变体,附加 settings 中的显式 username / password(覆盖 URL 中的)。
+fn parse_proxy_url_with_optional_auth(
+    raw: &str,
+    extra_user: &str,
+    extra_pass: &str,
+) -> anyhow::Result<ProxyInfo> {
+    let mut info = parse_proxy_url(raw)?;
+    if !extra_user.is_empty() || !extra_pass.is_empty() {
+        let userinfo = format!("{extra_user}:{extra_pass}");
+        info.basic_auth = Some(BASE64.encode(userinfo));
+    }
+    Ok(info)
 }
 
 /// Establishes a TCP connection through an HTTP proxy using the CONNECT method.
