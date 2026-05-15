@@ -82,4 +82,6 @@ pub struct Context {
     pub current_input_type: InputType,
     /// Whether or not the input is a follow-up to an agent query.
     pub is_agent_follow_up: bool,
+    /// The generation of the input autodetection request, if invoked from the terminal input model.
+    pub autodetect_generation: Option<u64>,
 }

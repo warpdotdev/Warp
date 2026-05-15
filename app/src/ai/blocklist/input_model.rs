@@ -741,6 +741,7 @@ impl BlocklistAIInputModel {
                     let context = input_classifier::Context {
                         current_input_type,
                         is_agent_follow_up,
+                        autodetect_generation: Some(autodetect_generation),
                     };
                     let new_input_type =
                         classifier.detect_input_type(input.clone(), &context).await;

@@ -17,6 +17,7 @@ fn test_input_detection() {
         let mut context = Context {
             current_input_type: InputType::AI,
             is_agent_follow_up: false,
+            autodetect_generation: None,
         };
 
         let token = mock_parsed_input_token("cargo --version".to_string()).await;
