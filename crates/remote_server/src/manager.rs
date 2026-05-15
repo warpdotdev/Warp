@@ -113,6 +113,7 @@ pub enum RemoteServerOperation {
     NavigateToDirectory,
     LoadRepoMetadataDirectory,
     IndexCodebase,
+    ResyncCodebase,
     DropCodebaseIndex,
     OpenBuffer,
     SaveBuffer,
@@ -128,14 +129,16 @@ pub enum RemoteServerOperation {
 
 #[derive(Clone, Copy, Debug)]
 enum RemoteCodebaseIndexMutation {
-    Index,
+    EnsureIndexed,
+    Resync,
     Drop,
 }
 
 impl RemoteCodebaseIndexMutation {
     fn operation(self) -> RemoteServerOperation {
         match self {
-            Self::Index => RemoteServerOperation::IndexCodebase,
+            Self::EnsureIndexed => RemoteServerOperation::IndexCodebase,
+            Self::Resync => RemoteServerOperation::ResyncCodebase,
             Self::Drop => RemoteServerOperation::DropCodebaseIndex,
         }
     }
@@ -147,7 +150,8 @@ impl RemoteCodebaseIndexMutation {
         auth_token: String,
     ) -> Result<RemoteCodebaseIndexStatus, crate::client::ClientError> {
         match self {
-            Self::Index => client.index_codebase(repo_path, auth_token).await,
+            Self::EnsureIndexed => client.index_codebase(repo_path, auth_token).await,
+            Self::Resync => client.resync_codebase(repo_path, auth_token).await,
             Self::Drop => client.drop_codebase_index(repo_path, auth_token).await,
         }
     }
@@ -1428,9 +1432,18 @@ impl RemoteServerManager {
         })
     }
 
-    /// Sends an `IndexCodebase` request to a connected daemon for this remote path.
-    pub fn index_codebase(&mut self, remote_path: RemotePath, ctx: &mut ModelContext<Self>) {
-        self.mutate_codebase_index(remote_path, RemoteCodebaseIndexMutation::Index, ctx);
+    /// Ensures a codebase index exists for this remote path without resyncing an existing index.
+    pub fn ensure_codebase_indexed(
+        &mut self,
+        remote_path: RemotePath,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.mutate_codebase_index(remote_path, RemoteCodebaseIndexMutation::EnsureIndexed, ctx);
+    }
+
+    /// Sends a `ResyncCodebase` request to a connected daemon for this remote path.
+    pub fn resync_codebase(&mut self, remote_path: RemotePath, ctx: &mut ModelContext<Self>) {
+        self.mutate_codebase_index(remote_path, RemoteCodebaseIndexMutation::Resync, ctx);
     }
 
     /// Sends a `DropCodebaseIndex` request to a connected daemon for this remote path.

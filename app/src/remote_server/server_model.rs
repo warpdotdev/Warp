@@ -17,6 +17,7 @@ use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity};
 use super::codebase_index_status::{
     codebase_index_status_to_proto, disabled_codebase_index_status,
     not_enabled_codebase_index_status, queued_codebase_index_status,
+    unavailable_codebase_index_status,
 };
 use crate::code::global_buffer_model::{GlobalBufferModel, GlobalBufferModelEvent};
 use ::ai::index::full_source_code_embedding::manager::{
@@ -38,20 +39,21 @@ use super::proto::{
     client_message, delete_file_response, discard_files_response, get_diff_state_response,
     get_fragment_metadata_from_hash_response, resolve_conflict_response, run_command_response,
     save_buffer_response, server_message, write_file_response, Abort, Authenticate, BranchInfo,
-    BufferEdit, BufferUpdatedPush, ClientMessage, CloseBuffer, CodebaseIndexStatusState,
-    CodebaseIndexStatusUpdated, CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse,
-    DeleteFileSuccess, DiscardFilesError, DiscardFilesResponse, DiscardFilesSuccess,
-    DropCodebaseIndex, ErrorCode, ErrorResponse, FailedFileRead, FileContextProto,
-    FileOperationError, FragmentMetadata as ProtoFragmentMetadata,
+    BufferEdit, BufferUpdatedPush, ClientMessage, CloseBuffer, CodebaseIndexStatus,
+    CodebaseIndexStatusState, CodebaseIndexStatusUpdated, CodebaseIndexStatusesSnapshot,
+    DeleteFile, DeleteFileResponse, DeleteFileSuccess, DiscardFilesError, DiscardFilesResponse,
+    DiscardFilesSuccess, DropCodebaseIndex, ErrorCode, ErrorResponse, FailedFileRead,
+    FileContextProto, FileOperationError, FragmentMetadata as ProtoFragmentMetadata,
     FragmentMetadataLookupError as ProtoFragmentMetadataLookupError,
     FragmentMetadataLookupErrorCode, GetBranchesError, GetBranchesResponse, GetBranchesSuccess,
     GetDiffStateResponse, GetFragmentMetadataFromHash, GetFragmentMetadataFromHashResponse,
     GetFragmentMetadataFromHashSuccess, IndexCodebase, Initialize, InitializeResponse,
     MissingFragmentMetadata, NavigatedToDirectory, NavigatedToDirectoryResponse, OpenBuffer,
     OpenBufferResponse, ReadFileContextResponse, ResolveConflict, ResolveConflictResponse,
-    ResolveConflictSuccess, RunCommandError, RunCommandErrorCode, RunCommandRequest,
-    RunCommandResponse, RunCommandSuccess, SaveBuffer, SaveBufferResponse, SaveBufferSuccess,
-    ServerMessage, SessionBootstrapped, TextEdit, WriteFile, WriteFileResponse, WriteFileSuccess,
+    ResolveConflictSuccess, ResyncCodebase, RunCommandError, RunCommandErrorCode,
+    RunCommandRequest, RunCommandResponse, RunCommandSuccess, SaveBuffer, SaveBufferResponse,
+    SaveBufferSuccess, ServerMessage, SessionBootstrapped, TextEdit, WriteFile, WriteFileResponse,
+    WriteFileSuccess,
 };
 use super::server_buffer_tracker::{PendingBufferRequestKind, ServerBufferTracker};
 
@@ -97,6 +99,42 @@ enum HandlerOutcome {
     /// are tracked by `FileId` in `pending_file_ops` rather than by
     /// `RequestId` in `in_progress`).
     Async(Option<SpawnedFutureHandle>),
+}
+
+struct CodebaseIndexRequest {
+    repo_path: PathBuf,
+}
+
+#[derive(Clone, Copy)]
+enum CodebaseIndexOperation {
+    Index,
+    Resync,
+    Drop,
+}
+
+impl CodebaseIndexOperation {
+    fn message_name(self) -> &'static str {
+        match self {
+            Self::Index => "IndexCodebase",
+            Self::Resync => "ResyncCodebase",
+            Self::Drop => "DropCodebaseIndex",
+        }
+    }
+
+    fn auth_operation(self) -> &'static str {
+        match self {
+            Self::Index => "remote codebase indexing",
+            Self::Resync => "remote codebase resync",
+            Self::Drop => "remote codebase index removal",
+        }
+    }
+
+    fn normalize_repo_path(self, repo_path: &str) -> Result<PathBuf, String> {
+        match self {
+            Self::Index | Self::Resync => canonicalize_index_repo_path(repo_path),
+            Self::Drop => requested_repo_path(repo_path),
+        }
+    }
 }
 
 /// Tracks an in-flight file write or delete so the async completion
@@ -719,6 +757,9 @@ impl ServerModel {
             Some(client_message::Message::IndexCodebase(msg)) => {
                 self.handle_index_codebase(msg, &request_id, conn_id, ctx)
             }
+            Some(client_message::Message::ResyncCodebase(msg)) => {
+                self.handle_resync_codebase(msg, &request_id, conn_id, ctx)
+            }
             Some(client_message::Message::DropCodebaseIndex(msg)) => {
                 self.handle_drop_codebase_index(msg, &request_id, conn_id, ctx)
             }
@@ -795,8 +836,12 @@ impl ServerModel {
 
     fn push_all_codebase_index_statuses(&self, ctx: &mut ModelContext<Self>) {
         let snapshot = self.codebase_index_statuses_snapshot(ctx);
+        let status_count = snapshot.statuses.len();
+        log::info!(
+            "[Remote codebase indexing] Daemon pushing codebase index status updates: status_count={status_count}"
+        );
         for status in snapshot.statuses {
-            log::info!(
+            log::debug!(
                 "[Remote codebase indexing] Daemon pushing codebase index status update: repo_path={} state={:?}",
                 status.repo_path,
                 CodebaseIndexStatusState::try_from(status.state)
@@ -858,55 +903,29 @@ impl ServerModel {
             repo_path,
             auth_token,
         } = msg;
-        let repo_path_for_log = repo_path.clone();
-        if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
-            log::info!(
-                "[Remote codebase indexing] Daemon rejecting IndexCodebase because remote indexing is disabled: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
-            );
-            return HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
-                CodebaseIndexStatusUpdated {
-                    status: Some(not_enabled_codebase_index_status(repo_path)),
-                },
-            ));
-        }
-
-        let repo_path = match canonicalize_index_repo_path(&repo_path) {
-            Ok(repo_path) => repo_path,
-            Err(error) => {
-                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                    code: ErrorCode::InvalidRequest.into(),
-                    message: error,
-                }));
-            }
+        let request = match self.prepare_codebase_index_request(
+            CodebaseIndexOperation::Index,
+            repo_path,
+            auth_token,
+            request_id,
+            conn_id,
+        ) {
+            Ok(request) => request,
+            Err(outcome) => return *outcome,
         };
-        if let Err(error) =
-            self.validate_remote_codebase_index_auth(&auth_token, "remote codebase indexing")
-        {
-            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                code: ErrorCode::InvalidRequest.into(),
-                message: error,
-            }));
-        }
-        log::info!(
-            "[Remote codebase indexing] Daemon handling IndexCodebase: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
-        );
+        let repo_path = request.repo_path;
         let status = CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
-            if let Some(indexed_repo_path) = manager.root_path_for_codebase(&repo_path) {
-                manager.try_manual_resync_codebase(&repo_path, ctx);
-                manager
-                    .get_codebase_index_status_for_path(indexed_repo_path.as_path(), ctx)
-                    .map(|status| {
-                        codebase_index_status_to_proto(indexed_repo_path.as_path(), &status)
-                    })
-                    .unwrap_or_else(|| {
-                        queued_codebase_index_status(
-                            indexed_repo_path.to_string_lossy().to_string(),
-                        )
-                    })
-            } else {
-                manager.index_directory(repo_path.clone(), ctx);
-                queued_codebase_index_status(repo_path.to_string_lossy().to_string())
-            }
+            manager.with_indexed_codebase(
+                &repo_path,
+                |manager, indexed_repo_path, ctx| {
+                    Self::current_codebase_index_status_or_queued(manager, indexed_repo_path, ctx)
+                },
+                |manager, repo_path, ctx| {
+                    manager.index_directory(repo_path.to_path_buf(), ctx);
+                    queued_codebase_index_status(repo_path.to_string_lossy().to_string())
+                },
+                ctx,
+            )
         });
 
         HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
@@ -914,6 +933,66 @@ impl ServerModel {
                 status: Some(status),
             },
         ))
+    }
+
+    fn handle_resync_codebase(
+        &mut self,
+        msg: ResyncCodebase,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) -> HandlerOutcome {
+        let ResyncCodebase {
+            repo_path,
+            auth_token,
+        } = msg;
+        let request = match self.prepare_codebase_index_request(
+            CodebaseIndexOperation::Resync,
+            repo_path,
+            auth_token,
+            request_id,
+            conn_id,
+        ) {
+            Ok(request) => request,
+            Err(outcome) => return *outcome,
+        };
+        let repo_path = request.repo_path;
+        let status = CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
+            manager.with_indexed_codebase(
+                &repo_path,
+                |manager, indexed_repo_path, ctx| {
+                    manager.try_manual_resync_codebase(indexed_repo_path, ctx);
+                    Self::current_codebase_index_status_or_queued(manager, indexed_repo_path, ctx)
+                },
+                |_, repo_path, _| {
+                    unavailable_codebase_index_status(
+                        repo_path.to_string_lossy().to_string(),
+                        "Cannot resync remote codebase because it has not been indexed."
+                            .to_string(),
+                    )
+                },
+                ctx,
+            )
+        });
+
+        HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
+            CodebaseIndexStatusUpdated {
+                status: Some(status),
+            },
+        ))
+    }
+
+    fn current_codebase_index_status_or_queued(
+        manager: &CodebaseIndexManager,
+        indexed_repo_path: &Path,
+        ctx: &mut ModelContext<CodebaseIndexManager>,
+    ) -> CodebaseIndexStatus {
+        manager
+            .get_codebase_index_status_for_path(indexed_repo_path, ctx)
+            .map(|status| codebase_index_status_to_proto(indexed_repo_path, &status))
+            .unwrap_or_else(|| {
+                queued_codebase_index_status(indexed_repo_path.to_string_lossy().to_string())
+            })
     }
 
     fn handle_drop_codebase_index(
@@ -927,49 +1006,23 @@ impl ServerModel {
             repo_path,
             auth_token,
         } = msg;
-        let repo_path_for_log = repo_path.clone();
-        if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
-            log::info!(
-                "[Remote codebase indexing] Daemon rejecting DropCodebaseIndex because remote indexing is disabled: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
-            );
-            return HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
-                CodebaseIndexStatusUpdated {
-                    status: Some(not_enabled_codebase_index_status(repo_path)),
-                },
-            ));
-        }
-
-        let repo_path = match requested_repo_path(&repo_path) {
-            Ok(repo_path) => repo_path,
-            Err(error) => {
-                return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                    code: ErrorCode::InvalidRequest.into(),
-                    message: error,
-                }));
-            }
+        let request = match self.prepare_codebase_index_request(
+            CodebaseIndexOperation::Drop,
+            repo_path,
+            auth_token,
+            request_id,
+            conn_id,
+        ) {
+            Ok(request) => request,
+            Err(outcome) => return *outcome,
         };
-        if let Err(error) =
-            self.validate_remote_codebase_index_auth(&auth_token, "remote codebase index removal")
-        {
-            return HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
-                code: ErrorCode::InvalidRequest.into(),
-                message: error,
-            }));
-        }
-        log::info!(
-            "[Remote codebase indexing] Daemon handling DropCodebaseIndex: request_id={request_id} conn_id={conn_id} repo_path={}",
-            repo_path.display()
-        );
+        let CodebaseIndexRequest { repo_path } = request;
         CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
             manager.drop_index(repo_path.clone(), ctx);
         });
 
-        HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
-            CodebaseIndexStatusUpdated {
-                status: Some(disabled_codebase_index_status(
-                    repo_path.to_string_lossy().to_string(),
-                )),
-            },
+        codebase_index_status_response(disabled_codebase_index_status(
+            repo_path.to_string_lossy().to_string(),
         ))
     }
 
@@ -1280,6 +1333,41 @@ impl ServerModel {
                 "Missing cached authentication credentials for {operation}"
             )),
         }
+    }
+
+    fn prepare_codebase_index_request(
+        &self,
+        operation: CodebaseIndexOperation,
+        repo_path: String,
+        auth_token: String,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+    ) -> Result<CodebaseIndexRequest, Box<HandlerOutcome>> {
+        let operation_name = operation.message_name();
+        let repo_path_for_log = repo_path.clone();
+        if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
+            log::info!(
+                "[Remote codebase indexing] Daemon rejecting {operation_name} because remote indexing is disabled: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
+            );
+            return Err(Box::new(codebase_index_status_response(
+                not_enabled_codebase_index_status(repo_path),
+            )));
+        }
+
+        let repo_path = operation
+            .normalize_repo_path(&repo_path)
+            .map_err(|error| Box::new(invalid_request_response(error)))?;
+
+        if let Err(error) =
+            self.validate_remote_codebase_index_auth(&auth_token, operation.auth_operation())
+        {
+            return Err(Box::new(invalid_request_response(error)));
+        }
+
+        log::info!(
+            "[Remote codebase indexing] Daemon handling {operation_name}: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
+        );
+        Ok(CodebaseIndexRequest { repo_path })
     }
 
     /// Handles `Abort` by cancelling the in-progress request it targets.
@@ -2453,6 +2541,20 @@ impl ServerModel {
     }
 }
 
+fn invalid_request_response(message: String) -> HandlerOutcome {
+    HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+        code: ErrorCode::InvalidRequest.into(),
+        message,
+    }))
+}
+
+fn codebase_index_status_response(status: CodebaseIndexStatus) -> HandlerOutcome {
+    HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
+        CodebaseIndexStatusUpdated {
+            status: Some(status),
+        },
+    ))
+}
 fn requested_repo_path(repo_path: &str) -> Result<PathBuf, String> {
     if repo_path.is_empty() {
         return Err("repo_path is required".to_string());

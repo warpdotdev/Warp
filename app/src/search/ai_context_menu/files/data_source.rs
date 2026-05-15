@@ -1,5 +1,6 @@
 #![cfg_attr(not(feature = "local_fs"), allow(dead_code))]
 use super::search_item::FileSearchItem;
+#[cfg(feature = "local_fs")]
 use crate::code::opened_files::OpenedFilesModel;
 use crate::search::ai_context_menu::mixer::AIContextMenuSearchableAction;
 use crate::search::async_snapshot_data_source::AsyncSnapshotDataSource;
@@ -7,15 +8,20 @@ use crate::search::data_source::{Query, QueryResult};
 use crate::search::files::model::FileSearchModel;
 use crate::search::files::search_item::FileSearchResult;
 use crate::search::mixer::{BoxFuture, DataSourceRunErrorWrapper};
+#[cfg(feature = "local_fs")]
 use crate::workspace::ActiveSession;
 use futures_lite::future::yield_now;
 use fuzzy_match::FuzzyMatchResult;
 use itertools::Itertools;
+#[cfg(feature = "local_fs")]
 use repo_metadata::repositories::DetectedRepositories;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+#[cfg(feature = "local_fs")]
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
+#[cfg(feature = "local_fs")]
 use warp_util::local_or_remote_path::LocalOrRemotePath;
 use warpui::{AppContext, SingletonEntity};
 
@@ -105,6 +111,7 @@ pub fn file_data_source_for_pwd(
 
 /// Captures last-opened timestamps from `OpenedFilesModel` for the active
 /// repo at snapshot time. Returns an empty map when no repo is active.
+#[cfg(feature = "local_fs")]
 fn snapshot_last_opened(app: &AppContext) -> HashMap<String, instant::Instant> {
     let git_repo_path = app
         .windows()
@@ -134,6 +141,12 @@ fn snapshot_last_opened(app: &AppContext) -> HashMap<String, instant::Instant> {
         .iter()
         .map(|(path, ts)| (path.to_string_lossy().to_string(), *ts))
         .collect()
+}
+
+/// File-open recency is unavailable without a local filesystem.
+#[cfg(not(feature = "local_fs"))]
+fn snapshot_last_opened(_app: &AppContext) -> HashMap<String, instant::Instant> {
+    HashMap::new()
 }
 
 /// Routes file matching to zero-state ranking or query-based fuzzy scoring.

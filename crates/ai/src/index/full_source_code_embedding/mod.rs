@@ -18,6 +18,7 @@ pub use sync_client::SyncTask;
 
 pub use codebase_index::{CodebaseIndex, RetrievalID, SyncProgress};
 pub use merkle_tree::{ContentHash, NodeHash};
+pub use snapshot::SnapshotStorage;
 
 pub use fragment_metadata::FragmentMetadata;
 use string_offset::ByteOffset;

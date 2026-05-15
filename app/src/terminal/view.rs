@@ -186,6 +186,7 @@ pub use init::{
     TOGGLE_HIDE_CLI_RESPONSES_KEYBINDING, TOGGLE_QUEUE_NEXT_PROMPT_KEYBINDING,
 };
 pub use inline_banner::{NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction};
+#[cfg(not(target_family = "wasm"))]
 use repo_metadata::repositories::DetectedRepositories;
 use repo_metadata::repositories::RepoDetectionSource;
 use session_sharing_protocol::common::LongRunningCommandAgentInteractionState;
@@ -4633,6 +4634,9 @@ impl TerminalView {
                         );
                     }
                     RemoteServerManagerEvent::HostDisconnected { host_id } => {
+                        #[cfg(target_family = "wasm")]
+                        let _ = host_id;
+                        #[cfg(not(target_family = "wasm"))]
                         DetectedRepositories::handle(ctx).update(ctx, |repos, _| {
                             repos.remove_roots_for_host(host_id);
                         });
@@ -11664,6 +11668,7 @@ impl TerminalView {
 
                                 match &repo_path_opt {
                                     Some(LocalOrRemotePath::Remote(remote_path)) => {
+                                        #[cfg(not(target_family = "wasm"))]
                                         DetectedRepositories::handle(ctx).update(
                                             ctx,
                                             |repos, _| {
