@@ -76,6 +76,64 @@ fn test_prompt_context_menu_items_shared_session_viewer_no_edit_prompt() {
 }
 
 #[test]
+fn test_on_ambient_agent_execution_ended_enables_followup_input_for_editable_non_owner_finished_view(
+) {
+    let _handoff_flag = FeatureFlag::HandoffCloudCloud.override_enabled(true);
+    let _setup_v2_flag = FeatureFlag::CloudModeSetupV2.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        let terminal = terminal_view_for_viewer(&mut app);
+        let task = create_cloud_mode_task_for_user("another-user");
+        let task_id = task.task_id;
+
+        insert_cloud_mode_task_with_server_metadata(
+            &mut app,
+            terminal.id(),
+            task,
+            AIAgentHarness::Oz,
+            current_user_owner_permissions(),
+        );
+        let initial_block_height_items = terminal.read(&app, |view, _| {
+            view.model.lock().block_list().block_heights().items().len()
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            let mut model = view.model.lock();
+            model.set_shared_session_source_type(SessionSourceType::AmbientAgent {
+                task_id: Some(task_id.to_string()),
+            });
+            model.set_shared_session_status(SharedSessionStatus::FinishedViewer);
+            drop(model);
+
+            view.on_ambient_agent_execution_ended(ctx);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            let model = view.model.lock();
+            assert_eq!(
+                model.block_list().block_heights().items().len(),
+                initial_block_height_items
+            );
+            assert!(matches!(
+                model.shared_session_status(),
+                SharedSessionStatus::NotShared
+            ));
+            assert!(view.conversation_ended_tombstone_view_id.is_none());
+            assert_eq!(view.pending_cloud_followup_task_id, Some(task_id));
+            assert!(view.is_input_box_visible(&model, ctx));
+            assert_eq!(
+                view.input()
+                    .as_ref(ctx)
+                    .editor()
+                    .as_ref(ctx)
+                    .interaction_state(ctx),
+                InteractionState::Editable
+            );
+        });
+    });
+}
+
+#[test]
 fn test_shared_session_banners() {
     let _flag = FeatureFlag::CreatingSharedSessions.override_enabled(true);
 
@@ -565,7 +623,7 @@ fn test_restored_ambient_view_resolves_cta_from_view_model_task_id() {
 
     App::test((), |mut app| async move {
         let terminal = cloud_mode_terminal_for_test(&mut app);
-        let task = create_cloud_mode_task_for_user(TEST_USER_UID);
+        let task = create_cloud_mode_task_for_user("another-user");
         let task_id = task.task_id;
 
         insert_cloud_mode_task_with_server_metadata(
@@ -605,13 +663,13 @@ fn test_restored_ambient_view_resolves_cta_from_view_model_task_id() {
 }
 
 #[test]
-fn test_restored_oz_edit_access_view_uses_followup_input_without_tombstone() {
+fn test_restored_oz_edit_access_non_owner_finished_view_uses_followup_input_without_tombstone() {
     let _handoff_flag = FeatureFlag::HandoffCloudCloud.override_enabled(true);
     let _setup_v2_flag = FeatureFlag::CloudModeSetupV2.override_enabled(true);
 
     App::test((), |mut app| async move {
         let terminal = cloud_mode_terminal_for_test(&mut app);
-        let task = create_cloud_mode_task_for_user(TEST_USER_UID);
+        let task = create_cloud_mode_task_for_user("another-user");
         let task_id = task.task_id;
 
         insert_cloud_mode_task_with_server_metadata(
@@ -635,8 +693,11 @@ fn test_restored_oz_edit_access_view_uses_followup_input_without_tombstone() {
             ambient_agent_view_model.update(ctx, |model, ctx| {
                 model.enter_viewing_existing_session(task_id, ctx);
             });
-            let initial_block_height_items =
-                view.model.lock().block_list().block_heights().items().len();
+            let initial_block_height_items = {
+                let mut model = view.model.lock();
+                model.set_shared_session_status(SharedSessionStatus::FinishedViewer);
+                model.block_list().block_heights().items().len()
+            };
 
             view.insert_conversation_ended_tombstone_with_resolved_cta(ctx);
 
@@ -648,6 +709,10 @@ fn test_restored_oz_edit_access_view_uses_followup_input_without_tombstone() {
             assert_eq!(view.pending_cloud_followup_task_id, Some(task_id));
             {
                 let model = view.model.lock();
+                assert!(matches!(
+                    model.shared_session_status(),
+                    SharedSessionStatus::NotShared
+                ));
                 assert!(view.is_input_box_visible(&model, ctx));
             }
             assert_eq!(
@@ -1284,10 +1349,13 @@ fn test_non_owned_tombstone_is_removed_for_followup_and_reinserted_after_complet
         let terminal = cloud_mode_terminal_for_test(&mut app);
         let task = create_cloud_mode_task_for_user("another-user");
         let task_id = task.task_id;
-
-        AgentConversationsModel::handle(&app).update(&mut app, |model, _| {
-            model.insert_task_for_test(task);
-        });
+        insert_cloud_mode_task_with_server_metadata(
+            &mut app,
+            terminal.id(),
+            task,
+            AIAgentHarness::ClaudeCode,
+            current_user_owner_permissions(),
+        );
 
         terminal.update(&mut app, |view, ctx| {
             let mut model = view.model.lock();
@@ -1307,8 +1375,7 @@ fn test_non_owned_tombstone_is_removed_for_followup_and_reinserted_after_complet
 
             let initial_block_height_items =
                 view.model.lock().block_list().block_heights().items().len();
-
-            view.insert_conversation_ended_tombstone_with_cta(None, ctx);
+            view.insert_conversation_ended_tombstone_with_resolved_cta(ctx);
             assert!(view.conversation_ended_tombstone_view_id.is_some());
             assert_eq!(
                 view.model.lock().block_list().block_heights().items().len(),
@@ -1318,9 +1385,25 @@ fn test_non_owned_tombstone_is_removed_for_followup_and_reinserted_after_complet
             view.start_cloud_followup_from_tombstone(task_id, ctx);
             assert_eq!(view.pending_cloud_followup_task_id, Some(task_id));
             assert!(view.conversation_ended_tombstone_view_id.is_none());
+            {
+                let model = view.model.lock();
+                assert!(matches!(
+                    model.shared_session_status(),
+                    SharedSessionStatus::NotShared
+                ));
+                assert!(view.is_input_box_visible(&model, ctx));
+                assert_eq!(
+                    model.block_list().block_heights().items().len(),
+                    initial_block_height_items
+                );
+            }
             assert_eq!(
-                view.model.lock().block_list().block_heights().items().len(),
-                initial_block_height_items
+                view.input()
+                    .as_ref(ctx)
+                    .editor()
+                    .as_ref(ctx)
+                    .interaction_state(ctx),
+                InteractionState::Editable
             );
 
             view.handle_ambient_agent_event(

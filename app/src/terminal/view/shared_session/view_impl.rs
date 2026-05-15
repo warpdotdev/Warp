@@ -197,6 +197,23 @@ impl TerminalView {
         ctx.notify();
     }
 
+    fn enable_cloud_followup_input_after_conversation_end(
+        &mut self,
+        task_id: AmbientAgentTaskId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.remove_conversation_ended_tombstone(ctx);
+
+        {
+            let mut model = self.model.lock();
+            if model.shared_session_status().is_finished_viewer() {
+                model.set_shared_session_status(SharedSessionStatus::NotShared);
+            }
+        }
+
+        self.enable_cloud_followup_input(task_id, ctx);
+    }
+
     pub(super) fn handle_viewer_role_change_menu_event(
         &mut self,
         event: &MenuEvent,
@@ -879,9 +896,8 @@ impl TerminalView {
                 self.insert_conversation_ended_tombstone_with_cta(cta, ctx);
             }
             CloudConversationContinuationUiState::FollowupInput => {
-                self.remove_conversation_ended_tombstone(ctx);
                 if let Some(task_id) = self.ambient_agent_task_id_for_details_panel(ctx) {
-                    self.enable_cloud_followup_input(task_id, ctx);
+                    self.enable_cloud_followup_input_after_conversation_end(task_id, ctx);
                 }
             }
         }
@@ -906,8 +922,7 @@ impl TerminalView {
             self.show_error_toast("Couldn't continue this cloud task.".to_string(), ctx);
             return;
         }
-        self.remove_conversation_ended_tombstone(ctx);
-        self.enable_cloud_followup_input(task_id, ctx);
+        self.enable_cloud_followup_input_after_conversation_end(task_id, ctx);
         self.focus_input_box(ctx);
         ctx.notify();
     }
@@ -1765,9 +1780,8 @@ impl TerminalView {
                 self.insert_conversation_ended_tombstone_with_cta(cta, ctx);
             }
             Some(CloudConversationContinuationUiState::FollowupInput) => {
-                self.remove_conversation_ended_tombstone(ctx);
                 if let Some(task_id) = self.ambient_agent_task_id_for_details_panel(ctx) {
-                    self.enable_cloud_followup_input(task_id, ctx);
+                    self.enable_cloud_followup_input_after_conversation_end(task_id, ctx);
                 } else {
                     self.insert_conversation_ended_tombstone_with_cta(None, ctx);
                 }
