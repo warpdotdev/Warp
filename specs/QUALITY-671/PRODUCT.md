@@ -54,13 +54,13 @@ The expanded credit usage footer in agent mode is per-conversation. When the con
 
 10. Descendants whose conversation state is not loaded locally do not contribute to the rollup and do not appear in the per-agent list. The rollup is a best-effort sum across locally-known agents. In practice this gap is small (server-side usage updates stream to the client), so the v1 surface does not warn the user that some agents may be missing. If real-world discrepancies prove confusing, a server-side rollup query is a follow-up.
 
-11. The collapsed footer pill (the small button with the credit number + chevron) shows the orchestration total when a rollup applies (per invariant 2). When the rollup does not apply (no eligible descendants, feature flag off, etc.), the pill shows the orchestrator's own credit number exactly as it does today.
+11. The collapsed footer pill (the small button with the credit number + chevron) shows the orchestration total when a rollup applies (per invariant 2). When the rollup does not apply (no eligible descendants), the pill shows the orchestrator's own credit number exactly as it does today.
    a. The "+N" delta annotation on the pill (current behavior: show the most-recent-response credit count when total ≠ last response) continues to use the orchestrator's own most-recent-block credits. With the rollup active, this delta represents "the credits the orchestrator's last response added to the orchestration total" — still meaningful at a glance.
    b. The existing "hide the button entirely when there's no usage data" rule is evaluated against the rollup total when applicable, so the pill appears as soon as any contributing agent has spent a credit (not only when the orchestrator itself has).
 
 12. The "View details" / "Hide details" link and the per-agent list visually match the existing footer's typography, spacing, and color treatment. Avatar discs use the same component used in the orchestration pill bar's pill avatars (per-name deterministic color + uppercase initial; orchestrator uses `Icon::Oz` on `ansi_fg_cyan`).
 
-13. The feature is gated by a new feature flag `OrchestrationCreditRollup`, default-enabled in dogfood builds and opt-in for preview/release until validated.
+13. The feature is self-gating: there is no dedicated feature flag. The rollup activates whenever the orchestrator has at least one locally-loaded descendant with non-zero credits; otherwise the row renders exactly as today. The underlying ability to create child agents is gated by `FeatureFlag::OrchestrationV2`, and the expanded footer surface itself is gated by `FeatureFlag::AgentView`, so the rollup is effectively reachable only when both are on — no additional flag is needed.
 
 14. The footer remains keyboard accessible. The "View details" link is reachable via the normal focus order and activatable with Enter/Space. The "Show N more" link is reachable and activatable the same way. Screen reader semantics for the per-agent list mirror existing list semantics in the footer (no new ARIA invention).
 

@@ -3246,20 +3246,18 @@ fn render_usage_button(props: Props, app: &AppContext) -> Box<dyn Element> {
         return Empty::new().finish();
     };
 
-    // Optional orchestration credit rollup. When the feature flag is on and
-    // the conversation has at least one locally-loaded descendant with
-    // credits spent, the pill's headline number and "has any usage"
-    // suppression check both switch over to the orchestration total
-    // (PRODUCT invariants 11, 11b). The `(+N)` last-block annotation
-    // below stays bound to the orchestrator's own credits.
-    let rollup = if FeatureFlag::OrchestrationCreditRollup.is_enabled() {
-        crate::ai::blocklist::usage::rollup::compute_orchestration_rollup(
-            conversation.id(),
-            BlocklistAIHistoryModel::as_ref(app),
-        )
-    } else {
-        None
-    };
+    // Optional orchestration credit rollup. When the conversation has at
+    // least one locally-loaded descendant with credits spent, the pill's
+    // headline number and "has any usage" suppression check both switch
+    // over to the orchestration total (PRODUCT invariants 11, 11b). The
+    // `(+N)` last-block annotation below stays bound to the
+    // orchestrator's own credits. The rollup helper returns `None` for
+    // conversations with no descendants, so callers that aren't
+    // orchestrators pay only the cost of one descendant-index probe.
+    let rollup = crate::ai::blocklist::usage::rollup::compute_orchestration_rollup(
+        conversation.id(),
+        BlocklistAIHistoryModel::as_ref(app),
+    );
 
     // If this conversation has no usage metadata (e.g. a forked conversation from
     // mid-way through a prior conversation where the server did not send

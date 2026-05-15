@@ -90,14 +90,14 @@ Modifications in `conversation_usage_view.rs`:
 The rollup is consumed in two places:
 
 - **Expanded footer.** The caller that constructs `ConversationUsageView::new(...)` for `DisplayMode::Footer` lives near `render_usage_footer` in `output.rs` (locate via `ConversationUsageView::new` call sites; `render_usage_button` at `output.rs:3243` is adjacent). The caller has access to the `BlocklistAIHistoryModel` because the surrounding view already uses it.
-   - Compute `compute_orchestration_rollup(conversation_id, history)` at construction time, behind `FeatureFlag::OrchestrationCreditRollup.is_enabled()`.
-   - Pass the result into the view constructor as `rollup: Option<OrchestrationCreditRollup>`.
-   - Settings-mode (`DisplayMode::Settings`) callers pass `None`.
+   - The footer constructor always uses `ConversationUsageView::new_footer_with_rollup`, which holds the parent conversation id and calls `compute_orchestration_rollup` at render time.
+   - `compute_orchestration_rollup` returns `None` whenever the orchestrator has no loaded descendants or no eligible credits, so the rollup-aware UI naturally collapses to today's exact behavior.
+   - Settings-mode (`DisplayMode::Settings`) continues to use `ConversationUsageView::new`, which leaves `parent_conversation_id` unset; `rollup()` then short-circuits to `None`.
 - **Collapsed pill** (PRODUCT invariant 11). In `render_usage_button` (`output.rs:3243`):
-   - Compute the same `compute_orchestration_rollup(...)` (or accept it from the caller to avoid duplicate work).
+   - Call `compute_orchestration_rollup(conversation.id(), history)` unconditionally.
    - When the rollup is `Some(_)`, use `rollup.total_credits` instead of `conversation.credits_spent()` for the pill's headline number and for the "has any usage" suppression check (`output.rs:3252-3258`).
    - The `(+N)` last-block annotation block (`output.rs:3271-3291`) is unchanged — it continues to read `conversation.credits_spent_for_last_block()` and compare to the headline number. With rollup active, headline ≫ last block, so the annotation appears whenever the orchestrator has had a recent response. This is the intended behavior per PRODUCT invariant 11a.
-   - Behind `FeatureFlag::OrchestrationCreditRollup.is_enabled()`; flag off means today's exact behavior.
+   - Self-gating: when the conversation has no descendants the helper returns `None` and the pill renders exactly as today.
 
 ### 4. Reset UI state on footer collapse / reopen
 
@@ -105,12 +105,15 @@ The expanded footer view is created fresh each time `is_usage_footer_expanded` f
 
 - Verify this assumption during implementation. If the view instance is cached across collapse cycles, add explicit reset logic on the open transition, or hoist the bools to props that the parent rebuilds.
 
-### 5. Feature flag
+### 5. Self-gating (no feature flag)
 
-Add `FeatureFlag::OrchestrationCreditRollup` in `crates/warp_core/src/features.rs`:
-- List in `DOGFOOD_FLAGS`.
-- Do NOT list in `PREVIEW_FLAGS` or `RELEASE_FLAGS` for v1; promote after dogfood validation via the `promote-feature` skill.
-- Gate the rollup computation AND the toggle/list render behind `FeatureFlag::OrchestrationCreditRollup.is_enabled()`. When disabled, the "Credits spent (total)" row renders exactly as today.
+There is no dedicated `OrchestrationCreditRollup` feature flag. The rollup activates whenever `compute_orchestration_rollup` returns `Some(_)` and falls through to today's UI whenever it returns `None`:
+
+- Conversations with no locally-loaded descendants → `None` (no children walked, no rollup UI).
+- Conversations where every loaded descendant has zero credits → `None` (zero-credit filter empties `per_agent`).
+- Settings-mode views → `rollup()` short-circuits on `display_mode != Footer`.
+
+The upstream ability to spawn child agents is still gated by `FeatureFlag::OrchestrationV2`, and the expanded footer surface itself is gated by `FeatureFlag::AgentView`, so the rollup is reachable only when both already permit the user to create and view an orchestration. Adding a third flag on top of those would only have offered a kill-switch; the self-gating data check provides the same safety net (today's UI is preserved whenever the rollup has nothing to add) without the cleanup burden.
 
 ### 6. Live updates from child usage changes
 
@@ -148,14 +151,13 @@ Renderer tests in `conversation_usage_view_tests.rs`:
 - Per-agent list with 6 rows renders first 5 plus "Show 1 more"; clicking the link reveals the 6th and removes the link. (invariant 5f)
 - Footer collapse + reopen rebuilds the view with `details_expanded == false` and `show_all_clicked == false`. (invariant 6)
 - `DisplayMode::Settings` renders no toggle and no per-agent list even if a rollup is passed (defensive). (invariant 17)
-- Feature flag off: row renders exactly as today. (invariant 13)
+- Conversation with no descendants (`rollup() == None`): row renders exactly as today (no toggle, no breakdown). (invariant 13)
 - "Credits spent (last response)" row is unchanged regardless of rollup state. (invariant 3)
 
 Collapsed-pill tests in `output_tests.rs` (or equivalent next to `render_usage_button`):
 
 - Conversation with a non-empty rollup: pill headline number equals `rollup.total_credits`. (invariant 11)
-- Same conversation with feature flag off: pill headline number equals `conversation.credits_spent()` (today's behavior). (invariants 11, 13)
-- Conversation with rollup `None`: pill headline number equals `conversation.credits_spent()`. (invariant 11)
+- Conversation with rollup `None` (no descendants, or only zero-credit descendants): pill headline number equals `conversation.credits_spent()` (today's behavior). (invariants 11, 13)
 - `(+N)` annotation renders using `credits_spent_for_last_block` regardless of rollup state. (invariant 11a)
 - "Hide button entirely" suppression is evaluated against rollup total when applicable. (invariant 11b)
 
@@ -168,7 +170,7 @@ Manual verification:
 - Trigger a child to finish a response mid-view; confirm both the pill number and the expanded rollup update without re-expanding. (invariants 7, 11)
 - Spawn 7+ children; confirm the list shows 5 + "Show N more"; click and confirm all rows visible and link gone. (invariant 5f)
 - Collapse + reopen the footer; confirm the list is back to truncated (and "View details" is closed). (invariant 6)
-- Toggle `OrchestrationCreditRollup` off; confirm the pill and the row revert to today's behavior. (invariant 13)
+- Open the same expanded footer on a non-orchestrator conversation (or one with no loaded descendants) and confirm the row renders exactly as it does today, with no "View details" affordance. (invariant 13)
 
 Run `./script/presubmit` before pushing. Formatting, clippy, and tests must pass.
 

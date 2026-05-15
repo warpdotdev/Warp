@@ -874,12 +874,6 @@ pub enum FeatureFlag {
 
     /// Replaces the raw harness CLI command with a styled header showing CLI name + status icon.
     HarnessSessionHeader,
-
-    /// Rolls up orchestration credit usage in the agent-mode footer. When
-    /// enabled, the orchestrator's expanded "Credits spent (total)" row and
-    /// collapsed footer pill show the orchestration total (orchestrator +
-    /// locally-loaded descendants) and expose a per-agent breakdown.
-    OrchestrationCreditRollup,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -959,7 +953,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::SoloUserByok,
     FeatureFlag::CustomInferenceEndpoints,
     FeatureFlag::RemoteCodebaseIndexing,
-    FeatureFlag::OrchestrationCreditRollup,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).

@@ -9,7 +9,6 @@ use crate::ai::blocklist::usage::rollup::{
 use crate::ai::blocklist::view_util::format_credits;
 use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
 use crate::appearance::Appearance;
-use crate::features::FeatureFlag;
 use crate::persistence::model::{
     token_usage_category_display_name, ModelTokenUsage, FULL_TERMINAL_USE_CATEGORY,
     PRIMARY_AGENT_CATEGORY,
@@ -171,12 +170,12 @@ impl ConversationUsageView {
     }
 
     /// Returns the current orchestration rollup for this view, or `None`
-    /// when the feature flag is off, the view is in settings mode, or the
-    /// orchestrator has no eligible descendants.
+    /// when the view is in settings mode, the parent conversation isn't
+    /// known, or the orchestrator has no locally-loaded descendants with
+    /// non-zero credits. The feature is self-gating: settings-mode views
+    /// and conversations without descendants short-circuit before any
+    /// rollup-specific UI is built, so no feature flag is needed.
     fn rollup(&self, app: &AppContext) -> Option<OrchestrationCreditRollup> {
-        if !FeatureFlag::OrchestrationCreditRollup.is_enabled() {
-            return None;
-        }
         if self.display_mode != DisplayMode::Footer {
             return None;
         }
@@ -251,7 +250,7 @@ impl ConversationUsageView {
 
         // "Credits spent (total)" value: use the rollup total when available,
         // otherwise the orchestrator's own self total (today's behavior).
-        // PRODUCT invariants 2a, 11, 13.
+        // PRODUCT invariants 2a, 11.
         let total_credits_value = rollup
             .as_ref()
             .map(|r| r.total_credits)
