@@ -77,13 +77,25 @@ async fn described_token_majority_below_v2_threshold() -> bool {
     is_likely_shell_command(&token, word_tokens_count).await
 }
 
-async fn url_like_token_in_nl_prompt_is_shell() -> bool {
+async fn downloads_log_path_in_nl_prompt_is_shell() -> bool {
+    let command_token = mock_parsed_input_token("cargo --version".to_string()).await;
+    let command_description = command_token
+        .parsed_tokens
+        .first()
+        .and_then(|token| token.token_description.clone())
+        .expect("test input should include a described command token");
+
     let mut token = mock_parsed_input_token(
-        "read this https://example.com/foo-bar and summarize it".to_string(),
+        "look at this /users/ewanlockwood/downloads/logs_58498936986".to_string(),
     )
     .await;
     let word_tokens_count = token.parsed_tokens.len();
     clear_all_token_descriptions(&mut token);
+    token
+        .parsed_tokens
+        .first_mut()
+        .expect("test input should include tokens")
+        .token_description = Some(command_description);
     is_likely_shell_command(&token, word_tokens_count).await
 }
 
@@ -103,6 +115,7 @@ async fn majority_described_tokens_returns_true() {
     assert!(is_likely_shell_command(&token, word_tokens_count).await);
 }
 
+// Cases where nld_heuristic_v1 and nld_heuristic_v2 should both mark input as shell.
 #[cfg(all(feature = "nld_heuristic_v1", not(feature = "nld_heuristic_v2")))]
 #[test]
 fn test_is_likely_shell_command_one_off_keyword_short_circuits_true_for_nld_heuristic_v1() {
@@ -131,6 +144,19 @@ fn test_is_likely_shell_command_first_token_with_description_short_input_true_fo
 
 #[cfg(all(feature = "nld_heuristic_v1", not(feature = "nld_heuristic_v2")))]
 #[test]
+fn test_is_likely_shell_command_majority_described_tokens_true_for_nld_heuristic_v1() {
+    futures::executor::block_on(majority_described_tokens_returns_true());
+}
+
+#[cfg(feature = "nld_heuristic_v2")]
+#[test]
+fn test_is_likely_shell_command_majority_described_tokens_true_for_nld_heuristic_v2() {
+    futures::executor::block_on(majority_described_tokens_returns_true());
+}
+
+// Cases where nld_heuristic_v1 and nld_heuristic_v2 should both not mark input as shell.
+#[cfg(all(feature = "nld_heuristic_v1", not(feature = "nld_heuristic_v2")))]
+#[test]
 fn test_is_likely_shell_command_no_descriptions_false_for_nld_heuristic_v1() {
     futures::executor::block_on(no_descriptions_returns_false());
 }
@@ -141,6 +167,24 @@ fn test_is_likely_shell_command_no_descriptions_false_for_nld_heuristic_v2() {
     futures::executor::block_on(no_descriptions_returns_false());
 }
 
+#[cfg(all(feature = "nld_heuristic_v1", not(feature = "nld_heuristic_v2")))]
+#[test]
+fn test_is_likely_shell_command_file_path_in_nl_prompt_false_for_nld_heuristic_v1() {
+    futures::executor::block_on(async move {
+        assert!(!file_path_in_nl_prompt_is_shell().await);
+    });
+}
+
+#[cfg(feature = "nld_heuristic_v2")]
+#[test]
+fn test_is_likely_shell_command_file_path_in_nl_prompt_false_for_nld_heuristic_v2() {
+    futures::executor::block_on(async move {
+        assert!(!file_path_in_nl_prompt_is_shell().await);
+    });
+}
+
+// Cases where nld_heuristic_v1 should mark input as shell and stricter
+// nld_heuristic_v2 should not mark input as shell.
 #[cfg(all(feature = "nld_heuristic_v1", not(feature = "nld_heuristic_v2")))]
 #[test]
 fn test_is_likely_shell_command_shell_syntax_votes_true_for_nld_heuristic_v1() {
@@ -175,44 +219,20 @@ fn test_is_likely_shell_command_described_token_majority_false_for_nld_heuristic
 
 #[cfg(all(feature = "nld_heuristic_v1", not(feature = "nld_heuristic_v2")))]
 #[test]
-fn test_is_likely_shell_command_url_like_token_in_nl_prompt_false_for_nld_heuristic_v1() {
+fn test_is_likely_shell_command_downloads_log_path_true_for_nld_heuristic_v1() {
     futures::executor::block_on(async move {
-        assert!(!url_like_token_in_nl_prompt_is_shell().await);
+        assert!(downloads_log_path_in_nl_prompt_is_shell().await);
     });
 }
 
 #[cfg(feature = "nld_heuristic_v2")]
 #[test]
-fn test_is_likely_shell_command_url_like_token_in_nl_prompt_false_for_nld_heuristic_v2() {
+fn test_is_likely_shell_command_downloads_log_path_false_for_nld_heuristic_v2() {
     futures::executor::block_on(async move {
-        assert!(!url_like_token_in_nl_prompt_is_shell().await);
+        assert!(!downloads_log_path_in_nl_prompt_is_shell().await);
     });
 }
 
-#[cfg(all(feature = "nld_heuristic_v1", not(feature = "nld_heuristic_v2")))]
-#[test]
-fn test_is_likely_shell_command_file_path_in_nl_prompt_false_for_nld_heuristic_v1() {
-    futures::executor::block_on(async move {
-        assert!(!file_path_in_nl_prompt_is_shell().await);
-    });
-}
-
-#[cfg(feature = "nld_heuristic_v2")]
-#[test]
-fn test_is_likely_shell_command_file_path_in_nl_prompt_false_for_nld_heuristic_v2() {
-    futures::executor::block_on(async move {
-        assert!(!file_path_in_nl_prompt_is_shell().await);
-    });
-}
-
-#[cfg(all(feature = "nld_heuristic_v1", not(feature = "nld_heuristic_v2")))]
-#[test]
-fn test_is_likely_shell_command_majority_described_tokens_true_for_nld_heuristic_v1() {
-    futures::executor::block_on(majority_described_tokens_returns_true());
-}
-
-#[cfg(feature = "nld_heuristic_v2")]
-#[test]
-fn test_is_likely_shell_command_majority_described_tokens_true_for_nld_heuristic_v2() {
-    futures::executor::block_on(majority_described_tokens_returns_true());
-}
+// No inverse section is expected: nld_heuristic_v2 only removes shell-syntax
+// voting and raises the command threshold, so it should not mark an input as
+// shell when nld_heuristic_v1 does not.
