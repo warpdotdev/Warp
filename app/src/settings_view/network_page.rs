@@ -35,6 +35,7 @@ use super::SettingsSection;
 use crate::appearance::Appearance;
 use crate::report_if_error;
 use crate::settings::network::{NetworkSettings, ProxyMode};
+use crate::settings::network_secrets::ProxyCredentials;
 use crate::view_components::dropdown::{Dropdown, DropdownItem};
 use crate::view_components::{SubmittableTextInput, SubmittableTextInputEvent};
 
@@ -53,6 +54,8 @@ pub enum NetworkPageAction {
     SetProxyUrl(String),
     /// 提交了新 proxy_username。
     SetProxyUsername(String),
+    /// 提交了新 代理密码(走 OS 密钥库)。
+    SetProxyPassword(String),
     /// 提交了新 no_proxy 列表。
     SetProxyNoProxy(String),
     /// 点击"测试连接"按钮:发起一次 GET 请求。
@@ -83,6 +86,9 @@ pub struct NetworkPageView {
     url_input: ViewHandle<SubmittableTextInput>,
     /// 用户名输入。
     username_input: ViewHandle<SubmittableTextInput>,
+    /// 密码输入。因为 `SubmittableTextInput` 未提供 mask 选项,输入时仍会明文显示;
+    /// 提交后走 OS 密钥库保存,不写入 settings.toml。
+    password_input: ViewHandle<SubmittableTextInput>,
     /// no_proxy 列表输入。
     no_proxy_input: ViewHandle<SubmittableTextInput>,
     /// 测试连接按钮的 mouse state(WarpUI 习惯单独保留)。
@@ -130,6 +136,17 @@ impl NetworkPageView {
             }
         });
 
+        let password_input = ctx.add_typed_action_view(|ctx| {
+            let mut input = SubmittableTextInput::new(ctx);
+            input.set_placeholder_text("密码(提交后保存到系统密钥库)", ctx);
+            input
+        });
+        ctx.subscribe_to_view(&password_input, |me: &mut Self, _, event, ctx| {
+            if let SubmittableTextInputEvent::Submit(text) = event {
+                me.handle_action(&NetworkPageAction::SetProxyPassword(text.clone()), ctx);
+            }
+        });
+
         let no_proxy_input = ctx.add_typed_action_view(|ctx| {
             let mut input = SubmittableTextInput::new(ctx);
             input.set_placeholder_text("localhost,127.0.0.1,.internal", ctx);
@@ -146,6 +163,7 @@ impl NetworkPageView {
             mode_dropdown,
             url_input,
             username_input,
+            password_input,
             no_proxy_input,
             test_button_state: MouseStateHandle::default(),
             test_state: TestState::Idle,
@@ -180,6 +198,13 @@ impl TypedActionView for NetworkPageView {
                 let username = username.clone();
                 NetworkSettings::handle(ctx).update(ctx, |settings, ctx| {
                     report_if_error!(settings.proxy_username.set_value(username, ctx));
+                });
+                ctx.notify();
+            }
+            NetworkPageAction::SetProxyPassword(password) => {
+                let password = password.clone();
+                ProxyCredentials::handle(ctx).update(ctx, |creds, ctx| {
+                    creds.set_password(password, ctx);
                 });
                 ctx.notify();
             }
@@ -286,6 +311,8 @@ impl SettingsWidget for NetworkPageWidget {
         let url_value = net.proxy_url.value().clone();
         let username_value = net.proxy_username.value().clone();
         let no_proxy_value = net.proxy_no_proxy.value().clone();
+        // 密码不明文显示;仅提示"已设置 / 未设置"。
+        let has_password = !ProxyCredentials::as_ref(app).password().is_empty();
 
         let mut content = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
@@ -354,7 +381,21 @@ impl SettingsWidget for NetworkPageWidget {
             )),
         ));
 
-        // 4. no_proxy
+        // 4. 密码。提交后密码存入 OS 密钥库,不出现在 settings.toml 中。
+        content.add_child(render_body_item::<NetworkPageAction>(
+            "密码".to_string(),
+            None::<AdditionalInfo<NetworkPageAction>>,
+            LocalOnlyIconState::Hidden,
+            ToggleState::from(custom_enabled),
+            appearance,
+            warpui::elements::ChildView::new(&view.password_input).finish(),
+            Some(format!(
+                "提交后保存到 OS 密钥库。当前:{}",
+                if has_password { "••••••••(已设置)" } else { "(未设置)" }
+            )),
+        ));
+
+        // 5. no_proxy
         content.add_child(render_body_item::<NetworkPageAction>(
             "例外列表 (no_proxy)".to_string(),
             None::<AdditionalInfo<NetworkPageAction>>,
@@ -372,7 +413,7 @@ impl SettingsWidget for NetworkPageWidget {
             )),
         ));
 
-        // 5. Test connection 按钮 + 结果文本
+        // 6. Test connection 按钮 + 结果文本
         let test_button = appearance
             .ui_builder()
             .button(ButtonVariant::Secondary, view.test_button_state.clone())
