@@ -345,7 +345,7 @@ pub enum RightPanelEvent {
         line_col: Option<LineAndColumnArg>,
     },
     OpenFileInNewTab {
-        path: PathBuf,
+        path: LocalOrRemotePath,
         line_and_column: Option<LineAndColumnArg>,
     },
     #[cfg(not(target_family = "wasm"))]
@@ -900,10 +900,13 @@ impl RightPanelView {
         let diff_stats = crv.loaded_diff_stats();
 
         let repo_path_element = repo_path.map(|repo_path| {
-            let display_path = dirs::home_dir()
-                .and_then(|home| repo_path.strip_prefix(&home).ok())
-                .map(|relative| format!("~/{}", relative.display()))
-                .unwrap_or_else(|| repo_path.display().to_string());
+            let display_path = match repo_path {
+                LocalOrRemotePath::Local(path) => dirs::home_dir()
+                    .and_then(|home| path.strip_prefix(&home).ok())
+                    .map(|relative| format!("~/{}", relative.display()))
+                    .unwrap_or_else(|| path.display().to_string()),
+                LocalOrRemotePath::Remote(_) => repo_path.display_path(),
+            };
             Container::new(
                 Text::new_inline(
                     format!("{display_path}:"),
@@ -1155,14 +1158,15 @@ impl RightPanelView {
         }
 
         let diff_state_model_clone = diff_state_model.clone();
+        let repo_location = LocalOrRemotePath::Local(repo_path.to_path_buf());
         let code_review_comment_batch =
             self.working_directories_model
                 .update(ctx, |working_directories, ctx| {
-                    working_directories.get_or_create_code_review_comments(repo_path, ctx)
+                    working_directories.get_or_create_code_review_comments(&repo_location, ctx)
                 });
         let code_review_view = ctx.add_typed_action_view(|ctx| {
             CodeReviewView::new(
-                Some(repo_path.to_path_buf()),
+                Some(repo_location),
                 diff_state_model_clone,
                 code_review_comment_batch,
                 Some(terminal_view),
@@ -1238,9 +1242,16 @@ impl RightPanelView {
         &mut self,
         code_review_view: &ViewHandle<CodeReviewView>,
         comments: AgentReviewCommentBatch,
-        repo_path: &Path,
+        repo_path: &LocalOrRemotePath,
         ctx: &mut ViewContext<Self>,
     ) {
+        let Some(local_repo_path) = repo_path.to_local_path() else {
+            log::warn!("Cannot submit review comments without a local repo path");
+            code_review_view.update(ctx, |view, ctx| {
+                view.handle_review_submission_result(ReviewSubmissionResult::Error, ctx);
+            });
+            return;
+        };
         let Some(pane_group) = &self.active_pane_group else {
             code_review_view.update(ctx, |view, ctx| {
                 view.handle_review_submission_result(ReviewSubmissionResult::Error, ctx);
@@ -1249,7 +1260,7 @@ impl RightPanelView {
         };
 
         let ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
-        let chosen = self.find_review_terminal(pane_group, repo_path, ai_enabled, ctx);
+        let chosen = self.find_review_terminal(pane_group, local_repo_path, ai_enabled, ctx);
 
         let Some(terminal_view) = chosen else {
             log::warn!("No available terminal found for submitting review comments");
@@ -1266,7 +1277,7 @@ impl RightPanelView {
             .filter_map(|c| {
                 c.target
                     .absolute_file_path()
-                    .map(|p| p.to_string_lossy().to_string())
+                    .map(LocalOrRemotePath::display_path)
             })
             .collect::<std::collections::HashSet<_>>()
             .len();
@@ -1311,6 +1322,11 @@ impl RightPanelView {
 
     fn format_optional_path(path: Option<&Path>) -> String {
         path.map(|path| path.display().to_string())
+            .unwrap_or_else(|| "<none>".to_string())
+    }
+
+    fn format_optional_repo_location(path: Option<&LocalOrRemotePath>) -> String {
+        path.map(LocalOrRemotePath::display_path)
             .unwrap_or_else(|| "<none>".to_string())
     }
 
@@ -1371,7 +1387,7 @@ impl RightPanelView {
     fn log_code_review_debug_state(debug_state: &CodeReviewCommentDebugState) {
         log::info!(
             "Active code review view: repo_path={}, has_active_comment_model={}, review_destination={:?}, total_comments={}, sendable_comments={}, is_collapsed={}, is_outdated_section_collapsed={:?}, ai_available={}, ai_enabled={}, send_button_tooltip={}",
-            Self::format_optional_path(debug_state.repo_path.as_deref()),
+            Self::format_optional_repo_location(debug_state.repo_path.as_ref()),
             debug_state.has_active_comment_model,
             debug_state.comment_list.review_destination,
             debug_state.comment_list.total_comments,
@@ -1594,8 +1610,14 @@ impl RightPanelView {
         };
 
         let ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
+        let Some(local_repo_path) = repo_path.to_local_path() else {
+            code_review_view.update(ctx, |view, ctx| {
+                view.set_review_destination(ReviewDestination::None, ctx);
+            });
+            return;
+        };
         let destination = self
-            .find_review_terminal(pane_group, &repo_path, ai_enabled, ctx)
+            .find_review_terminal(pane_group, local_repo_path, ai_enabled, ctx)
             .map(|tv| {
                 tv.read(ctx, |t, ctx| {
                     t.active_cli_agent(ctx)

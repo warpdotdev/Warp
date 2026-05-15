@@ -138,10 +138,10 @@ pub struct WorkingDirectoriesModel {
     /// Since git state is inherently tied to a repository (not a pane group),
     /// this is stored globally and shared across all pane groups viewing the same repo.
     diff_state_models: DiffStateModelMap,
-    /// Global mapping from repository root paths to their CommentBatch.
+    /// Global mapping from repository locations to their CommentBatch.
     /// Like the DiffStateModel mapping, comments are inherently tied to git diffs
     /// and are shared across all pane groups viewing the same repo.
-    comment_models: HashMap<PathBuf, ModelHandle<ReviewCommentBatch>>,
+    comment_models: HashMap<LocalOrRemotePath, ModelHandle<ReviewCommentBatch>>,
     /// Per-pane-group mapping from repository root paths to their CodeReviewView.
     /// This allows reusing code review views across multiple requests for the same repo.
     code_review_views: HashMap<EntityId, HashMap<PathBuf, ViewHandle<CodeReviewView>>>,
@@ -300,15 +300,14 @@ impl WorkingDirectoriesModel {
     /// If the model doesn't exist, it will be created.
     pub fn get_or_create_code_review_comments(
         &mut self,
-        repo_path: &Path,
+        repo_path: &LocalOrRemotePath,
         ctx: &mut ModelContext<Self>,
     ) -> Option<ModelHandle<ReviewCommentBatch>> {
         if let Some(existing) = self.comment_models.get(repo_path) {
             return Some(existing.clone());
         }
         let model = ctx.add_model(|_ctx| ReviewCommentBatch::default());
-        self.comment_models
-            .insert(repo_path.to_path_buf(), model.clone());
+        self.comment_models.insert(repo_path.clone(), model.clone());
         Some(model)
     }
 
@@ -663,21 +662,25 @@ impl WorkingDirectoriesModel {
     pub(crate) fn insert_code_review_comments(
         &mut self,
         pane_group_id: EntityId,
-        repo_path: &Path,
+        repo_path: &LocalOrRemotePath,
         comments: &Vec<PendingImportedReviewComment>,
         diff_mode: &DiffMode,
         ctx: &mut ModelContext<Self>,
     ) {
-        if let Some(code_review_view) = self.get_code_review_view(pane_group_id, repo_path) {
-            code_review_view.update(ctx, |code_review_view, ctx| {
-                code_review_view.set_diff_base(diff_mode.to_owned(), ctx);
-                code_review_view.expand_comment_list(ctx);
-            })
-        } else {
-            log::error!(
-                "WorkingDirectoriesModel did not find CodeReviewView for repo path {:?}",
-                repo_path
-            );
+        if let Some(local_repo_path) = repo_path.to_local_path() {
+            if let Some(code_review_view) =
+                self.get_code_review_view(pane_group_id, local_repo_path)
+            {
+                code_review_view.update(ctx, |code_review_view, ctx| {
+                    code_review_view.set_diff_base(diff_mode.to_owned(), ctx);
+                    code_review_view.expand_comment_list(ctx);
+                })
+            } else {
+                log::error!(
+                    "WorkingDirectoriesModel did not find CodeReviewView for repo path {:?}",
+                    repo_path
+                );
+            }
         }
 
         if let Some(comment_batch) = self.get_or_create_code_review_comments(repo_path, ctx) {
@@ -694,7 +697,7 @@ impl WorkingDirectoriesModel {
     /// they are ready to be repositioned onto diff editors immediately.
     pub(crate) fn upsert_flattened_code_review_comments(
         &mut self,
-        repo_path: &Path,
+        repo_path: &LocalOrRemotePath,
         comments: Vec<AttachedReviewComment>,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -757,7 +760,7 @@ impl WorkingDirectoriesModel {
 
     pub fn get_or_create_code_review_comments(
         &mut self,
-        _repo_path: &Path,
+        _repo_path: &LocalOrRemotePath,
         _ctx: &mut ModelContext<Self>,
     ) -> Option<ModelHandle<ReviewCommentBatch>> {
         None
@@ -820,7 +823,7 @@ impl WorkingDirectoriesModel {
     pub(crate) fn insert_code_review_comments(
         &mut self,
         _pane_group_id: EntityId,
-        _repo_path: &Path,
+        _repo_path: &LocalOrRemotePath,
         _comments: &Vec<PendingImportedReviewComment>,
         _diff_mode: &DiffMode,
         _ctx: &mut ModelContext<Self>,
@@ -829,7 +832,7 @@ impl WorkingDirectoriesModel {
 
     pub(crate) fn upsert_flattened_code_review_comments(
         &mut self,
-        _repo_path: &Path,
+        _repo_path: &LocalOrRemotePath,
         _comments: Vec<AttachedReviewComment>,
         _ctx: &mut ModelContext<Self>,
     ) {

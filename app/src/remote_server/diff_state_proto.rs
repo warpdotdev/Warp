@@ -338,15 +338,10 @@ pub(crate) fn try_decode_snapshot(
 /// by `RemoteDiffStateModel`, short-circuiting on the first conversion error.
 pub(crate) fn try_decode_file_delta(
     delta: &proto::DiffStateFileDelta,
-) -> Result<
-    (
-        StandardizedPath,
-        Option<FileDiffAndContent>,
-        Option<DiffMetadata>,
-    ),
-    String,
-> {
-    let file_path = StandardizedPath::try_new(&delta.file_path).map_err(|e| e.to_string())?;
+) -> Result<(String, Option<FileDiffAndContent>, Option<DiffMetadata>), String> {
+    if delta.file_path.is_empty() {
+        return Err("missing file path in DiffStateFileDelta".to_string());
+    }
     let diff = delta
         .diff
         .as_ref()
@@ -357,7 +352,7 @@ pub(crate) fn try_decode_file_delta(
         .as_ref()
         .map(DiffMetadata::try_from)
         .transpose()?;
-    Ok((file_path, diff, metadata))
+    Ok((delta.file_path.clone(), diff, metadata))
 }
 
 // ── Rust → Proto (for server pushes) ─────────────────────────────────────
@@ -549,31 +544,11 @@ impl From<&DiffState> for proto::DiffState {
     }
 }
 
-fn standardized_file_path_for_proto(
-    repo_path: &str,
-    repo_relative_or_absolute_path: &str,
-) -> String {
-    let file_path = std::path::Path::new(repo_relative_or_absolute_path);
-    if file_path.is_absolute() {
-        return StandardizedPath::try_new(repo_relative_or_absolute_path)
-            .map(|path| path.to_string())
-            .unwrap_or_else(|_| repo_relative_or_absolute_path.to_string());
-    }
-
-    StandardizedPath::try_new(repo_path)
-        .map(|repo_path| repo_path.join(repo_relative_or_absolute_path).to_string())
-        .unwrap_or_else(|_| repo_relative_or_absolute_path.to_string())
-}
-
 /// Converts a `FileDiff` to proto with an optional `content_at_base`.
 /// Cannot be a `From` impl because of the extra parameter.
-pub fn file_diff_to_proto(
-    repo_path: &str,
-    f: &FileDiff,
-    content_at_base: Option<&str>,
-) -> proto::FileDiff {
+pub fn file_diff_to_proto(f: &FileDiff, content_at_base: Option<&str>) -> proto::FileDiff {
     proto::FileDiff {
-        file_path: standardized_file_path_for_proto(repo_path, &f.file_path),
+        file_path: f.file_path.clone(),
         status: Some((&f.status).into()),
         hunks: f.hunks.iter().map(proto::DiffHunk::from).collect(),
         is_binary: f.is_binary,
@@ -585,20 +560,13 @@ pub fn file_diff_to_proto(
     }
 }
 
-fn file_diff_and_content_to_proto(repo_path: &str, f: &FileDiffAndContent) -> proto::FileDiff {
-    file_diff_to_proto(repo_path, &f.file_diff, f.content_at_head.as_deref())
+fn file_diff_and_content_to_proto(f: &FileDiffAndContent) -> proto::FileDiff {
+    file_diff_to_proto(&f.file_diff, f.content_at_head.as_deref())
 }
 
-fn git_diff_with_base_content_to_proto(
-    repo_path: &str,
-    d: &GitDiffWithBaseContent,
-) -> proto::GitDiffData {
+fn git_diff_with_base_content_to_proto(d: &GitDiffWithBaseContent) -> proto::GitDiffData {
     proto::GitDiffData {
-        files: d
-            .files
-            .iter()
-            .map(|f| file_diff_and_content_to_proto(repo_path, f))
-            .collect(),
+        files: d.files.iter().map(file_diff_and_content_to_proto).collect(),
         total_additions: d.total_additions as u64,
         total_deletions: d.total_deletions as u64,
         files_changed: d.files_changed as u64,
@@ -624,7 +592,7 @@ pub fn build_diff_state_snapshot(
         mode: Some(mode.into()),
         metadata: metadata.map(proto::DiffMetadata::from),
         state: Some(state.into()),
-        diffs: diffs.map(|diffs| git_diff_with_base_content_to_proto(repo_path, diffs)),
+        diffs: diffs.map(git_diff_with_base_content_to_proto),
     }
 }
 
@@ -652,8 +620,8 @@ pub fn build_diff_state_file_delta(
     proto::DiffStateFileDelta {
         repo_path: repo_path.to_string(),
         mode: Some(mode.into()),
-        file_path: standardized_file_path_for_proto(repo_path, repo_relative_path),
-        diff: diff.map(|diff| file_diff_and_content_to_proto(repo_path, diff)),
+        file_path: repo_relative_path.to_string(),
+        diff: diff.map(file_diff_and_content_to_proto),
         metadata: metadata.map(proto::DiffMetadata::from),
     }
 }
