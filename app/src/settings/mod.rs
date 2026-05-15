@@ -23,6 +23,7 @@ mod linux;
 pub mod macros;
 pub mod manager;
 pub mod native_preference;
+pub mod network;
 mod onboarding;
 mod pane;
 mod privacy;

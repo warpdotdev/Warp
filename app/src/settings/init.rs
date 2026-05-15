@@ -33,12 +33,12 @@ use warp_core::semantic_selection::SemanticSelection;
 use super::{
     app_icon::AppIconSettings, app_installation_detection::UserAppInstallDetectionSettings,
     cloud_preferences::PreferencesSettings, initializer::SettingsInitializer,
-    language::LanguageSettings, native_preference::NativePreferenceSettings, AISettings,
-    AccessibilitySettings, AliasExpansionSettings, AppEditorSettings, AutoupdateSettings,
-    BlockVisibilitySettings, CodeSettings, DebugSettings, EmacsBindingsSettings, FontSettings,
-    FontSettingsChangedEvent, GPUSettings, InputBoxType, InputModeSettings, InputSettings,
-    PaneSettings, SameLinePromptBlockSettings, ScrollSettings, SelectionSettings, SshSettings,
-    ThemeSettings, VimBannerSettings, WarpDrivePrivacySettings,
+    language::LanguageSettings, native_preference::NativePreferenceSettings,
+    network::NetworkSettings, AISettings, AccessibilitySettings, AliasExpansionSettings,
+    AppEditorSettings, AutoupdateSettings, BlockVisibilitySettings, CodeSettings, DebugSettings,
+    EmacsBindingsSettings, FontSettings, FontSettingsChangedEvent, GPUSettings, InputBoxType,
+    InputModeSettings, InputSettings, PaneSettings, SameLinePromptBlockSettings, ScrollSettings,
+    SelectionSettings, SshSettings, ThemeSettings, VimBannerSettings, WarpDrivePrivacySettings,
 };
 
 pub struct UserDefaultsOnStartup {
@@ -79,6 +79,7 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     ThemeSettings::register(ctx);
     AccessibilitySettings::register(ctx);
     NativePreferenceSettings::register(ctx);
+    NetworkSettings::register(ctx);
     AutoupdateSettings::register(ctx);
     PreferencesSettings::register(ctx);
     WarpDrivePrivacySettings::register(ctx);
@@ -210,6 +211,16 @@ pub fn init(
 
     appearance::register(ctx);
 
+    // 全局 HTTP 代理(见 Issue #72):从 NetworkSettings 读入初值,注入到
+    // `http_client` 与 `websocket` 两处的全局 slot,后续设置变更时同步重推。
+    apply_network_settings_to_global_slots(ctx);
+    ctx.subscribe_to_model(
+        &NetworkSettings::handle(ctx),
+        |_model, _event, ctx| {
+            apply_network_settings_to_global_slots(ctx);
+        },
+    );
+
     // Set up hot-reload for the settings file. When the WarpConfig watcher
     // detects a change to settings.toml, reload preferences from disk and
     // push changed values into setting models.
@@ -225,6 +236,35 @@ pub fn init(
     }
 
     user_defaults_on_startup
+}
+
+/// 读取当前 `NetworkSettings` 状态,同时更新 `http_client::set_global_proxy_config`
+/// 与 `websocket::set_global_proxy_config`,使两者保持同一代理语义(见 Issue #72)。
+///
+/// 密码从 `managed_secrets` 读(P2):本函数第一版为密码填空串;
+/// UI 部分接入密码存取后会重载。重建已有 `Client` 实例是调用方责任。
+fn apply_network_settings_to_global_slots(ctx: &mut AppContext) {
+    use super::network::NetworkSettings;
+    let net = NetworkSettings::as_ref(ctx);
+    let mode = *net.proxy_mode.value();
+    let url = net.proxy_url.value().clone();
+    let username = net.proxy_username.value().clone();
+    let no_proxy = net.proxy_no_proxy.value().clone();
+
+    http_client::set_global_proxy_config(http_client::ProxyConfig {
+        mode: mode.to_http_client_mode(),
+        url: url.clone(),
+        username: username.clone(),
+        password: String::new(),
+        no_proxy: no_proxy.clone(),
+    });
+    websocket::set_global_proxy_config(websocket::ProxyConfig {
+        mode: mode.to_websocket_mode(),
+        url,
+        username,
+        password: String::new(),
+        no_proxy,
+    });
 }
 
 /// Handles a `WarpConfig` change event, reloading settings from disk when
