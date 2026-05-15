@@ -493,22 +493,21 @@ impl TerminalView {
 
     /// Returns whether this view is a live shared-session viewer for a non-Oz cloud run.
     fn is_third_party_cloud_agent_viewer(&self, ctx: &AppContext) -> bool {
-        // We try to detect a third-party harness however we can; because there are a few different
-        // events that may cause it to be set when viewing a shared session, we handle multiple below.
-        let has_third_party_harness = match self.ambient_agent_view_model.as_ref() {
-            // We set the harness on the AmbientAgentViewModel after fetching task data from the server.
-            Some(model) => model.as_ref(ctx).is_third_party_harness(),
-            // When we join a shared session, if the harness is currently active in the sharer,
-            // we should be starting a new CLI agent via the CLIAgentSessionsModel.
-            None => {
-                FeatureFlag::AgentHarness.is_enabled()
-                    && CLIAgentSessionsModel::as_ref(ctx)
-                        .session(self.view_id)
-                        .is_some()
-            }
+        // The ambient model's harness resolves asynchronously after join, when we fetch the task. 
+		// Until then, use the synced CLI-agent session (which we get on shared session join, if the 
+		// CLI agent is currently active) as the live third-party harness signal.
+        let has_ambient_third_party_harness = self
+            .ambient_agent_view_model
+            .as_ref()
+            .is_some_and(|model| model.as_ref(ctx).is_third_party_harness());
+        let has_cli_agent_session = FeatureFlag::AgentHarness.is_enabled() && {
+            CLIAgentSessionsModel::as_ref(ctx)
+                .session(self.view_id)
+                .is_some()
         };
 
-        has_third_party_harness && self.is_shared_ambient_agent_session()
+        (has_ambient_third_party_harness || has_cli_agent_session)
+            && self.is_shared_ambient_agent_session()
     }
 
     /// Syncs agent view for a live shared-session viewer of a non-oz cloud run, so every
