@@ -80,8 +80,7 @@ pub async fn is_likely_shell_command(
         if token.token_index == 0 && ONE_OFF_SHELL_COMMAND_KEYWORDS.contains(&token.token.as_str())
         {
             log::debug!(
-                "is_likely_shell_command result=true: one-off shell keyword token={:?}, use_nld_heuristic_v2={use_nld_heuristic_v2}",
-                token.token.as_str()
+                "is_likely_shell_command result=true: first token is one-off shell keyword, use_nld_heuristic_v2={use_nld_heuristic_v2}"
             );
             return true;
         }
@@ -89,8 +88,7 @@ pub async fn is_likely_shell_command(
             natural_language_detection::check_if_token_has_shell_syntax(token.token.as_str())
         });
         log::debug!(
-            "is_likely_shell_command token: token={:?}, token_index={}, token_description_is_some={}, check_if_token_has_shell_syntax_result={:?}, use_nld_heuristic_v2={use_nld_heuristic_v2}",
-            token.token.as_str(),
+            "is_likely_shell_command token: token_index={}, token_description_is_some={}, check_if_token_has_shell_syntax_result={:?}, use_nld_heuristic_v2={use_nld_heuristic_v2}",
             token.token_index,
             token.token_description.is_some(),
             check_if_token_has_shell_syntax_result
