@@ -799,7 +799,24 @@ fn find_matching_tab_config(target: &str, configs: Vec<TabConfig>) -> Option<Tab
 /// user's home directory.
 fn parse_tab_path(url: &Url) -> Option<PathBuf> {
     let raw = url.query_pairs().find(|(k, _)| k == "path")?.1;
-    Some(PathBuf::from(shellexpand::tilde(&raw).into_owned()))
+    let raw = strip_surrounding_path_quotes(raw.as_ref());
+    Some(PathBuf::from(shellexpand::tilde(raw).into_owned()))
+}
+
+fn strip_surrounding_path_quotes(raw: &str) -> &str {
+    if raw.len() < 2 {
+        return raw;
+    }
+
+    let bytes = raw.as_bytes();
+    if matches!(
+        (bytes.first(), bytes.last()),
+        (Some(b'"'), Some(b'"')) | (Some(b'\''), Some(b'\''))
+    ) {
+        &raw[1..raw.len() - 1]
+    } else {
+        raw
+    }
 }
 
 #[derive(Debug)]

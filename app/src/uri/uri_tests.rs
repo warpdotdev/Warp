@@ -629,6 +629,22 @@ fn test_parse_tab_path_bare_tilde() {
     assert_eq!(parse_tab_path(&url), Some(home));
 }
 
+#[test]
+fn test_parse_tab_path_strips_surrounding_quotes() {
+    let url = Url::parse("warp://action/new_tab?path=%22C:%5CProjects%5Cmy-app%22").unwrap();
+    assert_eq!(
+        parse_tab_path(&url),
+        Some(PathBuf::from(r"C:\Projects\my-app"))
+    );
+}
+
+#[test]
+fn test_parse_tab_path_strips_quotes_before_expanding_tilde() {
+    let url = Url::parse("warp://action/new_tab?path=%22~%2FProjects%22").unwrap();
+    let home = dirs::home_dir().expect("HOME must be set for this test");
+    assert_eq!(parse_tab_path(&url), Some(home.join("Projects")));
+}
+
 // Regression coverage for issue #9005: shell scripts opened via `file://` should run,
 // not open in the editor. Exercised through the pure routing helper to avoid standing
 // up a full `AppContext`.
