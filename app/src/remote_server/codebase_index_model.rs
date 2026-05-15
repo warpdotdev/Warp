@@ -95,7 +95,7 @@ impl RemoteCodebaseIndexModel {
     pub fn active_repo_availability(
         &self,
         session_context: &SessionContext,
-        explicit_repo_path: Option<&str>,
+        requested_codebase_path: Option<&str>,
     ) -> RemoteCodebaseSearchAvailability {
         let Some(host_id) = session_context.host_id() else {
             return RemoteCodebaseSearchAvailability::NoConnectedHost;
@@ -104,16 +104,16 @@ impl RemoteCodebaseIndexModel {
         self.availability_for_remote(
             host_id,
             session_context.current_working_directory().as_deref(),
-            explicit_repo_path,
+            requested_codebase_path,
         )
     }
 
     pub fn active_repo_path(
         &self,
         session_context: &SessionContext,
-        explicit_repo_path: Option<&str>,
+        requested_codebase_path: Option<&str>,
     ) -> Option<String> {
-        self.active_repo_availability(session_context, explicit_repo_path)
+        self.active_repo_availability(session_context, requested_codebase_path)
             .repo_path()
             .map(ToOwned::to_owned)
     }
@@ -121,7 +121,7 @@ impl RemoteCodebaseIndexModel {
     pub fn request_active_repo_index(
         &self,
         session_context: &SessionContext,
-        explicit_repo_path: Option<&str>,
+        requested_codebase_path: Option<&str>,
         ctx: &mut ModelContext<Self>,
     ) -> bool {
         let Some(host_id) = session_context.host_id() else {
@@ -130,7 +130,7 @@ impl RemoteCodebaseIndexModel {
         let Some(remote_path) = self.resolve_remote_repo_path(
             host_id,
             session_context.current_working_directory().as_deref(),
-            explicit_repo_path,
+            requested_codebase_path,
         ) else {
             return false;
         };
@@ -268,10 +268,13 @@ impl RemoteCodebaseIndexModel {
         &self,
         host_id: &HostId,
         current_working_directory: Option<&str>,
-        explicit_repo_path: Option<&str>,
+        requested_codebase_path: Option<&str>,
     ) -> RemoteCodebaseSearchAvailability {
-        let remote_path =
-            self.resolve_remote_repo_path(host_id, current_working_directory, explicit_repo_path);
+        let remote_path = self.resolve_remote_repo_path(
+            host_id,
+            current_working_directory,
+            requested_codebase_path,
+        );
 
         let Some(remote_path) = remote_path else {
             return RemoteCodebaseSearchAvailability::NoActiveRepo;
@@ -286,31 +289,26 @@ impl RemoteCodebaseIndexModel {
         &self,
         host_id: &HostId,
         current_working_directory: Option<&str>,
-        explicit_repo_path: Option<&str>,
+        requested_codebase_path: Option<&str>,
     ) -> Option<RemotePath> {
-        if let Some(explicit_repo_path) = explicit_repo_path {
-            let explicit_remote_path = remote_path_from_repo_path(host_id, explicit_repo_path);
-            if let Some(remote_path) = explicit_remote_path
+        if let Some(requested_codebase_path) = requested_codebase_path {
+            let requested_remote_path =
+                remote_path_from_repo_path(host_id, requested_codebase_path);
+            // `requested_codebase_path` comes from `SearchCodebase.codebase_path`. Only honor it
+            // when it matches daemon-reported remote index state, so a model can't accidentally
+            // send a local path to the remote daemon for indexing.
+            if let Some(remote_path) = requested_remote_path
                 .as_ref()
                 .filter(|remote_path| self.status_for_repo(remote_path).is_some())
             {
-                // Remote branch: exact explicit matches are authoritative, mirroring local
-                // `SearchCodebase` behavior where a provided `codebase_path` targets that repo
-                // instead of the current working directory.
                 return Some(remote_path.clone());
             }
-
-            if let Some((remote_path, _)) = self.best_status_for_path(host_id, explicit_repo_path) {
-                // Remote branch: an explicit path inside an indexed remote repo should search that
-                // indexed repo root. This preserves remote cross-repo search for paths that can be
-                // matched against daemon-reported index state.
+            if let Some((remote_path, _)) =
+                self.best_status_for_path(host_id, requested_codebase_path)
+            {
                 return Some(remote_path.clone());
             }
-
-            // Remote branch: an explicit path that does not match known index state is still
-            // authoritative. Return it so callers surface `NotIndexed` (and can request indexing)
-            // for the explicit target instead of silently searching the active remote repo.
-            return explicit_remote_path;
+            return None;
         }
 
         if let Some(remote_path) = self.active_repos_by_host.get(host_id) {

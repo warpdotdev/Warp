@@ -107,9 +107,35 @@ struct CodebaseIndexRequest {
 }
 
 #[derive(Clone, Copy)]
-enum CodebaseIndexRequestPathKind {
-    Canonicalized,
-    Requested,
+enum CodebaseIndexOperation {
+    Index,
+    Resync,
+    Drop,
+}
+
+impl CodebaseIndexOperation {
+    fn message_name(self) -> &'static str {
+        match self {
+            Self::Index => "IndexCodebase",
+            Self::Resync => "ResyncCodebase",
+            Self::Drop => "DropCodebaseIndex",
+        }
+    }
+
+    fn auth_operation(self) -> &'static str {
+        match self {
+            Self::Index => "remote codebase indexing",
+            Self::Resync => "remote codebase resync",
+            Self::Drop => "remote codebase index removal",
+        }
+    }
+
+    fn normalize_repo_path(self, repo_path: &str) -> Result<PathBuf, String> {
+        match self {
+            Self::Index | Self::Resync => canonicalize_index_repo_path(repo_path),
+            Self::Drop => requested_repo_path(repo_path),
+        }
+    }
 }
 
 /// Tracks an in-flight file write or delete so the async completion
@@ -879,11 +905,9 @@ impl ServerModel {
             auth_token,
         } = msg;
         let request = match self.prepare_codebase_index_request(
-            "IndexCodebase",
+            CodebaseIndexOperation::Index,
             repo_path,
             auth_token,
-            "remote codebase indexing",
-            CodebaseIndexRequestPathKind::Canonicalized,
             request_id,
             conn_id,
         ) {
@@ -924,11 +948,9 @@ impl ServerModel {
             auth_token,
         } = msg;
         let request = match self.prepare_codebase_index_request(
-            "ResyncCodebase",
+            CodebaseIndexOperation::Resync,
             repo_path,
             auth_token,
-            "remote codebase resync",
-            CodebaseIndexRequestPathKind::Canonicalized,
             request_id,
             conn_id,
         ) {
@@ -986,11 +1008,9 @@ impl ServerModel {
             auth_token,
         } = msg;
         let request = match self.prepare_codebase_index_request(
-            "DropCodebaseIndex",
+            CodebaseIndexOperation::Drop,
             repo_path,
             auth_token,
-            "remote codebase index removal",
-            CodebaseIndexRequestPathKind::Requested,
             request_id,
             conn_id,
         ) {
@@ -1318,14 +1338,13 @@ impl ServerModel {
 
     fn prepare_codebase_index_request(
         &self,
-        operation_name: &str,
+        operation: CodebaseIndexOperation,
         repo_path: String,
         auth_token: String,
-        auth_operation: &str,
-        path_kind: CodebaseIndexRequestPathKind,
         request_id: &RequestId,
         conn_id: ConnectionId,
     ) -> Result<CodebaseIndexRequest, HandlerOutcome> {
+        let operation_name = operation.message_name();
         let repo_path_for_log = repo_path.clone();
         if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
             log::info!(
@@ -1336,13 +1355,13 @@ impl ServerModel {
             ));
         }
 
-        let repo_path = match path_kind {
-            CodebaseIndexRequestPathKind::Canonicalized => canonicalize_index_repo_path(&repo_path),
-            CodebaseIndexRequestPathKind::Requested => requested_repo_path(&repo_path),
-        }
-        .map_err(invalid_request_response)?;
+        let repo_path = operation
+            .normalize_repo_path(&repo_path)
+            .map_err(invalid_request_response)?;
 
-        if let Err(error) = self.validate_remote_codebase_index_auth(&auth_token, auth_operation) {
+        if let Err(error) =
+            self.validate_remote_codebase_index_auth(&auth_token, operation.auth_operation())
+        {
             return Err(invalid_request_response(error));
         }
 

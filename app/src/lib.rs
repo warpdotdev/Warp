@@ -1216,93 +1216,58 @@ pub(crate) fn initialize_app(
         })
     });
 
-    let (
-        mut cloud_objects,
-        mut cached_workspaces,
-        mut current_workspace_uid,
-        mut app_state,
-        mut command_history,
-        mut restored_user_profiles,
-        mut time_of_next_force_object_refresh,
-        mut object_actions,
-        mut experiments,
-        mut ai_queries,
-        persisted_workspaces,
-        mut workspace_language_servers,
-        mut multi_agent_conversations,
-        mut persisted_projects,
-        mut persisted_project_rules,
-        mut persisted_ignored_suggestions,
-        mut persisted_mcp_server_installations,
-        mut mcp_servers_to_restore,
-    ) = sqlite_data
-        .map(|sqlite_data| {
-            (
-                sqlite_data.cloud_objects,
-                sqlite_data.workspaces,
-                sqlite_data.current_workspace_uid,
-                Some(sqlite_data.app_state),
-                sqlite_data.command_history,
-                sqlite_data.user_profiles,
-                sqlite_data.time_of_next_force_object_refresh,
-                sqlite_data.object_actions,
-                sqlite_data.experiments,
-                sqlite_data.ai_queries,
-                sqlite_data.codebase_indices,
-                sqlite_data.workspace_language_servers,
-                sqlite_data.multi_agent_conversations,
-                sqlite_data.projects,
-                sqlite_data.project_rules,
-                sqlite_data.ignored_suggestions,
-                sqlite_data.mcp_server_installations,
-                sqlite_data.mcp_servers_to_restore,
-            )
-        })
-        .unwrap_or_else(|| {
-            (
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-            )
-        });
+    let mut cloud_objects = Default::default();
+    let mut cached_workspaces = Default::default();
+    let mut current_workspace_uid = None;
+    let mut app_state = None;
+    let mut command_history = Default::default();
+    let mut restored_user_profiles = Default::default();
+    let mut time_of_next_force_object_refresh = None;
+    let mut object_actions = Default::default();
+    let mut experiments = Default::default();
+    let mut ai_queries = Default::default();
+    let mut persisted_workspaces = Default::default();
+    let mut workspace_language_servers = Default::default();
+    let mut multi_agent_conversations = Default::default();
+    let mut persisted_projects = Default::default();
+    let mut persisted_project_rules = Default::default();
+    let mut persisted_ignored_suggestions = Default::default();
+    let mut persisted_mcp_server_installations = Default::default();
+    let mut mcp_servers_to_restore = Default::default();
 
-    if matches!(launch_mode, LaunchMode::RemoteServerDaemon { .. }) {
-        let codebase_index_count = persisted_workspaces.len();
-        log::info!(
-            "[Remote codebase indexing] Restored daemon codebase index metadata: metadata_count={codebase_index_count}"
-        );
-        cloud_objects = Default::default();
-        cached_workspaces = Default::default();
-        current_workspace_uid = None;
-        app_state = None;
-        command_history = Default::default();
-        restored_user_profiles = Default::default();
-        time_of_next_force_object_refresh = None;
-        object_actions = Default::default();
-        experiments = Default::default();
-        ai_queries = Default::default();
-        workspace_language_servers = Default::default();
-        multi_agent_conversations = Default::default();
-        persisted_projects = Default::default();
-        persisted_project_rules = Default::default();
-        persisted_ignored_suggestions = Default::default();
-        persisted_mcp_server_installations = Default::default();
-        mcp_servers_to_restore = Default::default();
+    if let Some(sqlite_data) = sqlite_data {
+        match launch_mode {
+            LaunchMode::RemoteServerDaemon { .. } => {
+                persisted_workspaces = sqlite_data.codebase_indices;
+                let codebase_index_count = persisted_workspaces.len();
+                log::info!(
+                    "[Remote codebase indexing] Restored daemon codebase index metadata: metadata_count={codebase_index_count}"
+                );
+            }
+            LaunchMode::App { .. }
+            | LaunchMode::CommandLine { .. }
+            | LaunchMode::RemoteServerProxy
+            | LaunchMode::Test { .. } => {
+                cloud_objects = sqlite_data.cloud_objects;
+                cached_workspaces = sqlite_data.workspaces;
+                current_workspace_uid = sqlite_data.current_workspace_uid;
+                app_state = Some(sqlite_data.app_state);
+                command_history = sqlite_data.command_history;
+                restored_user_profiles = sqlite_data.user_profiles;
+                time_of_next_force_object_refresh = sqlite_data.time_of_next_force_object_refresh;
+                object_actions = sqlite_data.object_actions;
+                experiments = sqlite_data.experiments;
+                ai_queries = sqlite_data.ai_queries;
+                persisted_workspaces = sqlite_data.codebase_indices;
+                workspace_language_servers = sqlite_data.workspace_language_servers;
+                multi_agent_conversations = sqlite_data.multi_agent_conversations;
+                persisted_projects = sqlite_data.projects;
+                persisted_project_rules = sqlite_data.project_rules;
+                persisted_ignored_suggestions = sqlite_data.ignored_suggestions;
+                persisted_mcp_server_installations = sqlite_data.mcp_server_installations;
+                mcp_servers_to_restore = sqlite_data.mcp_servers_to_restore;
+            }
+        }
     }
 
     // Initialize a global model to track server-side experiment state.

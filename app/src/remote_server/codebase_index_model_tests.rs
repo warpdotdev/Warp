@@ -88,7 +88,7 @@ fn availability_falls_back_to_longest_status_prefix() {
 }
 
 #[test]
-fn availability_uses_unmatched_explicit_path_as_not_indexed() {
+fn availability_rejects_unmatched_requested_local_path() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
     model.record_navigated_directory(&remote_path("/workspaces/warp"));
@@ -105,16 +105,13 @@ fn availability_uses_unmatched_explicit_path_as_not_indexed() {
 
     assert!(matches!(
         availability,
-        RemoteCodebaseSearchAvailability::NotIndexed { .. }
+        RemoteCodebaseSearchAvailability::NoActiveRepo
     ));
-    assert_eq!(
-        availability.repo_path(),
-        Some("/Users/moirahuang/code/warp")
-    );
+    assert_eq!(availability.repo_path(), None);
 }
 
 #[test]
-fn availability_uses_unknown_explicit_remote_path_as_not_indexed() {
+fn availability_rejects_unknown_requested_remote_path() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
     model.record_navigated_directory(&remote_path("/workspaces/active"));
@@ -128,13 +125,13 @@ fn availability_uses_unknown_explicit_remote_path_as_not_indexed() {
 
     assert!(matches!(
         availability,
-        RemoteCodebaseSearchAvailability::NotIndexed { .. }
+        RemoteCodebaseSearchAvailability::NoActiveRepo
     ));
-    assert_eq!(availability.repo_path(), Some("/workspaces/other"));
+    assert_eq!(availability.repo_path(), None);
 }
 
 #[test]
-fn availability_uses_explicit_path_when_it_matches_known_remote_repo() {
+fn availability_uses_requested_path_when_it_matches_known_remote_repo() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
     model.record_navigated_directory(&remote_path("/workspaces/other"));
