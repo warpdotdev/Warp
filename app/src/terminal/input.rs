@@ -8501,13 +8501,16 @@ impl Input {
             !context_model.pending_context_block_ids().is_empty()
                 || context_model.pending_context_selected_text().is_some()
         };
-        if vim_mode == Some(VimMode::Insert)
+        let should_escape_vim_before_dismissing = (vim_mode == Some(VimMode::Insert)
             && (self.suggestions_mode_model.as_ref(ctx).is_history_up()
                 || self
                     .suggestions_mode_model
                     .as_ref(ctx)
-                    .is_inline_history_menu())
-        {
+                    .is_inline_history_menu()))
+            || (vim_mode == Some(VimMode::Insert)
+                && self.prefix_mode(ctx) == InputPrefixMode::CloudHandoff);
+
+        if should_escape_vim_before_dismissing {
             self.editor.update(ctx, |editor, editor_ctx| {
                 editor.handle_action(&EditorAction::VimEscape, editor_ctx);
             });

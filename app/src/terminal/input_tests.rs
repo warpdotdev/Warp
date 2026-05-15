@@ -6031,6 +6031,67 @@ fn test_cloud_handoff_prefix_activates_in_powershell_when_nld_disabled() {
     });
 }
 #[test]
+fn test_cloud_handoff_prefix_vim_escape_exits_insert_before_handoff_mode() {
+    App::test((), |mut app| async move {
+        let _agent_view_flag = FeatureFlag::AgentView.override_enabled(true);
+        let _oz_handoff_flag = FeatureFlag::OzHandoff.override_enabled(true);
+        let _handoff_local_cloud_flag = FeatureFlag::HandoffLocalCloud.override_enabled(true);
+
+        initialize_app(&mut app);
+        enable_vim_mode(&mut app);
+        AISettings::handle(&app).update(&mut app, |ai_settings, ctx| {
+            let _ = ai_settings
+                .ai_autodetection_enabled_internal
+                .set_value(false, ctx);
+        });
+        let terminal = add_window_with_bootstrapped_terminal(&mut app, None, None).await;
+        let (input, editor) = terminal.read(&app, |terminal, ctx| {
+            let input = terminal.input().clone();
+            let editor = input.as_ref(ctx).editor().clone();
+            (input, editor)
+        });
+        enter_fullscreen_agent_view_for_test(&terminal, &mut app);
+
+        input.update(&mut app, |input, ctx| {
+            input.activate_cloud_handoff_compose(HandoffEntryPoint::Ampersand, ctx);
+            input.user_insert("fix tests", ctx);
+        });
+
+        editor.read(&app, |editor, ctx| {
+            assert_eq!(editor.vim_mode(ctx), Some(VimMode::Insert));
+        });
+        input.read(&app, |input, ctx| {
+            assert_eq!(input.buffer_text(ctx), "fix tests");
+            assert_eq!(input.prefix_mode(ctx), InputPrefixMode::CloudHandoff);
+        });
+
+        editor.update(&mut app, |editor, ctx| {
+            editor.escape(ctx);
+        });
+
+        editor.read(&app, |editor, ctx| {
+            assert_eq!(editor.vim_mode(ctx), Some(VimMode::Normal));
+        });
+        input.read(&app, |input, ctx| {
+            assert_eq!(input.buffer_text(ctx), "fix tests");
+            assert_eq!(input.prefix_mode(ctx), InputPrefixMode::CloudHandoff);
+        });
+
+        editor.update(&mut app, |editor, ctx| {
+            editor.escape(ctx);
+        });
+
+        editor.read(&app, |editor, ctx| {
+            assert_eq!(editor.vim_mode(ctx), Some(VimMode::Normal));
+        });
+        input.read(&app, |input, ctx| {
+            assert_eq!(input.buffer_text(ctx), "fix tests");
+            assert_eq!(input.prefix_mode(ctx), InputPrefixMode::None);
+            assert!(!input.handoff_compose_state.as_ref(ctx).is_active());
+        });
+    });
+}
+#[test]
 fn test_cloud_handoff_prefix_ignores_terminal_input_mode_toggle() {
     App::test((), |mut app| async move {
         let _agent_view_flag = FeatureFlag::AgentView.override_enabled(true);
