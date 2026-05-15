@@ -9,7 +9,7 @@ use crate::{
     tab::SelectedTabColor,
 };
 
-use super::{CommandExecutionMode, LaunchConfig, PaneMode, PaneTemplateType};
+use super::{LaunchConfig, PaneMode, PaneTemplateType};
 
 fn single_tab_snapshot(root: PaneNodeSnapshot) -> AppState {
     AppState {
@@ -114,7 +114,6 @@ fn test_config_from_snapshot_flattens_single_pane() {
             is_focused: Some(true),
             cwd: PathBuf::from("/some/dir"),
             commands: vec![],
-            command_execution_mode: CommandExecutionMode::ChainedWithAnd,
             pane_mode: PaneMode::Terminal,
             shell: None,
         },
@@ -188,7 +187,6 @@ fn test_config_from_snapshot_filters_panes() {
                     is_focused: Some(true),
                     cwd: PathBuf::from("/path/to/dir"),
                     commands: vec![],
-                    command_execution_mode: CommandExecutionMode::ChainedWithAnd,
                     pane_mode: PaneMode::Terminal,
                     shell: None,
                 },
@@ -196,7 +194,6 @@ fn test_config_from_snapshot_filters_panes() {
                     is_focused: Some(false),
                     cwd: PathBuf::from("/some/dir"),
                     commands: vec![],
-                    command_execution_mode: CommandExecutionMode::ChainedWithAnd,
                     pane_mode: PaneMode::Terminal,
                     shell: None,
                 },
@@ -226,55 +223,6 @@ fn test_config_from_snapshot_filters_tabs() {
 
     let template = LaunchConfig::from_snapshot("Test".into(), &state);
     assert!(template.windows[0].tabs.is_empty())
-}
-#[test]
-fn test_pane_template_command_execution_mode_defaults_to_chained_with_and() {
-    let config = r#"
-name = "Launch Config"
-windows = [
-  { tabs = [
-    { layout = { cwd = "/tmp", commands = [{ exec = "echo one" }, { exec = "echo two" }] } }
-  ] }
-]
-"#;
-
-    let config: LaunchConfig = toml::from_str(config).expect("Should parse launch config");
-    let PaneTemplateType::PaneTemplate {
-        command_execution_mode,
-        ..
-    } = config.windows[0].tabs[0].layout
-    else {
-        panic!("Expected PaneTemplate");
-    };
-
-    assert_eq!(command_execution_mode, CommandExecutionMode::ChainedWithAnd);
-}
-
-#[test]
-fn test_default_command_execution_mode_is_not_serialized() {
-    let launch_config = LaunchConfig {
-        name: "Launch Config".to_string(),
-        active_window_index: None,
-        windows: vec![super::WindowTemplate {
-            active_tab_index: None,
-            tabs: vec![super::TabTemplate {
-                title: None,
-                layout: PaneTemplateType::PaneTemplate {
-                    cwd: PathBuf::from("/tmp"),
-                    commands: vec!["echo one".into(), "echo two".into()],
-                    command_execution_mode: CommandExecutionMode::ChainedWithAnd,
-                    is_focused: None,
-                    pane_mode: PaneMode::Terminal,
-                    shell: None,
-                },
-                color: None,
-            }],
-        }],
-    };
-
-    let serialized = toml::to_string(&launch_config).expect("Should serialize launch config");
-
-    assert!(!serialized.contains("command_execution_mode"));
 }
 
 #[test]

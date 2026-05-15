@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::launch_configs::launch_config::{
-    CommandExecutionMode, PaneTemplateType, SplitDirection,
-};
+use crate::launch_configs::launch_config::{PaneTemplateType, SplitDirection};
 
 use super::*;
 
@@ -184,15 +182,10 @@ fn test_render_tab_config_substitutes_values() {
     if let crate::launch_configs::launch_config::PaneTemplateType::PaneTemplate {
         cwd,
         commands,
-        command_execution_mode,
         ..
     } = pane_template
     {
         assert_eq!(cwd, std::path::PathBuf::from("/Users/me/repo"));
-        assert_eq!(
-            command_execution_mode,
-            CommandExecutionMode::SequentialBlocks
-        );
         // Commands should have shell-quoted values.
         assert_eq!(
             commands[0].exec,

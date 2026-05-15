@@ -2512,7 +2512,7 @@ pub struct TerminalView {
     awaiting_pending_command_completion: bool,
     /// Commands that should run as separate blocks after the active pending
     /// command finishes successfully.
-    pending_command_sequence: VecDeque<String>,
+    pending_command_queue: VecDeque<String>,
     /// When true, enter agent view after pending setup commands complete
     /// (i.e. after `PendingCommandCompleted` is emitted). Set by
     /// `pane_tree_from_template_recursive` when a tab config has both
@@ -4139,7 +4139,7 @@ impl TerminalView {
             bootstrap_start: None,
             is_login_shell_bootstrapped: false,
             awaiting_pending_command_completion: false,
-            pending_command_sequence: Default::default(),
+            pending_command_queue: Default::default(),
             enter_agent_view_after_pending_commands: false,
             slow_bootstrap_banner,
             is_slow_bootstrap_banner_open: false,
@@ -8036,21 +8036,20 @@ impl TerminalView {
         })
     }
 
-    pub fn set_pending_command_sequence(
+    pub fn set_pending_command_queue(
         &mut self,
         commands: Vec<String>,
         ctx: &mut ViewContext<Self>,
     ) {
-        self.pending_command_sequence = commands.into_iter().collect();
-        self.set_next_pending_command_from_sequence(ctx);
+        self.pending_command_queue = commands.into_iter().collect();
+        self.set_next_pending_command_from_queue(ctx);
     }
 
-    fn set_next_pending_command_from_sequence(&mut self, ctx: &mut ViewContext<Self>) -> bool {
+    fn set_next_pending_command_from_queue(&mut self, ctx: &mut ViewContext<Self>) -> bool {
         if self.input.as_ref(ctx).has_pending_command() {
             return false;
         }
-
-        let Some(command) = self.pending_command_sequence.pop_front() else {
+        let Some(command) = self.pending_command_queue.pop_front() else {
             return false;
         };
 
@@ -10982,12 +10981,12 @@ impl TerminalView {
                 if self.awaiting_pending_command_completion {
                     if let Some(command_succeeded) = pending_command_succeeded {
                         self.awaiting_pending_command_completion = false;
-                        if command_succeeded && self.set_next_pending_command_from_sequence(ctx) {
+                        if command_succeeded && self.set_next_pending_command_from_queue(ctx) {
                             // The delayed pending-command scheduler below will
                             // submit the next queued command as a separate block.
                         } else {
                             if !command_succeeded {
-                                self.pending_command_sequence.clear();
+                                self.pending_command_queue.clear();
                             }
                             ctx.emit(Event::PendingCommandCompleted);
 
@@ -14825,7 +14824,7 @@ impl TerminalView {
     }
     pub fn has_pending_command_or_awaiting_completion(&self, ctx: &AppContext) -> bool {
         self.awaiting_pending_command_completion
-            || !self.pending_command_sequence.is_empty()
+            || !self.pending_command_queue.is_empty()
             || self.input.as_ref(ctx).has_pending_command()
     }
 

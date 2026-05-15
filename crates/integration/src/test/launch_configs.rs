@@ -165,8 +165,7 @@ pub fn test_open_launch_config_from_add_tab_menu_legacy() -> Builder {
 
 pub fn test_launch_config_single_child_branch() -> Builder {
     use warp::launch_configs::launch_config::{
-        CommandExecutionMode, LaunchConfig, PaneMode, PaneTemplateType, SplitDirection,
-        TabTemplate, WindowTemplate,
+        LaunchConfig, PaneMode, PaneTemplateType, SplitDirection, TabTemplate, WindowTemplate,
     };
     use warpui::actions::StandardAction;
 
@@ -185,7 +184,6 @@ pub fn test_launch_config_single_child_branch() -> Builder {
                             is_focused: Some(true),
                             cwd: PathBuf::from("/some/path"),
                             commands: Vec::new(),
-                            command_execution_mode: CommandExecutionMode::ChainedWithAnd,
                             pane_mode: PaneMode::Terminal,
                             shell: None,
                         }],
@@ -297,8 +295,7 @@ pub fn test_open_launch_config_in_active_window() -> Builder {
 
 pub fn test_with_launch_config_with_active_tab_index() -> Builder {
     use warp::launch_configs::launch_config::{
-        CommandExecutionMode, LaunchConfig, PaneMode, PaneTemplateType, SplitDirection,
-        TabTemplate, WindowTemplate,
+        LaunchConfig, PaneMode, PaneTemplateType, SplitDirection, TabTemplate, WindowTemplate,
     };
 
     fn create_launch_config() -> LaunchConfig {
@@ -316,7 +313,6 @@ pub fn test_with_launch_config_with_active_tab_index() -> Builder {
                                 is_focused: Some(true),
                                 cwd: PathBuf::from("/some/path"),
                                 commands: Vec::new(),
-                                command_execution_mode: CommandExecutionMode::ChainedWithAnd,
                                 pane_mode: PaneMode::Terminal,
                                 shell: None,
                             }],
@@ -358,8 +354,7 @@ pub fn test_with_launch_config_with_active_tab_index() -> Builder {
 
 pub fn test_with_launch_config_with_active_pane() -> Builder {
     use warp::launch_configs::launch_config::{
-        CommandExecutionMode, LaunchConfig, PaneMode, PaneTemplateType, SplitDirection,
-        TabTemplate, WindowTemplate,
+        LaunchConfig, PaneMode, PaneTemplateType, SplitDirection, TabTemplate, WindowTemplate,
     };
 
     fn create_launch_config() -> LaunchConfig {
@@ -377,7 +372,6 @@ pub fn test_with_launch_config_with_active_pane() -> Builder {
                                 is_focused: Some(false),
                                 cwd: PathBuf::from("/some/path"),
                                 commands: Vec::new(),
-                                command_execution_mode: CommandExecutionMode::ChainedWithAnd,
                                 pane_mode: PaneMode::Terminal,
                                 shell: None,
                             },
@@ -388,8 +382,6 @@ pub fn test_with_launch_config_with_active_pane() -> Builder {
                                         is_focused: Some(false),
                                         cwd: PathBuf::from("/some/path"),
                                         commands: Vec::new(),
-                                        command_execution_mode:
-                                            CommandExecutionMode::ChainedWithAnd,
                                         pane_mode: PaneMode::Terminal,
                                         shell: None,
                                     },
@@ -397,8 +389,6 @@ pub fn test_with_launch_config_with_active_pane() -> Builder {
                                         is_focused: Some(true),
                                         cwd: PathBuf::from("/some/path"),
                                         commands: Vec::new(),
-                                        command_execution_mode:
-                                            CommandExecutionMode::ChainedWithAnd,
                                         pane_mode: PaneMode::Terminal,
                                         shell: None,
                                     },
@@ -442,8 +432,7 @@ pub fn test_with_launch_config_with_active_pane() -> Builder {
 
 pub fn test_with_launch_config_with_no_active_pane() -> Builder {
     use warp::launch_configs::launch_config::{
-        CommandExecutionMode, LaunchConfig, PaneMode, PaneTemplateType, SplitDirection,
-        TabTemplate, WindowTemplate,
+        LaunchConfig, PaneMode, PaneTemplateType, SplitDirection, TabTemplate, WindowTemplate,
     };
 
     fn create_launch_config() -> LaunchConfig {
@@ -461,7 +450,6 @@ pub fn test_with_launch_config_with_no_active_pane() -> Builder {
                                 is_focused: Some(false),
                                 cwd: PathBuf::from("/some/path"),
                                 commands: Vec::new(),
-                                command_execution_mode: CommandExecutionMode::ChainedWithAnd,
                                 pane_mode: PaneMode::Terminal,
                                 shell: None,
                             },
@@ -472,8 +460,6 @@ pub fn test_with_launch_config_with_no_active_pane() -> Builder {
                                         is_focused: Some(false),
                                         cwd: PathBuf::from("/some/path"),
                                         commands: Vec::new(),
-                                        command_execution_mode:
-                                            CommandExecutionMode::ChainedWithAnd,
                                         pane_mode: PaneMode::Terminal,
                                         shell: None,
                                     },
@@ -481,8 +467,6 @@ pub fn test_with_launch_config_with_no_active_pane() -> Builder {
                                         is_focused: Some(false),
                                         cwd: PathBuf::from("/some/path"),
                                         commands: Vec::new(),
-                                        command_execution_mode:
-                                            CommandExecutionMode::ChainedWithAnd,
                                         pane_mode: PaneMode::Terminal,
                                         shell: None,
                                     },

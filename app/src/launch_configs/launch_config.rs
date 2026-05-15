@@ -72,9 +72,6 @@ impl From<WindowSnapshot> for WindowTemplate {
 fn is_falsey(val: &Option<bool>) -> bool {
     val.is_none_or(|v| !v)
 }
-fn is_default_command_execution_mode(val: &CommandExecutionMode) -> bool {
-    *val == CommandExecutionMode::default()
-}
 
 /// The mode a leaf pane opens in.
 ///
@@ -92,22 +89,6 @@ pub enum PaneMode {
     Cloud,
 }
 
-/// How a pane template's saved commands should be submitted.
-///
-/// Launch configs default to the legacy `&&` chain. Tab configs opt into
-/// separate blocks so shell hooks like `precmd` can report cwd changes between
-/// setup commands and long-running commands.
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum CommandExecutionMode {
-    /// Join all commands into one shell command separated by `&&`.
-    #[default]
-    ChainedWithAnd,
-    /// Submit commands one at a time as separate blocks, stopping after the
-    /// first command with a non-zero exit code.
-    SequentialBlocks,
-}
-
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(untagged, rename_all = "lowercase")]
 pub enum PaneTemplateType {
@@ -116,8 +97,6 @@ pub enum PaneTemplateType {
         cwd: PathBuf,
         #[serde(skip_serializing_if = "Vec::is_empty", default)]
         commands: Vec<CommandTemplate>,
-        #[serde(skip_serializing_if = "is_default_command_execution_mode", default)]
-        command_execution_mode: CommandExecutionMode,
         #[serde(skip_serializing_if = "is_falsey", default)]
         is_focused: Option<bool>,
         #[serde(default)]
@@ -161,7 +140,6 @@ impl TryFrom<PaneNodeSnapshot> for PaneTemplateType {
                 LeafContents::Terminal(terminal) => Ok(Self::PaneTemplate {
                     cwd: PathBuf::from(terminal.cwd.unwrap_or_default()),
                     commands: Vec::new(),
-                    command_execution_mode: CommandExecutionMode::ChainedWithAnd,
                     is_focused: Some(leaf.is_focused),
                     pane_mode: PaneMode::Terminal,
                     shell: None,
@@ -264,7 +242,6 @@ pub fn make_mock_single_window_launch_config() -> LaunchConfig {
                         is_focused: Some(true),
                         cwd: PathBuf::from("/some/path"),
                         commands: vec!["echo test_command".into()],
-                        command_execution_mode: CommandExecutionMode::ChainedWithAnd,
                         pane_mode: PaneMode::Terminal,
                         shell: None,
                     },
@@ -276,7 +253,6 @@ pub fn make_mock_single_window_launch_config() -> LaunchConfig {
                         is_focused: Some(true),
                         cwd: PathBuf::from("/some/path"),
                         commands: vec!["echo test_command_on_another_tab".into()],
-                        command_execution_mode: CommandExecutionMode::ChainedWithAnd,
                         pane_mode: PaneMode::Terminal,
                         shell: None,
                     },
