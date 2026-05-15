@@ -11498,7 +11498,18 @@ impl TerminalView {
                         .current_working_directory()
                     {
                         if block_metadata_received_event.is_done_bootstrapping {
-                            let is_local = self.active_session_is_local(ctx) == Some(true);
+                            // Determine session locality from the new block's session_id
+                            // directly. We cannot use `active_session_is_local(ctx)` here
+                            // because `active_block_metadata` was just consumed via
+                            // `take()` above, so it would always return `None` and
+                            // misclassify every local session as Remote.
+                            //
+                            // Defaults to local when the session cannot be looked up.
+                            let is_local = block_metadata
+                                .session_id()
+                                .and_then(|sid| self.sessions.as_ref(ctx).get(sid))
+                                .map(|session| session.is_local())
+                                .unwrap_or(true);
                             let session_type = if is_local {
                                 Some(RepoDetectionSessionType::Local)
                             } else {
