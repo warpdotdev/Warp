@@ -3,10 +3,7 @@
 //! This module provides a hover card that shows all references to a symbol
 //! as a flat list with file info, line numbers, and syntax-highlighted code snippets.
 
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, path::PathBuf};
 
 use lsp::ReferenceLocation;
 use pathfinder_geometry::vector::Vector2F;
@@ -39,7 +36,6 @@ use crate::editor::InteractionState;
 use warp_editor::{
     content::buffer::InitialBufferState, render::element::VerticalExpansionBehavior,
 };
-use warp_util::standardized_path::StandardizedPath;
 
 /// Maximum height for the find references card.
 pub const FIND_REFERENCES_CARD_MAX_HEIGHT: f32 = 300.;
@@ -126,14 +122,6 @@ pub struct ReferenceEntryWithUi {
     pub editor_view: ViewHandle<CodeEditorView>,
 }
 
-fn standardized_path_for_language(path: &Path) -> Option<StandardizedPath> {
-    if path.is_absolute() {
-        StandardizedPath::try_from_local(path).ok()
-    } else {
-        StandardizedPath::try_new(&format!("/{}", path.to_string_lossy())).ok()
-    }
-}
-
 impl ReferenceEntryWithUi {
     /// Updates the line content and refreshes the editor view.
     /// Trims whitespace from the start of the line and adjusts the column accordingly.
@@ -147,9 +135,7 @@ impl ReferenceEntryWithUi {
         let content = trimmed.to_string();
         let file_path = self.entry.file_path.clone();
         self.editor_view.update(ctx, |view, ctx| {
-            if let Some(path) = standardized_path_for_language(&file_path) {
-                view.set_language_with_path(&path, ctx);
-            }
+            view.set_language_with_local_path(&file_path, ctx);
             let state = InitialBufferState::plain_text(&content);
             view.reset(state, ctx);
         });
@@ -360,9 +346,7 @@ impl FindReferencesView {
             view.set_interaction_state(InteractionState::Disabled, ctx);
 
             // Set up syntax highlighting based on file extension
-            if let Some(path) = standardized_path_for_language(&file_path) {
-                view.set_language_with_path(&path, ctx);
-            }
+            view.set_language_with_local_path(&file_path, ctx);
 
             // Reset with the reference line content
             let state = InitialBufferState::plain_text(&content);

@@ -29,7 +29,6 @@ use warp_util::{
     content_version::ContentVersion,
     file::{FileId, FileLoadError, FileSaveError},
     path::to_relative_path,
-    standardized_path::StandardizedPath,
     sync::Condition,
 };
 use warpui::{
@@ -1197,14 +1196,12 @@ impl LocalCodeEditorView {
 
         match &location {
             BufferFileLocation::Local(path) => {
-                if let Ok(language_path) = StandardizedPath::try_from_local(path) {
-                    editor.update(ctx, |editor, ctx| {
-                        editor.set_language_with_path(&language_path, ctx);
-                        editor.model.update(ctx, |model, ctx| {
-                            model.rebuild_layout_with_syntax_highlighting(ctx)
-                        });
+                editor.update(ctx, |editor, ctx| {
+                    editor.set_language_with_local_path(path, ctx);
+                    editor.model.update(ctx, |model, ctx| {
+                        model.rebuild_layout_with_syntax_highlighting(ctx)
                     });
-                }
+                });
             }
             BufferFileLocation::Remote(remote_path) => {
                 editor.update(ctx, |editor, ctx| {
@@ -1650,11 +1647,9 @@ impl LocalCodeEditorView {
 
         me.set_new_file(false);
 
-        if let Ok(language_path) = StandardizedPath::try_from_local(&path) {
-            me.editor.update(ctx, |editor, ctx| {
-                editor.set_language_with_path(&language_path, ctx);
-            });
-        }
+        me.editor.update(ctx, |editor, ctx| {
+            editor.set_language_with_local_path(&path, ctx);
+        });
 
         let content = me.editor.as_ref(ctx).text(ctx).into_string();
         let buffer_version = me.editor.as_ref(ctx).version(ctx);
@@ -1742,11 +1737,9 @@ impl LocalCodeEditorView {
             location: BufferFileLocation::Local(new_path.to_path_buf()),
         });
 
-        if let Ok(language_path) = StandardizedPath::try_from_local(new_path) {
-            self.editor.update(ctx, |editor, ctx| {
-                editor.set_language_with_path(&language_path, ctx);
-            });
-        }
+        self.editor.update(ctx, |editor, ctx| {
+            editor.set_language_with_local_path(new_path, ctx);
+        });
 
         // Re-subscribe to GlobalBufferModel events for the new file_id.
         Self::subscribe_to_global_buffer_events(file_id, ctx);

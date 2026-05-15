@@ -1,4 +1,7 @@
-use std::{path::Path, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use warp_util::{
     local_or_remote_path::LocalOrRemotePath, remote_path::RemotePath,
     standardized_path::StandardizedPath,
@@ -102,7 +105,8 @@ impl ActiveSession {
                 .map(|path| LocalOrRemotePath::Remote(RemotePath::new(host_id, path))),
             Some(SessionType::WarpifiedRemote { host_id: None }) => None,
             Some(SessionType::Local) | None => {
-                let path = dunce::canonicalize(Path::new(path)).unwrap_or_else(|_| path.to_path_buf());
+                let path =
+                    dunce::canonicalize(Path::new(path)).unwrap_or_else(|_| PathBuf::from(path));
                 Some(LocalOrRemotePath::Local(path))
             }
         }

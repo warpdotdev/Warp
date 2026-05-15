@@ -1,13 +1,13 @@
 use parking_lot::{FairMutex, RwLock};
 use pathfinder_color::ColorU;
 use settings::Setting as _;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{cmp::Ordering, rc::Rc};
 use warp_core::features::FeatureFlag;
 use warp_core::report_error;
 use warp_core::ui::theme::color::internal_colors;
-use warp_util::standardized_path::StandardizedPath;
 use warpui::elements::new_scrollable::SingleAxisConfig;
 use warpui::elements::{
     ClippedScrollStateHandle, ConstrainedBox, Empty, Fill, FormattedTextElement, Highlight,
@@ -735,11 +735,8 @@ impl CLISubagentView {
                             .and_then(|language| language.to_extension())
                         {
                             // Since this is a code snippet, construct a fake path name for looking up the language.
-                            if let Ok(fake_path) =
-                                StandardizedPath::try_new(&format!("/snippet.{extension}"))
-                            {
-                                view.set_language_with_path(&fake_path, ctx);
-                            }
+                            let fake_path = format!("/snippet.{extension}");
+                            view.set_language_with_local_path(Path::new(&fake_path), ctx);
                         }
                     }
                     let starting_line_number = source.as_ref().and_then(|s| {

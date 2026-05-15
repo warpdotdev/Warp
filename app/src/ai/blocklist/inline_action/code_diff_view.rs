@@ -1002,9 +1002,7 @@ impl CodeDiffView {
                 // Set up the editor buffer with the pre-loaded content.
                 let standardized_path = StandardizedPath::try_new(&file_path).ok();
                 editor.update(ctx, |editor_view, ctx| {
-                    if let Some(path) = &standardized_path {
-                        editor_view.set_language_with_path(path, ctx);
-                    }
+                    editor_view.set_language_with_local_path(Path::new(&file_path), ctx);
                     let state = InitialBufferState::plain_text(&diff.base.content);
                     editor_view.reset(state, ctx);
                 });

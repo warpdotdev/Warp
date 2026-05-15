@@ -52,7 +52,7 @@ use crate::workspace::{
     PaneViewLocator, TabBarLocation, TabContextMenuAnchor, VerticalTabsPaneContextMenuTarget,
     VerticalTabsPaneDropTargetData, Workspace,
 };
-use languages::language_by_filename;
+use languages::language_by_local_filename;
 
 use pathfinder_color::ColorU;
 use pathfinder_geometry::rect::RectF;
@@ -66,7 +66,6 @@ use warp_core::ui::color::coloru_with_opacity;
 use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::{AnsiColorIdentifier, Fill as WarpThemeFill, WarpTheme};
 use warp_core::ui::Icon as WarpIcon;
-use warp_util::standardized_path::StandardizedPath;
 use warpui::elements::DispatchEventResult;
 use warpui::elements::{
     resizable_state_handle, Border, ChildAnchor, Clipped, ClippedScrollStateHandle,
@@ -5845,9 +5844,7 @@ fn render_warp_drive_object_detail_section(
 }
 
 fn code_detail_kind_label(file_name: &str) -> Option<String> {
-    StandardizedPath::try_new(&format!("/{file_name}"))
-        .ok()
-        .and_then(|path| language_by_filename(&path))
+    language_by_local_filename(Path::new(file_name))
         .map(|language| language.display_name().to_string())
 }
 

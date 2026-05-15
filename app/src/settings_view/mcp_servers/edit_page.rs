@@ -5,6 +5,7 @@ use diesel::SqliteConnection;
 use parking_lot::Mutex;
 use pathfinder_geometry::vector::vec2f;
 use std::collections::HashMap;
+use std::path::Path;
 #[cfg(feature = "local_fs")]
 use std::sync::Arc;
 use uuid::Uuid;
@@ -15,7 +16,6 @@ use warp_core::{
 use warp_editor::{
     content::buffer::InitialBufferState, render::element::VerticalExpansionBehavior,
 };
-use warp_util::standardized_path::StandardizedPath;
 use warpui::{
     elements::{
         Border, ChildAnchor, ChildView, Container, CornerRadius, CrossAxisAlignment, Flex,
@@ -179,8 +179,7 @@ impl MCPServersEditPageView {
                     true,
                 ),
             );
-            let path = StandardizedPath::try_new("/mcp.json").expect("path should be absolute");
-            editor.set_language_with_path(&path, ctx);
+            editor.set_language_with_local_path(Path::new("/mcp.json"), ctx);
             editor
         });
 

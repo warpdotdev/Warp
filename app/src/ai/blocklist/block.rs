@@ -130,7 +130,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::{cell::OnceCell, sync::Arc};
-use warp_util::{path::ShellFamily, standardized_path::StandardizedPath};
+use warp_util::path::ShellFamily;
 use warpui::elements::MainAxisAlignment;
 use warpui::elements::MainAxisSize;
 use warpui::elements::SecretRange;
@@ -2798,11 +2798,8 @@ impl AIBlock {
                             .and_then(|language| language.to_extension())
                         {
                             // Since this is a code snippet, construct a fake path name for looking up the language.
-                            if let Ok(fake_path) =
-                                StandardizedPath::try_new(&format!("/snippet.{extension}"))
-                            {
-                                view.set_language_with_path(&fake_path, ctx);
-                            }
+                            let fake_path = format!("/snippet.{extension}");
+                            view.set_language_with_local_path(Path::new(&fake_path), ctx);
                         }
                     }
                     let starting_line_number = source.as_ref().and_then(|s| {
@@ -2862,10 +2859,8 @@ impl AIBlock {
 
                     // Apply language immediately on initial creation so restored blocks get syntax highlighting.
                     if let Some(ext) = language.as_ref().and_then(|lang| lang.to_extension()) {
-                        if let Ok(fake_path) = StandardizedPath::try_new(&format!("/snippet.{ext}"))
-                        {
-                            view.set_language_with_path(&fake_path, ctx);
-                        }
+                        let fake_path = format!("/snippet.{ext}");
+                        view.set_language_with_local_path(Path::new(&fake_path), ctx);
                     }
 
                     ctx.notify();

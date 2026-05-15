@@ -35,6 +35,7 @@ use num_traits::SaturatingSub;
 use pathfinder_geometry::vector::vec2f;
 use std::collections::HashSet;
 use std::fmt::Debug;
+use std::path::Path;
 use std::rc::Rc;
 use std::{collections::HashMap, ops::Range};
 use string_offset::CharOffset;
@@ -1419,6 +1420,12 @@ impl CodeEditorView {
     pub fn set_language_with_path(&mut self, path: &StandardizedPath, ctx: &mut ViewContext<Self>) {
         self.model.update(ctx, |model, ctx| {
             model.set_language_with_path(path, ctx);
+        });
+    }
+
+    pub fn set_language_with_local_path(&mut self, path: &Path, ctx: &mut ViewContext<Self>) {
+        self.model.update(ctx, |model, ctx| {
+            model.set_language_with_local_path(path, ctx);
         });
     }
 
