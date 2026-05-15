@@ -54,7 +54,9 @@ use parent_bridge::{MessageBridge, MessageBridgeCleanupDisposition};
 #[cfg(test)]
 use shell_words::quote as shell_quote;
 #[cfg(test)]
-use wake_driver::{ClaudeWakeRemoteContext, CLAUDE_WAKE_PROMPT_FILE_NAME};
+use wake_driver::{
+    prime_parent_bridge_state_for_wake, ClaudeWakeRemoteContext, CLAUDE_WAKE_PROMPT_FILE_NAME,
+};
 
 pub(crate) struct ClaudeHarness;
 #[cfg_attr(not(target_family = "wasm"), async_trait)]

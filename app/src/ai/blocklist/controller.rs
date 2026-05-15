@@ -30,6 +30,7 @@ use crate::ai::agent::{
     PassiveSuggestionTriggerType, RunningCommand,
 };
 use crate::ai::agent::{DocumentContentAttachmentSource, FileContext};
+use crate::ai::agent_events::AgentMessageEventMetadata;
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::agent_sdk::ClaudeHarness;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
@@ -588,9 +589,11 @@ impl BlocklistAIController {
         if FeatureFlag::OrchestrationV2.is_enabled() {
             let streamer = OrchestrationEventStreamer::handle(ctx);
             ctx.subscribe_to_model(&streamer, move |me, event, ctx| {
-                let OrchestrationEventStreamerEvent::DormantClaudeWakeReady { conversation_id } =
-                    event;
-                me.handle_dormant_claude_wake_ready(*conversation_id, ctx);
+                let OrchestrationEventStreamerEvent::DormantClaudeWakeReady {
+                    conversation_id,
+                    wake_message,
+                } = event;
+                me.handle_dormant_claude_wake_ready(*conversation_id, wake_message.clone(), ctx);
             });
         }
         Self {
@@ -1573,6 +1576,7 @@ impl BlocklistAIController {
         &mut self,
         _conversation_id: AIConversationId,
         _trigger: LocalClaudeWakeTrigger,
+        _wake_message: Option<AgentMessageEventMetadata>,
         _ctx: &mut ModelContext<Self>,
     ) -> bool {
         false
@@ -1583,6 +1587,7 @@ impl BlocklistAIController {
         &mut self,
         conversation_id: AIConversationId,
         trigger: LocalClaudeWakeTrigger,
+        wake_message: Option<AgentMessageEventMetadata>,
         ctx: &mut ModelContext<Self>,
     ) -> bool {
         if self
@@ -1622,6 +1627,8 @@ impl BlocklistAIController {
             .cloned()
             .map(PathBuf::from);
         let task_id = conversation.task_id();
+        let wake_message_for_prepare = wake_message.clone();
+        let wake_message_for_retry = wake_message;
 
         let server_api = ServerApiProvider::as_ref(ctx).get();
         let handle = ctx.spawn(
@@ -1634,6 +1641,7 @@ impl BlocklistAIController {
                     conversation,
                     parent_conversation,
                     working_dir,
+                    wake_message_for_prepare,
                 )
                 .await
             },
@@ -1671,7 +1679,17 @@ impl BlocklistAIController {
                                 log::info!(
                                     "Retrying wake-only dormant Claude eligibility check: conversation_id={conversation_id:?} task_id={task_id:?}"
                                 );
-                                me.schedule_dormant_claude_wake_ready_retry(conversation_id, ctx);
+                                let Some(wake_message) = wake_message_for_retry.clone() else {
+                                    log::warn!(
+                                        "Cannot retry dormant Claude wake without wake message metadata: conversation_id={conversation_id:?} task_id={task_id:?}"
+                                    );
+                                    return;
+                                };
+                                me.schedule_dormant_claude_wake_ready_retry(
+                                    conversation_id,
+                                    wake_message,
+                                    ctx,
+                                );
                             }
                         }
                     }
@@ -1684,7 +1702,17 @@ impl BlocklistAIController {
                                 me.schedule_pending_events_ready_retry(conversation_id, ctx);
                             }
                             LocalClaudeWakeTrigger::WakeOnlyStream => {
-                                me.schedule_dormant_claude_wake_ready_retry(conversation_id, ctx);
+                                let Some(wake_message) = wake_message_for_retry.clone() else {
+                                    log::warn!(
+                                        "Cannot retry dormant Claude wake without wake message metadata: conversation_id={conversation_id:?} task_id={task_id:?}"
+                                    );
+                                    return;
+                                };
+                                me.schedule_dormant_claude_wake_ready_retry(
+                                    conversation_id,
+                                    wake_message,
+                                    ctx,
+                                );
                             }
                         }
                     }
@@ -1714,12 +1742,13 @@ impl BlocklistAIController {
     fn schedule_dormant_claude_wake_ready_retry(
         &mut self,
         conversation_id: AIConversationId,
+        wake_message: AgentMessageEventMetadata,
         ctx: &mut ModelContext<Self>,
     ) {
         ctx.spawn(
             async move { Timer::after(Duration::from_secs(2)).await },
             move |me, _, ctx| {
-                me.handle_dormant_claude_wake_ready(conversation_id, ctx);
+                me.handle_dormant_claude_wake_ready(conversation_id, wake_message.clone(), ctx);
             },
         );
     }
@@ -1780,6 +1809,7 @@ impl BlocklistAIController {
         if self.maybe_prepare_local_claude_wake(
             conversation_id,
             LocalClaudeWakeTrigger::PendingEvents,
+            None,
             ctx,
         ) {
             return;
@@ -1791,11 +1821,13 @@ impl BlocklistAIController {
     fn handle_dormant_claude_wake_ready(
         &mut self,
         conversation_id: AIConversationId,
+        wake_message: AgentMessageEventMetadata,
         ctx: &mut ModelContext<Self>,
     ) {
         if !self.maybe_prepare_local_claude_wake(
             conversation_id,
             LocalClaudeWakeTrigger::WakeOnlyStream,
+            Some(wake_message),
             ctx,
         ) {
             log::info!(
