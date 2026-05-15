@@ -14,15 +14,16 @@ use futures::io::{AsyncRead, AsyncWrite};
 use warpui::r#async::{executor, FutureExt as _};
 
 use crate::proto::{
-    client_message, get_fragment_metadata_from_hash_response, server_message, Abort, Authenticate,
-    BufferEdit, ClientMessage, CloseBuffer, DeleteFile, DiffMode, DiffStateFileDelta,
-    DiffStateMetadataUpdate, DiffStateSnapshot, DiscardFilesRequest, DropCodebaseIndex, ErrorCode,
-    FileStatusInfo, FragmentMetadataLookupErrorCode, GetDiffState, GetDiffStateResponse,
+    client_message, get_branches_response, get_fragment_metadata_from_hash_response,
+    server_message, Abort, Authenticate, BranchInfo, BufferEdit, ClientMessage, CloseBuffer,
+    DeleteFile, DiffMode, DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot,
+    DiscardFilesRequest, DropCodebaseIndex, ErrorCode, FileStatusInfo,
+    FragmentMetadataLookupErrorCode, GetBranches, GetDiffState, GetDiffStateResponse,
     GetFragmentMetadataFromHash, GetFragmentMetadataFromHashSuccess, IndexCodebase, Initialize,
     InitializeResponse, LoadRepoMetadataDirectoryResponse, NavigatedToDirectoryResponse,
     OpenBuffer, OpenBufferResponse, ReadFileContextRequest, ReadFileContextResponse,
-    RunCommandRequest, RunCommandResponse, SaveBuffer, ServerMessage, SessionBootstrapped,
-    TextEdit, UnsubscribeDiffState, WriteFile,
+    ResyncCodebase, RunCommandRequest, RunCommandResponse, SaveBuffer, ServerMessage,
+    SessionBootstrapped, TextEdit, UnsubscribeDiffState, WriteFile,
 };
 use crate::repo_metadata_proto::{proto_snapshot_to_update, proto_to_repo_metadata_update};
 
@@ -302,7 +303,6 @@ impl RemoteServerClient {
             }
         }
     }
-
     /// Sends an `IndexCodebase` request and awaits the initial status update.
     pub async fn index_codebase(
         &self,
@@ -330,14 +330,50 @@ impl RemoteServerClient {
                 crate::manager::RemoteServerOperation::IndexCodebase,
             )
             .await?;
+        Self::codebase_index_status_from_response("IndexCodebase", response)
+    }
 
+    /// Sends a `ResyncCodebase` request and awaits the resulting status update.
+    pub async fn resync_codebase(
+        &self,
+        repo_path: String,
+        auth_token: String,
+    ) -> Result<RemoteCodebaseIndexStatus, ClientError> {
+        let request_id = RequestId::new();
+        let repo_path_for_log = repo_path.clone();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::ResyncCodebase(ResyncCodebase {
+                repo_path,
+                auth_token,
+            })),
+        };
+        log::info!(
+            "[Remote codebase indexing] Client sending ResyncCodebase: request_id={request_id} \
+             repo_path={repo_path_for_log}"
+        );
+
+        let response = self
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::ResyncCodebase,
+            )
+            .await?;
+        Self::codebase_index_status_from_response("ResyncCodebase", response)
+    }
+
+    fn codebase_index_status_from_response(
+        operation: &str,
+        response: ServerMessage,
+    ) -> Result<RemoteCodebaseIndexStatus, ClientError> {
         match response.message {
             Some(server_message::Message::CodebaseIndexStatusUpdated(update)) => {
                 let status =
                     crate::codebase_index_proto::proto_to_codebase_index_status_updated(&update)
                         .ok_or(ClientError::UnexpectedResponse)?;
                 log::info!(
-                    "[Remote codebase indexing] Client received IndexCodebase response: \
+                    "[Remote codebase indexing] Client received {operation} response: \
                      repo_path={} state={:?}",
                     status.repo_path,
                     status.state
@@ -345,7 +381,7 @@ impl RemoteServerClient {
                 Ok(status)
             }
             other => {
-                log::error!("Unexpected response variant for IndexCodebase: {other:?}");
+                log::error!("Unexpected response variant for {operation}: {other:?}");
                 Err(ClientError::UnexpectedResponse)
             }
         }
@@ -381,24 +417,7 @@ impl RemoteServerClient {
             )
             .await?;
 
-        match response.message {
-            Some(server_message::Message::CodebaseIndexStatusUpdated(update)) => {
-                let status =
-                    crate::codebase_index_proto::proto_to_codebase_index_status_updated(&update)
-                        .ok_or(ClientError::UnexpectedResponse)?;
-                log::info!(
-                    "[Remote codebase indexing] Client received DropCodebaseIndex response: \
-                     repo_path={} state={:?}",
-                    status.repo_path,
-                    status.state
-                );
-                Ok(status)
-            }
-            other => {
-                log::error!("Unexpected response variant for DropCodebaseIndex: {other:?}");
-                Err(ClientError::UnexpectedResponse)
-            }
-        }
+        Self::codebase_index_status_from_response("DropCodebaseIndex", response)
     }
 
     /// Maps backend content hashes to server-local fragment metadata for a synced repo snapshot.
@@ -931,6 +950,56 @@ impl RemoteServerClient {
             )),
         };
         self.send_notification(msg);
+    }
+
+    /// Sends a `GetBranches` request and awaits the response.
+    pub async fn get_branches(
+        &self,
+        repo_path: &StandardizedPath,
+        max_branch_count: Option<u32>,
+        include_remotes: bool,
+    ) -> Result<Vec<BranchInfo>, ClientError> {
+        let request_id = RequestId::new();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::GetBranches(GetBranches {
+                repo_path: repo_path.to_string(),
+                max_branch_count,
+                include_remotes,
+            })),
+        };
+
+        let response = self
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::GetBranches,
+            )
+            .await?;
+
+        match response.message {
+            Some(server_message::Message::GetBranchesResponse(resp)) => match resp.result {
+                Some(get_branches_response::Result::Success(success)) => Ok(success.branches),
+                Some(get_branches_response::Result::Error(e)) => Err(ClientError::ServerError {
+                    code: ErrorCode::Internal,
+                    message: e.message,
+                }),
+                None => {
+                    safe_error!(
+                        safe: ("Remote server empty result for GetBranches"),
+                        full: ("Remote server empty result for GetBranches")
+                    );
+                    Err(ClientError::UnexpectedResponse)
+                }
+            },
+            other => {
+                safe_error!(
+                    safe: ("Remote server unexpected response for GetBranches"),
+                    full: ("Remote server unexpected response for GetBranches: response={other:?}")
+                );
+                Err(ClientError::UnexpectedResponse)
+            }
+        }
     }
 
     /// Sends a `DiscardFiles` request and awaits the response.

@@ -2049,6 +2049,22 @@ impl BlocklistAIHistoryModel {
         None
     }
 
+    pub fn get_server_conversation_metadata_by_server_token(
+        &self,
+        server_token: &ServerConversationToken,
+    ) -> Option<&ServerAIConversationMetadata> {
+        self.find_conversation_id_by_server_token(server_token)
+            .and_then(|conversation_id| self.get_server_conversation_metadata(&conversation_id))
+            .or_else(|| {
+                self.all_conversations_metadata
+                    .values()
+                    .find(|metadata| {
+                        metadata.server_conversation_token.as_ref() == Some(server_token)
+                    })
+                    .and_then(|metadata| metadata.server_conversation_metadata.as_ref())
+            })
+    }
+
     /// Finds an AIConversationId by its server conversation token.
     ///
     /// O(1) lookup via `server_token_to_conversation_id`, which is maintained

@@ -27,11 +27,11 @@ use crate::settings::{
     AIAutoDetectionEnabled, AICommandDenylist, AISettingsChangedEvent,
     AgentModeCodingPermissionsType, AgentModeCommandExecutionDenylist,
     AgentModeCommandExecutionPredicate, AgentModeQuerySuggestionsEnabled, AwsBedrockAutoLogin,
-    AwsBedrockCredentialsEnabled, CanUseWarpCreditsWithByok, CodeSettings, CodebaseContextEnabled,
-    FileBasedMcpEnabled, GitOperationsAutogenEnabled, IncludeAgentCommandsInHistory,
-    IntelligentAutosuggestionsEnabled, MemoryEnabled, NLDInTerminalEnabled,
-    NaturalLanguageAutosuggestionsEnabled, OrchestrationEnabled, RuleSuggestionsEnabled,
-    SharedBlockTitleGenerationEnabled, ShouldRenderCLIAgentToolbar,
+    AwsBedrockCredentialsEnabled, CanUseWarpCreditsForFallback, CodeSettings,
+    CodebaseContextEnabled, FileBasedMcpEnabled, GitOperationsAutogenEnabled,
+    IncludeAgentCommandsInHistory, IntelligentAutosuggestionsEnabled, MemoryEnabled,
+    NLDInTerminalEnabled, NaturalLanguageAutosuggestionsEnabled, OrchestrationEnabled,
+    RuleSuggestionsEnabled, SharedBlockTitleGenerationEnabled, ShouldRenderCLIAgentToolbar,
     ShouldRenderUseAgentToolbarForUserCommands, ShouldShowOzUpdatesInZeroState, ShowAgentTips,
     ShowConversationHistory, ShowHintText, ThinkingDisplayMode, VoiceInputEnabled,
     WarpDriveContextEnabled,
@@ -2618,7 +2618,7 @@ pub enum AISettingsPageAction {
     ToggleCLIAgentToolbar,
     ToggleUseAgentToolbar,
     ToggleVoiceInput,
-    ToggleCanUseWarpCreditsWithByok,
+    ToggleCanUseWarpCreditsForFallback,
     HyperlinkClick(HyperlinkUrl),
     ToggleCodebaseContext,
     ToggleShowInputHintText,
@@ -3018,10 +3018,10 @@ impl TypedActionView for AISettingsPageView {
                 }
                 ctx.notify();
             }
-            AISettingsPageAction::ToggleCanUseWarpCreditsWithByok => {
+            AISettingsPageAction::ToggleCanUseWarpCreditsForFallback => {
                 AISettings::handle(ctx).update(ctx, |settings, ctx| {
                     report_if_error!(settings
-                        .can_use_warp_credits_with_byok
+                        .can_use_warp_credits_for_fallback
                         .toggle_and_save_value(ctx));
                 });
                 ctx.notify();
@@ -6873,7 +6873,7 @@ struct ApiKeysWidget {
     anthropic_api_key_editor: ViewHandle<EditorView>,
     google_api_key_editor: ViewHandle<EditorView>,
 
-    can_use_warp_credits_with_byok: SwitchStateHandle,
+    can_use_warp_credits_for_fallback: SwitchStateHandle,
     upgrade_highlight_index: HighlightedHyperlink,
 
     custom_inference_info_tooltip: MouseStateHandle,
@@ -6985,7 +6985,7 @@ impl ApiKeysWidget {
             anthropic_api_key_editor,
             google_api_key_editor,
 
-            can_use_warp_credits_with_byok: Default::default(),
+            can_use_warp_credits_for_fallback: Default::default(),
             upgrade_highlight_index: Default::default(),
 
             custom_inference_info_tooltip: Default::default(),
@@ -7232,19 +7232,19 @@ impl ApiKeysWidget {
         list.finish()
     }
 
-    fn render_can_use_warp_credits_with_byok_toggle(
+    fn render_warp_credit_fallback_toggle(
         &self,
         view: &AISettingsPageView,
         app: &AppContext,
     ) -> Box<dyn Element> {
         let ai_settings = AISettings::as_ref(app);
 
-        let toggle = render_ai_setting_toggle::<CanUseWarpCreditsWithByok>(
+        let toggle = render_ai_setting_toggle::<CanUseWarpCreditsForFallback>(
             "Warp credit fallback",
-            AISettingsPageAction::ToggleCanUseWarpCreditsWithByok,
-            *ai_settings.can_use_warp_credits_with_byok,
+            AISettingsPageAction::ToggleCanUseWarpCreditsForFallback,
+            *ai_settings.can_use_warp_credits_for_fallback,
             ai_settings.is_any_ai_enabled(app),
-            self.can_use_warp_credits_with_byok.clone(),
+            self.can_use_warp_credits_for_fallback.clone(),
             &view.local_only_icon_tooltip_states,
             app,
         );
@@ -7369,10 +7369,10 @@ impl SettingsWidget for ApiKeysWidget {
             }
         }
 
-        // Warp credit fallback toggle (shown when BYO is enabled)
-        if is_byo_enabled {
+        // Warp credit fallback toggle (shown when BYO or custom inference is enabled)
+        if is_byo_enabled || show_custom_inference {
             column.add_child(
-                Container::new(self.render_can_use_warp_credits_with_byok_toggle(view, app))
+                Container::new(self.render_warp_credit_fallback_toggle(view, app))
                     .with_margin_top(16.)
                     .finish(),
             );

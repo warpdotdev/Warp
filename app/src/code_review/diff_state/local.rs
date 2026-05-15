@@ -277,7 +277,7 @@ impl LocalDiffStateModel {
 
         if let Some(repo_path) = &repo_path {
             let fut = DetectedRepositories::handle(ctx).update(ctx, |model, ctx| {
-                model.detect_possible_git_repo(
+                model.detect_possible_local_git_repo(
                     repo_path,
                     RepoDetectionSource::CodeReviewInitialization,
                     ctx,
@@ -286,8 +286,8 @@ impl LocalDiffStateModel {
 
             ctx.spawn(fut, move |me, repo_path, ctx| {
                 if let Some(repo_path) = &repo_path {
-                    if let Some(repo_handle) =
-                        DetectedRepositories::as_ref(ctx).get_watched_repo_for_path(repo_path, ctx)
+                    if let Some(repo_handle) = DetectedRepositories::as_ref(ctx)
+                        .get_local_watched_repo_for_path(repo_path, ctx)
                     {
                         me.set_active_repository(repo_handle, ctx);
                         return;

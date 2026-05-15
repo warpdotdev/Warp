@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 #[cfg(not(target_family = "wasm"))]
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -20,9 +21,12 @@ use crate::proto::{
 use crate::repo_metadata_proto::proto_load_repo_metadata_directory_response_to_update;
 use crate::setup::PreinstallCheckResult;
 #[cfg(not(target_family = "wasm"))]
+use crate::setup::PreinstallStatus;
+#[cfg(not(target_family = "wasm"))]
 use crate::setup::RemoteOs;
 use crate::setup::RemotePlatform;
 use crate::setup::RemoteServerSetupState;
+#[cfg(not(target_family = "wasm"))]
 use crate::setup::UnsupportedReason;
 #[cfg(not(target_family = "wasm"))]
 use crate::transport::Connection;
@@ -33,7 +37,7 @@ use serde::Serialize;
 #[cfg(not(target_family = "wasm"))]
 use warp_core::channel::ChannelState;
 use warp_core::SessionId;
-use warp_util::remote_path::RemotePath;
+use warp_util::remote_path::{RemoteNavigationResult, RemotePath};
 use warp_util::standardized_path::StandardizedPath;
 #[cfg(not(target_family = "wasm"))]
 use warpui::r#async::FutureExt as _;
@@ -109,6 +113,7 @@ pub enum RemoteServerOperation {
     NavigateToDirectory,
     LoadRepoMetadataDirectory,
     IndexCodebase,
+    ResyncCodebase,
     DropCodebaseIndex,
     OpenBuffer,
     SaveBuffer,
@@ -119,18 +124,21 @@ pub enum RemoteServerOperation {
     GetFragmentMetadataFromHash,
     GetDiffState,
     DiscardFiles,
+    GetBranches,
 }
 
 #[derive(Clone, Copy, Debug)]
 enum RemoteCodebaseIndexMutation {
-    Index,
+    EnsureIndexed,
+    Resync,
     Drop,
 }
 
 impl RemoteCodebaseIndexMutation {
     fn operation(self) -> RemoteServerOperation {
         match self {
-            Self::Index => RemoteServerOperation::IndexCodebase,
+            Self::EnsureIndexed => RemoteServerOperation::IndexCodebase,
+            Self::Resync => RemoteServerOperation::ResyncCodebase,
             Self::Drop => RemoteServerOperation::DropCodebaseIndex,
         }
     }
@@ -142,7 +150,8 @@ impl RemoteCodebaseIndexMutation {
         auth_token: String,
     ) -> Result<RemoteCodebaseIndexStatus, crate::client::ClientError> {
         match self {
-            Self::Index => client.index_codebase(repo_path, auth_token).await,
+            Self::EnsureIndexed => client.index_codebase(repo_path, auth_token).await,
+            Self::Resync => client.resync_codebase(repo_path, auth_token).await,
             Self::Drop => client.drop_codebase_index(repo_path, auth_token).await,
         }
     }
@@ -472,6 +481,15 @@ pub enum RemoteServerManagerEvent {
         delta: DiffStateFileDelta,
     },
 
+    // --- Branch listing ---
+    /// Response to a `GetBranches` request.
+    GetBranchesResponse {
+        session_id: SessionId,
+        repo_path: StandardizedPath,
+        /// Branch list on success, error message on failure.
+        result: Result<Vec<crate::proto::BranchInfo>, String>,
+    },
+
     // --- Setup events ---
     /// Intermediate state change during the binary check/install flow.
     SetupStateChanged {
@@ -480,7 +498,8 @@ pub enum RemoteServerManagerEvent {
     },
     /// Result of [`RemoteServerManager::check_binary`]. Returns a result where:
     /// - `Ok(true)` means the binary is installed and executable,
-    /// - `Ok(false)` means it is definitively not installed, and
+    /// - `Ok(false)` means it is not installed, or the preinstall gate
+    ///   classified the host as unsupported, and
     /// - `Err(_)` means the check itself failed (e.g. SSH error or timeout).
     BinaryCheckComplete {
         session_id: SessionId,
@@ -541,9 +560,8 @@ impl RemoteServerManagerEvent {
             | RemoteServerManagerEvent::BinaryCheckComplete { session_id, .. }
             | RemoteServerManagerEvent::BinaryInstallComplete { session_id, .. }
             | RemoteServerManagerEvent::ClientRequestFailed { session_id, .. }
-            | RemoteServerManagerEvent::ServerMessageDecodingError { session_id } => {
-                Some(*session_id)
-            }
+            | RemoteServerManagerEvent::ServerMessageDecodingError { session_id }
+            | RemoteServerManagerEvent::GetBranchesResponse { session_id, .. } => Some(*session_id),
             RemoteServerManagerEvent::HostConnected { .. }
             | RemoteServerManagerEvent::HostDisconnected { .. }
             | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
@@ -558,6 +576,17 @@ impl RemoteServerManagerEvent {
             | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. } => None,
         }
     }
+}
+
+/// Cached navigation state per session. Stores the last requested path
+/// (for dedup) and the result from the last successful response (so dedup
+/// returns a meaningful value instead of `None`).
+struct NavigationCache {
+    /// The path string last sent to `navigate_to_directory`.
+    path: String,
+    /// Populated by the spawner callback when the server responds
+    /// successfully. `None` until the first successful response.
+    result: Option<RemoteNavigationResult>,
 }
 
 /// Shell info recorded by [`RemoteServerManager::notify_session_bootstrapped`].
@@ -587,10 +616,11 @@ pub struct RemoteServerManager {
     host_to_sessions: HashMap<HostId, HashSet<SessionId>>,
     /// Spawner for running closures back on the main thread.
     spawner: ModelSpawner<Self>,
-    /// Last path requested per session for dedup. Avoids redundant
+    /// Per-session navigation cache for dedup. Avoids redundant
     /// `navigate_to_directory` calls when `update_active_session` fires
-    /// repeatedly for the same CWD.
-    last_navigated_path: HashMap<SessionId, String>,
+    /// repeatedly for the same CWD, and returns the cached result on
+    /// dedup so callers don't misinterpret the skip as "not a git repo".
+    last_navigation: HashMap<SessionId, NavigationCache>,
     /// Per-session shell info recorded at bootstrap time and re-sent to the
     /// remote server daemon on every (re)connect. Persists until
     /// `deregister_session`.
@@ -616,7 +646,7 @@ impl RemoteServerManager {
             sessions: HashMap::new(),
             host_to_sessions: HashMap::new(),
             spawner: ctx.spawner(),
-            last_navigated_path: HashMap::new(),
+            last_navigation: HashMap::new(),
             session_bootstrap_info: HashMap::new(),
             auth_context: None,
             session_platforms: HashMap::new(),
@@ -656,7 +686,8 @@ impl RemoteServerManager {
     /// Emits `BinaryCheckComplete { result }`.
     ///
     /// Returns Ok(true) if the binary is installed and executable,
-    /// Ok(false) if it is definitively not installed, and
+    /// Ok(false) if it is definitively not installed or unsupported setup
+    /// should skip install decisions, and
     /// Err(_) if the check failed (e.g. SSH timeout/unreachable).
     #[cfg_attr(target_family = "wasm", allow(unused_variables))]
     pub fn check_binary<T>(
@@ -681,31 +712,33 @@ impl RemoteServerManager {
             let spawner = self.spawner.clone();
             ctx.background_executor()
                 .spawn(async move {
-                    // Run platform detection, binary check, and old-binary
-                    // check sequentially so that each step reuses the
-                    // same SSH ControlMaster connection instead of
-                    // opening parallel channels. The old-binary check
-                    // lets the controller distinguish fresh install (no
-                    // prior versioned binary) from update (prior
-                    // versioned binary present), so it can skip the
-                    // install prompt in the update case.
+                    // Run platform detection and the preinstall gate before
+                    // any binary, update, prompt, or install decision. The
+                    // later binary and old-binary checks run sequentially on
+                    // supported hosts so each step reuses the same SSH
+                    // ControlMaster connection instead of opening parallel
+                    // channels.
                     let platform_result = transport.detect_platform().await;
-                    let check_result = transport.check_binary().await;
-                    let old_binary_result = transport.check_has_old_binary().await;
                     let platform = match platform_result {
                         Ok(p) => Some(p),
                         Err(e) => {
-                            log::warn!("Remote server platform detection failed: session={session_id:?} error={e}");
-                            None
-                        }
-                    };
-                    let has_old_binary = match old_binary_result {
-                        Ok(has) => has,
-                        Err(e) => {
+                            if let Some(reason) = UnsupportedReason::from_transport_error(&e) {
+                                log::info!(
+                                    "Remote server platform is unsupported, falling back to legacy SSH: session={session_id:?}"
+                                );
+                                Self::emit_unsupported_preinstall_check(
+                                    &spawner,
+                                    session_id,
+                                    None,
+                                    PreinstallCheckResult::unsupported(reason),
+                                )
+                                .await;
+                                return;
+                            }
                             log::warn!(
-                                "Remote server old-binary detection failed, treating as fresh install: session={session_id:?} error={e}"
+                                "Remote server platform detection failed: session={session_id:?} error={e}"
                             );
-                            false
+                            None
                         }
                     };
                     // Run the preinstall check after platform detection
@@ -727,64 +760,110 @@ impl RemoteServerManager {
                         }
                         _ => None,
                     };
-                    let _ = spawner
-                        .spawn(move |me, ctx| {
-                            if let Some(p) = &platform {
-                                me.session_platforms.insert(session_id, p.clone());
-                            }
-                            if let Err(error) = &check_result {
-                                ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
-                                    session_id,
-                                    state: RemoteServerSetupState::Failed {
-                                        error: error.to_string(),
-                                    },
-                                });
-                            }
-                            ctx.emit(RemoteServerManagerEvent::BinaryCheckComplete {
-                                session_id,
-                                result: check_result.map_err(Arc::new),
-                                remote_platform: platform,
-                                preinstall_check: preinstall,
-                                has_old_binary,
-                            });
-                        })
-                        .await;
+                    match preinstall {
+                        Some(
+                            preinstall @ PreinstallCheckResult {
+                                status: PreinstallStatus::Unsupported { .. },
+                                ..
+                            },
+                        ) => {
+                            log::info!(
+                                "Remote server preinstall check classified as unsupported, falling back to legacy SSH: session={session_id:?}"
+                            );
+                            Self::emit_unsupported_preinstall_check(
+                                &spawner, session_id, platform, preinstall,
+                            )
+                            .await;
+                        }
+                        preinstall => {
+                            Self::check_if_binary_is_installed(
+                                &spawner, session_id, transport, platform, preinstall,
+                            )
+                            .await;
+                        }
+                    }
                 })
                 .detach();
         }
     }
 
-    /// Marks a session as unsupported by the prebuilt remote-server
-    /// binary, based on a positive classification from the preinstall
-    /// check. The setup state transitions to `Unsupported`, which the
-    /// downstream UI treats as a clean fall-back to the legacy SSH flow.
-    ///
-    /// No-op on WASM (remote server connections use a different transport).
-    #[cfg(target_family = "wasm")]
-    pub fn mark_setup_unsupported(
-        &mut self,
-        _session_id: SessionId,
-        _reason: UnsupportedReason,
-        _ctx: &mut ModelContext<Self>,
-    ) {
-        log::warn!("Remote server mark_setup_unsupported is a no-op on WASM");
-    }
-
-    /// Marks a session as unsupported by the prebuilt remote-server
-    /// binary, based on a positive classification from the preinstall
-    /// check. The setup state transitions to `Unsupported`, which the
-    /// downstream UI treats as a clean fall-back to the legacy SSH flow.
+    /// Checks whether the remote server binary is already installed on a host
+    /// that has passed the support gate. Callers must only invoke this after
+    /// platform detection and the preinstall check have ruled out unsupported
+    /// OS, architecture, and libc cases.
     #[cfg(not(target_family = "wasm"))]
-    pub fn mark_setup_unsupported(
-        &mut self,
+    async fn check_if_binary_is_installed<T>(
+        spawner: &ModelSpawner<Self>,
         session_id: SessionId,
-        reason: UnsupportedReason,
-        ctx: &mut ModelContext<Self>,
+        transport: T,
+        platform: Option<RemotePlatform>,
+        preinstall: Option<PreinstallCheckResult>,
+    ) where
+        T: RemoteTransport,
+    {
+        let check_result = transport.check_binary().await;
+        let old_binary_result = transport.check_has_old_binary().await;
+        let has_old_binary = match old_binary_result {
+            Ok(has) => has,
+            Err(e) => {
+                log::warn!(
+                    "Remote server old-binary detection failed, treating as fresh install: session={session_id:?} error={e}"
+                );
+                false
+            }
+        };
+        let _ = spawner
+            .spawn(move |me, ctx| {
+                if let Some(p) = &platform {
+                    me.session_platforms.insert(session_id, p.clone());
+                }
+                if let Err(error) = &check_result {
+                    ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
+                        session_id,
+                        state: RemoteServerSetupState::from(error),
+                    });
+                }
+                ctx.emit(RemoteServerManagerEvent::BinaryCheckComplete {
+                    session_id,
+                    result: check_result.map_err(Arc::new),
+                    remote_platform: platform,
+                    preinstall_check: preinstall,
+                    has_old_binary,
+                });
+            })
+            .await;
+    }
+    #[cfg(not(target_family = "wasm"))]
+    async fn emit_unsupported_preinstall_check(
+        spawner: &ModelSpawner<Self>,
+        session_id: SessionId,
+        platform: Option<RemotePlatform>,
+        preinstall: PreinstallCheckResult,
     ) {
-        ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
-            session_id,
-            state: RemoteServerSetupState::Unsupported { reason },
-        });
+        let PreinstallStatus::Unsupported { reason } = &preinstall.status else {
+            return;
+        };
+        let reason = reason.clone();
+        let _ = spawner
+            .spawn(move |me, ctx| {
+                if let Some(p) = &platform {
+                    me.session_platforms.insert(session_id, p.clone());
+                }
+                ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
+                    session_id,
+                    state: RemoteServerSetupState::Unsupported {
+                        reason: reason.clone(),
+                    },
+                });
+                ctx.emit(RemoteServerManagerEvent::BinaryCheckComplete {
+                    session_id,
+                    result: Ok(false),
+                    remote_platform: platform,
+                    preinstall_check: Some(preinstall),
+                    has_old_binary: false,
+                });
+            })
+            .await;
     }
 
     /// Installs the remote server binary.
@@ -829,9 +908,7 @@ impl RemoteServerManager {
                             if let Err(error) = &outcome.result {
                                 ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
                                     session_id,
-                                    state: RemoteServerSetupState::Failed {
-                                        error: error.to_string(),
-                                    },
+                                    state: RemoteServerSetupState::from(error),
                                 });
                             }
                             ctx.emit(RemoteServerManagerEvent::BinaryInstallComplete {
@@ -1177,7 +1254,7 @@ impl RemoteServerManager {
     ///   outright. Unlike `SessionDisconnected`, this one never fires for
     ///   spontaneous drops -- only for explicit teardown.
     pub fn deregister_session(&mut self, session_id: SessionId, ctx: &mut ModelContext<Self>) {
-        self.last_navigated_path.remove(&session_id);
+        self.last_navigation.remove(&session_id);
         self.session_bootstrap_info.remove(&session_id);
         self.session_platforms.remove(&session_id);
 
@@ -1355,9 +1432,18 @@ impl RemoteServerManager {
         })
     }
 
-    /// Sends an `IndexCodebase` request to a connected daemon for this remote path.
-    pub fn index_codebase(&mut self, remote_path: RemotePath, ctx: &mut ModelContext<Self>) {
-        self.mutate_codebase_index(remote_path, RemoteCodebaseIndexMutation::Index, ctx);
+    /// Ensures a codebase index exists for this remote path without resyncing an existing index.
+    pub fn ensure_codebase_indexed(
+        &mut self,
+        remote_path: RemotePath,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.mutate_codebase_index(remote_path, RemoteCodebaseIndexMutation::EnsureIndexed, ctx);
+    }
+
+    /// Sends a `ResyncCodebase` request to a connected daemon for this remote path.
+    pub fn resync_codebase(&mut self, remote_path: RemotePath, ctx: &mut ModelContext<Self>) {
+        self.mutate_codebase_index(remote_path, RemoteCodebaseIndexMutation::Resync, ctx);
     }
 
     /// Sends a `DropCodebaseIndex` request to a connected daemon for this remote path.
@@ -1454,43 +1540,77 @@ impl RemoteServerManager {
     }
 
     /// Sends a `NavigatedToDirectory` request to the remote server for
-    /// the given session and emits the response as a manager event.
+    /// the given session and returns a future that resolves with the
+    /// navigation result on success, or `None` on failure. The
+    /// `NavigatedToDirectory` event is still emitted for other
+    /// subscribers (file tree, etc.).
     ///
     /// Deduplicates: if the same `(session_id, path)` was already requested,
-    /// the call is a no-op.
+    /// returns the cached result from the last successful navigation instead
+    /// of re-issuing the request.
+    ///
+    /// Callers that don't need the result can simply drop the future.
     pub fn navigate_to_directory(
         &mut self,
         session_id: SessionId,
         path: String,
         ctx: &mut ModelContext<Self>,
-    ) {
+    ) -> impl Future<Output = Option<RemoteNavigationResult>> {
+        use futures::future::ready;
+
+        match self.navigate_to_directory_impl(session_id, path, ctx) {
+            Some(rx) => futures::future::Either::Left(async move { rx.await.ok().flatten() }),
+            None => {
+                // Dedup skip or missing client — return the cached result
+                // from the last successful navigation so callers don't
+                // misinterpret the skip as "not a git repo".
+                let cached = self
+                    .last_navigation
+                    .get(&session_id)
+                    .and_then(|c| c.result.clone());
+                futures::future::Either::Right(ready(cached))
+            }
+        }
+    }
+
+    /// Returns `Some(receiver)` when a request was dispatched, `None` when
+    /// skipped (dedup or missing client).
+    fn navigate_to_directory_impl(
+        &mut self,
+        session_id: SessionId,
+        path: String,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<futures::channel::oneshot::Receiver<Option<RemoteNavigationResult>>> {
         // Dedup: skip if this session already navigated to the same path.
-        if self.last_navigated_path.get(&session_id) == Some(&path) {
-            return;
+        if self
+            .last_navigation
+            .get(&session_id)
+            .is_some_and(|c| c.path == path)
+        {
+            return None;
         }
 
-        let Some(client) = self.client_for_session(session_id).cloned() else {
-            log::warn!(
-                "Remote server navigate_to_directory: no connected client session={session_id:?}"
-            );
-            return;
-        };
-        let Some(host_id) = self.host_id_for_session(session_id).cloned() else {
-            log::warn!("Remote server navigate_to_directory: no host_id session={session_id:?}");
-            return;
-        };
+        let client = self.client_for_session(session_id).cloned()?;
+        let host_id = self.host_id_for_session(session_id).cloned()?;
 
         // Record only after confirming the client is connected, so that a
         // retry after SessionConnected is not incorrectly deduplicated.
-        self.last_navigated_path.insert(session_id, path.clone());
+        self.last_navigation.insert(
+            session_id,
+            NavigationCache {
+                path: path.clone(),
+                result: None,
+            },
+        );
 
+        let (tx, rx) = futures::channel::oneshot::channel();
         let spawner = self.spawner.clone();
         ctx.background_executor()
             .spawn(async move {
                 match client.navigate_to_directory(path).await {
                     Ok(resp) => {
                         let _ = spawner
-                            .spawn(move |_me, ctx| {
+                            .spawn(move |me, ctx| {
                                 let Some(remote_path) = StandardizedPath::try_new(&resp.indexed_path)
                                     .ok()
                                     .map(|path| RemotePath::new(host_id, path))
@@ -1500,8 +1620,17 @@ impl RemoteServerManager {
                                          session={session_id:?} indexed_path={}",
                                         resp.indexed_path
                                     );
+                                    let _ = tx.send(None);
                                     return;
                                 };
+                                let result = RemoteNavigationResult {
+                                    remote_path: remote_path.clone(),
+                                    is_git: resp.is_git,
+                                };
+                                if let Some(cache) = me.last_navigation.get_mut(&session_id) {
+                                    cache.result = Some(result.clone());
+                                }
+                                let _ = tx.send(Some(result));
                                 ctx.emit(RemoteServerManagerEvent::NavigatedToDirectory {
                                     session_id,
                                     remote_path,
@@ -1512,12 +1641,13 @@ impl RemoteServerManager {
                     }
                     Err(e) => {
                         log::warn!("Remote server navigate_to_directory failed: session={session_id:?} error={e}");
-                        // Transport-level telemetry is emitted automatically
-                        // by send_tracked_request via ClientEvent::RequestFailed.
+                        let _ = tx.send(None);
                     }
                 }
             })
             .detach();
+
+        Some(rx)
     }
 
     /// Sends a `SessionBootstrapped` notification to the remote server.
@@ -1637,6 +1767,43 @@ impl RemoteServerManager {
                             .await;
                     }
                 }
+            })
+            .detach();
+    }
+
+    /// Sends a `GetBranches` request to the remote server for the given
+    /// session and emits the result as a manager event.
+    pub fn get_branches(
+        &mut self,
+        session_id: SessionId,
+        remote_path: RemotePath,
+        max_branch_count: Option<u32>,
+        include_remotes: bool,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(client) = self.client_for_session(session_id).cloned() else {
+            log::warn!("Remote server get_branches: no connected client session={session_id:?}");
+            return;
+        };
+
+        let repo_path = remote_path.path;
+        let repo_path_for_event = repo_path.clone();
+        let spawner = self.spawner.clone();
+        ctx.background_executor()
+            .spawn(async move {
+                let result = client
+                    .get_branches(&repo_path, max_branch_count, include_remotes)
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = spawner
+                    .spawn(move |_me, ctx| {
+                        ctx.emit(RemoteServerManagerEvent::GetBranchesResponse {
+                            session_id,
+                            repo_path: repo_path_for_event,
+                            result,
+                        });
+                    })
+                    .await;
             })
             .detach();
     }
@@ -2124,11 +2291,10 @@ impl RemoteServerManager {
                 });
             }
 
-            // Clear last navigated path so navigate_to_directory
-            // re-fires after reconnect.
-            // We need to do this on disconnect because the cached
-            // navigated path is only deduping for the current _remote server session.
-            self.last_navigated_path.remove(&session_id);
+            // Clear navigation cache so navigate_to_directory re-fires
+            // after reconnect. The cached path only dedupes for the
+            // current remote server session.
+            self.last_navigation.remove(&session_id);
 
             self.attempt_reconnect(
                 session_id,

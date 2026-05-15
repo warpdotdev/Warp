@@ -228,6 +228,7 @@ pub struct AmbientAgentViewModel {
     /// Used as the previous session ID when submitting a follow-up so polling can wait for a
     /// different fresh session after the prior execution has ended.
     last_ended_execution_session_id: Option<SessionId>,
+
     /// Prompt text for a follow-up that has been submitted but not yet attached to a new session.
     pending_followup_prompt: Option<String>,
 
@@ -1283,8 +1284,13 @@ impl AmbientAgentViewModel {
         }
         if let Some(ai_api_error) = err.downcast_ref::<AIApiError>() {
             match ai_api_error {
-                AIApiError::QuotaLimit => {
-                    self.handle_spawn_error(OUT_OF_CREDITS_TASK_FAILURE_MESSAGE.to_string(), ctx);
+                AIApiError::QuotaLimit {
+                    user_display_message,
+                } => {
+                    let error_message = user_display_message
+                        .clone()
+                        .unwrap_or_else(|| OUT_OF_CREDITS_TASK_FAILURE_MESSAGE.to_string());
+                    self.handle_spawn_error(error_message, ctx);
                     ctx.emit(AmbientAgentViewModelEvent::ShowAICreditModal);
                     return;
                 }

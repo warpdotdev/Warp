@@ -218,6 +218,7 @@ impl View for CloudModeSetupTextBlock {
             &self.ambient_agent_view_model,
             app,
         )
+        .with_margin_top(8.)
         .finish()
     }
 }

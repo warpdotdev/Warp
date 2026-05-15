@@ -15,11 +15,11 @@ use warp_core::ui::theme::Fill;
 use warp_core::ui::{appearance::Appearance, theme::WarpTheme};
 use warpui::elements::new_scrollable::{NewScrollable, ScrollableAppearance, SingleAxisConfig};
 use warpui::elements::{
-    AnchorPair, ChildAnchor, ChildView, Clipped, ClippedScrollStateHandle, ConstrainedBox,
-    Container, CornerRadius, CrossAxisAlignment, Element, Empty, Fill as ElementFill, Flex,
-    Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, OffsetType,
-    ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementOffsetBounds,
-    PositioningAxis, Radius, SavePosition, ScrollbarWidth, Stack, Text, XAxisAnchor, YAxisAnchor,
+    AnchorPair, ChildAnchor, ChildView, ClippedScrollStateHandle, ConstrainedBox, Container,
+    CornerRadius, CrossAxisAlignment, Element, Empty, Fill as ElementFill, Flex, Hoverable,
+    MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, OffsetType, ParentAnchor,
+    ParentElement, ParentOffsetBounds, PositionedElementOffsetBounds, PositioningAxis, Radius,
+    SavePosition, ScrollbarWidth, Stack, Text, XAxisAnchor, YAxisAnchor,
     DEFAULT_UI_LINE_HEIGHT_RATIO,
 };
 use warpui::fonts::{Properties, Weight};
@@ -40,8 +40,8 @@ use crate::ai::blocklist::agent_view::orchestration_conversation_links::{
     is_conversation_open_in_other_visible_view, pane_group_id_containing_terminal_view,
     parent_conversation_id,
 };
-use crate::ai::blocklist::agent_view::orchestration_pin_model::{
-    OrchestrationPinEvent, OrchestrationPinModel,
+use crate::ai::blocklist::agent_view::orchestration_pill_bar_model::{
+    OrchestrationPillBarEvent, OrchestrationPillBarModel,
 };
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
 use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
@@ -151,7 +151,7 @@ fn collect_descendant_conversation_ids_in_spawn_order(
 }
 
 /// What kind of pill we are rendering, which determines click behavior.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum PillKind {
     Orchestrator,
     Child,
@@ -343,7 +343,8 @@ impl OrchestrationPillBar {
                 this.pin_button_mouse_states
                     .borrow_mut()
                     .remove(conversation_id);
-                // Pin set pruning lives in the pin-state singleton.
+                // Pin set + scroll handle pruning live in the pill bar
+                // model singleton.
                 // If the menu was open for a child that just disappeared,
                 // close it so we don't leave a dangling menu pointing at a
                 // dead conversation id.
@@ -385,9 +386,9 @@ impl OrchestrationPillBar {
         });
 
         // Re-render whenever any pane toggles a pin so the bars stay in sync.
-        let pin_model = OrchestrationPinModel::handle(ctx);
-        ctx.subscribe_to_model(&pin_model, |_, _, event, ctx| match event {
-            OrchestrationPinEvent::PinSetChanged => ctx.notify(),
+        let pill_bar_model = OrchestrationPillBarModel::handle(ctx);
+        ctx.subscribe_to_model(&pill_bar_model, |_, _, event, ctx| match event {
+            OrchestrationPillBarEvent::PinSetChanged => ctx.notify(),
         });
 
         Self {
@@ -533,8 +534,10 @@ impl OrchestrationPillBar {
         // pane's tree, so pruning here would clobber pins in other panes.
     }
 
-    /// Builds the ordered pill list, or `None` when nothing should render.
-    fn pill_specs(&self, app: &AppContext) -> Option<Vec<PillSpec>> {
+    /// Builds the ordered pill list along with the orchestrator id it was
+    /// built for (used to key the shared horizontal scroll handle), or
+    /// `None` when nothing should render.
+    fn pill_specs(&self, app: &AppContext) -> Option<(AIConversationId, Vec<PillSpec>)> {
         let active_id = self
             .agent_view_controller
             .as_ref(app)
@@ -580,13 +583,13 @@ impl OrchestrationPillBar {
         });
 
         // Stamp each child's current pin state; partitioning happens at render.
-        let pin_model = OrchestrationPinModel::as_ref(app);
+        let pill_bar_model = OrchestrationPillBarModel::as_ref(app);
         for child in children {
             let name = child
                 .agent_name()
                 .filter(|n| !n.is_empty())
                 .unwrap_or("Agent");
-            let pin_state = if pin_model.is_pinned(&child.id()) {
+            let pin_state = if pill_bar_model.is_pinned(&child.id()) {
                 PillPinState::Pinned
             } else {
                 PillPinState::Unpinned
@@ -604,7 +607,7 @@ impl OrchestrationPillBar {
             });
         }
 
-        Some(specs)
+        Some((orchestrator_id, specs))
     }
 }
 
@@ -722,7 +725,7 @@ impl TypedActionView for OrchestrationPillBar {
                 // Singleton emits an event that drives the re-render in every
                 // pill bar, so no `ctx.notify()` needed here.
                 let id = *id;
-                OrchestrationPinModel::handle(ctx).update(ctx, |model, ctx| {
+                OrchestrationPillBarModel::handle(ctx).update(ctx, |model, ctx| {
                     model.toggle_pin(id, ctx);
                 });
             }
@@ -801,23 +804,16 @@ impl View for OrchestrationPillBar {
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
-        let Some(specs) = self.pill_specs(app) else {
+        let Some((orchestrator_id, specs)) = self.pill_specs(app) else {
             return Empty::new().finish();
         };
 
-        // The row uses `MainAxisSize::Max` so the bar's intrinsic width
-        // is the parent's available width (i.e. the pane width passed in
-        // by the wrapping `Flex::column` in `pane_impl.rs`), not the sum
-        // of the children. With `MainAxisSize::Min` the row reports its
-        // full intrinsic width upward and the surrounding `Clipped`
-        // wrapper has nothing tighter to clip against, so the trailing
-        // pills paint into whichever pane sits to the right. Children
-        // remain left-packed via `MainAxisAlignment::Start`; any pills
-        // that overflow to the right of the available width get clipped
-        // by the `Clipped` element below.
+        // Row reports its intrinsic width so the wrapping horizontal
+        // scrollable below has something larger than the pane width to
+        // pan through when there are many child pills.
         let mut row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_size(MainAxisSize::Min)
             .with_main_axis_alignment(MainAxisAlignment::Start)
             .with_spacing(PILL_GAP);
 
@@ -899,27 +895,40 @@ impl View for OrchestrationPillBar {
             row.add_child(pill);
         }
 
-        // Wrap in a container with a touch of horizontal padding so the bar
-        // doesn't sit flush against the pane edges while leaving the row itself
-        // transparent so the pane's theme background shows through.
-        //
-        // Wrap the whole thing in a `Clipped` so when the orchestrator's
-        // pane is narrower than the natural width of the pill row
-        // (orchestrator + N child pills), the pills get clipped at the pane
-        // boundary instead of bleeding into whichever pane sits to the
-        // right. Without this clip the row's `MainAxisSize::Min` reports
-        // its full intrinsic width upward and the parent doesn't enforce
-        // a horizontal bound, so the trailing pills paint outside the
-        // pane (visible in split layouts).
-        let bar = Clipped::new(
-            Container::new(row.finish())
-                .with_padding_left(12.)
-                .with_padding_right(12.)
-                .with_padding_top(4.)
-                .with_padding_bottom(4.)
-                .finish(),
+        // Pan + clip the pill row when it overflows the pane. The scroll
+        // handle is keyed by orchestrator id and shared across sibling
+        // panes so the user's scroll position survives navigating between
+        // pill bars rendered for the same orchestration tree.
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let horizontal_scroll_state =
+            OrchestrationPillBarModel::as_ref(app).horizontal_scroll_state_for(orchestrator_id);
+        let scrollable = NewScrollable::horizontal(
+            SingleAxisConfig::Clipped {
+                handle: horizontal_scroll_state,
+                child: row.finish(),
+            },
+            theme.nonactive_ui_detail().into(),
+            theme.active_ui_detail().into(),
+            ElementFill::None,
         )
+        // 4px overlaid scrollbar so the bar height stays constant
+        // whether or not the row overflows.
+        .with_horizontal_scrollbar(ScrollableAppearance::new(ScrollbarWidth::Custom(4.), true))
+        // Let a standard vertical mouse wheel pan the bar horizontally;
+        // trackpad horizontal swipes already work through the default path.
+        .with_remap_cross_axis_wheel_to_main_axis(true)
+        .with_propagate_mousewheel_if_not_handled(true)
         .finish();
+
+        // Padding lives outside the scrollable so it doesn't scroll away
+        // with the content.
+        let bar = Container::new(scrollable)
+            .with_padding_left(12.)
+            .with_padding_right(12.)
+            .with_padding_top(4.)
+            .with_padding_bottom(4.)
+            .finish();
 
         // When the 3-dot menu is open, overlay it directly beneath the
         // clicked pill's overflow button. We anchor to the saved position id
@@ -1467,7 +1476,16 @@ fn render_pill(
     let is_selected = spec.is_selected;
     let pin_state = spec.pin_state;
     let is_pinned = matches!(pin_state, PillPinState::Pinned);
+    // The 3-dot overflow menu offers pane-management actions (open in new
+    // pane / tab, focus pane) that don't apply to the single-pane web
+    // viewer. Suppress the dots on WASM so the menu can never open.
+    #[cfg(not(target_family = "wasm"))]
     let show_overflow_button = matches!(kind, PillKind::Child);
+    #[cfg(target_family = "wasm")]
+    let show_overflow_button = {
+        let _ = &kind;
+        false
+    };
     // Orchestrator is always anchored at the leading edge with no pin.
     let supports_pinning = matches!(kind, PillKind::Child);
     // `spec` is owned by value, so we can move `label` directly into the
@@ -1724,23 +1742,20 @@ fn render_pill(
         // `ViewContext<Self>`, which reliably reaches the workspace.
         let is_open_elsewhere =
             is_conversation_open_in_other_visible_view(conversation_id, self_terminal_view_id, app);
+
         if is_open_elsewhere {
             ctx.dispatch_typed_action(OrchestrationPillBarAction::FocusOpenedConversation(
                 conversation_id,
             ));
             return;
         }
-        // Child pills should reveal the existing child pane/session, not
-        // switch the current pane in place. The hidden child pane owns the
-        // live harness/ambient session and associated view-scoped models; if
-        // we merely re-enter the child conversation in the current pane, the
-        // actual running session stays attached to the hidden pane and the
-        // user sees an empty child view. The orchestrator pill still switches
-        // the current pane back to the parent conversation.
-        //
-        // We keep the visible-owner fast path above so a child that's already
-        // open in another visible pane/tab still focuses that existing
-        // destination rather than trying to reveal the hidden bootstrap pane.
+        // Child pills reveal the existing child pane/session and orchestrator
+        // pills swap back to the orchestrator's pane. The hidden child pane
+        // owns the live harness/ambient session (locally) or the shared-
+        // session viewer that joins the child's session (for shared session
+        // viewers, materialized lazily by `OrchestrationViewerModel` when a
+        // `session_id` is known). In both cases the swap-based navigation is
+        // the correct destination.
         let action = navigation_action_for_pill(kind, conversation_id);
         ctx.dispatch_typed_action(
             PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(action),
@@ -2084,8 +2099,9 @@ pub fn render_orchestration_breadcrumbs(
     // whenever the row overflows; overlaying keeps the row vertically
     // centered in the title slot at the cost of the scrollbar briefly
     // crossing through the bottom edge of the labels — which the user
-    // explicitly accepted as a fine trade-off.
-    .with_horizontal_scrollbar(ScrollableAppearance::new(ScrollbarWidth::Auto, true))
+    // explicitly accepted as a fine trade-off. 4px matches the pill bar
+    // for a consistent hairline treatment across orchestration surfaces.
+    .with_horizontal_scrollbar(ScrollableAppearance::new(ScrollbarWidth::Custom(4.), true))
     .with_propagate_mousewheel_if_not_handled(true)
     .finish();
 

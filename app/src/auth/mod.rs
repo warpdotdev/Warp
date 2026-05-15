@@ -18,7 +18,7 @@ pub mod user_uid;
 pub mod web_handoff;
 
 use crate::ai::agent_conversations_model::AgentConversationsModel;
-use crate::ai::blocklist::agent_view::orchestration_pin_model::OrchestrationPinModel;
+use crate::ai::blocklist::agent_view::orchestration_pill_bar_model::OrchestrationPillBarModel;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai_assistant::requests::REQUEST_LIMIT_INFO_CACHE_KEY;
@@ -233,8 +233,8 @@ pub fn log_out(app: &mut AppContext) {
     BlocklistAIHistoryModel::handle(app).update(app, |history_model, _| {
         history_model.reset();
     });
-    OrchestrationPinModel::handle(app).update(app, |pin_model, _| {
-        pin_model.reset();
+    OrchestrationPillBarModel::handle(app).update(app, |pill_bar_model, _| {
+        pill_bar_model.reset();
     });
     AgentConversationsModel::handle(app).update(app, |agent_conversations_model, _| {
         agent_conversations_model.reset();
