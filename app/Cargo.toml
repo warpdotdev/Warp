@@ -509,7 +509,6 @@ default = [
     "tab_close_button_on_left",
     "ai_resume_button",
     "code_find_replace",
-    "ai_context_menu_code",
     "agent_decides_command_execution",
     "linked_code_blocks",
     "drive_objects_as_context",
@@ -830,7 +829,6 @@ command_palette_file_search = []
 conversation_filter = []
 ai_context_menu_commands = []
 preview_channel = []
-ai_context_menu_code = []
 expand_edit_to_pane = []
 fallback_model_load_output_messaging = []
 profiles_design_revamp = []

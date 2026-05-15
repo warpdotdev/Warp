@@ -2678,8 +2678,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::CommandPaletteFileSearch,
         #[cfg(feature = "ai_context_menu_commands")]
         FeatureFlag::AIContextMenuCommands,
-        #[cfg(feature = "ai_context_menu_code")]
-        FeatureFlag::AIContextMenuCode,
         #[cfg(feature = "expand_edit_to_pane")]
         FeatureFlag::ExpandEditToPane,
         #[cfg(feature = "fallback_model_load_output_messaging")]
