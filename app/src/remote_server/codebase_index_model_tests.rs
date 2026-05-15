@@ -274,7 +274,6 @@ fn availability_uses_explicit_path_when_it_matches_known_remote_repo() {
     assert_eq!(availability.repo_path(), Some("/workspaces/warp"));
 }
 
-
 #[test]
 fn codebases_for_agent_context_includes_searchable_remote_paths() {
     let mut model = RemoteCodebaseIndexModel::default();
