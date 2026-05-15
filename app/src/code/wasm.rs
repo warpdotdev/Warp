@@ -97,7 +97,7 @@ impl TabData {
     pub fn local_path(&self) -> Option<PathBuf> {
         self.location
             .as_ref()
-            .and_then(|loc| PathBuf::try_from(loc).ok())
+            .and_then(|loc| PathBuf::try_from(loc.clone()).ok())
     }
 }
 
