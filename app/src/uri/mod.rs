@@ -1144,7 +1144,7 @@ fn can_open_file_editor_path(path: &Path) -> bool {
     path.is_file() && is_file_openable_in_warp(path).is_some()
 }
 
-/// Handle an incoming file path from a URI.
+/// Handle an incoming `file://` URL.
 /// * Markdown files are opened as notebook panes.
 /// * For directories, open a new session at the directory path.
 /// * For other files, open a new session at the parent directory path, then possibly execute the
