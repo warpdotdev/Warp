@@ -5,7 +5,7 @@
 //! 下输入框禁用 + 显示提示;Custom 模式才可编辑。
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use settings::Setting;
 use warpui::{
@@ -34,8 +34,9 @@ use crate::settings::network::{NetworkSettings, ProxyMode};
 use crate::settings::network_secrets::ProxyCredentials;
 use crate::view_components::dropdown::{Dropdown, DropdownItem};
 
-/// 测试连接目标 URL。`generate_204` 对代理友好,无 body,固定返回 204。
-const TEST_CONNECTION_URL: &str = "https://www.google.com/generate_204";
+/// System / Off 模式下用于“出网连通”探测的公网 URL。
+/// `generate_204` 对代理友好,无 body,固定返回 204。
+const PUBLIC_PROBE_URL: &str = "https://www.google.com/generate_204";
 
 /// 单次测试连接的最长等待时间。
 const TEST_CONNECTION_TIMEOUT_SECS: u64 = 8;
@@ -69,10 +70,28 @@ pub enum NetworkPageAction {
     ClearProxyPassword,
     SaveProxyNoProxy,
     ClearProxyNoProxy,
-    /// 点击"测试连接"按钮。
+    /// 点击“测试连接”按钮。
     TestConnection,
     /// 测试连接完成。
-    TestConnectionResult(Result<u16, String>),
+    TestConnectionResult(TestOutcome),
+}
+
+/// 本次测试选择的探测方式。供结果文案选择合适的描述。
+#[derive(Debug, Clone, Copy)]
+enum TestKind {
+    /// TCP 探测代理 host:port(验证代理本身可达,适合企业内网 / VPN 代理)。
+    /// 用于 Custom 模式与能从环境变量探测到系统代理的 System 模式。
+    Tcp,
+    /// HTTP GET 公网探测 URL。仅用于 Off 模式 或 System 模式但未能探测
+    /// 到系统代理时的退化。
+    Http,
+}
+
+/// 测试结果(从 async 任务返回给 main 线程的 handle_action)。
+#[derive(Debug, Clone)]
+pub struct TestOutcome {
+    kind: TestKind,
+    result: Result<u128, String>,
 }
 
 /// 测试连接的当前状态。
@@ -82,9 +101,11 @@ enum TestState {
     Idle,
     Running,
     Success {
-        status: u16,
+        kind: TestKind,
+        latency_ms: u128,
     },
     Failed {
+        kind: TestKind,
         message: String,
     },
 }
@@ -306,29 +327,22 @@ impl TypedActionView for NetworkPageView {
             NetworkPageAction::TestConnection => {
                 self.test_state = TestState::Running;
                 ctx.notify();
-                let client = Arc::new(http_client::Client::new());
-                let target = TEST_CONNECTION_URL.to_string();
-                ctx.spawn(
-                    async move {
-                        match client
-                            .get(&target)
-                            .timeout(Duration::from_secs(TEST_CONNECTION_TIMEOUT_SECS))
-                            .send()
-                            .await
-                        {
-                            Ok(resp) => Ok(resp.status().as_u16()),
-                            Err(err) => Err(format!("{err:#}")),
-                        }
-                    },
-                    |me, result, ctx| {
-                        me.handle_action(&NetworkPageAction::TestConnectionResult(result), ctx);
-                    },
-                );
+
+                // 根据当前 mode 决定测试策略:
+                //   Custom → TCP 探测代理 host:port (代理连通性,与出网无关,适合企业内网代理)
+                //   System / Off → HTTP GET 公网探测 URL (出网连通性)
+                let mode = *NetworkSettings::as_ref(ctx).proxy_mode.value();
+                let proxy_url = NetworkSettings::as_ref(ctx).proxy_url.value().clone();
+                spawn_test_connection(self, mode, proxy_url, ctx);
             }
-            NetworkPageAction::TestConnectionResult(result) => {
-                self.test_state = match result {
-                    Ok(status) => TestState::Success { status: *status },
+            NetworkPageAction::TestConnectionResult(outcome) => {
+                self.test_state = match &outcome.result {
+                    Ok(latency_ms) => TestState::Success {
+                        kind: outcome.kind,
+                        latency_ms: *latency_ms,
+                    },
                     Err(msg) => TestState::Failed {
+                        kind: outcome.kind,
                         message: msg.clone(),
                     },
                 };
@@ -374,6 +388,141 @@ impl From<ViewHandle<NetworkPageView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<NetworkPageView>) -> Self {
         SettingsPageViewHandle::Network(view_handle)
     }
+}
+
+/// 根据模式选择探测方式,spawn 到后台运行,结果通过 action 回到主线程。
+fn spawn_test_connection(
+    _view: &NetworkPageView,
+    mode: ProxyMode,
+    proxy_url: String,
+    ctx: &mut ViewContext<NetworkPageView>,
+) {
+    let timeout = Duration::from_secs(TEST_CONNECTION_TIMEOUT_SECS);
+
+    match mode {
+        ProxyMode::Custom => {
+            // 用户填的代理:解析后 TCP 探测 host:port。
+            let Some((host, port)) = parse_host_port(&proxy_url) else {
+                ctx.spawn(
+                    async move {
+                        TestOutcome {
+                            kind: TestKind::Tcp,
+                            result: Err("invalid proxy URL".to_string()),
+                        }
+                    },
+                    |me, outcome, ctx| {
+                        me.handle_action(
+                            &NetworkPageAction::TestConnectionResult(outcome),
+                            ctx,
+                        );
+                    },
+                );
+                return;
+            };
+            spawn_tcp_probe(host, port, timeout, ctx);
+        }
+        ProxyMode::System => {
+            // 优先从环境变量读系统代理(跨平台的最小集),能读到则走 TCP
+            // 探测;读不到(macOS SCDynamicStore / Windows WinINET 仅 reqwest 内部
+            // 使用)则退化 HTTP 探测公网。
+            let (sys_https, sys_http, _) = read_system_proxy_env();
+            let sys_proxy = if !sys_https.is_empty() {
+                sys_https
+            } else {
+                sys_http
+            };
+            if let Some((host, port)) = parse_host_port(&sys_proxy) {
+                spawn_tcp_probe(host, port, timeout, ctx);
+            } else {
+                spawn_http_probe(timeout, ctx);
+            }
+        }
+        ProxyMode::Off => {
+            // Off 模式没有代理可测,测一下“直连出网”可不可。
+            spawn_http_probe(timeout, ctx);
+        }
+    }
+}
+
+/// 同步 TCP 探测逻辑抽出为 helper,顺便可重用 Custom 与 System 两路。
+fn spawn_tcp_probe(
+    host: String,
+    port: u16,
+    timeout: Duration,
+    ctx: &mut ViewContext<NetworkPageView>,
+) {
+    ctx.spawn(
+        async move {
+            let start = Instant::now();
+            let addr = format!("{host}:{port}");
+            let result =
+                tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&addr)).await;
+            let outcome_result = match result {
+                Ok(Ok(_stream)) => Ok(start.elapsed().as_millis()),
+                Ok(Err(e)) => Err(format!("{e}")),
+                Err(_) => Err(format!("timeout after {}s", timeout.as_secs())),
+            };
+            TestOutcome {
+                kind: TestKind::Tcp,
+                result: outcome_result,
+            }
+        },
+        |me, outcome, ctx| {
+            me.handle_action(&NetworkPageAction::TestConnectionResult(outcome), ctx);
+        },
+    );
+}
+
+/// HTTP 探测逻辑(走 reqwest 全局代理设置)。仅用于 Off 或 System 退化场景。
+fn spawn_http_probe(timeout: Duration, ctx: &mut ViewContext<NetworkPageView>) {
+    let client = Arc::new(http_client::Client::new());
+    let target = PUBLIC_PROBE_URL.to_string();
+    ctx.spawn(
+        async move {
+            let start = Instant::now();
+            let outcome_result = match client.get(&target).timeout(timeout).send().await {
+                Ok(resp) => {
+                    if resp.status().is_success() || resp.status().as_u16() == 204 {
+                        Ok(start.elapsed().as_millis())
+                    } else {
+                        Err(format!("HTTP {}", resp.status().as_u16()))
+                    }
+                }
+                Err(err) => Err(format!("{err:#}")),
+            };
+            TestOutcome {
+                kind: TestKind::Http,
+                result: outcome_result,
+            }
+        },
+        |me, outcome, ctx| {
+            me.handle_action(&NetworkPageAction::TestConnectionResult(outcome), ctx);
+        },
+    );
+}
+
+/// 从一个“粗略”代理 URL 中抽取 host + port。
+/// 支持以下输入:
+///   - `http://host:port`
+///   - `https://host:port`
+///   - `socks5://host:port`
+///   - `host:port`(无 scheme)
+/// 返回 `None` 表示无法解析。
+fn parse_host_port(raw: &str) -> Option<(String, u16)> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    // 如果有 scheme,先走 url::Url 解析;否则补上 `http://` 再解析。
+    let normalized: String = if trimmed.contains("://") {
+        trimmed.to_string()
+    } else {
+        format!("http://{trimmed}")
+    };
+    let url = url::Url::parse(&normalized).ok()?;
+    let host = url.host_str()?.to_string();
+    let port = url.port_or_known_default()?;
+    Some((host, port))
 }
 
 /// 构造单行 EditorView,可选 password mask。
@@ -439,6 +588,8 @@ impl SettingsWidget for NetworkPageWidget {
         appearance: &Appearance,
         _app: &AppContext,
     ) -> Box<dyn Element> {
+        // 注: SettingsWidget::render 传入的 `_app` 是渲染时的 AppContext;读当前 mode
+        // 需要用到。这里暂不改参数名以避免全文修改,下文直接用 `_app`。
         let page_title = crate::t!("settings-network-page-title");
         let header = crate::t!("settings-network-header");
         let description = crate::t!("settings-network-description");
@@ -608,15 +759,36 @@ impl SettingsWidget for NetworkPageWidget {
             test_button = test_button.disable();
         }
 
+        // Idle 提示文案需要与当前模式匹配:Custom 测代理连通性,System/Off 测出网连通性。
+        let mode = *NetworkSettings::as_ref(_app).proxy_mode.value();
         let result_text: String = match &view.test_state {
-            TestState::Idle => crate::t!("settings-network-test-idle", url = TEST_CONNECTION_URL),
+            TestState::Idle => match mode {
+                ProxyMode::Custom => crate::t!("settings-network-test-idle-tcp"),
+                ProxyMode::System | ProxyMode::Off => {
+                    crate::t!("settings-network-test-idle-http", url = PUBLIC_PROBE_URL)
+                }
+            },
             TestState::Running => crate::t!("settings-network-test-running"),
-            TestState::Success { status } => {
-                crate::t!("settings-network-test-success", status = (*status as i64))
-            }
-            TestState::Failed { message } => {
-                crate::t!("settings-network-test-failed", error = message.clone())
-            }
+            TestState::Success { kind, latency_ms } => match kind {
+                TestKind::Tcp => crate::t!(
+                    "settings-network-test-success-tcp",
+                    latency = (*latency_ms as i64)
+                ),
+                TestKind::Http => crate::t!(
+                    "settings-network-test-success-http",
+                    latency = (*latency_ms as i64)
+                ),
+            },
+            TestState::Failed { kind, message } => match kind {
+                TestKind::Tcp => crate::t!(
+                    "settings-network-test-failed-tcp",
+                    error = message.clone()
+                ),
+                TestKind::Http => crate::t!(
+                    "settings-network-test-failed-http",
+                    error = message.clone()
+                ),
+            },
         };
         let result_element = Text::new(
             result_text,
