@@ -60,6 +60,11 @@ use crate::code_review::diff_state::{DiffMode, FileStatusInfo};
 /// How long the daemon waits with no connections before exiting.
 pub const GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
+/// Server-side cap on the number of branches returned by `GetBranches`.
+/// Prevents a client from forcing the daemon to enumerate an arbitrarily
+/// large ref list.
+const MAX_BRANCH_COUNT_CAP: usize = 500;
+
 /// Unique identifier for a connected proxy session in daemon mode.
 pub type ConnectionId = uuid::Uuid;
 use super::protocol::RequestId;
@@ -2294,7 +2299,9 @@ impl ServerModel {
             }
         };
 
-        let max_branch_count = msg.max_branch_count.map(|c| c as usize);
+        let max_branch_count = msg
+            .max_branch_count
+            .map(|c| (c as usize).min(MAX_BRANCH_COUNT_CAP));
         let include_remotes = msg.include_remotes;
 
         log::info!(
