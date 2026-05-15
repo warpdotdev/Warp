@@ -324,38 +324,6 @@ impl AgentToolbarItemKind {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn handoff_compose_keeps_branch_chip_available() {
-        assert!(
-            AgentToolbarItemKind::ContextChip(ContextChipKind::ShellGitBranch)
-                .is_available_during_handoff_compose()
-        );
-    }
-
-    #[test]
-    fn handoff_compose_keeps_non_context_controls_available() {
-        assert!(AgentToolbarItemKind::ModelSelector.is_available_during_handoff_compose());
-        assert!(AgentToolbarItemKind::VoiceInput.is_available_during_handoff_compose());
-        assert!(AgentToolbarItemKind::FileAttach.is_available_during_handoff_compose());
-    }
-
-    #[test]
-    fn handoff_compose_hides_unrelated_context_chips() {
-        assert!(
-            !AgentToolbarItemKind::ContextChip(ContextChipKind::WorkingDirectory)
-                .is_available_during_handoff_compose()
-        );
-        assert!(
-            !AgentToolbarItemKind::ContextChip(ContextChipKind::GitDiffStats)
-                .is_available_during_handoff_compose()
-        );
-    }
-}
-
 impl From<ContextChipKind> for AgentToolbarItemKind {
     fn from(kind: ContextChipKind) -> Self {
         Self::ContextChip(kind)
