@@ -18,7 +18,7 @@ use crate::ai::blocklist::{agent_view::AgentViewEntryOrigin, BlocklistAIHistoryM
 use crate::ai::conversation_details_panel::ConversationDetailsData;
 use crate::pane_group::TerminalViewResources;
 use crate::terminal::view::rich_content::{RichContentInsertionPosition, RichContentMetadata};
-use crate::terminal::view::TerminalView;
+use crate::terminal::view::{ConversationDetailsPanelAutoOpenPolicy, TerminalView};
 use crate::terminal::CLIAgent;
 use crate::workspace::view::cloud_agent_capacity_modal::CloudAgentCapacityModalVariant;
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -965,9 +965,15 @@ impl TerminalView {
         if self.has_auto_opened_conversation_details_panel {
             return;
         }
-        self.is_conversation_details_panel_open = true;
         self.has_auto_opened_conversation_details_panel = true;
-        self.fetch_and_update_conversation_details_panel(ctx);
-        ctx.notify();
+
+        match self.conversation_details_panel_auto_open_policy {
+            ConversationDetailsPanelAutoOpenPolicy::DefaultOpen => {
+                self.is_conversation_details_panel_open = true;
+                self.fetch_and_update_conversation_details_panel(ctx);
+                ctx.notify();
+            }
+            ConversationDetailsPanelAutoOpenPolicy::SuppressInitialAutoOpen => {}
+        }
     }
 }
