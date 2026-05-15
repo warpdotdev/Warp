@@ -32,7 +32,7 @@ Warp's UI is entirely hardcoded in English. Non-English-speaking developers must
     3. If no locale can be determined, the application defaults to English (`en`).
 
 1.2. The resolved locale is matched as follows:
-    - Any locale starting with `"zh"` (e.g., `zh-CN`, `zh-TW`, `zh-HK`, `zh`) resolves to `zh-CN`.
+    - Any locale starting with `"zh"` (e.g., `zh-CN`, `zh-TW`, `zh-HK`, `zh`) resolves to `zh-CN` (Simplified Chinese). This is an intentional simplification: zh-CN is the only Chinese locale shipped, so all Chinese-language systems receive Simplified Chinese.
     - All other locales — including explicit non-Chinese values of `WARP_LANG` — resolve to `en` (English).
     - The explicit `WARP_LANG` override is NOT passed through as a raw locale string. Setting `WARP_LANG=fr` results in `en`, not `fr`.
 

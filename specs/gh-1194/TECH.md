@@ -63,7 +63,7 @@ fn load_translations() -> Translations {
 `load_dir` reads all `.yml`/`.yaml` files in a directory, parses them with `serde_yaml`, identifies the locale from the top-level key, and recursively flattens nested YAML into dot-separated keys via `flatten_value`.
 
 **File discovery order** (non-WASM):
-1. `$WARP_LOCALES_DIR` env var (if set). **Trust boundary:** this path is intended for development and testing only. It is not used in production builds — the bundled resources path (priority 2) is the sole source of locale files in shipped binaries. No integrity validation is performed on locale files loaded from this path. If a file is malformed (e.g., invalid YAML, wrong locale key), it is silently skipped and the next discovery path is tried.
+1. `$WARP_LOCALES_DIR` env var (if set). **Trust boundary:** this path is an override for development and testing only. The implementation must gate this path behind `#[cfg(debug_assertions)]` or an equivalent compile-time check so it is never compiled into release/production binaries. In shipped builds, the bundled resources path (priority 2) is the sole source of locale files. No integrity validation is performed on locale files loaded from this path; if a file is malformed (e.g., invalid YAML, wrong locale key), it is silently skipped and the next discovery path is tried.
 2. Platform bundled resources: `<exe_dir>/resources/bundled/locales`
 3. `$CARGO_MANIFEST_DIR/../resources/bundled/locales` (and up to 4 ancestor levels)
 4. `$PWD/resources/bundled/locales`
@@ -113,7 +113,7 @@ Two YAML files at `resources/bundled/locales/`:
 
 Both files share identical structure — 94 top-level YAML sections corresponding to UI areas: `menu`, `tab`, `workspace`, `auth`, `billing`, `settings`, `ai_settings_page`, `terminal`, `shared_session`, `common`, etc.
 
-Each string value in `en.yml` serves as the canonical key identifier. The `zh-CN.yml` file has the same keys with Chinese translations.
+The dot-separated YAML path (e.g., `menu.file`) is the lookup key used in `t!()` calls. The English string value at that path is the runtime fallback rendered when the active locale has no entry. The zh-CN string value is the Chinese rendering shown when zh-CN is active. Both values are independently authored — the key is the path, not the English text.
 
 ### 4. Usage patterns in the codebase
 
@@ -141,6 +141,7 @@ The `app/src/i18n.rs` file re-exports `warp_i18n::*` so the rest of the applicat
 
 ### Locale file integrity (automated)
 - Every key present in `en.yml` must have a corresponding key in `zh-CN.yml`. A script or build-time check verifies this invariant — missing keys in `zh-CN.yml` should cause a CI failure.
+- **Interpolation placeholder parity:** for every key whose English value contains `{name}` placeholders, the zh-CN value must contain the exact same set of placeholder names (same count, same names). Mismatched placeholder names (e.g., en has `{count}` but zh-CN has `{number}`) produce runtime rendering bugs and must be rejected at CI time.
 - Both YAML files must parse successfully as valid YAML and produce the expected top-level locale key (`en:` / `zh-CN:`).
 - No orphaned keys: every key referenced by a `t!()` call in the codebase must exist in `en.yml`. A static analysis script (e.g., `rg 't!\("([^"]+)"' --only-matching | sort -u` diffed against keys extracted from `en.yml`) should be runnable locally and in CI to catch callsite-locale drift.
 - The number of keys in `en.yml` and `zh-CN.yml` must be equal (after accounting for any intentionally untranslatable keys).
