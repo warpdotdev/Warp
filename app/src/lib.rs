@@ -2248,6 +2248,10 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         flags.extend(features::RELEASE_FLAGS);
     }
 
+    // Issue #72: HTTP 代理设置页面。不走 channel 判断,所有 channel 含 warp-oss
+    // 默认启用,作为企业 VPN / 公司代理场景的基本能力。
+    flags.insert(FeatureFlag::HttpProxySettings);
+
     let extra_flags: &[FeatureFlag] = &[
         #[cfg(feature = "autoupdate")]
         FeatureFlag::Autoupdate,

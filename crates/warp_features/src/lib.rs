@@ -738,7 +738,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::VerticalTabsSummaryMode,
     FeatureFlag::ConfigurableContextWindow,
     FeatureFlag::DragTabsToWindows,
-    FeatureFlag::HttpProxySettings,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).

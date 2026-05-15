@@ -15,8 +15,8 @@ use std::sync::Arc;
 use settings::Setting;
 use warpui::{
     elements::{
-        Container, CrossAxisAlignment, Element, Flex, MainAxisAlignment, MouseStateHandle,
-        ParentElement, Text,
+        ConstrainedBox, Container, CrossAxisAlignment, Element, Flex, MainAxisAlignment,
+        MouseStateHandle, ParentElement, Text,
     },
     fonts::{Properties, Weight},
     ui_components::{
@@ -45,6 +45,10 @@ const TEST_CONNECTION_URL: &str = "https://www.google.com/generate_204";
 
 /// 单次测试连接的最长等待时间。
 const TEST_CONNECTION_TIMEOUT_SECS: u64 = 8;
+
+/// 输入框在 body_item 右侧槽里的最大宽度。`SubmittableTextInput` 内部使用
+/// `MainAxisSize::Max` 的 flex,需要一个有限约束才能布局,否则会 panic。
+const INPUT_MAX_WIDTH: f32 = 360.0;
 
 #[derive(Debug, Clone)]
 pub enum NetworkPageAction {
@@ -336,6 +340,14 @@ impl SettingsWidget for NetworkPageWidget {
                 description,
             ));
 
+        // 小 helper:把 SubmittableTextInput 的 ChildView 包入一个有限宽度的 ConstrainedBox,
+        // 避免内部 MainAxisSize::Max flex 在 body_item 无限约束下 panic。
+        let wrap_input = |child: Box<dyn Element>| -> Box<dyn Element> {
+            ConstrainedBox::new(child)
+                .with_max_width(INPUT_MAX_WIDTH)
+                .finish()
+        };
+
         // 1. 模式 dropdown
         content.add_child(render_body_item::<NetworkPageAction>(
             crate::t!("settings-network-mode-label"),
@@ -367,7 +379,7 @@ impl SettingsWidget for NetworkPageWidget {
             LocalOnlyIconState::Hidden,
             ToggleState::from(custom_enabled),
             appearance,
-            warpui::elements::ChildView::new(&view.url_input).finish(),
+            wrap_input(warpui::elements::ChildView::new(&view.url_input).finish()),
             Some(url_description),
         ));
 
@@ -388,7 +400,7 @@ impl SettingsWidget for NetworkPageWidget {
             LocalOnlyIconState::Hidden,
             ToggleState::from(custom_enabled),
             appearance,
-            warpui::elements::ChildView::new(&view.username_input).finish(),
+            wrap_input(warpui::elements::ChildView::new(&view.username_input).finish()),
             Some(username_description),
         ));
 
@@ -404,7 +416,7 @@ impl SettingsWidget for NetworkPageWidget {
             LocalOnlyIconState::Hidden,
             ToggleState::from(custom_enabled),
             appearance,
-            warpui::elements::ChildView::new(&view.password_input).finish(),
+            wrap_input(warpui::elements::ChildView::new(&view.password_input).finish()),
             Some(crate::t!(
                 "settings-network-password-description",
                 value = password_status
@@ -423,7 +435,7 @@ impl SettingsWidget for NetworkPageWidget {
             LocalOnlyIconState::Hidden,
             ToggleState::from(custom_enabled),
             appearance,
-            warpui::elements::ChildView::new(&view.no_proxy_input).finish(),
+            wrap_input(warpui::elements::ChildView::new(&view.no_proxy_input).finish()),
             Some(crate::t!(
                 "settings-network-no-proxy-description",
                 value = no_proxy_current
