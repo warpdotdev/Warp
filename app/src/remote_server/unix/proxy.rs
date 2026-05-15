@@ -91,6 +91,17 @@ pub(super) fn ensure_private_daemon_dir(path: &std::path::Path) -> anyhow::Resul
     Ok(())
 }
 
+/// Maximum usable `sun_path` length for Unix domain sockets.
+///
+/// The `sockaddr_un.sun_path` field is 108 bytes on Linux and 104 on
+/// macOS, but one byte is reserved for the null terminator.
+#[cfg(target_os = "linux")]
+const SUN_PATH_MAX: usize = 107;
+#[cfg(target_os = "macos")]
+const SUN_PATH_MAX: usize = 103;
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+const SUN_PATH_MAX: usize = 103; // conservative default
+
 /// Entry point for `remote-server-proxy`.
 ///
 /// Ensures the daemon is running, then bridges stdin/stdout to the daemon's
@@ -98,6 +109,19 @@ pub(super) fn ensure_private_daemon_dir(path: &std::path::Path) -> anyhow::Resul
 pub fn run(identity_key: &str) -> anyhow::Result<()> {
     let socket_path = socket_path(identity_key);
     let pid_path = pid_path(identity_key);
+
+    // Guard against socket paths that exceed the platform's sun_path
+    // limit. This would cause UnixListener::bind to fail silently in
+    // the daemon, leaving the proxy to time out waiting for a socket
+    // that never appears.
+    let path_len = socket_path.as_os_str().len();
+    if path_len > SUN_PATH_MAX {
+        anyhow::bail!(
+            "daemon socket path is {path_len} bytes, which exceeds the \
+             platform sun_path limit of {SUN_PATH_MAX} bytes: {}",
+            socket_path.display()
+        );
+    }
 
     // Ensure the parent directory exists.
     if let Some(parent) = socket_path.parent() {

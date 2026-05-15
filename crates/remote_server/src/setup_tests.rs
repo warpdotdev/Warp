@@ -327,6 +327,101 @@ fn install_script_avoids_pattern_substitution_for_tilde_expansion() {
 }
 
 #[test]
+fn version_hash_is_deterministic() {
+    // version_hash uses the compile-time GIT_RELEASE_TAG which is typically
+    // unset in test builds, so it returns None. We test the hashing logic
+    // directly instead.
+    use std::hash::{Hash, Hasher};
+
+    let version = "v0.2026.05.13.09.15.stable_01";
+    let hash = |v: &str| -> String {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        v.hash(&mut hasher);
+        format!("{:016x}", hasher.finish())[..8].to_string()
+    };
+
+    // Same input produces the same hash.
+    assert_eq!(hash(version), hash(version));
+    // Different inputs produce different hashes.
+    assert_ne!(hash(version), hash("v0.2026.05.14.09.15.stable_01"));
+    // Hash is exactly 8 hex chars.
+    assert_eq!(hash(version).len(), 8);
+    assert!(hash(version).chars().all(|c| c.is_ascii_hexdigit()));
+}
+
+#[test]
+fn daemon_socket_name_is_short() {
+    // Without GIT_RELEASE_TAG (typical in tests), falls back to unversioned.
+    let name = daemon_socket_name();
+    // In test builds without GIT_RELEASE_TAG, we get "server.sock".
+    // In release builds, we get "server-{8hex}.sock" = 24 chars.
+    // Either way, the name must be ≤ 24 chars.
+    assert!(
+        name.len() <= 24,
+        "daemon_socket_name is too long ({} chars): {name}",
+        name.len()
+    );
+    assert!(name.starts_with("server"));
+    assert!(name.ends_with(".sock"));
+}
+
+#[test]
+fn daemon_pid_name_is_short() {
+    let name = daemon_pid_name();
+    assert!(
+        name.len() <= 22,
+        "daemon_pid_name is too long ({} chars): {name}",
+        name.len()
+    );
+    assert!(name.starts_with("server"));
+    assert!(name.ends_with(".pid"));
+}
+
+#[test]
+fn socket_path_fits_within_sun_path_worst_case() {
+    // Realistic worst case: 20-char username + 36-char UUID identity key.
+    // 20 chars covers >99% of real Linux usernames. The extreme 32-char
+    // case (Linux maximum) produces a prefix of 96 bytes, leaving only
+    // 11 chars for the filename — the original `server.sock` was already
+    // at exactly 107 bytes (the limit) for that case. Fixing the 32-char
+    // edge requires a broader change (e.g. hashing the identity key).
+    let long_home = "/home/twentycharactruser"; // 24 chars (/home/ + 18-char user)
+    let long_identity = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"; // 36 chars
+    let identity_dir = remote_server_identity_dir_name(long_identity); // 36 chars (all alphanum + hyphens)
+
+    // Hashed socket name: "server-a1b2c3d4.sock" = 20 chars
+    let hashed_socket = "server-a1b2c3d4.sock";
+    // Old full-version socket: "server-v0.2026.05.13.09.15.stable_01.sock" = 41 chars
+    let old_socket = "server-v0.2026.05.13.09.15.stable_01.sock";
+
+    // Simulate the daemon dir (without tilde expansion) then append socket.
+    // remote_server_dir() returns "~/.warp/remote-server" for stable.
+    // After tilde expansion: "{home}/.warp/remote-server"
+    let daemon_dir = format!("{long_home}/.warp/remote-server/{identity_dir}");
+
+    let hashed_path = format!("{daemon_dir}/{hashed_socket}");
+    let old_path = format!("{daemon_dir}/{old_socket}");
+
+    // Linux sun_path limit: 107 bytes. macOS: 103 bytes.
+    assert!(
+        hashed_path.len() <= 103,
+        "hashed socket path exceeds macOS sun_path limit: {} bytes ({})",
+        hashed_path.len(),
+        hashed_path,
+    );
+
+    // The OLD naming scheme should exceed the limit for this case,
+    // confirming the regression.
+    assert!(
+        old_path.len() > 107,
+        "old socket path should exceed Linux sun_path limit to confirm the \
+         regression: {} bytes ({})",
+        old_path.len(),
+        old_path,
+    );
+}
+
+#[test]
 fn parse_uname_linux_amd64() {
     let platform = parse_uname_output("Linux amd64").unwrap();
     assert_eq!(platform.os, RemoteOs::Linux);

@@ -394,26 +394,48 @@ pub fn remote_server_daemon_data_dir(identity_key: &str) -> String {
     format!("{}/data", remote_server_daemon_dir(identity_key))
 }
 
-/// Returns the daemon socket filename, versioned when a release tag is
-/// baked in.
+/// Returns a short, deterministic 8-hex-char hash of the app version string.
 ///
-/// - With `GIT_RELEASE_TAG`:    `server-{version}.sock`
+/// Used to version-discriminate daemon socket and PID files without
+/// embedding the full version string in the filename, which would push
+/// the Unix domain socket path over the `sun_path` limit (107 bytes on
+/// Linux, 103 on macOS) for users with moderately long identity keys or
+/// home directory paths.
+pub fn version_hash() -> Option<String> {
+    use std::hash::{Hash, Hasher};
+
+    let version = ChannelState::app_version()?;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    version.hash(&mut hasher);
+    Some(format!("{:016x}", hasher.finish())[..8].to_string())
+}
+
+/// Returns the daemon socket filename, versioned with a short hash when
+/// a release tag is baked in.
+///
+/// - With `GIT_RELEASE_TAG`:    `server-{hash8}.sock`  (e.g. `server-a1b2c3d4.sock`)
 /// - Without (plain cargo run): `server.sock`
+///
+/// The hash keeps the filename at a fixed 24 chars, well under the
+/// `sun_path` limit. The full version string used to be embedded
+/// directly (e.g. `server-v0.2026.05.13.09.15.stable_01.sock`, 43
+/// chars), which caused `UnixListener::bind` failures for users with
+/// longer paths.
 pub fn daemon_socket_name() -> String {
-    match ChannelState::app_version() {
-        Some(version) => format!("server-{version}.sock"),
+    match version_hash() {
+        Some(hash) => format!("server-{hash}.sock"),
         None => "server.sock".to_string(),
     }
 }
 
-/// Returns the daemon PID filename, versioned when a release tag is
-/// baked in.
+/// Returns the daemon PID filename, versioned with a short hash when a
+/// release tag is baked in.
 ///
-/// - With `GIT_RELEASE_TAG`:    `server-{version}.pid`
+/// - With `GIT_RELEASE_TAG`:    `server-{hash8}.pid`
 /// - Without (plain cargo run): `server.pid`
 pub fn daemon_pid_name() -> String {
-    match ChannelState::app_version() {
-        Some(version) => format!("server-{version}.pid"),
+    match version_hash() {
+        Some(hash) => format!("server-{hash}.pid"),
         None => "server.pid".to_string(),
     }
 }
