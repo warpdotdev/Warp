@@ -68,6 +68,16 @@ impl AgentProgress {
             stopped_at: None,
         }
     }
+
+    pub fn setup_status_text(&self) -> &'static str {
+        if self.harness_started_at.is_some() {
+            "Starting Environment (Step 3/3)"
+        } else if self.claimed_at.is_some() {
+            "Creating Environment (Step 2/3)"
+        } else {
+            "Connecting to Host (Step 1/3)"
+        }
+    }
 }
 
 /// Identifies what kind of session startup the model is currently waiting on.

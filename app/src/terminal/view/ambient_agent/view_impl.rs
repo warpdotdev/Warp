@@ -846,13 +846,7 @@ impl TerminalView {
             )
         } else {
             // Show loading screen - determine the message based on progress state
-            let message = if progress.harness_started_at.is_some() {
-                "Starting Environment (Step 3/3)"
-            } else if progress.claimed_at.is_some() {
-                "Creating Environment (Step 2/3)"
-            } else {
-                "Connecting to Host (Step 1/3)"
-            };
+            let message = progress.setup_status_text();
 
             render_cloud_mode_loading_screen(
                 message,

@@ -890,13 +890,7 @@ impl BlocklistAIStatusBar {
             .map(|ambient_agent_view_model| ambient_agent_view_model.as_ref(app))?;
 
         let progress = ambient_agent_model.agent_progress()?;
-        let progress_text = if progress.harness_started_at.is_some() {
-            "Starting Environment (Step 3/3)"
-        } else if progress.claimed_at.is_some() {
-            "Creating Environment (Step 2/3)"
-        } else {
-            "Connecting to Host (Step 1/3)"
-        };
+        let progress_text = progress.setup_status_text();
         Some(render_warping_indicator_base(
             WarpingIndicatorProps {
                 icon: None,
