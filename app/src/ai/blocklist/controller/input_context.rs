@@ -121,8 +121,8 @@ fn add_local_codebase_context(context: &mut Vec<AIAgentContext>, app: &AppContex
 fn add_remote_codebase_context(context: &mut Vec<AIAgentContext>, app: &AppContext) {
     for codebase in RemoteCodebaseIndexModel::as_ref(app).codebases_for_agent_context() {
         context.push(AIAgentContext::Codebase {
-            name: codebase.name.into(),
-            path: codebase.path.into(),
+            name: codebase.name,
+            path: codebase.path,
         });
     }
 }

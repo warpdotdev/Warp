@@ -145,16 +145,15 @@ impl RemoteCodebaseIndexModel {
         let mut entries = self
             .statuses
             .iter()
-            .filter_map(|(remote_path, status)| {
-                search_availability_for_status(status, remote_path.clone())
-                    .is_ready()
-                    .then(|| {
-                        let path = remote_path.path.as_str().to_string();
-                        RemoteCodebaseContextEntry {
-                            name: remote_codebase_name(&path),
-                            path,
-                        }
-                    })
+            .filter(|&(remote_path, status)| {
+                search_availability_for_status(status, remote_path.clone()).is_ready()
+            })
+            .map(|(remote_path, _)| {
+                let path = remote_path.path.as_str().to_string();
+                RemoteCodebaseContextEntry {
+                    name: remote_codebase_name(&path),
+                    path,
+                }
             })
             .collect::<Vec<_>>();
         entries.sort_by(|a, b| a.path.cmp(&b.path));

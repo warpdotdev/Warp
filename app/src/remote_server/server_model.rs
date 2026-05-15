@@ -911,7 +911,7 @@ impl ServerModel {
             conn_id,
         ) {
             Ok(request) => request,
-            Err(outcome) => return outcome,
+            Err(outcome) => return *outcome,
         };
         let repo_path = request.repo_path;
         let status = CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
@@ -954,7 +954,7 @@ impl ServerModel {
             conn_id,
         ) {
             Ok(request) => request,
-            Err(outcome) => return outcome,
+            Err(outcome) => return *outcome,
         };
         let repo_path = request.repo_path;
         let status = CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
@@ -1014,7 +1014,7 @@ impl ServerModel {
             conn_id,
         ) {
             Ok(request) => request,
-            Err(outcome) => return outcome,
+            Err(outcome) => return *outcome,
         };
         let CodebaseIndexRequest { repo_path } = request;
         CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
@@ -1342,26 +1342,26 @@ impl ServerModel {
         auth_token: String,
         request_id: &RequestId,
         conn_id: ConnectionId,
-    ) -> Result<CodebaseIndexRequest, HandlerOutcome> {
+    ) -> Result<CodebaseIndexRequest, Box<HandlerOutcome>> {
         let operation_name = operation.message_name();
         let repo_path_for_log = repo_path.clone();
         if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
             log::info!(
                 "[Remote codebase indexing] Daemon rejecting {operation_name} because remote indexing is disabled: request_id={request_id} conn_id={conn_id} repo_path={repo_path_for_log}"
             );
-            return Err(codebase_index_status_response(
+            return Err(Box::new(codebase_index_status_response(
                 not_enabled_codebase_index_status(repo_path),
-            ));
+            )));
         }
 
         let repo_path = operation
             .normalize_repo_path(&repo_path)
-            .map_err(invalid_request_response)?;
+            .map_err(|error| Box::new(invalid_request_response(error)))?;
 
         if let Err(error) =
             self.validate_remote_codebase_index_auth(&auth_token, operation.auth_operation())
         {
-            return Err(invalid_request_response(error));
+            return Err(Box::new(invalid_request_response(error)));
         }
 
         log::info!(
