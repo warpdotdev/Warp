@@ -1053,6 +1053,7 @@ impl VerticalTabsPanelState {
                         )
                     }
                     VerticalTabsResolvedMode::Panes | VerticalTabsResolvedMode::FocusedSession => {
+                        let custom_group_title = pane_group.custom_title(app);
                         pane_ids_for_display_granularity(
                             &visible_pane_ids,
                             pane_group.focused_pane_id(app),
@@ -1060,9 +1061,6 @@ impl VerticalTabsPanelState {
                         )
                         .into_iter()
                         .any(|pane_id| {
-                            let title_override = (!uses_outer_group_container(display_granularity))
-                                .then(|| pane_group.custom_title(app))
-                                .flatten();
                             let ms = MouseStateHandle::default();
                             PaneProps::new(
                                 pane_group,
@@ -1078,7 +1076,7 @@ impl VerticalTabsPanelState {
                                 self.detail_hover_state(tab.pane_group.window_id(app)),
                                 display_granularity,
                                 true,
-                                title_override.clone(),
+                                None,
                                 None,
                                 None,
                                 false,
@@ -1087,7 +1085,14 @@ impl VerticalTabsPanelState {
                                 None,
                                 app,
                             )
-                            .is_some_and(|props| pane_matches_query(&props, &query_lower, app))
+                            .is_some_and(|props| {
+                                pane_matches_query(
+                                    &props,
+                                    custom_group_title.as_deref(),
+                                    &query_lower,
+                                    app,
+                                )
+                            })
                         })
                     }
                 }
@@ -1597,9 +1602,7 @@ fn render_groups(
                         .then_some((tab_index, None))
                     }
                     VerticalTabsResolvedMode::Panes | VerticalTabsResolvedMode::FocusedSession => {
-                        let title_override = (!uses_outer_group_container)
-                            .then(|| pane_group.custom_title(app))
-                            .flatten();
+                        let custom_group_title = pane_group.custom_title(app);
                         let matching_ids: Vec<PaneId> = pane_ids_for_display_granularity(
                             &visible_pane_ids,
                             pane_group.focused_pane_id(app),
@@ -1625,7 +1628,7 @@ fn render_groups(
                                     state.detail_hover_state(workspace.window_id),
                                     display_granularity,
                                     true,
-                                    title_override.clone(),
+                                    None,
                                     None,
                                     None,
                                     false,
@@ -1635,7 +1638,12 @@ fn render_groups(
                                     app,
                                 )
                                 .is_some_and(|props| {
-                                    pane_matches_query(&props, &query_lower, app)
+                                    pane_matches_query(
+                                        &props,
+                                        custom_group_title.as_deref(),
+                                        &query_lower,
+                                        app,
+                                    )
                                 });
                             };
                             PaneProps::new(
@@ -1652,7 +1660,7 @@ fn render_groups(
                                 state.detail_hover_state(workspace.window_id),
                                 display_granularity,
                                 true,
-                                title_override.clone(),
+                                None,
                                 None,
                                 None,
                                 false,
@@ -1661,7 +1669,14 @@ fn render_groups(
                                 None,
                                 app,
                             )
-                            .is_some_and(|props| pane_matches_query(&props, &query_lower, app))
+                            .is_some_and(|props| {
+                                pane_matches_query(
+                                    &props,
+                                    custom_group_title.as_deref(),
+                                    &query_lower,
+                                    app,
+                                )
+                            })
                         })
                         .collect();
 
@@ -1861,9 +1876,8 @@ fn render_tab_group_internal(
     let is_being_renamed = is_active && workspace.current_workspace_state.is_tab_being_renamed();
     let rename_editor = workspace.tab_rename_editor.clone();
     let has_custom_title = pane_group.custom_title(app).is_some();
-    let displayed_tab_title_override = (!uses_outer_group_container)
-        .then(|| pane_group.custom_title(app))
-        .flatten();
+    let displayed_tab_title_override =
+        pane_row_display_title_override(pane_group.custom_title(app), display_granularity);
     let is_menu_open_for_tab = workspace
         .show_tab_right_click_menu
         .is_some_and(|(idx, _)| idx == tab_index);
@@ -2946,12 +2960,30 @@ impl<'a> PaneProps<'a> {
     }
 }
 
-fn pane_matches_query(props: &PaneProps<'_>, query_lower: &str, app: &AppContext) -> bool {
-    search_fragments_contain_query(&props.rendered_search_text_fragments(app), query_lower)
+fn pane_matches_query(
+    props: &PaneProps<'_>,
+    custom_group_title: Option<&str>,
+    query_lower: &str,
+    app: &AppContext,
+) -> bool {
+    let fragments = pane_search_text_fragments(
+        custom_group_title,
+        props.rendered_search_text_fragments(app),
+    );
+    search_fragments_contain_query(&fragments, query_lower)
 }
 
 fn uses_outer_group_container(display_granularity: VerticalTabsDisplayGranularity) -> bool {
     matches!(display_granularity, VerticalTabsDisplayGranularity::Panes)
+}
+
+fn pane_row_display_title_override(
+    custom_title: Option<String>,
+    display_granularity: VerticalTabsDisplayGranularity,
+) -> Option<String> {
+    (!uses_outer_group_container(display_granularity))
+        .then_some(custom_title)
+        .flatten()
 }
 
 fn search_fragments_contain_query(fragments: &[String], query_lower: &str) -> bool {
