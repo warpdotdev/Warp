@@ -999,6 +999,74 @@ fn shared_third_party_viewer_sync_enters_agent_view_and_retags_existing_block() 
 }
 
 #[test]
+fn shared_third_party_viewer_syncs_from_viewer_harness_updated_when_harness_unchanged() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _agent_harness = FeatureFlag::AgentHarness.override_enabled(true);
+
+        let terminal = add_window_with_cloud_mode_terminal(&mut app);
+
+        terminal.update(&mut app, |view, ctx| {
+            let harness_block_id = {
+                let mut model = view.model.lock();
+                model.set_shared_session_source_type(SessionSourceType::AmbientAgent {
+                    task_id: None,
+                });
+                model.set_shared_session_status(SharedSessionStatus::ActiveViewer {
+                    role: Default::default(),
+                });
+                model.simulate_block("claude", "running");
+                model
+                    .block_list()
+                    .blocks()
+                    .iter()
+                    .find(|block| block.command_to_string() == "claude")
+                    .expect("harness block should exist")
+                    .id()
+                    .clone()
+            };
+
+            view.ambient_agent_view_model()
+                .expect("cloud mode terminal should have ambient model")
+                .update(ctx, |model, ctx| {
+                    model.set_harness(Harness::Claude, ctx);
+                    model.set_harness(Harness::Claude, ctx);
+                });
+            assert!(!view.agent_view_controller().as_ref(ctx).is_active());
+
+            view.handle_ambient_agent_event(&AmbientAgentViewModelEvent::ViewerHarnessUpdated, ctx);
+
+            let AgentViewState::Active {
+                conversation_id,
+                origin,
+                ..
+            } = view.agent_view_controller().as_ref(ctx).agent_view_state()
+            else {
+                panic!("expected active agent view");
+            };
+            assert_eq!(*origin, AgentViewEntryOrigin::ThirdPartyCloudAgent);
+
+            let model = view.model.lock();
+            let block = model
+                .block_list()
+                .block_with_id(&harness_block_id)
+                .expect("harness block should still exist");
+            assert!(!block.should_hide_block(model.block_list().agent_view_state()));
+            match block.agent_view_visibility() {
+                AgentViewVisibility::Terminal {
+                    conversation_ids,
+                    pending_conversation_ids,
+                } => {
+                    assert!(pending_conversation_ids.is_empty());
+                    assert!(conversation_ids.contains(conversation_id));
+                }
+                visibility => panic!("expected terminal block visibility, got {visibility:?}"),
+            }
+        });
+    });
+}
+#[test]
 fn shared_third_party_viewer_syncs_from_cli_agent_state_without_ambient_model() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);

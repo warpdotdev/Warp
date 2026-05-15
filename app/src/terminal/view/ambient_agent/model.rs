@@ -852,6 +852,7 @@ impl AmbientAgentViewModel {
 
                     me.set_environment_id(environment_id, ctx);
                     me.set_harness(harness, ctx);
+                    ctx.emit(AmbientAgentViewModelEvent::ViewerHarnessUpdated);
                 }
                 Err(err) => {
                     log::warn!("Failed to fetch ambient agent task for shared session: {err}");
@@ -1555,6 +1556,8 @@ pub enum AmbientAgentViewModelEvent {
     Cancelled,
     /// The selected execution harness (Oz / Claude Code) changed.
     HarnessSelected,
+    /// A shared-session viewer resolved the run harness from the server task.
+    ViewerHarnessUpdated,
     /// The selected worker host changed via the HostSelector.
     HostSelected,
     /// The selected third-party harness model id changed (e.g. user picked `"opus"` for Claude).

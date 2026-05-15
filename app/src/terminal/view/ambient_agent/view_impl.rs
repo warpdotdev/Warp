@@ -298,6 +298,13 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::HarnessSelected => {
+                self.update_pane_configuration(ctx);
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
+                ctx.notify();
+            }
+            AmbientAgentViewModelEvent::ViewerHarnessUpdated => {
+                // Once we know which harness we're using from the server, try and enter the agent
+                // view if we haven't already.
                 self.sync_agent_view_for_shared_third_party_viewer(ctx);
                 self.update_pane_configuration(ctx);
                 ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
@@ -493,9 +500,9 @@ impl TerminalView {
 
     /// Returns whether this view is a live shared-session viewer for a non-Oz cloud run.
     fn is_third_party_cloud_agent_viewer(&self, ctx: &AppContext) -> bool {
-        // The ambient model's harness resolves asynchronously after join, when we fetch the task. 
-		// Until then, use the synced CLI-agent session (which we get on shared session join, if the 
-		// CLI agent is currently active) as the live third-party harness signal.
+        // The ambient model's harness resolves asynchronously after join, when we fetch the task.
+        // Until then, use the synced CLI-agent session (which we get on shared session join, if the
+        // CLI agent is currently active) as the live third-party harness signal.
         let has_ambient_third_party_harness = self
             .ambient_agent_view_model
             .as_ref()
@@ -505,9 +512,10 @@ impl TerminalView {
                 .session(self.view_id)
                 .is_some()
         };
+        let is_shared_ambient_agent_session = self.is_shared_ambient_agent_session();
 
         (has_ambient_third_party_harness || has_cli_agent_session)
-            && self.is_shared_ambient_agent_session()
+            && is_shared_ambient_agent_session
     }
 
     /// Syncs agent view for a live shared-session viewer of a non-oz cloud run, so every
@@ -519,9 +527,8 @@ impl TerminalView {
     /// the snapshot block exists before we retag — we intentionally do not trigger that path
     /// here.
     ///
-    /// The viewer-context guard is load-bearing: `HarnessSelected` also fires when the local
-    /// spawner picks a harness from the dropdown, and in that case the cloud-mode setup flow
-    /// handles agent view entry instead.
+    /// The viewer-context guard is load-bearing because this is also called from shared-session
+    /// block replay, before all server task state may be resolved.
     pub(crate) fn sync_agent_view_for_shared_third_party_viewer(
         &mut self,
         ctx: &mut ViewContext<Self>,
