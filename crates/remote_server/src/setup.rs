@@ -356,13 +356,11 @@ pub fn remote_server_dir() -> String {
     format!("~/{warp_dir}/remote-server")
 }
 
-/// Returns a short, deterministic directory name for a remote-server identity key.
+/// Returns a short, deterministic directory name for a remote-server
+/// identity key, used for the daemon socket and PID file paths.
 ///
-/// Hashes the identity key to an 8-hex-char string to keep the daemon
-/// socket path well within the `sun_path` limit across all channels.
-/// The previous implementation percent-encoded the raw key (up to 36+
-/// chars for a UUID), which, combined with longer channel base dirs
-/// like `.warp-preview`, could push the socket path over the limit.
+/// Hashes the key to 8 hex chars so the socket path stays within the
+/// `sun_path` limit across all channels.
 pub fn remote_server_identity_dir_name(identity_key: &str) -> String {
     use std::hash::{Hash, Hasher};
 
@@ -375,8 +373,31 @@ pub fn remote_server_identity_dir_name(identity_key: &str) -> String {
     format!("{:016x}", hasher.finish())[..8].to_string()
 }
 
+/// Percent-encodes an identity key for use in filesystem paths.
+///
+/// Keeps ASCII alphanumeric characters plus `-` and `_`; percent-encodes
+/// all other bytes.  Used by [`remote_server_daemon_data_dir`] for
+/// persistent data that must not collide across identities.
+fn percent_encode_identity_key(identity_key: &str) -> String {
+    if identity_key.is_empty() {
+        return "empty".to_string();
+    }
+
+    let mut encoded = String::with_capacity(identity_key.len());
+    for byte in identity_key.bytes() {
+        match byte {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' => {
+                encoded.push(byte as char);
+            }
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
+}
+
 /// Returns the identity-scoped remote directory used for the daemon socket
-/// and PID file.
+/// and PID file.  Uses the hashed identity dir name so the full socket
+/// path fits within `sun_path`.
 pub fn remote_server_daemon_dir(identity_key: &str) -> String {
     format!(
         "{}/{}",
@@ -386,9 +407,18 @@ pub fn remote_server_daemon_dir(identity_key: &str) -> String {
 }
 
 /// Returns the identity-scoped remote directory used for daemon-owned
-/// per-user data files.
+/// per-user data files (e.g. SQLite databases).
+///
+/// Uses the full percent-encoded identity key (not the hash) so that
+/// persistent data is never shared between distinct identities due to
+/// a hash collision.  The `sun_path` limit does not apply here because
+/// this path is only used for regular file I/O, not Unix sockets.
 pub fn remote_server_daemon_data_dir(identity_key: &str) -> String {
-    format!("{}/data", remote_server_daemon_dir(identity_key))
+    format!(
+        "{}/{}/data",
+        remote_server_dir(),
+        percent_encode_identity_key(identity_key)
+    )
 }
 
 /// Returns a short, deterministic 8-hex-char hash of the app version string.
@@ -412,12 +442,6 @@ pub fn version_hash() -> Option<String> {
 ///
 /// - With `GIT_RELEASE_TAG`:    `server-{hash8}.sock`  (e.g. `server-a1b2c3d4.sock`)
 /// - Without (plain cargo run): `server.sock`
-///
-/// The hash keeps the filename at a fixed 24 chars, well under the
-/// `sun_path` limit. The full version string used to be embedded
-/// directly (e.g. `server-v0.2026.05.13.09.15.stable_01.sock`, 43
-/// chars), which caused `UnixListener::bind` failures for users with
-/// longer paths.
 pub fn daemon_socket_name() -> String {
     match version_hash() {
         Some(hash) => format!("server-{hash}.sock"),

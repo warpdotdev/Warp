@@ -116,9 +116,34 @@ fn identity_dir_name_differs_for_different_keys() {
 }
 
 #[test]
-fn remote_server_identity_data_dir_handles_empty_identity_key() {
+fn data_dir_uses_percent_encoded_identity_key() {
+    let data_dir = remote_server_daemon_data_dir("user@example.com/ssh host");
+    assert_eq!(
+        data_dir,
+        format!(
+            "{}/user%40example%2Ecom%2Fssh%20host/data",
+            remote_server_dir()
+        )
+    );
+}
+
+#[test]
+fn data_dir_handles_empty_identity_key() {
     let data_dir = remote_server_daemon_data_dir("");
     assert_eq!(data_dir, format!("{}/empty/data", remote_server_dir()));
+}
+
+#[test]
+fn daemon_dir_and_data_dir_use_different_identity_paths() {
+    let key = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+    let daemon_dir = remote_server_daemon_dir(key);
+    let data_dir = remote_server_daemon_data_dir(key);
+    // Daemon dir uses the 8-char hash.
+    assert!(daemon_dir.contains(&remote_server_identity_dir_name(key)));
+    // Data dir uses the full key (no collision risk for persistent state).
+    assert!(data_dir.contains(key));
+    // They must be different paths.
+    assert!(!data_dir.starts_with(&daemon_dir));
 }
 
 #[test]
