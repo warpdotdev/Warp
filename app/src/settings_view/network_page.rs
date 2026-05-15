@@ -1,22 +1,17 @@
 //! "Network" 设置页:全局 HTTP 代理配置(见 Issue #72)。
 //!
-//! 提供三档代理模式(System / Custom / Off)、Custom URL / 用户名 / 密码 / no_proxy
-//! 列表,以及一个"测试连接"按钮。用户改完任一字段后回车(或点 enter)即保存,
-//! 设置变更后 `app/src/settings/init.rs` 的订阅会立即把新值推到
-//! `http_client` 与 `websocket` 两处的全局 slot。
-//!
-//! 测试连接按钮:用当前(已保存的)代理配置新建一个 `http_client::Client`,
-//! 发一次 GET 到固定 URL(默认 `https://www.google.com/generate_204`,
-//! 该地址命中 HTTP 204 且对代理友好),根据返回结果显示成功 / 失败文案。
-//! 测试发起在 `ctx.spawn` 中,结果通过专用 action 回到 view。
+//! 设计原则:每个输入框始终显示当前已保存值,可直接编辑(包括清空),用旁边的
+//! "保存"按钮提交。密码字段用 `is_password: true` mask 显示。System / Off 模式
+//! 下输入框禁用 + 显示提示;Custom 模式才可编辑。
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use settings::Setting;
 use warpui::{
     elements::{
         ConstrainedBox, Container, CrossAxisAlignment, Element, Flex, MainAxisAlignment,
-        MouseStateHandle, ParentElement, Text,
+        MainAxisSize, MouseStateHandle, ParentElement, Text,
     },
     fonts::{Properties, Weight},
     ui_components::{
@@ -33,42 +28,54 @@ use super::settings_page::{
 };
 use super::SettingsSection;
 use crate::appearance::Appearance;
+use crate::editor::{EditorView, InteractionState, SingleLineEditorOptions, TextOptions};
 use crate::report_if_error;
 use crate::settings::network::{NetworkSettings, ProxyMode};
 use crate::settings::network_secrets::ProxyCredentials;
 use crate::view_components::dropdown::{Dropdown, DropdownItem};
-use crate::view_components::{SubmittableTextInput, SubmittableTextInputEvent};
 
-/// 用于测试连接的目标 URL。Google 的 `generate_204` 是无 body / 200 状态码的轻量探针;
-/// 通过代理时如果失败,我们能确认是代理配置 / 网络 / DNS 等链路问题。
+/// 测试连接目标 URL。`generate_204` 对代理友好,无 body,固定返回 204。
 const TEST_CONNECTION_URL: &str = "https://www.google.com/generate_204";
 
 /// 单次测试连接的最长等待时间。
 const TEST_CONNECTION_TIMEOUT_SECS: u64 = 8;
 
-/// 输入框在 body_item 右侧槽里的最大宽度。`SubmittableTextInput` 内部使用
-/// `MainAxisSize::Max` 的 flex,需要一个有限约束才能布局,否则会 panic。
-const INPUT_MAX_WIDTH: f32 = 360.0;
+/// 输入框区域(editor + 两个按钮)的最大宽度,与字段标签右侧的槽位约束对齐。
+const INPUT_AREA_MAX_WIDTH: f32 = 420.0;
+
+/// 从环境变量读取系统代理(跨平台最小集):返回 (https_proxy, http_proxy, no_proxy)。
+/// Windows WinINET / macOS SCDynamicStore 的深入读取留作后续 PR。
+fn read_system_proxy_env() -> (String, String, String) {
+    fn read(name_upper: &str) -> String {
+        std::env::var(name_upper)
+            .ok()
+            .or_else(|| std::env::var(name_upper.to_lowercase()).ok())
+            .unwrap_or_default()
+    }
+    (read("HTTPS_PROXY"), read("HTTP_PROXY"), read("NO_PROXY"))
+}
 
 #[derive(Debug, Clone)]
 pub enum NetworkPageAction {
     /// dropdown 选择了某个 ProxyMode 项,持久化到 settings。
     SetProxyMode(ProxyMode),
-    /// SubmittableTextInput 提交了新 proxy_url。
-    SetProxyUrl(String),
-    /// 提交了新 proxy_username。
-    SetProxyUsername(String),
-    /// 提交了新 代理密码(走 OS 密钥库)。
-    SetProxyPassword(String),
-    /// 提交了新 no_proxy 列表。
-    SetProxyNoProxy(String),
-    /// 点击"测试连接"按钮:发起一次 GET 请求。
+    /// 点击 URL 字段的"保存"按钮。
+    SaveProxyUrl,
+    /// 点击 URL 字段的"清除"按钮。
+    ClearProxyUrl,
+    SaveProxyUsername,
+    ClearProxyUsername,
+    SaveProxyPassword,
+    ClearProxyPassword,
+    SaveProxyNoProxy,
+    ClearProxyNoProxy,
+    /// 点击"测试连接"按钮。
     TestConnection,
-    /// 测试连接完成,把结果显示到 UI。`Ok(status_code)` / `Err(error_string)`。
+    /// 测试连接完成。
     TestConnectionResult(Result<u16, String>),
 }
 
-/// "测试连接"按钮的当前状态。
+/// 测试连接的当前状态。
 #[derive(Debug, Clone, Default)]
 enum TestState {
     #[default]
@@ -86,29 +93,35 @@ pub struct NetworkPageView {
     page: PageType<Self>,
     /// 代理模式下拉。
     mode_dropdown: ViewHandle<Dropdown<NetworkPageAction>>,
-    /// 代理 URL 输入(回车提交)。
-    url_input: ViewHandle<SubmittableTextInput>,
-    /// 用户名输入。
-    username_input: ViewHandle<SubmittableTextInput>,
-    /// 密码输入。因为 `SubmittableTextInput` 未提供 mask 选项,输入时仍会明文显示;
-    /// 提交后走 OS 密钥库保存,不写入 settings.toml。
-    password_input: ViewHandle<SubmittableTextInput>,
-    /// no_proxy 列表输入。
-    no_proxy_input: ViewHandle<SubmittableTextInput>,
-    /// 测试连接按钮的 mouse state(WarpUI 习惯单独保留)。
+    /// 各字段的 editor(密码字段开了 `is_password` mask)。
+    url_editor: ViewHandle<EditorView>,
+    username_editor: ViewHandle<EditorView>,
+    password_editor: ViewHandle<EditorView>,
+    no_proxy_editor: ViewHandle<EditorView>,
+    /// 每个字段对应的两个按钮(保存 + 清除)的 mouse state。
+    url_save_state: MouseStateHandle,
+    url_clear_state: MouseStateHandle,
+    username_save_state: MouseStateHandle,
+    username_clear_state: MouseStateHandle,
+    password_save_state: MouseStateHandle,
+    password_clear_state: MouseStateHandle,
+    no_proxy_save_state: MouseStateHandle,
+    no_proxy_clear_state: MouseStateHandle,
+    /// 测试连接按钮的 mouse state 与状态。
     test_button_state: MouseStateHandle,
-    /// 测试连接当前状态。
     test_state: TestState,
 }
 
 impl NetworkPageView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let mode_dropdown = ctx.add_typed_action_view(Dropdown::<NetworkPageAction>::new);
-
-        // 装配 ProxyMode 三个选项。
         mode_dropdown.update(ctx, |dropdown, ctx| {
             dropdown.set_items(
                 vec![
+                    DropdownItem::new(
+                        crate::t!("settings-network-mode-off"),
+                        NetworkPageAction::SetProxyMode(ProxyMode::Off),
+                    ),
                     DropdownItem::new(
                         crate::t!("settings-network-mode-system"),
                         NetworkPageAction::SetProxyMode(ProxyMode::System),
@@ -117,70 +130,108 @@ impl NetworkPageView {
                         crate::t!("settings-network-mode-custom"),
                         NetworkPageAction::SetProxyMode(ProxyMode::Custom),
                     ),
-                    DropdownItem::new(
-                        crate::t!("settings-network-mode-off"),
-                        NetworkPageAction::SetProxyMode(ProxyMode::Off),
-                    ),
                 ],
                 ctx,
             );
         });
 
-        // 四个文本输入(每个独立 SubmittableTextInput;submit 时由 view 持久化)。
-        let url_input = ctx.add_typed_action_view(|ctx| {
-            let mut input = SubmittableTextInput::new(ctx);
-            input.set_placeholder_text(crate::t!("settings-network-url-placeholder"), ctx);
-            input
-        });
-        ctx.subscribe_to_view(&url_input, |me: &mut Self, _, event, ctx| {
-            if let SubmittableTextInputEvent::Submit(text) = event {
-                me.handle_action(&NetworkPageAction::SetProxyUrl(text.clone()), ctx);
-            }
-        });
+        let url_editor =
+            build_text_editor(ctx, false, crate::t!("settings-network-url-placeholder"));
+        let username_editor =
+            build_text_editor(ctx, false, crate::t!("settings-network-username-placeholder"));
+        let password_editor =
+            build_text_editor(ctx, true, crate::t!("settings-network-password-placeholder"));
+        let no_proxy_editor = build_text_editor(
+            ctx,
+            false,
+            crate::t!("settings-network-no-proxy-placeholder"),
+        );
 
-        let username_input = ctx.add_typed_action_view(|ctx| {
-            let mut input = SubmittableTextInput::new(ctx);
-            input.set_placeholder_text(crate::t!("settings-network-username-placeholder"), ctx);
-            input
-        });
-        ctx.subscribe_to_view(&username_input, |me: &mut Self, _, event, ctx| {
-            if let SubmittableTextInputEvent::Submit(text) = event {
-                me.handle_action(&NetworkPageAction::SetProxyUsername(text.clone()), ctx);
-            }
-        });
+        // 订阅 settings / credentials 变更 — 任何字段或 mode 外部变更后,
+        // 把最新值灌回各 editor 的 buffer,并同步 dropdown 选项。
+        ctx.subscribe_to_model(
+            &NetworkSettings::handle(ctx),
+            |me: &mut Self, _, _event, ctx| {
+                Self::sync_all_from_settings(me, ctx);
+                ctx.notify();
+            },
+        );
+        ctx.subscribe_to_model(
+            &ProxyCredentials::handle(ctx),
+            |me: &mut Self, _, _event, ctx| {
+                Self::sync_password_from_credentials(me, ctx);
+                ctx.notify();
+            },
+        );
 
-        let password_input = ctx.add_typed_action_view(|ctx| {
-            let mut input = SubmittableTextInput::new(ctx);
-            input.set_placeholder_text(crate::t!("settings-network-password-placeholder"), ctx);
-            input
-        });
-        ctx.subscribe_to_view(&password_input, |me: &mut Self, _, event, ctx| {
-            if let SubmittableTextInputEvent::Submit(text) = event {
-                me.handle_action(&NetworkPageAction::SetProxyPassword(text.clone()), ctx);
-            }
-        });
-
-        let no_proxy_input = ctx.add_typed_action_view(|ctx| {
-            let mut input = SubmittableTextInput::new(ctx);
-            input.set_placeholder_text(crate::t!("settings-network-no-proxy-placeholder"), ctx);
-            input
-        });
-        ctx.subscribe_to_view(&no_proxy_input, |me: &mut Self, _, event, ctx| {
-            if let SubmittableTextInputEvent::Submit(text) = event {
-                me.handle_action(&NetworkPageAction::SetProxyNoProxy(text.clone()), ctx);
-            }
-        });
-
-        Self {
+        let mut me = Self {
             page: PageType::new_monolith(NetworkPageWidget::default(), None, false),
             mode_dropdown,
-            url_input,
-            username_input,
-            password_input,
-            no_proxy_input,
+            url_editor,
+            username_editor,
+            password_editor,
+            no_proxy_editor,
+            url_save_state: MouseStateHandle::default(),
+            url_clear_state: MouseStateHandle::default(),
+            username_save_state: MouseStateHandle::default(),
+            username_clear_state: MouseStateHandle::default(),
+            password_save_state: MouseStateHandle::default(),
+            password_clear_state: MouseStateHandle::default(),
+            no_proxy_save_state: MouseStateHandle::default(),
+            no_proxy_clear_state: MouseStateHandle::default(),
             test_button_state: MouseStateHandle::default(),
             test_state: TestState::Idle,
-        }
+        };
+
+        // 初始同步一次,让 dropdown 与各 editor 显示当前已保存值。
+        Self::sync_all_from_settings(&mut me, ctx);
+        Self::sync_password_from_credentials(&mut me, ctx);
+        me
+    }
+
+    /// 把当前 NetworkSettings 的值灌进 dropdown 与三个非密码 editor。
+    fn sync_all_from_settings(me: &mut Self, ctx: &mut ViewContext<Self>) {
+        let net = NetworkSettings::as_ref(ctx);
+        let mode = *net.proxy_mode.value();
+        let url = net.proxy_url.value().clone();
+        let username = net.proxy_username.value().clone();
+        let no_proxy = net.proxy_no_proxy.value().clone();
+
+        // dropdown 选项跟随 mode。
+        let label: String = match mode {
+            ProxyMode::Off => crate::t!("settings-network-mode-off"),
+            ProxyMode::System => crate::t!("settings-network-mode-system"),
+            ProxyMode::Custom => crate::t!("settings-network-mode-custom"),
+        };
+        me.mode_dropdown.update(ctx, |dropdown, ctx| {
+            dropdown.set_selected_by_name(label, ctx);
+        });
+
+        // editor buffer 跟随 setting 值;同时按 mode 切换 InteractionState。
+        let editable = matches!(mode, ProxyMode::Custom);
+        set_editor_text_and_state(&me.url_editor, &url, editable, ctx);
+        set_editor_text_and_state(&me.username_editor, &username, editable, ctx);
+        set_editor_text_and_state(&me.no_proxy_editor, &no_proxy, editable, ctx);
+
+        // 密码也跟随 mode 切换交互态(buffer 由 ProxyCredentials 订阅单独刷)。
+        me.password_editor.update(ctx, |editor, ctx| {
+            editor.set_interaction_state(
+                if editable {
+                    InteractionState::Editable
+                } else {
+                    InteractionState::Disabled
+                },
+                ctx,
+            );
+        });
+    }
+
+    /// 把当前密码灌进 password editor(由 ProxyCredentials 单独管理)。
+    fn sync_password_from_credentials(me: &mut Self, ctx: &mut ViewContext<Self>) {
+        let pw = ProxyCredentials::as_ref(ctx).password().to_string();
+        me.password_editor.update(ctx, |editor, ctx| {
+            editor.set_buffer_text(&pw, ctx);
+        });
     }
 }
 
@@ -200,48 +251,71 @@ impl TypedActionView for NetworkPageView {
                 });
                 ctx.notify();
             }
-            NetworkPageAction::SetProxyUrl(url) => {
-                let url = url.clone();
+            NetworkPageAction::SaveProxyUrl => {
+                let value = self.url_editor.as_ref(ctx).buffer_text(ctx);
                 NetworkSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings.proxy_url.set_value(url, ctx));
+                    report_if_error!(settings.proxy_url.set_value(value, ctx));
                 });
                 ctx.notify();
             }
-            NetworkPageAction::SetProxyUsername(username) => {
-                let username = username.clone();
+            NetworkPageAction::ClearProxyUrl => {
                 NetworkSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings.proxy_username.set_value(username, ctx));
+                    report_if_error!(settings.proxy_url.set_value(String::new(), ctx));
                 });
                 ctx.notify();
             }
-            NetworkPageAction::SetProxyPassword(password) => {
-                let password = password.clone();
+            NetworkPageAction::SaveProxyUsername => {
+                let value = self.username_editor.as_ref(ctx).buffer_text(ctx);
+                NetworkSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings.proxy_username.set_value(value, ctx));
+                });
+                ctx.notify();
+            }
+            NetworkPageAction::ClearProxyUsername => {
+                NetworkSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings.proxy_username.set_value(String::new(), ctx));
+                });
+                ctx.notify();
+            }
+            NetworkPageAction::SaveProxyPassword => {
+                let value = self.password_editor.as_ref(ctx).buffer_text(ctx);
                 ProxyCredentials::handle(ctx).update(ctx, |creds, ctx| {
-                    creds.set_password(password, ctx);
+                    creds.set_password(value, ctx);
                 });
                 ctx.notify();
             }
-            NetworkPageAction::SetProxyNoProxy(no_proxy) => {
-                let no_proxy = no_proxy.clone();
+            NetworkPageAction::ClearProxyPassword => {
+                ProxyCredentials::handle(ctx).update(ctx, |creds, ctx| {
+                    creds.set_password(String::new(), ctx);
+                });
+                ctx.notify();
+            }
+            NetworkPageAction::SaveProxyNoProxy => {
+                let value = self.no_proxy_editor.as_ref(ctx).buffer_text(ctx);
                 NetworkSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings.proxy_no_proxy.set_value(no_proxy, ctx));
+                    report_if_error!(settings.proxy_no_proxy.set_value(value, ctx));
+                });
+                ctx.notify();
+            }
+            NetworkPageAction::ClearProxyNoProxy => {
+                NetworkSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings.proxy_no_proxy.set_value(String::new(), ctx));
                 });
                 ctx.notify();
             }
             NetworkPageAction::TestConnection => {
-                // 切到 Running 显示进度;真正发起请求时使用当前全局代理配置
-                // (init.rs 的订阅会在每次 settings 变更时刷新全局 slot)。
                 self.test_state = TestState::Running;
                 ctx.notify();
-
                 let client = Arc::new(http_client::Client::new());
                 let target = TEST_CONNECTION_URL.to_string();
                 ctx.spawn(
                     async move {
-                        let req = client.get(&target).timeout(std::time::Duration::from_secs(
-                            TEST_CONNECTION_TIMEOUT_SECS,
-                        ));
-                        match req.send().await {
+                        match client
+                            .get(&target)
+                            .timeout(Duration::from_secs(TEST_CONNECTION_TIMEOUT_SECS))
+                            .send()
+                            .await
+                        {
                             Ok(resp) => Ok(resp.status().as_u16()),
                             Err(err) => Err(format!("{err:#}")),
                         }
@@ -280,7 +354,6 @@ impl SettingsPageMeta for NetworkPageView {
     }
 
     fn should_render(&self, _ctx: &AppContext) -> bool {
-        // 与 nav 一同受 FeatureFlag::HttpProxySettings 门控,nav 已过滤,这里恒真即可。
         true
     }
 
@@ -303,6 +376,53 @@ impl From<ViewHandle<NetworkPageView>> for SettingsPageViewHandle {
     }
 }
 
+/// 构造单行 EditorView,可选 password mask。
+fn build_text_editor(
+    ctx: &mut ViewContext<NetworkPageView>,
+    is_password: bool,
+    placeholder: String,
+) -> ViewHandle<EditorView> {
+    ctx.add_typed_action_view(move |ctx| {
+        let appearance = Appearance::as_ref(ctx);
+        let options = SingleLineEditorOptions {
+            is_password,
+            text: TextOptions {
+                font_size_override: Some(appearance.ui_font_size()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut editor = EditorView::single_line(options, ctx);
+        editor.set_placeholder_text(placeholder, ctx);
+        editor
+    })
+}
+
+/// 把当前值写入 editor buffer,并按 `editable` 切换 InteractionState。
+/// 注意:`set_buffer_text` 会重置光标,不该在用户聚焦编辑时调用 —— 本函数仅
+/// 在 settings 外部变更时使用。
+fn set_editor_text_and_state(
+    editor: &ViewHandle<EditorView>,
+    value: &str,
+    editable: bool,
+    ctx: &mut ViewContext<NetworkPageView>,
+) {
+    editor.update(ctx, |editor, ctx| {
+        // 若 buffer 已经等于目标值,跳过 set 以避免不必要的 cursor 重置。
+        if editor.buffer_text(ctx) != value {
+            editor.set_buffer_text(value, ctx);
+        }
+        editor.set_interaction_state(
+            if editable {
+                InteractionState::Editable
+            } else {
+                InteractionState::Disabled
+            },
+            ctx,
+        );
+    });
+}
+
 #[derive(Default)]
 struct NetworkPageWidget;
 
@@ -317,16 +437,8 @@ impl SettingsWidget for NetworkPageWidget {
         &self,
         view: &NetworkPageView,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
-        let net = NetworkSettings::as_ref(app);
-        let mode = *net.proxy_mode.value();
-        let url_value = net.proxy_url.value().clone();
-        let username_value = net.proxy_username.value().clone();
-        let no_proxy_value = net.proxy_no_proxy.value().clone();
-        // 密码不明文显示;仅提示"已设置 / 未设置"。
-        let has_password = !ProxyCredentials::as_ref(app).password().is_empty();
-
         let page_title = crate::t!("settings-network-page-title");
         let header = crate::t!("settings-network-header");
         let description = crate::t!("settings-network-description");
@@ -340,15 +452,7 @@ impl SettingsWidget for NetworkPageWidget {
                 description,
             ));
 
-        // 小 helper:把 SubmittableTextInput 的 ChildView 包入一个有限宽度的 ConstrainedBox,
-        // 避免内部 MainAxisSize::Max flex 在 body_item 无限约束下 panic。
-        let wrap_input = |child: Box<dyn Element>| -> Box<dyn Element> {
-            ConstrainedBox::new(child)
-                .with_max_width(INPUT_MAX_WIDTH)
-                .finish()
-        };
-
-        // 1. 模式 dropdown
+        // 1. 模式 dropdown — 始终 enabled
         content.add_child(render_body_item::<NetworkPageAction>(
             crate::t!("settings-network-mode-label"),
             None::<AdditionalInfo<NetworkPageAction>>,
@@ -359,103 +463,150 @@ impl SettingsWidget for NetworkPageWidget {
             Some(crate::t!("settings-network-mode-description")),
         ));
 
-        // 仅当 mode == Custom 时后续字段才可用。由于 `ToggleState` 未实现 `Clone`,
-        // 每次使用时都重新从 bool 转出一个新值(该枚举已 impl `From<bool>`)。
-        let custom_enabled = matches!(mode, ProxyMode::Custom);
+        // 字段渲染辅助:一个 editor + 保存按钮 + 清除按钮,统一宽度对齐。
+        let render_field = |label: String,
+                            description: String,
+                            editor: &ViewHandle<EditorView>,
+                            save_state: &MouseStateHandle,
+                            clear_state: &MouseStateHandle,
+                            save_action: NetworkPageAction,
+                            clear_action: NetworkPageAction|
+         -> Box<dyn Element> {
+            let editor_element = warpui::elements::ChildView::new(editor).finish();
+            let save_button = appearance
+                .ui_builder()
+                .button(ButtonVariant::Accent, save_state.clone())
+                .with_text_label(crate::t!("settings-network-save"))
+                .with_style(
+                    UiComponentStyles::default()
+                        .set_padding(Coords {
+                            top: 5.,
+                            bottom: 5.,
+                            left: 10.,
+                            right: 10.,
+                        })
+                        .set_margin(Coords::default().left(6.)),
+                )
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(save_action.clone());
+                })
+                .finish();
+            let clear_button = appearance
+                .ui_builder()
+                .button(ButtonVariant::Text, clear_state.clone())
+                .with_text_label(crate::t!("settings-network-clear"))
+                .with_style(
+                    UiComponentStyles::default()
+                        .set_padding(Coords {
+                            top: 5.,
+                            bottom: 5.,
+                            left: 8.,
+                            right: 8.,
+                        })
+                        .set_margin(Coords::default().left(4.)),
+                )
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(clear_action.clone());
+                })
+                .finish();
 
-        // 2. URL
-        let url_description = if url_value.is_empty() {
-            crate::t!("settings-network-url-description")
-        } else {
-            format!(
-                "{} — {}",
-                crate::t!("settings-network-url-description"),
-                crate::t!("settings-network-url-current", value = url_value.clone())
+            let input_area = ConstrainedBox::new(
+                Flex::row()
+                    .with_main_axis_size(MainAxisSize::Min)
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_child(
+                        // editor 占据剩余空间,放进一个有限宽度的容器里(避免内部 flex 在
+                        // 无限约束下出问题)。
+                        ConstrainedBox::new(editor_element)
+                            .with_max_width(INPUT_AREA_MAX_WIDTH - 120.0)
+                            .finish(),
+                    )
+                    .with_child(save_button)
+                    .with_child(clear_button)
+                    .finish(),
+            )
+            .with_max_width(INPUT_AREA_MAX_WIDTH)
+            .finish();
+
+            render_body_item::<NetworkPageAction>(
+                label,
+                None::<AdditionalInfo<NetworkPageAction>>,
+                LocalOnlyIconState::Hidden,
+                ToggleState::Enabled,
+                appearance,
+                input_area,
+                Some(description),
             )
         };
-        content.add_child(render_body_item::<NetworkPageAction>(
+
+        // 2. URL
+        content.add_child(render_field(
             crate::t!("settings-network-url-label"),
-            None::<AdditionalInfo<NetworkPageAction>>,
-            LocalOnlyIconState::Hidden,
-            ToggleState::from(custom_enabled),
-            appearance,
-            wrap_input(warpui::elements::ChildView::new(&view.url_input).finish()),
-            Some(url_description),
+            crate::t!("settings-network-url-description"),
+            &view.url_editor,
+            &view.url_save_state,
+            &view.url_clear_state,
+            NetworkPageAction::SaveProxyUrl,
+            NetworkPageAction::ClearProxyUrl,
         ));
 
         // 3. 用户名
-        let username_current = if username_value.is_empty() {
-            crate::t!("settings-network-empty")
-        } else {
-            username_value.clone()
-        };
-        let username_description = format!(
-            "{} {}",
-            crate::t!("settings-network-username-description"),
-            crate::t!("settings-network-username-current", value = username_current)
-        );
-        content.add_child(render_body_item::<NetworkPageAction>(
+        content.add_child(render_field(
             crate::t!("settings-network-username-label"),
-            None::<AdditionalInfo<NetworkPageAction>>,
-            LocalOnlyIconState::Hidden,
-            ToggleState::from(custom_enabled),
-            appearance,
-            wrap_input(warpui::elements::ChildView::new(&view.username_input).finish()),
-            Some(username_description),
+            crate::t!("settings-network-username-description"),
+            &view.username_editor,
+            &view.username_save_state,
+            &view.username_clear_state,
+            NetworkPageAction::SaveProxyUsername,
+            NetworkPageAction::ClearProxyUsername,
         ));
 
-        // 4. 密码。提交后密码存入 OS 密钥库,不出现在 settings.toml 中。
-        let password_status = if has_password {
-            crate::t!("settings-network-password-set")
-        } else {
-            crate::t!("settings-network-password-unset")
-        };
-        content.add_child(render_body_item::<NetworkPageAction>(
+        // 4. 密码
+        content.add_child(render_field(
             crate::t!("settings-network-password-label"),
-            None::<AdditionalInfo<NetworkPageAction>>,
-            LocalOnlyIconState::Hidden,
-            ToggleState::from(custom_enabled),
-            appearance,
-            wrap_input(warpui::elements::ChildView::new(&view.password_input).finish()),
-            Some(crate::t!(
-                "settings-network-password-description",
-                value = password_status
-            )),
+            crate::t!("settings-network-password-description"),
+            &view.password_editor,
+            &view.password_save_state,
+            &view.password_clear_state,
+            NetworkPageAction::SaveProxyPassword,
+            NetworkPageAction::ClearProxyPassword,
         ));
 
         // 5. no_proxy
-        let no_proxy_current = if no_proxy_value.is_empty() {
-            crate::t!("settings-network-empty")
-        } else {
-            no_proxy_value.clone()
-        };
-        content.add_child(render_body_item::<NetworkPageAction>(
+        content.add_child(render_field(
             crate::t!("settings-network-no-proxy-label"),
-            None::<AdditionalInfo<NetworkPageAction>>,
-            LocalOnlyIconState::Hidden,
-            ToggleState::from(custom_enabled),
-            appearance,
-            wrap_input(warpui::elements::ChildView::new(&view.no_proxy_input).finish()),
-            Some(crate::t!(
-                "settings-network-no-proxy-description",
-                value = no_proxy_current
-            )),
+            crate::t!("settings-network-no-proxy-description"),
+            &view.no_proxy_editor,
+            &view.no_proxy_save_state,
+            &view.no_proxy_clear_state,
+            NetworkPageAction::SaveProxyNoProxy,
+            NetworkPageAction::ClearProxyNoProxy,
         ));
 
-        // 6. Test connection 按钮 + 结果文本
-        let test_button = appearance
+        // 6. 测试连接
+        let mut test_button = appearance
             .ui_builder()
-            .button(ButtonVariant::Secondary, view.test_button_state.clone())
+            .button(ButtonVariant::Accent, view.test_button_state.clone())
             .with_text_label(crate::t!("settings-network-test-button"))
             .with_style(
                 UiComponentStyles::default()
-                    .set_padding(Coords::uniform(8.))
-                    .set_margin(Coords::default().top(12.)),
+                    .set_padding(Coords {
+                        top: 6.,
+                        bottom: 6.,
+                        left: 14.,
+                        right: 14.,
+                    })
+                    .set_margin(Coords::default().top(20.)),
             )
             .build()
             .on_click(|ctx, _, _| {
                 ctx.dispatch_typed_action(NetworkPageAction::TestConnection);
             });
+        if matches!(view.test_state, TestState::Running) {
+            test_button = test_button.disable();
+        }
 
         let result_text: String = match &view.test_state {
             TestState::Idle => crate::t!("settings-network-test-idle", url = TEST_CONNECTION_URL),
@@ -467,8 +618,7 @@ impl SettingsWidget for NetworkPageWidget {
                 crate::t!("settings-network-test-failed", error = message.clone())
             }
         };
-
-        let result_text_element = Text::new(
+        let result_element = Text::new(
             result_text,
             appearance.ui_font_family(),
             appearance.ui_font_size(),
@@ -484,13 +634,13 @@ impl SettingsWidget for NetworkPageWidget {
                     .with_main_axis_alignment(MainAxisAlignment::Start)
                     .with_child(test_button.finish())
                     .with_child(
-                        Container::new(result_text_element)
+                        Container::new(result_element)
                             .with_padding_left(12.)
                             .finish(),
                     )
                     .finish(),
             )
-            .with_margin_top(16.)
+            .with_margin_top(20.)
             .finish(),
         );
 

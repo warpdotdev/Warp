@@ -771,25 +771,29 @@ settings-network-mode-off = Off
 settings-network-url-label = プロキシ URL
 settings-network-url-placeholder = http://proxy.example.com:8080
 settings-network-url-description = 例: http://proxy.corp:8080
-settings-network-url-current = 現在の保存値: {$value}
 settings-network-username-label = ユーザー名
 settings-network-username-placeholder = ユーザー名 (オプション)
 settings-network-username-description = プロキシが Basic Auth を要求する場合にユーザー名を入力します。
-settings-network-username-current = 現在の保存値: {$value}
 settings-network-empty = (未設定)
 settings-network-password-label = パスワード
 settings-network-password-placeholder = パスワード (送信後に OS キーチェーンに保存)
-settings-network-password-description = 送信されたパスワードは OS キーチェーンに保存されます (settings.toml には書き込まれません)。現在: {$value}
+settings-network-password-description = 送信されたパスワードは OS キーチェーンに保存されます (settings.toml には書き込まれません)。
 settings-network-password-set = ••••••••(設定済み)
 settings-network-password-unset = (未設定)
 settings-network-no-proxy-label = 例外リスト (no_proxy)
 settings-network-no-proxy-placeholder = localhost,127.0.0.1,.internal
-settings-network-no-proxy-description = カンマ区切りのホストリスト。現在: {$value}
+settings-network-no-proxy-description = カンマ区切りのホストリスト。
+settings-network-save = 保存
+settings-network-clear = クリア
 settings-network-test-button = 接続テスト
 settings-network-test-idle = 現在保存されているプロキシ設定を使って GET {$url} を送信します。
 settings-network-test-running = テスト中…
 settings-network-test-success = 成功 (HTTP {$status})
-settings-network-test-failed = 失敗: {$error}
+settings-network-test-failed = ❌ 失敗: {$error}
+settings-network-disabled = (無効)
+settings-network-saved-suffix = 現在の保存値: {$value}
+settings-network-from-system = システム / 環境変数に従う
+settings-network-mode-off-hint = プロキシ無効、このフィールドは使われません
 
 # --- ANCHOR-SUB-AI-PAGE (agent-settings-ai-page) ---
 # Section / sub-headers

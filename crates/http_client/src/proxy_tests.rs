@@ -36,8 +36,8 @@ fn proxy_mode_from_str_lenient_handles_variants() {
     assert_eq!(ProxyMode::from_str_lenient("off"), ProxyMode::Off);
     assert_eq!(ProxyMode::from_str_lenient("disabled"), ProxyMode::Off);
     assert_eq!(ProxyMode::from_str_lenient("none"), ProxyMode::Off);
-    // 未知值退回 System,避免误关代理导致 BYOP 在公司网络下完全失联。
-    assert_eq!(ProxyMode::from_str_lenient("wat"), ProxyMode::System);
+    // 未知值退回 Off,与默认项一致,避免意外走系统代理。
+    assert_eq!(ProxyMode::from_str_lenient("wat"), ProxyMode::Off);
 }
 
 #[test]

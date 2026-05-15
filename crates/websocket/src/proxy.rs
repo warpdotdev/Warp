@@ -28,10 +28,11 @@ use url::Url;
 /// `websocket::set_global_proxy_config` 保证两路保持一致。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ProxyMode {
+    /// 与 `http_client::ProxyMode` 一致:默认 `Off`。
     #[default]
+    Off,
     System,
     Custom,
-    Off,
 }
 
 /// `http_client::ProxyConfig` 的镜像,参见 [`ProxyMode`] 的说明。

@@ -36,17 +36,17 @@ use settings::{macros::define_settings_group, SupportedPlatforms, SyncToCloud};
     settings_value::SettingsValue,
 )]
 #[schemars(
-    description = "HTTP 代理模式: system 沿用系统/环境;custom 使用显式 URL;off 完全禁用代理。",
+    description = "HTTP 代理模式: off 完全禁用(默认);system 沿用系统/环境;custom 使用显式 URL。",
     rename_all = "snake_case"
 )]
 pub enum ProxyMode {
-    /// 跟随系统代理 / 环境变量(reqwest 默认行为)。
+    /// 强制禁用代理,包括环境变量。默认项;避免 reqwest 探测出的意外系统代理干扰本地调用。
     #[default]
+    Off,
+    /// 跟随系统代理 / 环境变量(reqwest 默认行为)。
     System,
     /// 使用用户填写的 URL。
     Custom,
-    /// 强制禁用代理,包括环境变量。
-    Off,
 }
 
 impl ProxyMode {
@@ -72,12 +72,12 @@ impl ProxyMode {
 define_settings_group!(NetworkSettings, settings: [
     proxy_mode: ProxyModeSetting {
         type: ProxyMode,
-        default: ProxyMode::System,
+        default: ProxyMode::Off,
         supported_platforms: SupportedPlatforms::DESKTOP,
         sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "network.proxy_mode",
-        description: "HTTP 代理模式:system / custom / off。",
+        description: "HTTP 代理模式:off (默认) / system / custom。",
     },
     proxy_url: ProxyUrlSetting {
         type: String,

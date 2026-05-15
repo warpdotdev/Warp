@@ -21,15 +21,18 @@
 use std::sync::{OnceLock, RwLock};
 
 /// 全局代理模式。
+///
+/// 默认项为 `Off`:避免在 app 层 settings 还未注入之前,冷启动期间构造的
+/// `Client` 走上 reqwest 探测到的意外系统代理。app::ProxyMode 同一默认。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ProxyMode {
-    /// 完全跟随系统 / 环境变量(reqwest 默认行为)。
+    /// 禁用代理,包括环境变量。默认项。
     #[default]
+    Off,
+    /// 完全跟随系统 / 环境变量(reqwest 默认行为)。
     System,
     /// 使用 [`ProxyConfig::url`] 中显式配置的代理。
     Custom,
-    /// 禁用代理,包括环境变量。
-    Off,
 }
 
 impl ProxyMode {
@@ -43,9 +46,10 @@ impl ProxyMode {
 
     pub fn from_str_lenient(s: &str) -> Self {
         match s.to_ascii_lowercase().as_str() {
-            "off" | "disabled" | "none" => ProxyMode::Off,
+            "system" => ProxyMode::System,
             "custom" => ProxyMode::Custom,
-            _ => ProxyMode::System,
+            // off / disabled / none / 未知 都退回 Off(默认),避免意外走系统代理。
+            _ => ProxyMode::Off,
         }
     }
 }

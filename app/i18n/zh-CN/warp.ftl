@@ -811,25 +811,29 @@ settings-network-mode-off = Off
 settings-network-url-label = 代理 URL
 settings-network-url-placeholder = http://proxy.example.com:8080
 settings-network-url-description = 例:http://proxy.corp:8080
-settings-network-url-current = 当前已保存:{$value}
 settings-network-username-label = 用户名
 settings-network-username-placeholder = 用户名(可选)
 settings-network-username-description = 若代理需要 Basic Auth,在此填用户名。
-settings-network-username-current = 当前已保存:{$value}
 settings-network-empty = (空)
 settings-network-password-label = 密码
 settings-network-password-placeholder = 密码(提交后保存到系统密钥库)
-settings-network-password-description = 提交后保存到 OS 密钥库(不写入 settings.toml)。当前:{$value}
+settings-network-password-description = 提交后保存到 OS 密钥库(不写入 settings.toml)。
 settings-network-password-set = ••••••••(已设置)
 settings-network-password-unset = (未设置)
 settings-network-no-proxy-label = 例外列表 (no_proxy)
 settings-network-no-proxy-placeholder = localhost,127.0.0.1,.internal
-settings-network-no-proxy-description = 逗号分隔的 host 列表。当前:{$value}
+settings-network-no-proxy-description = 逗号分隔的 host 列表。
+settings-network-save = 保存
+settings-network-clear = 清除
 settings-network-test-button = 测试连接
 settings-network-test-idle = 用当前已保存的代理配置发起一次 GET {$url} 请求。
 settings-network-test-running = 测试中…
 settings-network-test-success = 成功(HTTP {$status})
-settings-network-test-failed = 失败:{$error}
+settings-network-test-failed = ❌ 失败:{$error}
+settings-network-disabled = (已禁用)
+settings-network-saved-suffix = 当前已保存:{$value}
+settings-network-from-system = 跟随系统 / 环境变量
+settings-network-mode-off-hint = 已禁用代理,该字段不生效
 
 # --- ANCHOR-SUB-AI-PAGE (agent-settings-ai-page) ---
 # 章节 / 副标题
