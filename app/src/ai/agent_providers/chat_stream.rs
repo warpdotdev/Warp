@@ -444,18 +444,26 @@ fn build_chat_request(
 
     let mut messages: Vec<ChatMessage> = Vec::new();
 
-    // 收集所有 task 的 messages,按时间戳排序。
-    let mut all_msgs: Vec<&api::Message> = params
+    // 收集所有 task 的 messages。
+    //
+    // OpenWarp BYOP 路径下,所有 `make_*_message`(make_user_query_message /
+    // make_agent_output_message / make_tool_call_message / make_tool_call_result_message
+    // 等)生产的 message 都填 `timestamp: None`,只有上游 warp 云端 server 路径会
+    // 填真实 timestamp,而云端路径已在 OpenWarp 中完全移除。
+    //
+    // 旧实现这里还有一段 `sort_by_key(|m| m.timestamp...)` 兜底,假设跨 task 历史
+    // 按 chronological 时间序合并 — 该假设只在云端协议下成立。BYOP 直连后:
+    //   1. 单 task 内 `task.messages` 的 push 顺序就是 stream emit 顺序,确定;
+    //   2. timestamp 全 None → sort_by_key 的 key 全 (0, 0) → 稳定排序退化为
+    //      "保留输入顺序",与不排完全等价;
+    //   3. 多 task 场景(subagent 衍生 subtask)的 task 间相对顺序由
+    //      `compute_active_tasks` 决定,sort_by_key 无法纠正(全 (0, 0))。
+    // 综上,旧 sort_by_key 是确凿死代码,删除字节级等价,顺手清掉。
+    let all_msgs: Vec<&api::Message> = params
         .tasks
         .iter()
         .flat_map(|t| t.messages.iter())
         .collect();
-    all_msgs.sort_by_key(|m| {
-        m.timestamp
-            .as_ref()
-            .map(|ts| (ts.seconds, ts.nanos))
-            .unwrap_or((0, 0))
-    });
 
     // OpenWarp BYOP 本地会话压缩:把 conversation.compaction_state 应用到 message 序列。
     //   1. 过滤已被某次压缩覆盖的 (user, assistant) 对(`hidden_message_ids`)
@@ -1024,85 +1032,88 @@ fn apply_caching_anthropic(messages: &mut Vec<ChatMessage>) {
         .collect();
 }
 
-/// 重排 messages 中所有 Tool 消息,确保:
-/// 每个含 tool_calls 的 Assistant message 后面紧跟**且仅紧跟**一条 Tool message,
-/// 内含该 Assistant **每个** call_id 的 ToolResponse(按 tool_calls 顺序,缺失补 placeholder)。
+/// 兜底:确保每个含 `tool_calls` 的 Assistant 后面紧跟一条覆盖**全部** call_id 的
+/// Tool message,缺失的 call_id 补 placeholder ToolResponse `"(tool 执行结果未保留)"`。
+/// 多条相邻 Tool message 会被合并为一条,并按 Assistant `tool_calls` 的 call_id 顺序
+/// 重组 ToolResponse 数组(与 Anthropic `tool_result` block 必须按 `tool_use` 序对齐的
+/// 语义一致)。
 ///
-/// **为什么需要重排,而不是只补 placeholder / 剔孤儿**:
-/// `build_chat_request` 按时间戳 chronological 排序合并所有 task 的历史 messages。
-/// 当模型在一轮内发起多个 tool_call,且这些 tool 的执行时长差异较大时(如 read_skill
-/// 立即返回错误,而 git/PowerShell 命令稍慢),后到的 ToolCallResult 时间戳可能晚于
-/// 模型紧接着发起的**下一轮** Assistant tool_calls,导致历史 messages 被排成:
+/// **触发场景(全部是异常路径,正常 push 路径不会进入补码/合并分支)**:
+/// 1. `fork_conversation_at_exchange` 按 message_ids 截断对话,分叉点可能恰好落在
+///    Assistant 的 `tool_calls` 与 ToolCallResult 之间 — 截后只剩 Assistant 含
+///    tool_calls 但没有对应 Tool。
+/// 2. 历史 conversation 从 SQLite 反序列化时,某次写入失败漏了 ToolCallResult,
+///    加载回来是孤儿。
+/// 3. 持久化损坏 / 测试 stub 等其他异常路径。
 ///
-/// ```text
-/// Asst-X(tc_a, tc_b, tc_c)
-/// Tool(tc_c real)         ← read_skill 错误,快
-/// Asst-Y(tc_d, tc_e)      ← 模型基于 tc_c 错误立刻发了下一轮
-/// Tool(tc_a real)         ← git 命令慢,落到 Asst-Y 后面
-/// Tool(tc_b real)
-/// ```
-///
-/// Anthropic API 把连续 Tool block 合并视作"上一条 Assistant 的 tool_results",
-/// 于是 Asst-Y 后面的 Tool block 含 tc_a/tc_b 这种 Asst-Y 不认识的 call_id → 400
-/// `unexpected tool_use_id ... no corresponding tool_use block in the previous message`。
-///
-/// 旧实现只做"剔孤儿(整序列匹配)+补 placeholder(向前看相邻 Tool)",前者不会剔除
-/// 这类**位置错误但 call_id 合法**的 ToolResponse,后者也不会重定位 — 所以 400 重现。
-///
-/// 新实现:抽出所有 ToolResponse 进 `call_id → response` 表,然后按每个 Assistant
-/// tool_calls 的 call_id 顺序重新组装紧随其后的 Tool message。剩余未消费的 ToolResponse
-/// (call_id 完全不在历史 Assistant tool_calls 里)即真孤儿,丢弃。
+/// **不做的事情:跨位置重排 Tool messages**。旧实现会抽出所有 Tool message 到
+/// `call_id → response` 表再按每个 Assistant.tool_calls 顺序重装,用于兜底"按
+/// timestamp chronological 排序导致单轮多 tool_call 错位"这个云端路径 bug — 该
+/// bug 在 `build_chat_request` 按 timestamp 排序的前提下才出现。OpenWarp 已移除
+/// 云端,生产路径所有 `make_*_message` 填 `timestamp: None`,`build_chat_request`
+/// 也不再做跨 task chronological 排序 — “跨位置错位”场景在 BYOP 直连下不可能发生,
+/// 本函数仅保留 placeholder 兜底职责。
 fn sanitize_tool_call_pairs(messages: &mut Vec<ChatMessage>) {
     use std::collections::HashMap;
 
-    // 抽取所有 ToolResponse(同 call_id 后到的覆盖前面,符合"最新结果优先"语义)。
-    let mut response_by_call_id: HashMap<String, ToolResponse> = HashMap::new();
-    let original = std::mem::take(messages);
-    let mut non_tool_msgs: Vec<ChatMessage> = Vec::with_capacity(original.len());
-    for msg in original {
-        if msg.role == genai::chat::ChatRole::Tool {
-            for resp in msg.content.tool_responses() {
-                response_by_call_id.insert(resp.call_id.clone(), (*resp).clone());
-            }
-        } else {
-            non_tool_msgs.push(msg);
-        }
-    }
-
-    // 重组:每个 Assistant 含 tool_calls 后紧跟一条 Tool message,按 call_id 顺序绑定。
     let mut placeholders_inserted: Vec<String> = Vec::new();
-    for msg in non_tool_msgs {
-        let call_ids: Vec<String> = msg
+    let mut orphan_call_ids: Vec<String> = Vec::new();
+
+    let mut i = 0;
+    while i < messages.len() {
+        if messages[i].role != genai::chat::ChatRole::Assistant {
+            i += 1;
+            continue;
+        }
+        let expected_call_ids: Vec<String> = messages[i]
             .content
             .tool_calls()
             .iter()
             .map(|tc| tc.call_id.clone())
             .collect();
-        let is_assistant = msg.role == genai::chat::ChatRole::Assistant;
-        messages.push(msg);
-
-        if is_assistant && !call_ids.is_empty() {
-            let bundled: Vec<ToolResponse> = call_ids
-                .iter()
-                .map(|cid| {
-                    response_by_call_id.remove(cid).unwrap_or_else(|| {
-                        placeholders_inserted.push(cid.clone());
-                        ToolResponse::new(cid.clone(), "(tool 执行结果未保留)".to_owned())
-                    })
-                })
-                .collect();
-            messages.push(ChatMessage::from(bundled));
+        if expected_call_ids.is_empty() {
+            i += 1;
+            continue;
         }
+
+        // 收集 Assistant 之后所有**连续** Tool message 中的 responses,同 call_id 后到者覆盖。
+        let mut existing: HashMap<String, ToolResponse> = HashMap::new();
+        let mut j = i + 1;
+        while j < messages.len() && messages[j].role == genai::chat::ChatRole::Tool {
+            for resp in messages[j].content.tool_responses() {
+                existing.insert(resp.call_id.clone(), (*resp).clone());
+            }
+            j += 1;
+        }
+
+        // 按 Assistant.tool_calls 顺序重组,缺失补 placeholder。
+        let bundled: Vec<ToolResponse> = expected_call_ids
+            .iter()
+            .map(|cid| {
+                existing.remove(cid).unwrap_or_else(|| {
+                    placeholders_inserted.push(cid.clone());
+                    ToolResponse::new(cid.clone(), "(tool 执行结果未保留)".to_owned())
+                })
+            })
+            .collect();
+
+        // existing 剩余的 response(call_id 不在 expected 里)在这段作用域内是孤儿,丢弃。
+        // 正常 push 路径下不应出现,出现一般意味持久化损坏或异常 fork 路径。
+        if !existing.is_empty() {
+            orphan_call_ids.extend(existing.into_keys());
+        }
+
+        // 用合并后的单条 Tool message 替换 [i+1..j) 这段原始连续 Tool messages。
+        messages.splice(i + 1..j, std::iter::once(ChatMessage::from(bundled)));
+        i += 2; // 跳过 Assistant + 合并后的 Tool message
     }
 
-    // 剩余 response_by_call_id 是真孤儿(没有任何 Assistant tool_call 与之配对),丢弃。
-    if !response_by_call_id.is_empty() {
-        let orphan_ids: Vec<&String> = response_by_call_id.keys().collect();
+    if !orphan_call_ids.is_empty() {
         log::warn!(
             "[byop-diag] sanitize_tool_call_pairs: 丢弃 {} 个孤儿 ToolResponse: \
              orphan_call_ids={:?}",
-            response_by_call_id.len(),
-            orphan_ids
+            orphan_call_ids.len(),
+            orphan_call_ids
         );
     }
     if !placeholders_inserted.is_empty() {
@@ -4434,6 +4445,197 @@ mod cache_boundary_stability_tests {
                 api
             );
         }
+    }
+}
+
+/// **`sanitize_tool_call_pairs` 行为验证**:
+///
+/// 本模块覆盖各种 push 路径 / fork 截断 / 持久化损坏场景下该函数的修复行为,
+/// 确保下游 Anthropic / OpenAI 不会踩到 "unexpected tool_use_id" / "tool_result
+/// without tool_use" 这类 400。
+#[cfg(test)]
+mod sanitize_tool_call_pairs_tests {
+    use super::*;
+    use genai::chat::{ChatMessage, ChatRole, ToolCall};
+
+    fn make_tool_call(call_id: &str) -> ToolCall {
+        ToolCall {
+            call_id: call_id.to_owned(),
+            fn_name: "dummy".to_owned(),
+            fn_arguments: serde_json::json!({}),
+            thought_signatures: None,
+        }
+    }
+
+    fn assistant_with_calls(call_ids: &[&str]) -> ChatMessage {
+        let calls: Vec<ToolCall> = call_ids.iter().map(|cid| make_tool_call(cid)).collect();
+        ChatMessage::from(calls)
+    }
+
+    fn tool_response(call_id: &str, content: &str) -> ChatMessage {
+        ChatMessage::from(ToolResponse::new(call_id.to_owned(), content.to_owned()))
+    }
+
+    /// 单条 Tool message 中所有 ToolResponse 的 (call_id, content) 折平,便于断言。
+    fn responses_of(msg: &ChatMessage) -> Vec<(String, String)> {
+        msg.content
+            .tool_responses()
+            .iter()
+            .map(|r| (r.call_id.clone(), r.content.clone()))
+            .collect()
+    }
+
+    /// 正常 push 路径:[user, asst(a,b), tool_a, tool_b] → 合并为单条 bundled,不补码。
+    #[test]
+    fn normal_push_path_merges_adjacent_tool_messages_without_placeholder() {
+        let mut msgs = vec![
+            ChatMessage::user("hi"),
+            assistant_with_calls(&["a", "b"]),
+            tool_response("a", "resp_a"),
+            tool_response("b", "resp_b"),
+        ];
+        sanitize_tool_call_pairs(&mut msgs);
+
+        assert_eq!(msgs.len(), 3, "两条相邻 Tool 合并为一条");
+        assert_eq!(msgs[0].role, ChatRole::User);
+        assert_eq!(msgs[1].role, ChatRole::Assistant);
+        assert_eq!(msgs[2].role, ChatRole::Tool);
+        assert_eq!(
+            responses_of(&msgs[2]),
+            vec![
+                ("a".to_owned(), "resp_a".to_owned()),
+                ("b".to_owned(), "resp_b".to_owned()),
+            ],
+            "bundled response 顺序必须与 Assistant.tool_calls 一致"
+        );
+    }
+
+    /// fork 截断场景 A:Assistant 有 tool_calls 但**所有** ToolCallResult 缺失 →
+    /// 在 Assistant 后插入一条全 placeholder 的 Tool message。
+    #[test]
+    fn fork_truncated_missing_all_tool_responses_inserts_placeholders() {
+        let mut msgs = vec![ChatMessage::user("q"), assistant_with_calls(&["a", "b"])];
+        sanitize_tool_call_pairs(&mut msgs);
+
+        assert_eq!(msgs.len(), 3, "Assistant 后必须补一条 Tool message");
+        assert_eq!(msgs[2].role, ChatRole::Tool);
+        let responses = responses_of(&msgs[2]);
+        assert_eq!(
+            responses.iter().map(|(c, _)| c.clone()).collect::<Vec<_>>(),
+            vec!["a".to_owned(), "b".to_owned()]
+        );
+        for (_, content) in &responses {
+            assert!(
+                content.contains("未保留"),
+                "placeholder 内容应含提示文本: {content}"
+            );
+        }
+    }
+
+    /// fork 截断场景 B:Assistant 有 (a, b) 但只有 tool_a 被保留 → b 补 placeholder,
+    /// 顺序仍按 Assistant.tool_calls 重组为 (real_a, placeholder_b)。
+    #[test]
+    fn fork_truncated_partial_tool_responses_fills_missing_only() {
+        let mut msgs = vec![
+            ChatMessage::user("q"),
+            assistant_with_calls(&["a", "b"]),
+            tool_response("a", "real_a"),
+        ];
+        sanitize_tool_call_pairs(&mut msgs);
+
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(msgs[2].role, ChatRole::Tool);
+        let responses = responses_of(&msgs[2]);
+        assert_eq!(responses[0], ("a".to_owned(), "real_a".to_owned()));
+        assert_eq!(responses[1].0, "b".to_owned());
+        assert!(responses[1].1.contains("未保留"));
+    }
+
+    /// 孤儿 ToolResponse(call_id 不在 Assistant.tool_calls 里)被丢弃,不会污染输出。
+    #[test]
+    fn orphan_tool_response_with_unknown_call_id_is_dropped() {
+        let mut msgs = vec![
+            ChatMessage::user("q"),
+            assistant_with_calls(&["a"]),
+            tool_response("a", "real_a"),
+            tool_response("z", "orphan_z"),
+        ];
+        sanitize_tool_call_pairs(&mut msgs);
+
+        assert_eq!(msgs.len(), 3, "两条相邻 Tool 合并,孤儿 z 丢弃");
+        let responses = responses_of(&msgs[2]);
+        assert_eq!(
+            responses,
+            vec![("a".to_owned(), "real_a".to_owned())],
+            "只保留 Assistant 认识的 call_id"
+        );
+    }
+
+    /// Assistant.tool_calls 顺序为 (a, b) 但现有 Tool 顺序为 (b, a) →
+    /// bundled 输出重组为 (real_a, real_b),对齐 Anthropic tool_use 序。
+    #[test]
+    fn out_of_order_tool_responses_are_reordered_per_assistant_calls() {
+        let mut msgs = vec![
+            ChatMessage::user("q"),
+            assistant_with_calls(&["a", "b"]),
+            tool_response("b", "real_b"),
+            tool_response("a", "real_a"),
+        ];
+        sanitize_tool_call_pairs(&mut msgs);
+
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(
+            responses_of(&msgs[2]),
+            vec![
+                ("a".to_owned(), "real_a".to_owned()),
+                ("b".to_owned(), "real_b".to_owned()),
+            ]
+        );
+    }
+
+    /// 多个 Assistant tool_calls 段都能独立被处理:每段 Assistant + Tool 不会互相影响。
+    #[test]
+    fn multiple_assistant_tool_call_groups_handled_independently() {
+        let mut msgs = vec![
+            ChatMessage::user("q1"),
+            assistant_with_calls(&["a", "b"]),
+            tool_response("a", "real_a"),
+            tool_response("b", "real_b"),
+            ChatMessage::user("q2"),
+            assistant_with_calls(&["c"]),
+            tool_response("c", "real_c"),
+        ];
+        sanitize_tool_call_pairs(&mut msgs);
+
+        // 期望结果:user, asst(a,b), bundled(a,b), user, asst(c), bundled(c)
+        assert_eq!(msgs.len(), 6);
+        assert_eq!(msgs[2].role, ChatRole::Tool);
+        assert_eq!(
+            responses_of(&msgs[2]),
+            vec![
+                ("a".to_owned(), "real_a".to_owned()),
+                ("b".to_owned(), "real_b".to_owned()),
+            ]
+        );
+        assert_eq!(msgs[5].role, ChatRole::Tool);
+        assert_eq!(
+            responses_of(&msgs[5]),
+            vec![("c".to_owned(), "real_c".to_owned())]
+        );
+    }
+
+    /// 不含 tool_calls 的 Assistant message 不被动 — 不会付加多余 Tool。
+    #[test]
+    fn assistant_without_tool_calls_is_untouched() {
+        let mut msgs = vec![
+            ChatMessage::user("q"),
+            ChatMessage::assistant("plain reply"),
+        ];
+        let before = msgs.len();
+        sanitize_tool_call_pairs(&mut msgs);
+        assert_eq!(msgs.len(), before);
+        assert_eq!(msgs[1].role, ChatRole::Assistant);
+        assert!(msgs[1].content.tool_calls().is_empty());
     }
 }
 
