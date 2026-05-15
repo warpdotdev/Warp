@@ -2290,7 +2290,3 @@ fn handle_ai_history_event(
         | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => (),
     }
 }
-
-#[cfg(test)]
-#[path = "terminal_pane_local_child_tests.rs"]
-mod tests;

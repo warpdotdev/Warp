@@ -111,7 +111,7 @@ use warpui::{
     App, ModelHandle,
 };
 
-pub(super) fn initialize_app(app: &mut App) {
+fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
 
     app.add_singleton_model(|_ctx| ServerApiProvider::new_for_test());
@@ -210,9 +210,9 @@ pub(super) fn initialize_app(app: &mut App) {
     app.add_singleton_model(remote_server::manager::RemoteServerManager::new);
 }
 
-pub(super) struct MockOptions {
-    pub(super) layout: PanesLayout,
-    pub(super) window_bounds: WindowBounds,
+struct MockOptions {
+    layout: PanesLayout,
+    window_bounds: WindowBounds,
 }
 
 impl Default for MockOptions {
@@ -227,7 +227,7 @@ impl Default for MockOptions {
     }
 }
 
-pub(super) fn mock_pane_group(app: &mut App, options: MockOptions) -> ViewHandle<PaneGroup> {
+fn mock_pane_group(app: &mut App, options: MockOptions) -> ViewHandle<PaneGroup> {
     let tips_model = app.add_model(|_| TipsCompleted::default());
     let (_, pane_group) =
         app.add_window_with_bounds(WindowStyle::NotStealFocus, options.window_bounds, |ctx| {
@@ -247,7 +247,7 @@ pub(super) fn mock_pane_group(app: &mut App, options: MockOptions) -> ViewHandle
     pane_group
 }
 
-pub(super) fn get_newly_created_pane_id(panes: &PaneGroup, existing_ids: &[PaneId]) -> PaneId {
+fn get_newly_created_pane_id(panes: &PaneGroup, existing_ids: &[PaneId]) -> PaneId {
     panes
         .pane_ids()
         .find(|id| !existing_ids.contains(id))
@@ -269,7 +269,7 @@ fn new_notebook(ctx: &mut ViewContext<PaneGroup>) -> ViewHandle<NotebookView> {
     ctx.add_typed_action_view(NotebookView::new)
 }
 
-pub(super) fn new_ambient_agent_task_id() -> AmbientAgentTaskId {
+fn new_ambient_agent_task_id() -> AmbientAgentTaskId {
     Uuid::new_v4().to_string().parse().unwrap()
 }
 
@@ -357,7 +357,7 @@ fn cloud_conversation_with_ambient_task(task_id: AmbientAgentTaskId) -> CloudCon
     CloudConversationData::Oz(Box::new(conversation))
 }
 
-pub(super) fn start_parent_conversation(
+fn start_parent_conversation(
     panes: &PaneGroup,
     parent_pane_id: PaneId,
     ctx: &mut ViewContext<PaneGroup>,
@@ -369,7 +369,7 @@ pub(super) fn start_parent_conversation(
     start_parent_conversation_for_terminal_view(parent_terminal_view_id, ctx)
 }
 
-pub(super) fn start_parent_conversation_for_terminal_view(
+fn start_parent_conversation_for_terminal_view(
     terminal_view_id: EntityId,
     ctx: &mut ViewContext<PaneGroup>,
 ) -> AIConversationId {

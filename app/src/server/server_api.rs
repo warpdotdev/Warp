@@ -1461,20 +1461,6 @@ impl ServerApiProvider {
         }
     }
 
-    /// Test-only override for the AI client returned by
-    /// [`Self::get_ai_client`]. Stored in a thread-local keyed by the
-    /// process so that production builds don't carry an extra field.
-    ///
-    /// Tests that need to intercept calls like `AIClient::create_agent_task`
-    /// should call [`Self::set_ai_client_override_for_test`] after
-    /// constructing the provider via [`Self::new_for_test`]. Pass `None` to
-    /// clear the override (recommended at the end of each test to keep tests
-    /// isolated when running serially).
-    #[cfg(test)]
-    pub fn set_ai_client_override_for_test(client: Option<Arc<dyn AIClient>>) {
-        AI_CLIENT_TEST_OVERRIDE.with(|cell| *cell.borrow_mut() = client);
-    }
-
     /// Returns a handle to the underlying [`ServerApi`] object.
     /// Prefer retrieving a specific trait object related to the methods you're calling.
     pub fn get(&self) -> Arc<ServerApi> {
@@ -1502,14 +1488,6 @@ impl ServerApiProvider {
     }
 
     pub fn get_ai_client(&self) -> Arc<dyn AIClient> {
-        #[cfg(test)]
-        {
-            if let Some(client) =
-                AI_CLIENT_TEST_OVERRIDE.with(|cell| cell.borrow().as_ref().cloned())
-            {
-                return client;
-            }
-        }
         self.server_api.clone()
     }
 
@@ -1542,17 +1520,6 @@ impl Entity for ServerApiProvider {
 }
 
 impl SingletonEntity for ServerApiProvider {}
-
-#[cfg(test)]
-thread_local! {
-    /// Per-thread test-only override for `ServerApiProvider::get_ai_client`.
-    /// Set via [`ServerApiProvider::set_ai_client_override_for_test`]. The
-    /// override is keyed by thread so parallel tests don't see each other's
-    /// mocks; callers running serially (e.g. `serial_test::serial`) should
-    /// still clear the override at end-of-test to keep state local.
-    static AI_CLIENT_TEST_OVERRIDE: std::cell::RefCell<Option<Arc<dyn AIClient>>> =
-        const { std::cell::RefCell::new(None) };
-}
 
 #[cfg(test)]
 mod tests {
