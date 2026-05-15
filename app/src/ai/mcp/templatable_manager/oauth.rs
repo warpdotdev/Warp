@@ -254,7 +254,7 @@ pub async fn make_authenticated_client(
 
     // Create the auth manager and initialize it with a backing credential store that persists
     // new credentials to secure storage.
-    let client_id = persisted_credentials
+    let persisted_client_id = persisted_credentials
         .as_ref()
         .map(|c| c.credentials.client_id.clone());
     let client_secret = persisted_credentials
@@ -271,34 +271,18 @@ pub async fn make_authenticated_client(
 
     // If we have a valid access token (or successfully refreshed a valid refresh token),
     // we're already authorized and good to go.
-    let mut configured_persisted_client = false;
-    let mut access_token_result = auth_manager.get_access_token().await;
-    if access_token_result.is_err() {
-        if let Some(client_id) = client_id.clone() {
-            configure_auth_manager_for_persisted_credentials(
-                &mut auth_manager,
-                client_id,
-                client_secret.clone(),
-                &redirect_uri,
-            )
-            .await?;
-            configured_persisted_client = true;
-            access_token_result = auth_manager.get_access_token().await;
+    if let Some(client_id) = persisted_client_id {
+        configure_auth_manager_for_persisted_credentials(
+            &mut auth_manager,
+            client_id,
+            client_secret,
+            &redirect_uri,
+        )
+        .await?;
+        if auth_manager.get_access_token().await.is_ok() {
+            return Ok((AuthClient::new(reqwest::Client::new(), auth_manager), false));
         }
-    }
-
-    if access_token_result.is_ok() {
-        if !configured_persisted_client {
-            if let Some(client_id) = client_id {
-                configure_auth_manager_for_persisted_credentials(
-                    &mut auth_manager,
-                    client_id,
-                    client_secret,
-                    &redirect_uri,
-                )
-                .await?;
-            }
-        }
+    } else if auth_manager.get_access_token().await.is_ok() {
         return Ok((AuthClient::new(reqwest::Client::new(), auth_manager), false));
     }
 
