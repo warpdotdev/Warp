@@ -6106,7 +6106,7 @@ impl CodeReviewView {
                 let end_line = line_range.end.as_usize();
                 let path_with_range = format!("{}:{start_line}-{end_line} ", full_path.display());
                 terminal_view.update(ctx, |terminal_view, ctx| {
-                    terminal_view.handle_file_tree_drop_on_active_command(&path_with_range, ctx);
+                    terminal_view.insert_text_into_active_command(&path_with_range, ctx);
                 });
                 send_telemetry_from_ctx!(
                     CodeReviewTelemetryEvent::AddToContext {
