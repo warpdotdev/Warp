@@ -7,6 +7,7 @@ use futures::TryStreamExt as _;
 use http_client::StatusCode;
 
 use remote_server::setup::RemotePlatform;
+use remote_server::ssh::SshCommandError;
 use remote_server::transport::Error;
 
 const REMOTE_SERVER_TARBALL_CACHE_FILE_NAME: &str = "oz.tar.gz";
@@ -46,19 +47,38 @@ pub(super) async fn install(socket_path: &Path) -> Result<(), Error> {
     // The normal install script creates this directory before downloading, but
     // SCP fallback can run after a failure that happened before that point.
     // Ensure the destination exists before uploading the staged tarball.
-    let mkdir_output = remote_server::ssh::run_ssh_command(
+    let mkdir_cmd = format!("mkdir -p {install_dir}");
+    let mkdir_result = remote_server::ssh::run_ssh_command(
         socket_path,
-        &format!("mkdir -p {install_dir}"),
+        &mkdir_cmd,
         remote_server::setup::CHECK_TIMEOUT,
     )
-    .await
-    .map_err(Error::from)?;
+    .await;
+    let mkdir_output = match mkdir_result {
+        Ok(output) => output,
+        Err(SshCommandError::TimedOut { .. }) => return Err(Error::TimedOut),
+        Err(e) => {
+            return Err(Error::Other(anyhow::anyhow!(
+                "Destination setup ({mkdir_cmd}) failed before SCP upload: {e}"
+            )));
+        }
+    };
     if !mkdir_output.status.success() {
         let code = mkdir_output.status.code().unwrap_or(-1);
         let stderr = String::from_utf8_lossy(&mkdir_output.stderr).to_string();
+        let stdout = String::from_utf8_lossy(&mkdir_output.stdout).to_string();
+        let detail = if !stderr.trim().is_empty() {
+            stderr.trim().to_string()
+        } else if !stdout.trim().is_empty() {
+            format!("(empty stderr; stdout: {})", stdout.trim())
+        } else {
+            "(no output captured)".to_string()
+        };
         return Err(Error::ScriptFailed {
             exit_code: code,
-            stderr,
+            stderr: format!(
+                "Destination setup ({mkdir_cmd}) failed (exit {code}) before SCP upload: {detail}"
+            ),
         });
     }
 
