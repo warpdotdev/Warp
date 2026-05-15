@@ -6714,7 +6714,7 @@ impl SettingsWidget for CloudAgentComputerUseWidget {
                 app,
             ));
 
-        if FeatureFlag::Orchestration.is_enabled() {
+        if AISettings::is_orchestration_user_setting_visible() {
             let ai_settings = AISettings::as_ref(app);
             column.add_child(render_ai_setting_toggle::<OrchestrationEnabled>(
                 "Orchestration",

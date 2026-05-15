@@ -1,7 +1,9 @@
 use super::*;
 use crate::{
     ai::request_usage_model::{RequestLimitInfo, RequestLimitRefreshDuration},
+    auth::AuthStateProvider,
     test_util::settings::initialize_settings_for_tests,
+    workspaces::user_workspaces::UserWorkspaces,
 };
 use chrono::Utc;
 use warp_graphql::scalars::time::ServerTimestamp;
@@ -28,6 +30,11 @@ fn create_test_request_limit_info(
         max_files_per_repo: 5000,
         embedding_generation_batch_size: 100,
     }
+}
+
+fn add_ai_enablement_dependencies_for_test(app: &mut App) {
+    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
+    app.add_singleton_model(UserWorkspaces::default_mock);
 }
 
 // FocusedTerminalInfo Tests
@@ -383,6 +390,65 @@ fn test_toolbar_command_map_matched_agent() {
     });
 }
 
+#[test]
+fn orchestration_user_setting_is_visible_only_for_legacy_orchestration() {
+    let _orchestration_flag = FeatureFlag::Orchestration.override_enabled(true);
+    let _orchestration_v2_flag = FeatureFlag::OrchestrationV2.override_enabled(false);
+
+    assert!(AISettings::is_orchestration_user_setting_visible());
+}
+
+#[test]
+fn orchestration_user_setting_is_hidden_when_orchestration_v2_is_enabled() {
+    let _orchestration_flag = FeatureFlag::Orchestration.override_enabled(true);
+    let _orchestration_v2_flag = FeatureFlag::OrchestrationV2.override_enabled(true);
+
+    assert!(!AISettings::is_orchestration_user_setting_visible());
+}
+
+#[test]
+fn orchestration_v2_ignores_disabled_legacy_user_setting() {
+    let _orchestration_flag = FeatureFlag::Orchestration.override_enabled(false);
+    let _orchestration_v2_flag = FeatureFlag::OrchestrationV2.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        add_ai_enablement_dependencies_for_test(&mut app);
+
+        AISettings::handle(&app).update(&mut app, |settings, ctx| {
+            settings
+                .orchestration_enabled
+                .set_value(false, ctx)
+                .unwrap();
+        });
+
+        AISettings::handle(&app).read(&app, |settings, ctx| {
+            assert!(settings.is_orchestration_enabled(ctx));
+        });
+    });
+}
+
+#[test]
+fn legacy_orchestration_respects_disabled_user_setting() {
+    let _orchestration_flag = FeatureFlag::Orchestration.override_enabled(true);
+    let _orchestration_v2_flag = FeatureFlag::OrchestrationV2.override_enabled(false);
+
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+        add_ai_enablement_dependencies_for_test(&mut app);
+
+        AISettings::handle(&app).update(&mut app, |settings, ctx| {
+            settings
+                .orchestration_enabled
+                .set_value(false, ctx)
+                .unwrap();
+        });
+
+        AISettings::handle(&app).read(&app, |settings, ctx| {
+            assert!(!settings.is_orchestration_enabled(ctx));
+        });
+    });
+}
 #[test]
 fn test_should_display_quota_reset_banner_with_empty_history() {
     App::test((), |mut app| async move {
