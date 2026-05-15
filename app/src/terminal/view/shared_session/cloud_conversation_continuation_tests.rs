@@ -4,7 +4,9 @@ use persistence::model::ConversationUsageMetadata;
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::{AIAgentHarness, ServerAIConversationMetadata};
 use crate::ai::agent_conversations_model::AgentConversationsModel;
-use crate::ai::ambient_agents::task::{TaskPrincipalInfo, TaskStatusErrorCode, TaskStatusMessage};
+use crate::ai::ambient_agents::task::{
+    AgentConfigSnapshot, HarnessConfig, TaskPrincipalInfo, TaskStatusErrorCode, TaskStatusMessage,
+};
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskId, AmbientAgentTaskState};
 use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
 use crate::auth::user::TEST_USER_UID;
@@ -20,6 +22,7 @@ use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::workspaces::workspace::Workspace;
 use crate::FeatureFlag;
 use std::sync::Arc;
+use warp_cli::agent::Harness;
 use warp_graphql::object_permissions::AccessLevel;
 use warpui::{App, EntityId, SingletonEntity};
 
@@ -115,6 +118,14 @@ fn setup_app_with_creator(
 }
 
 fn setup_task_without_server_metadata(app: &mut App) -> TestHandles {
+    setup_task_without_server_metadata_for_creator(app, "other-user")
+}
+
+fn setup_owned_task_without_server_metadata(app: &mut App) -> TestHandles {
+    setup_task_without_server_metadata_for_creator(app, TEST_USER_UID)
+}
+
+fn setup_task_without_server_metadata_for_creator(app: &mut App, creator_uid: &str) -> TestHandles {
     let _agent_management_guard = FeatureFlag::AgentManagementView.override_enabled(false);
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(UserWorkspaces::default_mock);
@@ -127,7 +138,8 @@ fn setup_task_without_server_metadata(app: &mut App) -> TestHandles {
         task_id,
         CONVERSATION_TOKEN,
         AmbientAgentTaskState::Succeeded,
-    );
+    )
+    .with_creator(creator_uid);
     AgentConversationsModel::handle(app).update(app, |model, _| {
         model.insert_task_for_test(task);
     });
@@ -188,6 +200,33 @@ fn active_ambient_agent_task(task_id: AmbientAgentTaskId) -> AmbientAgentTask {
     task.session_link = Some("https://example.com/session/active".to_string());
     task.is_sandbox_running = true;
     task
+}
+
+trait AmbientAgentTaskTestExt {
+    fn with_creator(self, creator_uid: &str) -> Self;
+    fn with_harness(self, harness: Harness) -> Self;
+}
+
+impl AmbientAgentTaskTestExt for AmbientAgentTask {
+    fn with_creator(mut self, creator_uid: &str) -> Self {
+        self.creator = Some(TaskPrincipalInfo {
+            creator_type: "USER".to_string(),
+            uid: creator_uid.to_string(),
+            display_name: None,
+        });
+        self
+    }
+
+    fn with_harness(mut self, harness: Harness) -> Self {
+        self.agent_config_snapshot = Some(AgentConfigSnapshot {
+            harness: (harness != Harness::Oz).then_some(HarnessConfig {
+                harness_type: harness,
+                model_id: None,
+            }),
+            ..Default::default()
+        });
+        self
+    }
 }
 
 fn current_team_uid() -> ServerId {
@@ -387,7 +426,42 @@ fn third_party_conversation_with_edit_access_shows_continue_in_cloud_tombstone()
 }
 
 #[test]
-fn environment_setup_failure_shows_tombstone_without_cta() {
+fn environment_setup_failure_without_conversation_shows_tombstone_without_cta() {
+    App::test((), |mut app| async move {
+        let TestHandles {
+            terminal_view_id,
+            task_id,
+        } = setup_app(
+            &mut app,
+            AuthFixture::LoggedIn,
+            AIAgentHarness::ClaudeCode,
+            ConversationPermissionFixture::CurrentUserOwner,
+        );
+        AgentConversationsModel::handle(&app).update(&mut app, |model, _| {
+            let mut task =
+                ambient_agent_task(task_id, CONVERSATION_TOKEN, AmbientAgentTaskState::Failed);
+            task.conversation_id = None;
+            task.status_message = Some(TaskStatusMessage {
+                message: "Environment setup failed: Failed to run setup command: hi".to_string(),
+                error_code: Some(TaskStatusErrorCode::EnvironmentSetupFailed),
+            });
+            model.insert_task_for_test(task);
+        });
+
+        app.update(|ctx| {
+            let state =
+                resolve_cloud_conversation_continuation_ui_state(terminal_view_id, task_id, ctx);
+
+            assert_eq!(
+                state,
+                Ok(CloudConversationContinuationUiState::Tombstone { cta: None })
+            );
+        });
+    });
+}
+
+#[test]
+fn environment_setup_failure_with_conversation_shows_continue_cta() {
     App::test((), |mut app| async move {
         let TestHandles {
             terminal_view_id,
@@ -414,11 +488,14 @@ fn environment_setup_failure_shows_tombstone_without_cta() {
 
             assert_eq!(
                 state,
-                Ok(CloudConversationContinuationUiState::Tombstone { cta: None })
+                Ok(CloudConversationContinuationUiState::Tombstone {
+                    cta: Some(TombstoneCta::ContinueInCloud { task_id }),
+                })
             );
         });
     });
 }
+
 #[test]
 fn third_party_conversation_created_by_current_user_shows_continue_in_cloud_tombstone() {
     App::test((), |mut app| async move {
@@ -500,6 +577,7 @@ fn third_party_conversation_shared_with_current_team_as_editor_shows_continue_in
         });
     });
 }
+
 #[test]
 fn third_party_conversation_with_view_access_shows_tombstone_without_cta() {
     App::test((), |mut app| async move {
@@ -564,6 +642,59 @@ fn missing_metadata_returns_error() {
             assert_eq!(
                 state,
                 Err(CloudConversationContinuationError::MissingServerConversationMetadata)
+            );
+        });
+    });
+}
+
+#[test]
+fn owned_oz_task_without_metadata_shows_inline_followup_input() {
+    App::test((), |mut app| async move {
+        let TestHandles {
+            terminal_view_id,
+            task_id,
+        } = setup_owned_task_without_server_metadata(&mut app);
+
+        app.update(|ctx| {
+            let state =
+                resolve_cloud_conversation_continuation_ui_state(terminal_view_id, task_id, ctx);
+
+            assert_eq!(
+                state,
+                Ok(CloudConversationContinuationUiState::FollowupInput)
+            );
+        });
+    });
+}
+
+#[test]
+fn owned_third_party_task_without_metadata_shows_continue_in_cloud_tombstone() {
+    App::test((), |mut app| async move {
+        let TestHandles {
+            terminal_view_id,
+            task_id,
+        } = setup_owned_task_without_server_metadata(&mut app);
+        AgentConversationsModel::handle(&app).update(&mut app, |model, _| {
+            model.insert_task_for_test(
+                ambient_agent_task(
+                    task_id,
+                    CONVERSATION_TOKEN,
+                    AmbientAgentTaskState::Succeeded,
+                )
+                .with_creator(TEST_USER_UID)
+                .with_harness(Harness::Claude),
+            );
+        });
+
+        app.update(|ctx| {
+            let state =
+                resolve_cloud_conversation_continuation_ui_state(terminal_view_id, task_id, ctx);
+
+            assert_eq!(
+                state,
+                Ok(CloudConversationContinuationUiState::Tombstone {
+                    cta: Some(TombstoneCta::ContinueInCloud { task_id }),
+                })
             );
         });
     });

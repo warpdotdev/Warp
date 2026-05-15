@@ -16,9 +16,7 @@ use crate::{
         inline_action::inline_action_icons,
         BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
     },
-    terminal::view::ambient_agent::{
-        block::SETUP_TEXT_BOTTOM_MARGIN, AmbientAgentViewModel, AmbientAgentViewModelEvent,
-    },
+    terminal::view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

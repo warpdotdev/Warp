@@ -7361,6 +7361,7 @@ impl TerminalView {
         // agent exchange arrives, we hide the interactive input view. A non-interactive footer is
         // rendered instead (see `TerminalView::render`).
         if !FeatureFlag::CloudModeSetupV2.is_enabled()
+            && !FeatureFlag::HandoffCloudCloud.is_enabled()
             && ambient_agent::is_cloud_agent_pre_first_exchange(
                 self.ambient_agent_view_model.as_ref(),
                 &self.agent_view_controller,
@@ -7439,6 +7440,22 @@ impl TerminalView {
         }
 
         true
+    }
+
+    fn should_render_legacy_ambient_agent_loading_footer(
+        &self,
+        model: &TerminalModel,
+        app: &AppContext,
+    ) -> bool {
+        !model.is_read_only()
+            && !FeatureFlag::CloudModeSetupV2.is_enabled()
+            && !FeatureFlag::HandoffCloudCloud.is_enabled()
+            && ambient_agent::is_cloud_agent_pre_first_exchange(
+                self.ambient_agent_view_model.as_ref(),
+                &self.agent_view_controller,
+                model,
+                app,
+            )
     }
 
     /// Give the agent control of the active long running command
@@ -20166,7 +20183,10 @@ impl TerminalView {
         if !FeatureFlag::HandoffCloudCloud.is_enabled() {
             return false;
         }
-        let Some(task_id) = self.pending_cloud_followup_task_id else {
+        let Some(task_id) = self
+            .pending_cloud_followup_task_id
+            .or_else(|| self.owned_ambient_agent_task_id(ctx))
+        else {
             return false;
         };
 
@@ -26230,14 +26250,7 @@ impl View for TerminalView {
 
                     if self.is_input_box_visible(&model, app) {
                         column.add_child(self.render_input());
-                    } else if !model.is_read_only()
-                        && ambient_agent::is_cloud_agent_pre_first_exchange(
-                            self.ambient_agent_view_model.as_ref(),
-                            &self.agent_view_controller,
-                            &model,
-                            app,
-                        )
-                    {
+                    } else if self.should_render_legacy_ambient_agent_loading_footer(&model, app) {
                         column.add_child(ambient_agent::render_loading_footer(appearance));
                     } else if self.show_remote_server_loading_footer(&model, app) {
                         column.add_child(

@@ -102,18 +102,21 @@ impl TerminalView {
         };
 
         // Tear down the cloud-mode queued-prompt block on terminal / transition
-        // events that replace it. `Failed`, `NeedsGithubAuth`, and `Cancelled` hand off
+        // events that replace it. Legacy `Failed`, `NeedsGithubAuth`, and `Cancelled` hand off
         // to the existing error / auth / cancelled UI; `HarnessCommandStarted` hands
         // off to the live third-party harness CLI block. Idempotent and cheap when no
         // block exists.
-        if matches!(
-            event,
-            AmbientAgentViewModelEvent::Failed { .. }
-                | AmbientAgentViewModelEvent::NeedsGithubAuth
-                | AmbientAgentViewModelEvent::Cancelled
-                | AmbientAgentViewModelEvent::HarnessCommandStarted { .. }
-                | AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { .. }
-        ) {
+        let should_remove_pending_user_query = match event {
+            AmbientAgentViewModelEvent::Failed { .. } => {
+                !FeatureFlag::CloudModeSetupV2.is_enabled()
+            }
+            AmbientAgentViewModelEvent::NeedsGithubAuth
+            | AmbientAgentViewModelEvent::Cancelled
+            | AmbientAgentViewModelEvent::HarnessCommandStarted { .. }
+            | AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { .. } => true,
+            _ => false,
+        };
+        if should_remove_pending_user_query {
             self.remove_pending_user_query_block(ctx);
         }
 

@@ -24,8 +24,9 @@ use crate::terminal::shared_session::{
     COPY_LINK_TEXT,
 };
 use crate::terminal::view::{
-    ContextMenuAction, Event, InlineBannerItem, InlineBannerType, RichContentInsertionPosition,
-    SharedSessionBanners, SizeUpdateBuilder, TerminalAction, TerminalView,
+    ContextMenuAction, Event, InlineBannerItem, InlineBannerType, PendingUserQueryKind,
+    RichContentInsertionPosition, SharedSessionBanners, SizeUpdateBuilder, TerminalAction,
+    TerminalView,
 };
 use crate::terminal::TerminalModel;
 use crate::view_components::{DismissibleToast, ToastFlavor};
@@ -188,6 +189,9 @@ impl TerminalView {
         self.input.update(ctx, |input, ctx| {
             input.reset_after_cloud_followup_submission(ctx);
             input.set_input_mode_agent(true, ctx);
+            input.editor().update(ctx, |editor, ctx| {
+                editor.set_interaction_state(InteractionState::Editable, ctx);
+            });
         });
         self.update_pane_configuration(ctx);
         ctx.notify();
@@ -769,8 +773,13 @@ impl TerminalView {
                 && !model.is_receiving_agent_conversation_replay()
         };
         if let Some(state) = handoff_continuation_state {
-            if let CloudConversationContinuationUiState::Tombstone { cta } = state {
-                self.insert_conversation_ended_tombstone_with_cta(cta, ctx);
+            match state {
+                CloudConversationContinuationUiState::Tombstone { cta } => {
+                    self.insert_conversation_ended_tombstone_with_cta(cta, ctx);
+                }
+                CloudConversationContinuationUiState::FollowupInput => {
+                    self.remove_conversation_ended_tombstone(ctx);
+                }
             }
         } else if should_insert_legacy_tombstone {
             self.insert_conversation_ended_tombstone_with_cta(None, ctx);
@@ -854,12 +863,8 @@ impl TerminalView {
         if has_live_shared_session {
             return;
         }
-        let has_existing_tombstone = self.conversation_ended_tombstone_view_id.is_some();
         let has_pending_cloud_followup = self.pending_cloud_followup_task_id.is_some();
-        if !FeatureFlag::CloudModeSetupV2.is_enabled()
-            || has_existing_tombstone
-            || has_pending_cloud_followup
-        {
+        if !FeatureFlag::CloudModeSetupV2.is_enabled() || has_pending_cloud_followup {
             return;
         }
         if !FeatureFlag::HandoffCloudCloud.is_enabled() {
@@ -874,6 +879,7 @@ impl TerminalView {
                 self.insert_conversation_ended_tombstone_with_cta(cta, ctx);
             }
             CloudConversationContinuationUiState::FollowupInput => {
+                self.remove_conversation_ended_tombstone(ctx);
                 if let Some(task_id) = self.ambient_agent_task_id_for_details_panel(ctx) {
                     self.enable_cloud_followup_input(task_id, ctx);
                 }
@@ -901,12 +907,7 @@ impl TerminalView {
             return;
         }
         self.remove_conversation_ended_tombstone(ctx);
-
-        self.pending_cloud_followup_task_id = Some(task_id);
-        self.input.update(ctx, |input, ctx| {
-            input.reset_after_cloud_followup_submission(ctx);
-            input.set_input_mode_agent(true, ctx);
-        });
+        self.enable_cloud_followup_input(task_id, ctx);
         self.focus_input_box(ctx);
         ctx.notify();
     }
@@ -1730,6 +1731,14 @@ impl TerminalView {
             }
         });
         let tombstone_view_id = tombstone_view_handle.id();
+        if self.pending_user_query_kind == Some(PendingUserQueryKind::CloudMode) {
+            if let Some(pending_query_view_id) = self.pending_user_query_view_id {
+                self.model
+                    .lock()
+                    .block_list_mut()
+                    .unpin_rich_content_from_bottom(pending_query_view_id);
+            }
+        }
         self.insert_rich_content(
             None,
             tombstone_view_handle,
@@ -1756,6 +1765,7 @@ impl TerminalView {
                 self.insert_conversation_ended_tombstone_with_cta(cta, ctx);
             }
             Some(CloudConversationContinuationUiState::FollowupInput) => {
+                self.remove_conversation_ended_tombstone(ctx);
                 if let Some(task_id) = self.ambient_agent_task_id_for_details_panel(ctx) {
                     self.enable_cloud_followup_input(task_id, ctx);
                 } else {

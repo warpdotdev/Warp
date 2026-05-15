@@ -216,7 +216,7 @@ impl ConversationEndedTombstoneView {
             Some(TombstoneCta::ContinueLocally { conversation_id }) => {
                 Some(ctx.add_typed_action_view(move |_| {
                     ActionButton::new("Continue locally", PrimaryTheme)
-                        .with_tooltip("Fork this conversation into a local Warp session")
+                        .with_tooltip("Fork this conversation locally")
                         .on_click(move |ctx| {
                             ctx.dispatch_typed_action(
                                 ConversationEndedTombstoneAction::ContinueLocally(conversation_id),
