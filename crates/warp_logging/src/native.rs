@@ -189,6 +189,7 @@ pub fn init_for_crash_recovery_process() -> Result<()> {
         true,  /* is_from_crash_recovery_process */
         false, /* is_cli */
         None,  /* log_destination */
+        None,  /* max_file_size_bytes — crash recovery uses its own short-lived log */
     )
 }
 
@@ -201,6 +202,7 @@ pub fn init(config: LogConfig) -> Result<()> {
         false, /* is_from_crash_recovery_process */
         config.is_cli,
         config.log_destination,
+        config.max_file_size_bytes,
     )
 }
 
@@ -346,6 +348,7 @@ fn init_internal(
     is_from_crash_recovery_process: bool,
     is_cli: bool,
     log_destination: Option<LogDestination>,
+    max_file_size_bytes: Option<u64>,
 ) -> Result<()> {
     /// Returns an empty file named `warp.log` to log the current execution, and
     /// renames the previous execution's log to a temporary name.
@@ -421,9 +424,24 @@ fn init_internal(
         log_directory = log_directory.join(CLI_LOG_SUBDIRECTORY);
     }
     if use_logfile {
-        base_logger.target(env_logger::Target::Pipe(Box::new(
-            setup_log_files_for_current_execution(&log_directory, is_from_crash_recovery_process)?,
-        )));
+        let file =
+            setup_log_files_for_current_execution(&log_directory, is_from_crash_recovery_process)?;
+        // Crash-recovery logs are short-lived (the file is renamed into place
+        // by the parent on crash, and otherwise deleted on clean exit), so
+        // skip in-session rotation for them — `max_file_size_bytes` only
+        // applies to the main process's `warp.log`.
+        let target: Box<dyn std::io::Write + Send + 'static> = if is_from_crash_recovery_process {
+            Box::new(file)
+        } else {
+            crate::rotation::wrap_for_rotation(
+                file,
+                &log_directory,
+                &ChannelState::logfile_name(),
+                max_file_size_bytes,
+                max_rotation,
+            )?
+        };
+        base_logger.target(env_logger::Target::Pipe(target));
         base_logger.format(format_for_file_output);
     } else {
         // Agent mode eval outputs are written to stdout but redirected to a file, so we don't want terminal styling.
