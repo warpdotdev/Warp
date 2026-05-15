@@ -461,6 +461,34 @@ jobs:
           WARP_NOTARIZATION_APPLE_ID: ${{ secrets.WARP_NOTARIZATION_APPLE_ID }}
           WARP_NOTARIZATION_PASSWORD: ${{ secrets.WARP_NOTARIZATION_PASSWORD }}
 
+      # Catch macOS CLI linking regressions before we ship — e.g. a missing
+      # LC_RPATH for the Swift runtime, or an absolute Xcode toolchain path
+      # in the dylib references. These would silently pass the build but
+      # fail dyld during post-install verification on the remote host with
+      # "Library not loaded: @rpath/libswiftCore.dylib (no LC_RPATH)".
+      - name: Validate CLI binary linkage
+        run: |
+          set -euo pipefail
+          binary="${{ steps.bundle_cli.outputs.binary_path }}"
+          echo "Linked libraries (otool -L):"
+          otool -L "$binary"
+          echo
+          echo "LC_RPATH entries (otool -l):"
+          otool -l "$binary" | awk '/cmd LC_RPATH/{flag=1;next} flag && /path /{print; flag=0}'
+
+          if otool -L "$binary" | grep -q '@rpath/libswift'; then
+            if ! otool -l "$binary" | grep -q 'path /usr/lib/swift '; then
+              echo "::error::CLI binary references @rpath/libswift* but is missing LC_RPATH for /usr/lib/swift; remote installs will fail with 'Library not loaded: @rpath/libswiftCore.dylib (no LC_RPATH)'."
+              exit 1
+            fi
+          fi
+
+          if otool -L "$binary" | grep -E '/(Applications/Xcode|Library/Developer/CommandLineTools|usr/lib/swift-[0-9])'; then
+            echo "::error::CLI binary references absolute Xcode/toolchain Swift library paths; these will not exist on remote macOS hosts."
+            exit 1
+          fi
+        shell: bash
+
       - name: Package CLI binary
         run: |
           mv ${{ steps.bundle_cli.outputs.binary_path }} oz-${{ steps.get-config.outputs.channel }}

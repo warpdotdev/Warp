@@ -593,6 +593,45 @@ elif [[ "$ARTIFACT" == "cli" ]]; then
     cp -HR "target/$DEFAULT_TARGET/$TARGET_PROFILE_DIR/$WARP_BIN.dSYM" "$OUT_DIR/"
   fi
 
+  # The standalone CLI links Sentry's static xcframework, which embeds Swift
+  # code. The resulting binary has @rpath/libswift*.dylib load commands but
+  # Rust does not add any LC_RPATH entries — Apple's `swiftc` would normally
+  # add /usr/lib/swift here. Without it, dyld fails on the remote host with
+  # "Library not loaded: @rpath/libswiftCore.dylib (no LC_RPATH)" during
+  # post-install verification. Swift ABI stability ships libswiftCore.dylib
+  # in /usr/lib/swift on macOS 10.14.4+, so pointing LC_RPATH there is enough.
+  #
+  # This MUST happen before codesigning, since codesign captures load
+  # commands at sign time — modifying them afterwards would invalidate the
+  # signature.
+  if otool -L "$OUT_DIR/$WARP_BIN" 2>/dev/null | grep -q '@rpath/libswift'; then
+    echo "CLI binary references @rpath/libswift*; adding /usr/lib/swift to LC_RPATH"
+    install_name_tool -add_rpath "/usr/lib/swift" "$OUT_DIR/$WARP_BIN"
+  fi
+
+  echo "Validating CLI binary linkage:"
+  otool -L "$OUT_DIR/$WARP_BIN"
+  echo "LC_RPATH entries:"
+  otool -l "$OUT_DIR/$WARP_BIN" | awk '/cmd LC_RPATH/{flag=1;next} flag && /path /{print; flag=0}'
+
+  # Fail the release build if any @rpath/libswift* reference would not
+  # resolve on the remote host. Catches regressions where install_name_tool
+  # is skipped, the rpath is stripped, or a new Swift dependency is added
+  # without updating this script.
+  if otool -L "$OUT_DIR/$WARP_BIN" 2>/dev/null | grep -q '@rpath/libswift'; then
+    if ! otool -l "$OUT_DIR/$WARP_BIN" | grep -q 'path /usr/lib/swift '; then
+      echo "ERROR: CLI binary references @rpath/libswift* but has no LC_RPATH entry for /usr/lib/swift. The Swift runtime will fail to load on remote hosts." >&2
+      exit 1
+    fi
+  fi
+
+  # Reject absolute Xcode / Command Line Tools Swift paths. These only exist
+  # on developer machines, not on remote hosts where the CLI gets installed.
+  if otool -L "$OUT_DIR/$WARP_BIN" 2>/dev/null | grep -E '/(Applications/Xcode|Library/Developer/CommandLineTools|usr/lib/swift-[0-9])'; then
+    echo "ERROR: CLI binary references absolute Xcode/toolchain Swift library paths; these will not exist on remote macOS hosts." >&2
+    exit 1
+  fi
+
   echo "Preparing CLI resources directory"
   BUNDLED_RESOURCES_DIR="$OUT_DIR/resources"
   "$WORKSPACE_ROOT_DIR/script/prepare_bundled_resources" "$BUNDLED_RESOURCES_DIR" "$RELEASE_CHANNEL" "$CARGO_PROFILE"
