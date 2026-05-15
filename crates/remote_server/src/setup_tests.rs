@@ -89,14 +89,29 @@ fn parse_uname_missing_arch() {
 }
 
 #[test]
-fn remote_server_identity_data_dir_uses_encoded_identity_directory() {
-    let data_dir = remote_server_daemon_data_dir("user@example.com/ssh host");
+fn identity_dir_name_is_short_hash() {
+    let name = remote_server_identity_dir_name("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+    assert_eq!(name.len(), 8, "identity dir should be 8 hex chars: {name}");
+    assert!(
+        name.chars().all(|c| c.is_ascii_hexdigit()),
+        "identity dir should be hex: {name}"
+    );
+}
+
+#[test]
+fn identity_dir_name_is_deterministic() {
+    let key = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
     assert_eq!(
-        data_dir,
-        format!(
-            "{}/user%40example%2Ecom%2Fssh%20host/data",
-            remote_server_dir()
-        )
+        remote_server_identity_dir_name(key),
+        remote_server_identity_dir_name(key)
+    );
+}
+
+#[test]
+fn identity_dir_name_differs_for_different_keys() {
+    assert_ne!(
+        remote_server_identity_dir_name("key-a"),
+        remote_server_identity_dir_name("key-b")
     );
 }
 
@@ -379,30 +394,25 @@ fn daemon_pid_name_is_short() {
 
 #[test]
 fn socket_path_fits_within_sun_path_worst_case() {
-    // Realistic worst case: 20-char username + 36-char UUID identity key.
-    // 20 chars covers >99% of real Linux usernames. The extreme 32-char
-    // case (Linux maximum) produces a prefix of 96 bytes, leaving only
-    // 11 chars for the filename — the original `server.sock` was already
-    // at exactly 107 bytes (the limit) for that case. Fixing the 32-char
-    // edge requires a broader change (e.g. hashing the identity key).
-    let long_home = "/home/twentycharactruser"; // 24 chars (/home/ + 18-char user)
-    let long_identity = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"; // 36 chars
-    let identity_dir = remote_server_identity_dir_name(long_identity); // 36 chars (all alphanum + hyphens)
+    // Worst case: preview channel (longest base dir) + 32-char username
+    // (Linux max) + hashed identity (8 chars) + hashed socket (20 chars).
+    //
+    // Path: /home/{user}/.warp-preview/remote-server/{hash8}/server-{hash8}.sock
+    //       6 + 32 + 1 + 29 + 8 + 1 + 20 = 97 bytes → well under 103 (macOS)
+    let long_home = "/home/a]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]";
+    let identity_dir = remote_server_identity_dir_name("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+    assert_eq!(identity_dir.len(), 8);
 
-    // Hashed socket name: "server-a1b2c3d4.sock" = 20 chars
     let hashed_socket = "server-a1b2c3d4.sock";
-    // Old full-version socket: "server-v0.2026.05.13.09.15.stable_01.sock" = 41 chars
     let old_socket = "server-v0.2026.05.13.09.15.stable_01.sock";
 
-    // Simulate the daemon dir (without tilde expansion) then append socket.
-    // remote_server_dir() returns "~/.warp/remote-server" for stable.
-    // After tilde expansion: "{home}/.warp/remote-server"
-    let daemon_dir = format!("{long_home}/.warp/remote-server/{identity_dir}");
+    // Use .warp-preview (longest channel base dir) for worst case.
+    let daemon_dir = format!("{long_home}/.warp-preview/remote-server/{identity_dir}");
 
     let hashed_path = format!("{daemon_dir}/{hashed_socket}");
-    let old_path = format!("{daemon_dir}/{old_socket}");
 
-    // Linux sun_path limit: 107 bytes. macOS: 103 bytes.
+    // Must fit within macOS sun_path limit (103 bytes), the stricter of
+    // the two platforms.
     assert!(
         hashed_path.len() <= 103,
         "hashed socket path exceeds macOS sun_path limit: {} bytes ({})",
@@ -410,14 +420,17 @@ fn socket_path_fits_within_sun_path_worst_case() {
         hashed_path,
     );
 
-    // The OLD naming scheme should exceed the limit for this case,
-    // confirming the regression.
+    // The OLD naming scheme (full version + unhashed identity) should
+    // exceed the limit, confirming the regression.
+    let old_identity = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"; // 36 chars unhashed
+    let old_daemon_dir = format!("{long_home}/.warp-preview/remote-server/{old_identity}");
+    let old_full_path = format!("{old_daemon_dir}/{old_socket}");
     assert!(
-        old_path.len() > 107,
+        old_full_path.len() > 107,
         "old socket path should exceed Linux sun_path limit to confirm the \
          regression: {} bytes ({})",
-        old_path.len(),
-        old_path,
+        old_full_path.len(),
+        old_full_path,
     );
 }
 

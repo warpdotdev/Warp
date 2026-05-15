@@ -356,26 +356,23 @@ pub fn remote_server_dir() -> String {
     format!("~/{warp_dir}/remote-server")
 }
 
-/// Returns a filesystem-safe directory name for a remote-server identity key.
+/// Returns a short, deterministic directory name for a remote-server identity key.
 ///
-/// The identity key is not secret, but it can contain bytes that are unsafe or
-/// ambiguous in paths. Keep ASCII alphanumeric characters plus `-` and `_`;
-/// percent-encode all other UTF-8 bytes.
+/// Hashes the identity key to an 8-hex-char string to keep the daemon
+/// socket path well within the `sun_path` limit across all channels.
+/// The previous implementation percent-encoded the raw key (up to 36+
+/// chars for a UUID), which, combined with longer channel base dirs
+/// like `.warp-preview`, could push the socket path over the limit.
 pub fn remote_server_identity_dir_name(identity_key: &str) -> String {
+    use std::hash::{Hash, Hasher};
+
     if identity_key.is_empty() {
         return "empty".to_string();
     }
 
-    let mut encoded = String::with_capacity(identity_key.len());
-    for byte in identity_key.bytes() {
-        match byte {
-            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' => {
-                encoded.push(byte as char);
-            }
-            _ => encoded.push_str(&format!("%{byte:02X}")),
-        }
-    }
-    encoded
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    identity_key.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())[..8].to_string()
 }
 
 /// Returns the identity-scoped remote directory used for the daemon socket
