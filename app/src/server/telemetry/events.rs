@@ -464,7 +464,6 @@ pub enum PaletteSource {
     ConversationManager,
     ContextChip,
     PaneHeader,
-    RecentsViewAll,
     AgentTip,
     TitleBarSearchBar,
 }
@@ -2867,12 +2866,26 @@ pub enum TelemetryEvent {
     RemoteServerHostUnsupported {
         remote_os: Option<String>,
         remote_arch: Option<String>,
+        /// Typed unsupported reason. Converted into stable telemetry
+        /// fields in `payload()`.
+        unsupported_reason: remote_server::setup::UnsupportedReason,
         /// Detected libc on the remote host, e.g. `"glibc 2.28"`,
         /// `"musl"`, `"unknown"`.
         detected_libc: String,
-        /// Required minimum glibc reported by the script. Empty when
-        /// the unsupported classification was not glibc-related.
-        required_glibc: String,
+    },
+    /// Emitted when a reconnection attempt succeeds after a spontaneous disconnect.
+    RemoteServerReconnection {
+        attempt: u32,
+        remote_os: Option<String>,
+        remote_arch: Option<String>,
+    },
+    /// Emitted when all reconnection attempts are exhausted.
+    RemoteServerReconnectExhausted {
+        attempts: u32,
+        remote_os: Option<String>,
+        remote_arch: Option<String>,
+        exit_code: Option<i32>,
+        signal_killed: Option<bool>,
     },
 }
 
@@ -4211,6 +4224,28 @@ impl TelemetryEvent {
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
             })),
+            TelemetryEvent::RemoteServerReconnection {
+                attempt,
+                remote_os,
+                remote_arch,
+            } => Some(json!({
+                "attempt": attempt,
+                "remote_os": remote_os,
+                "remote_arch": remote_arch,
+            })),
+            TelemetryEvent::RemoteServerReconnectExhausted {
+                attempts,
+                remote_os,
+                remote_arch,
+                exit_code,
+                signal_killed,
+            } => Some(json!({
+                "attempts": attempts,
+                "remote_os": remote_os,
+                "remote_arch": remote_arch,
+                "exit_code": exit_code,
+                "signal_killed": signal_killed,
+            })),
             TelemetryEvent::RemoteServerClientRequestError {
                 operation,
                 error_type,
@@ -4245,14 +4280,34 @@ impl TelemetryEvent {
             TelemetryEvent::RemoteServerHostUnsupported {
                 remote_os,
                 remote_arch,
+                unsupported_reason,
                 detected_libc,
-                required_glibc,
-            } => Some(json!({
-                "remote_os": remote_os,
-                "remote_arch": remote_arch,
-                "detected_libc": detected_libc,
-                "required_glibc": required_glibc,
-            })),
+            } => {
+                let unsupported_os = match unsupported_reason {
+                    remote_server::setup::UnsupportedReason::UnsupportedOs { os } => {
+                        Some(os.clone())
+                    }
+                    remote_server::setup::UnsupportedReason::GlibcTooOld { .. }
+                    | remote_server::setup::UnsupportedReason::NonGlibc { .. }
+                    | remote_server::setup::UnsupportedReason::UnsupportedArch { .. } => None,
+                };
+                let unsupported_arch = match unsupported_reason {
+                    remote_server::setup::UnsupportedReason::UnsupportedArch { arch } => {
+                        Some(arch.clone())
+                    }
+                    remote_server::setup::UnsupportedReason::GlibcTooOld { .. }
+                    | remote_server::setup::UnsupportedReason::NonGlibc { .. }
+                    | remote_server::setup::UnsupportedReason::UnsupportedOs { .. } => None,
+                };
+                Some(json!({
+                    "remote_os": remote_os,
+                    "remote_arch": remote_arch,
+                    "reason": unsupported_reason.as_telemetry_reason(),
+                    "detected_libc": detected_libc,
+                    "unsupported_os": unsupported_os,
+                    "unsupported_arch": unsupported_arch,
+                }))
+            }
             TelemetryEvent::ConversationListItemOpened { is_ambient_agent } => Some(json!({
                 "is_ambient_agent": is_ambient_agent,
             })),
@@ -5072,7 +5127,9 @@ impl TelemetryEvent {
             | TelemetryEvent::RemoteServerClientRequestError { .. }
             | TelemetryEvent::RemoteServerMessageDecodingError { .. }
             | TelemetryEvent::RemoteServerSetupDuration { .. }
-            | TelemetryEvent::RemoteServerHostUnsupported { .. } => false,
+            | TelemetryEvent::RemoteServerHostUnsupported { .. }
+            | TelemetryEvent::RemoteServerReconnection { .. }
+            | TelemetryEvent::RemoteServerReconnectExhausted { .. } => false,
             #[cfg(feature = "local_fs")]
             TelemetryEvent::CodePaneOpened { .. }
             | TelemetryEvent::CodePanelsFileOpened { .. }
@@ -5639,7 +5696,9 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::RemoteServerClientRequestError
             | Self::RemoteServerMessageDecodingError
             | Self::RemoteServerSetupDuration
-            | Self::RemoteServerHostUnsupported => {
+            | Self::RemoteServerHostUnsupported
+            | Self::RemoteServerReconnection
+            | Self::RemoteServerReconnectExhausted => {
                 EnablementState::Flag(FeatureFlag::SshRemoteServer)
             }
         }
@@ -6049,6 +6108,8 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::RemoteServerMessageDecodingError => "RemoteServer.MessageDecodingError",
             Self::RemoteServerSetupDuration => "RemoteServer.SetupDuration",
             Self::RemoteServerHostUnsupported => "RemoteServer.HostUnsupported",
+            Self::RemoteServerReconnection => "RemoteServer.Reconnection",
+            Self::RemoteServerReconnectExhausted => "RemoteServer.ReconnectExhausted",
             #[cfg(windows)]
             Self::WSLRegistryError => "WSL Distribution Registry Error",
             #[cfg(windows)]
@@ -7092,6 +7153,12 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::RemoteServerHostUnsupported => {
                 "Preinstall check classified the remote host as unsupported, \
                  falling back to the legacy SSH flow"
+            }
+            Self::RemoteServerReconnection => {
+                "A reconnection attempt succeeded after a spontaneous disconnect"
+            }
+            Self::RemoteServerReconnectExhausted => {
+                "All reconnection attempts were exhausted after a spontaneous disconnect"
             }
         }
     }

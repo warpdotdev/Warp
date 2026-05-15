@@ -285,6 +285,7 @@ pub enum MembershipRole {
 #[derive(cynic::Enum, Clone, Debug)]
 pub enum LlmModelHost {
     AwsBedrock,
+    CustomEndpoint,
     DirectApi,
     #[cynic(fallback)]
     Other(String),

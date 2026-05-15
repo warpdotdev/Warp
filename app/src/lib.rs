@@ -135,7 +135,11 @@ use crate::ai::aws_credentials::AwsCredentialRefresher as _;
 use crate::ai::mcp::FileBasedMCPManager;
 use crate::ai::mcp::FileMCPWatcher;
 use crate::uri::web_intent_parser::maybe_rewrite_web_url_to_intent;
-use ::ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
+use ::ai::index::full_source_code_embedding::manager::{
+    CodebaseIndexManager, CodebaseIndexManagerConfig,
+};
+#[cfg(feature = "local_fs")]
+use ::ai::index::full_source_code_embedding::SnapshotStorage;
 use ::ai::index::full_source_code_embedding::SyncTask;
 use ::ai::index::DEFAULT_SYNC_REQUESTS_PER_MIN;
 use ::ai::project_context::model::ProjectContextModel;
@@ -193,6 +197,7 @@ use warpui::platform::app::ApproveTerminateResult;
 use window_settings::WindowSettings;
 use workflows::manager::WorkflowManager;
 
+use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier;
 use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::ai::facts::manager::AIFactManager;
@@ -221,6 +226,7 @@ use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::notebooks::manager::NotebookManager;
 use crate::notebooks::CloudNotebook;
 use crate::palette::PaletteMode;
+use crate::persistence::model::AgentConversationData;
 use crate::persistence::PersistenceWriter;
 use crate::projects::ProjectManagementModel;
 use crate::server::cloud_objects::{listener::Listener, update_manager::UpdateManager};
@@ -259,9 +265,13 @@ use referral_theme_status::ReferralThemeStatus;
 use rust_embed::RustEmbed;
 use server::server_api::ServerApiProvider;
 use settings::{ExtraMetaKeys, PrivacySettings};
+#[cfg(feature = "local_fs")]
+use shellexpand::tilde;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::ops::Deref;
+#[cfg(feature = "local_fs")]
+use std::path::PathBuf;
 use std::sync::Arc;
 use terminal::input;
 use terminal::session_settings::SessionSettings;
@@ -340,6 +350,23 @@ fn determine_agent_source(
         // RemoteServerProxy and RemoteServerDaemon are headless server
         // processes that don't use the agent subsystem.
         LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon { .. } => None,
+    }
+}
+
+#[cfg(feature = "local_fs")]
+fn daemon_codebase_index_snapshot_storage(launch_mode: &LaunchMode) -> Option<SnapshotStorage> {
+    match launch_mode {
+        LaunchMode::RemoteServerDaemon { identity_key } => {
+            let data_dir = remote_server::setup::remote_server_daemon_data_dir(identity_key);
+            let snapshot_dir = PathBuf::from(tilde(&data_dir).into_owned())
+                .join("cache")
+                .join("codebase_index_snapshots");
+            SnapshotStorage::from_dir(snapshot_dir)
+        }
+        LaunchMode::App { .. }
+        | LaunchMode::CommandLine { .. }
+        | LaunchMode::RemoteServerProxy
+        | LaunchMode::Test { .. } => None,
     }
 }
 
@@ -1191,70 +1218,59 @@ pub(crate) fn initialize_app(
         })
     });
 
-    let (
-        cloud_objects,
-        cached_workspaces,
-        current_workspace_uid,
-        app_state,
-        command_history,
-        restored_user_profiles,
-        time_of_next_force_object_refresh,
-        object_actions,
-        experiments,
-        ai_queries,
-        persisted_workspaces,
-        workspace_language_servers,
-        multi_agent_conversations,
-        persisted_projects,
-        persisted_project_rules,
-        persisted_ignored_suggestions,
-        persisted_mcp_server_installations,
-        mcp_servers_to_restore,
-    ) = sqlite_data
-        .map(|sqlite_data| {
-            (
-                sqlite_data.cloud_objects,
-                sqlite_data.workspaces,
-                sqlite_data.current_workspace_uid,
-                Some(sqlite_data.app_state),
-                sqlite_data.command_history,
-                sqlite_data.user_profiles,
-                sqlite_data.time_of_next_force_object_refresh,
-                sqlite_data.object_actions,
-                sqlite_data.experiments,
-                sqlite_data.ai_queries,
-                sqlite_data.codebase_indices,
-                sqlite_data.workspace_language_servers,
-                sqlite_data.multi_agent_conversations,
-                sqlite_data.projects,
-                sqlite_data.project_rules,
-                sqlite_data.ignored_suggestions,
-                sqlite_data.mcp_server_installations,
-                sqlite_data.mcp_servers_to_restore,
-            )
-        })
-        .unwrap_or_else(|| {
-            (
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-            )
-        });
+    let mut cloud_objects = Default::default();
+    let mut cached_workspaces = Default::default();
+    let mut current_workspace_uid = None;
+    let mut app_state = None;
+    let mut command_history = Default::default();
+    let mut restored_user_profiles = Default::default();
+    let mut time_of_next_force_object_refresh = None;
+    let mut object_actions = Default::default();
+    let mut experiments = Default::default();
+    let mut ai_queries = Default::default();
+    let mut persisted_workspaces = Default::default();
+    let mut workspace_language_servers = Default::default();
+    let mut multi_agent_conversations = Default::default();
+    let mut persisted_projects = Default::default();
+    let mut persisted_project_rules = Default::default();
+    let mut persisted_ignored_suggestions = Default::default();
+    let mut persisted_mcp_server_installations = Default::default();
+    let mut mcp_servers_to_restore = Default::default();
+
+    if let Some(sqlite_data) = sqlite_data {
+        match launch_mode {
+            LaunchMode::RemoteServerDaemon { .. } => {
+                persisted_workspaces = sqlite_data.codebase_indices;
+                let codebase_index_count = persisted_workspaces.len();
+                log::info!(
+                    "[Remote codebase indexing] Restored daemon codebase index metadata: metadata_count={codebase_index_count}"
+                );
+            }
+            LaunchMode::App { .. }
+            | LaunchMode::CommandLine { .. }
+            | LaunchMode::RemoteServerProxy
+            | LaunchMode::Test { .. } => {
+                cloud_objects = sqlite_data.cloud_objects;
+                cached_workspaces = sqlite_data.workspaces;
+                current_workspace_uid = sqlite_data.current_workspace_uid;
+                app_state = Some(sqlite_data.app_state);
+                command_history = sqlite_data.command_history;
+                restored_user_profiles = sqlite_data.user_profiles;
+                time_of_next_force_object_refresh = sqlite_data.time_of_next_force_object_refresh;
+                object_actions = sqlite_data.object_actions;
+                experiments = sqlite_data.experiments;
+                ai_queries = sqlite_data.ai_queries;
+                persisted_workspaces = sqlite_data.codebase_indices;
+                workspace_language_servers = sqlite_data.workspace_language_servers;
+                multi_agent_conversations = sqlite_data.multi_agent_conversations;
+                persisted_projects = sqlite_data.projects;
+                persisted_project_rules = sqlite_data.project_rules;
+                persisted_ignored_suggestions = sqlite_data.ignored_suggestions;
+                persisted_mcp_server_installations = sqlite_data.mcp_server_installations;
+                mcp_servers_to_restore = sqlite_data.mcp_servers_to_restore;
+            }
+        }
+    }
 
     // Initialize a global model to track server-side experiment state.
     // This depends on the [`GlobalResourceHandlesProvider`] and so it must
@@ -1357,6 +1373,8 @@ pub(crate) fn initialize_app(
     ctx.add_singleton_model(|_ctx| SyncedInputState::new());
 
     ctx.add_singleton_model(remote_server::manager::RemoteServerManager::new);
+    #[cfg(not(target_family = "wasm"))]
+    ctx.add_singleton_model(remote_server::codebase_index_model::RemoteCodebaseIndexModel::new);
     #[cfg(not(target_family = "wasm"))]
     remote_server::wire_auth_token_rotation(ctx);
 
@@ -1663,10 +1681,34 @@ pub(crate) fn initialize_app(
         )
     });
 
+    // Seed the orchestration pin set from persisted conversation data
+    // before the conversations vec is consumed by the singletons below.
+    // Each conversation's `AgentConversationData.pinned` is the source of
+    // truth; the singleton mirrors them in memory for fast cross-pane lookups.
+    let initial_pinned_conversations: HashSet<AIConversationId> = multi_agent_conversations
+        .iter()
+        .filter_map(|conv| {
+            let data =
+                serde_json::from_str::<AgentConversationData>(&conv.conversation.conversation_data)
+                    .ok()?;
+            if !data.pinned {
+                return None;
+            }
+            AIConversationId::try_from(conv.conversation.conversation_id.clone()).ok()
+        })
+        .collect();
     {
         let conversations = &multi_agent_conversations;
         ctx.add_singleton_model(move |_| BlocklistAIHistoryModel::new(ai_queries, conversations));
     }
+    // Cross-pane UI state for the orchestration pill bar. Registered
+    // after the history model since it subscribes to history events.
+    ctx.add_singleton_model(move |ctx| {
+        ai::blocklist::agent_view::orchestration_pill_bar_model::OrchestrationPillBarModel::new(
+            initial_pinned_conversations,
+            ctx,
+        )
+    });
     ctx.add_singleton_model(move |_| RestoredAgentConversations::new(multi_agent_conversations));
     ctx.add_singleton_model(|_| CLIAgentSessionsModel::new());
     // ActiveAgentViewsModel is used to track active agent conversations and notify listeners when they change.
@@ -1842,25 +1884,34 @@ pub(crate) fn initialize_app(
     ctx.add_singleton_model(DefaultTerminal::new);
 
     ctx.add_singleton_model(|ctx| {
-        let indices_to_restore = if UserWorkspaces::as_ref(ctx).is_codebase_context_enabled(ctx)
-            && launch_mode.supports_indexing()
-        {
+        let should_restore_indices = launch_mode.supports_indexing()
+            && (matches!(launch_mode, LaunchMode::RemoteServerDaemon { .. })
+                || UserWorkspaces::as_ref(ctx).is_codebase_context_enabled(ctx));
+        let indices_to_restore = if should_restore_indices {
             persisted_workspaces.clone()
         } else {
             vec![]
         };
 
         let codebase_limits = AIRequestUsageModel::as_ref(ctx).codebase_context_limits();
-
-        CodebaseIndexManager::new(
+        let codebase_index_config = CodebaseIndexManagerConfig::new(
             indices_to_restore,
             codebase_limits.max_indices_allowed,
             codebase_limits.max_files_per_repo,
             codebase_limits.embedding_generation_batch_size,
             server_api_provider.as_ref(ctx).get(),
             launch_mode.supports_indexing(),
-            ctx,
-        )
+        );
+        #[cfg(feature = "local_fs")]
+        if let Some(snapshot_storage) = daemon_codebase_index_snapshot_storage(launch_mode) {
+            return CodebaseIndexManager::new_with_snapshot_storage(
+                codebase_index_config,
+                Some(snapshot_storage),
+                ctx,
+            );
+        }
+
+        CodebaseIndexManager::new_with_config(codebase_index_config, ctx)
     });
 
     ctx.add_singleton_model(|ctx| {
@@ -2718,6 +2769,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::AmbientAgentsImageUpload,
         #[cfg(feature = "scheduled_ambient_agents")]
         FeatureFlag::ScheduledAmbientAgents,
+        #[cfg(feature = "conversation_api")]
+        FeatureFlag::ConversationApi,
         #[cfg(feature = "code_launch_modal")]
         FeatureFlag::CodeLaunchModal,
         #[cfg(feature = "api_key_authentication")]
@@ -2786,8 +2839,12 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::AgentModeComputerUse,
         #[cfg(feature = "local_computer_use")]
         FeatureFlag::LocalComputerUse,
+        #[cfg(feature = "local_claude_codex_child_harnesses")]
+        FeatureFlag::LocalClaudeCodexChildHarnesses,
         #[cfg(feature = "team_api_keys")]
         FeatureFlag::TeamApiKeys,
+        #[cfg(feature = "named_agents")]
+        FeatureFlag::NamedAgents,
         #[cfg(feature = "cloud_conversations")]
         FeatureFlag::CloudConversations,
         #[cfg(feature = "agent_toolbar_editor")]

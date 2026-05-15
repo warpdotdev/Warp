@@ -140,6 +140,15 @@ impl SessionContext {
             current_working_directory: None,
         }
     }
+
+    #[cfg(test)]
+    pub fn new_with_session_type_for_test(session_type: Option<SessionType>) -> Self {
+        SessionContext {
+            session_type,
+            shell: None,
+            current_working_directory: None,
+        }
+    }
 }
 
 pub enum BlocklistAIControllerEvent {
@@ -2571,7 +2580,7 @@ impl BlocklistAIController {
                         }
                     }
                     Err(e) => {
-                        if matches!(e.as_ref(), AIApiError::QuotaLimit) {
+                        if matches!(e.as_ref(), AIApiError::QuotaLimit { .. }) {
                             // If the error is a quota limit, we want to refresh workspace metadata
                             // So the current state of AI overages is immediately up to date.
                             TeamUpdateManager::handle(ctx).update(
@@ -2892,7 +2901,9 @@ impl BlocklistAIController {
             Some(warp_multi_agent_api::response_event::stream_finished::Reason::QuotaLimit(_)) => {
                 history_model.update(ctx, |history_model, ctx| {
                     history_model.mark_response_stream_completed_with_error(
-                        RenderableAIError::QuotaLimit,
+                        RenderableAIError::QuotaLimit {
+                            user_display_message: None,
+                        },
                         stream_id,
                         conversation_id,
                         self.terminal_view_id,

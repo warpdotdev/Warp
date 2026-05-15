@@ -172,6 +172,7 @@ pub use self::link_detection::GridHighlightedLink;
 pub use self::link_detection::{RichContentLink, RichContentLinkTooltipInfo};
 use crate::ai::llms::{LLMId, LLMModelHost, LLMPreferences};
 use crate::settings::CodeSettings;
+use crate::util::repo_detection::{detect_possible_git_repo, RepoDetectionSessionType};
 pub use action::{AgentOnboardingVersion, OnboardingIntention, OnboardingVersion, TerminalAction};
 use ai::api_keys::{ApiKeyManager, AwsCredentialsState};
 use ai::index::full_source_code_embedding::manager::{BuildSource, CodebaseIndexManager};
@@ -185,13 +186,15 @@ pub use init::{
     TOGGLE_HIDE_CLI_RESPONSES_KEYBINDING, TOGGLE_QUEUE_NEXT_PROMPT_KEYBINDING,
 };
 pub use inline_banner::{NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction};
-#[cfg(feature = "local_fs")]
-use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
+#[cfg(not(target_family = "wasm"))]
+use repo_metadata::repositories::DetectedRepositories;
+use repo_metadata::repositories::RepoDetectionSource;
 use session_sharing_protocol::common::LongRunningCommandAgentInteractionState;
 use session_sharing_protocol::sharer::{RoleUpdateReason, SessionEndedReason, SessionSourceType};
 use ssh_file_upload::{FileUpload, FileUploadEvent};
 use uuid::Uuid;
 use warp_core::channel::ChannelState;
+use warp_util::local_or_remote_path::LocalOrRemotePath;
 use warpui::elements::{shimmering_text::ShimmeringTextStateHandle, Border, ChildView};
 use warpui::fonts::Properties;
 use warpui::{ViewHandle, WeakModelHandle};
@@ -364,12 +367,15 @@ use session_sharing_protocol::common::{
     ServerConversationToken as SessionSharingServerConversationToken,
     WindowSize as SessionSharingWindowSize,
 };
-use shared_session::{SharedSessionAdapter, Viewer};
+use shared_session::{
+    cloud_conversation_continuation::CloudConversationContinuationUiState, SharedSessionAdapter,
+    Viewer,
+};
 use std::any::Any;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::hash::Hash;
 use std::ops::Range;
@@ -395,7 +401,7 @@ use warpui::elements::new_scrollable::{
 use warpui::elements::{
     get_rich_content_position_id, ChildAnchor, ClippedScrollStateHandle, Container,
     CrossAxisAlignment, DispatchEventResult, DropTarget, DropTargetData, Empty, EventHandler,
-    Expanded, Flex, NewScrollable, OffsetPositioning, ParentAnchor, ParentElement,
+    Expanded, Flex, LiveElement, NewScrollable, OffsetPositioning, ParentAnchor, ParentElement,
     ParentOffsetBounds, PositionedElementAnchor, PositionedElementOffsetBounds, Radius,
     ScrollableElement, ScrollbarWidth, Shrinkable, Text,
 };
@@ -754,6 +760,9 @@ lazy_static! {
     /// `BlockList` or the `AltScreen`) should be rendered.
     pub static ref PADDING_LEFT: f32 = 16.;
 }
+
+/// Interval at which the live command duration counter repaints.
+const LIVE_COMMAND_DURATION_REPAINT_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Default)]
 pub struct ControlMasterErrorBannerState {
@@ -2005,6 +2014,16 @@ pub enum Event {
     SwapPaneToConversation {
         conversation_id: AIConversationId,
     },
+    /// Emitted by `OrchestrationViewerModel` when a child of a shared-session
+    /// orchestration first reports a `session_id`. The pane group materializes
+    /// a dedicated hidden shared-session viewer pane for the child, with its
+    /// own `TerminalView`, `BlocklistAIController`, and viewer-side `Network`
+    /// joining the child's session. Subsequent pill clicks navigate to the
+    /// hidden pane via the existing `SwapPaneToConversation` mechanism.
+    EnsureSharedSessionViewerChildPane {
+        conversation_id: AIConversationId,
+        session_id: session_sharing_protocol::common::SessionId,
+    },
     /// Emitted when "Open in new tab" is picked from a child pill's 3-dot menu.
     /// Bubbles up to the workspace to create the new tab.
     OpenChildAgentInNewTab {
@@ -2545,6 +2564,9 @@ pub struct TerminalView {
     /// next `AfterBlockCompleted`, at which point `Event::PendingCommandCompleted`
     /// is emitted so subscribers know the command has finished.
     awaiting_pending_command_completion: bool,
+    /// Commands that should run as separate blocks after the active pending
+    /// command finishes successfully.
+    pending_command_queue: VecDeque<String>,
     /// When true, enter agent view after pending setup commands complete
     /// (i.e. after `PendingCommandCompleted` is emitted). Set by
     /// `pane_tree_from_template_recursive` when a tab config has both
@@ -2782,7 +2804,7 @@ pub struct TerminalView {
     conversation_completed_callbacks: Vec<ConversationFinishedCallback>,
 
     /// Path to the current repository, or None if not currently in a repo.
-    current_repo_path: Option<PathBuf>,
+    current_repo_path: Option<LocalOrRemotePath>,
 
     /// The title of the terminal view to show when there is no selected conversation.
     terminal_title: String,
@@ -2916,8 +2938,16 @@ pub struct BlockSelectionDetails {
 
 impl TerminalView {
     /// Returns the path to the current repository, if any.
-    pub fn current_repo_path(&self) -> Option<&PathBuf> {
+    pub fn current_repo_path(&self) -> Option<&LocalOrRemotePath> {
         self.current_repo_path.as_ref()
+    }
+
+    /// Returns the local repo path, if the current repo is local.
+    /// Remote repo paths return None — full remote support is a follow-up.
+    pub fn current_local_repo_path(&self) -> Option<&Path> {
+        self.current_repo_path
+            .as_ref()
+            .and_then(|p| p.to_local_path())
     }
 
     fn is_nested_cloud_mode(&self, app: &AppContext) -> bool {
@@ -3031,6 +3061,20 @@ impl TerminalView {
         }
     }
 
+    /// Returns whether local input-editor CRDT edits should be published to the shared-session
+    /// sharer. Viewer-local editor events can still fire from ended/setup-only cloud agent surfaces,
+    /// where sending them upstream would be rejected and surfaced back as edit failures.
+    pub(crate) fn should_publish_shared_session_input_editor_update(
+        &self,
+        model: &TerminalModel,
+        app: &AppContext,
+    ) -> bool {
+        let input_is_visible = self.is_input_box_visible(model, app);
+        // If there is a conversation tombstone and the input is hidden, should not broadcast input updates as
+        // the cloud agent session is over.
+        self.conversation_ended_tombstone_view_id.is_none() || input_is_visible
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         resources: TerminalViewResources,
@@ -3115,7 +3159,7 @@ impl TerminalView {
                                 );
                             if should_insert_zero_state_block {
                                 let mut should_show_init_callout = false;
-                                if let Some(directory) = me.current_repo_path.as_ref() {
+                                if let Some(directory) = me.current_local_repo_path() {
                                     should_show_init_callout = me
                                         .should_show_agent_mode_setup_for_directory(directory, ctx);
                                     if should_show_init_callout {
@@ -4171,6 +4215,7 @@ impl TerminalView {
             bootstrap_start: None,
             is_login_shell_bootstrapped: false,
             awaiting_pending_command_completion: false,
+            pending_command_queue: Default::default(),
             enter_agent_view_after_pending_commands: false,
             slow_bootstrap_banner,
             is_slow_bootstrap_banner_open: false,
@@ -4388,7 +4433,12 @@ impl TerminalView {
                             );
                         }
                     }
-                    RemoteServerManagerEvent::SessionDisconnected { session_id, .. } => {
+                    RemoteServerManagerEvent::SessionDisconnected {
+                        session_id,
+                        exit_status,
+                        was_reconnect_attempt,
+                        ..
+                    } => {
                         let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
                             .as_ref(ctx)
                             .platform_for_session(*session_id)
@@ -4399,13 +4449,26 @@ impl TerminalView {
                                 )
                             })
                             .unwrap_or((None, None));
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::RemoteServerDisconnection {
-                                remote_os,
-                                remote_arch,
-                            },
-                            ctx
-                        );
+                        if *was_reconnect_attempt {
+                            send_telemetry_from_ctx!(
+                                TelemetryEvent::RemoteServerReconnectExhausted {
+                                    attempts: remote_server::manager::MAX_RECONNECT_ATTEMPTS,
+                                    remote_os,
+                                    remote_arch,
+                                    exit_code: exit_status.as_ref().and_then(|s| s.code),
+                                    signal_killed: exit_status.as_ref().map(|s| s.signal_killed),
+                                },
+                                ctx
+                            );
+                        } else {
+                            send_telemetry_from_ctx!(
+                                TelemetryEvent::RemoteServerDisconnection {
+                                    remote_os,
+                                    remote_arch,
+                                },
+                                ctx
+                            );
+                        }
                     }
                     RemoteServerManagerEvent::SessionDeregistered { session_id } => {
                         // Clean up any stale SSH remote-server choice block if the
@@ -4453,8 +4516,7 @@ impl TerminalView {
                         session_id,
                         result,
                         remote_platform,
-                        preinstall_check: _,
-                        has_old_binary: _,
+                        ..
                     } => {
                         let (remote_os, remote_arch) = remote_platform
                             .as_ref()
@@ -4531,10 +4593,11 @@ impl TerminalView {
                     }
                     RemoteServerManagerEvent::NavigatedToDirectory {
                         session_id: nav_session_id,
-                        host_id,
-                        indexed_path,
-                        ..
+                        remote_path,
+                        is_git: _,
                     } => {
+                        // Repo registration is now handled by the unified
+                        // detect_possible_git_repo callback in BlockMetadataReceived.
                         // Check if this navigation belongs to our active session
                         // using exact session_id match (no CWD heuristics).
                         let is_relevant = me
@@ -4542,15 +4605,44 @@ impl TerminalView {
                             .is_some_and(|sid| sid == *nav_session_id);
                         if is_relevant {
                             ctx.emit(Event::Pane(PaneEvent::RemoteRepoNavigated {
-                                host_id: host_id.clone(),
-                                indexed_path: indexed_path.clone(),
+                                remote_path: remote_path.clone(),
                             }));
                         }
                     }
+                    RemoteServerManagerEvent::SessionReconnected {
+                        session_id,
+                        attempt,
+                        ..
+                    } => {
+                        let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
+                            .as_ref(ctx)
+                            .platform_for_session(*session_id)
+                            .map(|p| {
+                                (
+                                    Some(p.os.as_str().to_owned()),
+                                    Some(p.arch.as_str().to_owned()),
+                                )
+                            })
+                            .unwrap_or((None, None));
+                        send_telemetry_from_ctx!(
+                            TelemetryEvent::RemoteServerReconnection {
+                                attempt: *attempt,
+                                remote_os,
+                                remote_arch,
+                            },
+                            ctx
+                        );
+                    }
+                    RemoteServerManagerEvent::HostDisconnected { host_id } => {
+                        #[cfg(target_family = "wasm")]
+                        let _ = host_id;
+                        #[cfg(not(target_family = "wasm"))]
+                        DetectedRepositories::handle(ctx).update(ctx, |repos, _| {
+                            repos.remove_roots_for_host(host_id);
+                        });
+                    }
                     RemoteServerManagerEvent::SessionConnecting { .. }
-                    | RemoteServerManagerEvent::SessionReconnected { .. }
                     | RemoteServerManagerEvent::HostConnected { .. }
-                    | RemoteServerManagerEvent::HostDisconnected { .. }
                     | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
                     | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
                     | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
@@ -4560,7 +4652,8 @@ impl TerminalView {
                     | RemoteServerManagerEvent::BufferConflictDetected { .. }
                     | RemoteServerManagerEvent::DiffStateSnapshotReceived { .. }
                     | RemoteServerManagerEvent::DiffStateMetadataUpdateReceived { .. }
-                    | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. } => {}
+                    | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. }
+                    | RemoteServerManagerEvent::GetBranchesResponse { .. } => {}
                 }
             });
         }
@@ -4806,7 +4899,7 @@ impl TerminalView {
         if should_subscribe {
             // Subscribe if we have a repo path but no active subscription.
             if self.git_repo_status.is_none() {
-                if let Some(repo_path) = self.current_repo_path.clone() {
+                if let Some(repo_path) = self.current_local_repo_path().map(Path::to_path_buf) {
                     let result = GitStatusUpdateModel::handle(ctx)
                         .update(ctx, |model, ctx| model.subscribe(&repo_path, ctx));
                     match result {
@@ -5266,14 +5359,19 @@ impl TerminalView {
         if self.pending_user_query_kind != Some(PendingUserQueryKind::CloudMode) {
             return;
         }
+        let Some(pending_prompt) = self.pending_user_query_prompt(ctx) else {
+            return;
+        };
 
         let initial_conversation_query = ai_block_model
             .conversation(ctx)
             .and_then(|conversation| conversation.initial_user_query());
         let has_renderable_user_query = ai_block_model.inputs_to_render(ctx).iter().any(|input| {
-            input
-                .display_user_query(initial_conversation_query.as_ref())
-                .is_some()
+            input.user_query().as_deref() == Some(pending_prompt)
+                || input
+                    .display_user_query(initial_conversation_query.as_ref())
+                    .as_deref()
+                    == Some(pending_prompt)
         });
         if has_renderable_user_query {
             self.remove_pending_user_query_block(ctx);
@@ -5358,6 +5456,13 @@ impl TerminalView {
             )
         {
             self.fetch_and_update_conversation_details_panel(ctx);
+        }
+        if matches!(
+            event,
+            BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
+                | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
+        ) {
+            self.maybe_insert_tombstone_for_non_running_shared_ambient_task(ctx);
         }
         match event {
             BlocklistAIHistoryEvent::AppendedExchange {
@@ -5673,7 +5778,7 @@ impl TerminalView {
                         if matches!(
                             conversation_output_status_from_conversation(conversation),
                             Some(AmbientConversationStatus::Error {
-                                error: RenderableAIError::QuotaLimit
+                                error: RenderableAIError::QuotaLimit { .. }
                             })
                         ) {
                             self.show_out_of_credits_modal(ctx);
@@ -5716,7 +5821,7 @@ impl TerminalView {
                         if !conversation.status().is_in_progress()
                             && conversation_output_status_from_conversation(conversation).is_some()
                         {
-                            self.insert_conversation_ended_tombstone(ctx);
+                            self.insert_conversation_ended_tombstone_with_cta(None, ctx);
                         }
                     }
                 }
@@ -6187,7 +6292,7 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         let arg = CodeReviewPanelArg {
-            repo_path: self.current_repo_path.clone(),
+            repo_path: self.current_local_repo_path().map(Path::to_path_buf),
             terminal_view: self.view_handle.clone(),
             entrypoint,
             focus_new_pane,
@@ -6260,7 +6365,7 @@ impl TerminalView {
 
     #[cfg(feature = "local_fs")]
     fn handle_attach_diffset_context(&mut self, diff_mode: DiffMode, ctx: &mut ViewContext<Self>) {
-        let Some(repo_path) = self.current_repo_path.clone() else {
+        let Some(repo_path) = self.current_local_repo_path().map(Path::to_path_buf) else {
             return;
         };
 
@@ -6901,21 +7006,26 @@ impl TerminalView {
         })
     }
 
+    /// Returns whether a specific session is local, treating shared-session
+    /// viewers and conversation transcript viewers as non-local even when
+    /// their session hasn't been joined yet.
+    pub fn session_is_local<C: ModelAsRef>(&self, session_id: SessionId, ctx: &C) -> bool {
+        let forced_non_local = {
+            let model = self.model.lock();
+            model.is_shared_session_viewer() || model.is_conversation_transcript_viewer()
+        };
+        !forced_non_local
+            && self
+                .sessions
+                .as_ref(ctx)
+                .get(session_id)
+                .is_some_and(|session| session.is_local())
+    }
+
     /// Returns whether or not the active session is a local session.  Returns
     /// None if there is no active session.
     pub fn active_session_is_local<C: ModelAsRef>(&self, ctx: &C) -> Option<bool> {
-        // Ensure shared session viewers and conversation transcript viewers are not
-        // considered local, even if the session hasn't been joined yet.
-        let model = self.model.lock();
-        if model.is_shared_session_viewer() || model.is_conversation_transcript_viewer() {
-            return Some(false);
-        }
-        drop(model);
-
-        self.active_block_session_id().and_then(|session_id| {
-            let current_session = self.sessions.as_ref(ctx).get(session_id)?;
-            Some(current_session.is_local())
-        })
+        Some(self.session_is_local(self.active_block_session_id()?, ctx))
     }
 
     /// Returns the active session's launch shell, if it is specified.
@@ -7095,17 +7205,27 @@ impl TerminalView {
             return;
         }
 
-        let can_continue_owned_task_in_cloud = self.owned_ambient_agent_task_id(ctx).is_some()
-            && FeatureFlag::HandoffCloudCloud.is_enabled();
-        if !can_continue_owned_task_in_cloud {
-            self.insert_conversation_ended_tombstone(ctx);
-        } else if !self
-            .model
-            .lock()
-            .shared_session_status()
-            .is_sharer_or_viewer()
-        {
-            self.enable_owned_cloud_followup_input(task_id, ctx)
+        if FeatureFlag::HandoffCloudCloud.is_enabled() {
+            let has_live_shared_session = {
+                let status = self.model.lock().shared_session_status().clone();
+                status.is_active_viewer() || status.is_active_sharer()
+            };
+            if has_live_shared_session {
+                return;
+            }
+            let Some(state) = self.cloud_conversation_continuation_ui_state(ctx) else {
+                return;
+            };
+            match state {
+                CloudConversationContinuationUiState::Tombstone { cta } => {
+                    self.insert_conversation_ended_tombstone_with_cta(cta, ctx);
+                }
+                CloudConversationContinuationUiState::FollowupInput => {
+                    self.enable_cloud_followup_input(task_id, ctx);
+                }
+            }
+        } else {
+            self.insert_conversation_ended_tombstone_with_cta(None, ctx);
         }
     }
 
@@ -7259,6 +7379,7 @@ impl TerminalView {
         // agent exchange arrives, we hide the interactive input view. A non-interactive footer is
         // rendered instead (see `TerminalView::render`).
         if !FeatureFlag::CloudModeSetupV2.is_enabled()
+            && !FeatureFlag::HandoffCloudCloud.is_enabled()
             && ambient_agent::is_cloud_agent_pre_first_exchange(
                 self.ambient_agent_view_model.as_ref(),
                 &self.agent_view_controller,
@@ -7339,6 +7460,22 @@ impl TerminalView {
         true
     }
 
+    fn should_render_legacy_ambient_agent_loading_footer(
+        &self,
+        model: &TerminalModel,
+        app: &AppContext,
+    ) -> bool {
+        !model.is_read_only()
+            && !FeatureFlag::CloudModeSetupV2.is_enabled()
+            && !FeatureFlag::HandoffCloudCloud.is_enabled()
+            && ambient_agent::is_cloud_agent_pre_first_exchange(
+                self.ambient_agent_view_model.as_ref(),
+                &self.agent_view_controller,
+                model,
+                app,
+            )
+    }
+
     /// Give the agent control of the active long running command
     /// (which was started outside of a conversation).
     fn tag_agent_in(&mut self, ctx: &mut ViewContext<Self>) {
@@ -7410,6 +7547,10 @@ impl TerminalView {
                 LongRunningCommandAgentInteractionState::NotInteracting
             }
         };
+        log::info!(
+            "emit_long_running_command_agent_interaction_state_changed: \
+             agent_has_control={agent_has_control}, emitting state={state:?}"
+        );
         ctx.emit(Event::LongRunningCommandAgentInteractionStateChanged { state });
     }
 
@@ -8204,6 +8345,27 @@ impl TerminalView {
         self.input.update(ctx, |input, ctx| {
             input.set_pending_command(exec, ctx);
         })
+    }
+
+    pub fn set_pending_command_queue(
+        &mut self,
+        commands: Vec<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.pending_command_queue = commands.into_iter().collect();
+        self.set_next_pending_command_from_queue(ctx);
+    }
+
+    fn set_next_pending_command_from_queue(&mut self, ctx: &mut ViewContext<Self>) -> bool {
+        if self.input.as_ref(ctx).has_pending_command() {
+            return false;
+        }
+        let Some(command) = self.pending_command_queue.pop_front() else {
+            return false;
+        };
+
+        self.set_pending_command(&command, ctx);
+        true
     }
 
     fn alt_scroll_cmd_sequence(&self, lines_to_scroll: i32) -> Vec<u8> {
@@ -9598,8 +9760,8 @@ impl TerminalView {
             AgentModeSetupSpeedbumpBannerAction::SetupAgentMode => {
                 send_telemetry_from_ctx!(TelemetryEvent::AgentModeSetupBannerAccepted, ctx);
                 #[cfg(feature = "local_fs")]
-                if let Some(repo_path) = self.current_repo_path.clone() {
-                    self.mark_agent_init_callout_as_shown_for_directory(&repo_path, ctx);
+                if let Some(repo_path) = self.current_local_repo_path() {
+                    self.mark_agent_init_callout_as_shown_for_directory(repo_path, ctx);
                 }
                 self.remove_agent_setup_speedbump_banner(ctx);
                 self.init_project(false, ctx)
@@ -11113,23 +11275,45 @@ impl TerminalView {
                     ctx,
                 );
 
+                let pending_command_succeeded = match &block_type {
+                    BlockType::User(UserBlockCompleted {
+                        serialized_block, ..
+                    }) => Some(serialized_block.exit_code.was_successful()),
+                    BlockType::BootstrapHidden
+                    | BlockType::BootstrapVisible(_)
+                    | BlockType::Restored
+                    | BlockType::InBandCommand
+                    | BlockType::Background(_)
+                    | BlockType::Static => None,
+                };
+
                 // Emit PendingCommandCompleted when a pending command's block
                 // finishes (e.g. tab config setup commands like `git worktree add`).
                 if self.awaiting_pending_command_completion {
-                    self.awaiting_pending_command_completion = false;
-                    ctx.emit(Event::PendingCommandCompleted);
+                    if let Some(command_succeeded) = pending_command_succeeded {
+                        self.awaiting_pending_command_completion = false;
+                        if command_succeeded && self.set_next_pending_command_from_queue(ctx) {
+                            // The delayed pending-command scheduler below will
+                            // submit the next queued command as a separate block.
+                        } else {
+                            if !command_succeeded {
+                                self.pending_command_queue.clear();
+                            }
+                            ctx.emit(Event::PendingCommandCompleted);
 
-                    // If agent view entry was deferred until setup commands
-                    // finished, enter it now (unless suppressed by onboarding).
-                    if self.enter_agent_view_after_pending_commands {
-                        self.enter_agent_view_after_pending_commands = false;
-                        self.enter_agent_view_for_new_conversation(
-                            None,
-                            AgentViewEntryOrigin::Input {
-                                was_prompt_autodetected: false,
-                            },
-                            ctx,
-                        );
+                            // If agent view entry was deferred until setup commands
+                            // finished, enter it now (unless suppressed by onboarding).
+                            if self.enter_agent_view_after_pending_commands {
+                                self.enter_agent_view_after_pending_commands = false;
+                                self.enter_agent_view_for_new_conversation(
+                                    None,
+                                    AgentViewEntryOrigin::Input {
+                                        was_prompt_autodetected: false,
+                                    },
+                                    ctx,
+                                );
+                            }
+                        }
                     }
                 }
 
@@ -11407,114 +11591,175 @@ impl TerminalView {
                     }
 
                     // Check if the block is done bootstrapping and the directory is set.
-                    #[cfg(feature = "local_fs")]
                     if let Some(active_directory) = block_metadata_received_event
                         .block_metadata
                         .current_working_directory()
                     {
-                        // Check if we need to index the directory
                         if block_metadata_received_event.is_done_bootstrapping {
-                            #[cfg(feature = "local_fs")]
-                            {
-                                // Convert the shell-native CWD (e.g. "/c/Users/..." for
-                                // Git Bash/MSYS2) to a Windows-native path before passing
-                                // it to repo detection, which requires an OS-native path.
-                                let native_directory = block_metadata_received_event
+                            // Derive locality directly from the incoming block's
+                            // session_id. We cannot use `active_session_is_local(ctx)`
+                            // here because `active_block_metadata` was just consumed
+                            // via `take()` above, so it would always return `None`
+                            // and misclassify every local session as Remote.
+                            //
+                            // `session_is_local` keeps the shared-session viewer /
+                            // conversation-transcript guard intact.
+                            let session_id = block_metadata.session_id();
+                            let session_type = session_id.map(|sid| {
+                                if self.session_is_local(sid, ctx) {
+                                    RepoDetectionSessionType::Local
+                                } else {
+                                    RepoDetectionSessionType::Remote { session_id: sid }
+                                }
+                            });
+                            let Some(session_type) = session_type else {
+                                // Skip detection entirely when session type can't be determined.
+                                self.active_block_metadata = Some(block_metadata.clone());
+                                self.input.update(ctx, |view, ctx| {
+                                    view.set_active_block_metadata(
+                                        block_metadata.clone(),
+                                        block_metadata_received_event.is_after_in_band_command,
+                                        ctx,
+                                    );
+                                    ctx.notify();
+                                });
+                                return;
+                            };
+                            let is_local = matches!(session_type, RepoDetectionSessionType::Local);
+
+                            // For local sessions, convert the shell-native CWD
+                            // (e.g. "/c/Users/..." for Git Bash/MSYS2) to a
+                            // Windows-native path before repo detection.
+                            let directory_for_detection = if is_local {
+                                block_metadata_received_event
                                     .block_metadata
                                     .session_id()
-                                    .and_then(|session_id| {
-                                        self.sessions.as_ref(ctx).get(session_id)
-                                    })
+                                    .and_then(|sid| self.sessions.as_ref(ctx).get(sid))
                                     .and_then(|session| {
                                         session.launch_data().and_then(|data| {
                                             data.maybe_convert_absolute_path(active_directory)
                                         })
                                     })
-                                    .map(|path| path.to_string_lossy().into_owned());
-                                let directory_for_detection =
-                                    native_directory.as_deref().unwrap_or(active_directory);
+                                    .map(|path| path.to_string_lossy().into_owned())
+                                    .unwrap_or_else(|| active_directory.to_string())
+                            } else {
+                                active_directory.to_string()
+                            };
 
-                                let fut = DetectedRepositories::handle(ctx).update(
-                                    ctx,
-                                    |updater, ctx| {
-                                        updater.detect_possible_git_repo(
-                                            directory_for_detection,
-                                            RepoDetectionSource::TerminalNavigation,
+                            let fut = detect_possible_git_repo(
+                                session_type,
+                                &directory_for_detection,
+                                RepoDetectionSource::TerminalNavigation,
+                                ctx,
+                            );
+
+                            ctx.spawn(fut, move |me, repo_path_opt, ctx| {
+                                let old_repo_path = me.current_repo_path.clone();
+                                me.current_repo_path = repo_path_opt.clone();
+
+                                if old_repo_path != me.current_repo_path {
+                                    ctx.emit(Event::Pane(PaneEvent::RepoChanged));
+                                }
+
+                                let callbacks = me.block_completed_callbacks.drain(..).collect_vec();
+                                for callback in callbacks {
+                                    callback(me, ctx);
+                                }
+
+                                match &repo_path_opt {
+                                    Some(LocalOrRemotePath::Remote(remote_path)) => {
+                                        #[cfg(not(target_family = "wasm"))]
+                                        DetectedRepositories::handle(ctx).update(
                                             ctx,
-                                        )
-                                    },
-                                );
-
-                                ctx.spawn(fut, move |me, repo_path_opt, ctx| {
-                                    let old_repo_path = me.current_repo_path.clone();
-                                    // Update the current repo path
-                                    me.current_repo_path = repo_path_opt.clone();
-
-                                    // Notify the pane group that the detected repo
-                                    // changed so the code review panel can
-                                    // (re-)initialize with the correct context.
-                                    if old_repo_path != me.current_repo_path {
-                                        ctx.emit(Event::Pane(PaneEvent::RepoChanged));
+                                            |repos, _| {
+                                                repos.register_remote_repo_root(
+                                                    remote_path.clone(),
+                                                );
+                                            },
+                                        );
+                                        ctx.emit(Event::Pane(PaneEvent::RemoteRepoNavigated {
+                                            remote_path: remote_path.clone(),
+                                        }));
                                     }
+                                    Some(LocalOrRemotePath::Local(repo_path)) => {
+                                        #[cfg(feature = "local_fs")]
+                                        {
+                                            let Some(active_directory) =
+                                                me.active_session_path_if_local(ctx)
+                                            else {
+                                                me.clear_git_repo_status(ctx);
+                                                return;
+                                            };
 
-                                    let callbacks = me.block_completed_callbacks.drain(..).collect_vec();
-                                    for callback in callbacks {
-                                        callback(me, ctx);
-                                    }
+                                            let Ok(active_directory) =
+                                                repo_metadata::CanonicalizedPath::try_from(
+                                                    active_directory,
+                                                )
+                                            else {
+                                                return;
+                                            };
 
-                                    let Some(active_directory) = me.active_session_path_if_local(ctx) else {
-                                        me.clear_git_repo_status(ctx);
-                                        return;
-                                    };
+                                            let is_ancestor = active_directory
+                                                .as_path_buf()
+                                                .ancestors()
+                                                .any(|ancestor| {
+                                                    ancestor == repo_path.as_path()
+                                                });
+                                            if !is_ancestor {
+                                                return;
+                                            }
 
-                                    if let Some(repo_path) = &repo_path_opt {
-                                        let Ok(active_directory) = repo_metadata::CanonicalizedPath::try_from(active_directory) else {
-                                            return;
-                                        };
+                                            PersistedWorkspace::handle(ctx).update(
+                                                ctx,
+                                                |manager, _| {
+                                                    manager.navigated_to_path(
+                                                        active_directory.as_path_buf(),
+                                                    );
+                                                },
+                                            );
 
-                                        // Make sure the repo path is still an ancestor of the active directory.
-                                        let is_ancestor = active_directory.as_path_buf().ancestors().any(|ancestor| ancestor == repo_path.as_path());
-                                        if !is_ancestor {
-                                            return;
-                                        }
+                                            if old_repo_path
+                                                .as_ref()
+                                                .and_then(|p| p.to_local_path())
+                                                != Some(repo_path.as_path())
+                                            {
+                                                me.git_repo_status = None;
+                                                me.update_git_status_subscription(ctx);
+                                            }
 
-                                        PersistedWorkspace::handle(ctx).update(ctx, |manager, _| {
-                                            manager.navigated_to_path(active_directory.as_path_buf());
-                                        });
-
-                                        // Subscribe to GitRepoStatusModel if the repo changed
-                                        // and git status updates are needed.
-                                        if old_repo_path.as_ref() != Some(repo_path) {
-                                            // Drop old handle (unsubscribes automatically).
-                                            me.git_repo_status = None;
-                                            me.update_git_status_subscription(ctx);
-                                        }
-
-                                        // Notify chips of the new repo path.
-                                        me.input.update(ctx, |input, ctx| {
-                                            input.update_repo_path(Some(repo_path.clone()), ctx);
-                                        });
-
-                                        if FeatureFlag::AIContextMenuEnabled.is_enabled() {
                                             me.input.update(ctx, |input, ctx| {
-                                                input.check_and_update_ai_context_menu_disabled_state(
+                                                input.update_repo_path(
+                                                    Some(repo_path.clone()),
                                                     ctx,
                                                 );
                                             });
+
+                                            if FeatureFlag::AIContextMenuEnabled.is_enabled() {
+                                                me.input.update(ctx, |input, ctx| {
+                                                    input
+                                                        .check_and_update_ai_context_menu_disabled_state(
+                                                            ctx,
+                                                        );
+                                                });
+                                            }
+
+                                            me.start_lsp_server_in_active_pwd(ctx);
+
+                                            me.update_repo_banner_state(
+                                                repo_path.clone(),
+                                                ctx,
+                                            );
                                         }
-
-                                        me.start_lsp_server_in_active_pwd(ctx);
-
-                                        me.update_repo_banner_state(
-                                            repo_path.clone(),
-                                            ctx,
-                                        );
-                                    } else {
+                                        #[cfg(not(feature = "local_fs"))]
+                                        let _ = repo_path;
+                                    }
+                                    None => {
+                                        #[cfg(feature = "local_fs")]
                                         me.clear_git_repo_status(ctx);
                                         ctx.notify();
                                     }
-                                });
-                            }
+                                }
+                            });
                         }
                     }
                 }
@@ -12933,9 +13178,8 @@ impl TerminalView {
     pub fn maybe_set_pending_repo_init_path(&mut self, path: PathBuf) {
         self.on_next_block_completed(move |me, ctx| {
             if me
-                .current_repo_path
-                .as_ref()
-                .is_some_and(|repo_path| repo_path == &path)
+                .current_local_repo_path()
+                .is_some_and(|repo_path| repo_path == path)
             {
                 me.init_project_and_suppress_banners(path, ctx);
             }
@@ -13284,7 +13528,7 @@ impl TerminalView {
                     .and_then(|pwd| Path::new(&pwd).canonicalize().ok())
                 {
                     DetectedRepositories::as_ref(ctx)
-                        .get_root_for_path(&pwd_path)
+                        .get_root_for_path(&LocalOrRemotePath::Local(pwd_path))
                         .is_some()
                 } else {
                     false
@@ -13393,7 +13637,7 @@ impl TerminalView {
                 .and_then(|pwd| Path::new(&pwd).canonicalize().ok())
                 .is_some_and(|pwd_path| {
                     DetectedRepositories::as_ref(ctx)
-                        .get_root_for_path(&pwd_path)
+                        .get_root_for_path(&LocalOrRemotePath::Local(pwd_path))
                         .is_some()
                 });
 
@@ -13479,7 +13723,7 @@ impl TerminalView {
             .iter()
             .any(|shown_path| shown_path == directory);
         let is_repo = DetectedRepositories::as_ref(ctx)
-            .get_root_for_path(directory)
+            .get_root_for_path(&LocalOrRemotePath::Local(directory.to_path_buf()))
             .is_some();
         let is_any_ai_enabled =
             FeatureFlag::AgentMode.is_enabled() && AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
@@ -13564,9 +13808,28 @@ impl TerminalView {
             .input_mode
             .value();
         let inverted = input_mode.is_inverted_blocklist();
-        self.model
-            .lock()
-            .selection_to_string(semantic_selection, inverted, ctx)
+        let blocklist_selected_text =
+            self.model
+                .lock()
+                .selection_to_string(semantic_selection, inverted, ctx);
+        blocklist_selected_text.or_else(|| self.pending_user_query_selected_text(ctx))
+    }
+
+    /// Returns selected text from the pending user query block, if any.
+    fn pending_user_query_selected_text(&self, ctx: &AppContext) -> Option<String> {
+        let view_id = self.pending_user_query_view_id?;
+        self.rich_content_views
+            .iter()
+            .find_map(|rc| match rc.metadata() {
+                Some(RichContentMetadata::PendingUserQuery {
+                    pending_user_query_block_handle,
+                }) if pending_user_query_block_handle.id() == view_id => {
+                    pending_user_query_block_handle
+                        .as_ref(ctx)
+                        .selected_text(ctx)
+                }
+                _ => None,
+            })
     }
 
     /// Gets the selected text from the terminal input editor, if any.
@@ -14954,7 +15217,9 @@ impl TerminalView {
         self.is_login_shell_bootstrapped
     }
     pub fn has_pending_command_or_awaiting_completion(&self, ctx: &AppContext) -> bool {
-        self.awaiting_pending_command_completion || self.input.as_ref(ctx).has_pending_command()
+        self.awaiting_pending_command_completion
+            || !self.pending_command_queue.is_empty()
+            || self.input.as_ref(ctx).has_pending_command()
     }
 
     /// Marks this terminal to enter agent view once pending setup commands
@@ -15463,6 +15728,12 @@ impl TerminalView {
                 ctx.clipboard().write(ClipboardContent::plain_text(text));
                 return;
             }
+        }
+
+        if let Some(selected_text) = self.pending_user_query_selected_text(ctx) {
+            ctx.clipboard()
+                .write(ClipboardContent::plain_text(selected_text));
+            return;
         }
 
         let semantic_selection = SemanticSelection::as_ref(ctx);
@@ -16072,6 +16343,27 @@ impl TerminalView {
                 | BlockListMenuSource::RichContentTextRightClick { .. }
                 | BlockListMenuSource::OutsideBlockRightClick { .. }
         ) {
+            // Surface "Clear Blocks" in the right-click menu so it's
+            // discoverable without the keyboard shortcut. We skip
+            // text-selection contexts (`Regular*TextRightClick` /
+            // `RichContentTextRightClick`) because those menus are scoped to
+            // actions on the selected text.
+            let include_clear = matches!(
+                menu_source,
+                BlockListMenuSource::RegularBlockRightClick { .. }
+                    | BlockListMenuSource::RichContentBlockRightClick { .. }
+                    | BlockListMenuSource::OutsideBlockRightClick { .. }
+            );
+            let clear_menu_item = include_clear
+                .then(|| self.clear_buffer_menu_item(&model, ctx))
+                .flatten();
+            if let Some(clear_menu_item) = clear_menu_item {
+                if !items.is_empty() {
+                    items.push(MenuItem::Separator);
+                }
+                items.push(clear_menu_item);
+            }
+
             let current_shell = model.shell_launch_state().available_shell();
             let pane_context_menu_items = self.pane_context_menu_items(current_shell, ctx);
             // Only add the separator if there's something before and after it.
@@ -16084,6 +16376,29 @@ impl TerminalView {
         }
 
         items
+    }
+
+    /// Builds the "Clear Blocks" entry for the terminal right-click context
+    /// menu. Returns `None` when there are no blocks to clear, mirroring the
+    /// `TerminalView_NonEmptyBlockList` predicate that gates the
+    /// `terminal:clear_blocks` keybinding.
+    fn clear_buffer_menu_item(
+        &self,
+        model: &TerminalModel,
+        ctx: &AppContext,
+    ) -> Option<MenuItem<TerminalAction>> {
+        if model.is_block_list_empty() {
+            return None;
+        }
+        Some(
+            MenuItemFields::new("Clear Blocks")
+                .with_on_select_action(TerminalAction::ClearBuffer)
+                .with_key_shortcut_label(keybinding_name_to_display_string(
+                    "terminal:clear_blocks",
+                    ctx,
+                ))
+                .into_item(),
+        )
     }
 
     fn copy_prompt_menu_items(
@@ -17165,9 +17480,10 @@ impl TerminalView {
         let selection_settings = SelectionSettings::handle(ctx);
         let semantic_selection = SemanticSelection::as_ref(ctx);
         let model = self.model.lock();
-        if let Some(selected) =
-            model.selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
-        {
+        let selected_text = model
+            .selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
+            .or_else(|| self.pending_user_query_selected_text(ctx));
+        if let Some(selected) = selected_text {
             selection_settings.update(ctx, |selection_settings, ctx| {
                 selection_settings
                     .maybe_copy_on_select(ClipboardContent::plain_text(selected), ctx);
@@ -18872,6 +19188,18 @@ impl TerminalView {
                         env_var_collection_block.clear_selection(ctx);
                     });
                 }
+                Some(RichContentMetadata::PendingUserQuery {
+                    pending_user_query_block_handle,
+                }) => {
+                    if exempt_rich_content_view_id
+                        .is_some_and(|view_id| pending_user_query_block_handle.id() == view_id)
+                    {
+                        continue;
+                    }
+                    pending_user_query_block_handle.update(ctx, |block, ctx| {
+                        block.clear_selection(ctx);
+                    });
+                }
                 Some(RichContentMetadata::WarpifySuccessBlock { .. }) => {
                     // TODO(Simon): We should be checking for WarpifySuccessBlocks here as well.
                     // The `WarpifySuccessBlock` implements a `SelectableArea`.
@@ -19268,7 +19596,7 @@ impl TerminalView {
 
     fn imported_comments_panel_arg(&self) -> CodeReviewPanelArg {
         CodeReviewPanelArg {
-            repo_path: self.current_repo_path.clone(),
+            repo_path: self.current_local_repo_path().map(Path::to_path_buf),
             terminal_view: self.view_handle.clone(),
             entrypoint: CodeReviewPaneEntrypoint::AgentModeRunning,
             focus_new_pane: true,
@@ -19807,9 +20135,10 @@ impl TerminalView {
             send_telemetry_from_ctx!(TelemetryEvent::ContextMenuCopySelectedText, ctx);
             let semantic_selection = SemanticSelection::as_ref(ctx);
             let model = self.model.lock();
-            if let Some(selected_text) =
-                model.selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
-            {
+            let selected_text = model
+                .selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
+                .or_else(|| self.pending_user_query_selected_text(ctx));
+            if let Some(selected_text) = selected_text {
                 ctx.clipboard()
                     .write(ClipboardContent::plain_text(selected_text));
             }
@@ -20400,7 +20729,7 @@ impl TerminalView {
             }
             InputEvent::OpenCodeReviewPane => {
                 ctx.emit(Event::OpenCodeReviewPane(CodeReviewPanelArg {
-                    repo_path: self.current_repo_path.clone(),
+                    repo_path: self.current_local_repo_path().map(Path::to_path_buf),
                     terminal_view: self.view_handle.clone(),
                     entrypoint: CodeReviewPaneEntrypoint::GitDiffChip,
                     focus_new_pane: true,
@@ -20495,6 +20824,11 @@ impl TerminalView {
             }
             InputEvent::OpenHandoffEnvironmentCreationModal => {
                 ctx.dispatch_typed_action(&WorkspaceAction::ShowHandoffEnvironmentCreationModal);
+            }
+            InputEvent::OpenCloudModeV2EnvironmentCreationModal => {
+                ctx.dispatch_typed_action(
+                    &WorkspaceAction::ShowCloudModeV2EnvironmentCreationModal,
+                );
             }
         }
     }
@@ -21695,6 +22029,23 @@ impl TerminalView {
             .formatted_duration_string()
     }
 
+    fn is_block_duration_live(model: &TerminalModel, block_index: BlockIndex) -> bool {
+        model
+            .block_list()
+            .block_at(block_index)
+            .is_some_and(|block| block.is_duration_live())
+    }
+
+    /// Returns `true` when the block is actively executing (has started but not
+    /// yet completed). Used to kick off the repaint timer before the first
+    /// whole-second tick so the live duration counter appears promptly.
+    fn is_block_executing(model: &TerminalModel, block_index: BlockIndex) -> bool {
+        model
+            .block_list()
+            .block_at(block_index)
+            .is_some_and(|block| block.is_executing())
+    }
+
     fn block_start_and_completed_ts(model: &TerminalModel, block_index: BlockIndex) -> String {
         let block = match model.block_list().block_at(block_index) {
             None => return String::new(),
@@ -22021,6 +22372,7 @@ impl TerminalView {
 
         let mut label_row = Flex::row().with_child(prompt);
 
+        let is_live = Self::is_block_duration_live(model, index);
         if let Some(duration_string) = Self::block_duration_text(model, index) {
             let duration = Text::new_inline(
                 duration_string,
@@ -22030,6 +22382,14 @@ impl TerminalView {
             .with_style(Properties::default().weight(appearance.monospace_font_weight()))
             .with_color(terminal_theme_prompt)
             .finish();
+
+            // Wrap in LiveElement to trigger periodic repaints while the command
+            // is still running, so the counter updates live.
+            let duration: Box<dyn Element> = if is_live {
+                LiveElement::new(duration, LIVE_COMMAND_DURATION_REPAINT_INTERVAL).finish()
+            } else {
+                duration
+            };
 
             label_row.add_child(if let Some(state) = mouse_state {
                 Hoverable::new(state.clone(), |state| {
@@ -22069,6 +22429,20 @@ impl TerminalView {
             } else {
                 duration
             });
+        } else if Self::is_block_executing(model, index) {
+            // Block is executing but less than 1 second has elapsed — no duration
+            // text to show yet. Add an invisible LiveElement to kick off the
+            // repaint timer so the counter appears as soon as 1s elapses.
+            label_row.add_child(
+                LiveElement::new(
+                    ConstrainedBox::new(Empty::new().finish())
+                        .with_width(0.)
+                        .with_height(0.)
+                        .finish(),
+                    LIVE_COMMAND_DURATION_REPAINT_INTERVAL,
+                )
+                .finish(),
+            );
         }
 
         SavePosition::new(
@@ -25605,7 +25979,7 @@ impl TypedActionView for TerminalView {
             }
             ToggleCodeReviewPane { entrypoint } => {
                 ctx.emit(Event::ToggleCodeReviewPane(CodeReviewPanelArg {
-                    repo_path: self.current_repo_path.clone(),
+                    repo_path: self.current_local_repo_path().map(Path::to_path_buf),
                     terminal_view: self.view_handle.clone(),
                     entrypoint: *entrypoint,
                     focus_new_pane: true,
@@ -25857,8 +26231,7 @@ impl TypedActionView for TerminalView {
                 });
             }
             SwitchAgentViewToConversation { conversation_id } => {
-                // Pill-bar nav: swap visibility instead of cloning the
-                // conversation into this pane.
+                // Pill-bar nav: every child has a hidden pane, so swap to it.
                 ctx.emit(Event::SwapPaneToConversation {
                     conversation_id: *conversation_id,
                 });
@@ -25999,14 +26372,7 @@ impl View for TerminalView {
 
                     if self.is_input_box_visible(&model, app) {
                         column.add_child(self.render_input());
-                    } else if !model.is_read_only()
-                        && ambient_agent::is_cloud_agent_pre_first_exchange(
-                            self.ambient_agent_view_model.as_ref(),
-                            &self.agent_view_controller,
-                            &model,
-                            app,
-                        )
-                    {
+                    } else if self.should_render_legacy_ambient_agent_loading_footer(&model, app) {
                         column.add_child(ambient_agent::render_loading_footer(appearance));
                     } else if self.show_remote_server_loading_footer(&model, app) {
                         column.add_child(
