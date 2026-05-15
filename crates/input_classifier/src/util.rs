@@ -84,19 +84,14 @@ pub async fn is_likely_shell_command(
             );
             return true;
         }
-        let check_if_token_has_shell_syntax_result = (!use_nld_heuristic_v2).then(|| {
-            natural_language_detection::check_if_token_has_shell_syntax(token.token.as_str())
-        });
+        let check_if_token_has_shell_syntax = !use_nld_heuristic_v2
+            && natural_language_detection::check_if_token_has_shell_syntax(token.token.as_str());
         log::debug!(
-            "is_likely_shell_command token: token_index={}, token_description_is_some={}, check_if_token_has_shell_syntax_result={:?}, use_nld_heuristic_v2={use_nld_heuristic_v2}",
+            "is_likely_shell_command token: token_index={}, token_description_is_some={}, check_if_token_has_shell_syntax={check_if_token_has_shell_syntax}, use_nld_heuristic_v2={use_nld_heuristic_v2}",
             token.token_index,
-            token.token_description.is_some(),
-            check_if_token_has_shell_syntax_result
+            token.token_description.is_some()
         );
-
-        if token.token_description.is_some()
-            || check_if_token_has_shell_syntax_result.unwrap_or(false)
-        {
+        if token.token_description.is_some() || check_if_token_has_shell_syntax {
             likely_command_token_count += 1;
         }
 
