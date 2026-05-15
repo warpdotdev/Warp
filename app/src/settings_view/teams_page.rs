@@ -2572,8 +2572,7 @@ impl TeamsWidget {
                 pricing_info_model,
                 appearance,
             );
-            invitation_section
-                .add_child(Container::new(alert).with_padding_bottom(24.).finish());
+            invitation_section.add_child(Container::new(alert).with_padding_bottom(24.).finish());
         }
 
         invitation_section.add_child(
@@ -2780,12 +2779,9 @@ impl TeamsWidget {
                 .with_child(
                     Shrinkable::new(
                         1.,
-                        TextInput::new(
-                            view.email_invites_block_editor.clone(),
-                            chip_editor_style,
-                        )
-                        .build()
-                        .finish(),
+                        TextInput::new(view.email_invites_block_editor.clone(), chip_editor_style)
+                            .build()
+                            .finish(),
                     )
                     .finish(),
                 )
