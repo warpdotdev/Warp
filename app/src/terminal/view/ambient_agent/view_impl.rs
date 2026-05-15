@@ -494,12 +494,12 @@ impl TerminalView {
     /// Returns whether this view is a live shared-session viewer for a non-Oz cloud run.
     fn is_third_party_cloud_agent_viewer(&self, ctx: &AppContext) -> bool {
         // We try to detect a third-party harness however we can; because there are a few different
-		// events that may cause it to be set when viewing a shared session, we handle multiple below.
+        // events that may cause it to be set when viewing a shared session, we handle multiple below.
         let has_third_party_harness = match self.ambient_agent_view_model.as_ref() {
             // We set the harness on the AmbientAgentViewModel after fetching task data from the server.
             Some(model) => model.as_ref(ctx).is_third_party_harness(),
             // When we join a shared session, if the harness is currently active in the sharer,
-			// we should be starting a new CLI agent via the CLIAgentSessionsModel.
+            // we should be starting a new CLI agent via the CLIAgentSessionsModel.
             None => {
                 FeatureFlag::AgentHarness.is_enabled()
                     && CLIAgentSessionsModel::as_ref(ctx)
@@ -544,14 +544,11 @@ impl TerminalView {
             ctx,
         );
 
-        let Some(vehicle_conversation_id) = self
+        let vehicle_conversation_id = self
             .agent_view_controller
             .as_ref(ctx)
             .agent_view_state()
-            .active_conversation_id()
-        else {
-            return None;
-        };
+            .active_conversation_id()?;
 
         // Retag existing non-setup blocks so the harness content passes the agent view filter.
         self.model
