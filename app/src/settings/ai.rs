@@ -1751,7 +1751,11 @@ impl AISettings {
     }
 
     pub fn is_auto_handoff_on_sleep_enabled(&self, app: &warpui::AppContext) -> bool {
-        self.is_cloud_handoff_enabled(app) && *self.auto_handoff_on_sleep_enabled
+        self.is_cloud_handoff_enabled(app)
+            && self
+                .auto_handoff_on_sleep_enabled
+                .is_supported_on_current_platform()
+            && *self.auto_handoff_on_sleep_enabled
     }
 
     /// Determines whether a quota reset banner should be displayed to the user.
