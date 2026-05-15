@@ -624,20 +624,25 @@ impl SettingsWidget for NetworkPageWidget {
                             clear_action: NetworkPageAction|
          -> Box<dyn Element> {
             let editor_element = warpui::elements::ChildView::new(editor).finish();
-            // 使用 with_centered_text_label 让按钮文字水平居中。
+            // 设固定宽度 + 小 padding,以实现表单列整齐 + 文字与按钮宽度区匹配。
+            // 不用 with_centered_text_label——当前 Button 实现中 `CenteredText` 路径未明确
+            // 指定 Align 方向,会造成文字偏右;用固定宽 + Text 默认左对齐 +
+            // 左右对称 padding,视觉上即居中。
+            const ACTION_BUTTON_WIDTH: f32 = 56.0;
             let save_button = appearance
                 .ui_builder()
                 .button(ButtonVariant::Accent, save_state.clone())
-                .with_centered_text_label(crate::t!("settings-network-save"))
+                .with_text_label(crate::t!("settings-network-save"))
                 .with_style(
                     UiComponentStyles::default()
                         .set_padding(Coords {
                             top: 5.,
                             bottom: 5.,
-                            left: 10.,
-                            right: 10.,
+                            left: 14.,
+                            right: 14.,
                         })
-                        .set_margin(Coords::default().left(6.)),
+                        .set_margin(Coords::default().left(6.))
+                        .set_width(ACTION_BUTTON_WIDTH),
                 )
                 .build()
                 .on_click(move |ctx, _, _| {
@@ -647,16 +652,17 @@ impl SettingsWidget for NetworkPageWidget {
             let clear_button = appearance
                 .ui_builder()
                 .button(ButtonVariant::Text, clear_state.clone())
-                .with_centered_text_label(crate::t!("settings-network-clear"))
+                .with_text_label(crate::t!("settings-network-clear"))
                 .with_style(
                     UiComponentStyles::default()
                         .set_padding(Coords {
                             top: 5.,
                             bottom: 5.,
-                            left: 8.,
-                            right: 8.,
+                            left: 12.,
+                            right: 12.,
                         })
-                        .set_margin(Coords::default().left(4.)),
+                        .set_margin(Coords::default().left(4.))
+                        .set_width(ACTION_BUTTON_WIDTH),
                 )
                 .build()
                 .on_click(move |ctx, _, _| {
@@ -737,11 +743,12 @@ impl SettingsWidget for NetworkPageWidget {
             NetworkPageAction::ClearProxyNoProxy,
         ));
 
-        // 6. 测试连接 — 文字水平居中。用 with_centered_text_label 避免默认左对齐。
+        // 6. 测试连接 — 同上:固定宽 + 左右对称 padding,避开 CenteredText 偏右问题。
+        const TEST_BUTTON_WIDTH: f32 = 100.0;
         let mut test_button = appearance
             .ui_builder()
             .button(ButtonVariant::Accent, view.test_button_state.clone())
-            .with_centered_text_label(crate::t!("settings-network-test-button"))
+            .with_text_label(crate::t!("settings-network-test-button"))
             .with_style(
                 UiComponentStyles::default()
                     .set_padding(Coords {
@@ -749,7 +756,8 @@ impl SettingsWidget for NetworkPageWidget {
                         bottom: 6.,
                         left: 14.,
                         right: 14.,
-                    }),
+                    })
+                    .set_width(TEST_BUTTON_WIDTH),
             )
             .build()
             .on_click(|ctx, _, _| {

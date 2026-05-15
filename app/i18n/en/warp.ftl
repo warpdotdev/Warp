@@ -831,12 +831,9 @@ settings-network-url-description = e.g. http://proxy.corp:8080
 settings-network-username-label = Username
 settings-network-username-placeholder = Username (optional)
 settings-network-username-description = If the proxy requires Basic Auth, fill in the username here.
-settings-network-empty = (empty)
 settings-network-password-label = Password
 settings-network-password-placeholder = Password (saved to the OS keyring on submit)
 settings-network-password-description = Submitted password is stored in the OS keyring (not in settings.toml).
-settings-network-password-set = ••••••••(set)
-settings-network-password-unset = (not set)
 settings-network-no-proxy-label = No-proxy list
 settings-network-no-proxy-placeholder = localhost,127.0.0.1,.internal
 settings-network-no-proxy-description = Comma-separated hosts.
@@ -850,10 +847,6 @@ settings-network-test-success-tcp = ✅ Proxy reachable ({$latency} ms)
 settings-network-test-success-http = ✅ Internet reachable ({$latency} ms)
 settings-network-test-failed-tcp = ❌ Cannot reach proxy: {$error}
 settings-network-test-failed-http = ❌ Connection failed: {$error}
-settings-network-disabled = (disabled)
-settings-network-saved-suffix = currently saved: {$value}
-settings-network-from-system = follows system / env vars
-settings-network-mode-off-hint = proxy disabled, this field is unused
 
 # --- ANCHOR-SUB-AI-PAGE (agent-settings-ai-page) ---
 # Section / sub-headers
