@@ -744,6 +744,8 @@ fn test_restored_oz_edit_access_view_uses_followup_input_without_tombstone() {
         });
     });
 }
+
+#[test]
 fn test_on_session_share_ended_enables_followup_input_without_tombstone_for_owned_ambient_session()
 {
     let _handoff_flag = FeatureFlag::HandoffCloudCloud.override_enabled(true);
