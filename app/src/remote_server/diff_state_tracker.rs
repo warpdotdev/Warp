@@ -8,6 +8,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 
 use itertools::Itertools;
 use warp_util::standardized_path::StandardizedPath;
@@ -95,6 +96,11 @@ pub(super) enum DiffStateUpdate {
 
 // ── RemoteDiffStateManager ────────────────────────────────────────
 
+/// Server-side deadline for pending `GetDiffState` responses.
+/// If a response hasn't been sent within this duration, the server responds
+/// with the current model state to prevent client-side timeouts.
+const PENDING_RESPONSE_DEADLINE: Duration = Duration::from_secs(90);
+
 /// Manages the lifecycle of server-side `LocalDiffStateModel` instances and
 /// per-connection subscription tracking.
 ///
@@ -109,6 +115,9 @@ pub(super) struct RemoteDiffStateManager {
     pending_responses: HashMap<DiffModelKey, Vec<PendingDiffStateResponse>>,
     /// In-progress content reload handles, keyed by request ID.
     in_progress: HashMap<RequestId, SpawnedFutureHandle>,
+    /// Per-pending-response deadline timers. When a timer fires, all pending
+    /// responses for the associated key are resolved with the current model state.
+    deadline_timers: HashMap<RequestId, SpawnedFutureHandle>,
 }
 
 impl Entity for RemoteDiffStateManager {
@@ -122,6 +131,7 @@ impl RemoteDiffStateManager {
             key_to_connections: HashMap::new(),
             pending_responses: HashMap::new(),
             in_progress: HashMap::new(),
+            deadline_timers: HashMap::new(),
         }
     }
 
@@ -137,7 +147,14 @@ impl RemoteDiffStateManager {
 
     pub fn remove_model(&mut self, key: &DiffModelKey) {
         self.states.remove(key);
-        self.pending_responses.remove(key);
+        // Cancel deadline timers for any pending responses under this key.
+        if let Some(pending) = self.pending_responses.remove(key) {
+            for p in &pending {
+                if let Some(handle) = self.deadline_timers.remove(&p.request_id) {
+                    handle.abort();
+                }
+            }
+        }
         self.key_to_connections.remove(key);
     }
 
@@ -168,6 +185,14 @@ impl RemoteDiffStateManager {
     /// If the key has zero remaining subscribers the model is dropped inline.
     pub fn unsubscribe_connection(&mut self, key: &DiffModelKey, conn_id: ConnectionId) {
         if let Some(pending) = self.pending_responses.get_mut(key) {
+            // Cancel deadline timers for the removed connection's pending responses.
+            for p in pending.iter() {
+                if p.conn_id == conn_id {
+                    if let Some(handle) = self.deadline_timers.remove(&p.request_id) {
+                        handle.abort();
+                    }
+                }
+            }
             pending.retain(|p| p.conn_id != conn_id);
         }
 
@@ -227,9 +252,15 @@ impl RemoteDiffStateManager {
             });
     }
 
-    /// Drains all pending responses for `key`.
+    /// Drains all pending responses for `key`, cancelling their deadline timers.
     pub fn drain_pending_responses(&mut self, key: &DiffModelKey) -> Vec<PendingDiffStateResponse> {
-        self.pending_responses.remove(key).unwrap_or_default()
+        let responses = self.pending_responses.remove(key).unwrap_or_default();
+        for p in &responses {
+            if let Some(handle) = self.deadline_timers.remove(&p.request_id) {
+                handle.abort();
+            }
+        }
+        responses
     }
 
     // ── High-level operations ────────────────────────────────────
@@ -258,6 +289,7 @@ impl RemoteDiffStateManager {
                 DiffState::Loaded => {
                     let already_in_flight = self.has_pending_responses(&key);
                     self.add_pending_response(key.clone(), request_id.clone(), conn_id);
+                    self.spawn_deadline_timer(key.clone(), request_id, ctx);
                     if !already_in_flight {
                         self.spawn_content_reload(key, request_id, ctx);
                     }
@@ -271,7 +303,8 @@ impl RemoteDiffStateManager {
                     }
                 }
                 DiffState::Loading | DiffState::Disconnected => {
-                    self.add_pending_response(key, request_id.clone(), conn_id);
+                    self.add_pending_response(key.clone(), request_id.clone(), conn_id);
+                    self.spawn_deadline_timer(key, request_id, ctx);
                     SubscribeOutcome::Async
                 }
             }
@@ -287,6 +320,7 @@ impl RemoteDiffStateManager {
             });
             self.insert_model(key.clone(), model.clone());
             self.add_pending_response(key.clone(), request_id.clone(), conn_id);
+            self.spawn_deadline_timer(key.clone(), request_id, ctx);
 
             let key_for_sub = key;
             ctx.subscribe_to_model(&model, move |me, event, ctx| {
@@ -406,6 +440,32 @@ impl RemoteDiffStateManager {
         });
     }
 
+    /// Spawns a deadline timer for a pending response. When the timer fires,
+    /// all pending responses for the key are resolved with the current model state.
+    fn spawn_deadline_timer(
+        &mut self,
+        key: DiffModelKey,
+        request_id: &RequestId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let timer_key = key;
+        let timer_request_id = request_id.clone();
+        let handle = ctx.spawn_abortable(
+            async { async_io::Timer::after(PENDING_RESPONSE_DEADLINE).await },
+            move |me, _, ctx| {
+                me.deadline_timers.remove(&timer_request_id);
+                if me.has_pending_responses(&timer_key) {
+                    log::info!(
+                        "Deadline expired for pending diff state response (key={timer_key:?})"
+                    );
+                    me.resolve_pending_responses(&timer_key, None, ctx);
+                }
+            },
+            |_, _| {},
+        );
+        self.deadline_timers.insert(request_id.clone(), handle);
+    }
+
     /// Spawns an async diff reload with `content_at_base` for late-joining subscribers.
     fn spawn_content_reload(
         &mut self,
@@ -417,6 +477,7 @@ impl RemoteDiffStateManager {
         let repo_path = std::path::PathBuf::from(key.repo_path.as_str());
         let resolve_id = request_id.clone();
         let abort_id = request_id.clone();
+        let abort_key = key.clone();
         let handle = ctx.spawn_abortable(
             async move {
                 LocalDiffStateModel::load_diffs_with_content_for_mode(diff_mode, repo_path).await
@@ -425,9 +486,11 @@ impl RemoteDiffStateManager {
                 me.in_progress.remove(&resolve_id);
                 me.resolve_pending_responses(&key, diffs, ctx);
             },
-            move |me, _ctx| {
+            move |me, ctx| {
                 log::info!("Request cancelled (request_id={abort_id})");
                 me.in_progress.remove(&abort_id);
+                // Drain pending responses with current state instead of orphaning them.
+                me.resolve_pending_responses(&abort_key, None, ctx);
             },
         );
         self.in_progress.insert(request_id.clone(), handle);
@@ -442,6 +505,21 @@ impl RemoteDiffStateManager {
         } else {
             false
         }
+    }
+
+    /// Removes a specific pending response by request_id across all keys.
+    /// Returns `true` if a pending response was found and removed.
+    pub fn abort_pending_response(&mut self, request_id: &RequestId) -> bool {
+        if let Some(handle) = self.deadline_timers.remove(request_id) {
+            handle.abort();
+        }
+        for pending in self.pending_responses.values_mut() {
+            if let Some(pos) = pending.iter().position(|p| &p.request_id == request_id) {
+                pending.remove(pos);
+                return true;
+            }
+        }
+        false
     }
 }
 
