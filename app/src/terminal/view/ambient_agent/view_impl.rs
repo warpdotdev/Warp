@@ -973,7 +973,7 @@ impl TerminalView {
                 self.fetch_and_update_conversation_details_panel(ctx);
                 ctx.notify();
             }
-            ConversationDetailsPanelAutoOpenPolicy::SuppressInitialAutoOpen => {}
+            ConversationDetailsPanelAutoOpenPolicy::DefaultClosed => {}
         }
     }
 }

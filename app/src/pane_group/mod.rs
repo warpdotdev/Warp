@@ -3344,9 +3344,6 @@ impl PaneGroup {
             if let Some(new_terminal_view) = self.terminal_view_from_pane_id(new_pane_id, ctx) {
                 let mut restored = false;
                 new_terminal_view.update(ctx, |terminal_view, ctx| {
-                    // Suppression is already set on the view inside
-                    // `insert_ambient_agent_pane_hidden_for_child_agent`; no
-                    // need to call `suppress_initial_conversation_details_panel_auto_open` here.
                     terminal_view.restore_conversation_after_view_creation(
                         RestoredAIConversation::new(child_conversation),
                         true,

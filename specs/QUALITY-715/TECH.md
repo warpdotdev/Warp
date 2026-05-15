@@ -38,12 +38,12 @@ Tradeoffs:
 - Not recommended for QUALITY-715 because direct child links should keep opening the panel.
 # Proposed changes
 Implement Option A. Suppression should be an explicit property of the `TerminalView`'s opening context.
-1. In `app/src/terminal/view.rs`, add `ConversationDetailsPanelAutoOpenPolicy` with variants `DefaultOpen` and `SuppressInitialAutoOpen`. Store it as a private `conversation_details_panel_auto_open_policy` field on `TerminalView`, initialized to `DefaultOpen` in `TerminalView::new`.
-2. Add a method on `TerminalView`, for example `suppress_initial_conversation_details_panel_auto_open(&mut self)`, that sets the policy to `SuppressInitialAutoOpen` before the join-time auto-open can run. This method should not close the panel if the user has already opened it manually; it only affects future calls to `maybe_auto_open_conversation_details_panel`.
+1. In `app/src/terminal/view.rs`, add `ConversationDetailsPanelAutoOpenPolicy` with variants `DefaultOpen` and `DefaultClosed`. Store it as a private `conversation_details_panel_auto_open_policy` field on `TerminalView`, initialized to `DefaultOpen` in `TerminalView::new`.
+2. Add a method on `TerminalView`, for example `suppress_initial_conversation_details_panel_auto_open(&mut self)`, that sets the policy to `DefaultClosed` before the join-time auto-open can run. This method should not close the panel if the user has already opened it manually; it only affects future calls to `maybe_auto_open_conversation_details_panel`.
 3. Update `maybe_auto_open_conversation_details_panel` in `app/src/terminal/view/ambient_agent/view_impl.rs` to preserve existing one-shot behavior and consult the policy:
    - if `has_auto_opened_conversation_details_panel` is already true, return;
    - always set `has_auto_opened_conversation_details_panel = true` before applying the policy;
-   - if the policy is `SuppressInitialAutoOpen`, return without setting `is_conversation_details_panel_open` and without calling `fetch_and_update_conversation_details_panel`;
+   - if the policy is `DefaultClosed`, return without setting `is_conversation_details_panel_open` and without calling `fetch_and_update_conversation_details_panel`;
    - otherwise keep the current behavior: set `is_conversation_details_panel_open = true`, set `has_auto_opened_conversation_details_panel = true`, fetch details, and notify.
 4. Set the suppress policy in parent-owned child pane creation paths:
    - `PaneGroup::ensure_shared_session_viewer_child_pane`, before or in the same `new_terminal_view.update` closure that restores the child conversation and enters agent view (`app/src/pane_group/mod.rs:3428`).
@@ -62,7 +62,7 @@ Add unit coverage in the Warp client.
    - `has_auto_opened_conversation_details_panel` becomes true,
    - calling `TerminalAction::ToggleConversationDetailsPanel` still opens the panel when details are available.
 2. Add a direct-link regression test: create a shared ambient viewer for a child conversation/task without setting the new suppress policy, call `maybe_auto_open_conversation_details_panel`, and assert the panel opens by default. This test is the guard against deriving suppression from child metadata.
-3. Add a regression test for the `OrchestrationViewerModel` path: create or restore a child conversation marked `is_viewing_shared_session`, run `ensure_shared_session_viewer_child_pane` or the smallest test-visible equivalent, and assert the resulting child `TerminalView` uses `SuppressInitialAutoOpen` and does not auto-open the panel.
+3. Add a regression test for the `OrchestrationViewerModel` path: create or restore a child conversation marked `is_viewing_shared_session`, run `ensure_shared_session_viewer_child_pane` or the smallest test-visible equivalent, and assert the resulting child `TerminalView` uses `DefaultClosed` and does not auto-open the panel.
 4. Add a regression test or manual validation case where a suppressed parent-owned child pane already exists, then the same child is opened through its own direct shared-session link. The direct-link `TerminalView` should still open the details panel by default, proving the suppression state is per-view and not tied globally to the child conversation/task.
 5. If implementation adds suppression to any additional local-parent shared-session viewer path, add targeted coverage for that exact path. Do not add broad tests that assume ordinary local child panes should suppress auto-open.
 6. Add or update a regular shared ambient viewer test in `app/src/terminal/view/shared_session/view_impl_tests.rs` that proves a non-child ambient shared session still auto-opens the panel by default.

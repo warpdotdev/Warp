@@ -2407,7 +2407,7 @@ pub enum TerminalViewState {
 pub(in crate::terminal::view) enum ConversationDetailsPanelAutoOpenPolicy {
     #[default]
     DefaultOpen,
-    SuppressInitialAutoOpen,
+    DefaultClosed,
 }
 
 /// A struct containing information about a state change event for a particular
@@ -7192,7 +7192,7 @@ impl TerminalView {
     /// continues to work normally.
     pub(crate) fn suppress_initial_conversation_details_panel_auto_open(&mut self) {
         self.conversation_details_panel_auto_open_policy =
-            ConversationDetailsPanelAutoOpenPolicy::SuppressInitialAutoOpen;
+            ConversationDetailsPanelAutoOpenPolicy::DefaultClosed;
     }
 
     #[cfg(test)]
@@ -7201,7 +7201,7 @@ impl TerminalView {
     ) -> bool {
         matches!(
             self.conversation_details_panel_auto_open_policy,
-            ConversationDetailsPanelAutoOpenPolicy::SuppressInitialAutoOpen
+            ConversationDetailsPanelAutoOpenPolicy::DefaultClosed
         )
     }
 
