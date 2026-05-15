@@ -573,7 +573,7 @@ impl<'a> RequestBuilder<'a> {
 #[derive(Debug)]
 pub struct ResponseError {
     pub source: reqwest::Error,
-    pub headers: HeaderMap,
+    pub headers: Box<HeaderMap>,
     pub body: Option<String>,
 }
 
@@ -623,7 +623,7 @@ impl Response {
             Ok(response) => Ok(Self(response)),
             Err(source) => Err(ResponseError {
                 source,
-                headers,
+                headers: Box::new(headers),
                 body: None,
             }),
         }
@@ -639,7 +639,7 @@ impl Response {
                 let body = self.text().await.ok();
                 Err(ResponseError {
                     source,
-                    headers,
+                    headers: Box::new(headers),
                     body,
                 })
             }
@@ -654,7 +654,7 @@ impl Response {
             Ok(response) => Ok(response),
             Err(source) => Err(ResponseError {
                 source,
-                headers,
+                headers: Box::new(headers),
                 body: None,
             }),
         }
