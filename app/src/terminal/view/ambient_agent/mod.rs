@@ -31,7 +31,7 @@ pub(crate) use model::should_disable_snapshot;
 pub(crate) use model::PendingHandoff;
 pub use model::{AgentProgress, AmbientAgentViewModel, AmbientAgentViewModelEvent, Status};
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-pub(crate) use model::{HandoffSubmissionState, SnapshotUploadStatus};
+pub(crate) use model::{HandoffConnectionState, HandoffSubmissionState, SnapshotUploadStatus};
 pub use model_selector::{
     HarnessSelection, ModelSelection, ModelSelector, ModelSelectorAction, ModelSelectorEvent,
 };

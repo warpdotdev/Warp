@@ -332,7 +332,8 @@ use crate::terminal::settings::{SpacingMode, TerminalSettings};
 use crate::terminal::shell::ShellType;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::terminal::view::ambient_agent::{
-    AmbientAgentViewModel, HandoffSubmissionState, PendingHandoff, SnapshotUploadStatus,
+    AmbientAgentViewModel, HandoffConnectionState, HandoffSubmissionState, PendingHandoff,
+    SnapshotUploadStatus,
 };
 #[cfg(feature = "local_tty")]
 use crate::terminal::view::docker_sandbox::DEFAULT_DOCKER_SANDBOX_BASE_IMAGE;
@@ -13410,6 +13411,7 @@ impl Workspace {
             touched_workspace: None,
             snapshot_upload: SnapshotUploadStatus::Pending,
             submission_state: HandoffSubmissionState::Idle,
+            connection_state: HandoffConnectionState::Connected,
             auto_submit: launch,
         };
         model_handle.update(ctx, |model, model_ctx| {
@@ -13631,6 +13633,7 @@ impl Workspace {
             touched_workspace: None,
             snapshot_upload: SnapshotUploadStatus::Pending,
             submission_state: HandoffSubmissionState::Idle,
+            connection_state: HandoffConnectionState::Connected,
             auto_submit: launch,
         };
         model_handle.update(ctx, |model, model_ctx| {

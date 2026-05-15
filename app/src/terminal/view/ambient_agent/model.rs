@@ -39,6 +39,7 @@ use crate::server::server_api::{
     AIApiError, ClientError, CloudAgentCapacityError, ServerApiProvider,
 };
 use crate::settings::PrivacySettings;
+use crate::system::{SystemStats, SystemStatsEvent};
 use crate::terminal::view::ambient_agent::{SetupCommandGroupId, SetupCommandState};
 use crate::terminal::CLIAgent;
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -85,6 +86,16 @@ pub(crate) enum HandoffSubmissionState {
     Idle,
     Queued,
     Starting,
+}
+
+/// Local connection status for the app-side portion of a local-to-cloud handoff.
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum HandoffConnectionState {
+    #[default]
+    Connected,
+    Interrupted,
+    Reconnecting,
 }
 
 /// Outcome of the chip-click async snapshot upload.
@@ -142,6 +153,8 @@ pub(crate) struct PendingHandoff {
     pub(crate) snapshot_upload: SnapshotUploadStatus,
     /// Gates submit — prevents double-submitting while the spawn is in flight.
     pub(crate) submission_state: HandoffSubmissionState,
+    /// Tracks whether the local app connection was interrupted while handing off.
+    pub(crate) connection_state: HandoffConnectionState,
     /// When the user types `& query` or `/handoff query`, the launch payload is
     /// stashed here so `maybe_auto_submit_handoff` can consume it once
     /// the touched workspace and snapshot upload have settled.
@@ -245,6 +258,10 @@ impl AmbientAgentViewModel {
 
         ctx.subscribe_to_model(&HarnessAvailabilityModel::handle(ctx), |me, _event, ctx| {
             me.validate_selected_harness(ctx);
+        });
+
+        ctx.subscribe_to_model(&SystemStats::handle(ctx), |me, event, ctx| {
+            me.handle_system_stats_event(event, ctx);
         });
 
         // Validate the default environment once Warp Drive sync completes.
@@ -373,6 +390,40 @@ impl AmbientAgentViewModel {
                 }
             }
             _ => (),
+        }
+    }
+
+    fn handle_system_stats_event(
+        &mut self,
+        event: &SystemStatsEvent,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        {
+            if !matches!(self.status, Status::WaitingForSession { .. }) {
+                return;
+            }
+
+            let Some(handoff) = self.pending_handoff.as_mut() else {
+                return;
+            };
+
+            let next_state = match event {
+                SystemStatsEvent::CpuWillSleep => HandoffConnectionState::Interrupted,
+                SystemStatsEvent::CpuWasAwakened => HandoffConnectionState::Reconnecting,
+            };
+
+            if handoff.connection_state == next_state {
+                return;
+            }
+
+            handoff.connection_state = next_state;
+            ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
+        }
+
+        #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+        {
+            let _ = (event, ctx);
         }
     }
 
@@ -924,6 +975,31 @@ impl AmbientAgentViewModel {
 
     pub fn pending_followup_prompt(&self) -> Option<&str> {
         self.pending_followup_prompt.as_deref()
+    }
+
+    pub fn handoff_connection_message(&self) -> Option<&'static str> {
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        {
+            if !matches!(self.status, Status::WaitingForSession { .. }) {
+                return None;
+            }
+
+            let handoff = self.pending_handoff.as_ref()?;
+            match handoff.connection_state {
+                HandoffConnectionState::Connected => None,
+                HandoffConnectionState::Interrupted => {
+                    Some("Local handoff interrupted. Waiting to reconnect...")
+                }
+                HandoffConnectionState::Reconnecting => {
+                    Some("Reconnecting local handoff to cloud...")
+                }
+            }
+        }
+
+        #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+        {
+            None
+        }
     }
 
     pub fn should_show_followup_progress(&self) -> bool {
