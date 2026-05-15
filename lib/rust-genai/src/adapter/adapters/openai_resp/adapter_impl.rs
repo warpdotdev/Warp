@@ -542,6 +542,7 @@ impl OpenAIRespAdapter {
 			schema,
 			strict,
 			config,
+			cache_control: _,
 		} = tool;
 
 		let name = match name {

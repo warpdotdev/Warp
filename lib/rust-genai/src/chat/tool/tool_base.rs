@@ -1,4 +1,5 @@
 use super::{ToolConfig, ToolName};
+use crate::chat::CacheControl;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -47,6 +48,17 @@ pub struct Tool {
 	///
 	/// Useful with embedded provider tools (e.g., Google Search for Gemini).
 	pub config: Option<ToolConfig>,
+
+	/// Optional per-tool cache control.
+	///
+	/// Currently only honored by the Anthropic adapter: when set on a `Tool`,
+	/// the adapter emits the corresponding `cache_control` field on that tool's
+	/// JSON object in the `tools` array. Use a 1h breakpoint on the last tool
+	/// to mark the static prefix (tools → system) as long-lived cache, then
+	/// short TTLs on later parts (messages tail) to satisfy Anthropic's
+	/// `tools → system → messages` TTL ordering requirement.
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub cache_control: Option<CacheControl>,
 }
 
 /// Computed accessors
@@ -90,6 +102,7 @@ impl Tool {
 			schema: None,
 			strict: None,
 			config: None,
+			cache_control: None,
 		}
 	}
 
@@ -124,6 +137,13 @@ impl Tool {
 	/// Set provider-specific configuration (if any). Returns self for chaining.
 	pub fn with_config(mut self, config: impl Into<ToolConfig>) -> Self {
 		self.config = Some(config.into());
+		self
+	}
+
+	/// Attach a `cache_control` breakpoint to this tool. Currently honored only
+	/// by the Anthropic adapter (emitted on the tool JSON in the `tools` array).
+	pub fn with_cache_control(mut self, cache_control: impl Into<CacheControl>) -> Self {
+		self.cache_control = Some(cache_control.into());
 		self
 	}
 }

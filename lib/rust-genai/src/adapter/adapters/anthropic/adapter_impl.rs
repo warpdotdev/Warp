@@ -843,6 +843,7 @@ impl AnthropicAdapter {
 			description,
 			schema,
 			config,
+			cache_control,
 			..
 		} = tool;
 
@@ -890,6 +891,15 @@ impl AnthropicAdapter {
 				// TODO: need to handle error
 				let _ = tool_value.x_insert("description", description);
 			}
+		}
+
+		// -- Per-tool cache_control breakpoint
+		// Anthropic accepts `cache_control` on any tool in the `tools` array; the
+		// canonical pattern is to mark only the **last** tool so the entire tools
+		// segment becomes a single cache prefix. We just forward whatever the
+		// caller set on the `Tool` and let the caller decide which tool gets it.
+		if let Some(cc) = cache_control {
+			tool_value.x_insert("cache_control", cache_control_to_json(&cc))?;
 		}
 
 		Ok(tool_value)
