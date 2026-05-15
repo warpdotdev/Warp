@@ -180,6 +180,34 @@ pub enum BuildSource<'a> {
     FromPath(&'a Path),
     FromPersistedMetadata(WorkspaceMetadata),
 }
+pub struct CodebaseIndexManagerConfig {
+    persisted_index_metadata: Vec<WorkspaceMetadata>,
+    max_index_count: Option<usize>,
+    max_files_repo_limit: usize,
+    embedding_generation_batch_size: usize,
+    store_client: Arc<dyn StoreClient>,
+    indexing_enabled: bool,
+}
+
+impl CodebaseIndexManagerConfig {
+    pub fn new(
+        persisted_index_metadata: Vec<WorkspaceMetadata>,
+        max_index_count: Option<usize>,
+        max_files_repo_limit: usize,
+        embedding_generation_batch_size: usize,
+        store_client: Arc<dyn StoreClient>,
+        indexing_enabled: bool,
+    ) -> Self {
+        Self {
+            persisted_index_metadata,
+            max_index_count,
+            max_files_repo_limit,
+            embedding_generation_batch_size,
+            store_client,
+            indexing_enabled,
+        }
+    }
+}
 
 /// Manager for the codebase index states across the app.
 pub struct CodebaseIndexManager {
@@ -215,69 +243,57 @@ impl CodebaseIndexManager {
         indexing_enabled: bool,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
-        #[cfg(feature = "local_fs")]
-        {
-            report_if_error!(migrate_snapshots_to_secure_dir_if_needed());
-            return Self::new_with_snapshot_storage(
-                persisted_index_metadata,
-                max_index_count,
-                max_files_repo_limit,
-                embedding_generation_batch_size,
-                store_client,
-                indexing_enabled,
-                SnapshotStorage::app_default(),
-                ctx,
-            );
-        }
-
-        #[cfg(not(feature = "local_fs"))]
-        {
-            Self::new_internal(
-                persisted_index_metadata,
-                max_index_count,
-                max_files_repo_limit,
-                embedding_generation_batch_size,
-                store_client,
-                indexing_enabled,
-                ctx,
-            )
-        }
-    }
-
-    #[cfg(feature = "local_fs")]
-    pub fn new_with_snapshot_storage(
-        persisted_index_metadata: Vec<WorkspaceMetadata>,
-        max_index_count: Option<usize>,
-        max_files_repo_limit: usize,
-        embedding_generation_batch_size: usize,
-        store_client: Arc<dyn StoreClient>,
-        indexing_enabled: bool,
-        snapshot_storage: Option<SnapshotStorage>,
-        ctx: &mut ModelContext<Self>,
-    ) -> Self {
-        Self::new_internal(
+        let config = CodebaseIndexManagerConfig::new(
             persisted_index_metadata,
             max_index_count,
             max_files_repo_limit,
             embedding_generation_batch_size,
             store_client,
             indexing_enabled,
-            snapshot_storage,
-            ctx,
-        )
+        );
+        Self::new_with_config(config, ctx)
+    }
+
+    #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]
+    pub fn new_with_config(
+        config: CodebaseIndexManagerConfig,
+        ctx: &mut ModelContext<Self>,
+    ) -> Self {
+        #[cfg(feature = "local_fs")]
+        {
+            report_if_error!(migrate_snapshots_to_secure_dir_if_needed());
+            Self::new_with_snapshot_storage(config, SnapshotStorage::app_default(), ctx)
+        }
+
+        #[cfg(not(feature = "local_fs"))]
+        {
+            Self::new_internal(config, ctx)
+        }
+    }
+
+    #[cfg(feature = "local_fs")]
+    pub fn new_with_snapshot_storage(
+        config: CodebaseIndexManagerConfig,
+        snapshot_storage: Option<SnapshotStorage>,
+        ctx: &mut ModelContext<Self>,
+    ) -> Self {
+        Self::new_internal(config, snapshot_storage, ctx)
     }
 
     #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]
     fn new_internal(
-        persisted_index_metadata: Vec<WorkspaceMetadata>,
-        max_index_count: Option<usize>,
-        max_files_repo_limit: usize,
-        embedding_generation_batch_size: usize,
-        store_client: Arc<dyn StoreClient>,
-        indexing_enabled: bool,
+        config: CodebaseIndexManagerConfig,
         #[cfg(feature = "local_fs")] snapshot_storage: Option<SnapshotStorage>,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
+        let CodebaseIndexManagerConfig {
+            persisted_index_metadata,
+            max_index_count,
+            max_files_repo_limit,
+            embedding_generation_batch_size,
+            store_client,
+            indexing_enabled,
+        } = config;
         cfg_if::cfg_if! {
             if #[cfg(feature = "local_fs")] {
                 let file_watcher = ctx.add_model(|ctx| BulkFilesystemWatcher::new(REPO_WATCHER_DEBOUNCE_DURATION, ctx));

@@ -10,7 +10,7 @@ use warpui::App;
 
 use crate::workspace::WorkspaceMetadata;
 
-use super::{BuildSource, CodebaseIndexManager};
+use super::{BuildSource, CodebaseIndexManager, CodebaseIndexManagerConfig};
 
 fn workspace_metadata(path: impl Into<PathBuf>) -> WorkspaceMetadata {
     WorkspaceMetadata {
@@ -75,12 +75,14 @@ fn initializes_with_injected_snapshot_storage_when_configured() {
         let expected_snapshot_dir = storage.path().to_path_buf();
         let manager = app.add_singleton_model(|ctx| {
             CodebaseIndexManager::new_with_snapshot_storage(
-                vec![workspace_metadata("repo")],
-                Some(1),
-                1000,
-                32,
-                Arc::new(MockStoreClient),
-                false,
+                CodebaseIndexManagerConfig::new(
+                    vec![workspace_metadata("repo")],
+                    Some(1),
+                    1000,
+                    32,
+                    Arc::new(MockStoreClient),
+                    false,
+                ),
                 Some(storage),
                 ctx,
             )
