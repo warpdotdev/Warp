@@ -73,7 +73,9 @@ Release builds (`#[cfg(not(debug_assertions))]`) only search the platform bundle
 | 3 | `$CARGO_MANIFEST_DIR/../resources/bundled/locales` (and up to 4 ancestor levels) | `#[cfg(debug_assertions)]` |
 | 4 | `$PWD/resources/bundled/locales` | `#[cfg(debug_assertions)]` |
 
-**Security:** Paths 1, 3, and 4 are compiled out of release binaries. This prevents shipped builds from loading arbitrary YAML from environment variables or the current working directory into the startup parsing and UI rendering pipeline. If a file loaded from a dev-only path is malformed (e.g., invalid YAML, wrong locale key), it is silently skipped and the next discovery path is tried — the application does not crash.
+**Security:** Paths 1, 3, and 4 are compiled out of release binaries. This prevents shipped builds from loading arbitrary YAML from environment variables or the current working directory into the startup parsing and UI rendering pipeline. In debug builds, locale files loaded from dev-only paths are subject to a size cap (8 MB per file) to prevent intentionally large or malformed YAML from causing excessive startup parsing in poisoned local environments. If a file loaded from a dev-only path exceeds the cap or is malformed, it is silently skipped and the next discovery path is tried — the application does not crash.
+
+**No-locale fallback:** If no locale file can be loaded from any discovery path (e.g., corrupt installation, missing resource directory), `init_locale()` still completes successfully. The translation map remains empty, and every `t!()` call returns its raw key string as the rendered text. The application starts and functions normally — menu items, buttons, and labels display their dot-path keys (e.g., `"menu.file"`, `"common.save"`) instead of English text. This degraded mode ensures the application never fails to launch due to missing locale data.
 
 ### 2. `t!()` macro (defined in `app/src/lib.rs`)
 
@@ -145,6 +147,11 @@ The `app/src/i18n.rs` file re-exports `warp_i18n::*` so the rest of the applicat
 `windows-rs` crate macros generate code referencing `i18n::t()` on the `app` crate. Windows resource compilation works correctly because no i18n call appears in a const-evaluation context.
 
 ## Testing and validation
+
+### Security-sensitive translation review (manual)
+- Strings in security-relevant UI surfaces must be manually reviewed by a maintainer before merge. These surfaces include: auth dialogs (sign-in, sign-up, permission prompts), billing pages (pricing, plan descriptions, credit consumption warnings), sharing/permission controls (access grant text, visibility labels), and agent-mode consent prompts (data-handling disclosures, handoff confirmations).
+- The reviewer verifies that Chinesetranslations preserve the legal and behavioral intent of the original English text — warnings are not weakened, consent semantics are not altered, and permission descriptions remain accurate.
+- A checklist of security-sensitive keys (identified by YAML section prefix: `auth.*`, `billing.*`, `teams.*`, `shared_session.*`, `hoa_onboarding.*`) is maintained alongside the locale files for targeted review.
 
 ### Locale file integrity (automated)
 - Every key present in `en.yml` must have a corresponding key in `zh-CN.yml`. A script or build-time check verifies this invariant — missing keys in `zh-CN.yml` should cause a CI failure.
