@@ -32,6 +32,7 @@ use persistence::model::AMBIENT_AGENT_PANE_KIND;
 use uuid::Uuid;
 use warp_graphql::scalars::time::ServerTimestamp;
 use warpui::platform::FullscreenState;
+use warpui::windowing::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH};
 use warpui::{AppContext, SingletonEntity};
 
 use super::agent::{delete_agent_conversations, upsert_agent_conversation};
@@ -142,13 +143,6 @@ const COMMANDS_COUNT_LIMIT: i64 = 10000;
 use warp_server_client::persistence::{upsert_cloud_object, CloudObjectId};
 
 const WARP_SQLITE_FILE_NAME: &str = "warp.sqlite";
-
-// Minimum width/height (in logical pixels) we will persist or restore for a
-// window. Bounds smaller than this are treated as if no bounds were saved, so
-// the platform default geometry is used instead. Guards against transient
-// OS-reported geometry (e.g. the macOS green-tile animation that produced a
-// 1px-wide saved window in GH#10083).
-const MIN_PERSISTED_WINDOW_DIMENSION: f32 = 200.0;
 
 /// When delete a cloud object, this callback is used to delete the cloud
 /// object. It takes the id of the cloud object to delete as a parameter.
@@ -908,14 +902,13 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
 
             // In the database each individual field is nullable but in practice these
             // fields are either all null or all non-null as they together represent
-            // the stored window bound. Bounds with a dimension below
-            // `MIN_PERSISTED_WINDOW_DIMENSION` are treated as missing so that we fall
-            // back to default geometry on restore instead of replaying a corrupt size
-            // (see GH#10083).
+            // the stored window bound. Bounds smaller than the platform minimum
+            // window size are treated as missing so that we fall back to default
+            // geometry on restore instead of replaying a corrupt size (see GH#10083).
             let (window_width, window_height, origin_x, origin_y) = match window.bounds {
                 Some(rect)
-                    if rect.size().x() >= MIN_PERSISTED_WINDOW_DIMENSION
-                        && rect.size().y() >= MIN_PERSISTED_WINDOW_DIMENSION =>
+                    if rect.size().x() >= MIN_WINDOW_WIDTH
+                        && rect.size().y() >= MIN_WINDOW_HEIGHT =>
                 {
                     (
                         Some(rect.size().x()),
@@ -2807,10 +2800,9 @@ fn read_sqlite_data(
                 FullscreenState::from_i32(window.fullscreen_state).unwrap_or_default();
 
             // The origin and size of the bound should be all null or all non-null.
-            // Reject bounds whose width or height fall below
-            // `MIN_PERSISTED_WINDOW_DIMENSION` so users with an already-corrupted
-            // warp.sqlite (see GH#10083) restore to default geometry instead of a
-            // sliver.
+            // Reject bounds smaller than the platform minimum window size so users
+            // with an already-corrupted warp.sqlite (see GH#10083) restore to
+            // default geometry instead of a sliver.
             let bounds = match (
                 window.window_width,
                 window.window_height,
@@ -2818,8 +2810,7 @@ fn read_sqlite_data(
                 window.origin_y,
             ) {
                 (Some(mut width), Some(mut height), Some(x), Some(y))
-                    if width >= MIN_PERSISTED_WINDOW_DIMENSION
-                        && height >= MIN_PERSISTED_WINDOW_DIMENSION =>
+                    if width >= MIN_WINDOW_WIDTH && height >= MIN_WINDOW_HEIGHT =>
                 {
                     // When fullscreen or maximized, the `inner_size` we snapshotted will be the
                     // size of the full screen. This will cause problems with winit. When you set
