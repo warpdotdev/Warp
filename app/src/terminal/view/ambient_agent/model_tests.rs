@@ -88,7 +88,7 @@ fn github_auth_url_for_initial_run_includes_focus_cloud_mode_next() {
                 progress: AgentProgress::new(),
                 kind: SessionStartupKind::InitialRun,
             };
-            model.initial_run_retry_request = Some(retry_request("fix tests"));
+            model.request = Some(retry_request("fix tests"));
             model.handle_needs_github_auth(
                 "https://example.com/oauth/connect/github?scheme=warpdev".to_string(),
                 "auth required".to_string(),
@@ -123,7 +123,7 @@ fn github_auth_completed_retries_stored_initial_run_request() {
                 error_message: "auth required".to_string(),
                 auth_url: "https://example.com/oauth/connect/github".to_string(),
             };
-            model.initial_run_retry_request = Some(retry_request("retry this"));
+            model.request = Some(retry_request("retry this"));
 
             model.handle_github_auth_completed(ctx);
 
@@ -166,7 +166,7 @@ fn github_auth_completed_retries_stored_initial_run_request() {
 }
 
 #[test]
-fn followup_github_auth_does_not_reuse_initial_run_retry_request() {
+fn followup_github_auth_does_not_reuse_stored_initial_request() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
         let model = add_model(&mut app);
@@ -176,7 +176,7 @@ fn followup_github_auth_does_not_reuse_initial_run_retry_request() {
                 progress: AgentProgress::new(),
                 kind: SessionStartupKind::Followup,
             };
-            model.initial_run_retry_request = Some(retry_request("do not retry"));
+            model.request = Some(retry_request("do not retry"));
             model.handle_needs_github_auth(
                 "https://example.com/oauth/connect/github".to_string(),
                 "auth required".to_string(),
@@ -184,7 +184,7 @@ fn followup_github_auth_does_not_reuse_initial_run_retry_request() {
             );
 
             assert!(matches!(model.status(), Status::NeedsGithubAuth { .. }));
-            assert!(model.initial_run_retry_request.is_none());
+            assert!(model.request().is_none());
 
             model.handle_github_auth_completed(ctx);
 
