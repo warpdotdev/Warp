@@ -36,8 +36,6 @@ use repo_metadata::repositories::DetectedRepositories;
 #[cfg(not(target_family = "wasm"))]
 use std::path::Path;
 #[cfg(not(target_family = "wasm"))]
-use warp_util::local_or_remote_path::LocalOrRemotePath;
-#[cfg(not(target_family = "wasm"))]
 use warpui::SingletonEntity;
 
 const MAX_RESULTS: usize = 200;
@@ -120,11 +118,7 @@ impl CodeSymbolCache {
             .active_window
             .and_then(|window_id| ActiveSession::as_ref(app).path_if_local(window_id))
             .and_then(|current_dir| {
-                DetectedRepositories::as_ref(app)
-                    .get_root_for_path(&LocalOrRemotePath::Local(
-                        Path::new(current_dir).to_path_buf(),
-                    ))
-                    .and_then(|r| PathBuf::try_from(r).ok())
+                DetectedRepositories::as_ref(app).get_root_for_path(Path::new(current_dir))
             })?;
 
         let (outline_status, _) = RepoOutlines::as_ref(app).get_outline(&git_repo_path)?;
@@ -204,11 +198,7 @@ impl CodeSymbolCache {
             .active_window
             .and_then(|window_id| ActiveSession::as_ref(app).path_if_local(window_id))
             .and_then(|current_dir| {
-                DetectedRepositories::as_ref(app)
-                    .get_root_for_path(&LocalOrRemotePath::Local(
-                        Path::new(current_dir).to_path_buf(),
-                    ))
-                    .and_then(|r| PathBuf::try_from(r).ok())
+                DetectedRepositories::as_ref(app).get_root_for_path(Path::new(current_dir))
             })
         else {
             return HashSet::new();

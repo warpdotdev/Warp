@@ -19,7 +19,6 @@ use ai::skills::{
 use command::blocking::Command;
 use command::r#async::Command as AsyncCommand;
 use warp_cli::skill::SkillSpec;
-use warp_util::local_or_remote_path::LocalOrRemotePath;
 use warpui::AppContext;
 use warpui::SingletonEntity as _;
 
@@ -320,8 +319,7 @@ fn resolve_unqualified(
 
     // Next, try to scope to the current repo root (if known).
     let repo_root = repo_metadata::repositories::DetectedRepositories::as_ref(ctx)
-        .get_root_for_path(&LocalOrRemotePath::Local(working_dir.to_path_buf()))
-        .and_then(|r| PathBuf::try_from(r).ok());
+        .get_root_for_path(working_dir);
 
     if let Some(repo_root) = repo_root {
         match resolve_in_single_repo_root(spec, &repo_root, skill_manager) {

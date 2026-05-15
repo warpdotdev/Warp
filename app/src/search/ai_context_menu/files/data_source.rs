@@ -16,7 +16,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use warp_util::local_or_remote_path::LocalOrRemotePath;
 use warpui::{AppContext, SingletonEntity};
 
 const MAX_RESULTS: usize = 200;
@@ -112,11 +111,7 @@ fn snapshot_last_opened(app: &AppContext) -> HashMap<String, instant::Instant> {
         .active_window
         .and_then(|window_id| ActiveSession::as_ref(app).path_if_local(window_id))
         .and_then(|current_dir| {
-            DetectedRepositories::as_ref(app)
-                .get_root_for_path(&LocalOrRemotePath::Local(
-                    Path::new(current_dir).to_path_buf(),
-                ))
-                .and_then(|r| PathBuf::try_from(r).ok())
+            DetectedRepositories::as_ref(app).get_root_for_path(Path::new(current_dir))
         });
 
     let Some(repo_path) = git_repo_path else {

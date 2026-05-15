@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::future::Future;
 #[cfg(not(target_family = "wasm"))]
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -37,7 +36,7 @@ use serde::Serialize;
 #[cfg(not(target_family = "wasm"))]
 use warp_core::channel::ChannelState;
 use warp_core::SessionId;
-use warp_util::remote_path::{RemoteNavigationResult, RemotePath};
+use warp_util::remote_path::RemotePath;
 use warp_util::standardized_path::StandardizedPath;
 #[cfg(not(target_family = "wasm"))]
 use warpui::r#async::FutureExt as _;
@@ -574,17 +573,6 @@ impl RemoteServerManagerEvent {
     }
 }
 
-/// Cached navigation state per session. Stores the last requested path
-/// (for dedup) and the result from the last successful response (so dedup
-/// returns a meaningful value instead of `None`).
-struct NavigationCache {
-    /// The path string last sent to `navigate_to_directory`.
-    path: String,
-    /// Populated by the spawner callback when the server responds
-    /// successfully. `None` until the first successful response.
-    result: Option<RemoteNavigationResult>,
-}
-
 /// Shell info recorded by [`RemoteServerManager::notify_session_bootstrapped`].
 ///
 /// Persists for the lifetime of the session (removed only in
@@ -612,11 +600,10 @@ pub struct RemoteServerManager {
     host_to_sessions: HashMap<HostId, HashSet<SessionId>>,
     /// Spawner for running closures back on the main thread.
     spawner: ModelSpawner<Self>,
-    /// Per-session navigation cache for dedup. Avoids redundant
+    /// Last path requested per session for dedup. Avoids redundant
     /// `navigate_to_directory` calls when `update_active_session` fires
-    /// repeatedly for the same CWD, and returns the cached result on
-    /// dedup so callers don't misinterpret the skip as "not a git repo".
-    last_navigation: HashMap<SessionId, NavigationCache>,
+    /// repeatedly for the same CWD.
+    last_navigated_path: HashMap<SessionId, String>,
     /// Per-session shell info recorded at bootstrap time and re-sent to the
     /// remote server daemon on every (re)connect. Persists until
     /// `deregister_session`.
@@ -642,7 +629,7 @@ impl RemoteServerManager {
             sessions: HashMap::new(),
             host_to_sessions: HashMap::new(),
             spawner: ctx.spawner(),
-            last_navigation: HashMap::new(),
+            last_navigated_path: HashMap::new(),
             session_bootstrap_info: HashMap::new(),
             auth_context: None,
             session_platforms: HashMap::new(),
@@ -1250,7 +1237,7 @@ impl RemoteServerManager {
     ///   outright. Unlike `SessionDisconnected`, this one never fires for
     ///   spontaneous drops -- only for explicit teardown.
     pub fn deregister_session(&mut self, session_id: SessionId, ctx: &mut ModelContext<Self>) {
-        self.last_navigation.remove(&session_id);
+        self.last_navigated_path.remove(&session_id);
         self.session_bootstrap_info.remove(&session_id);
         self.session_platforms.remove(&session_id);
 
@@ -1527,77 +1514,43 @@ impl RemoteServerManager {
     }
 
     /// Sends a `NavigatedToDirectory` request to the remote server for
-    /// the given session and returns a future that resolves with the
-    /// navigation result on success, or `None` on failure. The
-    /// `NavigatedToDirectory` event is still emitted for other
-    /// subscribers (file tree, etc.).
+    /// the given session and emits the response as a manager event.
     ///
     /// Deduplicates: if the same `(session_id, path)` was already requested,
-    /// returns the cached result from the last successful navigation instead
-    /// of re-issuing the request.
-    ///
-    /// Callers that don't need the result can simply drop the future.
+    /// the call is a no-op.
     pub fn navigate_to_directory(
         &mut self,
         session_id: SessionId,
         path: String,
         ctx: &mut ModelContext<Self>,
-    ) -> impl Future<Output = Option<RemoteNavigationResult>> {
-        use futures::future::ready;
-
-        match self.navigate_to_directory_impl(session_id, path, ctx) {
-            Some(rx) => futures::future::Either::Left(async move { rx.await.ok().flatten() }),
-            None => {
-                // Dedup skip or missing client — return the cached result
-                // from the last successful navigation so callers don't
-                // misinterpret the skip as "not a git repo".
-                let cached = self
-                    .last_navigation
-                    .get(&session_id)
-                    .and_then(|c| c.result.clone());
-                futures::future::Either::Right(ready(cached))
-            }
-        }
-    }
-
-    /// Returns `Some(receiver)` when a request was dispatched, `None` when
-    /// skipped (dedup or missing client).
-    fn navigate_to_directory_impl(
-        &mut self,
-        session_id: SessionId,
-        path: String,
-        ctx: &mut ModelContext<Self>,
-    ) -> Option<futures::channel::oneshot::Receiver<Option<RemoteNavigationResult>>> {
+    ) {
         // Dedup: skip if this session already navigated to the same path.
-        if self
-            .last_navigation
-            .get(&session_id)
-            .is_some_and(|c| c.path == path)
-        {
-            return None;
+        if self.last_navigated_path.get(&session_id) == Some(&path) {
+            return;
         }
 
-        let client = self.client_for_session(session_id).cloned()?;
-        let host_id = self.host_id_for_session(session_id).cloned()?;
+        let Some(client) = self.client_for_session(session_id).cloned() else {
+            log::warn!(
+                "Remote server navigate_to_directory: no connected client session={session_id:?}"
+            );
+            return;
+        };
+        let Some(host_id) = self.host_id_for_session(session_id).cloned() else {
+            log::warn!("Remote server navigate_to_directory: no host_id session={session_id:?}");
+            return;
+        };
 
         // Record only after confirming the client is connected, so that a
         // retry after SessionConnected is not incorrectly deduplicated.
-        self.last_navigation.insert(
-            session_id,
-            NavigationCache {
-                path: path.clone(),
-                result: None,
-            },
-        );
+        self.last_navigated_path.insert(session_id, path.clone());
 
-        let (tx, rx) = futures::channel::oneshot::channel();
         let spawner = self.spawner.clone();
         ctx.background_executor()
             .spawn(async move {
                 match client.navigate_to_directory(path).await {
                     Ok(resp) => {
                         let _ = spawner
-                            .spawn(move |me, ctx| {
+                            .spawn(move |_me, ctx| {
                                 let Some(remote_path) = StandardizedPath::try_new(&resp.indexed_path)
                                     .ok()
                                     .map(|path| RemotePath::new(host_id, path))
@@ -1607,17 +1560,8 @@ impl RemoteServerManager {
                                          session={session_id:?} indexed_path={}",
                                         resp.indexed_path
                                     );
-                                    let _ = tx.send(None);
                                     return;
                                 };
-                                let result = RemoteNavigationResult {
-                                    remote_path: remote_path.clone(),
-                                    is_git: resp.is_git,
-                                };
-                                if let Some(cache) = me.last_navigation.get_mut(&session_id) {
-                                    cache.result = Some(result.clone());
-                                }
-                                let _ = tx.send(Some(result));
                                 ctx.emit(RemoteServerManagerEvent::NavigatedToDirectory {
                                     session_id,
                                     remote_path,
@@ -1628,13 +1572,12 @@ impl RemoteServerManager {
                     }
                     Err(e) => {
                         log::warn!("Remote server navigate_to_directory failed: session={session_id:?} error={e}");
-                        let _ = tx.send(None);
+                        // Transport-level telemetry is emitted automatically
+                        // by send_tracked_request via ClientEvent::RequestFailed.
                     }
                 }
             })
             .detach();
-
-        Some(rx)
     }
 
     /// Sends a `SessionBootstrapped` notification to the remote server.
@@ -2278,10 +2221,11 @@ impl RemoteServerManager {
                 });
             }
 
-            // Clear navigation cache so navigate_to_directory re-fires
-            // after reconnect. The cached path only dedupes for the
-            // current remote server session.
-            self.last_navigation.remove(&session_id);
+            // Clear last navigated path so navigate_to_directory
+            // re-fires after reconnect.
+            // We need to do this on disconnect because the cached
+            // navigated path is only deduping for the current _remote server session.
+            self.last_navigated_path.remove(&session_id);
 
             self.attempt_reconnect(
                 session_id,

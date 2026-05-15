@@ -56,10 +56,9 @@ pub use watcher::{DirectoryWatcher, RepositoryUpdate, TargetFile};
 #[cfg(not(target_family = "wasm"))]
 pub fn is_in_repo(path: &str, app: &warpui::AppContext) -> bool {
     use crate::repositories::DetectedRepositories;
-    use warp_util::local_or_remote_path::LocalOrRemotePath;
 
     DetectedRepositories::as_ref(app)
-        .get_root_for_path(&LocalOrRemotePath::Local(std::path::PathBuf::from(path)))
+        .get_root_for_path(std::path::Path::new(path))
         .is_some()
 }
 
