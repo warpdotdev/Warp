@@ -44,6 +44,7 @@ use crate::ai::blocklist::agent_view::orchestration_pill_bar_model::{
     OrchestrationPillBarEvent, OrchestrationPillBarModel,
 };
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
+use crate::ai::blocklist::orchestration_topology::descendant_conversation_ids_in_spawn_order;
 use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
 use crate::ai::harness_display;
 use crate::features::FeatureFlag;
@@ -82,7 +83,7 @@ fn pill_palette(theme: &WarpTheme) -> [ColorU; 6] {
     ]
 }
 
-fn pill_avatar_color(name: &str, theme: &WarpTheme) -> ColorU {
+pub(crate) fn pill_avatar_color(name: &str, theme: &WarpTheme) -> ColorU {
     let palette = pill_palette(theme);
     let mut hasher = DefaultHasher::new();
     name.hash(&mut hasher);
@@ -90,7 +91,7 @@ fn pill_avatar_color(name: &str, theme: &WarpTheme) -> ColorU {
     palette[idx]
 }
 
-fn pill_initial(name: &str) -> char {
+pub(crate) fn pill_initial(name: &str) -> char {
     name.trim()
         .chars()
         .next()
@@ -99,7 +100,7 @@ fn pill_initial(name: &str) -> char {
 }
 /// Renders the orchestrator avatar disc shared by pill, breadcrumb, and transcript
 /// surfaces.
-pub(super) fn render_orchestrator_avatar_disc(
+pub(crate) fn render_orchestrator_avatar_disc(
     size: f32,
     theme: &WarpTheme,
     appearance: &Appearance,
@@ -115,7 +116,7 @@ pub(super) fn render_orchestrator_avatar_disc(
 
 /// Renders a child-agent avatar using the same deterministic-color + initial-letter
 /// treatment as the orchestration pill bar.
-pub(super) fn render_agent_avatar_disc(
+pub(crate) fn render_agent_avatar_disc(
     name: &str,
     size: f32,
     theme: &WarpTheme,
@@ -128,26 +129,6 @@ pub(super) fn render_agent_avatar_disc(
         theme,
         appearance,
     )
-}
-
-fn descendant_conversation_ids_in_spawn_order(
-    history: &BlocklistAIHistoryModel,
-    parent_id: AIConversationId,
-) -> Vec<AIConversationId> {
-    let mut descendants = Vec::new();
-    collect_descendant_conversation_ids_in_spawn_order(history, parent_id, &mut descendants);
-    descendants
-}
-
-fn collect_descendant_conversation_ids_in_spawn_order(
-    history: &BlocklistAIHistoryModel,
-    parent_id: AIConversationId,
-    descendants: &mut Vec<AIConversationId>,
-) {
-    for child_id in history.child_conversation_ids_of(&parent_id) {
-        descendants.push(*child_id);
-        collect_descendant_conversation_ids_in_spawn_order(history, *child_id, descendants);
-    }
 }
 
 /// What kind of pill we are rendering, which determines click behavior.

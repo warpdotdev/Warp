@@ -5402,7 +5402,8 @@ impl TerminalView {
             | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
             | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. }
             | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
-            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => None,
+            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. }
+            | BlocklistAIHistoryEvent::ConversationUsageMetadataUpdated { .. } => None,
         }
     }
 
@@ -5873,7 +5874,8 @@ impl TerminalView {
             | BlocklistAIHistoryEvent::DeletedConversation { .. }
             | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
             | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
-            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => {}
+            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. }
+            | BlocklistAIHistoryEvent::ConversationUsageMetadataUpdated { .. } => {}
         }
         ctx.notify();
     }
@@ -6171,14 +6173,27 @@ impl TerminalView {
             wall_to_wall_response_time_ms,
         };
 
-        // View to hold the usage footer.
-        let usage_view = ctx.add_view(|_| {
-            ConversationUsageView::new(
-                conversation_usage_info,
-                DisplayMode::Footer,
-                Some(timing_info),
-                MouseStateHandle::default(),
-            )
+        // View to hold the usage footer. When the orchestration credit
+        // rollup feature flag is on, route through the rollup-aware
+        // constructor so the view subscribes to history events and
+        // re-renders when any contributing agent's usage updates.
+        let usage_view = ctx.add_view(|ctx| {
+            if FeatureFlag::OrchestrationCreditRollup.is_enabled() {
+                ConversationUsageView::new_footer_with_rollup(
+                    conversation_usage_info,
+                    Some(timing_info),
+                    MouseStateHandle::default(),
+                    conversation_id,
+                    ctx,
+                )
+            } else {
+                ConversationUsageView::new(
+                    conversation_usage_info,
+                    DisplayMode::Footer,
+                    Some(timing_info),
+                    MouseStateHandle::default(),
+                )
+            }
         });
         self.usage_footer_view_ids
             .insert(source_ai_block_view_id, usage_view.id());
