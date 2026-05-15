@@ -904,6 +904,7 @@ settings-ai-unlimited = 不限量
 # AI 输入区段
 settings-ai-show-input-hint-text = 显示输入提示文本
 settings-ai-show-agent-tips = 显示智能体提示
+settings-ai-show-agent-zero-state-hints = 显示 Agent 快捷键提示
 settings-ai-include-agent-commands-in-history = 将智能体执行的命令纳入历史
 settings-ai-autodetect-agent-prompts = 在终端输入中自动检测智能体提示
 settings-ai-autodetect-terminal-commands = 在智能体输入中自动检测终端命令
@@ -2024,6 +2025,7 @@ agent-zero-state-title-cloud = 新建 Agent 对话
 agent-zero-state-description = 在下方输入提示开始新的对话
 agent-zero-state-description-with-location = 在下方输入提示，于 `{ $location }` 开始新的对话
 agent-zero-state-recent-activity = 最近活动
+agent-zero-state-hide-hints-tooltip = 隐藏快捷键提示（可在设置中重新开启）
 inline-agent-header-prompt-to-interact-command = 提示智能体与 `{ $command }` 交互
 inline-agent-header-prompt-to-interact-running-command = 提示智能体与正在运行的命令交互
 inline-agent-header-waiting-on-instructions = 智能体正在等待指令

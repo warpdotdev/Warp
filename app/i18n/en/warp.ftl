@@ -921,6 +921,7 @@ settings-ai-unlimited = Unlimited
 # AI Input section
 settings-ai-show-input-hint-text = Show input hint text
 settings-ai-show-agent-tips = Show agent tips
+settings-ai-show-agent-zero-state-hints = Show Agent shortcut hints
 settings-ai-include-agent-commands-in-history = Include agent-executed commands in history
 settings-ai-autodetect-agent-prompts = Autodetect agent prompts in terminal input
 settings-ai-autodetect-terminal-commands = Autodetect terminal commands in agent input
@@ -2099,6 +2100,7 @@ agent-zero-state-title = New Oz agent conversation
 agent-zero-state-description = Send a prompt below to start a new conversation
 agent-zero-state-description-with-location = Send a prompt below to start a new conversation in `{ $location }`
 agent-zero-state-recent-activity = RECENT ACTIVITY
+agent-zero-state-hide-hints-tooltip = Hide shortcut hints (re-enable in Settings)
 inline-agent-header-prompt-to-interact-command = Prompt agent to interact with `{ $command }`
 inline-agent-header-prompt-to-interact-running-command = Prompt agent to interact with the running command
 inline-agent-header-waiting-on-instructions = Agent is waiting for instructions

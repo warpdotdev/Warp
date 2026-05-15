@@ -47,6 +47,7 @@ use crate::terminal::input::suggestions_mode_model::{
 use crate::terminal::input::{InputAction, SET_INPUT_MODE_AGENT_ACTION_NAME};
 use crate::terminal::model::TerminalModel;
 use crate::terminal::view::TerminalAction;
+use crate::settings::{InputSettings, InputSettingsChangedEvent};
 use crate::ui_components::blended_colors;
 use crate::util::bindings::keybinding_name_to_keystroke;
 use crate::workspace::tab_settings::{TabSettings, TabSettingsChangedEvent};
@@ -191,6 +192,13 @@ impl AgentMessageBar {
 
         ctx.subscribe_to_model(&TabSettings::handle(ctx), |_, _, event, ctx| {
             if matches!(event, TabSettingsChangedEvent::ShowCodeReviewButton { .. }) {
+                ctx.notify();
+            }
+        });
+
+        // 订阅「显示 Agent 快捷键提示」设置，开关改变后重渲染 message bar 以隐藏/恢复 4 项 hint。
+        ctx.subscribe_to_model(&InputSettings::handle(ctx), |_, _, event, ctx| {
+            if matches!(event, InputSettingsChangedEvent::ShowAgentZeroStateHints { .. }) {
                 ctx.notify();
             }
         });
@@ -504,53 +512,59 @@ impl MessageProvider<AgentMessageArgs<'_>> for ZeroStateMessageProducer {
             bg_color_override_for_shortcuts_and_commands,
         ) = disableable_message_item_color_overrides(!is_buffer_empty, app);
 
-        items.push(
-            MessageItem::clickable(
-                vec![
-                    MessageItem::Keystroke {
-                        keystroke: Keystroke {
-                            key: "?".to_owned(),
-                            ..Default::default()
-                        },
-                        color: color_override_for_shortcuts_and_commands,
-                        background_color: bg_color_override_for_shortcuts_and_commands,
-                    },
-                    MessageItem::Text {
-                        content: crate::t!("agent-message-bar-for-help").into(),
-                        color: color_override_for_shortcuts_and_commands,
-                    },
-                ],
-                |ctx| {
-                    ctx.dispatch_typed_action(InputAction::ToggleAgentViewShortcuts);
-                },
-                mouse_states.toggle_shortcuts.clone(),
-            )
-            .with_is_disabled(!is_buffer_empty),
-        );
+        // 「显示 Agent 快捷键提示」总开关：false 时跳过底部 4 项 hint(? 帮助 / / 命令 /
+        // 打开对话 / 代码评审)。resume / plan / fork 不受影响，因为它们不是提示而是状态性入口。
+        let show_zero_state_hints = *InputSettings::as_ref(app).show_agent_zero_state_hints;
 
-        items.push(
-            MessageItem::clickable(
-                vec![
-                    MessageItem::Keystroke {
-                        keystroke: Keystroke {
-                            key: "/".to_owned(),
-                            ..Default::default()
+        if show_zero_state_hints {
+            items.push(
+                MessageItem::clickable(
+                    vec![
+                        MessageItem::Keystroke {
+                            keystroke: Keystroke {
+                                key: "?".to_owned(),
+                                ..Default::default()
+                            },
+                            color: color_override_for_shortcuts_and_commands,
+                            background_color: bg_color_override_for_shortcuts_and_commands,
                         },
-                        color: color_override_for_shortcuts_and_commands,
-                        background_color: bg_color_override_for_shortcuts_and_commands,
+                        MessageItem::Text {
+                            content: crate::t!("agent-message-bar-for-help").into(),
+                            color: color_override_for_shortcuts_and_commands,
+                        },
+                    ],
+                    |ctx| {
+                        ctx.dispatch_typed_action(InputAction::ToggleAgentViewShortcuts);
                     },
-                    MessageItem::Text {
-                        content: crate::t!("agent-message-bar-for-commands").into(),
-                        color: color_override_for_shortcuts_and_commands,
+                    mouse_states.toggle_shortcuts.clone(),
+                )
+                .with_is_disabled(!is_buffer_empty),
+            );
+
+            items.push(
+                MessageItem::clickable(
+                    vec![
+                        MessageItem::Keystroke {
+                            keystroke: Keystroke {
+                                key: "/".to_owned(),
+                                ..Default::default()
+                            },
+                            color: color_override_for_shortcuts_and_commands,
+                            background_color: bg_color_override_for_shortcuts_and_commands,
+                        },
+                        MessageItem::Text {
+                            content: crate::t!("agent-message-bar-for-commands").into(),
+                            color: color_override_for_shortcuts_and_commands,
+                        },
+                    ],
+                    |ctx| {
+                        ctx.dispatch_typed_action(InputAction::ToggleSlashCommandsMenu);
                     },
-                ],
-                |ctx| {
-                    ctx.dispatch_typed_action(InputAction::ToggleSlashCommandsMenu);
-                },
-                mouse_states.toggle_slash_commands.clone(),
-            )
-            .with_is_disabled(!is_buffer_empty),
-        );
+                    mouse_states.toggle_slash_commands.clone(),
+                )
+                .with_is_disabled(!is_buffer_empty),
+            );
+        }
 
         let is_ambient_agent = matches!(
             agent_view_controller.agent_view_state(),
@@ -564,7 +578,10 @@ impl MessageProvider<AgentMessageArgs<'_>> for ZeroStateMessageProducer {
         let has_conversation_been_updated_since_agent_view_entry =
             *original_conversation_length != active_conversation.exchange_count();
 
-        if !is_ambient_agent && !has_conversation_been_updated_since_agent_view_entry {
+        if show_zero_state_hints
+            && !is_ambient_agent
+            && !has_conversation_been_updated_since_agent_view_entry
+        {
             if let Some(conversations_keystroke) =
                 keybinding_name_to_keystroke(commands::CONVERSATIONS.name, app)
             {
@@ -583,7 +600,10 @@ impl MessageProvider<AgentMessageArgs<'_>> for ZeroStateMessageProducer {
 
         // Code review only works locally.
         #[cfg(not(target_family = "wasm"))]
-        if !is_ambient_agent && *TabSettings::as_ref(app).show_code_review_button {
+        if show_zero_state_hints
+            && !is_ambient_agent
+            && *TabSettings::as_ref(app).show_code_review_button
+        {
             let code_review_keystroke = if OperatingSystem::get().is_mac() {
                 Keystroke::parse("cmd-shift-+").expect("keystroke should parse")
             } else {

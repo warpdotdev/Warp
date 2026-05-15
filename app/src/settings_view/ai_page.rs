@@ -27,7 +27,8 @@ use crate::settings::{
     IncludeAgentCommandsInHistory, IntelligentAutosuggestionsEnabled, MemoryEnabled,
     NLDInTerminalEnabled, NaturalLanguageAutosuggestionsEnabled, RuleSuggestionsEnabled,
     ShouldRenderCLIAgentToolbar, ShouldRenderUseAgentToolbarForUserCommands, ShowAgentTips,
-    ShowConversationHistory, ShowHintText, ThinkingDisplayMode, VoiceInputEnabled,
+    ShowAgentZeroStateHints, ShowConversationHistory, ShowHintText, ThinkingDisplayMode,
+    VoiceInputEnabled,
 };
 use crate::terminal::session_settings::{SessionSettings, SessionSettingsChangedEvent};
 use crate::terminal::CLIAgent;
@@ -2191,6 +2192,8 @@ pub enum AISettingsPageAction {
     HyperlinkClick(HyperlinkUrl),
     ToggleShowInputHintText,
     ToggleShowAgentTips,
+    /// 切换「显示 Agent 快捷键提示」设置（零状态三件套 + message bar 底部 4 项 hint）。
+    ToggleShowAgentZeroStateHints,
     SetThinkingDisplayMode(ThinkingDisplayMode),
     RemoveCLIAgentToolbarEnabledCommand(String),
     RemoveFromCommandExecutionAllowlist(AgentModeCommandExecutionPredicate),
@@ -2687,6 +2690,19 @@ impl TypedActionView for AISettingsPageView {
                     }
                     Err(e) => {
                         log::warn!("Failed to set value for Show Agent Tips setting: {e:?}");
+                    }
+                });
+                ctx.notify();
+            }
+            AISettingsPageAction::ToggleShowAgentZeroStateHints => {
+                InputSettings::handle(ctx).update(ctx, |input_settings, ctx| {
+                    if let Err(e) = input_settings
+                        .show_agent_zero_state_hints
+                        .toggle_and_save_value(ctx)
+                    {
+                        log::warn!(
+                            "Failed to set value for Show Agent Zero-State Hints setting: {e:?}"
+                        );
                     }
                 });
                 ctx.notify();
@@ -5186,6 +5202,8 @@ struct AIInputWidget {
     nld_in_terminal_toggle: SwitchStateHandle,
     show_input_hint_toggle: SwitchStateHandle,
     show_agent_tips_toggle: SwitchStateHandle,
+    // 「显示 Agent 快捷键提示」开关对应的 switch 状态句柄。
+    show_agent_zero_state_hints_toggle: SwitchStateHandle,
     include_agent_commands_in_history_toggle: SwitchStateHandle,
 }
 
@@ -5252,6 +5270,19 @@ impl SettingsWidget for AIInputWidget {
             );
             widget_children.push(agent_tips_toggle);
         }
+
+        // 「显示 Agent 快捷键提示」：控制零状态三件套与 message bar 底部 4 项 hint。
+        widget_children.push(
+            render_ai_setting_toggle::<ShowAgentZeroStateHints>(
+                crate::t!("settings-ai-show-agent-zero-state-hints"),
+                AISettingsPageAction::ToggleShowAgentZeroStateHints,
+                *InputSettings::as_ref(app).show_agent_zero_state_hints,
+                is_any_ai_enabled,
+                self.show_agent_zero_state_hints_toggle.clone(),
+                &view.local_only_icon_tooltip_states,
+                app,
+            ),
+        );
 
         widget_children.push(render_ai_setting_toggle::<IncludeAgentCommandsInHistory>(
             crate::t!("settings-ai-include-agent-commands-in-history"),

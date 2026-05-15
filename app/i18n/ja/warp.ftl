@@ -864,6 +864,7 @@ settings-ai-unlimited = 無制限
 # AI Input section
 settings-ai-show-input-hint-text = 入力ヒントを表示
 settings-ai-show-agent-tips = エージェントのヒントを表示
+settings-ai-show-agent-zero-state-hints = エージェントのショートカットヒントを表示
 settings-ai-include-agent-commands-in-history = エージェントが実行したコマンドを履歴に含める
 settings-ai-autodetect-agent-prompts = ターミナル入力中のエージェントプロンプトを自動検出
 settings-ai-autodetect-terminal-commands = エージェント入力中のターミナルコマンドを自動検出
@@ -2022,6 +2023,7 @@ agent-zero-state-title = 新規 Oz エージェント会話
 agent-zero-state-title-cloud = 新規 Oz ローカルエージェント会話
 agent-zero-state-description = 下にプロンプトを送信して新規会話を開始
 agent-zero-state-description-with-location = `{ $location }` で新規会話を開始するには下にプロンプトを送信
+agent-zero-state-hide-hints-tooltip = ショートカットヒントを非表示（設定から再有効化可能）
 agent-zero-state-switch-model = モデルを切り替え
 agent-zero-state-go-back-to-terminal = ターミナルに戻る
 agent-message-bar-for-help = ヘルプ

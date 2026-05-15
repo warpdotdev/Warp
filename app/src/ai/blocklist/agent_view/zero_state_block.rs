@@ -2,11 +2,12 @@ use itertools::Itertools as _;
 use markdown_parser::parse_markdown;
 use parking_lot::FairMutex;
 use std::{borrow::Cow, cmp::Reverse, path::Path, sync::Arc};
+use settings::Setting as _;
 use warp_core::ui::Icon;
 use warpui::{
     elements::{
-        Container, CornerRadius, CrossAxisAlignment, Flex, FormattedTextElement, MainAxisSize,
-        MouseStateHandle, ParentElement, Radius, Text,
+        Container, CornerRadius, CrossAxisAlignment, Expanded, Flex, FormattedTextElement,
+        MainAxisSize, MouseStateHandle, ParentElement, Radius, Text,
     },
     fonts::{Properties, Weight},
     keymap::Keystroke,
@@ -28,6 +29,8 @@ use crate::{
         conversation_navigation::ConversationNavigationData,
     },
     appearance::Appearance,
+    report_if_error,
+    settings::{InputSettings, InputSettingsChangedEvent},
     terminal::{
         self,
         event::BlockType,
@@ -56,6 +59,8 @@ struct StateHandles {
     exit: MouseStateHandle,
     init_callout: MouseStateHandle,
     recent_conversations: [MouseStateHandle; MAX_RECENT_CONVERSATION_COUNT],
+    // 标题右侧「×」按钮的 hover 状态句柄，点击后永久隐藏零状态快捷键提示。
+    hide_hints: MouseStateHandle,
 }
 
 /// Zero state view shown when agent view is active but the conversation has no exchanges yet.
@@ -143,6 +148,13 @@ impl AgentViewZeroStateBlock {
                 }
             },
         );
+
+        // 监听「显示 Agent 快捷键提示」设置变化，点击 × 后立即重渲染以隐藏提示。
+        ctx.subscribe_to_model(&InputSettings::handle(ctx), |_, _, event, ctx| {
+            if matches!(event, InputSettingsChangedEvent::ShowAgentZeroStateHints { .. }) {
+                ctx.notify();
+            }
+        });
 
         let model_events_clone = model_events_dispatcher.clone();
         ctx.subscribe_to_model(ambient_agent_view_model, move |me, model, event, ctx| {
@@ -311,6 +323,12 @@ impl View for AgentViewZeroStateBlock {
             return Empty::new().finish();
         }
 
+        // 用户点「×」永久关闭后，整个零状态区域（标题 / 描述 / 快捷键三件套 / 最近对话
+        // / init callout）都不渲染，避免留下一块空白区。如需恢复可在设置中重新开启。
+        if !*InputSettings::as_ref(app).show_agent_zero_state_hints {
+            return Empty::new().finish();
+        }
+
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
 
@@ -334,6 +352,9 @@ impl View for AgentViewZeroStateBlock {
             } else {
                 Icon::Oz
             },
+            // ambient agent 不提供 × 按钮，其余场景都在标题右侧展示。
+            hide_hints_state: (!self.origin.is_ambient_agent())
+                .then(|| self.state_handles.hide_hints.clone()),
         };
 
         let mut content = Flex::column()
@@ -395,6 +416,9 @@ impl Entity for AgentViewZeroStateBlock {
 pub enum AgentViewZeroStateAction {
     ClickedInitCallout,
     OpenConversation { conversation_id: AIConversationId },
+    /// 点击标题右侧「×」按钮：永久隐藏零状态快捷键提示（包含 message bar 那一排）。
+    /// 用户可在「设置 → Warp 智能体 → AI 输入」中重新开启。
+    HideZeroStateHints,
 }
 
 impl TypedActionView for AgentViewZeroStateBlock {
@@ -409,6 +433,14 @@ impl TypedActionView for AgentViewZeroStateBlock {
                 ctx.emit(AgentViewZeroStateEvent::OpenConversation {
                     conversation_id: *conversation_id,
                 });
+            }
+            AgentViewZeroStateAction::HideZeroStateHints => {
+                InputSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings
+                        .show_agent_zero_state_hints
+                        .set_value(false, ctx));
+                });
+                // 设置订阅会触发 ctx.notify，这里不重复发。
             }
         }
     }
@@ -451,6 +483,8 @@ struct HeaderProps {
     title: Cow<'static, str>,
     description: AgentViewDescription,
     icon: Icon,
+    /// 若为 Some，在标题行右侧渲染一个 × 按钮用于隐藏零状态快捷键提示。
+    hide_hints_state: Option<MouseStateHandle>,
 }
 
 fn render_title_and_description(props: HeaderProps, app: &AppContext) -> Vec<Box<dyn Element>> {
@@ -461,10 +495,11 @@ fn render_title_and_description(props: HeaderProps, app: &AppContext) -> Vec<Box
         title,
         description,
         icon,
+        hide_hints_state,
     } = props;
 
     let title_font_size = styles::title_font_size(appearance);
-    let title = Flex::row()
+    let mut title_row = Flex::row()
         .with_cross_axis_alignment(CrossAxisAlignment::Center)
         .with_child(
             Container::new(
@@ -489,8 +524,39 @@ fn render_title_and_description(props: HeaderProps, app: &AppContext) -> Vec<Box
                 .with_color(theme.main_text_color(theme.background()).into_solid())
                 .with_style(Properties::default().weight(Weight::Bold))
                 .finish(),
-        )
+        );
+
+    if let Some(hide_hints_state) = hide_hints_state {
+        // spacer 把 × 按钮推到标题行最右侧。
+        title_row = title_row.with_child(Expanded::new(1., Empty::new().finish()).finish());
+        // × 按钮：hover 时高亮颜色，点击 dispatch HideZeroStateHints 写入设置。
+        let icon_size = appearance.monospace_font_size();
+        let close_button = Hoverable::new(hide_hints_state, move |state| {
+            let bg = theme.background();
+            let fill = if state.is_hovered() {
+                theme.main_text_color(bg).into_solid()
+            } else {
+                theme.sub_text_color(bg.into()).into_solid()
+            };
+            Container::new(
+                ConstrainedBox::new(Icon::X.to_warpui_icon(fill.into()).finish())
+                    .with_height(icon_size)
+                    .with_width(icon_size)
+                    .finish(),
+            )
+            .with_horizontal_padding(4.)
+            .with_vertical_padding(2.)
+            .finish()
+        })
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action(AgentViewZeroStateAction::HideZeroStateHints);
+        })
+        .with_cursor(Cursor::PointingHand)
         .finish();
+        title_row = title_row.with_child(close_button);
+    }
+
+    let title = title_row.finish();
 
     let mut items = vec![];
     items.push(
