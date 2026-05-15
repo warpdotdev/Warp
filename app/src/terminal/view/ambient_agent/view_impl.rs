@@ -922,10 +922,11 @@ impl TerminalView {
                 .as_ref()
                 .map(|task| ConversationDetailsData::from_task(task, None, None, ctx))
                 .unwrap_or_else(|| {
-                    let fetch_failed = conversations_handle
+                    let fetch_error = conversations_handle
                         .as_ref(ctx)
-                        .is_task_fetch_failed(&task_id);
-                    ConversationDetailsData::from_task_id(task_id, fetch_failed)
+                        .task_fetch_error(&task_id)
+                        .map(str::to_owned);
+                    ConversationDetailsData::from_task_id(task_id, fetch_error)
                 });
             self.conversation_details_panel.update(ctx, |panel, ctx| {
                 panel.set_conversation_details(data, ctx);

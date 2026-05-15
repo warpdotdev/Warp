@@ -124,6 +124,7 @@ struct PanelMouseStates {
     copy_run_id: MouseStateHandle,
     copy_environment_id: MouseStateHandle,
     copy_docker_image: MouseStateHandle,
+    copy_fetch_error: MouseStateHandle,
     copy_error: MouseStateHandle,
     copy_setup_commands: MouseStateHandle,
     skill_link: MouseStateHandle,
@@ -139,6 +140,7 @@ enum CopyButtonKind {
     RunId,
     EnvironmentId,
     DockerImage,
+    FetchError,
     Error,
     SetupCommands,
 }
@@ -492,7 +494,7 @@ impl ConversationDetailsData {
 
     /// Minimal details data for when we only know the task id (e.g. shared sessions)
     /// but have not loaded the full `AmbientAgentTask` yet.
-    pub fn from_task_id(task_id: AmbientAgentTaskId, fetch_failed: bool) -> Self {
+    pub fn from_task_id(task_id: AmbientAgentTaskId, fetch_error: Option<String>) -> Self {
         ConversationDetailsData {
             mode: PanelMode::Task {
                 task_id: Some(task_id),
@@ -514,7 +516,7 @@ impl ConversationDetailsData {
             copy_link_url: None,
             skill_spec: None,
             harness: None,
-            fetch_error: fetch_failed.then(|| "Failed to load run details".to_string()),
+            fetch_error,
         }
     }
 
@@ -577,6 +579,7 @@ pub enum ConversationDetailsPanelAction {
     CopyRunId,
     CopyEnvironmentId,
     CopyDockerImage,
+    CopyFetchError,
     CopyError,
     CopySetupCommands(String),
     Focus,
@@ -1595,6 +1598,7 @@ impl ConversationDetailsPanel {
             CopyButtonKind::RunId => self.mouse_states.copy_run_id.clone(),
             CopyButtonKind::EnvironmentId => self.mouse_states.copy_environment_id.clone(),
             CopyButtonKind::DockerImage => self.mouse_states.copy_docker_image.clone(),
+            CopyButtonKind::FetchError => self.mouse_states.copy_fetch_error.clone(),
             CopyButtonKind::Error => self.mouse_states.copy_error.clone(),
             CopyButtonKind::SetupCommands => self.mouse_states.copy_setup_commands.clone(),
         }
@@ -1768,17 +1772,24 @@ impl View for ConversationDetailsPanel {
             .with_width(STATUS_ICON_SIZE)
             .with_height(STATUS_ICON_SIZE)
             .finish();
-            let error_text = Text::new(
-                fetch_error.clone(),
-                appearance.ui_font_family(),
-                ui_font_size,
-            )
-            .with_color(theme.ansi_fg_red())
-            .finish();
+            let error_text = render_copyable_text_field(
+                CopyableTextFieldConfig::new(fetch_error.clone())
+                    .with_font_size(ui_font_size)
+                    .with_text_color(theme.ansi_fg_red())
+                    .with_wrap_text(true)
+                    .with_icon_size(16.)
+                    .with_mouse_state(self.mouse_state_for_copy_button(CopyButtonKind::FetchError))
+                    .with_last_copied_at(self.copy_feedback_times.get(&CopyButtonKind::FetchError))
+                    .with_cross_axis_alignment(CrossAxisAlignment::Start),
+                |ctx| {
+                    ctx.dispatch_typed_action(ConversationDetailsPanelAction::CopyFetchError);
+                },
+                app,
+            );
             let error_row = Flex::row()
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_cross_axis_alignment(CrossAxisAlignment::Start)
                 .with_child(Container::new(error_icon).with_margin_right(4.).finish())
-                .with_child(error_text)
+                .with_child(Expanded::new(1., error_text).finish())
                 .finish();
             let error_banner = Container::new(error_row)
                 .with_uniform_padding(8.)
@@ -2092,6 +2103,13 @@ impl TypedActionView for ConversationDetailsPanel {
                             self.record_copy(CopyButtonKind::DockerImage, ctx);
                         }
                     }
+                }
+            }
+            ConversationDetailsPanelAction::CopyFetchError => {
+                if let Some(error) = &self.data.fetch_error {
+                    ctx.clipboard()
+                        .write(ClipboardContent::plain_text(error.clone()));
+                    self.record_copy(CopyButtonKind::FetchError, ctx);
                 }
             }
             ConversationDetailsPanelAction::CopyError => {
