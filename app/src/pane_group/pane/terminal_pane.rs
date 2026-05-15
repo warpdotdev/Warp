@@ -178,12 +178,11 @@ fn register_legacy_local_lifecycle_subscription(
 }
 
 /// Returns the `SessionSourceType` the host terminal is sharing as, or
-/// `None` if it is not currently a shared-session creator. The host of a
-/// `run_agents(local)` dispatch is always a `local_tty::TerminalManager`,
-/// so this mirrors the logic of
-/// `local_tty::TerminalManager::shared_session_source_type` but reads the
-/// model directly via the host's `TerminalView` so the dispatch helpers in
-/// this module don't need to downcast through the `TerminalManager` trait.
+/// `None` if it is not currently a shared-session creator. Reads the
+/// underlying `TerminalModel` directly via the host's `TerminalView` so the
+/// dispatch helpers don't need to downcast a `dyn TerminalManager` trait
+/// object to the concrete `local_tty::TerminalManager` just to call the
+/// equivalent inherent method.
 #[cfg(not(target_family = "wasm"))]
 fn host_terminal_shared_session_source_type(
     parent_terminal_view: &ViewHandle<TerminalView>,

@@ -310,16 +310,31 @@ impl StartAgentExecutor {
                 // and remote-child branches below; the child task row is
                 // created eagerly at dispatch (see
                 // `launch_local_no_harness_child`) using this value as the
-                // `parent_run_id` on `CreateAgentTask`.
+                // `parent_run_id` on `CreateAgentTask`. Bail out if the
+                // parent has no `run_id` yet — the eager-create path has no
+                // late-binding fallback (the pre-change lazy path would have
+                // linked via `Request.metadata.parent_agent_id` later), so
+                // proceeding would mint an orphan child with no server-side
+                // parent linkage.
                 let parent_run_id = BlocklistAIHistoryModel::as_ref(ctx)
                     .conversation(&parent_conversation_id)
                     .and_then(|conversation| conversation.run_id());
+                let Some(parent_run_id) = parent_run_id else {
+                    return ActionExecution::Sync(AIAgentActionResultType::StartAgent(
+                        StartAgentResult::Error {
+                            error:
+                                "Local Oz child agents require the parent run_id to be available."
+                                    .to_string(),
+                            version,
+                        },
+                    ));
+                };
                 (
                     StartAgentExecutionMode::Local {
                         harness_type: None,
                         model_id,
                     },
-                    parent_run_id,
+                    Some(parent_run_id),
                 )
             }
             StartAgentExecutionMode::Local {

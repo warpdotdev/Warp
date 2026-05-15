@@ -2497,30 +2497,6 @@ impl TerminalManager {
     pub fn session_sharer(&self) -> Rc<RefCell<Option<ModelHandle<Network>>>> {
         self.session_sharer.clone()
     }
-
-    /// Returns the source type the host terminal is sharing as, or `None`
-    /// if it is not currently a shared-session creator. Used by child
-    /// dispatch (`launch_local_no_harness_child` /
-    /// `launch_local_harness_child` in `pane_group/pane/terminal_pane.rs`)
-    /// to decide whether to inherit-share when spawning a `run_agents(local)`
-    /// child pane.
-    pub fn shared_session_source_type(&self) -> Option<SessionSourceType> {
-        let model = self.model.lock();
-        // `start_sharing_session` sets this once the share is active.
-        if let Some(source_type) = model.shared_session_source_type() {
-            return Some(source_type);
-        }
-        // Pre-bootstrap: the source_type is carried inside
-        // `SharedSessionStatus::SharePendingPreBootstrap` (set by the
-        // terminal manager constructor above when
-        // `IsSharedSessionCreator::Yes` is plumbed through).
-        if let SharedSessionStatus::SharePendingPreBootstrap { source_type } =
-            model.shared_session_status()
-        {
-            return Some(source_type.clone());
-        }
-        None
-    }
 }
 
 /// Determine whether to show password notifications based on the user's settings.
