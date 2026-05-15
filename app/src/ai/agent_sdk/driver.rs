@@ -116,6 +116,8 @@ use terminal::TerminalDriverEvent;
 
 const MCP_SERVER_STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
 const HARNESS_SAVE_INTERVAL: Duration = Duration::from_secs(30);
+/// Timeout for individual harness auth preflight commands.
+const PREFLIGHT_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const WARP_DRIVE_SYNC_TIMEOUT: Duration = Duration::from_secs(60);
 const SETUP_FAILED_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 /// Maximum time to wait for an automatic error resume before propagating the error.
@@ -484,6 +486,22 @@ pub enum AgentDriverError {
         #[source]
         error: anyhow::Error,
     },
+    #[error("Harness '{harness}' auth preflight failed")]
+    HarnessAuthCheckFailed {
+        harness: String,
+        kind: HarnessAuthFailureKind,
+        /// Stderr/stdout captured from the failing command, for logs.
+        detail: String,
+    },
+}
+
+/// Which preflight check failed.
+#[derive(Debug, Clone, Copy)]
+pub enum HarnessAuthFailureKind {
+    /// The harness CLI's login/auth status check exited non-zero.
+    LoginFailed,
+    /// A lightweight test API request exited non-zero (billing, quota, etc.).
+    TestRequestFailed,
 }
 
 impl From<warpui::ModelDropped> for AgentDriverError {
@@ -1841,6 +1859,9 @@ impl AgentDriver {
                 )
                 .await?;
 
+                // Run auth and billing preflight checks before starting the main harness command.
+                Self::run_preflight_checks(harness.as_ref(), &foreground).await?;
+
                 if let Some(task_id) = task_id_for_refresh {
                     let harness_fut =
                         Self::run_harness(runner, &foreground, harness_exit_rx).fuse();
@@ -1862,6 +1883,95 @@ impl AgentDriver {
                 ),
             }),
         }
+    }
+
+    /// Run the authentication and billing preflight checks for a third-party harness.
+    ///
+    /// Uses `execute_silent_command` so the check commands do not appear in the
+    /// user-visible block list.
+    async fn run_preflight_checks(
+        harness: &dyn ThirdPartyHarness,
+        foreground: &ModelSpawner<Self>,
+    ) -> Result<(), AgentDriverError> {
+        let harness_name = harness.cli_agent().command_prefix().to_owned();
+
+        // Authentication check.
+        if let Some(cmd) = harness.auth_check_command() {
+            log::info!("Running auth check for {harness_name}: {cmd}");
+            Self::run_single_preflight(
+                &cmd,
+                &harness_name,
+                HarnessAuthFailureKind::LoginFailed,
+                foreground,
+            )
+            .await?;
+        }
+
+        // Billing check.
+        if let Some(cmd) = harness.billing_check_command() {
+            log::info!("Running billing check for {harness_name}: {cmd}");
+            Self::run_single_preflight(
+                &cmd,
+                &harness_name,
+                HarnessAuthFailureKind::TestRequestFailed,
+                foreground,
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+
+    /// Run a single preflight check command and return an error if it fails.
+    async fn run_single_preflight(
+        command: &str,
+        harness_name: &str,
+        failure_kind: HarnessAuthFailureKind,
+        foreground: &ModelSpawner<Self>,
+    ) -> Result<(), AgentDriverError> {
+        let cmd = command.to_owned();
+        let result = foreground
+            .spawn(move |me, ctx| {
+                me.terminal_driver.update(ctx, |driver, ctx| {
+                    driver.execute_silent_command(cmd, ctx)
+                })
+            })
+            .await?
+            .with_timeout(PREFLIGHT_CHECK_TIMEOUT)
+            .await;
+
+        let output = match result {
+            Err(TimeoutError) => {
+                return Err(AgentDriverError::HarnessAuthCheckFailed {
+                    harness: harness_name.to_owned(),
+                    kind: failure_kind,
+                    detail: "command timed out".to_owned(),
+                });
+            }
+            Ok(Err(_)) => {
+                return Err(AgentDriverError::HarnessAuthCheckFailed {
+                    harness: harness_name.to_owned(),
+                    kind: failure_kind,
+                    detail: "failed to execute command".to_owned(),
+                });
+            }
+            Ok(Ok(output)) => output,
+        };
+
+        if !output.success() {
+            let output_text = String::from_utf8_lossy(output.output()).to_string();
+            log::error!(
+                "Preflight {failure_kind:?} failed for {harness_name}. Output: {output_text}"
+            );
+            return Err(AgentDriverError::HarnessAuthCheckFailed {
+                harness: harness_name.to_owned(),
+                kind: failure_kind,
+                detail: output_text,
+            });
+        }
+
+        log::info!("Preflight {failure_kind:?} passed for {harness_name}");
+        Ok(())
     }
 
     /// Sets up the third-party harness by subscribing to CLI session events and

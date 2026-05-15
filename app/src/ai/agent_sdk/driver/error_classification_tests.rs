@@ -182,3 +182,37 @@ fn conversation_blocked_is_blocked() {
     assert_eq!(state, AgentTaskState::Blocked);
     assert!(update.message.contains("rm -rf /"));
 }
+
+// --- Harness auth preflight errors ---
+
+#[test]
+fn harness_auth_login_failed_is_failed_with_auth_required() {
+    let (state, update) = classify_driver_error(&AgentDriverError::HarnessAuthCheckFailed {
+        harness: "claude".into(),
+        kind: crate::ai::agent_sdk::driver::HarnessAuthFailureKind::LoginFailed,
+        detail: "exit code 1".into(),
+    });
+    assert_eq!(state, AgentTaskState::Failed);
+    assert_eq!(
+        update.error_code,
+        Some(PlatformErrorCode::AuthenticationRequired)
+    );
+    assert!(update.message.contains("authentication check failed"));
+    assert!(update.message.contains("claude"));
+}
+
+#[test]
+fn harness_auth_test_request_failed_is_failed_with_auth_required() {
+    let (state, update) = classify_driver_error(&AgentDriverError::HarnessAuthCheckFailed {
+        harness: "codex".into(),
+        kind: crate::ai::agent_sdk::driver::HarnessAuthFailureKind::TestRequestFailed,
+        detail: "exit code 1".into(),
+    });
+    assert_eq!(state, AgentTaskState::Failed);
+    assert_eq!(
+        update.error_code,
+        Some(PlatformErrorCode::AuthenticationRequired)
+    );
+    assert!(update.message.contains("billing check failed"));
+    assert!(update.message.contains("codex"));
+}

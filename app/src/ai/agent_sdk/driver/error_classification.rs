@@ -299,6 +299,32 @@ pub fn classify_driver_error(error: &AgentDriverError) -> (AgentTaskState, TaskS
                 PlatformErrorCode::EnvironmentSetupFailed,
             ),
         ),
+        AgentDriverError::HarnessAuthCheckFailed {
+            harness,
+            kind,
+            detail,
+        } => {
+            let message = match kind {
+                super::HarnessAuthFailureKind::LoginFailed => format!(
+                    "Harness '{harness}' authentication check failed: login credentials \
+                     are invalid or expired. Verify that the authentication secret \
+                     configured for this harness is correct."
+                ),
+                super::HarnessAuthFailureKind::TestRequestFailed => format!(
+                    "Harness '{harness}' billing check failed: a test API request did not \
+                     succeed. This usually means the API key lacks billing access, credits \
+                     are exhausted, or the account is misconfigured."
+                ),
+            };
+            log::error!("Preflight detail for {harness}: {detail}");
+            (
+                AgentTaskState::Failed,
+                TaskStatusUpdate::with_error_code(
+                    message,
+                    PlatformErrorCode::AuthenticationRequired,
+                ),
+            )
+        }
     }
 }
 

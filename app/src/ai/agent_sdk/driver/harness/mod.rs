@@ -138,6 +138,18 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
         validate_cli_installed(self.cli_agent().command_prefix(), self.install_docs_url())
     }
 
+    /// Shell command to verify authentication credentials are valid.
+    /// Exit code 0 = pass; non-zero = fail.
+    fn auth_check_command(&self) -> Option<String> {
+        None
+    }
+
+    /// Shell command to send a cheap test API request to verify billing/quota.
+    /// Exit code 0 = pass; non-zero = fail.
+    fn billing_check_command(&self) -> Option<String> {
+        None
+    }
+
     /// Fetch the harness-specific resume payload for an existing conversation.
     ///
     /// The driver calls this when the user passes `--conversation <id>` and the harness

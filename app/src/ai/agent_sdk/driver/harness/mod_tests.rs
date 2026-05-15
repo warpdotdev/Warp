@@ -31,3 +31,50 @@ fn validate_cli_installed_includes_docs_url_in_error() {
     assert!(reason.contains(url));
     assert!(reason.contains("Install it first"));
 }
+
+// --- Preflight command tests ---
+
+#[test]
+fn claude_returns_auth_check_command() {
+    use super::claude_code::ClaudeHarness;
+    use super::ThirdPartyHarness;
+    let harness = ClaudeHarness;
+    let cmd = harness.auth_check_command().expect("should return Some");
+    assert!(cmd.contains("auth status --json"));
+}
+
+#[test]
+fn claude_returns_billing_check_command() {
+    use super::claude_code::ClaudeHarness;
+    use super::ThirdPartyHarness;
+    let harness = ClaudeHarness;
+    let cmd = harness.billing_check_command().expect("should return Some");
+    assert!(cmd.contains("-p hello"));
+}
+
+#[test]
+fn codex_returns_auth_check_command() {
+    use super::codex::CodexHarness;
+    use super::ThirdPartyHarness;
+    let harness = CodexHarness;
+    let cmd = harness.auth_check_command().expect("should return Some");
+    assert!(cmd.contains("login status"));
+}
+
+#[test]
+fn codex_returns_billing_check_command() {
+    use super::codex::CodexHarness;
+    use super::ThirdPartyHarness;
+    let harness = CodexHarness;
+    let cmd = harness.billing_check_command().expect("should return Some");
+    assert!(cmd.contains("exec hello"));
+}
+
+#[test]
+fn gemini_returns_no_preflight_commands() {
+    use super::gemini::GeminiHarness;
+    use super::ThirdPartyHarness;
+    let harness = GeminiHarness;
+    assert!(harness.auth_check_command().is_none());
+    assert!(harness.billing_check_command().is_none());
+}

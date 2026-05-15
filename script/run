@@ -23,7 +23,7 @@ INSTALL_COMMON_SKILLS=1
 FORCE_COMMON_SKILLS=0
 COMMON_SKILLS_TARGET="${WARP_COMMON_SKILLS_INSTALL_TARGET:-}"
 
-./script/install_channel_config || echo "Skipping internal channel config installation (no repo access)."
+# ./script/install_channel_config || echo "Skipping internal channel config installation (no repo access)."
 
 
 # If warp_channel_config is on PATH, build the Local channel binary; otherwise build the OSS channel.

@@ -72,6 +72,16 @@ impl ThirdPartyHarness for ClaudeHarness {
         Some("https://code.claude.com/docs/en/quickstart")
     }
 
+    fn auth_check_command(&self) -> Option<String> {
+        let cli = self.cli_agent().command_prefix();
+        Some(format!("{cli} auth status --json"))
+    }
+
+    fn billing_check_command(&self) -> Option<String> {
+        let cli = self.cli_agent().command_prefix();
+        Some(format!("{cli} -p hello"))
+    }
+
     /// Fetch the Claude Code transcript for the current task's conversation and wrap it
     /// into a [`ResumePayload::Claude`]. Maps a server 404 to
     /// [`AgentDriverError::ConversationResumeStateMissing`] tagged as the `claude` harness

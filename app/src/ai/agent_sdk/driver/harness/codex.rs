@@ -58,6 +58,16 @@ impl ThirdPartyHarness for CodexHarness {
         Some("https://developers.openai.com/codex/cli")
     }
 
+    fn auth_check_command(&self) -> Option<String> {
+        let cli = self.cli_agent().command_prefix();
+        Some(format!("{cli} login status"))
+    }
+
+    fn billing_check_command(&self) -> Option<String> {
+        let cli = self.cli_agent().command_prefix();
+        Some(format!("{cli} exec hello"))
+    }
+
     /// Fetch the codex transcript for the current task's conversation and wrap it into a
     /// [`ResumePayload::Codex`].
     async fn fetch_resume_payload(
