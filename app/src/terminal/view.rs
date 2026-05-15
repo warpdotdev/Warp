@@ -7185,6 +7185,26 @@ impl TerminalView {
         self.can_show_conversation_details_ui_from_model(&model, app)
     }
 
+    /// Consume the one-shot conversation details panel auto-open for this
+    /// view. Call this before the first `maybe_auto_open_conversation_details_panel`
+    /// fires (e.g. on a parent-orchestrated child agent pane) so the panel does
+    /// not default open. Manual toggle via `TerminalAction::ToggleConversationDetailsPanel`
+    /// continues to work normally.
+    pub(crate) fn suppress_initial_conversation_details_panel_auto_open(&mut self) {
+        self.conversation_details_panel_auto_open_policy =
+            ConversationDetailsPanelAutoOpenPolicy::SuppressInitialAutoOpen;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_initial_conversation_details_panel_auto_open_suppressed_for_test(
+        &self,
+    ) -> bool {
+        matches!(
+            self.conversation_details_panel_auto_open_policy,
+            ConversationDetailsPanelAutoOpenPolicy::SuppressInitialAutoOpen
+        )
+    }
+
     fn maybe_insert_tombstone_for_non_running_shared_ambient_task(
         &mut self,
         ctx: &mut ViewContext<Self>,
@@ -13824,20 +13844,6 @@ impl TerminalView {
                 .lock()
                 .selection_to_string(semantic_selection, inverted, ctx);
         blocklist_selected_text.or_else(|| self.pending_user_query_selected_text(ctx))
-    }
-    pub(crate) fn suppress_initial_conversation_details_panel_auto_open(&mut self) {
-        self.conversation_details_panel_auto_open_policy =
-            ConversationDetailsPanelAutoOpenPolicy::SuppressInitialAutoOpen;
-    }
-
-    #[cfg(test)]
-    pub(crate) fn is_initial_conversation_details_panel_auto_open_suppressed_for_test(
-        &self,
-    ) -> bool {
-        matches!(
-            self.conversation_details_panel_auto_open_policy,
-            ConversationDetailsPanelAutoOpenPolicy::SuppressInitialAutoOpen
-        )
     }
 
     /// Returns selected text from the pending user query block, if any.
