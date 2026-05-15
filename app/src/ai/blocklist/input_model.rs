@@ -157,6 +157,7 @@ pub struct BlocklistAIInputModel {
     terminal_view_id: EntityId,
 
     autodetect_abort_handle: Option<AbortHandle>,
+    autodetect_generation: u64,
     model: Arc<FairMutex<TerminalModel>>,
 }
 
@@ -345,6 +346,7 @@ impl BlocklistAIInputModel {
             last_explicit_input_type_set_at: None,
             was_lock_set_with_empty_buffer: false,
             autodetect_abort_handle: None,
+            autodetect_generation: 0,
             model,
         }
     }
@@ -593,6 +595,7 @@ impl BlocklistAIInputModel {
     pub fn abort_in_progress_detection(&mut self) {
         if let Some(handle) = self.autodetect_abort_handle.take() {
             handle.abort();
+            self.autodetect_generation = self.autodetect_generation.wrapping_add(1);
         }
     }
 
@@ -693,6 +696,8 @@ impl BlocklistAIInputModel {
         };
 
         let classifier = InputClassifierModel::as_ref(ctx).classifier();
+        self.autodetect_generation = self.autodetect_generation.wrapping_add(1);
+        let autodetect_generation = self.autodetect_generation;
         let handle = ctx
             .spawn(
                 async move {
@@ -745,6 +750,9 @@ impl BlocklistAIInputModel {
                     new_input_type
                 },
                 move |me, new_input_type, ctx| {
+                    if me.autodetect_generation != autodetect_generation {
+                        return;
+                    }
                     // In theory, we shouldn't need to check this, as we only run autodetection if the input
                     // is not locked, and we should abort the autodetect future if the input is locked, but
                     // we do it anyway out of an abundance of caution.
@@ -757,6 +765,7 @@ impl BlocklistAIInputModel {
                     if me.autodetect_abort_handle.is_none() {
                         return;
                     }
+                    me.autodetect_abort_handle = None;
                     me.set_input_config_internal(
                         InputConfig {
                             input_type: new_input_type,
