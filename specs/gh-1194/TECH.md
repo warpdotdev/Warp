@@ -33,10 +33,10 @@ pub fn t(key: &'static str) -> Cow<'static, str>        // Primary translation l
 pub fn interpolate(template: &str, args: &[(&str, String)]) -> Cow<'static, str>
 ```
 
-**Locale resolution pipeline** (`init_locale`):
-1. Check `WARP_LANG` env var → if set and starts with `"zh"`, use `zh-CN`.
-2. Check system locale (`LANG`, `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` on POSIX; native API on Windows/macOS) → if starts with `"zh"`, use `zh-CN`.
-3. Default to `en`.
+**Locale resolution** (`init_locale`):
+1. Select a candidate locale: first non-empty value from `WARP_LANG` > `LANG` > `LANGUAGE` > `LC_ALL` > `LC_MESSAGES` > system locale API > `"en"` (default).
+2. Classify: if candidate starts with `"zh"` → `"zh-CN"`, otherwise → `"en"`.
+3. The candidate is NOT used as a raw locale string; it is always mapped to one of the two supported values.
 
 **Translation lookup** (`t`):
 1. Look up key in `TRANSLATIONS[current_locale]`.

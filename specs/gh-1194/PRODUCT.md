@@ -26,26 +26,24 @@ Warp's UI is entirely hardcoded in English. Non-English-speaking developers must
 
 ### 1. Locale detection
 
-1.1. On application startup, Warp determines the active locale in two steps:
+1.1. The active locale is always exactly `"zh-CN"` or `"en"`. These are the only two supported locales. The determination is:
 
-    **Step 1 — Resolve the raw locale string.** The first non-empty value from these sources is used:
-    1. `WARP_LANG` environment variable (highest priority)
-    2. `LANG`, `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` (POSIX) or platform-native locale API
-    3. Default: `"en"`
+    A candidate locale string is selected from the first available source:
+    1. `WARP_LANG` environment variable
+    2. `LANG`, `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` environment variables
+    3. Platform-native system locale API
+    4. Default: `"en"`
 
-    **Step 2 — Classify into a supported locale.** The raw locale string is mapped:
-    - `zh*` → `"zh-CN"`
-    - Everything else → `"en"`
+    The candidate is then classified:
+    - Starts with `"zh"` → `"zh-CN"`
+    - Otherwise → `"en"`
 
-    Step 1 resolves *which* source to use (env var beats system beats default). Step 2 maps the resulting string to one of the two supported locales. The key invariant: Step 2 always produces either `"zh-CN"` or `"en"` — the raw locale string is never used directly.
-
-1.2. Examples:
-    - `WARP_LANG=zh-CN` → zh-CN (env var, zh match)
-    - `WARP_LANG=zh-TW` → zh-CN (env var, zh match)
-    - `WARP_LANG=fr` → en (env var, non-zh match)
-    - Chinese OS, no `WARP_LANG` → zh-CN (system, zh match)
-    - English OS, no `WARP_LANG` → en (system, non-zh match)
-    - No `WARP_LANG`, no system locale → en (default)
+    Examples:
+    - `WARP_LANG=zh-CN` → "zh-CN" candidate → zh-CN
+    - `WARP_LANG=fr` → "fr" candidate → en (non-zh candidate, no fallthrough to system)
+    - No env vars, Chinese OS → system "zh-CN" → zh-CN
+    - No env vars, English OS → system "en_US" → en
+    - No env vars, no system locale → default "en" → en
 
 1.3. The application ships with exactly two locale files: `en.yml` and `zh-CN.yml`.
 
