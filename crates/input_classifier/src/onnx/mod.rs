@@ -91,10 +91,6 @@ impl OnnxClassifier {
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 impl InputClassifier for OnnxClassifier {
     async fn detect_input_type(&self, input: ParsedTokensSnapshot, context: &Context) -> InputType {
-        log::debug!(
-            "OnnxClassifier::detect_input_type start: autodetect_generation={:?}",
-            context.autodetect_generation
-        );
         let word_tokens = parse_query_into_tokens(input.buffer_text.as_str());
 
         let total_word_token_count = word_tokens.len();
@@ -105,29 +101,17 @@ impl InputClassifier for OnnxClassifier {
 
             // If the input is a single word and the word is one of a specific set of words, classify it as AI
             if word_tokens.len() == 1 && is_one_off_natural_language_word(&first_word) {
-                log::debug!(
-                    "OnnxClassifier::detect_input_type result=AI: one-off natural language word, autodetect_generation={:?}",
-                    context.autodetect_generation
-                );
                 return InputType::AI;
             }
 
             // If the first token is one of a specific set of shell command keywords (e.g.: echo or sudo),
             // we should classify it as shell.
             if is_one_off_shell_command_keyword(&first_word) {
-                log::debug!(
-                    "OnnxClassifier::detect_input_type result=Shell: one-off shell command keyword, autodetect_generation={:?}",
-                    context.autodetect_generation
-                );
                 return InputType::Shell;
             }
         }
 
         if is_likely_shell_command(&input, total_word_token_count).await {
-            log::debug!(
-                "OnnxClassifier::detect_input_type result=Shell: likely shell command, autodetect_generation={:?}",
-                context.autodetect_generation
-            );
             return InputType::Shell;
         }
 
@@ -143,10 +127,6 @@ impl InputClassifier for OnnxClassifier {
         input: warp_completer::ParsedTokensSnapshot,
         _context: &Context,
     ) -> anyhow::Result<ClassificationResult> {
-        log::debug!(
-            "OnnxClassifier::classify_input start: autodetect_generation={:?}",
-            _context.autodetect_generation
-        );
         // If we ever panicked while running inference, we should fall back to the heuristic classifier.
         if self.has_panicked.has_panicked() {
             return crate::heuristic_classifier::HeuristicClassifier
@@ -160,7 +140,6 @@ impl InputClassifier for OnnxClassifier {
         let inference_runner = std::panic::AssertUnwindSafe(&self.inference_runner);
 
         let input_ref = &input;
-        let autodetect_generation = _context.autodetect_generation;
         match std::panic::catch_unwind(move || {
             let start = instant::Instant::now();
             let result = inference_runner.run_inference(input_ref);
@@ -170,7 +149,7 @@ impl InputClassifier for OnnxClassifier {
             match result {
                 Ok(result) => {
                     log::debug!(
-                        "Inference took {duration_ms:.2} ms; autodetect_generation={autodetect_generation:?}, p_shell: {:.5}, p_ai: {:.5}",
+                        "Inference took {duration_ms:.2} ms; p_shell: {:.5}, p_ai: {:.5}",
                         result.p_shell,
                         result.p_ai
                     );

@@ -40,28 +40,16 @@ pub struct HeuristicClassifier;
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 impl InputClassifier for HeuristicClassifier {
     async fn detect_input_type(&self, input: ParsedTokensSnapshot, context: &Context) -> InputType {
-        log::debug!(
-            "HeuristicClassifier::detect_input_type start: autodetect_generation={:?}",
-            context.autodetect_generation
-        );
         let word_tokens = parse_query_into_tokens(input.buffer_text.as_str());
         let total_word_token_count = word_tokens.len();
 
         if total_word_token_count == 1
             && is_one_off_natural_language_word_or_prefix(&word_tokens[0].to_lowercase())
         {
-            log::debug!(
-                "HeuristicClassifier::detect_input_type result=AI: one-off natural language word or prefix, autodetect_generation={:?}",
-                context.autodetect_generation
-            );
             return InputType::AI;
         }
 
         if is_likely_shell_command(&input, total_word_token_count).await {
-            log::debug!(
-                "HeuristicClassifier::detect_input_type result=Shell: likely shell command, autodetect_generation={:?}",
-                context.autodetect_generation
-            );
             return InputType::Shell;
         }
 
@@ -76,10 +64,6 @@ impl InputClassifier for HeuristicClassifier {
         input: warp_completer::ParsedTokensSnapshot,
         context: &Context,
     ) -> anyhow::Result<super::ClassificationResult> {
-        log::debug!(
-            "HeuristicClassifier::classify_input start: autodetect_generation={:?}",
-            context.autodetect_generation
-        );
         let word_tokens = parse_query_into_tokens(input.buffer_text.as_str());
 
         // Try autodetecting both including and not including the last token,
