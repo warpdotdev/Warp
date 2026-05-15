@@ -44,6 +44,11 @@ const TEST_CONNECTION_TIMEOUT_SECS: u64 = 8;
 /// 输入框区域(editor + 两个按钮)的最大宽度,与字段标签右侧的槽位约束对齐。
 const INPUT_AREA_MAX_WIDTH: f32 = 420.0;
 
+/// 页内所有动作按钮(保存 / 清除 / 测试连接)的字号与 padding,与 BYOP 设置页
+/// 卡片按钮(`agent_providers_widget::CARD_BUTTON_*`)保持一致。
+const BUTTON_FONT_SIZE: f32 = 12.0;
+const BUTTON_PADDING: f32 = 6.0;
+
 /// 从环境变量读取系统代理(跨平台最小集):返回 (https_proxy, http_proxy, no_proxy)。
 /// Windows WinINET / macOS SCDynamicStore 的深入读取留作后续 PR。
 fn read_system_proxy_env() -> (String, String, String) {
@@ -624,26 +629,19 @@ impl SettingsWidget for NetworkPageWidget {
                             clear_action: NetworkPageAction|
          -> Box<dyn Element> {
             let editor_element = warpui::elements::ChildView::new(editor).finish();
-            // 设固定宽度 + 小 padding,以实现表单列整齐 + 文字与按钮宽度区匹配。
-            // 不用 with_centered_text_label——当前 Button 实现中 `CenteredText` 路径未明确
-            // 指定 Align 方向,会造成文字偏右;用固定宽 + Text 默认左对齐 +
-            // 左右对称 padding,视觉上即居中。
-            const ACTION_BUTTON_WIDTH: f32 = 56.0;
+            // 与 BYOP 提供商设置页的卡片按钮保持一致的样式:
+            // font_size 12 + uniform padding 6,按钮宽度随文字自适应,不设固定宽。
+            // (参考 agent_providers_widget::render_provider_card 的 save_button)
             let save_button = appearance
                 .ui_builder()
                 .button(ButtonVariant::Accent, save_state.clone())
-                .with_text_label(crate::t!("settings-network-save"))
-                .with_style(
-                    UiComponentStyles::default()
-                        .set_padding(Coords {
-                            top: 5.,
-                            bottom: 5.,
-                            left: 14.,
-                            right: 14.,
-                        })
-                        .set_margin(Coords::default().left(6.))
-                        .set_width(ACTION_BUTTON_WIDTH),
-                )
+                .with_style(UiComponentStyles {
+                    font_size: Some(BUTTON_FONT_SIZE),
+                    padding: Some(Coords::uniform(BUTTON_PADDING)),
+                    margin: Some(Coords::default().left(6.)),
+                    ..Default::default()
+                })
+                .with_centered_text_label(crate::t!("settings-network-save"))
                 .build()
                 .on_click(move |ctx, _, _| {
                     ctx.dispatch_typed_action(save_action.clone());
@@ -652,18 +650,13 @@ impl SettingsWidget for NetworkPageWidget {
             let clear_button = appearance
                 .ui_builder()
                 .button(ButtonVariant::Text, clear_state.clone())
-                .with_text_label(crate::t!("settings-network-clear"))
-                .with_style(
-                    UiComponentStyles::default()
-                        .set_padding(Coords {
-                            top: 5.,
-                            bottom: 5.,
-                            left: 12.,
-                            right: 12.,
-                        })
-                        .set_margin(Coords::default().left(4.))
-                        .set_width(ACTION_BUTTON_WIDTH),
-                )
+                .with_style(UiComponentStyles {
+                    font_size: Some(BUTTON_FONT_SIZE),
+                    padding: Some(Coords::uniform(BUTTON_PADDING)),
+                    margin: Some(Coords::default().left(4.)),
+                    ..Default::default()
+                })
+                .with_centered_text_label(crate::t!("settings-network-clear"))
                 .build()
                 .on_click(move |ctx, _, _| {
                     ctx.dispatch_typed_action(clear_action.clone());
@@ -743,22 +736,16 @@ impl SettingsWidget for NetworkPageWidget {
             NetworkPageAction::ClearProxyNoProxy,
         ));
 
-        // 6. 测试连接 — 同上:固定宽 + 左右对称 padding,避开 CenteredText 偏右问题。
-        const TEST_BUTTON_WIDTH: f32 = 100.0;
+        // 6. 测试连接 — 与上面保存按钮同款样式。
         let mut test_button = appearance
             .ui_builder()
             .button(ButtonVariant::Accent, view.test_button_state.clone())
-            .with_text_label(crate::t!("settings-network-test-button"))
-            .with_style(
-                UiComponentStyles::default()
-                    .set_padding(Coords {
-                        top: 6.,
-                        bottom: 6.,
-                        left: 14.,
-                        right: 14.,
-                    })
-                    .set_width(TEST_BUTTON_WIDTH),
-            )
+            .with_style(UiComponentStyles {
+                font_size: Some(BUTTON_FONT_SIZE),
+                padding: Some(Coords::uniform(BUTTON_PADDING)),
+                ..Default::default()
+            })
+            .with_centered_text_label(crate::t!("settings-network-test-button"))
             .build()
             .on_click(|ctx, _, _| {
                 ctx.dispatch_typed_action(NetworkPageAction::TestConnection);
