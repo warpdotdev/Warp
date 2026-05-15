@@ -413,6 +413,111 @@ fn mime_to_modality(mime: &str) -> &'static str {
     }
 }
 
+/// 把 `params.tasks` 收集成稳定的线性消息序,修复 Issue #94。
+///
+/// `params.tasks` 来自 [`crate::ai::agent::conversation::AIConversation::compute_active_tasks`],
+/// 后者用 `HashMap::into_values()` 收集 → task 间顺序不确定。旧实现直接
+/// `flat_map(|t| t.messages.iter())` 朴素拼接,在多 task 场景(LRC CLI subagent /
+/// `subagent` 工具衍生 subtask)下有两个缺陷:
+///   1. task 间相对顺序随机 → 历史轮的 user 消息可能被排到序列末尾,被上游模型
+///      当作"最新一轮 user message"(Issue #94 的直接现象)。
+///   2. LRC subagent spawn 时,当前轮 UserQuery 会被**同时**复制进 root task 和
+///      新建 subtask(见 `generate_byop_output` 流内的 subtask UserQuery 注入,
+///      该副本是 `CLISubagentView` 渲染所必需,不能在源头删),朴素拼接会让同一条
+///      user query 在请求里出现两次。
+///
+/// 修复:以 root task(无 parent,或 parent 不在 tasks 集合内)为起点做 DFS,遇到
+/// `Subagent` ToolCall 就下钻到对应 subtask —— 与 [`crate::ai::agent::task_store::TaskStore::all_linearized_messages`]
+/// 同一套确定性遍历;并对 UserQuery 按 `(request_id, query)` 去重,丢弃 LRC 复制出的
+/// subtask 副本。不同用户轮次 `request_id` 不同,不会被误删;`request_id` 为空的老
+/// 数据 / 测试桩则退回不去重,避免误伤。tasks 里没被 DFS 命中的孤儿 task 按 id 排序
+/// 追加到末尾兜底,确保不丢消息。
+fn collect_linearized_task_messages(tasks: &[api::Task]) -> Vec<&api::Message> {
+    use std::collections::{HashMap, HashSet};
+
+    if tasks.is_empty() {
+        return Vec::new();
+    }
+
+    let by_id: HashMap<&str, &api::Task> = tasks.iter().map(|t| (t.id.as_str(), t)).collect();
+
+    // root = 没有 parent,或 parent 不在当前 tasks 集合里的 task。
+    let root = tasks.iter().find(|t| match t.dependencies.as_ref() {
+        None => true,
+        Some(dep) => {
+            dep.parent_task_id.is_empty() || !by_id.contains_key(dep.parent_task_id.as_str())
+        }
+    });
+
+    fn push_msg<'a>(
+        msg: &'a api::Message,
+        out: &mut Vec<&'a api::Message>,
+        seen_user_queries: &mut HashSet<(&'a str, &'a str)>,
+    ) {
+        if let Some(api::message::Message::UserQuery(u)) = &msg.message {
+            if !msg.request_id.is_empty()
+                && !seen_user_queries.insert((msg.request_id.as_str(), u.query.as_str()))
+            {
+                return;
+            }
+        }
+        out.push(msg);
+    }
+
+    fn dfs<'a>(
+        task: &'a api::Task,
+        by_id: &HashMap<&'a str, &'a api::Task>,
+        visited_tasks: &mut HashSet<&'a str>,
+        out: &mut Vec<&'a api::Message>,
+        seen_user_queries: &mut HashSet<(&'a str, &'a str)>,
+    ) {
+        if !visited_tasks.insert(task.id.as_str()) {
+            return;
+        }
+        for msg in &task.messages {
+            push_msg(msg, out, seen_user_queries);
+            if let Some(api::message::Message::ToolCall(tc)) = &msg.message {
+                if let Some(api::message::tool_call::Tool::Subagent(sub)) = &tc.tool {
+                    if let Some(subtask) = by_id.get(sub.task_id.as_str()) {
+                        dfs(subtask, by_id, visited_tasks, out, seen_user_queries);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut out: Vec<&api::Message> = Vec::new();
+    let mut visited_tasks: HashSet<&str> = HashSet::new();
+    let mut seen_user_queries: HashSet<(&str, &str)> = HashSet::new();
+
+    if let Some(root) = root {
+        dfs(
+            root,
+            &by_id,
+            &mut visited_tasks,
+            &mut out,
+            &mut seen_user_queries,
+        );
+    }
+
+    // 孤儿 task 兜底:按 id 排序保证确定性。
+    let mut orphans: Vec<&api::Task> = tasks
+        .iter()
+        .filter(|t| !visited_tasks.contains(t.id.as_str()))
+        .collect();
+    orphans.sort_by(|a, b| a.id.cmp(&b.id));
+    for task in orphans {
+        if !visited_tasks.insert(task.id.as_str()) {
+            continue;
+        }
+        for msg in &task.messages {
+            push_msg(msg, &mut out, &mut seen_user_queries);
+        }
+    }
+
+    out
+}
+
 /// 把 RequestParams 翻译为 genai `ChatRequest`(含 system + messages + tools)。
 ///
 /// `force_echo_reasoning`:由 `super::reasoning::model_requires_reasoning_echo`
@@ -444,26 +549,10 @@ fn build_chat_request(
 
     let mut messages: Vec<ChatMessage> = Vec::new();
 
-    // 收集所有 task 的 messages。
-    //
-    // OpenWarp BYOP 路径下,所有 `make_*_message`(make_user_query_message /
-    // make_agent_output_message / make_tool_call_message / make_tool_call_result_message
-    // 等)生产的 message 都填 `timestamp: None`,只有上游 warp 云端 server 路径会
-    // 填真实 timestamp,而云端路径已在 OpenWarp 中完全移除。
-    //
-    // 旧实现这里还有一段 `sort_by_key(|m| m.timestamp...)` 兜底,假设跨 task 历史
-    // 按 chronological 时间序合并 — 该假设只在云端协议下成立。BYOP 直连后:
-    //   1. 单 task 内 `task.messages` 的 push 顺序就是 stream emit 顺序,确定;
-    //   2. timestamp 全 None → sort_by_key 的 key 全 (0, 0) → 稳定排序退化为
-    //      "保留输入顺序",与不排完全等价;
-    //   3. 多 task 场景(subagent 衍生 subtask)的 task 间相对顺序由
-    //      `compute_active_tasks` 决定,sort_by_key 无法纠正(全 (0, 0))。
-    // 综上,旧 sort_by_key 是确凿死代码,删除字节级等价,顺手清掉。
-    let all_msgs: Vec<&api::Message> = params
-        .tasks
-        .iter()
-        .flat_map(|t| t.messages.iter())
-        .collect();
+    // 收集所有 task 的 messages,经 `collect_linearized_task_messages` 做确定性
+    // DFS 线性化 + UserQuery 去重(修复 Issue #94 —— 历史轮 user 消息被乱序排到
+    // 末尾、或 LRC subagent 副本导致重复)。详见该函数文档。
+    let all_msgs: Vec<&api::Message> = collect_linearized_task_messages(&params.tasks);
 
     // OpenWarp BYOP 本地会话压缩:把 conversation.compaction_state 应用到 message 序列。
     //   1. 过滤已被某次压缩覆盖的 (user, assistant) 对(`hidden_message_ids`)
@@ -4652,4 +4741,181 @@ pub(super) fn serialize_outgoing_tool_call_for_test(
     server_message_data: &str,
 ) -> (String, Value) {
     serialize_outgoing_tool_call(tc, mcp_ctx, server_message_data)
+}
+
+/// Issue #94 回归测试:`build_chat_request` 收集多 task 消息时,历史轮 user 消息
+/// 不能被乱序排到末尾、也不能因 LRC subagent 副本而重复。
+#[cfg(test)]
+mod issue_94_task_linearization_tests {
+    use super::*;
+    use crate::test_util::ai_agent_tasks::{
+        create_api_subtask, create_api_task, create_message, create_subagent_tool_call_message,
+    };
+
+    /// 构造一条带 `request_id` 的 UserQuery message。
+    fn user_query_msg(id: &str, task_id: &str, request_id: &str, query: &str) -> api::Message {
+        api::Message {
+            id: id.to_string(),
+            task_id: task_id.to_string(),
+            server_message_data: String::new(),
+            citations: vec![],
+            message: Some(api::message::Message::UserQuery(api::message::UserQuery {
+                query: query.to_string(),
+                ..Default::default()
+            })),
+            request_id: request_id.to_string(),
+            timestamp: None,
+        }
+    }
+
+    /// 复刻 Issue #94 的 01.json / 02.json 场景:用户只发过一句话,但在 LRC CLI
+    /// subagent 派生后,这句 UserQuery 同时存在于 root task 与 subtask。
+    ///
+    /// - root: [UserQuery, AgentOutput, Subagent ToolCall→subtask]
+    /// - subtask: [UserQuery(同 request_id+query 的副本), AgentOutput]
+    fn issue_94_tasks() -> (api::Task, api::Task) {
+        const REQ: &str = "req-1";
+        const QUERY: &str = "帮我在这个服务器上搭建一个dns(doh)分流服务";
+        let root = create_api_task(
+            "root",
+            vec![
+                user_query_msg("m1", "root", REQ, QUERY),
+                create_message("m2", "root"),
+                create_subagent_tool_call_message("m3", "root", "sub-1", None),
+            ],
+        );
+        let subtask = create_api_subtask(
+            "sub-1",
+            "root",
+            vec![
+                user_query_msg("s1", "sub-1", REQ, QUERY),
+                create_message("s2", "sub-1"),
+            ],
+        );
+        (root, subtask)
+    }
+
+    fn count_user_queries(msgs: &[&api::Message]) -> usize {
+        msgs.iter()
+            .filter(|m| matches!(&m.message, Some(api::message::Message::UserQuery(_))))
+            .count()
+    }
+
+    fn message_ids(msgs: &[&api::Message]) -> Vec<String> {
+        msgs.iter().map(|m| m.id.clone()).collect()
+    }
+
+    /// 复现:旧实现 `params.tasks.iter().flat_map(|t| t.messages.iter())` 朴素拼接 ——
+    /// (1) UserQuery 重复出现两次;(2) 结果随 task 输入顺序变化(`compute_active_tasks`
+    /// 用 HashMap::into_values 收集,顺序不确定)。
+    #[test]
+    fn naive_flat_map_reproduces_issue_94() {
+        let (root, subtask) = issue_94_tasks();
+
+        let naive = |tasks: &[api::Task]| -> Vec<String> {
+            tasks
+                .iter()
+                .flat_map(|t| t.messages.iter())
+                .map(|m| m.id.clone())
+                .collect()
+        };
+
+        let root_first = naive(&[root.clone(), subtask.clone()]);
+        let subtask_first = naive(&[subtask.clone(), root.clone()]);
+
+        // (1) UserQuery 被拼了两次。
+        let root_first_refs: Vec<&api::Message> = [&root, &subtask]
+            .iter()
+            .flat_map(|t| t.messages.iter())
+            .collect();
+        assert_eq!(
+            count_user_queries(&root_first_refs),
+            2,
+            "朴素拼接会让同一条 user query 出现两次 —— 这正是 Issue #94 的 bug"
+        );
+
+        // (2) 顺序随输入 task 顺序漂移 —— subtask 在前时历史 user(m1)被甩到末尾。
+        assert_ne!(
+            root_first, subtask_first,
+            "朴素拼接结果依赖 task 顺序,非确定性"
+        );
+        assert_eq!(
+            subtask_first.last().map(String::as_str),
+            Some("m3"),
+            "subtask 排前时 root 的消息整体后移"
+        );
+        assert!(
+            subtask_first.iter().position(|id| id == "s1").unwrap()
+                < subtask_first.iter().position(|id| id == "m1").unwrap(),
+            "subtask 的 UserQuery 副本(s1)排到了 root 原件(m1)之前"
+        );
+    }
+
+    /// 修复验证:`collect_linearized_task_messages` 输出与 task 输入顺序无关,
+    /// UserQuery 去重后只剩一条,且整体为 root→subtask 的 DFS 线性序。
+    #[test]
+    fn linearized_collection_is_deterministic_and_deduped() {
+        let (root, subtask) = issue_94_tasks();
+
+        let root_first = vec![root.clone(), subtask.clone()];
+        let subtask_first = vec![subtask.clone(), root.clone()];
+
+        let a = collect_linearized_task_messages(&root_first);
+        let b = collect_linearized_task_messages(&subtask_first);
+
+        // 与输入顺序无关。
+        assert_eq!(
+            message_ids(&a),
+            message_ids(&b),
+            "结果必须与 params.tasks 的输入顺序无关"
+        );
+
+        // UserQuery 去重:LRC 复制出的 subtask 副本(s1)被丢弃。
+        assert_eq!(
+            count_user_queries(&a),
+            1,
+            "重复的 UserQuery 必须被去重为一条"
+        );
+
+        // DFS 线性序:root 的消息在前,遇到 Subagent ToolCall 下钻 subtask。
+        // s1 被去重,故期望 [m1, m2, m3, s2]。
+        assert_eq!(message_ids(&a), vec!["m1", "m2", "m3", "s2"]);
+
+        // 保留下来的那条 user query 是 root 原件,排在序列开头。
+        assert_eq!(a.first().map(|m| m.id.as_str()), Some("m1"));
+    }
+
+    /// 普通单 task 对话(无 subagent)不受影响:消息原样、原序返回。
+    #[test]
+    fn single_task_conversation_unchanged() {
+        let root = create_api_task(
+            "root",
+            vec![
+                user_query_msg("m1", "root", "req-1", "你好"),
+                create_message("m2", "root"),
+            ],
+        );
+        let out = collect_linearized_task_messages(std::slice::from_ref(&root));
+        assert_eq!(message_ids(&out), vec!["m1", "m2"]);
+    }
+
+    /// 不同用户轮次即使 query 文本相同,只要 `request_id` 不同就不会被误删。
+    #[test]
+    fn distinct_turns_with_same_text_are_kept() {
+        let root = create_api_task(
+            "root",
+            vec![
+                user_query_msg("m1", "root", "req-1", "继续"),
+                create_message("m2", "root"),
+                user_query_msg("m3", "root", "req-2", "继续"),
+            ],
+        );
+        let out = collect_linearized_task_messages(std::slice::from_ref(&root));
+        assert_eq!(
+            count_user_queries(&out),
+            2,
+            "request_id 不同的两轮 user 消息都要保留"
+        );
+        assert_eq!(message_ids(&out), vec!["m1", "m2", "m3"]);
+    }
 }
