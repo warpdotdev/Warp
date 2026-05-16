@@ -9,6 +9,7 @@ use crate::{
     },
     channel::ChannelState,
     cloud_object::{
+        generic_string_server_object_from_graphql_fields,
         model::{
             actions::{ObjectActionHistory, ObjectActionType},
             generic_string_model::{
@@ -16,13 +17,15 @@ use crate::{
             },
             json_model::JsonSerializer,
         },
-        BulkCreateCloudObjectResult, BulkCreateGenericStringObjectsRequest,
-        CreateCloudObjectResult, CreateObjectRequest, CreatedCloudObject, GenericCloudObject,
-        GenericServerObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
-        JsonObjectType, ObjectDeleteResult, ObjectIdType, ObjectMetadataUpdateResult,
-        ObjectPermissionUpdateResult, ObjectPermissionsUpdateData, ObjectType, ObjectsToUpdate,
-        Owner, Revision, RevisionAndLastEditor, ServerCloudObject, ServerFolder, ServerMetadata,
-        ServerNotebook, ServerObject, ServerPermissions, ServerWorkflow, UpdateCloudObjectResult,
+        server_folder_from_graphql_fields, server_notebook_from_graphql_fields,
+        server_workflow_from_graphql_fields, BulkCreateCloudObjectResult,
+        BulkCreateGenericStringObjectsRequest, CreateCloudObjectResult, CreateObjectRequest,
+        CreatedCloudObject, GenericCloudObject, GenericStringObjectFormat,
+        GenericStringObjectUniqueKey, JsonObjectType, ObjectDeleteResult, ObjectIdType,
+        ObjectMetadataUpdateResult, ObjectPermissionUpdateResult, ObjectPermissionsUpdateData,
+        ObjectType, ObjectsToUpdate, Owner, Revision, RevisionAndLastEditor, ServerCloudObject,
+        ServerFolder, ServerMetadata, ServerNotebook, ServerObject, ServerPermissions,
+        ServerWorkflow, UpdateCloudObjectResult,
     },
     drive::{folders::FolderId, sharing::SharingAccessLevel},
     env_vars::EnvVarCollection,
@@ -420,7 +423,14 @@ impl ObjectClient for ServerApi {
                 }
                 WorkflowUpdate::WorkflowUpdateRejected(rejected) => {
                     Ok(UpdateCloudObjectResult::Rejected {
-                        object: rejected.conflicting_workflow.try_into()?,
+                        object: server_workflow_from_graphql_fields(
+                            ServerId::from_string_lossy(
+                                rejected.conflicting_workflow.metadata.uid.inner(),
+                            ),
+                            rejected.conflicting_workflow.data,
+                            rejected.conflicting_workflow.metadata.try_into()?,
+                            rejected.conflicting_workflow.permissions.try_into()?,
+                        )?,
                     })
                 }
                 WorkflowUpdate::Unknown => Err(anyhow!("WorkflowUpdate has unknown variant")),
@@ -668,7 +678,16 @@ impl ObjectClient for ServerApi {
                 }
                 NotebookUpdate::NotebookUpdateRejected(rejected) => {
                     Ok(UpdateCloudObjectResult::Rejected {
-                        object: rejected.conflicting_notebook.try_into()?,
+                        object: server_notebook_from_graphql_fields(
+                            ServerId::from_string_lossy(
+                                rejected.conflicting_notebook.metadata.uid.inner(),
+                            ),
+                            Some(rejected.conflicting_notebook.title),
+                            Some(rejected.conflicting_notebook.data),
+                            rejected.conflicting_notebook.ai_document_id,
+                            rejected.conflicting_notebook.metadata.try_into()?,
+                            rejected.conflicting_notebook.permissions.try_into()?,
+                        )?,
                     })
                 }
                 NotebookUpdate::Unknown => Err(anyhow!("NotebookUpdate has unknown variant")),
@@ -914,7 +933,7 @@ impl ObjectClient for ServerApi {
                         notebooks
                             .into_iter()
                             .filter_map(|notebook| {
-                                ServerNotebook::try_from_graphql_fields(
+                                server_notebook_from_graphql_fields(
                                     ServerId::from_string_lossy(notebook.metadata.uid.inner()),
                                     Some(notebook.title),
                                     Some(notebook.data),
@@ -934,7 +953,7 @@ impl ObjectClient for ServerApi {
                         workflows
                             .into_iter()
                             .filter_map(|workflow| {
-                                ServerWorkflow::try_from_graphql_fields(
+                                server_workflow_from_graphql_fields(
                                     ServerId::from_string_lossy(workflow.metadata.uid.inner()),
                                     workflow.data,
                                     workflow.metadata.try_into().ok()?,
@@ -952,7 +971,7 @@ impl ObjectClient for ServerApi {
                         folders
                             .into_iter()
                             .filter_map(|folder| {
-                                ServerFolder::try_from_graphql_fields(
+                                server_folder_from_graphql_fields(
                                     ServerId::from_string_lossy(folder.metadata.uid.inner()),
                                     Some(folder.name),
                                     folder.metadata.try_into().ok()?,
@@ -1653,8 +1672,12 @@ fn parse_server_gso<T, S>(
     >,
     S: Serializer<T>,
 {
-    match GenericServerObject::<GenericStringObjectId, GenericStringModel<T, S>>::try_from_graphql_fields(uid, Some(serialized_model), metadata, permissions)
-    {
+    match generic_string_server_object_from_graphql_fields::<T, S>(
+        uid,
+        Some(serialized_model),
+        metadata,
+        permissions,
+    ) {
         Ok(object) => {
             map.entry(format).or_default().push(Box::new(object));
         }
