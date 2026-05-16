@@ -38,7 +38,7 @@ fn make_message_response(message_id: &str) -> ReadAgentMessageResponse {
     }
 }
 
-fn transient_read_error(status: u16) -> anyhow::Error {
+fn http_status_read_error(status: u16) -> anyhow::Error {
     anyhow::Error::new(HttpStatusError {
         status,
         body: format!("status {status} body"),
@@ -94,7 +94,7 @@ async fn read_message_with_timeout_retries_transient_failures_until_success() {
         .returning(move |_| {
             let attempt = attempts_clone.fetch_add(1, Ordering::SeqCst);
             if attempt == 0 {
-                Err(transient_read_error(404))
+                Err(http_status_read_error(404))
             } else {
                 Ok(make_message_response("msg-123"))
             }
@@ -124,7 +124,7 @@ async fn read_message_with_timeout_times_out_after_retrying_transient_failures()
         .with(eq("msg-123"))
         .returning(move |_| {
             attempts_clone.fetch_add(1, Ordering::SeqCst);
-            Err(transient_read_error(404))
+            Err(http_status_read_error(404))
         });
 
     let ai_client: Arc<dyn AIClient> = Arc::new(ai_client);
@@ -147,5 +147,43 @@ async fn read_message_with_timeout_times_out_after_retrying_transient_failures()
     assert!(
         attempts.load(Ordering::SeqCst) >= 2,
         "expected at least one retry before timeout"
+    );
+}
+
+#[tokio::test]
+async fn read_message_with_timeout_does_not_retry_permanent_http_failures() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let attempts_clone = attempts.clone();
+    let mut ai_client = MockAIClient::new();
+    ai_client
+        .expect_read_agent_message()
+        .with(eq("msg-123"))
+        .times(1)
+        .returning(move |_| {
+            attempts_clone.fetch_add(1, Ordering::SeqCst);
+            Err(http_status_read_error(403))
+        });
+
+    let ai_client: Arc<dyn AIClient> = Arc::new(ai_client);
+    let hydrator = MessageHydrator::with_fetch_timing(
+        ai_client,
+        Duration::from_millis(100),
+        Duration::from_millis(5),
+    );
+
+    let err = hydrator
+        .read_message_with_timeout("msg-123")
+        .await
+        .expect_err("expected permanent failure to fail fast");
+    let err_chain = format!("{err:#}");
+
+    assert!(
+        err_chain.contains("HTTP request failed with status 403"),
+        "{err:#}"
+    );
+    assert_eq!(
+        attempts.load(Ordering::SeqCst),
+        1,
+        "permanent 4xx errors should not retry"
     );
 }

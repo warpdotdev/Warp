@@ -8,18 +8,17 @@ use futures::future::Either;
 #[cfg(not(target_family = "wasm"))]
 use instant::Instant;
 #[cfg(not(target_family = "wasm"))]
+use reqwest::Error as ReqwestError;
+#[cfg(not(target_family = "wasm"))]
 use warpui::r#async::Timer;
 
 use crate::ai::agent::ReceivedMessageInput;
-#[cfg(not(target_family = "wasm"))]
-use crate::server::retry_strategies::is_transient_http_error;
 use crate::server::server_api::ai::{AIClient, AgentRunEvent, ReadAgentMessageResponse};
 #[cfg(not(target_family = "wasm"))]
 use crate::server::server_api::presigned_upload::HttpStatusError;
 use crate::server::server_api::ServerApi;
 
 pub(crate) const DEFAULT_AGENT_MESSAGE_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
-#[cfg(not(target_family = "wasm"))]
 const DEFAULT_AGENT_MESSAGE_RETRY_DELAY: Duration = Duration::from_millis(50);
 
 /// Hydrates `new_message` agent events into full message payloads and delivery
@@ -221,15 +220,32 @@ impl MessageHydrator {
 #[cfg(not(target_family = "wasm"))]
 fn should_retry_message_read_error(err: &anyhow::Error) -> bool {
     // Immediate read-after-event lag can surface as a short-lived 404 before
-    // the message row becomes readable. Treat that the same as the existing
-    // transient transport errors and keep retrying within the caller's timeout
-    // window.
-    for cause in err.chain() {
-        if let Some(http_err) = cause.downcast_ref::<HttpStatusError>() {
-            return matches!(http_err.status, 404 | 408 | 429 | 500..=599);
-        }
+    // the message row becomes readable. Restrict retries to status-preserving
+    // eventual-consistency/server responses plus clearly transient transport
+    // failures so permanent 4xxs fail fast instead of timing out.
+    if let Some(status) = message_read_error_status(err) {
+        return matches!(status, 404 | 408 | 429 | 500..=599);
     }
-    is_transient_http_error(err)
+
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<ReqwestError>()
+            .is_some_and(is_transient_message_read_transport_error)
+    })
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn message_read_error_status(err: &anyhow::Error) -> Option<u16> {
+    err.chain().find_map(|cause| {
+        cause
+            .downcast_ref::<HttpStatusError>()
+            .map(|http_err| http_err.status)
+    })
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn is_transient_message_read_transport_error(err: &ReqwestError) -> bool {
+    err.is_timeout() || err.is_connect()
 }
 
 #[cfg(not(target_family = "wasm"))]
