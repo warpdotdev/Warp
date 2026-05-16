@@ -5565,9 +5565,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::AgentModeCodeFilesNavigated
             | Self::AgentModeCodeDiffHunksNavigated => EnablementState::Always,
 
-            Self::ToggleWorkspaceDecorationVisibility => {
-                EnablementState::Flag(FeatureFlag::FullScreenZenMode)
-            }
+            Self::ToggleWorkspaceDecorationVisibility => EnablementState::Always,
             Self::UpdateAltScreenPaddingMode => EnablementState::Always,
             Self::AddTabWithShell => EnablementState::Flag(FeatureFlag::ShellSelector),
             Self::AgentModeSurfacedCitations | Self::AgentModeOpenedCitation => {

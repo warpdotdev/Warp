@@ -2983,7 +2983,6 @@ fn test_worktree_sidecar_hides_linked_worktrees_from_repo_list() {
 
 #[test]
 fn test_vertical_tabs_context_menu_does_not_show_hover_only_tab_bar() {
-    let _full_screen_zen_mode_guard = FeatureFlag::FullScreenZenMode.override_enabled(true);
     let _vertical_tabs_guard = FeatureFlag::VerticalTabs.override_enabled(true);
 
     App::test((), |mut app| async move {
@@ -3011,8 +3010,6 @@ fn test_vertical_tabs_context_menu_does_not_show_hover_only_tab_bar() {
 
 #[test]
 fn test_standard_tab_context_menu_shows_hover_only_tab_bar() {
-    let _full_screen_zen_mode_guard = FeatureFlag::FullScreenZenMode.override_enabled(true);
-
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 
