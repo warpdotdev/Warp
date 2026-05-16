@@ -866,24 +866,28 @@ impl AmbientAgentViewModel {
         ctx.emit(AmbientAgentViewModelEvent::RunLifecycleChanged);
 
         // Fetch the task so we can set the correct environment (instead of defaulting to the most
-        // recently-used one) and the correct harness (so non-oz viewers know to use the
+        // recently-used one), harness, and harness model (so non-oz viewers know to use the
         // queued-prompt / harness-command-started flow).
         ctx.spawn(
             async move { ai_client.get_ambient_agent_task(&task_id).await },
             |me, result, ctx| match result {
                 Ok(task) => {
                     let snapshot = task.agent_config_snapshot.as_ref();
+                    let harness_config = snapshot.and_then(|s| s.harness.as_ref());
                     let environment_id = snapshot
                         .and_then(|s| s.environment_id.as_deref())
                         .and_then(|id| ServerId::try_from(id).ok())
                         .map(SyncId::ServerId);
-                    let harness = snapshot
-                        .and_then(|s| s.harness.as_ref())
+                    let harness = harness_config
                         .map(|h| h.harness_type)
                         .unwrap_or(Harness::Oz);
+                    let harness_model_id = harness_config.and_then(|h| h.model_id.clone());
+                    let harness_reasoning_level =
+                        harness_config.and_then(|h| h.reasoning_level.clone());
 
                     me.set_environment_id(environment_id, ctx);
                     me.set_harness(harness, ctx);
+                    me.set_harness_model_selection(harness_model_id, harness_reasoning_level, ctx);
                     ctx.emit(AmbientAgentViewModelEvent::ViewerHarnessResolved);
                 }
                 Err(err) => {

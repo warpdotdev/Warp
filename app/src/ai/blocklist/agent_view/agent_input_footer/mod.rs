@@ -2023,7 +2023,23 @@ impl AgentInputFooter {
             AgentToolbarItemKind::ModelSelector => {
                 let show = FeatureFlag::ProfilesDesignRevamp.is_enabled()
                     || *SessionSettings::as_ref(app).show_model_selectors_in_prompt;
-                show.then(|| ChildView::new(&self.model_selector).finish())
+                if !show {
+                    return None;
+                }
+                let is_third_party_harness =
+                    self.ambient_agent_view_model.as_ref().is_some_and(|m| {
+                        !matches!(
+                            m.as_ref(app).selected_harness(),
+                            Harness::Oz | Harness::Unknown
+                        )
+                    });
+                if is_third_party_harness {
+                    self.v2_model_selector
+                        .as_ref()
+                        .map(|selector| ChildView::new(selector).finish())
+                } else {
+                    Some(ChildView::new(&self.model_selector).finish())
+                }
             }
             AgentToolbarItemKind::NLDToggle => Some(ChildView::new(&self.nld_button).finish()),
             AgentToolbarItemKind::VoiceInput => {

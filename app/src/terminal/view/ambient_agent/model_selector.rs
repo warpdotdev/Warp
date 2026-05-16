@@ -290,6 +290,12 @@ impl ModelSelector {
             .map(|m| m.as_ref(app).selected_harness())
     }
 
+    fn is_configuring(&self, app: &AppContext) -> bool {
+        self.ambient_agent_model
+            .as_ref()
+            .is_none_or(|m| m.as_ref(app).is_configuring_ambient_agent())
+    }
+
     pub fn is_menu_open(&self) -> bool {
         self.is_menu_open
     }
@@ -372,6 +378,11 @@ impl ModelSelector {
     }
 
     fn refresh_button(&mut self, ctx: &mut ViewContext<Self>) {
+        let is_configuring = self.is_configuring(ctx);
+        self.button.update(ctx, |button, ctx| {
+            button.set_disabled(!is_configuring, ctx);
+        });
+
         let active_label = match self.active_harness(ctx) {
             Some(harness) if !matches!(harness, Harness::Oz | Harness::Unknown) => self
                 .resolved_harness_selection(harness, ctx)
@@ -601,8 +612,10 @@ impl TypedActionView for ModelSelector {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             ModelSelectorAction::ToggleMenu => {
-                let new_state = !self.is_menu_open;
-                self.set_menu_visibility(new_state, ctx);
+                if self.is_configuring(ctx) {
+                    let new_state = !self.is_menu_open;
+                    self.set_menu_visibility(new_state, ctx);
+                }
             }
             ModelSelectorAction::SelectModel(llm_id) => {
                 let terminal_view_id = self.terminal_view_id;
