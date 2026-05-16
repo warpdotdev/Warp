@@ -237,9 +237,9 @@ impl From<GqlUgcCollectionEnablementSetting> for UgcCollectionEnablementSetting 
                 UgcCollectionEnablementSetting::RespectUserSetting
             }
             GqlUgcCollectionEnablementSetting::Other(value) => {
-                report_error!(anyhow!(
+                log::warn!(
                     "Invalid UgcCollectionEnablementSetting '{value}'. Make sure to update client GraphQL types!"
-                ));
+                );
                 UgcCollectionEnablementSetting::RespectUserSetting
             }
         }
@@ -278,9 +278,9 @@ impl From<GqlAdminEnablementSetting> for AdminEnablementSetting {
                 AdminEnablementSetting::RespectUserSetting
             }
             GqlAdminEnablementSetting::Other(value) => {
-                report_error!(anyhow!(
+                log::warn!(
                     "Invalid AdminEnablementSetting '{value}'. Make sure to update client GraphQL types!"
-                ));
+                );
                 AdminEnablementSetting::RespectUserSetting
             }
         }
@@ -295,9 +295,9 @@ impl From<GqlHostEnablementSetting> for HostEnablementSetting {
                 HostEnablementSetting::RespectUserSetting
             }
             GqlHostEnablementSetting::Other(value) => {
-                report_error!(anyhow!(
+                log::warn!(
                     "Invalid HostEnablementSetting '{value}'. Make sure to update client GraphQL types!"
-                ));
+                );
                 HostEnablementSetting::RespectUserSetting
             }
         }
@@ -578,9 +578,9 @@ fn convert_gql_ai_autonomy_value_to_action_permission(
         GqlAiAutonomyValue::AlwaysAsk => Some(ActionPermission::AlwaysAsk),
         GqlAiAutonomyValue::RespectUserSetting => None,
         GqlAiAutonomyValue::Other(value) => {
-            report_error!(anyhow!(
+            log::warn!(
                 "Invalid AiAutonomyValue '{value}'. Make sure to update client GraphQL types!"
-            ));
+            );
             None
         }
     }
@@ -595,9 +595,9 @@ fn convert_gql_write_to_pty_autonomy_value_to_write_to_pty_permission(
         GqlWriteToPtyAutonomyValue::AskOnFirstWrite => Some(WriteToPtyPermission::AskOnFirstWrite),
         GqlWriteToPtyAutonomyValue::RespectUserSetting => None,
         GqlWriteToPtyAutonomyValue::Other(value) => {
-            report_error!(anyhow!(
+            log::warn!(
                 "Invalid WriteToPtyAutonomyValue '{value}'. Make sure to update client GraphQL types!"
-            ));
+            );
             None
         }
     }
@@ -612,9 +612,9 @@ fn convert_gql_computer_use_autonomy_value_to_computer_use_permission(
         GqlComputerUseAutonomyValue::AlwaysAllow => Some(ComputerUsePermission::AlwaysAllow),
         GqlComputerUseAutonomyValue::RespectUserSetting => None,
         GqlComputerUseAutonomyValue::Other(value) => {
-            report_error!(anyhow!(
+            log::warn!(
                 "Invalid ComputerUseAutonomyValue '{value}'. Make sure to update client GraphQL types!"
-            ));
+            );
             None
         }
     }
@@ -659,9 +659,9 @@ impl From<warp_graphql::workspace::LlmModelHost> for crate::ai::llms::LLMModelHo
             GqlLlmModelHost::AwsBedrock => Self::AwsBedrock,
             GqlLlmModelHost::CustomEndpoint => Self::CustomEndpoint,
             GqlLlmModelHost::Other(value) => {
-                report_error!(anyhow!(
+                log::warn!(
                     "Unknown LlmModelHost '{value}'. Make sure to update client GraphQL types!"
-                ));
+                );
                 Self::Unknown
             }
         }
