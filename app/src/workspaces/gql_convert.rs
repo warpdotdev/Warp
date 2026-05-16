@@ -492,15 +492,10 @@ impl From<GqlUsageVisibilityPolicy> for UsageVisibilityPolicy {
     }
 }
 
-fn convert_billing_cycle_usage(
-    gql_history: Option<GqlBillingCycleUsageHistory>,
-) -> BillingCycleUsageData {
-    let Some(history) = gql_history else {
-        return BillingCycleUsageData::default();
-    };
+fn convert_billing_cycle_usage(history: GqlBillingCycleUsageHistory) -> BillingCycleUsageData {
     BillingCycleUsageData {
-        current_period_start: Some(history.current_period_start.utc()),
-        current_period_end: Some(history.current_period_end.utc()),
+        current_period_start: history.current_period_start.utc(),
+        current_period_end: history.current_period_end.utc(),
         summaries: history
             .summaries
             .into_iter()
@@ -1000,9 +995,10 @@ impl From<GqlWorkspace> for Workspace {
                     cents_spent: info.current_month_spend_cents,
                 })
                 .unwrap_or_default(),
-            billing_cycle_usage: convert_billing_cycle_usage(
-                gql_workspace.billing_cycle_usage_history.clone(),
-            ),
+            billing_cycle_usage: gql_workspace
+                .billing_cycle_usage_history
+                .clone()
+                .map(convert_billing_cycle_usage),
             has_billing_history: gql_workspace.has_billing_history,
             settings: gql_workspace.settings.clone().into(),
             invite_code: gql_workspace

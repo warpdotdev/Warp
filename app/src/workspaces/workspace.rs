@@ -42,7 +42,7 @@ pub struct Workspace {
     pub teams: Vec<Team>,
     pub billing_metadata: BillingMetadata,
     pub bonus_grants_purchased_this_month: BonusGrantsPurchased,
-    pub billing_cycle_usage: BillingCycleUsageData,
+    pub billing_cycle_usage: Option<BillingCycleUsageData>,
     pub has_billing_history: bool,
     pub settings: WorkspaceSettings,
     pub invite_code: Option<WorkspaceInviteCode>,
@@ -71,7 +71,7 @@ impl Workspace {
             teams: teams.unwrap_or_default(),
             billing_metadata,
             bonus_grants_purchased_this_month: Default::default(),
-            billing_cycle_usage: Default::default(),
+            billing_cycle_usage: None,
             has_billing_history: false,
             settings: Default::default(), // TODO: persistence wrapper instead of default
             invite_code: Default::default(),
@@ -534,10 +534,10 @@ pub struct BillingCycleUsageSummary {
 /// `current_period_end` mark the cycle that's currently active; older
 /// summaries cover prior cycles and the number of them retained is governed
 /// by the policy's `max_prior_cycles`.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct BillingCycleUsageData {
-    pub current_period_start: Option<chrono::DateTime<chrono::Utc>>,
-    pub current_period_end: Option<chrono::DateTime<chrono::Utc>>,
+    pub current_period_start: chrono::DateTime<chrono::Utc>,
+    pub current_period_end: chrono::DateTime<chrono::Utc>,
     pub summaries: Vec<BillingCycleUsageSummary>,
 }
 
