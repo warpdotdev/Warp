@@ -1096,11 +1096,8 @@ base = "macos_app_base"
 groups = ["macos_dev_diagnostics", "nld_v2"]
 
 [package.metadata.warp.build_profiles.macos.preview.app]
-# Preserve the pre-refactor macOS preview matrix exactly. Preview already
-# carried the heap diagnostics in the old bundle script, so this group is
-# shared with stable.
 base = "macos_app_base"
-groups = ["preview_channel", "macos_heap_diagnostics", "nld_v1"]
+groups = ["preview_channel", "nld_v1"]
 
 [package.metadata.warp.build_profiles.macos.stable.app]
 base = "macos_app_base"
@@ -1120,7 +1117,7 @@ groups = ["macos_dev_diagnostics"]
 
 [package.metadata.warp.build_profiles.macos.preview.cli]
 base = "macos_cli_base"
-groups = ["preview_channel", "macos_heap_diagnostics"]
+groups = ["preview_channel"]
 
 [package.metadata.warp.build_profiles.macos.stable.cli]
 base = "macos_cli_base"
@@ -1130,10 +1127,10 @@ groups = ["macos_heap_diagnostics"]
 base = "macos_oss_cli_base"
 
 [package.metadata.warp.build_profiles.windows.local.app]
-# Preserve the pre-refactor Windows local matrix exactly. Local builds stayed
-# on the non-debug feature set in the original bundle script.
+# Restore the local debug matrix so Windows local builds keep compiling the
+# debug-only AI/blocklist paths gated by `agent_mode_debug`.
 base = "windows_app_base"
-groups = ["nld_v2"]
+groups = ["agent_debug", "nld_v2"]
 
 [package.metadata.warp.build_profiles.windows.dev.app]
 base = "windows_app_base"
