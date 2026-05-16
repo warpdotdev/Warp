@@ -63,6 +63,7 @@ use crate::{
 
 use super::{
     billing_and_usage::{
+        billing_cycle_usage_section::BillingCycleUsageSectionView,
         overage_limit_modal::{SpendingLimitModal, SpendingLimitModalEvent},
         usage_history_entry::UsageHistoryEntry,
         usage_history_model::UsageHistoryModel,
@@ -101,6 +102,12 @@ pub(super) const BONUS_CREDITS_DOT_COLOR: ColorU = ColorU {
     r: 236,
     g: 148,
     b: 85,
+    a: 255,
+};
+pub(super) const PAYG_CREDITS_DOT_COLOR: ColorU = ColorU {
+    r: 138,
+    g: 173,
+    b: 233,
     a: 255,
 };
 const DEFAULT_MAX_MONTHLY_SPEND_CENTS: i32 = 20_000;
@@ -235,6 +242,7 @@ pub struct BillingAndUsagePageV2View {
     plan_mouse_states: PlanSectionMouseStates,
     buy_credits_mouse_states: BuyCreditsMouseStates,
     ambient_trial_mouse_states: AmbientTrialMouseStates,
+    billing_cycle_usage_section: ViewHandle<BillingCycleUsageSectionView>,
 }
 
 impl BillingAndUsagePageV2View {
@@ -305,6 +313,9 @@ impl BillingAndUsagePageV2View {
             })
         });
 
+        let billing_cycle_usage_section =
+            ctx.add_typed_action_view(BillingCycleUsageSectionView::new);
+
         let mut me = Self {
             auth_state,
             addon_credit_modal_state: ModalViewState::new(addon_credit_modal_view),
@@ -327,6 +338,7 @@ impl BillingAndUsagePageV2View {
             plan_mouse_states: Default::default(),
             buy_credits_mouse_states: Default::default(),
             ambient_trial_mouse_states: Default::default(),
+            billing_cycle_usage_section,
         };
         me.update_addon_credits_options(ctx);
         me.refresh_addon_credits_settings(ctx);
@@ -1414,6 +1426,18 @@ impl BillingAndUsagePageV2View {
                 ));
             }
         }
+
+        content.add_child(
+            Container::new(
+                ChildView::new(&self.billing_cycle_usage_section).finish(),
+            )
+            .with_margin_top(16.)
+            .with_padding_top(24.)
+            .with_border(Border::top(1.).with_border_color(
+                appearance.theme().outline().into(),
+            ))
+            .finish(),
+        );
 
         content.finish()
     }
