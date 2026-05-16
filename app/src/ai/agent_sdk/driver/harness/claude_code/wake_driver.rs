@@ -12,22 +12,21 @@ use warp_graphql::ai::AgentTaskState;
 
 use crate::ai::agent_events::MessageHydrator;
 use crate::ai::ambient_agents::{AmbientAgentTaskId, AmbientAgentTaskState};
+use crate::server::server_api::ServerApi;
 use crate::server::server_api::ai::AIClient;
 use crate::server::server_api::harness_support::ResolvePromptRequest;
-use crate::server::server_api::ServerApi;
 use crate::terminal::CLIAgent;
 
 use super::super::claude_transcript::{
-    claude_config_dir, write_envelope, write_session_index_entry, ClaudeTranscriptEnvelope,
+    ClaudeTranscriptEnvelope, claude_config_dir, write_envelope, write_session_index_entry,
 };
 use super::super::task_env_vars;
 use super::parent_bridge::{
     acknowledge_parent_bridge_hook_output, ensure_parent_bridge_state_dir, parent_bridge_root,
 };
-use super::{claude_command, prepare_claude_environment_config, ClaudeHarness};
+use super::{ClaudeHarness, claude_command, prepare_claude_environment_config};
 
-const CLAUDE_WAKE_PROMPT: &str =
-    "New lead-agent messages are available. Read the latest lead-agent updates and continue the task accordingly.";
+const CLAUDE_WAKE_PROMPT: &str = "New lead-agent messages are available. Read the latest lead-agent updates and continue the task accordingly.";
 pub(super) const CLAUDE_WAKE_PROMPT_FILE_NAME: &str = "wake-turn-prompt.txt";
 const CLAUDE_WAKE_EXTERNALLY_MANAGED_LISTENER_ENV_VARS: &[&str] = &[
     "OZ_MESSAGE_LISTENER_MANAGED_EXTERNALLY",

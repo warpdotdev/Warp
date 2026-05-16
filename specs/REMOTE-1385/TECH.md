@@ -128,26 +128,20 @@ fn billing_check_command(&self) -> Option<String> {
 
 ### 5. Preflight runner in `AgentDriver`
 
-Add a new method on `AgentDriver` and call it from `run_internal`, between `prepare_harness` and `run_harness`:
+Add a new method on `AgentDriver` and call it from `run_internal`, between `prepare_harness` and `run_harness`. The preflight commands are executed through `TerminalDriver::execute_command` (the same path used by environment setup commands), so each check appears as a collapsible block in the shared session UI. On failure, the driver fetches the resulting block's `stylized_output` via `TerminalDriver::block_snapshot` and stashes the rendered text in the error `detail`, which both server logs and the failure status message consume. This makes it easy for the user to inspect the failure output and for on-call to see the captured stderr.
 
 ```rust
 /// Timeout for individual preflight commands.
 const PREFLIGHT_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Run the authentication and billing preflight checks for a third-party harness.
-///
-/// Uses `execute_silent_command` so the check commands do not appear in the
-/// user-visible block list.
 async fn run_preflight_checks(
     harness: &dyn ThirdPartyHarness,
     foreground: &ModelSpawner<Self>,
 ) -> Result<(), AgentDriverError> {
     let harness_name = harness.cli_agent().command_prefix().to_owned();
 
-    // Authentication check.
     if let Some(cmd) = harness.auth_check_command() {
-        log::info!("Running auth check for {harness_name}: {cmd}");
-        run_single_preflight(
+        Self::run_single_preflight(
             &cmd,
             &harness_name,
             HarnessAuthFailureKind::LoginFailed,
@@ -156,10 +150,8 @@ async fn run_preflight_checks(
         .await?;
     }
 
-    // Billing check.
     if let Some(cmd) = harness.billing_check_command() {
-        log::info!("Running billing check for {harness_name}: {cmd}");
-        run_single_preflight(
+        Self::run_single_preflight(
             &cmd,
             &harness_name,
             HarnessAuthFailureKind::TestRequestFailed,
@@ -178,41 +170,34 @@ async fn run_single_preflight(
     foreground: &ModelSpawner<Self>,
 ) -> Result<(), AgentDriverError> {
     let cmd = command.to_owned();
-    let output = foreground
+    let start_future = foreground
         .spawn(move |me, ctx| {
             me.terminal_driver
-                .as_ref(ctx)
-                .execute_silent_command(cmd, ctx)
+                .update(ctx, |driver, ctx| driver.execute_command(&cmd, ctx))
         })
-        .await?
-        .with_timeout(PREFLIGHT_CHECK_TIMEOUT)
-        .await
-        .map_err(|_| AgentDriverError::HarnessAuthCheckFailed {
-            harness: harness_name.to_owned(),
-            kind: failure_kind,
-            detail: "command timed out".to_owned(),
-        })?
-        .map_err(|_| AgentDriverError::HarnessAuthCheckFailed {
-            harness: harness_name.to_owned(),
-            kind: failure_kind,
-            detail: "failed to execute command".to_owned(),
-        })?;
+        .await??;
 
-    // Check if the command succeeded. CommandOutput contains the exit code and
-    // output text.
-    let output_text = output.to_string().unwrap_or_default();
-    if !output.was_successful() {
-        log::error!(
-            "Preflight {failure_kind:?} failed for {harness_name}. Output: {output_text}"
-        );
+    let command_handle = start_future.await?;
+
+    let exit_code = match command_handle.with_timeout(PREFLIGHT_CHECK_TIMEOUT).await {
+        Err(TimeoutError) => {
+            return Err(AgentDriverError::HarnessAuthCheckFailed {
+                harness: harness_name.to_owned(),
+                kind: failure_kind,
+                detail: "command timed out".to_owned(),
+            });
+        }
+        Ok(result) => result?,
+    };
+
+    if !exit_code.was_successful() {
         return Err(AgentDriverError::HarnessAuthCheckFailed {
             harness: harness_name.to_owned(),
             kind: failure_kind,
-            detail: output_text,
+            detail: format!("exit code {}", exit_code.value()),
         });
     }
 
-    log::info!("Preflight {failure_kind:?} passed for {harness_name}");
     Ok(())
 }
 ```
@@ -249,7 +234,20 @@ This placement ensures:
 - The preflight commands run in the terminal session with the correct env vars (secrets, cloud provider vars).
 - On failure, the error propagates up through `run_internal` → `run` → `report_driver_error`, which will send the `updateAgentTask` mutation and terminate the process.
 
-### 7. Server-side changes
+### 7. Treating preflight blocks as setup commands in the viewer
+
+The cloud-mode shared-session viewer wraps environment-setup blocks in a collapsible "Set up environment commands" group. The viewer toggles out of this mode the moment it sees a block whose command is detected as the run's third-party harness CLI (via `TerminalView::block_matches_run_harness` in `app/src/terminal/view/ambient_agent/view_impl.rs`). Because the preflight commands share the harness CLI prefix (e.g. `claude auth status --json` starts with `claude`), the unmodified detector would mis-classify the first preflight command as the harness session start and tear down the setup-commands group prematurely.
+
+To route preflight blocks into the existing setup-commands UI instead:
+
+1. Expose a `pub(crate)` helper `preflight_commands_for(harness: Harness) -> Vec<String>` in `harness/mod.rs` next to `harness_kind`. It reuses `harness_kind` to dispatch and returns the union of `auth_check_command()` and `billing_check_command()` for the matching `ThirdPartyHarness` impl. Returns an empty `Vec` for `Oz`, unsupported harnesses, and harnesses with no preflight commands (e.g. Gemini). This is the single source of truth for the viewer.
+2. In `block_matches_run_harness`, after `CLIAgent::detect` resolves a hit, compare the block's command (trimmed) against `preflight_commands_for(selected_harness)` by exact string equality. If any entry matches, return `false`. This keeps the block-list flag set, lets `maybe_insert_setup_command_blocks` append the preflight blocks into the existing setup-commands group, and defers `HarnessCommandStarted` until the actual harness invocation arrives.
+
+String equality is exact and reliable: the driver constructs the preflight command via `format!("{cli} auth status --json", …)`, passes that exact string to `TerminalDriver::execute_command`, and the viewer reads the same string back via `block.command_with_secrets_obfuscated(false)`. The real harness invocations have very different shapes (`claude --session-id <uuid> --dangerously-skip-permissions …`, `codex --dangerously-bypass-approvals-and-sandbox "$(cat '…')"`) and never collide with the short preflight strings.
+
+Adding a new preflight check in the future means adding a new `Some("…")` return in a `ThirdPartyHarness` impl. `preflight_commands_for` picks it up automatically; the viewer needs no edits.
+
+### 8. Server-side changes
 
 No new `PlatformErrorCode` variants are needed. Both failures map to the existing `AUTHENTICATION_REQUIRED` code, differentiated by the human-readable `statusMessage`. The server already handles `AUTHENTICATION_REQUIRED` in task state transitions. The client UI already renders `PlatformErrorCode::AuthenticationRequired` with appropriate styling.
 
@@ -257,7 +255,7 @@ No new `PlatformErrorCode` variants are needed. Both failures map to the existin
 
 ### Unit tests
 - `error_classification_tests.rs`: Add tests verifying that `HarnessAuthCheckFailed` with `LoginFailed` and `TestRequestFailed` map to `(AgentTaskState::Failed, AUTHENTICATION_REQUIRED)` with the expected messages.
-- `harness/mod_tests.rs`: Add tests verifying that `auth_check_command()` and `billing_check_command()` return the expected commands for Claude, Codex, and `None` for Gemini.
+- `harness/mod_tests.rs`: Add tests verifying that `auth_check_command()` and `billing_check_command()` return the expected commands for Claude, Codex, and `None` for Gemini. Also tests that `preflight_commands_for` returns the union of the two for Claude/Codex, and an empty `Vec` for Gemini, Oz, OpenCode (unsupported), and Unknown.
 
 ### Manual validation (per PRODUCT.md invariants 1–22)
 Covers invariants 2, 3, 4, 6, 7, 10, 12, 13, 14:

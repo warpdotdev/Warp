@@ -65,7 +65,7 @@ impl ThirdPartyHarness for CodexHarness {
 
     fn billing_check_command(&self) -> Option<String> {
         let cli = self.cli_agent().command_prefix();
-        Some(format!("{cli} exec hello"))
+        Some(format!("{cli} exec hello --skip-git-repo-check"))
     }
 
     /// Fetch the codex transcript for the current task's conversation and wrap it into a
@@ -423,7 +423,9 @@ async fn upload_transcript(
     };
     let Some(transcript_path) = transcript_path else {
         if is_final {
-            log::warn!("No codex rollout file found at final save for session {session_id}; transcript was never uploaded");
+            log::warn!(
+                "No codex rollout file found at final save for session {session_id}; transcript was never uploaded"
+            );
         } else {
             log::debug!("No codex rollout file yet for session {session_id}");
         }

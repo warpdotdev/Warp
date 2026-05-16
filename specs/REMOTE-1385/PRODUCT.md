@@ -24,30 +24,31 @@ Cloud agent runs using third-party harnesses (Claude Code, Codex) should run lig
 
 ### Success / failure semantics
 10. Success is determined solely by exit code. Exit code 0 = pass; any non-zero exit code = fail.
-11. Stdout/stderr from preflight commands is captured but not displayed to the user. It is included in error-level logs for debugging.
+11. Each preflight command is executed as a visible block in the shared session UI and is classified as part of the existing **Set up environment commands** collapsible group, in line with the other environment-setup blocks. The block is individually expandable to reveal the CLI's captured output, and the whole group collapses to "Ran setup commands" once the harness session begins. On preflight failure, the group remains expanded so the user can inspect the failing block directly.
+12. The captured block output is also stashed in the driver-side error `detail` so the same text reaches server logs and the failure status message.
 
 ### Error reporting
-12. When a preflight check fails, the driver sends an `updateAgentTask` mutation to the server with:
+13. When a preflight check fails, the driver sends an `updateAgentTask` mutation to the server with:
     - `taskState: FAILED`
     - A `statusMessage` containing a human-readable description of which check failed and for which harness.
     - `errorCode: AUTHENTICATION_REQUIRED`
-13. The two failure modes have distinct user-facing messages:
+14. The two failure modes have distinct user-facing messages:
     - Authentication check failure: "Harness '{harness}' authentication check failed: login credentials are invalid or expired. Verify that the authentication secret configured for this harness is correct."
     - Billing check failure: "Harness '{harness}' billing check failed: a test API request did not succeed. This usually means the API key lacks billing access, credits are exhausted, or the account is misconfigured."
-14. After reporting the failure to the server, the driver exits the harness and terminates the process. No retry is attempted.
+15. After reporting the failure to the server, the driver exits the harness and terminates the process. No retry is attempted.
 
 ### Timeouts
-15. Each preflight command has a timeout of 30 seconds. If a command does not exit within the timeout, it is treated as a failure with a message indicating the check timed out.
+16. Each preflight command has a timeout of 30 seconds. If a command does not exit within the timeout, it is treated as a failure with a message indicating the check timed out.
 
 ### Interaction with existing checks
-16. Preflight checks run after `ThirdPartyHarness::validate()` (which checks CLI installation) and after `build_runner()` (which writes auth config files). This ordering ensures the CLI binary exists and credentials are on disk before we attempt to use them.
-17. Preflight checks run before `HarnessRunner::start()`, which launches the main CLI command. The main command is never started if a preflight check fails.
+17. Preflight checks run after `ThirdPartyHarness::validate()` (which checks CLI installation) and after `build_runner()` (which writes auth config files). This ordering ensures the CLI binary exists and credentials are on disk before we attempt to use them.
+18. Preflight checks run before `HarnessRunner::start()`, which launches the main CLI command. The main command is never started if a preflight check fails.
 
 ### Idempotency and side effects
-18. The authentication check commands (`claude auth status`, `codex login status`) are read-only status queries with no side effects.
-19. The billing check commands (`claude -p hello`, `codex exec hello`) send a minimal API request. This consumes a negligible amount of quota/credits. These commands should not produce persistent artifacts (files, git changes, etc.) in the working directory.
+19. The authentication check commands (`claude auth status`, `codex login status`) are read-only status queries with no side effects.
+20. The billing check commands (`claude -p hello`, `codex exec hello`) send a minimal API request. This consumes a negligible amount of quota/credits. These commands should not produce persistent artifacts (files, git changes, etc.) in the working directory.
 
 ### Edge cases
-20. If the harness CLI is installed but the auth config file was not written successfully (e.g. disk full), the authentication check will fail with a non-zero exit code. This is the correct behavior — the run cannot proceed without valid auth.
-21. If network connectivity is unavailable, both checks will fail. The error message does not distinguish between "bad credentials" and "network unreachable" — the user sees the generic auth/billing failure message. The stderr logs will contain the CLI's own diagnostic output for further debugging.
-22. If the harness CLI version is too old to support the preflight command (e.g. `claude auth status` not available), the command will fail with a non-zero exit code. This is acceptable — the subsequent main command would also likely fail.
+21. If the harness CLI is installed but the auth config file was not written successfully (e.g. disk full), the authentication check will fail with a non-zero exit code. This is the correct behavior — the run cannot proceed without valid auth.
+22. If network connectivity is unavailable, both checks will fail. The error message does not distinguish between "bad credentials" and "network unreachable" — the user sees the generic auth/billing failure message. The stderr logs will contain the CLI's own diagnostic output for further debugging.
+23. If the harness CLI version is too old to support the preflight command (e.g. `claude auth status` not available), the command will fail with a non-zero exit code. This is acceptable — the subsequent main command would also likely fail.

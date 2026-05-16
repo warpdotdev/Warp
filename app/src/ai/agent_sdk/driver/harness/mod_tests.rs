@@ -1,5 +1,6 @@
-use super::validate_cli_installed;
+use super::{preflight_commands_for, validate_cli_installed};
 use crate::ai::agent_sdk::driver::AgentDriverError;
+use warp_cli::agent::Harness;
 
 fn assert_harness_setup_failed(err: &AgentDriverError) -> (&str, &str) {
     match err {
@@ -77,4 +78,64 @@ fn gemini_returns_no_preflight_commands() {
     let harness = GeminiHarness;
     assert!(harness.auth_check_command().is_none());
     assert!(harness.billing_check_command().is_none());
+}
+
+#[test]
+fn preflight_commands_for_claude_returns_auth_and_billing() {
+    use super::claude_code::ClaudeHarness;
+    use super::ThirdPartyHarness;
+    let commands = preflight_commands_for(Harness::Claude);
+    assert_eq!(commands.len(), 2);
+    // The helper's output is the single source of truth for the viewer's
+    // preflight detection, so pin the strings to the trait impls directly.
+    assert_eq!(
+        commands[0],
+        ClaudeHarness.auth_check_command().expect("auth check")
+    );
+    assert_eq!(
+        commands[1],
+        ClaudeHarness
+            .billing_check_command()
+            .expect("billing check")
+    );
+}
+
+#[test]
+fn preflight_commands_for_codex_returns_auth_and_billing() {
+    use super::codex::CodexHarness;
+    use super::ThirdPartyHarness;
+    let commands = preflight_commands_for(Harness::Codex);
+    assert_eq!(commands.len(), 2);
+    assert_eq!(
+        commands[0],
+        CodexHarness.auth_check_command().expect("auth check")
+    );
+    assert_eq!(
+        commands[1],
+        CodexHarness.billing_check_command().expect("billing check")
+    );
+}
+
+#[test]
+fn preflight_commands_for_gemini_is_empty() {
+    assert!(preflight_commands_for(Harness::Gemini).is_empty());
+}
+
+#[test]
+fn preflight_commands_for_oz_is_empty() {
+    assert!(preflight_commands_for(Harness::Oz).is_empty());
+}
+
+#[test]
+fn preflight_commands_for_unsupported_is_empty() {
+    // OpenCode is mapped to HarnessKind::Unsupported and therefore has no
+    // preflight commands of its own.
+    assert!(preflight_commands_for(Harness::OpenCode).is_empty());
+}
+
+#[test]
+fn preflight_commands_for_unknown_is_empty() {
+    // Harness::Unknown causes harness_kind to return Err; the helper still
+    // returns an empty Vec instead of panicking.
+    assert!(preflight_commands_for(Harness::Unknown).is_empty());
 }

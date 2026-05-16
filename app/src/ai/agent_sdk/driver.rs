@@ -59,6 +59,7 @@ use crate::terminal::cli_agent_sessions::plugin_manager::{
 use crate::terminal::cli_agent_sessions::{
     CLIAgentSessionStatus, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
 };
+use crate::terminal::model::BlockId;
 use crate::{
     ai::{
         agent::{
@@ -1887,8 +1888,10 @@ impl AgentDriver {
 
     /// Run the authentication and billing preflight checks for a third-party harness.
     ///
-    /// Uses `execute_silent_command` so the check commands do not appear in the
-    /// user-visible block list.
+    /// Uses `execute_command` so each check appears as a collapsible block in the
+    /// shared session UI, mirroring how environment setup commands surface. This
+    /// makes it easier for the user to see exactly what went wrong when a check
+    /// fails.
     async fn run_preflight_checks(
         harness: &dyn ThirdPartyHarness,
         foreground: &ModelSpawner<Self>,
@@ -1923,6 +1926,13 @@ impl AgentDriver {
     }
 
     /// Run a single preflight check command and return an error if it fails.
+    ///
+    /// The command is executed via `TerminalDriver::execute_command` so it shows
+    /// up as a normal block in the shared session UI (just like environment
+    /// setup commands), letting the viewer inspect the CLI's output when the
+    /// check fails. After the command finishes, we also fetch the block
+    /// snapshot and stash its rendered output in the error `detail` so the
+    /// captured stdout/stderr makes it into logs and the server status message.
     async fn run_single_preflight(
         command: &str,
         harness_name: &str,
@@ -1930,48 +1940,69 @@ impl AgentDriver {
         foreground: &ModelSpawner<Self>,
     ) -> Result<(), AgentDriverError> {
         let cmd = command.to_owned();
-        let result = foreground
+        let start_future = foreground
             .spawn(move |me, ctx| {
-                me.terminal_driver.update(ctx, |driver, ctx| {
-                    driver.execute_silent_command(cmd, ctx)
-                })
+                me.terminal_driver
+                    .update(ctx, |driver, ctx| driver.execute_command(&cmd, ctx))
             })
-            .await?
-            .with_timeout(PREFLIGHT_CHECK_TIMEOUT)
-            .await;
+            .await??;
 
-        let output = match result {
+        let command_handle = start_future.await?;
+        let block_id = command_handle.block_id().clone();
+
+        let exit_code = match command_handle.with_timeout(PREFLIGHT_CHECK_TIMEOUT).await {
             Err(TimeoutError) => {
+                log::error!("Preflight {failure_kind:?} timed out for {harness_name}");
                 return Err(AgentDriverError::HarnessAuthCheckFailed {
                     harness: harness_name.to_owned(),
                     kind: failure_kind,
                     detail: "command timed out".to_owned(),
                 });
             }
-            Ok(Err(_)) => {
-                return Err(AgentDriverError::HarnessAuthCheckFailed {
-                    harness: harness_name.to_owned(),
-                    kind: failure_kind,
-                    detail: "failed to execute command".to_owned(),
-                });
-            }
-            Ok(Ok(output)) => output,
+            Ok(result) => result?,
         };
 
-        if !output.success() {
-            let output_text = String::from_utf8_lossy(output.output()).to_string();
-            log::error!(
-                "Preflight {failure_kind:?} failed for {harness_name}. Output: {output_text}"
-            );
+        if !exit_code.was_successful() {
+            let output_text = Self::fetch_preflight_block_output(&block_id, foreground).await;
+            let detail = if output_text.is_empty() {
+                format!("exit code {}", exit_code.value())
+            } else {
+                format!("exit code {}: {}", exit_code.value(), output_text)
+            };
+            log::error!("Preflight {failure_kind:?} failed for {harness_name}. {detail}");
             return Err(AgentDriverError::HarnessAuthCheckFailed {
                 harness: harness_name.to_owned(),
                 kind: failure_kind,
-                detail: output_text,
+                detail,
             });
         }
 
         log::info!("Preflight {failure_kind:?} passed for {harness_name}");
         Ok(())
+    }
+
+    /// Pull the rendered output text out of the block produced by a preflight
+    /// command. The block's `stylized_output` is the truncated terminal grid
+    /// contents (with ANSI escapes); we lossily decode it for inclusion in the
+    /// failure detail. Returns an empty string when the block is missing.
+    async fn fetch_preflight_block_output(
+        block_id: &BlockId,
+        foreground: &ModelSpawner<Self>,
+    ) -> String {
+        let block_id = block_id.clone();
+        let snapshot = foreground
+            .spawn(move |me, ctx| {
+                me.terminal_driver
+                    .as_ref(ctx)
+                    .block_snapshot(&block_id, ctx)
+            })
+            .await;
+        match snapshot {
+            Ok(Some(block)) => String::from_utf8_lossy(&block.stylized_output)
+                .trim()
+                .to_owned(),
+            Ok(None) | Err(_) => String::new(),
+        }
     }
 
     /// Sets up the third-party harness by subscribing to CLI session events and

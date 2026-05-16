@@ -248,7 +248,11 @@ pub fn classify_driver_error(error: &AgentDriverError) -> (AgentTaskState, TaskS
                 PlatformErrorCode::InternalError,
             ),
         ),
-        AgentDriverError::ConversationHarnessMismatch { conversation_id, expected, got } => (
+        AgentDriverError::ConversationHarnessMismatch {
+            conversation_id,
+            expected,
+            got,
+        } => (
             AgentTaskState::Failed,
             TaskStatusUpdate::with_error_code(
                 format!(
@@ -258,7 +262,11 @@ pub fn classify_driver_error(error: &AgentDriverError) -> (AgentTaskState, TaskS
                 PlatformErrorCode::EnvironmentSetupFailed,
             ),
         ),
-        AgentDriverError::TaskHarnessMismatch { task_id, expected, got } => (
+        AgentDriverError::TaskHarnessMismatch {
+            task_id,
+            expected,
+            got,
+        } => (
             AgentTaskState::Failed,
             TaskStatusUpdate::with_error_code(
                 format!(
@@ -268,7 +276,10 @@ pub fn classify_driver_error(error: &AgentDriverError) -> (AgentTaskState, TaskS
                 PlatformErrorCode::EnvironmentSetupFailed,
             ),
         ),
-        AgentDriverError::ConversationResumeStateMissing { harness, conversation_id } => (
+        AgentDriverError::ConversationResumeStateMissing {
+            harness,
+            conversation_id,
+        } => (
             AgentTaskState::Failed,
             TaskStatusUpdate::with_error_code(
                 format!(
