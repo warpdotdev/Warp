@@ -829,7 +829,7 @@ impl ServerModel {
         ctx: &mut ModelContext<Self>,
     ) {
         if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
-            log::info!(
+            log::debug!(
                 "[Remote codebase indexing] Daemon skipping bootstrap codebase index statuses snapshot because remote indexing is disabled: conn_id={conn_id}"
             );
             return;
