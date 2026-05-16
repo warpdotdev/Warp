@@ -24,6 +24,8 @@ use super::{
     FindOptions,
 };
 
+const MAX_SYNC_BLOCK_LIST_FIND_MATCH_COUNT: usize = 1000;
+
 /// Runs a find operation on the blocklist using the given `options` and returns a
 /// `BlockListFindRun` with the results.
 ///
@@ -55,75 +57,87 @@ pub(super) fn run_find_on_block_list(
             block_sort_direction,
             dfas: None,
             matches: vec![],
+            match_count: 0,
+            is_match_count_exact: true,
+            block_match_counts: HashMap::new(),
             raw_focused_match_index: None,
         };
     };
-
-    let mut matches = vec![];
 
     // If find in block is enabled, find matches in selected blocks only
     if let Some(blocks_to_include_in_results) = options.blocks_to_include_in_results.as_mut() {
         // Sort blocks in descending order so that the most recent block is last, which is the order we expect.
         blocks_to_include_in_results.sort_by(|i, j| j.cmp(i));
-
-        // Must update matches in order, from first block to last block,
-        // so that matches for the latest blocks come before matches for earlier blocks.
-        // Note that this is true regardless of the blocklist orientation (inverted or not)
-        // In both cases we want the most recent block updated last, which means the sort direction
-        // here should always be MostRecentLast
-        for block_index in blocks_to_include_in_results {
-            let agent_view_state = block_list.agent_view_state();
-            if let Some(block) = block_list
-                .block_at(*block_index)
-                .filter(|block| !block.is_empty(agent_view_state))
-            {
-                if block.height(agent_view_state) == Lines::zero() {
-                    // This should not happen in practice, because `blocks_to_include_in_results`
-                    // is set by selecting blocks, which are presumably visible.
-                    continue;
-                }
-                matches.extend(run_find_on_block(
-                    &dfas,
-                    block,
-                    *block_index,
-                    block_sort_direction,
-                ));
-            }
-        }
-    } else {
-        // Otherwise, loop through all the blocks in the terminal's blocklist, executing find on each block.
-        run_find_on_sumtree(
-            &options,
-            &dfas,
-            block_list,
-            findable_rich_content_views,
-            block_sort_direction,
-            &mut matches,
-            ctx,
-        );
     }
+
+    let matches = find_next_match(
+        &options,
+        &dfas,
+        block_list,
+        findable_rich_content_views,
+        block_sort_direction,
+        None,
+        ctx,
+    )
+    .into_iter()
+    .collect_vec();
+    let count = count_matches(
+        &options,
+        &dfas,
+        block_list,
+        findable_rich_content_views,
+        block_sort_direction,
+        ctx,
+    );
 
     let raw_focused_match_index = (!matches.is_empty()).then_some(0);
     BlockListFindRun {
         dfas: Some(dfas),
         matches,
+        match_count: count.count,
+        is_match_count_exact: count.is_exact,
+        block_match_counts: count.block_match_counts,
         raw_focused_match_index,
         options,
         block_sort_direction,
     }
 }
 
-/// Runs a find operation over blocks yielded by the given `blocks_iter`, appending `BlockListMatches`
-/// to the `matches` output parameter in the same order as blocks in the `blocks_iter`.
-fn run_find_on_sumtree(
+fn find_next_match(
     options: &FindOptions,
     dfas: &RegexDFAs,
     block_list: &BlockList,
     rich_content_views: &HashMap<EntityId, Box<dyn FindableRichContentHandle>>,
     block_sort_direction: BlockSortDirection,
-    matches: &mut Vec<BlockListMatch>,
+    current_match: Option<&BlockListMatch>,
     ctx: &mut AppContext,
-) {
+) -> Option<BlockListMatch> {
+    let mut found_current_match = current_match.is_none();
+
+    if let Some(blocks_to_include_in_results) = options.blocks_to_include_in_results.as_ref() {
+        for block_index in blocks_to_include_in_results {
+            let agent_view_state = block_list.agent_view_state();
+            let Some(block) = block_list
+                .block_at(*block_index)
+                .filter(|block| !block.is_empty(agent_view_state))
+            else {
+                continue;
+            };
+            if block.height(agent_view_state) == Lines::zero() {
+                continue;
+            }
+
+            for find_match in run_find_on_block(dfas, block, *block_index, block_sort_direction) {
+                if let Some(find_match) =
+                    next_match_after(find_match, current_match, &mut found_current_match)
+                {
+                    return Some(find_match);
+                }
+            }
+        }
+        return None;
+    }
+
     let mut cursor = block_list
         .block_heights()
         .cursor::<BlockHeight, BlockHeightSummary>();
@@ -134,12 +148,15 @@ fn run_find_on_sumtree(
             BlockHeightItem::Block(height) if height.into_lines() > Lines::zero() => {
                 let block_index = cursor.start().block_count;
                 if let Some(block) = block_list.block_at(block_index.into()) {
-                    matches.extend(run_find_on_block(
-                        dfas,
-                        block,
-                        block_index.into(),
-                        block_sort_direction,
-                    ));
+                    for find_match in
+                        run_find_on_block(dfas, block, block_index.into(), block_sort_direction)
+                    {
+                        if let Some(find_match) =
+                            next_match_after(find_match, current_match, &mut found_current_match)
+                        {
+                            return Some(find_match);
+                        }
+                    }
                 }
             }
             BlockHeightItem::RichContent(RichContentItem {
@@ -153,76 +170,233 @@ fn run_find_on_sumtree(
                         rich_content_matches.reverse();
                     }
 
-                    matches.extend(rich_content_matches.into_iter().map(|match_id| {
+                    for find_match in rich_content_matches.into_iter().map(|match_id| {
                         BlockListMatch::RichContent {
                             match_id,
                             view_id: *view_id,
                             index: cursor.start().total_count.into(),
                         }
-                    }));
+                    }) {
+                        if let Some(find_match) =
+                            next_match_after(find_match, current_match, &mut found_current_match)
+                        {
+                            return Some(find_match);
+                        }
+                    }
                 }
             }
             _ => (),
         }
         cursor.prev();
     }
+    None
 }
 
-/// Runs a find operation on the given block and returns the resulting vector of `BlockListMatch`es.
-fn run_find_on_block(
+struct LimitedMatchCount {
+    count: usize,
+    is_exact: bool,
+}
+
+struct BlockListMatchCount {
+    count: usize,
+    is_exact: bool,
+    block_match_counts: HashMap<BlockIndex, usize>,
+}
+
+fn next_match_after(
+    find_match: BlockListMatch,
+    current_match: Option<&BlockListMatch>,
+    found_current_match: &mut bool,
+) -> Option<BlockListMatch> {
+    if !*found_current_match {
+        if current_match.is_some_and(|current_match| find_match.same_span(current_match)) {
+            *found_current_match = true;
+        }
+        return None;
+    }
+
+    (!find_match.is_filtered()).then_some(find_match)
+}
+
+fn count_matches(
+    options: &FindOptions,
+    dfas: &RegexDFAs,
+    block_list: &BlockList,
+    rich_content_views: &HashMap<EntityId, Box<dyn FindableRichContentHandle>>,
+    block_sort_direction: BlockSortDirection,
+    ctx: &mut AppContext,
+) -> BlockListMatchCount {
+    let mut match_count = 0;
+    let mut is_exact = true;
+    let mut block_match_counts = HashMap::new();
+
+    if let Some(blocks_to_include_in_results) = options.blocks_to_include_in_results.as_ref() {
+        for block_index in blocks_to_include_in_results {
+            let agent_view_state = block_list.agent_view_state();
+            let Some(block) = block_list
+                .block_at(*block_index)
+                .filter(|block| !block.is_empty(agent_view_state))
+            else {
+                continue;
+            };
+            if block.height(agent_view_state) == Lines::zero() {
+                continue;
+            }
+
+            let remaining_count = MAX_SYNC_BLOCK_LIST_FIND_MATCH_COUNT - match_count;
+            let block_count = count_block_matches(
+                dfas,
+                block,
+                *block_index,
+                block_sort_direction,
+                remaining_count,
+            );
+            match_count += block_count.count;
+            block_match_counts.insert(*block_index, block_count.count);
+            if !block_count.is_exact {
+                is_exact = false;
+                break;
+            }
+        }
+        return BlockListMatchCount {
+            count: match_count,
+            is_exact,
+            block_match_counts,
+        };
+    }
+
+    let mut cursor = block_list
+        .block_heights()
+        .cursor::<BlockHeight, BlockHeightSummary>();
+    cursor.descend_to_last_item(block_list.block_heights());
+
+    while let Some(item) = cursor.item() {
+        match item {
+            BlockHeightItem::Block(height) if height.into_lines() > Lines::zero() => {
+                let block_index = cursor.start().block_count;
+                if let Some(block) = block_list.block_at(block_index.into()) {
+                    let remaining_count = MAX_SYNC_BLOCK_LIST_FIND_MATCH_COUNT - match_count;
+                    let block_count = count_block_matches(
+                        dfas,
+                        block,
+                        block_index.into(),
+                        block_sort_direction,
+                        remaining_count,
+                    );
+                    match_count += block_count.count;
+                    block_match_counts.insert(block_index.into(), block_count.count);
+                    if !block_count.is_exact {
+                        is_exact = false;
+                        break;
+                    }
+                }
+            }
+            BlockHeightItem::RichContent(RichContentItem {
+                view_id,
+                last_laid_out_height,
+                ..
+            }) if last_laid_out_height.into_lines() > Lines::zero() => {
+                if let Some(findable_view) = rich_content_views.get(view_id) {
+                    let remaining_count = MAX_SYNC_BLOCK_LIST_FIND_MATCH_COUNT - match_count;
+                    let rich_content_match_count = findable_view.run_find(options, ctx).len();
+                    if rich_content_match_count > remaining_count {
+                        match_count = MAX_SYNC_BLOCK_LIST_FIND_MATCH_COUNT;
+                        is_exact = false;
+                        break;
+                    }
+                    match_count += rich_content_match_count;
+                }
+            }
+            _ => (),
+        }
+        cursor.prev();
+    }
+
+    BlockListMatchCount {
+        count: match_count,
+        is_exact,
+        block_match_counts,
+    }
+}
+
+fn count_block_matches(
     dfas: &RegexDFAs,
     block: &Block,
     block_index: BlockIndex,
     block_sort_direction: BlockSortDirection,
-) -> Vec<BlockListMatch> {
+    limit: usize,
+) -> LimitedMatchCount {
+    if limit == 0 {
+        return LimitedMatchCount {
+            count: 0,
+            is_exact: false,
+        };
+    }
+
+    let mut count = 0;
+    for _find_match in run_find_on_block(dfas, block, block_index, block_sort_direction)
+        .filter(|find_match| !find_match.is_filtered())
+    {
+        if count == limit {
+            return LimitedMatchCount {
+                count,
+                is_exact: false,
+            };
+        }
+        count += 1;
+    }
+
+    LimitedMatchCount {
+        count,
+        is_exact: true,
+    }
+}
+
+/// Runs a find operation on the given block and returns resulting matches lazily.
+fn run_find_on_block<'a>(
+    dfas: &'a RegexDFAs,
+    block: &'a Block,
+    block_index: BlockIndex,
+    block_sort_direction: BlockSortDirection,
+) -> Box<dyn Iterator<Item = BlockListMatch> + 'a> {
     let grid_order = match block_sort_direction {
         BlockSortDirection::MostRecentFirst => &[GridType::PromptAndCommand, GridType::Output],
         BlockSortDirection::MostRecentLast => &[GridType::Output, GridType::PromptAndCommand],
     };
 
-    let mut block_matches = vec![];
-    for grid_type in grid_order.iter() {
-        let mut grid_matches = match grid_type {
-            GridType::PromptAndCommand => block
-                .find_prompt_and_command_grid_matches(dfas)
-                .into_iter()
-                .map(|range| {
+    let mut grid_matches = Vec::with_capacity(grid_order.len());
+    for grid_type in grid_order {
+        let matches_for_grid: Box<dyn Iterator<Item = BlockListMatch>> = match grid_type {
+            GridType::PromptAndCommand => Box::new(block.prompt_and_command_grid().find(dfas).map(
+                move |range| {
                     BlockListMatch::CommandBlock(BlockGridMatch {
                         grid_type: GridType::PromptAndCommand,
                         range,
                         block_index,
                         is_filtered: false,
                     })
-                })
-                .collect_vec(),
-            GridType::Output => {
-                let mut output_grid_matches = block
-                    .find_output_grid_matches(dfas)
-                    .into_iter()
-                    .map(|range| {
-                        BlockListMatch::CommandBlock(BlockGridMatch {
-                            grid_type: GridType::Output,
-                            range,
-                            block_index,
-                            is_filtered: false,
-                        })
-                    })
-                    .collect_vec();
+                },
+            )),
+            GridType::Output => Box::new(block.output_grid().find(dfas).map(move |range| {
+                let mut find_match = BlockListMatch::CommandBlock(BlockGridMatch {
+                    grid_type: GridType::Output,
+                    range,
+                    block_index,
+                    is_filtered: false,
+                });
                 update_matches_for_filtered_block(
-                    output_grid_matches.iter_mut(),
+                    iter::once(&mut find_match),
                     block,
                     block_sort_direction,
                 );
-                output_grid_matches
-            }
+                find_match
+            })),
             _ => continue,
         };
-        if matches!(block_sort_direction, BlockSortDirection::MostRecentFirst) {
-            grid_matches.reverse();
-        }
-        block_matches.extend(grid_matches);
+        grid_matches.push(matches_for_grid);
     }
-    block_matches
+
+    Box::new(grid_matches.into_iter().flatten())
 }
 
 /// Represents a single find match in a grid-based block in the blocklist..
@@ -346,6 +520,18 @@ pub struct BlockListFindRun {
     /// block.
     matches: Vec<BlockListMatch>,
 
+    /// Total number of visible matches for the current query, capped at
+    /// [`MAX_SYNC_BLOCK_LIST_FIND_MATCH_COUNT`] when there are too many matches to count
+    /// synchronously without blocking the UI thread.
+    match_count: usize,
+
+    /// Whether `match_count` is exact. If false, the real count is at least `match_count`.
+    is_match_count_exact: bool,
+
+    /// Visible match counts by command block, used to update the total when the active block changes.
+    /// These counts are complete only while `is_match_count_exact` is true.
+    block_match_counts: HashMap<BlockIndex, usize>,
+
     /// The index of the currently focused match in the `matches` vector.
     ///
     /// Note that this may differ from the focused match index displayed in the find bar UI, since
@@ -382,63 +568,24 @@ impl BlockListFindRun {
         self.matches.iter().filter(|m| !m.is_filtered())
     }
 
+    pub fn match_count(&self) -> usize {
+        self.match_count
+    }
+
+    pub fn is_match_count_exact(&self) -> bool {
+        self.is_match_count_exact
+    }
+
     /// Returns an iterator over matches for the given block index and grid type, in "ascending"
     /// order.
     ///
     /// This logic relies on the ordering of `self.matches` explained in the field declaration.
     pub fn matches_for_block_grid(
         &self,
-        block_index: BlockIndex,
-        grid_type: GridType,
+        _block_index: BlockIndex,
+        _grid_type: GridType,
     ) -> Box<dyn Iterator<Item = &RangeInclusive<Point>> + '_> {
-        let Some(start_index) = self
-            .matches
-            .iter()
-            .position(|m| m.matches_blockgrid(block_index, grid_type))
-        else {
-            return Box::new(iter::empty());
-        };
-        let match_slice = if let Some(relative_end_index) = self.matches[start_index..]
-            .iter()
-            .position(|m| !m.matches_blockgrid(block_index, grid_type))
-        {
-            &self.matches[start_index..(start_index + relative_end_index)]
-        } else {
-            &self.matches[start_index..]
-        };
-        match self.block_sort_direction {
-            BlockSortDirection::MostRecentLast => Box::new(
-                match_slice
-                    .iter()
-                    .filter_map(|m| match m {
-                        BlockListMatch::CommandBlock(BlockGridMatch {
-                            range, is_filtered, ..
-                        }) => {
-                            if !is_filtered {
-                                Some(range)
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
-                    })
-                    .rev(),
-            ),
-            BlockSortDirection::MostRecentFirst => {
-                Box::new(match_slice.iter().filter_map(|m| match m {
-                    BlockListMatch::CommandBlock(BlockGridMatch {
-                        range, is_filtered, ..
-                    }) => {
-                        if !is_filtered {
-                            Some(range)
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
-                }))
-            }
-        }
+        Box::new(iter::empty())
     }
 
     pub fn focused_match(&self) -> Option<&BlockListMatch> {
@@ -455,40 +602,63 @@ impl BlockListFindRun {
         &mut self,
         direction: FindDirection,
         block_sort_direction: BlockSortDirection,
+        block_list: &BlockList,
+        rich_content_views: &HashMap<EntityId, Box<dyn FindableRichContentHandle>>,
+        ctx: &mut AppContext,
     ) {
+        let should_advance = matches!(
+            (direction, block_sort_direction),
+            (FindDirection::Up, BlockSortDirection::MostRecentLast)
+                | (FindDirection::Down, BlockSortDirection::MostRecentFirst)
+        );
+
         let new_focused_index = match (self.raw_focused_match_index, self.matches.is_empty()) {
             (_, true) => None,
-            (Some(mut current_index), false) => {
-                let mut new_focused_index = None;
-                for _ in 0..self.matches.len() {
-                    current_index = match (direction, block_sort_direction) {
-                        (FindDirection::Up, BlockSortDirection::MostRecentLast)
-                        | (FindDirection::Down, BlockSortDirection::MostRecentFirst) => {
-                            if current_index + 1 < self.matches.len() {
-                                current_index + 1
-                            } else {
-                                0
-                            }
-                        }
-                        (FindDirection::Down, BlockSortDirection::MostRecentLast)
-                        | (FindDirection::Up, BlockSortDirection::MostRecentFirst) => {
-                            if current_index > 0 {
-                                current_index - 1
-                            } else {
-                                self.matches.len() - 1
-                            }
-                        }
-                    };
-                    if !self.matches[current_index].is_filtered() {
-                        new_focused_index = Some(current_index);
-                        break;
+            (Some(current_index), false) => Some(if should_advance {
+                if current_index + 1 == self.matches.len() {
+                    let current_match = self.matches.get(current_index).cloned();
+                    if let Some(next_match) = self.find_next_visible_match(
+                        current_match.as_ref(),
+                        block_list,
+                        rich_content_views,
+                        ctx,
+                    ) {
+                        self.matches.push(next_match);
                     }
                 }
-                new_focused_index
-            }
+
+                if current_index + 1 < self.matches.len() {
+                    current_index + 1
+                } else {
+                    0
+                }
+            } else if current_index > 0 {
+                current_index - 1
+            } else {
+                current_index
+            }),
             (None, false) => Some(0),
         };
         self.raw_focused_match_index = new_focused_index;
+    }
+
+    fn find_next_visible_match(
+        &self,
+        current_match: Option<&BlockListMatch>,
+        block_list: &BlockList,
+        rich_content_views: &HashMap<EntityId, Box<dyn FindableRichContentHandle>>,
+        ctx: &mut AppContext,
+    ) -> Option<BlockListMatch> {
+        let dfas = self.dfas.as_ref()?;
+        find_next_match(
+            &self.options,
+            dfas,
+            block_list,
+            rich_content_views,
+            self.block_sort_direction,
+            current_match,
+            ctx,
+        )
     }
 
     /// Reruns the find operation on the block at the given index, updates the matches with the new results.
@@ -514,8 +684,38 @@ impl BlockListFindRun {
             .matches
             .iter()
             .position(|find_match| find_match.matches_block(block_index));
-        let new_matches = run_find_on_block(dfas, block, block_index, block_sort_direction);
-        let new_block_match_count = new_matches.len();
+        if self.is_match_count_exact {
+            let old_block_match_count = self
+                .block_match_counts
+                .get(&block_index)
+                .copied()
+                .unwrap_or_default();
+            let base_match_count = self.match_count.saturating_sub(old_block_match_count);
+            let remaining_count =
+                MAX_SYNC_BLOCK_LIST_FIND_MATCH_COUNT.saturating_sub(base_match_count);
+            let new_block_match_count = count_block_matches(
+                dfas,
+                block,
+                block_index,
+                block_sort_direction,
+                remaining_count,
+            );
+
+            self.match_count = base_match_count + new_block_match_count.count;
+            self.block_match_counts
+                .insert(block_index, new_block_match_count.count);
+            if !new_block_match_count.is_exact {
+                self.match_count = MAX_SYNC_BLOCK_LIST_FIND_MATCH_COUNT;
+                self.is_match_count_exact = false;
+                self.block_match_counts.clear();
+            }
+        }
+
+        let new_matches = run_find_on_block(dfas, block, block_index, block_sort_direction)
+            .find(|find_match| !find_match.is_filtered())
+            .into_iter()
+            .collect_vec();
+        let new_stored_block_match_count = new_matches.len();
         if let Some(start_index) = old_block_matches_start_index {
             let end_index = old_block_matches_start_index
                 .and_then(|i| {
@@ -526,7 +726,7 @@ impl BlockListFindRun {
                 })
                 .unwrap_or(self.matches.len());
 
-            let old_block_match_count = end_index - start_index;
+            let old_stored_block_match_count = end_index - start_index;
 
             // Splice in the new matches where the old block matches used to exist.
             self.matches.splice(start_index..end_index, new_matches);
@@ -539,7 +739,7 @@ impl BlockListFindRun {
                     self.raw_focused_match_index = old_focused_match
                         .as_ref()
                         .and_then(|old_match| {
-                            self.matches[start_index..(start_index + new_block_match_count)]
+                            self.matches[start_index..(start_index + new_stored_block_match_count)]
                                 .iter()
                                 .position(|m| m.same_span(old_match))
                                 .map(|p| start_index + p)
@@ -555,7 +755,8 @@ impl BlockListFindRun {
                 } else if focused_index >= end_index {
                     // The focused match was after the rerun block. Shift by the change in
                     // match count so it continues to point at the same match.
-                    let new_index = focused_index + new_block_match_count - old_block_match_count;
+                    let new_index =
+                        focused_index + new_stored_block_match_count - old_stored_block_match_count;
                     self.raw_focused_match_index =
                         Some(new_index.min(self.matches.len().saturating_sub(1)));
                 }
@@ -569,7 +770,7 @@ impl BlockListFindRun {
 
             // All previous indices shifted forward by the number of newly prepended matches.
             if let Some(focused_index) = self.raw_focused_match_index {
-                self.raw_focused_match_index = Some(focused_index + new_block_match_count);
+                self.raw_focused_match_index = Some(focused_index + new_stored_block_match_count);
             }
         }
 
@@ -622,6 +823,9 @@ impl BlockListFindRun {
             });
         self.dfas = new_dfas;
         self.matches = vec![];
+        self.match_count = 0;
+        self.is_match_count_exact = true;
+        self.block_match_counts.clear();
         self.raw_focused_match_index = None;
         self
     }

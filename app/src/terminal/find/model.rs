@@ -65,8 +65,19 @@ impl FindModel for TerminalFindModel {
         } else {
             self.block_list_find_run
                 .as_ref()
-                .map(|run| run.matches().count())
+                .map(|run| run.match_count())
                 .unwrap_or(0)
+        }
+    }
+
+    fn is_match_count_exact(&self) -> bool {
+        if self.terminal_model.lock().is_alt_screen_active() {
+            true
+        } else {
+            self.block_list_find_run
+                .as_ref()
+                .map(|run| run.is_match_count_exact())
+                .unwrap_or(true)
         }
     }
 
@@ -216,7 +227,14 @@ impl TerminalFindModel {
                 .value()
                 .block_sort_direction();
 
-            block_list_find_run.focus_next_match(find_direction, block_sort_direction);
+            let terminal_model = self.terminal_model.lock();
+            block_list_find_run.focus_next_match(
+                find_direction,
+                block_sort_direction,
+                terminal_model.block_list(),
+                &self.rich_content_views,
+                ctx,
+            );
         }
         ctx.emit(FindEvent::UpdatedFocusedMatch);
     }

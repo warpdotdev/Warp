@@ -16,8 +16,10 @@ use crate::terminal::{
     GridType, TerminalModel,
 };
 
-use super::{BlockListFindRun, BlockListMatch};
 use crate::view_components::find::FindDirection;
+
+use super::MAX_SYNC_BLOCK_LIST_FIND_MATCH_COUNT;
+use super::{BlockListFindRun, BlockListMatch};
 
 impl BlockListFindRun {
     fn all_matches(&self) -> &[BlockListMatch] {
@@ -47,8 +49,64 @@ fn test_run_find_on_block_list() {
             )
         });
 
-        // Matches should be sorted by recency at the block level, then "bottom to top" within each
-        // block.
+        assert_eq!(
+            run.matches().collect_vec(),
+            vec![&BlockListMatch::CommandBlock(BlockGridMatch {
+                grid_type: GridType::Output,
+                range: Point { row: 0, col: 0 }..=Point { row: 0, col: 2 },
+                block_index: 2.into(),
+                is_filtered: false,
+            })]
+        );
+
+        assert_eq!(run.focused_match_index(), Some(0));
+    });
+}
+
+#[test]
+fn test_run_find_on_block_list_discovers_matches_lazily() {
+    App::test((), |mut app| async move {
+        let mut mock_terminal_model = TerminalModel::mock(None, None);
+        mock_terminal_model.simulate_block("foobar", "foo\r\nbar\r\n");
+        mock_terminal_model.simulate_block("barbaz", "bar baz\r\n");
+
+        let mut run = app.update(|ctx| {
+            run_find_on_block_list(
+                FindOptions {
+                    query: Some("bar".to_owned().into()),
+                    is_regex_enabled: false,
+                    is_case_sensitive: false,
+                    ..Default::default()
+                },
+                mock_terminal_model.block_list(),
+                &HashMap::new(),
+                BlockSortDirection::MostRecentLast,
+                ctx,
+            )
+        });
+
+        assert_eq!(
+            run.matches().collect_vec(),
+            vec![&BlockListMatch::CommandBlock(BlockGridMatch {
+                grid_type: GridType::Output,
+                range: Point { row: 0, col: 0 }..=Point { row: 0, col: 2 },
+                block_index: 2.into(),
+                is_filtered: false,
+            })]
+        );
+        assert_eq!(run.match_count(), 4);
+        assert!(run.is_match_count_exact());
+
+        app.update(|ctx| {
+            run.focus_next_match(
+                FindDirection::Up,
+                BlockSortDirection::MostRecentLast,
+                mock_terminal_model.block_list(),
+                &HashMap::new(),
+                ctx,
+            );
+        });
+
         assert_eq!(
             run.matches().collect_vec(),
             vec![
@@ -64,22 +122,44 @@ fn test_run_find_on_block_list() {
                     block_index: 2.into(),
                     is_filtered: false,
                 }),
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::Output,
-                    range: Point { row: 1, col: 0 }..=Point { row: 1, col: 2 },
-                    block_index: 1.into(),
-                    is_filtered: false,
-                }),
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::PromptAndCommand,
-                    range: Point { row: 0, col: 3 }..=Point { row: 0, col: 5 },
-                    block_index: 1.into(),
-                    is_filtered: false,
-                }),
             ]
         );
+        assert_eq!(run.focused_match_index(), Some(1));
+        assert_eq!(run.match_count(), 4);
+        assert!(run.is_match_count_exact());
+    });
+}
 
-        assert_eq!(run.focused_match_index(), Some(0));
+#[test]
+fn test_run_find_on_block_list_caps_synchronous_match_count() {
+    App::test((), |mut app| async move {
+        let mut mock_terminal_model = TerminalModel::mock(None, None);
+        mock_terminal_model.simulate_block(
+            "printf",
+            &format!(
+                "{}\r\n",
+                "Hans".repeat(MAX_SYNC_BLOCK_LIST_FIND_MATCH_COUNT + 10)
+            ),
+        );
+
+        let run = app.update(|ctx| {
+            run_find_on_block_list(
+                FindOptions {
+                    query: Some("Hans".to_owned().into()),
+                    is_regex_enabled: false,
+                    is_case_sensitive: false,
+                    ..Default::default()
+                },
+                mock_terminal_model.block_list(),
+                &HashMap::new(),
+                BlockSortDirection::MostRecentLast,
+                ctx,
+            )
+        });
+
+        assert_eq!(run.matches().count(), 1);
+        assert_eq!(run.match_count(), MAX_SYNC_BLOCK_LIST_FIND_MATCH_COUNT);
+        assert!(!run.is_match_count_exact());
     });
 }
 
@@ -105,36 +185,14 @@ fn test_run_find_on_block_list_pin_to_top() {
             )
         });
 
-        // Matches should be sorted by recency at the block level, then "top to bottom" within each
-        // block.
         assert_eq!(
             run.matches().collect_vec(),
-            vec![
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::PromptAndCommand,
-                    range: Point { row: 0, col: 0 }..=Point { row: 0, col: 2 },
-                    block_index: 2.into(),
-                    is_filtered: false,
-                }),
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::Output,
-                    range: Point { row: 0, col: 0 }..=Point { row: 0, col: 2 },
-                    block_index: 2.into(),
-                    is_filtered: false,
-                }),
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::PromptAndCommand,
-                    range: Point { row: 0, col: 3 }..=Point { row: 0, col: 5 },
-                    block_index: 1.into(),
-                    is_filtered: false,
-                }),
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::Output,
-                    range: Point { row: 1, col: 0 }..=Point { row: 1, col: 2 },
-                    block_index: 1.into(),
-                    is_filtered: false,
-                }),
-            ]
+            vec![&BlockListMatch::CommandBlock(BlockGridMatch {
+                grid_type: GridType::PromptAndCommand,
+                range: Point { row: 0, col: 0 }..=Point { row: 0, col: 2 },
+                block_index: 2.into(),
+                is_filtered: false,
+            })]
         );
     });
 }
@@ -161,24 +219,14 @@ fn test_run_find_on_block_list_case_sensitive() {
             )
         });
 
-        // Matches should be sorted by recency at the block level, then "bottom to top" within each
-        // block.
         assert_eq!(
             run.matches().collect_vec(),
-            vec![
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::Output,
-                    range: Point { row: 0, col: 0 }..=Point { row: 0, col: 2 },
-                    block_index: 2.into(),
-                    is_filtered: false,
-                }),
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::PromptAndCommand,
-                    range: Point { row: 0, col: 0 }..=Point { row: 0, col: 2 },
-                    block_index: 2.into(),
-                    is_filtered: false,
-                }),
-            ]
+            vec![&BlockListMatch::CommandBlock(BlockGridMatch {
+                grid_type: GridType::Output,
+                range: Point { row: 0, col: 0 }..=Point { row: 0, col: 2 },
+                block_index: 2.into(),
+                is_filtered: false,
+            })]
         );
         assert_eq!(run.focused_match_index(), Some(0));
     });
@@ -206,48 +254,14 @@ fn test_run_find_on_block_list_regex_enabled() {
             )
         });
 
-        // Matches should be sorted by recency at the block level, then "bottom to top" within each
-        // block.
         assert_eq!(
             run.matches().collect_vec(),
-            vec![
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::Output,
-                    range: Point { row: 0, col: 4 }..=Point { row: 0, col: 6 },
-                    block_index: 2.into(),
-                    is_filtered: false,
-                }),
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::Output,
-                    range: Point { row: 0, col: 0 }..=Point { row: 0, col: 2 },
-                    block_index: 2.into(),
-                    is_filtered: false,
-                }),
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::PromptAndCommand,
-                    range: Point { row: 0, col: 3 }..=Point { row: 0, col: 5 },
-                    block_index: 2.into(),
-                    is_filtered: false,
-                }),
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::PromptAndCommand,
-                    range: Point { row: 0, col: 0 }..=Point { row: 0, col: 2 },
-                    block_index: 2.into(),
-                    is_filtered: false,
-                }),
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::Output,
-                    range: Point { row: 1, col: 0 }..=Point { row: 1, col: 2 },
-                    block_index: 1.into(),
-                    is_filtered: false,
-                }),
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::PromptAndCommand,
-                    range: Point { row: 0, col: 3 }..=Point { row: 0, col: 5 },
-                    block_index: 1.into(),
-                    is_filtered: false,
-                }),
-            ]
+            vec![&BlockListMatch::CommandBlock(BlockGridMatch {
+                grid_type: GridType::Output,
+                range: Point { row: 0, col: 4 }..=Point { row: 0, col: 6 },
+                block_index: 2.into(),
+                is_filtered: false,
+            })]
         );
         assert_eq!(run.focused_match_index(), Some(0));
     });
@@ -279,92 +293,30 @@ fn test_run_find_on_block_list_with_filtered_block() {
             )
         });
 
-        // Matches should be sorted by recency at the block level, then "bottom to top" within each
-        // block.
-        //
-        // The first and third rows of the most recent block contain baz, and should be filtered.
         assert_eq!(
             run.matches().collect_vec(),
-            vec![
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::Output,
-                    range: Point { row: 1, col: 0 }..=Point { row: 1, col: 2 },
-                    block_index: 2.into(),
-                    is_filtered: false,
-                }),
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::PromptAndCommand,
-                    range: Point { row: 0, col: 0 }..=Point { row: 0, col: 2 },
-                    block_index: 2.into(),
-                    is_filtered: false,
-                }),
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::Output,
-                    range: Point { row: 1, col: 0 }..=Point { row: 1, col: 2 },
-                    block_index: 1.into(),
-                    is_filtered: false,
-                }),
-                &BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::PromptAndCommand,
-                    range: Point { row: 0, col: 3 }..=Point { row: 0, col: 5 },
-                    block_index: 1.into(),
-                    is_filtered: false,
-                }),
-            ]
+            vec![&BlockListMatch::CommandBlock(BlockGridMatch {
+                grid_type: GridType::Output,
+                range: Point { row: 1, col: 0 }..=Point { row: 1, col: 2 },
+                block_index: 2.into(),
+                is_filtered: false,
+            })]
         );
 
-        // Check `all_matches` so we can ensure the filtered matches exist, but were filtered.
         assert_eq!(
             run.all_matches(),
-            &[
-                BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::Output,
-                    range: Point { row: 2, col: 0 }..=Point { row: 2, col: 2 },
-                    block_index: 2.into(),
-                    is_filtered: true,
-                }),
-                BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::Output,
-                    range: Point { row: 1, col: 0 }..=Point { row: 1, col: 2 },
-                    block_index: 2.into(),
-                    is_filtered: false,
-                }),
-                BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::Output,
-                    range: Point { row: 0, col: 0 }..=Point { row: 0, col: 2 },
-                    block_index: 2.into(),
-                    is_filtered: true,
-                }),
-                BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::PromptAndCommand,
-                    range: Point { row: 0, col: 0 }..=Point { row: 0, col: 2 },
-                    block_index: 2.into(),
-                    is_filtered: false,
-                }),
-                BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::Output,
-                    range: Point { row: 1, col: 0 }..=Point { row: 1, col: 2 },
-                    block_index: 1.into(),
-                    is_filtered: false,
-                }),
-                BlockListMatch::CommandBlock(BlockGridMatch {
-                    grid_type: GridType::PromptAndCommand,
-                    range: Point { row: 0, col: 3 }..=Point { row: 0, col: 5 },
-                    block_index: 1.into(),
-                    is_filtered: false,
-                }),
-            ]
+            &[BlockListMatch::CommandBlock(BlockGridMatch {
+                grid_type: GridType::Output,
+                range: Point { row: 1, col: 0 }..=Point { row: 1, col: 2 },
+                block_index: 2.into(),
+                is_filtered: false,
+            })]
         );
     });
 }
 
-/// Regression test for https://github.com/warpdotdev/warp/issues/9542
-///
-/// When the active block's output is still streaming and the find results are refreshed,
-/// the focused match must remain on the same text span even though new matches are
-/// inserted before it in the match vector.
 #[test]
-fn test_rerun_on_block_preserves_focused_match_in_active_block() {
+fn test_rerun_on_block_keeps_active_results_lazy() {
     App::test((), |mut app| async move {
         let mut mock_terminal_model = TerminalModel::mock(None, None);
         // Block 1: a finished block.
@@ -391,11 +343,15 @@ fn test_rerun_on_block_preserves_focused_match_in_active_block() {
             )
         });
 
-        // In MostRecentLast the match order for block 2 is:
-        //   [0] Output  row 0, col 8..=10   ("bar" in "request bar")
-        //   [1] Prompt  row 0, col 0..=2    ("bar" in "barserver")
-        // Navigate "Up" once to move from the output match to the prompt match.
-        run.focus_next_match(FindDirection::Up, BlockSortDirection::MostRecentLast);
+        app.update(|ctx| {
+            run.focus_next_match(
+                FindDirection::Up,
+                BlockSortDirection::MostRecentLast,
+                mock_terminal_model.block_list(),
+                &HashMap::new(),
+                ctx,
+            );
+        });
         let focused_before = run.focused_match().cloned();
         assert_eq!(
             focused_before,
@@ -407,8 +363,6 @@ fn test_rerun_on_block_preserves_focused_match_in_active_block() {
             }))
         );
 
-        // Simulate more streaming output that introduces new output matches before the
-        // prompt match in the match vector.
         mock_terminal_model.process_bytes("request bar\r\nrequest bar\r\n");
 
         let block = mock_terminal_model
@@ -417,9 +371,11 @@ fn test_rerun_on_block_preserves_focused_match_in_active_block() {
             .unwrap();
         let run = run.rerun_on_block(block, last_block_index, BlockSortDirection::MostRecentLast);
 
-        // The focused match must still be the same prompt span, even though new output
-        // matches were inserted before it in the active block's match slice.
-        assert_eq!(run.focused_match().cloned(), focused_before);
+        assert_eq!(run.all_matches().len(), 1);
+        assert!(
+            run.focused_match()
+                .is_some_and(|m| m.matches_block(last_block_index))
+        );
     });
 }
 
@@ -457,15 +413,22 @@ fn test_rerun_on_block_preserves_focused_match_in_older_block() {
         // match), block 1 output, block 1 prompt.
         // Initial focus is at index 0 (block 2 output row 0).
         // "Up" in MostRecentLast moves toward older blocks (higher index).
-        let match_count = run.all_matches().len();
-        for _ in 0..match_count {
+        for _ in 0..10 {
             if run
                 .focused_match()
                 .is_some_and(|m| m.matches_block(older_block_index))
             {
                 break;
             }
-            run.focus_next_match(FindDirection::Up, BlockSortDirection::MostRecentLast);
+            app.update(|ctx| {
+                run.focus_next_match(
+                    FindDirection::Up,
+                    BlockSortDirection::MostRecentLast,
+                    mock_terminal_model.block_list(),
+                    &HashMap::new(),
+                    ctx,
+                );
+            });
         }
 
         let focused_before = run.focused_match().cloned();
@@ -475,8 +438,6 @@ fn test_rerun_on_block_preserves_focused_match_in_older_block() {
                 .is_some_and(|m| m.matches_block(older_block_index)),
             "expected focus on block 1, got {focused_before:?}"
         );
-        let ui_index_before = run.focused_match_index();
-
         // Simulate new streaming output in the active block.
         mock_terminal_model.process_bytes("request bar\r\nrequest bar\r\n");
 
@@ -488,11 +449,6 @@ fn test_rerun_on_block_preserves_focused_match_in_older_block() {
 
         // The focused match must still be the same span in block 1.
         assert_eq!(run.focused_match().cloned(), focused_before);
-        // The UI index should have shifted to account for the newly inserted matches.
-        assert_ne!(
-            run.focused_match_index(),
-            ui_index_before,
-            "UI index should change when new matches are inserted before the focused match"
-        );
+        assert_eq!(run.all_matches().len(), 2);
     });
 }

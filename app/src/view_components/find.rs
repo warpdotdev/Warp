@@ -62,6 +62,9 @@ pub enum FindEvent {
 pub trait FindModel {
     fn focused_match_index(&self) -> Option<usize>;
     fn match_count(&self) -> usize;
+    fn is_match_count_exact(&self) -> bool {
+        true
+    }
     fn default_find_direction(&self, app: &AppContext) -> FindDirection;
     fn alt_find_direction(&self, app: &AppContext) -> FindDirection {
         match self.default_find_direction(app) {
@@ -251,12 +254,10 @@ impl<T: FindModel + Entity<Event = FindEvent> + 'static> Find<T> {
     /// as `focus_next_match` may have multiple entrypoints (that are not Action).
     pub fn emit_result_a11y_content(&mut self, ctx: &mut ViewContext<Self>) {
         let content = if let Some(match_index) = self.model.as_ref(ctx).focused_match_index() {
+            let model = self.model.as_ref(ctx);
+            let match_count = format_match_count(model.match_count(), model.is_match_count_exact());
             AccessibilityContent::new(
-                format!(
-                    "Result {} of {}.",
-                    match_index + 1,
-                    self.model.as_ref(ctx).match_count()
-                ),
+                format!("Result {} of {}.", match_index + 1, match_count),
                 "Use enter and shift-enter to navigate between matches. Escape to quit.",
                 WarpA11yRole::UserAction,
             )
@@ -323,7 +324,12 @@ impl<T: FindModel + Entity<Event = FindEvent> + 'static> Find<T> {
             None => 0,
             Some(idx) => idx + 1,
         };
-        let label = format!("{}/{}", index, self.model.as_ref(app).match_count());
+        let model = self.model.as_ref(app);
+        let label = format!(
+            "{}/{}",
+            index,
+            format_match_count(model.match_count(), model.is_match_count_exact())
+        );
         Text::new_inline(label, appearance.ui_font_family(), FIND_EDITOR_FONT_SIZE)
             .with_color(blended_colors::text_sub(
                 appearance.theme(),
@@ -463,6 +469,14 @@ impl<T: FindModel + Entity<Event = FindEvent> + 'static> Find<T> {
         )))
         .with_uniform_padding(ICON_PADDING)
         .finish()
+    }
+}
+
+fn format_match_count(match_count: usize, is_exact: bool) -> String {
+    if is_exact {
+        match_count.to_string()
+    } else {
+        format!("{match_count}+")
     }
 }
 
