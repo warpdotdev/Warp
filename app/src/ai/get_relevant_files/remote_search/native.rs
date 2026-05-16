@@ -137,15 +137,11 @@ async fn execute_remote_codebase_search(
     let root_hash = search_context.root_hash;
     let root_hash_string = root_hash.to_string();
     let repo_path = search_context.remote_path.path.as_str().to_string();
-<<<<<<< HEAD
     let embedding_config = store_client
         .codebase_context_config()
         .await?
         .embedding_config;
     log::debug!(
-=======
-    log::info!(
->>>>>>> 291629640a (index when auto sync is on)
         "[Remote codebase indexing] Remote codebase search using embedding config: repo_path={repo_path} embedding_config={embedding_config:?}"
     );
     let candidate_hashes = store_client

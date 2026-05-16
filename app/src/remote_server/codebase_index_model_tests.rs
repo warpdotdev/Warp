@@ -14,6 +14,7 @@ fn remote_path(repo_path: &str) -> RemotePath {
 fn remote_path_for_host(host: &HostId, repo_path: &str) -> RemotePath {
     remote_path_from_repo_path(host, repo_path).unwrap()
 }
+
 fn session(id: u64) -> SessionId {
     SessionId::from(id)
 }

@@ -102,6 +102,8 @@ const INDEXING_WORKSPACE_ENABLED_ADMIN_TEXT: &str = "Team admins have enabled co
 const INDEXING_DISABLED_GLOBAL_AI_TEXT: &str =
     "AI Features must be enabled to use codebase indexing.";
 const CODEBASE_INDEX_LIMIT_REACHED: &str = "You have reached the maximum number of codebase indices for your plan. Delete existing indices to auto-index new codebases.";
+const REMOTE_CODEBASE_INDEX_LIMIT_REACHED_FAILURE: &str =
+    "maximum number of codebase indexes has been reached";
 
 /// Identifies which subpage of the Code settings the user is viewing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -126,6 +128,53 @@ impl CodeSubpage {
             Self::Indexing => "Codebase Indexing",
             Self::EditorAndCodeReview => "Editor and Code Review",
         }
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn remote_codebase_index_limit_reached(status: &RemoteCodebaseIndexStatus) -> bool {
+    status
+        .failure_message
+        .as_deref()
+        .is_some_and(|message| message.contains(REMOTE_CODEBASE_INDEX_LIMIT_REACHED_FAILURE))
+}
+
+#[cfg(all(test, not(target_family = "wasm")))]
+mod tests {
+    use remote_server::codebase_index_proto::{
+        RemoteCodebaseIndexState, RemoteCodebaseIndexStatus,
+    };
+
+    use super::remote_codebase_index_limit_reached;
+
+    fn remote_status_with_failure(failure_message: Option<&str>) -> RemoteCodebaseIndexStatus {
+        RemoteCodebaseIndexStatus {
+            repo_path: "/workspaces/repo".to_string(),
+            state: RemoteCodebaseIndexState::Unavailable,
+            last_updated_epoch_millis: Some(1),
+            progress_completed: None,
+            progress_total: None,
+            failure_message: failure_message.map(ToOwned::to_owned),
+            root_hash: None,
+        }
+    }
+
+    #[test]
+    fn remote_index_limit_failure_is_detected_from_status_message() {
+        let status = remote_status_with_failure(Some(
+            "Cannot index remote codebase because the maximum number of codebase indexes has been reached.",
+        ));
+
+        assert!(remote_codebase_index_limit_reached(&status));
+    }
+
+    #[test]
+    fn other_unavailable_failures_are_not_index_limit_failures() {
+        let status = remote_status_with_failure(Some(
+            "Cannot index remote codebase because indexing did not start.",
+        ));
+
+        assert!(!remote_codebase_index_limit_reached(&status));
     }
 }
 
@@ -1747,13 +1796,28 @@ impl CodePageWidget {
                 refresh_action: Some(IndexingRefreshAction::RequestRemote),
                 show_delete: true,
             },
-            RemoteCodebaseIndexState::Unavailable => IndexingStatusPresentation {
-                text: Cow::from("Unavailable"),
-                color: theme.disabled_ui_text_color().into_solid(),
-                icon: Some(Icon::SlashCircle),
-                refresh_action: None,
-                show_delete: true,
-            },
+            RemoteCodebaseIndexState::Unavailable => {
+                let limit_reached = remote_codebase_index_limit_reached(status);
+                IndexingStatusPresentation {
+                    text: Cow::from(if limit_reached {
+                        "Index limit reached"
+                    } else {
+                        "Unavailable"
+                    }),
+                    color: if limit_reached {
+                        theme.ui_warning_color()
+                    } else {
+                        theme.disabled_ui_text_color().into_solid()
+                    },
+                    icon: Some(if limit_reached {
+                        Icon::AlertTriangle
+                    } else {
+                        Icon::SlashCircle
+                    }),
+                    refresh_action: Some(IndexingRefreshAction::RequestRemote),
+                    show_delete: true,
+                }
+            }
             RemoteCodebaseIndexState::Disabled => IndexingStatusPresentation {
                 text: Cow::from("Disabled"),
                 color: theme.disabled_ui_text_color().into_solid(),

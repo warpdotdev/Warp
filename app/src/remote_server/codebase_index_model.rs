@@ -528,9 +528,12 @@ impl RemoteCodebaseIndexModel {
 
     fn log_status_update(&self, remote_path: &RemotePath, status: &RemoteCodebaseIndexStatus) {
         log::info!(
+<<<<<<< HEAD
             "[Remote codebase indexing] Client applying codebase index status update: host_id={} repo_path={} state={:?} has_root_hash={}",
+=======
+            "[Remote codebase indexing] Client applying codebase index status update: host_id={} state={:?} has_root_hash={}",
+>>>>>>> 58b14779f0 (pass repo limits)
             remote_path.host_id,
-            status.repo_path,
             status.state,
             status
                 .root_hash

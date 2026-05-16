@@ -32,6 +32,8 @@ use itertools::Itertools;
 use lsp::supported_servers::LSPServerType;
 use warp_core::features::FeatureFlag;
 #[cfg(feature = "local_fs")]
+use warp_util::local_or_remote_path::LocalOrRemotePath;
+#[cfg(feature = "local_fs")]
 use warpui::windowing::WindowManager;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
@@ -655,9 +657,11 @@ impl PersistedWorkspace {
 
         #[cfg(feature = "local_fs")]
         if should_auto_index_codebase(CodebaseAutoIndexingSurface::Local, ctx) {
-            let roots = all_working_directories(ctx)
-                .into_iter()
-                .filter_map(|dir| DetectedRepositories::as_ref(ctx).get_root_for_path(&dir));
+            let roots = all_working_directories(ctx).into_iter().filter_map(|dir| {
+                DetectedRepositories::as_ref(ctx)
+                    .get_root_for_path(&LocalOrRemotePath::Local(dir))
+                    .and_then(|root| root.to_local_path().map(Path::to_path_buf))
+            });
             for root in auto_index_candidate_roots(roots, |_| true) {
                 manager.index_directory(root, ctx);
             }
@@ -812,13 +816,21 @@ impl PersistedWorkspace {
             for terminal_view in terminal_views.into_iter().flatten() {
                 let terminal_view_ref = terminal_view.as_ref(ctx);
                 if terminal_view_ref.view_id() == terminal_view_id {
-                    if let Some(pwd) = terminal_view_ref.pwd() {
-                        let directory_path = Path::new(&pwd);
+                    if terminal_view_ref.active_session_is_local(ctx) != Some(true) {
+                        log::info!(
+                            "Skipping local codebase incremental sync for non-local agent conversation"
+                        );
+                        return;
+                    }
+
+                    let pwd = terminal_view_ref.pwd();
+                    if let Some(pwd) = pwd {
+                        let directory_path = PathBuf::from(pwd);
 
                         // Trigger an incremental sync through the CodebaseIndexManager
                         CodebaseIndexManager::handle(ctx).update(ctx, |codebase_manager, ctx| {
                             if let Err(e) = codebase_manager
-                                .trigger_incremental_sync_for_path(directory_path, ctx)
+                                .trigger_incremental_sync_for_path(&directory_path, ctx)
                             {
                                 log::warn!("Failed to trigger incremental sync {e}");
                             }

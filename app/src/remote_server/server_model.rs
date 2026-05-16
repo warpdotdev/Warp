@@ -19,6 +19,7 @@ use super::codebase_index_status::{
     not_enabled_codebase_index_status, queued_codebase_index_status,
     unavailable_codebase_index_status,
 };
+use super::proto::CodebaseIndexLimits;
 use crate::code::global_buffer_model::{GlobalBufferModel, GlobalBufferModelEvent};
 use ::ai::index::full_source_code_embedding::manager::{
     CodebaseIndexManager, CodebaseIndexManagerEvent,
@@ -836,7 +837,14 @@ impl ServerModel {
         }
         let snapshot = self.codebase_index_statuses_snapshot(ctx);
         let status_count = snapshot.statuses.len();
+<<<<<<< HEAD
         log::debug!(
+=======
+        for status in &snapshot.statuses {
+            self.record_codebase_index_status_push(status);
+        }
+        log::info!(
+>>>>>>> 78ef5f37e9 (pass repo limits)
             "[Remote codebase indexing] Daemon pushing bootstrap codebase index statuses snapshot: conn_id={conn_id} bootstrap_status_count={status_count}"
         );
         self.send_server_message(
@@ -903,20 +911,35 @@ impl ServerModel {
                     Self::current_codebase_index_status_or_queued(manager, indexed_repo_path, ctx)
                 },
                 |manager, repo_path, ctx| {
-                    if manager.index_directory(repo_path.to_path_buf(), ctx) {
-                        Self::current_codebase_index_status_or_queued(manager, repo_path, ctx)
-                    } else if !manager.is_indexing_enabled() {
+                    if !manager.is_indexing_enabled() {
+                        log::info!(
+                            "[Remote codebase indexing] Daemon cannot start IndexCodebase because indexing is disabled: repo_path={}",
+                            repo_path.display()
+                        );
                         not_enabled_codebase_index_status(repo_path.to_string_lossy().to_string())
                     } else if !manager.can_create_new_indices() {
+                        let failure_message = "Cannot index remote codebase because the maximum number of codebase indexes has been reached.".to_string();
+                        log::warn!(
+                            "[Remote codebase indexing] Daemon cannot start IndexCodebase: repo_path={} reason={failure_message}",
+                            repo_path.display()
+                        );
                         unavailable_codebase_index_status(
                             repo_path.to_string_lossy().to_string(),
-                            "Cannot index remote codebase because the maximum number of codebase indexes has been reached.".to_string(),
+                            failure_message,
                         )
+                    } else if manager.index_directory(repo_path.to_path_buf(), ctx) {
+                        Self::current_codebase_index_status_or_queued(manager, repo_path, ctx)
                     } else {
+                        let failure_message =
+                            "Cannot index remote codebase because indexing did not start."
+                                .to_string();
+                        log::warn!(
+                            "[Remote codebase indexing] Daemon cannot start IndexCodebase: repo_path={} reason={failure_message}",
+                            repo_path.display()
+                        );
                         unavailable_codebase_index_status(
                             repo_path.to_string_lossy().to_string(),
-                            "Cannot index remote codebase because indexing did not start."
-                                .to_string(),
+                            failure_message,
                         )
                     }
                 },
@@ -1263,6 +1286,7 @@ impl ServerModel {
     ) -> HandlerOutcome {
         log::info!("Handling Initialize (request_id={request_id})");
         self.apply_initialize_auth(&msg);
+        Self::apply_codebase_index_limits(msg.codebase_index_limits.as_ref(), ctx);
 
         // Update crash reporting based on client-supplied preferences.
         #[cfg(feature = "crash_reporting")]
@@ -1293,6 +1317,31 @@ impl ServerModel {
         );
     }
 
+    fn apply_codebase_index_limits(
+        limits: Option<&CodebaseIndexLimits>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(limits) = limits else {
+            return;
+        };
+        let max_indices_allowed = limits.max_indices_allowed.map(|limit| limit as usize);
+        let max_files_per_repo = usize::try_from(limits.max_files_per_repo).unwrap_or(usize::MAX);
+        let embedding_generation_batch_size =
+            usize::try_from(limits.embedding_generation_batch_size).unwrap_or(usize::MAX);
+
+        log::info!(
+            "[Remote codebase indexing] Daemon applying codebase index limits: max_indices_allowed={max_indices_allowed:?} max_files_per_repo={max_files_per_repo} embedding_generation_batch_size={embedding_generation_batch_size}"
+        );
+        CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
+            manager.update_max_limits(
+                max_indices_allowed,
+                max_files_per_repo,
+                embedding_generation_batch_size,
+                ctx,
+            );
+        });
+    }
+
     /// Sets the Sentry user identity from the stored `AuthState`.
     /// Called both during `Initialize` and when re-enabling crash reporting
     /// via `UpdatePreferences`.
@@ -1314,6 +1363,7 @@ impl ServerModel {
             "Handling UpdatePreferences: crash_reporting_enabled={}",
             msg.crash_reporting_enabled
         );
+        Self::apply_codebase_index_limits(msg.codebase_index_limits.as_ref(), ctx);
         #[cfg(feature = "crash_reporting")]
         {
             if msg.crash_reporting_enabled {
