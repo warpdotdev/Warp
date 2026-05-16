@@ -16,6 +16,8 @@ pub struct OnboardingKeybindings {
     pub submit_to_local_agent: String,
     /// Display string for submitting to cloud agent (e.g., "⌘⌥⏎")
     pub submit_to_cloud_agent: String,
+    /// Display string for returning to terminal mode (e.g., "Esc")
+    pub return_to_terminal_mode: String,
 }
 
 use crate::{
@@ -116,9 +118,9 @@ fn get_agent_modality_callout_options(
             if initial_natural_language_detection_enabled {
                 // NL detection was already enabled - show simpler "overrides" callout without checkbox
                 Some(CalloutOptions {
-                    title: "Terminal input with natural language support",
+                    title: "Welcome to terminal mode",
                     text: format!(
-                        "Run commands from the terminal, or type in plain English for the agent. You can always override any auto-detection using {}.",
+                        "Run commands here, just like a regular terminal. If you type a question or task, Warp can suggest opening it in agent mode. You can always override using {}.",
                         keybindings.toggle_input_mode
                     ),
                     step: StepStatus::new(0, total_steps),
@@ -133,9 +135,9 @@ fn get_agent_modality_callout_options(
             } else {
                 // NL detection was disabled - show full explanation with checkbox to enable
                 Some(CalloutOptions {
-                    title: "Terminal input with natural language support",
+                    title: "You’re in terminal mode",
                     text: format!(
-                        "Run commands from the terminal. Natural language input is off by default. If enabled, you can type requests in plain English and Warp will autodetect queries for the agent. You can always override them using {}.",
+                        "Run commands here, just like a regular terminal. If you type a question or task, Warp can suggest opening it in agent mode. You can always override using {}.",
                         keybindings.toggle_input_mode
                     ),
                     step: StepStatus::new(0, total_steps),
@@ -155,8 +157,8 @@ fn get_agent_modality_callout_options(
         AgentModalityCalloutState::IntroducingAgentExperience => {
             if has_project {
                 Some(CalloutOptions {
-                    title: "Welcome to Warp's agent experience",
-                    text: "Agent conversations are their own scoped view outside of your terminal. Simply hit ESC to return to the terminal at any point.\n\nSubmit the query below to have the agent initialize this project, or ⊗ to clear the input and start your own!".to_string(),
+                    title: "You're in agent mode",
+                    text: "Agent mode gives your questions and tasks their own conversation, so you can ask follow-ups without leaving your terminal workflow.\n\nSubmit the query below to have the agent initialize this project, or ⊗ to clear the input and start your own!".to_string(),
                     step: StepStatus::new(1, total_steps),
                     left_button: Some(ButtonOptions {
                         text: "Skip initialization",
@@ -172,8 +174,11 @@ fn get_agent_modality_callout_options(
                 })
             } else {
                 Some(CalloutOptions {
-                    title: "Welcome to Warp's agent experience",
-                    text: "Agent conversations are their own scoped view outside of your terminal. Simply hit ESC to return to the terminal at any point.".to_string(),
+                    title: "You're in agent mode",
+                    text: format!(
+                        "Agent mode gives your questions and tasks their own conversation, so you can ask follow-ups without leaving your terminal workflow. Press {} to return to terminal mode at any point.",
+                        keybindings.return_to_terminal_mode
+                    ),
                     step: StepStatus::new(1, total_steps),
                     left_button: Some(ButtonOptions {
                         text: "Back to terminal",
