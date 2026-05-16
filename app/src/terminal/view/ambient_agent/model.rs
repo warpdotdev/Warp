@@ -226,6 +226,8 @@ pub struct AmbientAgentViewModel {
     worker_host: Option<String>,
     /// Selected model id for a third-party harness (e.g. `"opus"` for Claude).
     harness_model_id: Option<String>,
+    /// Optional reasoning level for the selected harness model.
+    harness_reasoning_level: Option<String>,
     /// Name of the selected auth secret for the current non-Oz harness.
     harness_auth_secret_name: Option<String>,
     /// Whether the harness CLI
@@ -302,6 +304,7 @@ impl AmbientAgentViewModel {
             harness,
             worker_host: None,
             harness_model_id: None,
+            harness_reasoning_level: None,
             harness_auth_secret_name: None,
             harness_command_started: false,
             active_execution_session_id: None,
@@ -448,6 +451,7 @@ impl AmbientAgentViewModel {
         }
         self.harness = harness;
         self.harness_model_id = None;
+        self.harness_reasoning_level = None;
         self.harness_auth_secret_name = None;
         ctx.emit(AmbientAgentViewModelEvent::HarnessSelected);
     }
@@ -460,15 +464,23 @@ impl AmbientAgentViewModel {
         self.harness_model_id.as_deref()
     }
 
-    pub fn set_harness_model_id(
+    pub fn selected_harness_reasoning_level(&self) -> Option<&str> {
+        self.harness_reasoning_level.as_deref()
+    }
+
+    pub fn set_harness_model_selection(
         &mut self,
         harness_model_id: Option<String>,
+        reasoning_level: Option<String>,
         ctx: &mut ModelContext<Self>,
     ) {
-        if self.harness_model_id == harness_model_id {
+        if self.harness_model_id == harness_model_id
+            && self.harness_reasoning_level == reasoning_level
+        {
             return;
         }
         self.harness_model_id = harness_model_id;
+        self.harness_reasoning_level = reasoning_level;
         ctx.emit(AmbientAgentViewModelEvent::HarnessModelSelected);
     }
 
@@ -975,6 +987,7 @@ impl AmbientAgentViewModel {
         self.task_id = None;
         self.conversation_id = None;
         self.harness_model_id = None;
+        self.harness_reasoning_level = None;
         self.harness_command_started = false;
         self.active_execution_session_id = None;
         self.last_ended_execution_session_id = None;
@@ -1016,6 +1029,7 @@ impl AmbientAgentViewModel {
         let third_party_harness = (selected_harness != Harness::Oz).then(|| HarnessConfig {
             harness_type: selected_harness,
             model_id: self.harness_model_id.clone(),
+            reasoning_level: self.harness_reasoning_level.clone(),
         });
 
         let harness_auth_secrets =
@@ -1097,6 +1111,11 @@ impl AmbientAgentViewModel {
                         ctx,
                     )
                 });
+            }
+            if let Some(harness) = config.harness.as_ref() {
+                self.harness = harness.harness_type;
+                self.harness_model_id = harness.model_id.clone();
+                self.harness_reasoning_level = harness.reasoning_level.clone();
             }
         }
 

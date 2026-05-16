@@ -224,6 +224,7 @@ enum AgentHarness {
 type HarnessModel {
   displayName: String!
   id: ID!
+  reasoningLevel: String
 }
 
 """A harness available to the requesting user."""
