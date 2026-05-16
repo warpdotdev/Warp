@@ -1035,7 +1035,10 @@ fn shared_third_party_viewer_syncs_from_viewer_harness_updated_when_harness_unch
                 });
             assert!(!view.agent_view_controller().as_ref(ctx).is_active());
 
-            view.handle_ambient_agent_event(&AmbientAgentViewModelEvent::ViewerHarnessUpdated, ctx);
+            view.handle_ambient_agent_event(
+                &AmbientAgentViewModelEvent::ViewerHarnessResolved,
+                ctx,
+            );
 
             let AgentViewState::Active {
                 conversation_id,

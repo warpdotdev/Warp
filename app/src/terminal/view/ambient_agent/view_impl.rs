@@ -302,7 +302,7 @@ impl TerminalView {
                 ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
-            AmbientAgentViewModelEvent::ViewerHarnessUpdated => {
+            AmbientAgentViewModelEvent::ViewerHarnessResolved => {
                 // Once we know which harness we're using from the server, try and enter the agent
                 // view if we haven't already.
                 self.sync_agent_view_for_shared_third_party_viewer(ctx);
