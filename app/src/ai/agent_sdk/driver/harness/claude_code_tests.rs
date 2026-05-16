@@ -827,7 +827,10 @@ fn prepare_local_wake_command_rehydrates_transcript_with_self_managed_listener()
         restored_envelope.entries,
         vec![serde_json::json!({"type": "assistant", "text": "done"})]
     );
-    assert!(home_dir.path().join(".claude.json").exists());
+    assert!(claude_config_dir
+        .path()
+        .join(CLAUDE_JSON_FILE_NAME)
+        .exists());
     assert!(claude_config_dir
         .path()
         .join(CLAUDE_SETTINGS_FILE_NAME)
