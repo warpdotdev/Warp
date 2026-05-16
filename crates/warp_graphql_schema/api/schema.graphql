@@ -1710,6 +1710,13 @@ input HarnessAuthSecretsInput {
   codexAuthSecretName: String
 }
 
+type HarnessAuthSecretsOutput implements Response {
+  managedSecrets: [ManagedSecret!]!
+  responseContext: ResponseContext!
+}
+
+union HarnessAuthSecretsResult = HarnessAuthSecretsOutput | UserFacingError
+
 type HarnessConfig {
   enabled: Boolean!
 }
@@ -1905,6 +1912,14 @@ type ListAIConversationsOutput implements Response {
 }
 
 union ListAIConversationsResult = ListAIConversationsOutput | UserFacingError
+
+input ListHarnessAuthSecretsInput {
+  """
+  Harness whose auth-credential secrets should be returned. Harnesses that
+  don't use auth secrets (e.g. OZ) always return an empty result.
+  """
+  harness: AgentHarness!
+}
 
 type ListWarpDevImagesOutput implements Response {
   """List of available Warp dev base images from Docker Hub"""
@@ -2919,6 +2934,12 @@ type RootQuery {
   getIntegrationsUsingEnvironment(input: GetIntegrationsUsingEnvironmentInput!, requestContext: RequestContext!): GetIntegrationsUsingEnvironmentResult!
   getOAuthConnectTxStatus(input: GetOAuthConnectTxStatusInput!, requestContext: RequestContext!): GetOAuthConnectTxStatusResult!
   getRelevantFragments(input: GetRelevantFragmentsInput!, requestContext: RequestContext!): GetRelevantFragmentsResult!
+
+  """
+  Retrieve managed secrets that serve as authentication credentials for the given harness,
+  scoped to the caller's personal drive and team drives.
+  """
+  harnessAuthSecrets(input: ListHarnessAuthSecretsInput!, requestContext: RequestContext!): HarnessAuthSecretsResult!
   listAIConversations(input: ListAIConversationsInput!, requestContext: RequestContext!): ListAIConversationsResult!
 
   """

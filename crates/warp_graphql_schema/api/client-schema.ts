@@ -83,6 +83,7 @@ const clientQueries = [
   'freeAvailableModels',
   'getRelevantFragments',
   'rerankFragments',
+  'harnessAuthSecrets',
   'listWarpDevImages',
   'pricingInfo',
   'managedSecrets',
