@@ -2026,10 +2026,10 @@ impl AgentInputFooter {
                 if !show {
                     return None;
                 }
-                let is_ambient_agent =
-                    self.ambient_agent_view_model.as_ref().is_some_and(|m| {
-                        m.as_ref(app).is_ambient_agent()
-                    });
+                let is_ambient_agent = self
+                    .ambient_agent_view_model
+                    .as_ref()
+                    .is_some_and(|m| m.as_ref(app).is_ambient_agent());
                 if is_ambient_agent {
                     self.v2_model_selector
                         .as_ref()
