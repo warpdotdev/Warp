@@ -538,30 +538,49 @@ impl ModelSelector {
         };
         let icon = harness_icon_for(harness);
 
+        let default_action = ModelSelectorAction::SelectHarnessModel {
+            harness,
+            model_id: String::new(),
+            reasoning_level: None,
+        };
+        let mut items: Vec<MenuItem<ModelSelectorAction>> = Vec::new();
+        if query.is_empty() || "default".contains(query) {
+            items.push(MenuItem::Item(
+                MenuItemFields::new("default")
+                    .with_icon(icon)
+                    .with_icon_size_override(ITEM_ICON_SIZE)
+                    .with_font_size_override(ITEM_FONT_SIZE)
+                    .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
+                    .with_override_hover_background_color(hover_background)
+                    .with_on_select_action(default_action),
+            ));
+        }
+
         let models = HarnessAvailabilityModel::as_ref(ctx).models_for(harness);
-        let items: Vec<MenuItem<ModelSelectorAction>> = models
-            .into_iter()
-            .flat_map(|slice| slice.iter())
-            .filter_map(|model| {
-                let display_name = model.display_name.clone();
-                if !query.is_empty() && !display_name.to_lowercase().contains(query) {
-                    return None;
-                }
-                Some(MenuItem::Item(
-                    MenuItemFields::new(display_name)
-                        .with_icon(icon)
-                        .with_icon_size_override(ITEM_ICON_SIZE)
-                        .with_font_size_override(ITEM_FONT_SIZE)
-                        .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
-                        .with_override_hover_background_color(hover_background)
-                        .with_on_select_action(ModelSelectorAction::SelectHarnessModel {
-                            harness,
-                            model_id: model.id.clone(),
-                            reasoning_level: model.reasoning_level.clone(),
-                        }),
-                ))
-            })
-            .collect();
+        items.extend(
+            models
+                .into_iter()
+                .flat_map(|slice| slice.iter())
+                .filter_map(|model| {
+                    let display_name = model.display_name.clone();
+                    if !query.is_empty() && !display_name.to_lowercase().contains(query) {
+                        return None;
+                    }
+                    Some(MenuItem::Item(
+                        MenuItemFields::new(display_name)
+                            .with_icon(icon)
+                            .with_icon_size_override(ITEM_ICON_SIZE)
+                            .with_font_size_override(ITEM_FONT_SIZE)
+                            .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
+                            .with_override_hover_background_color(hover_background)
+                            .with_on_select_action(ModelSelectorAction::SelectHarnessModel {
+                                harness,
+                                model_id: model.id.clone(),
+                                reasoning_level: model.reasoning_level.clone(),
+                            }),
+                    ))
+                }),
+        );
 
         (items, active_action)
     }
@@ -630,26 +649,36 @@ impl TypedActionView for ModelSelector {
                 model_id,
                 reasoning_level,
             } => {
+                let is_default = model_id.is_empty();
                 if let Some(ambient_agent_model) = self.ambient_agent_model.clone() {
                     if ambient_agent_model.as_ref(ctx).selected_harness() == *harness {
                         ambient_agent_model.update(ctx, |model, ctx| {
                             model.set_harness_model_selection(
-                                Some(model_id.clone()),
-                                reasoning_level.clone(),
+                                (!is_default).then(|| model_id.clone()),
+                                if is_default {
+                                    None
+                                } else {
+                                    reasoning_level.clone()
+                                },
                                 ctx,
                             );
                         });
                     }
                 }
+                // Persist the selection per-harness to settings for next time.
                 CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
                     let mut map = settings.last_selected_harness_model.value().clone();
-                    map.insert(
-                        harness.config_name().to_string(),
-                        HarnessModelSelection {
-                            model_id: model_id.clone(),
-                            reasoning_level: reasoning_level.clone(),
-                        },
-                    );
+                    if is_default {
+                        map.remove(harness.config_name());
+                    } else {
+                        map.insert(
+                            harness.config_name().to_string(),
+                            HarnessModelSelection {
+                                model_id: model_id.clone(),
+                                reasoning_level: reasoning_level.clone(),
+                            },
+                        );
+                    }
                     report_if_error!(settings.last_selected_harness_model.set_value(map, ctx));
                 });
                 self.set_menu_visibility(false, ctx);
