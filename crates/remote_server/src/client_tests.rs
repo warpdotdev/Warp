@@ -291,6 +291,28 @@ async fn resync_codebase_round_trip() {
 }
 
 #[tokio::test]
+async fn trigger_codebase_incremental_sync_round_trip() {
+    let (client, _disconnect_rx, _executor) = setup_mock_client(|msg| {
+        match &msg.message {
+            Some(client_message::Message::TriggerCodebaseIncrementalSync(request)) => {
+                assert_eq!(request.repo_path, "/repo");
+                assert_eq!(request.auth_token, "auth-token");
+            }
+            other => panic!("Expected TriggerCodebaseIncrementalSync, got {other:?}"),
+        }
+        server_message::Message::CodebaseIndexStatusUpdated(CodebaseIndexStatusUpdated {
+            status: Some(not_enabled_codebase_status("/repo")),
+        })
+    });
+
+    let status = client
+        .trigger_codebase_incremental_sync("/repo".to_string(), "auth-token".to_string())
+        .await
+        .unwrap();
+
+    assert_eq!(status.repo_path, "/repo");
+}
+#[tokio::test]
 async fn get_fragment_metadata_from_hash_error_maps_to_typed_client_error() {
     let (client, _disconnect_rx, _executor) = setup_mock_client(|msg| {
         match &msg.message {

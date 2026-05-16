@@ -23,7 +23,7 @@ use crate::proto::{
     InitializeResponse, LoadRepoMetadataDirectoryResponse, NavigatedToDirectoryResponse,
     OpenBuffer, OpenBufferResponse, ReadFileContextRequest, ReadFileContextResponse,
     ResyncCodebase, RunCommandRequest, RunCommandResponse, SaveBuffer, ServerMessage,
-    SessionBootstrapped, TextEdit, UnsubscribeDiffState, WriteFile,
+    SessionBootstrapped, TextEdit, TriggerCodebaseIncrementalSync, UnsubscribeDiffState, WriteFile,
 };
 use crate::repo_metadata_proto::{proto_snapshot_to_update, proto_to_repo_metadata_update};
 
@@ -361,6 +361,38 @@ impl RemoteServerClient {
             )
             .await?;
         Self::codebase_index_status_from_response("ResyncCodebase", response)
+    }
+
+    /// Sends a `TriggerCodebaseIncrementalSync` request and awaits the current status update.
+    pub async fn trigger_codebase_incremental_sync(
+        &self,
+        repo_path: String,
+        auth_token: String,
+    ) -> Result<RemoteCodebaseIndexStatus, ClientError> {
+        let request_id = RequestId::new();
+        let repo_path_for_log = repo_path.clone();
+        let msg = ClientMessage {
+            request_id: request_id.to_string(),
+            message: Some(client_message::Message::TriggerCodebaseIncrementalSync(
+                TriggerCodebaseIncrementalSync {
+                    repo_path,
+                    auth_token,
+                },
+            )),
+        };
+        log::debug!(
+            "[Remote codebase indexing] Client sending TriggerCodebaseIncrementalSync: request_id={request_id} \
+             repo_path={repo_path_for_log}"
+        );
+
+        let response = self
+            .send_request(
+                request_id,
+                msg,
+                crate::manager::RemoteServerOperation::TriggerCodebaseIncrementalSync,
+            )
+            .await?;
+        Self::codebase_index_status_from_response("TriggerCodebaseIncrementalSync", response)
     }
 
     fn codebase_index_status_from_response(

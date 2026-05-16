@@ -52,8 +52,8 @@ use super::proto::{
     OpenBufferResponse, ReadFileContextResponse, ResolveConflict, ResolveConflictResponse,
     ResolveConflictSuccess, ResyncCodebase, RunCommandError, RunCommandErrorCode,
     RunCommandRequest, RunCommandResponse, RunCommandSuccess, SaveBuffer, SaveBufferResponse,
-    SaveBufferSuccess, ServerMessage, SessionBootstrapped, TextEdit, WriteFile, WriteFileResponse,
-    WriteFileSuccess,
+    SaveBufferSuccess, ServerMessage, SessionBootstrapped, TextEdit,
+    TriggerCodebaseIncrementalSync, WriteFile, WriteFileResponse, WriteFileSuccess,
 };
 use super::server_buffer_tracker::{PendingBufferRequestKind, ServerBufferTracker};
 
@@ -741,6 +741,9 @@ impl ServerModel {
             Some(client_message::Message::ResyncCodebase(msg)) => {
                 self.handle_resync_codebase(msg, &request_id, conn_id, ctx)
             }
+            Some(client_message::Message::TriggerCodebaseIncrementalSync(msg)) => {
+                self.handle_trigger_codebase_incremental_sync(msg, &request_id, conn_id, ctx)
+            }
             Some(client_message::Message::DropCodebaseIndex(msg)) => {
                 self.handle_drop_codebase_index(msg, &request_id, conn_id, ctx)
             }
@@ -829,14 +832,14 @@ impl ServerModel {
         ctx: &mut ModelContext<Self>,
     ) {
         if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
-            log::info!(
+            log::debug!(
                 "[Remote codebase indexing] Daemon skipping bootstrap codebase index statuses snapshot because remote indexing is disabled: conn_id={conn_id}"
             );
             return;
         }
         let snapshot = self.codebase_index_statuses_snapshot(ctx);
         let status_count = snapshot.statuses.len();
-        log::info!(
+        log::debug!(
             "[Remote codebase indexing] Daemon pushing bootstrap codebase index statuses snapshot: conn_id={conn_id} bootstrap_status_count={status_count}"
         );
         self.send_server_message(
@@ -903,8 +906,22 @@ impl ServerModel {
                     Self::current_codebase_index_status_or_queued(manager, indexed_repo_path, ctx)
                 },
                 |manager, repo_path, ctx| {
-                    manager.index_directory(repo_path.to_path_buf(), ctx);
-                    queued_codebase_index_status(repo_path.to_string_lossy().to_string())
+                    if manager.index_directory(repo_path.to_path_buf(), ctx) {
+                        Self::current_codebase_index_status_or_queued(manager, repo_path, ctx)
+                    } else if !manager.is_indexing_enabled() {
+                        not_enabled_codebase_index_status(repo_path.to_string_lossy().to_string())
+                    } else if !manager.can_create_new_indices() {
+                        unavailable_codebase_index_status(
+                            repo_path.to_string_lossy().to_string(),
+                            "Cannot index remote codebase because the maximum number of codebase indexes has been reached.".to_string(),
+                        )
+                    } else {
+                        unavailable_codebase_index_status(
+                            repo_path.to_string_lossy().to_string(),
+                            "Cannot index remote codebase because indexing did not start."
+                                .to_string(),
+                        )
+                    }
                 },
                 ctx,
             )
@@ -954,6 +971,64 @@ impl ServerModel {
                     unavailable_codebase_index_status(
                         repo_path.to_string_lossy().to_string(),
                         "Cannot resync remote codebase because it has not been indexed."
+                            .to_string(),
+                    )
+                },
+                ctx,
+            )
+        });
+
+        HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
+            CodebaseIndexStatusUpdated {
+                status: Some(status),
+            },
+        ))
+    }
+
+    fn handle_trigger_codebase_incremental_sync(
+        &mut self,
+        msg: TriggerCodebaseIncrementalSync,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) -> HandlerOutcome {
+        let TriggerCodebaseIncrementalSync {
+            repo_path,
+            auth_token,
+        } = msg;
+        let request = match self.prepare_codebase_index_request(
+            CodebaseIndexRequestParams {
+                operation_name: "TriggerCodebaseIncrementalSync",
+                repo_path,
+                auth_token,
+                auth_operation: "remote codebase incremental sync",
+                path_kind: CodebaseIndexRequestPathKind::Canonicalized,
+            },
+            request_id,
+            conn_id,
+        ) {
+            Ok(request) => request,
+            Err(outcome) => return *outcome,
+        };
+        let repo_path = request.repo_path;
+        let status = CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
+            manager.with_indexed_codebase(
+                &repo_path,
+                |manager, indexed_repo_path, ctx| {
+                    if let Err(error) =
+                        manager.trigger_incremental_sync_for_path(indexed_repo_path, ctx)
+                    {
+                        log::warn!(
+                            "Failed to trigger remote codebase incremental sync: repo_path={} error={error}",
+                            indexed_repo_path.display()
+                        );
+                    }
+                    Self::current_codebase_index_status_or_queued(manager, indexed_repo_path, ctx)
+                },
+                |_, repo_path, _| {
+                    unavailable_codebase_index_status(
+                        repo_path.to_string_lossy().to_string(),
+                        "Cannot trigger remote codebase incremental sync because it has not been indexed."
                             .to_string(),
                     )
                 },
