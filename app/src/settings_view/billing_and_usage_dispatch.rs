@@ -33,7 +33,7 @@ impl BillingAndUsageDispatchView {
             ctx.emit(event.clone());
         });
 
-        let page = PageType::new_monolith(BillingAndUsageWidget, None, true);
+        let page = PageType::new_monolith(BillingAndUsageWidget, Some("Billing and Usage"), true);
 
         Self { page, v1, v2 }
     }
