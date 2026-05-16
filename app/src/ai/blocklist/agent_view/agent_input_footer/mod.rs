@@ -2026,14 +2026,11 @@ impl AgentInputFooter {
                 if !show {
                     return None;
                 }
-                let is_third_party_harness =
+                let is_ambient_agent =
                     self.ambient_agent_view_model.as_ref().is_some_and(|m| {
-                        !matches!(
-                            m.as_ref(app).selected_harness(),
-                            Harness::Oz | Harness::Unknown
-                        )
+                        m.as_ref(app).is_ambient_agent()
                     });
-                if is_third_party_harness {
+                if is_ambient_agent {
                     self.v2_model_selector
                         .as_ref()
                         .map(|selector| ChildView::new(selector).finish())
