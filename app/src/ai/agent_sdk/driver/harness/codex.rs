@@ -476,9 +476,10 @@ fn prepare_codex_environment_config(
         write_codex_agents_override(&codex_dir, prompt)?;
     }
 
+    let codex_auth_path = codex_dir.join(CODEX_AUTH_FILE_NAME);
     match resolve_openai_api_key(resolved_env_vars) {
-        Some(api_key) => prepare_codex_auth(&codex_dir.join(CODEX_AUTH_FILE_NAME), &api_key)?,
-        None => log::info!("No OPENAI_API_KEY available; skipping Codex auth.json seed"),
+        Some(api_key) => prepare_codex_auth(&codex_auth_path, &api_key)?,
+        None => validate_existing_codex_auth(&codex_auth_path)?,
     }
 
     // Resolve the base URL directly from the typed OpenAI secret. This avoids
@@ -535,10 +536,36 @@ struct CodexAuthDotJson {
 fn prepare_codex_auth(auth_path: &Path, api_key: &str) -> Result<()> {
     let mut auth: CodexAuthDotJson = read_json_file_or_default(auth_path)?;
     auth.openai_api_key = Some(api_key.to_owned());
-    if auth.auth_mode.is_none() {
-        auth.auth_mode = Some(CODEX_AUTH_MODE_API_KEY.to_owned());
-    }
+    auth.auth_mode = Some(CODEX_AUTH_MODE_API_KEY.to_owned());
     write_codex_auth_json(auth_path, &auth)
+}
+
+fn validate_existing_codex_auth(auth_path: &Path) -> Result<()> {
+    let auth: CodexAuthDotJson = read_json_file_or_default(auth_path).with_context(|| {
+        format!(
+            "Failed to inspect existing Codex auth at {}",
+            auth_path.display()
+        )
+    })?;
+    if has_usable_codex_auth(&auth) {
+        return Ok(());
+    }
+
+    Err(anyhow::anyhow!(
+        "Codex authentication credentials are unavailable. Configure an OPENAI_API_KEY secret for this task or provide a valid Codex auth.json before launching the Codex harness."
+    ))
+}
+
+fn has_usable_codex_auth(auth: &CodexAuthDotJson) -> bool {
+    auth.openai_api_key
+        .as_deref()
+        .is_some_and(|key| !key.trim().is_empty())
+        || auth
+            .extra
+            .get("tokens")
+            .and_then(|tokens| tokens.get("access_token"))
+            .and_then(Value::as_str)
+            .is_some_and(|token| !token.trim().is_empty())
 }
 
 /// Write Codex's `auth.json` with restrictive (0o600) permissions, mirroring how
