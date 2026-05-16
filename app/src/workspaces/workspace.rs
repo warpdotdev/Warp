@@ -425,8 +425,10 @@ pub struct UsageVisibilityPolicy {
 /// Effective per-viewer visibility, after combining the tier's
 /// `UsageVisibilityPolicy` with the viewer's admin status. Non-admins always
 /// collapse to `granularity == OwnOnly`; `max_prior_cycles` is plan-wide and
-/// applies to admins and non-admins alike.
-// The first consumer (`resolve_usage_visibility`) lands in the next commit.
+/// applies to admins and non-admins alike. Built by
+/// [`super::usage_visibility::resolve_usage_visibility`].
+// `dead_code` is suppressed until the UI scaffold PR consumes this struct;
+// the resolver tests exercise it but the lint only counts non-test usage.
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct UsageVisibility {

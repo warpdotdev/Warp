@@ -469,10 +469,6 @@ impl From<GqlUsageVisibilityGranularity> for UsageVisibilityGranularity {
     }
 }
 
-/// Translate the wire format's `i32` representation of `maxPriorCycles` into
-/// the typed `MaxPriorCycles` enum. The wire format uses `-1` as the
-/// unlimited sentinel; any other negative value is treated as unlimited
-/// defensively (and logged), since the server should never emit it.
 fn from_gql_max_prior_cycles(value: i32) -> MaxPriorCycles {
     match value {
         0 => MaxPriorCycles::None,
