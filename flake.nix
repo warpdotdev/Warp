@@ -123,11 +123,86 @@
             zlib
           ];
 
-          buildFeatures = [
-            "release_bundle"
-            "gui"
-            "nld_improvements"
-          ];
+          warpMetadata = appCargoToml.package.metadata.warp;
+          buildFeatureGroups = warpMetadata.build_feature_groups;
+          buildProfiles = warpMetadata.build_profiles;
+          nixBuildProfile =
+            if warpMetadata ? nix && warpMetadata.nix ? build_profile then
+              warpMetadata.nix.build_profile
+            else
+              throw "app/Cargo.toml package.metadata.warp.nix.build_profile is missing";
+          uniqueFeatures =
+            features:
+            let
+              go =
+                seen: rest:
+                if rest == [ ] then
+                  [ ]
+                else
+                  let
+                    head = builtins.head rest;
+                    tail = builtins.tail rest;
+                  in
+                  if builtins.elem head seen then go seen tail else [ head ] ++ go (seen ++ [ head ]) tail;
+            in
+            go [ ] features;
+          profileGroupNames =
+            profile: (if profile ? base then [ profile.base ] else [ ]) ++ (profile.groups or [ ]);
+          resolveBuildProfileFeatures =
+            profilePath:
+            let
+              profile = lib.attrsets.getAttrFromPath (lib.splitString "." profilePath) buildProfiles;
+              groupNames = profileGroupNames profile;
+              missingGroups = builtins.filter (group: !(builtins.hasAttr group buildFeatureGroups)) groupNames;
+              groupFeatures = lib.concatMap (group: buildFeatureGroups.${group}) (
+                builtins.filter (group: builtins.hasAttr group buildFeatureGroups) groupNames
+              );
+              directFeatures = profile.features or [ ];
+              features = uniqueFeatures (groupFeatures ++ directFeatures);
+              missingFeatures = builtins.filter (
+                feature: !(builtins.hasAttr feature appCargoToml.features)
+              ) features;
+            in
+            if missingGroups != [ ] then
+              throw "app/Cargo.toml package.metadata.warp.build_profiles.${profilePath} references undefined build feature groups: ${lib.concatStringsSep ", " missingGroups}"
+            else if missingFeatures != [ ] then
+              throw "app/Cargo.toml package.metadata.warp.build_profiles.${profilePath} references undefined Cargo features: ${lib.concatStringsSep ", " missingFeatures}"
+            else
+              features;
+          invalidBuildProfiles =
+            let
+              collectInvalidProfiles =
+                path: value:
+                if builtins.isAttrs value && (value ? base || value ? groups || value ? features) then
+                  let
+                    groupNames = profileGroupNames value;
+                    missingGroups = builtins.filter (group: !(builtins.hasAttr group buildFeatureGroups)) groupNames;
+                    groupFeatures = lib.concatMap (group: buildFeatureGroups.${group}) (
+                      builtins.filter (group: builtins.hasAttr group buildFeatureGroups) groupNames
+                    );
+                    directFeatures = value.features or [ ];
+                    missingFeatures = builtins.filter (feature: !(builtins.hasAttr feature appCargoToml.features)) (
+                      groupFeatures ++ directFeatures
+                    );
+                  in
+                  lib.optional (missingGroups != [ ])
+                    "${lib.concatStringsSep "." path}: missing build feature groups ${lib.concatStringsSep ", " missingGroups}"
+                  ++
+                    lib.optional (missingFeatures != [ ])
+                      "${lib.concatStringsSep "." path}: references undefined Cargo features ${lib.concatStringsSep ", " missingFeatures}"
+                else if builtins.isAttrs value then
+                  lib.concatLists (
+                    lib.mapAttrsToList (name: child: collectInvalidProfiles (path ++ [ name ]) child) value
+                  )
+                else
+                  [ ];
+            in
+            collectInvalidProfiles [ "package" "metadata" "warp" "build_profiles" ] buildProfiles;
+          buildFeatures =
+            if invalidBuildProfiles == [ ] then
+              resolveBuildProfileFeatures nixBuildProfile
+            else
+              throw "app/Cargo.toml package.metadata.warp.build_profiles references undefined Cargo features or groups:\n${lib.concatStringsSep "\n" invalidBuildProfiles}";
 
           warp-terminal-experimental = rustPlatform.buildRustPackage {
             pname = "warp-terminal-experimental";
