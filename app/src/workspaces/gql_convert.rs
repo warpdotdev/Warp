@@ -467,6 +467,8 @@ impl From<GqlTier> for Tier {
                 .map(From::from),
             multi_admin_policy: gql_tier.multi_admin_policy.map(From::from),
             ambient_agents_policy: gql_tier.ambient_agents_policy.map(From::from),
+            // TODO: wire up the real conversion in the next commit (PR 2.2).
+            usage_visibility_policy: None,
         }
     }
 }
@@ -913,6 +915,8 @@ impl From<GqlWorkspace> for Workspace {
                     cents_spent: info.current_month_spend_cents,
                 })
                 .unwrap_or_default(),
+            // TODO: wire up the real conversion in the next commit (PR 2.2).
+            billing_cycle_usage: Default::default(),
             has_billing_history: gql_workspace.has_billing_history,
             settings: gql_workspace.settings.clone().into(),
             invite_code: gql_workspace
