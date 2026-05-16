@@ -1,8 +1,5 @@
 use super::workspace::{UsageVisibility, UsageVisibilityGranularity, Workspace};
 
-// `dead_code` is suppressed until the UI scaffold PR consumes this function;
-// the unit tests below exercise it but the lint only counts non-test usage.
-#[allow(dead_code)]
 pub fn resolve_usage_visibility(
     workspace: &Workspace,
     viewer_email: Option<&str>,
