@@ -280,9 +280,14 @@ impl BillingCycleUsageSectionView {
         let icon_color = theme.sub_text_color(theme.background());
         let mouse_state = self.refresh_button_mouse_state.clone();
         Hoverable::new(mouse_state, move |_| {
-            Container::new(Icon::Refresh.to_warpui_icon(icon_color).finish())
-                .with_uniform_padding(2.)
-                .finish()
+            Container::new(
+                ConstrainedBox::new(Icon::Refresh.to_warpui_icon(icon_color).finish())
+                    .with_width(16.)
+                    .with_height(16.)
+                    .finish(),
+            )
+            .with_uniform_padding(2.)
+            .finish()
         })
         .with_cursor(Cursor::PointingHand)
         .on_click(|ctx, _, _| {
