@@ -531,6 +531,10 @@ impl BillingMetadata {
         self.customer_type == CustomerType::Business
     }
 
+    pub fn is_enterprise_plan(&self) -> bool {
+        self.customer_type == CustomerType::Enterprise
+    }
+
     pub fn is_on_legacy_paid_plan(&self) -> bool {
         match self.customer_type {
             CustomerType::Prosumer

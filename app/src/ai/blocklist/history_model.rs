@@ -1425,7 +1425,13 @@ impl BlocklistAIHistoryModel {
         token_usage: Vec<TokenUsage>,
         usage_metadata: Option<ConversationUsageMetadata>,
         was_user_initiated_request: bool,
+        ctx: &mut ModelContext<Self>,
     ) {
+        // Track whether this update changes any state derived by
+        // `BlocklistAIHistoryEvent::ConversationUsageMetadataUpdated`
+        // subscribers (e.g. the orchestration credit rollup). We emit the
+        // event only when there's actual data to react to.
+        let emits_usage_event = request_cost.is_some() || usage_metadata.is_some();
         if let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) {
             if let Err(e) = conversation.update_cost_and_usage_for_request(
                 request_cost,
@@ -1436,6 +1442,11 @@ impl BlocklistAIHistoryModel {
                 log::warn!(
                     "Failed to update request cost for conversation {conversation_id}: {e:#}"
                 );
+            }
+            if emits_usage_event {
+                ctx.emit(BlocklistAIHistoryEvent::ConversationUsageMetadataUpdated {
+                    conversation_id,
+                });
             }
         } else {
             log::warn!(
@@ -2396,6 +2407,15 @@ pub enum BlocklistAIHistoryEvent {
     OrchestrationConfigUpdated {
         conversation_id: AIConversationId,
     },
+
+    /// Emitted when a conversation's `conversation_usage_metadata` is updated
+    /// (for example after a `StreamFinished` event). Subscribers that derive
+    /// data from cross-conversation usage — e.g. the orchestration credit
+    /// rollup in the agent-mode footer — can listen for this to re-render
+    /// when a descendant's credits change.
+    ConversationUsageMetadataUpdated {
+        conversation_id: AIConversationId,
+    },
 }
 
 impl BlocklistAIHistoryEvent {
@@ -2472,6 +2492,11 @@ impl BlocklistAIHistoryEvent {
             // OrchestrationConfigUpdated is conversation-scoped and has no
             // terminal_view_id.
             BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => None,
+            // ConversationUsageMetadataUpdated is conversation-scoped and
+            // has no terminal_view_id. Cross-pane consumers (e.g. the
+            // orchestrator footer reading descendant credits) can't be
+            // disambiguated by a single owner pane.
+            BlocklistAIHistoryEvent::ConversationUsageMetadataUpdated { .. } => None,
         }
     }
 }

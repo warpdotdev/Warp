@@ -28,11 +28,11 @@ use warpui::{
 
 use settings::Setting;
 use warp_cli::agent::Harness;
-use warp_core::channel::{Channel, ChannelState};
 use warp_core::features::FeatureFlag;
 use warp_core::ui::theme::Fill;
 
 use crate::ai::auth_secret_types::auth_secret_types_for_harness;
+use crate::ai::blocklist::inline_action::host_picker::HostPicker;
 use crate::ai::cloud_agent_settings::CloudAgentSettings;
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::execution_profiles::model_menu_items::available_model_menu_items;
@@ -47,7 +47,12 @@ use crate::report_if_error;
 use crate::ui_components::blended_colors;
 use crate::view_components::dropdown::{Dropdown, DropdownAction, DropdownStyle};
 use crate::view_components::FilterableDropdown;
+use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::LLMPreferences;
+
+/// Env var override for the workspace default host (developer testing).
+/// Mirrors the single-agent ambient flow.
+const DEFAULT_HOST_ENV_VAR: &str = "WARP_CLOUD_MODE_DEFAULT_HOST";
 
 // ── Shared constants ────────────────────────────────────────────────
 
@@ -78,7 +83,6 @@ pub trait OrchestrationControlAction: Clone + Debug + Send + Sync + 'static {
     fn model_changed(model_id: String) -> Self;
     fn harness_changed(harness_type: String) -> Self;
     fn environment_changed(environment_id: String) -> Self;
-    fn worker_host_changed(worker_host: String) -> Self;
     /// Fires when the auth secret picker selects a managed secret.
     /// `None` means "clear the selection / inherit from environment".
     fn auth_secret_changed(name: Option<String>) -> Self;
@@ -291,7 +295,7 @@ pub struct OrchestrationPickerHandles<A: OrchestrationControlAction> {
     pub model_picker: Option<ViewHandle<Dropdown<A>>>,
     pub harness_picker: Option<ViewHandle<Dropdown<A>>>,
     pub environment_picker: Option<ViewHandle<FilterableDropdown<A>>>,
-    pub host_picker: Option<ViewHandle<Dropdown<A>>>,
+    pub host_picker: Option<ViewHandle<HostPicker>>,
     /// Picker for the managed auth secret used by non-Oz cloud children.
     /// `None` when the picker hasn't been built yet (e.g. harness is Oz or
     /// execution mode is Local), or when the harness has no supported
@@ -688,37 +692,72 @@ pub fn create_environment_picker<A: OrchestrationControlAction, V: View>(
     dropdown_handle
 }
 
-pub fn populate_host_picker<A: OrchestrationControlAction, V: View>(
-    dropdown: &ViewHandle<Dropdown<A>>,
+/// Repopulates the host picker with the workspace default (if any) and
+/// the user's last-selected custom host (if any), then sets the current
+/// selection to `initial_host`.
+pub fn populate_host_picker<V: View>(
+    picker: &ViewHandle<HostPicker>,
     initial_host: &str,
     ctx: &mut ViewContext<V>,
 ) {
-    let initial_host = if initial_host.is_empty() {
+    let default_host = resolve_default_host_slug(ctx);
+    let recent_host = resolve_recent_host_slug(ctx);
+    let initial = if initial_host.trim().is_empty() {
         ORCHESTRATION_WARP_WORKER_HOST.to_string()
     } else {
         initial_host.to_string()
     };
-    dropdown.update(ctx, |dropdown, ctx_dropdown| {
-        let hosts: &[&str] = if matches!(ChannelState::channel(), Channel::Local) {
-            &["warp", "local-dev"]
-        } else {
-            &["warp"]
-        };
-        let mut items: Vec<MenuItem<DropdownAction<A>>> = Vec::new();
-        let mut selected_idx = None;
-        for (idx, &host) in hosts.iter().enumerate() {
-            let fields = MenuItemFields::new(host).with_on_select_action(
-                DropdownAction::SelectActionAndClose(A::worker_host_changed(host.to_string())),
-            );
-            if host.eq_ignore_ascii_case(&initial_host) {
-                selected_idx = Some(idx);
-            }
-            items.push(MenuItem::Item(fields));
+    picker.update(ctx, |picker, picker_ctx| {
+        picker.set_options(default_host, recent_host, picker_ctx);
+        picker.set_selected(&initial, picker_ctx);
+    });
+}
+
+/// Resolves the workspace-configured default host slug, honoring the
+/// `WARP_CLOUD_MODE_DEFAULT_HOST` env var override for developer
+/// testing. Mirrors the single-agent ambient flow.
+pub fn resolve_default_host_slug(ctx: &AppContext) -> Option<String> {
+    if let Ok(slug) = std::env::var(DEFAULT_HOST_ENV_VAR) {
+        let trimmed = slug.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
         }
-        dropdown.set_rich_items(items, ctx_dropdown);
-        if let Some(idx) = selected_idx {
-            dropdown.set_selected_by_index(idx, ctx_dropdown);
-        }
+    }
+    UserWorkspaces::as_ref(ctx)
+        .default_host_slug()
+        .map(str::to_string)
+        .filter(|s| !s.trim().is_empty())
+}
+
+/// Returns the user's last-selected custom host slug from
+/// `CloudAgentSettings.last_selected_host`, excluding `"warp"` and the
+/// workspace default (those are surfaced as separate menu rows).
+pub fn resolve_recent_host_slug(ctx: &AppContext) -> Option<String> {
+    let last = CloudAgentSettings::as_ref(ctx)
+        .last_selected_host
+        .value()
+        .clone()
+        .filter(|s| !s.trim().is_empty())?;
+    if last.eq_ignore_ascii_case(ORCHESTRATION_WARP_WORKER_HOST) {
+        return None;
+    }
+    if resolve_default_host_slug(ctx).as_deref() == Some(last.as_str()) {
+        return None;
+    }
+    Some(last)
+}
+
+/// Persists the user's most-recent host selection to
+/// `CloudAgentSettings.last_selected_host`. Skipped for `"warp"` and
+/// empty values (those don't represent a custom slug worth remembering).
+pub fn persist_host_selection<V: View>(worker_host: &str, ctx: &mut ViewContext<V>) {
+    let trimmed = worker_host.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case(ORCHESTRATION_WARP_WORKER_HOST) {
+        return;
+    }
+    let value = trimmed.to_string();
+    CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+        report_if_error!(settings.last_selected_host.set_value(Some(value), ctx));
     });
 }
 
@@ -1188,8 +1227,8 @@ pub fn sync_picker_selections<A: OrchestrationControlAction, V: View>(
             RunAgentsExecutionMode::Remote { worker_host, .. } => worker_host.clone(),
             RunAgentsExecutionMode::Local => ORCHESTRATION_WARP_WORKER_HOST.to_string(),
         };
-        host_picker.update(ctx, |dropdown, ctx_dropdown| {
-            dropdown.set_selected_by_name(&worker_host, ctx_dropdown);
+        host_picker.update(ctx, |picker, picker_ctx| {
+            picker.set_selected(&worker_host, picker_ctx);
         });
     }
     if let Some(auth_secret_picker) = handles.auth_secret_picker.clone() {

@@ -11,6 +11,8 @@ use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::{conversation::AIConversationId, extract_user_query_mode};
+use crate::ai::ambient_agents::github_auth_notifier::{GitHubAuthEvent, GitHubAuthNotifier};
+use crate::ai::ambient_agents::github_auth_url;
 use crate::ai::ambient_agents::spawn::{spawn_task, submit_run_followup, AmbientAgentEvent};
 use crate::ai::ambient_agents::task::{HarnessAuthSecretsConfig, HarnessConfig};
 use crate::ai::ambient_agents::telemetry::CloudAgentTelemetryEvent;
@@ -66,6 +68,16 @@ impl AgentProgress {
             claimed_at: None,
             harness_started_at: None,
             stopped_at: None,
+        }
+    }
+
+    pub fn setup_status_text(&self) -> &'static str {
+        if self.harness_started_at.is_some() {
+            "Starting Environment (Step 3/3)"
+        } else if self.claimed_at.is_some() {
+            "Creating Environment (Step 2/3)"
+        } else {
+            "Connecting to Host (Step 1/3)"
         }
     }
 }
@@ -245,6 +257,12 @@ impl AmbientAgentViewModel {
 
         ctx.subscribe_to_model(&HarnessAvailabilityModel::handle(ctx), |me, _event, ctx| {
             me.validate_selected_harness(ctx);
+        });
+
+        ctx.subscribe_to_model(&GitHubAuthNotifier::handle(ctx), |me, event, ctx| {
+            if matches!(event, GitHubAuthEvent::AuthCompleted) {
+                me.handle_github_auth_completed(ctx);
+            }
         });
 
         // Validate the default environment once Warp Drive sync completes.
@@ -853,6 +871,7 @@ impl AmbientAgentViewModel {
 
                     me.set_environment_id(environment_id, ctx);
                     me.set_harness(harness, ctx);
+                    ctx.emit(AmbientAgentViewModelEvent::ViewerHarnessResolved);
                 }
                 Err(err) => {
                     log::warn!("Failed to fetch ambient agent task for shared session: {err}");
@@ -862,22 +881,28 @@ impl AmbientAgentViewModel {
         );
     }
 
-    /// Attach the view model to the shared session created for a follow-up prompt and notify the
-    /// terminal manager to append that session's scrollback to the existing transcript.
-    pub fn attach_followup_session(&mut self, session_id: SessionId, ctx: &mut ModelContext<Self>) {
-        self.stop_progress_timer();
-        self.pending_followup_prompt = None;
-        self.active_execution_session_id = Some(session_id);
-        self.last_ended_execution_session_id = None;
-        self.status = Status::AgentRunning;
-        ctx.emit(AmbientAgentViewModelEvent::FollowupSessionReady { session_id });
-    }
-
     pub fn record_ambient_execution_ended(&mut self, session_id: SessionId) {
         if self.active_execution_session_id.as_ref() == Some(&session_id) {
             self.active_execution_session_id = None;
         }
         self.last_ended_execution_session_id = Some(session_id);
+    }
+
+    /// Attach a new execution session to an existing ambient agent pane (e.g. when the
+    /// owner reopens a cloud conversation whose orchestrator has spun up a follow-up
+    /// session). The emitted `ExecutionSessionReady` event drives the view-side
+    /// `TerminalManager::attach_execution_session` swap to the new shared session.
+    pub fn attach_execution_session(
+        &mut self,
+        session_id: SessionId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.stop_progress_timer();
+        self.active_execution_session_id = Some(session_id);
+        self.last_ended_execution_session_id = None;
+        self.pending_followup_prompt = None;
+        self.status = Status::AgentRunning;
+        ctx.emit(AmbientAgentViewModelEvent::ExecutionSessionReady { session_id });
     }
 
     pub fn submit_cloud_followup(&mut self, prompt: String, ctx: &mut ModelContext<Self>) {
@@ -948,6 +973,7 @@ impl AmbientAgentViewModel {
         self.active_execution_session_id = None;
         self.last_ended_execution_session_id = None;
         self.pending_followup_prompt = None;
+        self.request = None;
         self.setup_commands_state = Default::default();
         self.stop_progress_timer();
         ctx.notify();
@@ -1122,7 +1148,6 @@ impl AmbientAgentViewModel {
         match event {
             AmbientAgentEvent::TaskSpawned { task_id, run_id } => {
                 self.task_id = Some(task_id);
-
                 if matches!(self.status, Status::Cancelled { .. }) {
                     log::info!(
                         "Received task_id after cancellation, sending server cancellation for task {}",
@@ -1228,7 +1253,7 @@ impl AmbientAgentViewModel {
                             ..
                         }
                         | Status::AgentRunning => {
-                            AmbientAgentViewModelEvent::FollowupSessionReady {
+                            AmbientAgentViewModelEvent::ExecutionSessionReady {
                                 session_id: event_session_id,
                             }
                         }
@@ -1284,8 +1309,13 @@ impl AmbientAgentViewModel {
         }
         if let Some(ai_api_error) = err.downcast_ref::<AIApiError>() {
             match ai_api_error {
-                AIApiError::QuotaLimit => {
-                    self.handle_spawn_error(OUT_OF_CREDITS_TASK_FAILURE_MESSAGE.to_string(), ctx);
+                AIApiError::QuotaLimit {
+                    user_display_message,
+                } => {
+                    let error_message = user_display_message
+                        .clone()
+                        .unwrap_or_else(|| OUT_OF_CREDITS_TASK_FAILURE_MESSAGE.to_string());
+                    self.handle_spawn_error(error_message, ctx);
                     ctx.emit(AmbientAgentViewModelEvent::ShowAICreditModal);
                     return;
                 }
@@ -1375,29 +1405,48 @@ impl AmbientAgentViewModel {
         let now = Instant::now();
 
         // Extract or create progress tracking.
-        let progress = if let Status::WaitingForSession { mut progress, .. } =
+        let (progress, startup_kind) = if let Status::WaitingForSession { mut progress, kind } =
             std::mem::replace(&mut self.status, Status::Composing)
         {
             progress.stopped_at = Some(now);
-            progress
+            (progress, Some(kind))
         } else {
             // If not in WaitingForSession, create a new progress with current time.
-            AgentProgress {
-                spawned_at: now,
-                claimed_at: None,
-                harness_started_at: None,
-                stopped_at: Some(now),
-            }
+            (
+                AgentProgress {
+                    spawned_at: now,
+                    claimed_at: None,
+                    harness_started_at: None,
+                    stopped_at: Some(now),
+                },
+                None,
+            )
+        };
+
+        if !matches!(startup_kind, Some(SessionStartupKind::InitialRun)) {
+            self.request = None;
         };
 
         self.status = Status::NeedsGithubAuth {
             progress,
             error_message,
-            auth_url,
+            auth_url: github_auth_url::cloud_setup_auth_url_with_next(&auth_url),
         };
         self.pending_followup_prompt = None;
 
         ctx.emit(AmbientAgentViewModelEvent::NeedsGithubAuth);
+    }
+
+    fn handle_github_auth_completed(&mut self, ctx: &mut ModelContext<Self>) {
+        if !matches!(self.status, Status::NeedsGithubAuth { .. }) {
+            return;
+        }
+
+        let Some(request) = self.request.clone() else {
+            return;
+        };
+
+        self.spawn_internal(request, ctx);
     }
 
     /// Handles cancellation by transitioning to the Cancelled state.
@@ -1536,8 +1585,8 @@ pub enum AmbientAgentViewModelEvent {
     SessionReady {
         session_id: SessionId,
     },
-    /// A follow-up execution has started sharing a fresh session.
-    FollowupSessionReady {
+    /// An execution has started sharing a session for an already-canonical ambient pane.
+    ExecutionSessionReady {
         session_id: SessionId,
     },
     /// An environment was selected.
@@ -1556,6 +1605,8 @@ pub enum AmbientAgentViewModelEvent {
     Cancelled,
     /// The selected execution harness (Oz / Claude Code) changed.
     HarnessSelected,
+    /// A shared-session viewer resolved the run harness from the server task.
+    ViewerHarnessResolved,
     /// The selected worker host changed via the HostSelector.
     HostSelected,
     /// The selected third-party harness model id changed (e.g. user picked `"opus"` for Claude).

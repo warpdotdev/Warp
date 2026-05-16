@@ -18,6 +18,7 @@ use crate::ai::blocklist::block::view_impl::common::{
 use crate::ai::blocklist::inline_action::aws_bedrock_credentials_error::AwsBedrockCredentialsErrorView;
 use crate::ai::blocklist::inline_action::create_or_edit_document::CreateOrEditDocumentAction;
 use crate::ai::blocklist::secret_redaction::SecretRedactionState;
+use crate::ai::blocklist::usage::rollup::compute_orchestration_rollup;
 use crate::ai::blocklist::view_util::format_credits;
 use crate::ai::skills::SkillOpenOrigin;
 use crate::ai::skills::{
@@ -3246,10 +3247,25 @@ fn render_usage_button(props: Props, app: &AppContext) -> Box<dyn Element> {
         return Empty::new().finish();
     };
 
+    // Optional orchestration credit rollup. When the conversation has at
+    // least one locally-loaded descendant with credits spent, the pill's
+    // headline number and "has any usage" suppression check both switch
+    // over to the orchestration total (PRODUCT invariants 11, 11b). The
+    // `(+N)` last-block annotation below stays bound to the
+    // orchestrator's own credits. The rollup helper returns `None` for
+    // conversations with no descendants, so callers that aren't
+    // orchestrators pay only the cost of one descendant-index probe.
+    let rollup =
+        compute_orchestration_rollup(conversation.id(), BlocklistAIHistoryModel::as_ref(app));
+
     // If this conversation has no usage metadata (e.g. a forked conversation from
     // mid-way through a prior conversation where the server did not send
     // ConversationUsageMetadata), avoid rendering the usage button entirely.
-    let has_any_usage = conversation.credits_spent() > 0.0
+    let headline_credits = rollup
+        .as_ref()
+        .map(|r| r.total_credits)
+        .unwrap_or_else(|| conversation.credits_spent());
+    let has_any_usage = headline_credits > 0.0
         || conversation.credits_spent_for_last_block().is_some()
         || !conversation.token_usage().is_empty()
         || conversation.tool_usage_metadata().total_tool_calls() > 0;
@@ -3266,7 +3282,7 @@ fn render_usage_button(props: Props, app: &AppContext) -> Box<dyn Element> {
         Icon::ChevronRight
     };
 
-    let total_credits_spent = conversation.credits_spent();
+    let total_credits_spent = headline_credits;
     let mut credit_usage_text = format_credits(total_credits_spent);
     if let Some(credits_spent_for_last_block) = conversation.credits_spent_for_last_block() {
         // Only show the credits spent for the last block if it is different from the total credits spent

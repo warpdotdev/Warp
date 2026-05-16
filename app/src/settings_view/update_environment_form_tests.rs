@@ -1,8 +1,9 @@
 use super::{
-    EnvironmentFormInitArgs, EnvironmentFormValues, GithubAuthRedirectTarget, SuggestImageState,
-    UpdateEnvironmentForm, UpdateEnvironmentFormAction,
+    EnvironmentFormInitArgs, EnvironmentFormValues, SuggestImageState, UpdateEnvironmentForm,
+    UpdateEnvironmentFormAction,
 };
 use crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier;
+use crate::ai::ambient_agents::github_auth_url::{self, AuthSource, GithubAuthRedirectTarget};
 use crate::ai::cloud_environments::GithubRepo;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;
@@ -108,6 +109,25 @@ fn test_build_auth_url_with_next_focus_cloud_mode() {
     );
 }
 
+#[test]
+fn test_build_auth_url_with_next_cloud_setup_source() {
+    let base_url = "https://example.com/oauth/connect/github";
+    let result = github_auth_url::build_auth_url_with_next(
+        base_url,
+        GithubAuthRedirectTarget::FocusCloudMode,
+        "warpdev",
+        AuthSource::CloudSetup,
+    );
+    let parsed = Url::parse(&result).expect("result should be valid url");
+    let next_value = parsed
+        .query_pairs()
+        .find(|(key, _)| key == "next")
+        .map(|(_, value)| value.into_owned());
+    assert_eq!(
+        next_value,
+        Some("warpdev://action/focus_cloud_mode?source=cloud_setup".to_string())
+    );
+}
 #[test]
 fn test_build_auth_url_with_next_uses_scheme_param() {
     let base_url = "https://example.com/oauth/connect/github?scheme=warp";

@@ -2136,6 +2136,7 @@ fn handle_ai_history_event(
         | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
         | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. }
         | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
-        | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => (),
+        | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. }
+        | BlocklistAIHistoryEvent::ConversationUsageMetadataUpdated { .. } => (),
     }
 }

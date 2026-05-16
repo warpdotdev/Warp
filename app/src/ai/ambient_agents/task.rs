@@ -3,6 +3,8 @@
 use anyhow::anyhow;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use session_sharing_protocol::common::SessionId;
+use url::Url;
 use warp_cli::agent::Harness;
 use warp_core::report_error;
 use warp_core::ui::theme::WarpTheme;
@@ -87,6 +89,23 @@ impl HarnessConfig {
             model_id: None,
         }
     }
+}
+
+fn parse_session_id_from_link(session_link: &str) -> Option<SessionId> {
+    Url::parse(session_link).ok().and_then(|url| {
+        url.path_segments()
+            .into_iter()
+            .flatten()
+            .last()
+            .and_then(|segment| segment.parse().ok())
+    })
+}
+
+fn parse_execution_session_id(execution: RunExecution<'_>) -> Option<SessionId> {
+    execution
+        .session_id
+        .and_then(|id| id.parse().ok())
+        .or_else(|| execution.session_link.and_then(parse_session_id_from_link))
 }
 
 fn serialize_harness<S: Serializer>(harness: &Harness, serializer: S) -> Result<S::Ok, S::Error> {
@@ -282,6 +301,17 @@ pub struct RunExecution<'a> {
     pub is_sandbox_running: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AmbientAgentLiveSessionState {
+    /// The task does not currently have a running execution with a joinable session signal.
+    Inactive,
+    /// The task has a running execution, but this client does not have a parsed
+    /// shared-session id it can attach to.
+    ActiveUnattachable,
+    /// The task has a running execution and this client can attach to its shared session.
+    Attachable { session_id: SessionId },
+}
+
 impl RunExecution<'_> {
     pub fn has_joinable_session(&self) -> bool {
         self.session_id.is_some() || self.session_link.is_some()
@@ -333,6 +363,23 @@ impl AmbientAgentTask {
             execution.session_id
         } else {
             None
+        }
+    }
+
+    /// Returns the canonical live-session state for this task from the client's perspective.
+    ///
+    /// This separates task liveness from attachability: an in-progress task can have an active
+    /// execution without a usable shared-session id, and callers should not treat that as a
+    /// completed transcript/follow-up state.
+    pub fn active_live_session_state(&self) -> AmbientAgentLiveSessionState {
+        let execution = self.active_run_execution();
+        if self.state != AmbientAgentTaskState::InProgress || !execution.is_active() {
+            return AmbientAgentLiveSessionState::Inactive;
+        }
+
+        match parse_execution_session_id(execution) {
+            Some(session_id) => AmbientAgentLiveSessionState::Attachable { session_id },
+            None => AmbientAgentLiveSessionState::ActiveUnattachable,
         }
     }
 

@@ -546,6 +546,7 @@ default = [
     "agent_shared_sessions",
     "integration_command",
     "artifact_command",
+    "conversation_api",
     "cloud_environments",
     "create_environment_slash_command",
     "code_review_find",
@@ -561,6 +562,7 @@ default = [
     "classic_completions",
     "force_classic_completions",
     "team_api_keys",
+    "named_agents",
     "agent_tips",
     "pluggable_notifications",
     "agent_onboarding",
@@ -620,6 +622,7 @@ default = [
     "vertical_tabs",
     "vertical_tabs_summary_mode",
     "tab_configs",
+    "agent_harness",
     "hoa_onboarding_flow",
     "hoa_remote_control",
     "codex_notifications",
@@ -631,6 +634,10 @@ default = [
     "configurable_context_window",
     "oz_handoff",
     "handoff_local_cloud",
+    "orchestration_v2",
+    "orchestration_pill_bar",
+    "orchestration_viewer_pill_bar",
+    "run_agents_tool",
     "pending_user_query_indicator",
 ]
 # Enable this feature to automatically perform heap profiling.  NOTE: This will
@@ -846,6 +853,7 @@ pr_comments_v2 = []
 pr_comments_skill = []
 conversation_artifacts = []
 conversations_as_context = []
+conversation_api = []
 sync_ambient_plans = []
 projects = []
 vim_code_editor = []
@@ -888,6 +896,7 @@ cloud_conversations = []
 agent_view_prompt_chip = ["agent_view"]
 ambient_agents_rtc = []
 team_api_keys = []
+named_agents = []
 classic_completions = []
 cloud_mode = []
 cloud_mode_from_local_session = []
@@ -912,6 +921,8 @@ incremental_auto_reload = []
 orchestration = []
 orchestration_v2 = ["orchestration"]
 orchestration_pill_bar = []
+orchestration_viewer_pill_bar = []
+run_agents_tool = []
 pending_user_query_indicator = []
 queue_slash_command = []
 inline_menu_headers = []

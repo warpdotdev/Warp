@@ -34,7 +34,9 @@ fn assert_update(
 #[test]
 fn quota_limit_is_failed_with_insufficient_credits() {
     assert_update(
-        classify_renderable_error(&RenderableAIError::QuotaLimit),
+        classify_renderable_error(&RenderableAIError::QuotaLimit {
+            user_display_message: None,
+        }),
         AgentTaskState::Failed,
         Some(PlatformErrorCode::InsufficientCredits),
         Some("credits"),

@@ -34,6 +34,7 @@ use crate::ai::blocklist::agent_view::orchestration_pill_bar::render_static_agen
 use crate::ai::blocklist::block::model::AIBlockModel;
 use crate::ai::blocklist::block::view_impl::WithContentItemSpacing;
 use crate::ai::blocklist::block::AIBlock;
+use crate::ai::blocklist::inline_action::host_picker::{HostPicker, HostPickerEvent};
 use crate::ai::blocklist::inline_action::inline_action_header::{HeaderConfig, InteractionMode};
 use crate::ai::blocklist::inline_action::inline_action_icons;
 use crate::ai::blocklist::inline_action::orchestration_controls::{
@@ -146,9 +147,6 @@ impl OrchestrationControlAction for RunAgentsCardViewAction {
     fn environment_changed(environment_id: String) -> Self {
         Self::EnvironmentChanged { environment_id }
     }
-    fn worker_host_changed(worker_host: String) -> Self {
-        Self::WorkerHostChanged { worker_host }
-    }
     fn auth_secret_changed(auth_secret_name: Option<String>) -> Self {
         Self::AuthSecretChanged { auth_secret_name }
     }
@@ -254,9 +252,13 @@ fn resolve_interactive_defaults(
         let needs_host = worker_host.is_empty();
         let needs_env = environment_id.is_empty();
         if needs_host {
-            state
-                .orch
-                .set_worker_host(oc::ORCHESTRATION_WARP_WORKER_HOST.to_string());
+            // Prefer the workspace default (or the dev env-var override)
+            // over the bare "warp" fallback so self-hosted teams see
+            // their default pre-selected. Mirrors the Oz webapp's
+            // `HostSelector` initial-selection behavior.
+            let default_host = oc::resolve_default_host_slug(ctx)
+                .unwrap_or_else(|| oc::ORCHESTRATION_WARP_WORKER_HOST.to_string());
+            state.orch.set_worker_host(default_host);
         }
         if needs_env {
             if let Some(default_env) = oc::resolve_default_environment_id(ctx) {
@@ -668,10 +670,27 @@ impl RunAgentsCardView {
                 RunAgentsExecutionMode::Remote { worker_host, .. } => worker_host.as_str(),
                 RunAgentsExecutionMode::Local => oc::ORCHESTRATION_WARP_WORKER_HOST,
             };
-            let handle = oc::new_standard_picker_dropdown(&colors, ctx);
-            Self::set_upward_menu_position(&handle, ctx);
+            let handle = ctx.add_typed_action_view(HostPicker::new);
+            // Open upward so the menu doesn't overlap pickers below it,
+            // matching the other dropdowns in this card.
+            handle.update(ctx, |picker, picker_ctx| {
+                picker.set_menu_position(
+                    warpui::elements::PositionedElementAnchor::TopLeft,
+                    warpui::elements::ChildAnchor::BottomLeft,
+                    picker_ctx,
+                );
+            });
             oc::populate_host_picker(&handle, initial_host, ctx);
-            Self::subscribe_picker_close(&handle, ctx);
+            ctx.subscribe_to_view(&handle, |me, _, event, ctx| match event {
+                HostPickerEvent::HostChanged { slug } => {
+                    ctx.dispatch_typed_action(&RunAgentsCardViewAction::WorkerHostChanged {
+                        worker_host: slug.clone(),
+                    });
+                }
+                HostPickerEvent::Closed => {
+                    me.refocus_after_picker_close(ctx);
+                }
+            });
             self.handles.pickers.host_picker = Some(handle);
         }
 
@@ -920,6 +939,7 @@ impl TypedActionView for RunAgentsCardView {
             }
             RunAgentsCardViewAction::WorkerHostChanged { worker_host } => {
                 self.state.orch.set_worker_host(worker_host.clone());
+                oc::persist_host_selection(worker_host, ctx);
                 ctx.notify();
             }
             RunAgentsCardViewAction::AuthSecretChanged { auth_secret_name } => {

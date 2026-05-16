@@ -54,7 +54,7 @@ use crate::ai::blocklist::agent_view::{
     agent_view_bg_fill, get_agent_view_entry_block_position_id, AgentViewController,
     AgentViewControllerEvent, AgentViewDisplayMode, AgentViewEntryBlockParams,
     AgentViewEntryOrigin, AgentViewHeaderDisabledTheme, AgentViewHeaderTheme,
-    AgentViewZeroStateBlock, AgentViewZeroStateEvent, EphemeralMessageModel, ExitAgentViewError,
+    AgentViewZeroStateBlock, AgentViewZeroStateEvent, EphemeralMessageModel,
     ExitConfirmationTrigger, InlineAgentViewHeader, OrchestrationPillBar,
     ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
@@ -90,7 +90,7 @@ use crate::ai::blocklist::block::cli_controller::{
 };
 use crate::ai::blocklist::block::status_bar::BlocklistAIStatusBarEvent;
 use crate::ai::blocklist::usage::conversation_usage_view::{
-    ConversationUsageInfo, ConversationUsageView, DisplayMode, TimingInfo,
+    ConversationUsageInfo, ConversationUsageView, TimingInfo,
 };
 use crate::ai::blocklist::{block_context_from_terminal_model, SlashCommandRequest};
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentModel, AIDocumentVersion};
@@ -186,6 +186,7 @@ pub use init::{
     TOGGLE_HIDE_CLI_RESPONSES_KEYBINDING, TOGGLE_QUEUE_NEXT_PROMPT_KEYBINDING,
 };
 pub use inline_banner::{NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction};
+#[cfg(not(target_family = "wasm"))]
 use repo_metadata::repositories::DetectedRepositories;
 use repo_metadata::repositories::RepoDetectionSource;
 use session_sharing_protocol::common::LongRunningCommandAgentInteractionState;
@@ -374,7 +375,7 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::hash::Hash;
 use std::ops::Range;
@@ -2402,6 +2403,13 @@ pub enum TerminalViewState {
     Normal,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(in crate::terminal::view) enum ConversationDetailsPanelAutoOpenPolicy {
+    #[default]
+    DefaultOpen,
+    DefaultClosed,
+}
+
 /// A struct containing information about a state change event for a particular
 /// terminal view.
 #[derive(Copy, Clone)]
@@ -2563,6 +2571,9 @@ pub struct TerminalView {
     /// next `AfterBlockCompleted`, at which point `Event::PendingCommandCompleted`
     /// is emitted so subscribers know the command has finished.
     awaiting_pending_command_completion: bool,
+    /// Commands that should run as separate blocks after the active pending
+    /// command finishes successfully.
+    pending_command_queue: VecDeque<String>,
     /// When true, enter agent view after pending setup commands complete
     /// (i.e. after `PendingCommandCompleted` is emitted). Set by
     /// `pane_tree_from_template_recursive` when a tab config has both
@@ -2838,6 +2849,9 @@ pub struct TerminalView {
     /// by the cloud-mode auto-open path; local conversations require the user to
     /// click the pane-header toggle button to open the panel.
     has_auto_opened_conversation_details_panel: bool,
+    /// Determines whether the one-shot auto-open should open the panel or be
+    /// consumed without opening.
+    conversation_details_panel_auto_open_policy: ConversationDetailsPanelAutoOpenPolicy,
     /// Mouse state handle for the conversation details panel toggle button in the pane header.
     /// Only available on non-WASM platforms (WASM uses a per-window button instead).
     #[cfg(not(target_arch = "wasm32"))]
@@ -4211,6 +4225,7 @@ impl TerminalView {
             bootstrap_start: None,
             is_login_shell_bootstrapped: false,
             awaiting_pending_command_completion: false,
+            pending_command_queue: Default::default(),
             enter_agent_view_after_pending_commands: false,
             slow_bootstrap_banner,
             is_slow_bootstrap_banner_open: false,
@@ -4307,6 +4322,7 @@ impl TerminalView {
             conversation_details_panel,
             is_conversation_details_panel_open: false,
             has_auto_opened_conversation_details_panel: false,
+            conversation_details_panel_auto_open_policy: Default::default(),
             pending_cloud_followup_task_id: None,
             #[cfg(not(target_arch = "wasm32"))]
             conversation_details_panel_toggle_mouse_state: Default::default(),
@@ -4629,6 +4645,9 @@ impl TerminalView {
                         );
                     }
                     RemoteServerManagerEvent::HostDisconnected { host_id } => {
+                        #[cfg(target_family = "wasm")]
+                        let _ = host_id;
+                        #[cfg(not(target_family = "wasm"))]
                         DetectedRepositories::handle(ctx).update(ctx, |repos, _| {
                             repos.remove_roots_for_host(host_id);
                         });
@@ -4709,20 +4728,6 @@ impl TerminalView {
         callback(self, ctx);
     }
 
-    fn can_exit_agent_view_for_terminal_view(
-        &self,
-        ctx: &AppContext,
-    ) -> Result<(), ExitAgentViewError> {
-        match self.agent_view_controller.as_ref(ctx).can_exit_agent_view() {
-            Err(ExitAgentViewError::LongRunningCommand)
-                if self.can_pop_nested_cloud_agent_view(ctx) =>
-            {
-                Ok(())
-            }
-            result => result,
-        }
-    }
-
     /// If the active conversation is a child agent, navigate to the parent
     /// and return `true`; otherwise return `false` so the caller can run
     /// the normal exit-agent-view flow. Cross-tab and swap-target cases
@@ -4763,19 +4768,21 @@ impl TerminalView {
         true
     }
 
-    fn can_pop_nested_cloud_agent_view(&self, ctx: &AppContext) -> bool {
-        self.is_ambient_agent_session(ctx) && self.is_nested_cloud_mode(ctx)
-    }
-
     /// Exits the active agent, either:
     /// * Exiting agent view for the selected conversation
-    /// * Popping the current view off the navigation stack (for cloud mode agents)
+    /// * Popping the current view off the navigation stack (for nested cloud mode agents)
+    /// Root cloud-mode panes (stack depth ≤ 1) are a no-op — there is nowhere to return to.
     fn exit_agent_view(&mut self, ctx: &mut ViewContext<Self>) {
-        // For ambient agent sessions (cloud mode), always pop from pane stack.
-        // These sessions are pushed onto a nav stack and have no underlying terminal
-        // to return to via the normal agent view exit path.
+        // For nested ambient agent sessions (cloud mode), pop from pane stack.
+        // Root cloud-mode panes have no parent terminal to return to, so escape
+        // is a no-op to avoid leaving the app in a borked state.
         if self.is_ambient_agent_session(ctx) {
-            if let Some(pane_stack) = self.pane_stack.as_ref().and_then(|h| h.upgrade(ctx)) {
+            if let Some(pane_stack) = self
+                .pane_stack
+                .as_ref()
+                .and_then(|h| h.upgrade(ctx))
+                .filter(|stack| stack.as_ref(ctx).depth() > 1)
+            {
                 pane_stack.update(ctx, |stack, ctx| {
                     stack.pop(ctx);
                 });
@@ -5351,19 +5358,14 @@ impl TerminalView {
         if self.pending_user_query_kind != Some(PendingUserQueryKind::CloudMode) {
             return;
         }
-        let Some(pending_prompt) = self.pending_user_query_prompt(ctx) else {
-            return;
-        };
 
         let initial_conversation_query = ai_block_model
             .conversation(ctx)
             .and_then(|conversation| conversation.initial_user_query());
         let has_renderable_user_query = ai_block_model.inputs_to_render(ctx).iter().any(|input| {
-            input.user_query().as_deref() == Some(pending_prompt)
-                || input
-                    .display_user_query(initial_conversation_query.as_ref())
-                    .as_deref()
-                    == Some(pending_prompt)
+            input
+                .display_user_query(initial_conversation_query.as_ref())
+                .is_some()
         });
         if has_renderable_user_query {
             self.remove_pending_user_query_block(ctx);
@@ -5410,7 +5412,8 @@ impl TerminalView {
             | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
             | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. }
             | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
-            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => None,
+            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. }
+            | BlocklistAIHistoryEvent::ConversationUsageMetadataUpdated { .. } => None,
         }
     }
 
@@ -5770,7 +5773,7 @@ impl TerminalView {
                         if matches!(
                             conversation_output_status_from_conversation(conversation),
                             Some(AmbientConversationStatus::Error {
-                                error: RenderableAIError::QuotaLimit
+                                error: RenderableAIError::QuotaLimit { .. }
                             })
                         ) {
                             self.show_out_of_credits_modal(ctx);
@@ -5888,7 +5891,8 @@ impl TerminalView {
             | BlocklistAIHistoryEvent::DeletedConversation { .. }
             | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
             | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
-            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => {}
+            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. }
+            | BlocklistAIHistoryEvent::ConversationUsageMetadataUpdated { .. } => {}
         }
         ctx.notify();
     }
@@ -6186,13 +6190,26 @@ impl TerminalView {
             wall_to_wall_response_time_ms,
         };
 
-        // View to hold the usage footer.
-        let usage_view = ctx.add_view(|_| {
-            ConversationUsageView::new(
+        // View to hold the usage footer. Always route through the
+        // rollup-aware constructor so the view subscribes to history
+        // events and re-renders when any contributing agent's usage
+        // updates. The rollup itself is computed at render time and is
+        // self-gating: conversations without descendants short-circuit
+        // to today's UI inside `ConversationUsageView::render`, so no
+        // feature flag check is needed at the call site.
+        //
+        // Use `add_typed_action_view` (not `add_view`) so the framework
+        // registers `ConversationUsageView::handle_action`. Without this,
+        // typed actions like `ToggleDetailsExpanded` / `ShowAllAgentRows`
+        // dispatched from the view's own click handlers would be logged
+        // as `Dispatched action has no handlers` and silently ignored.
+        let usage_view = ctx.add_typed_action_view(|ctx| {
+            ConversationUsageView::new_footer_with_rollup(
                 conversation_usage_info,
-                DisplayMode::Footer,
                 Some(timing_info),
                 MouseStateHandle::default(),
+                conversation_id,
+                ctx,
             )
         });
         self.usage_footer_view_ids
@@ -7164,6 +7181,26 @@ impl TerminalView {
     fn can_show_conversation_details_ui(&self, app: &AppContext) -> bool {
         let model = self.model.lock();
         self.can_show_conversation_details_ui_from_model(&model, app)
+    }
+
+    /// Consume the one-shot conversation details panel auto-open for this
+    /// view. Call this before the first `maybe_auto_open_conversation_details_panel`
+    /// fires (e.g. on a parent-orchestrated child agent pane) so the panel does
+    /// not default open. Manual toggle via `TerminalAction::ToggleConversationDetailsPanel`
+    /// continues to work normally.
+    pub(crate) fn suppress_initial_conversation_details_panel_auto_open(&mut self) {
+        self.conversation_details_panel_auto_open_policy =
+            ConversationDetailsPanelAutoOpenPolicy::DefaultClosed;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_initial_conversation_details_panel_auto_open_suppressed_for_test(
+        &self,
+    ) -> bool {
+        matches!(
+            self.conversation_details_panel_auto_open_policy,
+            ConversationDetailsPanelAutoOpenPolicy::DefaultClosed
+        )
     }
 
     fn maybe_insert_tombstone_for_non_running_shared_ambient_task(
@@ -8337,6 +8374,27 @@ impl TerminalView {
         self.input.update(ctx, |input, ctx| {
             input.set_pending_command(exec, ctx);
         })
+    }
+
+    pub fn set_pending_command_queue(
+        &mut self,
+        commands: Vec<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.pending_command_queue = commands.into_iter().collect();
+        self.set_next_pending_command_from_queue(ctx);
+    }
+
+    fn set_next_pending_command_from_queue(&mut self, ctx: &mut ViewContext<Self>) -> bool {
+        if self.input.as_ref(ctx).has_pending_command() {
+            return false;
+        }
+        let Some(command) = self.pending_command_queue.pop_front() else {
+            return false;
+        };
+
+        self.set_pending_command(&command, ctx);
+        true
     }
 
     fn alt_scroll_cmd_sequence(&self, lines_to_scroll: i32) -> Vec<u8> {
@@ -10726,7 +10784,9 @@ impl TerminalView {
         let disabled_reason = if is_child_agent {
             None
         } else {
-            self.can_exit_agent_view_for_terminal_view(ctx)
+            self.agent_view_controller
+                .as_ref(ctx)
+                .can_exit_agent_view()
                 .err()
                 .map(|e| e.to_string())
         };
@@ -11246,23 +11306,45 @@ impl TerminalView {
                     ctx,
                 );
 
+                let pending_command_succeeded = match &block_type {
+                    BlockType::User(UserBlockCompleted {
+                        serialized_block, ..
+                    }) => Some(serialized_block.exit_code.was_successful()),
+                    BlockType::BootstrapHidden
+                    | BlockType::BootstrapVisible(_)
+                    | BlockType::Restored
+                    | BlockType::InBandCommand
+                    | BlockType::Background(_)
+                    | BlockType::Static => None,
+                };
+
                 // Emit PendingCommandCompleted when a pending command's block
                 // finishes (e.g. tab config setup commands like `git worktree add`).
                 if self.awaiting_pending_command_completion {
-                    self.awaiting_pending_command_completion = false;
-                    ctx.emit(Event::PendingCommandCompleted);
+                    if let Some(command_succeeded) = pending_command_succeeded {
+                        self.awaiting_pending_command_completion = false;
+                        if command_succeeded && self.set_next_pending_command_from_queue(ctx) {
+                            // The delayed pending-command scheduler below will
+                            // submit the next queued command as a separate block.
+                        } else {
+                            if !command_succeeded {
+                                self.pending_command_queue.clear();
+                            }
+                            ctx.emit(Event::PendingCommandCompleted);
 
-                    // If agent view entry was deferred until setup commands
-                    // finished, enter it now (unless suppressed by onboarding).
-                    if self.enter_agent_view_after_pending_commands {
-                        self.enter_agent_view_after_pending_commands = false;
-                        self.enter_agent_view_for_new_conversation(
-                            None,
-                            AgentViewEntryOrigin::Input {
-                                was_prompt_autodetected: false,
-                            },
-                            ctx,
-                        );
+                            // If agent view entry was deferred until setup commands
+                            // finished, enter it now (unless suppressed by onboarding).
+                            if self.enter_agent_view_after_pending_commands {
+                                self.enter_agent_view_after_pending_commands = false;
+                                self.enter_agent_view_for_new_conversation(
+                                    None,
+                                    AgentViewEntryOrigin::Input {
+                                        was_prompt_autodetected: false,
+                                    },
+                                    ctx,
+                                );
+                            }
+                        }
                     }
                 }
 
@@ -11617,6 +11699,7 @@ impl TerminalView {
 
                                 match &repo_path_opt {
                                     Some(LocalOrRemotePath::Remote(remote_path)) => {
+                                        #[cfg(not(target_family = "wasm"))]
                                         DetectedRepositories::handle(ctx).update(
                                             ctx,
                                             |repos, _| {
@@ -15165,7 +15248,9 @@ impl TerminalView {
         self.is_login_shell_bootstrapped
     }
     pub fn has_pending_command_or_awaiting_completion(&self, ctx: &AppContext) -> bool {
-        self.awaiting_pending_command_completion || self.input.as_ref(ctx).has_pending_command()
+        self.awaiting_pending_command_completion
+            || !self.pending_command_queue.is_empty()
+            || self.input.as_ref(ctx).has_pending_command()
     }
 
     /// Marks this terminal to enter agent view once pending setup commands
@@ -20507,7 +20592,12 @@ impl TerminalView {
                     }
 
                     // Disable escape completely for ambient agents without a parent terminal.
-                    if self.can_exit_agent_view_for_terminal_view(ctx).is_err() {
+                    if self
+                        .agent_view_controller
+                        .as_ref(ctx)
+                        .can_exit_agent_view()
+                        .is_err()
+                    {
                         return;
                     }
 
@@ -20517,7 +20607,7 @@ impl TerminalView {
                         .block_list()
                         .active_block()
                         .is_active_and_long_running();
-                    if is_long_running && self.can_pop_nested_cloud_agent_view(ctx) {
+                    if is_long_running && self.is_ambient_agent_session(ctx) {
                         self.exit_agent_view(ctx);
                     } else if !is_long_running {
                         // During first-time setup, always exit directly without confirmation
@@ -26117,7 +26207,12 @@ impl TypedActionView for TerminalView {
                 // to the in-place exit flow.
                 if self.try_navigate_to_parent_conversation(ctx) {
                     ctx.notify();
-                } else if self.can_exit_agent_view_for_terminal_view(ctx).is_ok() {
+                } else if self
+                    .agent_view_controller
+                    .as_ref(ctx)
+                    .can_exit_agent_view()
+                    .is_ok()
+                {
                     self.exit_agent_view(ctx);
                     ctx.notify();
                 }

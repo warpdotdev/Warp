@@ -247,26 +247,42 @@ impl BlocklistAIController {
         ctx: &mut ModelContext<Self>,
     ) -> bool {
         let Some(conversation_id) = existing_conversation_id else {
+            log::info!(
+                "should_skip_replayed_response: no existing conversation id, not skipping \
+                 (request_id={init_request_id})"
+            );
             return false;
         };
-        if !self
+        let is_receiving_replay = self
             .terminal_model
             .lock()
-            .is_receiving_agent_conversation_replay()
-            || !self
-                .shared_session_state
-                .should_suppress_replayed_response_for_existing_conversation
-        {
+            .is_receiving_agent_conversation_replay();
+        let suppress_enabled = self
+            .shared_session_state
+            .should_suppress_replayed_response_for_existing_conversation;
+        if !is_receiving_replay || !suppress_enabled {
+            log::info!(
+                "should_skip_replayed_response: not skipping \
+                 (request_id={init_request_id}, conversation_id={conversation_id:?}, \
+                 is_receiving_replay={is_receiving_replay}, suppress_enabled={suppress_enabled})"
+            );
             return false;
         }
 
         // Only skip the replayed response when our local task already has the given request_id.
         // New exchanges (e.g. the user's first post-handoff prompt) carry unseen request_ids and must flow through normally.
         let history = BlocklistAIHistoryModel::as_ref(ctx);
-        history.conversation(&conversation_id).is_some_and(|conv| {
+        let found = history.conversation(&conversation_id).is_some_and(|conv| {
             conv.all_tasks()
                 .any(|task| task.messages().any(|msg| msg.request_id == init_request_id))
-        })
+        });
+        if !found {
+            log::info!(
+                "should_skip_replayed_response: not skipping, request_id not found in local \
+                 conversation (request_id={init_request_id}, conversation_id={conversation_id:?})"
+            );
+        }
+        found
     }
 
     fn on_shared_client_actions(

@@ -992,11 +992,6 @@ impl Action {
                 }
             }
             Action::FocusCloudMode => {
-                // Notify that GitHub auth completed so views can refresh
-                GitHubAuthNotifier::handle(ctx).update(ctx, |notifier, ctx| {
-                    notifier.notify_auth_completed(ctx);
-                });
-
                 let active_agent_views = ActiveAgentViewsModel::as_ref(ctx);
                 let focused_conversation = primary_window_id
                     .and_then(|wid| active_agent_views.get_focused_conversation(wid));
@@ -1032,10 +1027,17 @@ impl Action {
                                 ctx,
                             );
                         });
+                        // Notify after focusing so Cloud Mode panes can retry in the selected pane.
+                        GitHubAuthNotifier::handle(ctx).update(ctx, |notifier, ctx| {
+                            notifier.notify_auth_completed(ctx);
+                        });
                         return;
                     }
                 }
 
+                GitHubAuthNotifier::handle(ctx).update(ctx, |notifier, ctx| {
+                    notifier.notify_auth_completed(ctx);
+                });
                 dispatch_action_in_new_or_existing_window(
                     primary_window_id,
                     "root_view:open_settings_page_in_existing_window",
