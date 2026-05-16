@@ -119,17 +119,6 @@ impl AuthSecretSelector {
             MenuEvent::ItemSelected => {}
         });
 
-        // Note: the sidecar menu intentionally does NOT use
-        // `prevent_interaction_with_other_elements()`. The main menu already
-        // has it, which is sufficient for outside-click dismissal. Adding it
-        // here would cause the sidecar's `Dismiss` to draw a window-spanning
-        // hit-recording rect at a higher z-index than the main menu, which
-        // would intercept all `MouseMoved` events while the sidecar is open
-        // and prevent the main menu items from firing hover events. That
-        // would break `update_sidecar_visibility_from_hover` and leave the
-        // sidecar visible until the user clicked outside. This mirrors the
-        // pattern in `profile_model_selector.rs`, where only the primary
-        // dropdown uses `prevent_interaction_with_other_elements()`.
         let new_type_sidecar = ctx
             .add_typed_action_view(|_ctx| Menu::new().with_width(SIDECAR_WIDTH).with_drop_shadow());
 
