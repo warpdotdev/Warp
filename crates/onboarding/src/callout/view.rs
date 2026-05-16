@@ -352,9 +352,7 @@ impl OnboardingCalloutView {
     pub fn should_position_above_zero_state(&self, app: &AppContext) -> bool {
         !matches!(
             self.model.as_ref(app).state(),
-            OnboardingCalloutState::AgentModality(
-                AgentModalityCalloutState::AgentMode
-            )
+            OnboardingCalloutState::AgentModality(AgentModalityCalloutState::AgentMode)
         )
     }
 
