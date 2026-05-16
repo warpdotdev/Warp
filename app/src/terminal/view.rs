@@ -13915,11 +13915,7 @@ fn build_onboarding_keybindings(ctx: &AppContext) -> OnboardingKeybindings {
     .map(|k| k.displayed())
     .unwrap_or_else(|_| "⌘-⌥-⏎".to_string());
 
-    let return_to_terminal_mode = if OperatingSystem::get().is_mac() {
-        Keystroke::parse("escape")
-    } else {
-        Keystroke::parse("esc")
-    }
+    let return_to_terminal_mode = Keystroke::parse("escape")
     .map(|k| k.displayed())
     .unwrap_or_else(|_| "ESC".to_string());
 
