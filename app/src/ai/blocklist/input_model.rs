@@ -157,6 +157,7 @@ pub struct BlocklistAIInputModel {
     terminal_view_id: EntityId,
 
     autodetect_abort_handle: Option<AbortHandle>,
+    // Id (or counter) to track the latest valid async task
     autodetect_generation: u64,
     model: Arc<FairMutex<TerminalModel>>,
 }
@@ -595,6 +596,7 @@ impl BlocklistAIInputModel {
     pub fn abort_in_progress_detection(&mut self) {
         if let Some(handle) = self.autodetect_abort_handle.take() {
             handle.abort();
+            // Increment autodetect_generation to invalidate aborted runs
             self.autodetect_generation = self.autodetect_generation.wrapping_add(1);
         }
     }
@@ -696,6 +698,7 @@ impl BlocklistAIInputModel {
         };
 
         let classifier = InputClassifierModel::as_ref(ctx).classifier();
+        // Increment autodetect_generation to a new run 
         self.autodetect_generation = self.autodetect_generation.wrapping_add(1);
         let autodetect_generation = self.autodetect_generation;
         let handle = ctx
