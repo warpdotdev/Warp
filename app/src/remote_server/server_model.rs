@@ -40,10 +40,10 @@ use super::proto::{
     get_fragment_metadata_from_hash_response, resolve_conflict_response, run_command_response,
     save_buffer_response, server_message, write_file_response, Abort, Authenticate, BranchInfo,
     BufferEdit, BufferUpdatedPush, ClientMessage, CloseBuffer, CodebaseIndexStatus,
-    CodebaseIndexStatusState, CodebaseIndexStatusUpdated, CodebaseIndexStatusesSnapshot,
-    DeleteFile, DeleteFileResponse, DeleteFileSuccess, DiscardFilesError, DiscardFilesResponse,
-    DiscardFilesSuccess, DropCodebaseIndex, ErrorCode, ErrorResponse, FailedFileRead,
-    FileContextProto, FileOperationError, FragmentMetadata as ProtoFragmentMetadata,
+    CodebaseIndexStatusUpdated, CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse,
+    DeleteFileSuccess, DiscardFilesError, DiscardFilesResponse, DiscardFilesSuccess,
+    DropCodebaseIndex, ErrorCode, ErrorResponse, FailedFileRead, FileContextProto,
+    FileOperationError, FragmentMetadata as ProtoFragmentMetadata,
     FragmentMetadataLookupError as ProtoFragmentMetadataLookupError,
     FragmentMetadataLookupErrorCode, GetBranchesError, GetBranchesResponse, GetBranchesSuccess,
     GetDiffStateResponse, GetFragmentMetadataFromHash, GetFragmentMetadataFromHashResponse,
@@ -790,56 +790,41 @@ impl ServerModel {
         }
 
         match event {
-            CodebaseIndexManagerEvent::SyncStateUpdated
-            | CodebaseIndexManagerEvent::IndexMetadataUpdated { .. }
-            | CodebaseIndexManagerEvent::NewIndexCreated => {
-                self.push_all_codebase_index_statuses(ctx);
+            CodebaseIndexManagerEvent::SyncStateUpdated { root_path }
+            | CodebaseIndexManagerEvent::NewIndexCreated { root_path } => {
+                self.push_codebase_index_status(root_path, ctx);
             }
             CodebaseIndexManagerEvent::RemoveExpiredIndexMetadata { expired_metadata } => {
                 for repo_path in expired_metadata.iter() {
-                    self.send_server_message(
-                        None,
-                        None,
-                        server_message::Message::CodebaseIndexStatusUpdated(
-                            CodebaseIndexStatusUpdated {
-                                status: Some(disabled_codebase_index_status(
-                                    repo_path.to_string_lossy().to_string(),
-                                )),
-                            },
-                        ),
-                    );
+                    self.push_codebase_index_status_update(disabled_codebase_index_status(
+                        repo_path.to_string_lossy().to_string(),
+                    ));
                 }
             }
             CodebaseIndexManagerEvent::RetrievalRequestCompleted { .. }
-            | CodebaseIndexManagerEvent::RetrievalRequestFailed { .. } => {}
+            | CodebaseIndexManagerEvent::RetrievalRequestFailed { .. }
+            | CodebaseIndexManagerEvent::IndexMetadataUpdated { .. } => {}
         }
     }
+    fn push_codebase_index_status(&mut self, repo_path: &Path, ctx: &mut ModelContext<Self>) {
+        let Some(status) = self.codebase_index_status(repo_path, ctx) else {
+            return;
+        };
+        self.push_codebase_index_status_update(status);
+    }
 
-    fn push_all_codebase_index_statuses(&self, ctx: &mut ModelContext<Self>) {
-        let snapshot = self.codebase_index_statuses_snapshot(ctx);
-        let status_count = snapshot.statuses.len();
-        log::info!(
-            "[Remote codebase indexing] Daemon pushing codebase index status updates: status_count={status_count}"
+    fn push_codebase_index_status_update(&mut self, status: CodebaseIndexStatus) {
+        self.send_server_message(
+            None,
+            None,
+            server_message::Message::CodebaseIndexStatusUpdated(CodebaseIndexStatusUpdated {
+                status: Some(status),
+            }),
         );
-        for status in snapshot.statuses {
-            log::debug!(
-                "[Remote codebase indexing] Daemon pushing codebase index status update: repo_path={} state={:?}",
-                status.repo_path,
-                CodebaseIndexStatusState::try_from(status.state)
-                    .unwrap_or(CodebaseIndexStatusState::Unspecified),
-            );
-            self.send_server_message(
-                None,
-                None,
-                server_message::Message::CodebaseIndexStatusUpdated(CodebaseIndexStatusUpdated {
-                    status: Some(status),
-                }),
-            );
-        }
     }
 
     fn push_codebase_index_statuses_snapshot(
-        &self,
+        &mut self,
         conn_id: ConnectionId,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -871,6 +856,18 @@ impl ServerModel {
             .map(|(repo_path, status)| codebase_index_status_to_proto(repo_path.as_path(), &status))
             .collect();
         CodebaseIndexStatusesSnapshot { statuses }
+    }
+
+    fn codebase_index_status(
+        &self,
+        repo_path: &Path,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<CodebaseIndexStatus> {
+        let index_manager = CodebaseIndexManager::handle(ctx);
+        index_manager
+            .as_ref(ctx)
+            .get_codebase_index_status_for_path(repo_path, ctx)
+            .map(|status| codebase_index_status_to_proto(repo_path, &status))
     }
 
     fn handle_index_codebase(

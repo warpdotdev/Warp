@@ -10,7 +10,10 @@ use warpui::App;
 
 use crate::workspace::WorkspaceMetadata;
 
-use super::{BuildSource, CodebaseIndexManager, CodebaseIndexManagerConfig};
+use super::{
+    BuildSource, CodebaseIndexFinishedStatus, CodebaseIndexManager, CodebaseIndexManagerConfig,
+    CodebaseIndexStatus, CodebaseIndexStatusEventKey, CodebaseIndexingError, SyncProgress,
+};
 
 fn workspace_metadata(path: impl Into<PathBuf>) -> WorkspaceMetadata {
     WorkspaceMetadata {
@@ -19,6 +22,84 @@ fn workspace_metadata(path: impl Into<PathBuf>) -> WorkspaceMetadata {
         modified_ts: None,
         queried_ts: None,
     }
+}
+
+fn codebase_index_status(
+    has_pending: bool,
+    has_synced_version: bool,
+    last_sync_successful: Option<CodebaseIndexFinishedStatus>,
+    sync_progress: Option<SyncProgress>,
+) -> CodebaseIndexStatus {
+    CodebaseIndexStatus {
+        has_pending,
+        has_synced_version,
+        last_sync_successful,
+        sync_progress,
+        root_hash: None,
+    }
+}
+
+#[test]
+fn codebase_index_status_event_key_matches_identical_statuses() {
+    let first_status = codebase_index_status(
+        true,
+        true,
+        None,
+        Some(SyncProgress::Syncing {
+            completed_nodes: 1,
+            total_nodes: 2,
+        }),
+    );
+    let duplicate_status = codebase_index_status(
+        true,
+        true,
+        None,
+        Some(SyncProgress::Syncing {
+            completed_nodes: 1,
+            total_nodes: 2,
+        }),
+    );
+
+    assert_eq!(
+        CodebaseIndexStatusEventKey::from(&first_status),
+        CodebaseIndexStatusEventKey::from(&duplicate_status)
+    );
+}
+
+#[test]
+fn codebase_index_status_event_key_detects_semantic_changes() {
+    let syncing_status = codebase_index_status(
+        true,
+        true,
+        None,
+        Some(SyncProgress::Syncing {
+            completed_nodes: 1,
+            total_nodes: 2,
+        }),
+    );
+    let completed_status = codebase_index_status(
+        false,
+        true,
+        Some(CodebaseIndexFinishedStatus::Completed),
+        None,
+    );
+    let failed_status = codebase_index_status(
+        false,
+        true,
+        Some(CodebaseIndexFinishedStatus::Failed(
+            CodebaseIndexingError::BuildTreeError,
+        )),
+        None,
+    );
+
+    assert_ne!(
+        CodebaseIndexStatusEventKey::from(&syncing_status),
+        CodebaseIndexStatusEventKey::from(&completed_status)
+    );
+    assert_ne!(
+        CodebaseIndexStatusEventKey::from(&completed_status),
+        CodebaseIndexStatusEventKey::from(&failed_status)
+    );
 }
 
 #[test]

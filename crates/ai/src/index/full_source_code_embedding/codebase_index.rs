@@ -319,7 +319,9 @@ pub enum CodebaseIndexEvent {
         retrieval_id: RetrievalID,
         error: Error,
     },
-    SyncStateUpdated,
+    SyncStateUpdated {
+        root_path: PathBuf,
+    },
     IndexMetadataUpdated {
         root_path: PathBuf,
         event: WorkspaceMetadataEvent,
@@ -879,7 +881,9 @@ impl CodebaseIndex {
         ctx: &mut ModelContext<Self>,
     ) -> TreeSourceSyncState {
         let old_state = std::mem::replace(&mut self.tree_sync_state, new_state);
-        ctx.emit(CodebaseIndexEvent::SyncStateUpdated);
+        ctx.emit(CodebaseIndexEvent::SyncStateUpdated {
+            root_path: self.repo_path.clone(),
+        });
         old_state
     }
 
@@ -888,7 +892,9 @@ impl CodebaseIndex {
         if let TreeSourceSyncState::Syncing { sync_progress, .. } = &mut self.tree_sync_state {
             *sync_progress = Some(progress);
 
-            ctx.emit(CodebaseIndexEvent::SyncStateUpdated);
+            ctx.emit(CodebaseIndexEvent::SyncStateUpdated {
+                root_path: self.repo_path.clone(),
+            });
         }
     }
 
