@@ -1,6 +1,6 @@
 # GH11107: Reduce first-time agent onboarding callouts
 ## Summary
-Reduce the first-time Agent Modality onboarding tutorial from four callouts to two callouts. The shorter flow should teach the same essential concepts with less interruption: terminal input can route commands or natural language, and agent conversations now live in their own scoped agent experience.
+Reduce the first-time Agent Modality onboarding tutorial from four callouts to two callouts, and remove the FTUE tab/session configuration modal from the handoff into the tutorial. The shorter flow should teach the same essential concepts with less interruption: terminal input can route commands or natural language, and agent conversations now live in their own scoped agent experience.
 ## Problem
 The current Agent Modality first-time tutorial shows four sequential callouts before the user can finish onboarding. That amount of instructional UI is too heavy for a first-run experience, especially because some concepts can be combined without losing clarity.
 ## Goals
@@ -9,17 +9,24 @@ The current Agent Modality first-time tutorial shows four sequential callouts be
 - Preserve the transition from terminal input into the scoped agent experience.
 - Preserve project initialization behavior for users who selected a project.
 - Preserve the ability to finish without submitting anything for users who did not select a project.
+- Start the post-slide tutorial directly without requiring first-time users to configure a tab, session type, worktree, or startup config.
 - Reuse the existing callout visual style, button conventions, keyboard shortcuts, progress dots, and placement patterns.
 ## Non-goals
 - Redesigning the callout component.
 - Changing the broader onboarding slides before the callout tutorial starts.
 - Changing the natural language detection setting outside the first-run tutorial.
 - Changing how the agent experience itself works after the tutorial completes.
+- Removing or changing the manual session configuration modal outside FTUE.
+- Changing reusable tab config, worktree, or new-session menu behavior outside the FTUE handoff.
 - Introducing a new visual treatment, animation, or Figma-driven layout for the callouts.
 ## Figma
 Figma: none provided. This change uses the existing onboarding callout component and consolidates existing callout content.
 ## Behavior
 1. When a first-time user enters the Agent Driven Development tutorial with Agent Modality enabled, Warp shows exactly two sequential callouts.
+1. First-time Agent Driven Development users do not see the tab config/session config modal between completing onboarding slides and starting the callout tutorial.
+1. First-time Agent Driven Development users are not required to choose a session type, project setup, worktree setup, or startup tab config before the callout tutorial starts.
+1. If the user selected a project in the onboarding slides, Warp should continue using that selection for the tutorial/project initialization path without re-asking through the tab config modal.
+1. Manual session configuration remains available from its existing non-FTUE entrypoints.
 2. The two-callout sequence is:
    - Callout 1: terminal input with natural language support.
    - Callout 2: Warp's agent experience.

@@ -2094,12 +2094,6 @@ impl Workspace {
         }
     }
 
-    /// Stores an onboarding intention so the guided tutorial starts after the
-    /// session config modal is closed.
-    pub(crate) fn set_pending_onboarding_intention(&mut self, intention: OnboardingIntention) {
-        self.pending_onboarding_intention = Some(intention);
-    }
-
     #[cfg(feature = "local_fs")]
     fn handle_session_config_completed(
         &mut self,

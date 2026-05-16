@@ -16,6 +16,8 @@ The current flow is implemented as a small model/view state machine in the onboa
 - `app/src/terminal/view.rs (13942-14117)` owns callout lifecycle side effects: submitting prompts, entering agent view on `EnterAgentModality`, applying natural language detection changes, clearing input, and exiting agent view.
 - `app/src/workspace/view/onboarding.rs (178-195)` chooses `AgentOnboardingVersion::AgentModality` when `FeatureFlag::AgentView` is enabled.
 - `app/src/terminal/view/init.rs (876-948)` registers debug keybindings that launch Agent Modality onboarding with project, without project, and with terminal intention.
+- `app/src/root_view.rs:3258` starts a pending tutorial after onboarding/auth. In the `OpenWarpNewSettingsModes && TabConfigs` path, Agent Driven Development previously set a pending onboarding intention and opened the session config modal before the tutorial.
+- `app/src/workspace/view.rs (2022-2106)` handles the session config modal completion/dismissal and queued onboarding tutorial when that modal was used as the FTUE handoff.
 The existing design already has the right separation of responsibilities:
 - The onboarding model decides which state comes next and emits semantic events.
 - The onboarding view maps state to callout text/buttons.
@@ -112,6 +114,13 @@ Update comments in:
 so they no longer describe a four-step Agent Modality flow.
 The debug keybindings in `app/src/terminal/view/init.rs` can stay, but their launched flows should now show only two callouts for Agent Driven Development.
 Update `crates/onboarding/examples/callout_flow.rs` only if its demo text or assumptions mention the old four-step sequence.
+### 11. Bypass the FTUE session config modal before the callout tutorial
+Update `RootView::start_pending_tutorial` so the `OpenWarpNewSettingsModes && TabConfigs` Agent Driven Development branch no longer calls `set_pending_onboarding_intention` or `show_session_config_modal`.
+Instead:
+- Keep `open_vertical_tabs_panel_if_enabled` so the user's onboarding UI customization is still reflected.
+- Call `Workspace::start_agent_onboarding_tutorial(tutorial, ctx)` directly for Agent Driven Development.
+- Keep the Terminal-intention branch unchanged: it may open vertical tabs when enabled, but it should not open the agent tutorial or the session config modal.
+Do not remove `Workspace::show_session_config_modal` or the pending session-config tutorial/chip code. Those paths are still used by manual session configuration and should remain intact outside the FTUE handoff.
 ## State transition diagram
 ```mermaid
 flowchart TD
@@ -152,11 +161,14 @@ Validate:
 - Natural language detection checkbox appears only when initially disabled and updates the setting immediately.
 - Terminal-intention debug flow does not enter agent view.
 - Universal Input onboarding still follows its existing flow.
+- Completing FTUE with Agent Driven Development selected does not open the session config modal.
+- The tutorial starts directly after the workspace/auth handoff, preserving the selected project/no-project tutorial variant.
+- Manual `WorkspaceAction::ShowSessionConfigModal` entrypoints still open the session config modal.
 ### Commands
 Run:
 - `cargo fmt`
 - A targeted check for onboarding/app compilation, such as `cargo check -p onboarding` if supported by workspace dependencies.
-- If touching app-side code beyond the onboarding files, run the smallest relevant app check available locally.
+- Because `app/src/root_view.rs` is touched, run the smallest relevant app check available locally in addition to `cargo check -p onboarding`.
 Before opening or updating a PR, follow repo policy and run the required `cargo fmt` and `cargo clippy` checks from presubmit guidance.
 ## Risks and mitigations
 ### Entering agent view at the wrong time
