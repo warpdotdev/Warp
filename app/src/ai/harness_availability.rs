@@ -6,16 +6,16 @@ use serde::{Deserialize, Serialize};
 use warp_cli::agent::Harness;
 use warp_core::features::FeatureFlag;
 use warp_core::user_preferences::GetUserPreferences;
-use warp_managed_secrets::{ManagedSecretManager, ManagedSecretValue, client::SecretOwner};
+use warp_managed_secrets::{client::SecretOwner, ManagedSecretManager, ManagedSecretValue};
 use warpui::{Entity, ModelContext, RequestState, SingletonEntity};
 
 use crate::ai::harness_display;
-use crate::auth::AuthStateProvider;
 use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
+use crate::auth::AuthStateProvider;
 use crate::network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind};
 use crate::report_error;
 use crate::server::retry_strategies::{
-    OUT_OF_BAND_REQUEST_RETRY_STRATEGY, is_transient_http_error,
+    is_transient_graphql_or_http_error, OUT_OF_BAND_REQUEST_RETRY_STRATEGY,
 };
 use crate::server::server_api::ServerApiProvider;
 use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
@@ -200,7 +200,7 @@ impl HarnessAvailabilityModel {
                 async move { api.list_harness_auth_secrets(agent_harness).await }
             },
             OUT_OF_BAND_REQUEST_RETRY_STRATEGY,
-            is_transient_http_error,
+            is_transient_graphql_or_http_error,
             move |me,
                   result: RequestState<Vec<warp_graphql::managed_secrets::ManagedSecret>>,
                   ctx| match result {
