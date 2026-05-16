@@ -232,33 +232,6 @@ fn custom_theme_path_storage_value(path: &Path, theme_root: &Path) -> serde_json
     }
 }
 
-#[cfg(test)]
-pub(crate) fn custom_theme_path_for_storage(path: &Path, theme_root: &Path) -> PathBuf {
-    if path_is_absolute_or_foreign_absolute(path) {
-        return portable_custom_theme_storage_string(path, theme_root)
-            .map(PathBuf::from)
-            .unwrap_or_else(|| path.to_path_buf());
-    }
-
-    path.to_str()
-        .filter(|path| portable_stored_raw_components(path).is_some())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| path.to_path_buf())
-}
-
-#[cfg(test)]
-pub(crate) fn custom_theme_path_from_storage(path: &Path, theme_root: &Path) -> PathBuf {
-    if path_is_absolute_or_foreign_absolute(path) {
-        return portable_custom_theme_storage_string(path, theme_root)
-            .map(|path| portable_custom_theme_path_from_stored_raw(&path, theme_root))
-            .unwrap_or_else(|| path.to_path_buf());
-    }
-
-    path.to_str()
-        .map(|path| portable_custom_theme_path_from_stored_raw(path, theme_root))
-        .unwrap_or_else(|| path.to_path_buf())
-}
-
 pub(crate) fn custom_theme_path_is_portable(path: &Path, theme_root: &Path) -> bool {
     if path_is_absolute_or_foreign_absolute(path) {
         return portable_custom_theme_storage_string(path, theme_root).is_some();

@@ -25,6 +25,31 @@ fn assert_custom_theme_is_not_syncable(custom_theme: CustomTheme) {
     assert!(!ThemeKind::Custom(custom_theme).is_custom_theme_reference_syncable());
 }
 
+fn custom_theme_path_for_storage(path: &Path, theme_root: &Path) -> PathBuf {
+    if path_is_absolute_or_foreign_absolute(path) {
+        return portable_custom_theme_storage_string(path, theme_root)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| path.to_path_buf());
+    }
+
+    path.to_str()
+        .filter(|path| portable_stored_raw_components(path).is_some())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| path.to_path_buf())
+}
+
+fn custom_theme_path_from_storage(path: &Path, theme_root: &Path) -> PathBuf {
+    if path_is_absolute_or_foreign_absolute(path) {
+        return portable_custom_theme_storage_string(path, theme_root)
+            .map(|path| portable_custom_theme_path_from_stored_raw(&path, theme_root))
+            .unwrap_or_else(|| path.to_path_buf());
+    }
+
+    path.to_str()
+        .map(|path| portable_custom_theme_path_from_stored_raw(path, theme_root))
+        .unwrap_or_else(|| path.to_path_buf())
+}
+
 #[test]
 fn custom_theme_path_under_theme_root_storage_helper_returns_relative_path() {
     let root = PathBuf::from("/home/user/.local/share/warp-terminal/themes");
