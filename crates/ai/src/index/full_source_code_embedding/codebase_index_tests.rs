@@ -143,6 +143,47 @@ fn synced_index_with_queued_file_changes_reports_pending_status() {
         },
     );
 }
+
+#[test]
+fn synced_index_without_pending_file_changes_stays_ready_after_flush() {
+    VirtualFS::test(
+        "synced_index_without_pending_file_changes_stays_ready_after_flush",
+        |dirs, mut sandbox| {
+            App::test((), |mut app| async move {
+                app.add_singleton_model(DirectoryWatcher::new);
+
+                let repo_name = "warp-virtual";
+                sandbox.mkdir(repo_name);
+                sandbox.with_files(vec![Stub::FileWithContent(
+                    format!("{repo_name}/existing_file").as_str(),
+                    "existing content",
+                )]);
+
+                let repo_path = dunce::canonicalize(dirs.tests().join(repo_name)).unwrap();
+                let build_file_tree_result =
+                    block_on(CodebaseIndex::build_file_tree(repo_path, None)).unwrap();
+                let (tree, _) =
+                    block_on(MerkleTree::try_new(build_file_tree_result.file_tree)).unwrap();
+
+                let mut test_index = CodebaseIndex::new_for_test(Default::default(), &mut app);
+                test_index.tree_sync_state = TreeSourceSyncState::Synced {
+                    tree,
+                    server_sync_result: ServerSyncResult::Success,
+                };
+                let index = app.add_model(|_| test_index);
+
+                index.update(&mut app, |index, ctx| {
+                    index.flush_pending_file_changes(ctx);
+
+                    let status = index.codebase_index_status();
+                    assert!(!status.has_pending());
+                    assert!(status.has_synced_version());
+                    assert_eq!(status.last_sync_successful(), Some(true));
+                });
+            });
+        },
+    );
+}
 #[test]
 fn test_empty_fragments() {
     App::test((), |mut app| async move {

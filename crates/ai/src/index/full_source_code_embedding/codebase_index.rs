@@ -503,6 +503,13 @@ impl CodebaseIndex {
         store_client: Arc<dyn StoreClient>,
         ctx: &mut ModelContext<Self>,
     ) {
+        if self
+            .pending_file_changes
+            .as_ref()
+            .is_none_or(|changed_files| changed_files.is_empty())
+        {
+            return;
+        }
         let last_server_synced_root_node = self.last_server_synced_root_node();
         let old_state = self.update_tree_sync_state(
             TreeSourceSyncState::Syncing {

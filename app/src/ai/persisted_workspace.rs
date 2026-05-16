@@ -11,6 +11,9 @@ use repo_metadata::repositories::{DetectedRepositories, DetectedRepositoriesEven
 use serde::{Deserialize, Serialize};
 
 use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
+use crate::ai::codebase_auto_indexing::{
+    auto_index_candidate_roots, should_auto_index_codebase, CodebaseAutoIndexingSurface,
+};
 use crate::ai::AIRequestUsageModel;
 use crate::persistence::ModelEvent;
 use crate::report_if_error;
@@ -651,19 +654,12 @@ impl PersistedWorkspace {
         );
 
         #[cfg(feature = "local_fs")]
-        for dir in all_working_directories(ctx) {
-            // Auto-index working directory ONLY if the user has "Read files" set to "Always allow" OR this directory is in the allowlist.
-            let auto_indexing_enabled = *CodeSettings::as_ref(ctx).auto_indexing_enabled;
-
-            if auto_indexing_enabled {
-                if let Some(root) = DetectedRepositories::as_ref(ctx)
-                    .get_root_for_path(&warp_util::local_or_remote_path::LocalOrRemotePath::Local(
-                        dir.clone(),
-                    ))
-                    .and_then(|r| r.to_local_path().map(std::path::Path::to_path_buf))
-                {
-                    manager.index_directory(root, ctx);
-                }
+        if should_auto_index_codebase(CodebaseAutoIndexingSurface::Local, ctx) {
+            let roots = all_working_directories(ctx)
+                .into_iter()
+                .filter_map(|dir| DetectedRepositories::as_ref(ctx).get_root_for_path(&dir));
+            for root in auto_index_candidate_roots(roots, |_| true) {
+                manager.index_directory(root, ctx);
             }
         }
     }

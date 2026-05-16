@@ -1285,7 +1285,7 @@ pub(crate) fn initialize_app(
 
     if matches!(launch_mode, LaunchMode::RemoteServerDaemon { .. }) {
         let codebase_index_count = persisted_workspaces.len();
-        log::debug!(
+        log::info!(
             "[Remote codebase indexing] Restored daemon codebase index metadata: metadata_count={codebase_index_count}"
         );
         cloud_objects = Default::default();
