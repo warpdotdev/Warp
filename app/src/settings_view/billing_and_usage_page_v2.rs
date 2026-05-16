@@ -68,10 +68,7 @@ use super::{
         usage_history_model::UsageHistoryModel,
     },
     billing_and_usage_page::{BillingAndUsagePageAction, BillingUsageTab},
-    settings_page::{
-        render_customer_type_badge, render_info_icon, render_sub_header, AdditionalInfo, MatchData,
-        SettingsPageMeta, SettingsPageViewHandle, PAGE_PADDING,
-    },
+    settings_page::{render_customer_type_badge, render_info_icon, AdditionalInfo},
     SettingsSection,
 };
 
@@ -94,13 +91,13 @@ const CARD_BORDER_COLOR: ColorU = ColorU {
     b: 43,
     a: 255,
 };
-const BASE_CREDITS_DOT_COLOR: ColorU = ColorU {
+pub(super) const BASE_CREDITS_DOT_COLOR: ColorU = ColorU {
     r: 207,
     g: 145,
     b: 216,
     a: 255,
 };
-const BONUS_CREDITS_DOT_COLOR: ColorU = ColorU {
+pub(super) const BONUS_CREDITS_DOT_COLOR: ColorU = ColorU {
     r: 236,
     g: 148,
     b: 85,
@@ -1578,22 +1575,12 @@ impl BillingAndUsagePageV2View {
     }
 }
 
-impl SettingsPageMeta for BillingAndUsagePageV2View {
-    fn section() -> SettingsSection {
-        SettingsSection::BillingAndUsage
-    }
-
-    fn should_render(&self, ctx: &AppContext) -> bool {
-        let is_logged_in = !AuthStateProvider::as_ref(ctx)
-            .get()
-            .is_anonymous_or_logged_out();
-        let is_build = UserWorkspaces::as_ref(ctx)
-            .current_workspace()
-            .is_some_and(|workspace| workspace.billing_metadata.is_on_build_plan());
-        is_logged_in && is_build
-    }
-
-    fn on_page_selected(&mut self, _allow_steal_focus: bool, ctx: &mut ViewContext<Self>) {
+impl BillingAndUsagePageV2View {
+    pub(super) fn on_page_selected(
+        &mut self,
+        _allow_steal_focus: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
         self.addon_credits.purchase_loading = false;
         std::mem::drop(
             TeamUpdateManager::handle(ctx)
@@ -1606,13 +1593,6 @@ impl SettingsPageMeta for BillingAndUsagePageV2View {
         self.refresh_addon_credits_settings(ctx);
     }
 
-    fn update_filter(&mut self, _query: &str, _ctx: &mut ViewContext<Self>) -> MatchData {
-        MatchData::Uncounted(false)
-    }
-
-    fn scroll_to_widget(&mut self, _widget_id: &'static str) {}
-
-    fn clear_highlighted_widget(&mut self) {}
 }
 
 impl Entity for BillingAndUsagePageV2View {
@@ -1627,7 +1607,6 @@ impl View for BillingAndUsagePageV2View {
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let mut page = Flex::column();
-        page.add_child(render_sub_header(appearance, "Billing and Usage", None));
         page.add_child(self.render_plan_section(appearance, app));
 
         let tabs = vec![
@@ -1658,17 +1637,7 @@ impl View for BillingAndUsagePageV2View {
             page.add_child(self.render_usage_history_tab(appearance, app));
         }
 
-        Container::new(
-            Align::new(
-                ConstrainedBox::new(page.finish())
-                    .with_max_width(800.)
-                    .finish(),
-            )
-            .top_center()
-            .finish(),
-        )
-        .with_uniform_padding(PAGE_PADDING)
-        .finish()
+        page.finish()
     }
 }
 
@@ -1964,8 +1933,3 @@ fn render_balance_card(
     .finish()
 }
 
-impl From<warpui::ViewHandle<BillingAndUsagePageV2View>> for SettingsPageViewHandle {
-    fn from(view_handle: warpui::ViewHandle<BillingAndUsagePageV2View>) -> Self {
-        SettingsPageViewHandle::BillingAndUsageV2(view_handle)
-    }
-}
