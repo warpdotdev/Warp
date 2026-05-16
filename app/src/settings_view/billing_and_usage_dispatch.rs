@@ -84,7 +84,8 @@ impl SettingsPageMeta for BillingAndUsageDispatchView {
     fn should_render(&self, ctx: &AppContext) -> bool {
         !AuthStateProvider::as_ref(ctx)
             .get()
-            .is_anonymous_or_logged_out()
+            .is_user_anonymous()
+            .unwrap_or_default()
     }
 
     fn on_page_selected(&mut self, allow_steal_focus: bool, ctx: &mut ViewContext<Self>) {

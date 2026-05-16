@@ -1105,10 +1105,7 @@ impl SettingsView {
             me.handle_environments_page_event(event, ctx);
         });
 
-        // The dispatcher picks v1 vs v2 internally at render time based on
-        // the `BillingAndUsagePageV2` feature flag and the workspace's plan.
-        // SettingsView only sees the dispatcher; the inner pages are an
-        // implementation detail of `BillingAndUsageDispatchView`.
+        // Billing & Usage page (internally, this routes to the v1 or v2 version. Depending on FFs and current plan).
         let billing_and_usage_handle = ctx.add_view(BillingAndUsageDispatchView::new);
         ctx.subscribe_to_view(&billing_and_usage_handle, |me, _, event, ctx| {
             me.handle_billing_and_usage_page_event(event, ctx);
