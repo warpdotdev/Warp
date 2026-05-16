@@ -187,6 +187,7 @@ fn prepare_codex_environment_config_honors_codex_home() {
         Some("system prompt"),
         &resolved,
         &HashMap::new(),
+        &HashMap::new(),
         Some("gpt-5.5"),
     );
 
@@ -209,7 +210,7 @@ fn prepare_codex_environment_config_honors_codex_home() {
     assert_eq!(auth["OPENAI_API_KEY"], "sk-from-secret");
     let cfg = read_codex_config(&codex_home.join(CODEX_CONFIG_TOML_FILE_NAME));
     assert_eq!(cfg["model"].as_str(), Some("gpt-5.5"));
-    assert_eq!(cfg["openai_base_url"].as_str(), Some(CODEX_OPENAI_BASE_URL));
+    assert!(!cfg.contains_key("openai_base_url"));
     assert!(!tmp.path().join(CODEX_CONFIG_DIR).exists());
 }
 
