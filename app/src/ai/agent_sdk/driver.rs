@@ -446,6 +446,12 @@ pub enum AgentDriverError {
     SecretsFetchFailed(#[source] anyhow::Error),
     #[error("Failed to load conversation: {0}")]
     ConversationLoadFailed(String),
+    #[error(
+        "Conversation {conversation_id} is too large to restart from cloud storage. \
+         Start a new conversation and include the important context from the previous run; \
+         the original conversation is still saved in history."
+    )]
+    ConversationTooLargeToResume { conversation_id: String },
     #[error("Failed to initialize AWS Bedrock credentials: {0}")]
     AwsBedrockCredentialsFailed(String),
     #[error(

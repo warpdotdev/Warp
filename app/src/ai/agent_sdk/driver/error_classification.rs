@@ -248,6 +248,17 @@ pub fn classify_driver_error(error: &AgentDriverError) -> (AgentTaskState, TaskS
                 PlatformErrorCode::InternalError,
             ),
         ),
+        AgentDriverError::ConversationTooLargeToResume { conversation_id } => (
+            AgentTaskState::Failed,
+            TaskStatusUpdate::with_error_code(
+                format!(
+                    "Conversation {conversation_id} is too large to restart from cloud storage. \
+                     Start a new conversation and include the important context from the previous run; \
+                     the original conversation is still saved in history."
+                ),
+                PlatformErrorCode::InvalidRequest,
+            ),
+        ),
         AgentDriverError::ConversationHarnessMismatch { conversation_id, expected, got } => (
             AgentTaskState::Failed,
             TaskStatusUpdate::with_error_code(

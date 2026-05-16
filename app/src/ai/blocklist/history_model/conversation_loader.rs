@@ -20,9 +20,11 @@ use crate::ai::agent::conversation::{
 };
 use crate::ai::agent::task::Task;
 use crate::persistence::model::{AgentConversation, AgentConversationData};
+use crate::server::graphql::GraphQLError;
 use crate::server::server_api::ai::AIClient;
 use crate::server::server_api::ServerApiProvider;
 use crate::terminal::model::block::SerializedBlock;
+use reqwest::StatusCode;
 
 #[cfg(feature = "local_fs")]
 use crate::persistence::agent::read_agent_conversation_by_id;
@@ -47,6 +49,63 @@ pub enum CloudConversationData {
     Oz(Box<AIConversation>),
     /// A conversation produced by an external CLI agent harness.
     CLIAgent(Box<CLIAgentConversation>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CloudConversationLoadError {
+    ConversationTooLarge {
+        conversation_id: AIConversationId,
+    },
+    MissingMetadata {
+        conversation_id: AIConversationId,
+    },
+    MissingServerToken {
+        conversation_id: AIConversationId,
+    },
+    UnsupportedHarness {
+        conversation_id: AIConversationId,
+    },
+    ConversionFailed {
+        conversation_id: AIConversationId,
+    },
+    FetchFailed {
+        conversation_id: AIConversationId,
+        message: String,
+    },
+}
+
+impl CloudConversationLoadError {
+    pub fn user_message(&self) -> String {
+        match self {
+            Self::ConversationTooLarge { .. } => {
+                "This cloud conversation is too large to reopen. Start a new conversation and include the important context from the previous run; the original conversation is still saved in history.".to_string()
+            }
+            Self::MissingMetadata { .. }
+            | Self::MissingServerToken { .. }
+            | Self::UnsupportedHarness { .. }
+            | Self::ConversionFailed { .. }
+            | Self::FetchFailed { .. } => "Failed to load conversation.".to_string(),
+        }
+    }
+}
+
+type CloudConversationLoadResult = Result<CloudConversationData, CloudConversationLoadError>;
+
+fn is_oversized_conversation_error(error: &anyhow::Error) -> bool {
+    if let Some(GraphQLError::HttpError { status, body }) = error.downcast_ref::<GraphQLError>() {
+        return *status == StatusCode::FORBIDDEN
+            && (body.is_empty()
+                || body.to_ascii_lowercase().contains("too large")
+                || body.to_ascii_lowercase().contains("conversation size")
+                || body.to_ascii_lowercase().contains("50mb"));
+    }
+
+    let message = format!("{error:#}").to_ascii_lowercase();
+    message.contains("403")
+        && (message.contains("too large")
+            || message.contains("conversation size")
+            || message.contains("50mb")
+            || message.contains("forbidden"))
 }
 
 /// Converts an `AgentConversation` from the database to an `AIConversation`.
@@ -99,9 +158,12 @@ pub async fn load_conversation_from_server(
     conversation_id: AIConversationId,
     server_conversation_token: ServerConversationToken,
     server_api: Arc<dyn AIClient>,
-) -> Option<CloudConversationData> {
+) -> CloudConversationLoadResult {
     if !FeatureFlag::CloudConversations.is_enabled() {
-        return None;
+        return Err(CloudConversationLoadError::FetchFailed {
+            conversation_id,
+            message: "Cloud conversations are disabled".to_string(),
+        });
     }
 
     log::info!(
@@ -125,20 +187,22 @@ pub async fn load_conversation_from_server(
                     ) {
                         Some(conversation) => {
                             log::info!("Loaded Oz conversation {conversation_id} from server");
-                            Some(CloudConversationData::Oz(Box::new(conversation)))
+                            Ok(CloudConversationData::Oz(Box::new(conversation)))
                         }
                         None => {
                             log::warn!(
                                 "Failed to convert Oz server conversation data for {conversation_id}"
                             );
-                            None
+                            Err(CloudConversationLoadError::ConversionFailed { conversation_id })
                         }
                     }
                 }
                 AIAgentHarness::ClaudeCode | AIAgentHarness::Gemini | AIAgentHarness::Codex => {
                     if !FeatureFlag::AgentHarness.is_enabled() {
                         log::warn!("Ignoring non-Oz conversation {conversation_id}: AgentHarness flag is disabled");
-                        return None;
+                        return Err(CloudConversationLoadError::UnsupportedHarness {
+                            conversation_id,
+                        });
                     }
                     // Fetch snapshot data for third-party harness conversations.
                     match server_api
@@ -147,7 +211,7 @@ pub async fn load_conversation_from_server(
                     {
                         Ok(block) => {
                             log::info!("Loaded CLI agent block snapshot for {conversation_id}");
-                            Some(CloudConversationData::CLIAgent(Box::new(
+                            Ok(CloudConversationData::CLIAgent(Box::new(
                                 CLIAgentConversation {
                                     metadata: server_metadata,
                                     block,
@@ -158,7 +222,10 @@ pub async fn load_conversation_from_server(
                             log::warn!(
                                 "Failed to fetch block snapshot for {conversation_id}: {e:#}"
                             );
-                            None
+                            Err(CloudConversationLoadError::FetchFailed {
+                                conversation_id,
+                                message: format!("{e:#}"),
+                            })
                         }
                     }
                 }
@@ -166,22 +233,29 @@ pub async fn load_conversation_from_server(
                     log::warn!(
                         "Ignoring conversation {conversation_id}: server reported an unknown harness; this client may be out of date"
                     );
-                    None
+                    Err(CloudConversationLoadError::UnsupportedHarness { conversation_id })
                 }
             }
         }
         Err(e) => {
             log::warn!("Failed to load conversation {conversation_id} from server: {e:#}");
-            None
+            if is_oversized_conversation_error(&e) {
+                Err(CloudConversationLoadError::ConversationTooLarge { conversation_id })
+            } else {
+                Err(CloudConversationLoadError::FetchFailed {
+                    conversation_id,
+                    message: format!("{e:#}"),
+                })
+            }
         }
     }
 }
 
 /// Boxes a future with the right type for the platform.
 /// On WASM, futures must not implement Send.
-fn box_future<F>(f: F) -> warpui::r#async::BoxFuture<'static, Option<CloudConversationData>>
+fn box_future<F>(f: F) -> warpui::r#async::BoxFuture<'static, CloudConversationLoadResult>
 where
-    F: Future<Output = Option<CloudConversationData>> + warpui::r#async::Spawnable,
+    F: Future<Output = CloudConversationLoadResult> + warpui::r#async::Spawnable,
 {
     cfg_if::cfg_if! {
         if #[cfg(target_family = "wasm")] {
@@ -223,10 +297,10 @@ impl BlocklistAIHistoryModel {
         &self,
         conversation_id: AIConversationId,
         ctx: &AppContext,
-    ) -> warpui::r#async::BoxFuture<'static, Option<CloudConversationData>> {
+    ) -> warpui::r#async::BoxFuture<'static, CloudConversationLoadResult> {
         // First check if the conversation is already in memory
         if let Some(conversation) = self.conversations_by_id.get(&conversation_id) {
-            return box_future(futures::future::ready(Some(CloudConversationData::Oz(
+            return box_future(futures::future::ready(Ok(CloudConversationData::Oz(
                 Box::new(conversation.clone()),
             ))));
         }
@@ -238,14 +312,20 @@ impl BlocklistAIHistoryModel {
             .cloned()
         else {
             log::warn!("No metadata found for conversation {conversation_id}");
-            return box_future(futures::future::ready(None));
+            return box_future(futures::future::ready(Err(
+                CloudConversationLoadError::MissingMetadata { conversation_id },
+            )));
         };
 
         if metadata.has_local_data {
             // Load from local database synchronously
             let result = self
                 .load_conversation_from_db(&conversation_id)
-                .map(|c| CloudConversationData::Oz(Box::new(c)));
+                .map(|c| CloudConversationData::Oz(Box::new(c)))
+                .ok_or(CloudConversationLoadError::FetchFailed {
+                    conversation_id,
+                    message: "Failed to load conversation from local database".to_string(),
+                });
             box_future(futures::future::ready(result))
         } else {
             // Load from server asynchronously
@@ -261,7 +341,9 @@ impl BlocklistAIHistoryModel {
                 log::warn!(
                     "Cannot load conversation {conversation_id}: no local data and no server token"
                 );
-                box_future(futures::future::ready(None))
+                box_future(futures::future::ready(Err(
+                    CloudConversationLoadError::MissingServerToken { conversation_id },
+                )))
             }
         }
     }
@@ -279,7 +361,7 @@ impl BlocklistAIHistoryModel {
         &mut self,
         server_token: &ServerConversationToken,
         ctx: &AppContext,
-    ) -> warpui::r#async::BoxFuture<'static, Option<CloudConversationData>> {
+    ) -> warpui::r#async::BoxFuture<'static, CloudConversationLoadResult> {
         let conversation_id =
             self.get_or_set_canonical_conversation_id_for_server_token(server_token);
         if self.conversations_by_id.contains_key(&conversation_id)

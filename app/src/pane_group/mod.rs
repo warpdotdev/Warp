@@ -3734,21 +3734,22 @@ impl PaneGroup {
         let future = history_model_handle.update(ctx, |history_model, ctx| {
             history_model.load_conversation_by_server_token(&server_conversation_token, ctx)
         });
-        ctx.spawn(future, move |group, conversation, ctx| {
-            if let Some(conversation) = conversation {
+        ctx.spawn(future, move |group, conversation, ctx| match conversation {
+            Ok(conversation) => {
                 group.load_data_into_transcript_viewer(
                     target_view,
                     conversation,
                     ambient_agent_task_id,
                     ctx,
                 );
-            } else if let Some(pane_id) =
-                group.find_pane_id_for_terminal_view(target_view.id(), ctx)
-            {
-                log::error!(
-                    "Failed to restore ambient agent pane, replacing with new cloud conversation"
-                );
-                group.replace_pane_with_new_cloud_conversation(pane_id, ctx);
+            }
+            Err(err) => {
+                if let Some(pane_id) = group.find_pane_id_for_terminal_view(target_view.id(), ctx) {
+                    log::error!(
+                        "Failed to restore ambient agent pane ({err:?}), replacing with new cloud conversation"
+                    );
+                    group.replace_pane_with_new_cloud_conversation(pane_id, ctx);
+                }
             }
         });
     }

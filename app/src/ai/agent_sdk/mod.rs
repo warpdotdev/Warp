@@ -20,10 +20,12 @@ use crate::ai::aws_credentials::refresh_aws_credentials;
 use crate::ai::llms::LLMId;
 use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
 use crate::cloud_object::model::persistence::CloudModel;
+use crate::server::graphql::GraphQLError;
 use crate::server::server_api::ai::AIClient;
 use crate::workflows::workflow::Workflow;
 use ai::api_keys::{ApiKeyManager, AwsCredentialsRefreshStrategy};
 use anyhow::Context;
+use reqwest::StatusCode;
 use warp_cli::{
     agent::{AgentCommand, AgentProfileCommand, OutputFormat},
     artifact::ArtifactCommand,
@@ -102,6 +104,23 @@ mod telemetry;
 #[cfg(test)]
 mod test_support;
 mod text_layout;
+
+fn is_oversized_cloud_conversation_error(error: &anyhow::Error) -> bool {
+    if let Some(GraphQLError::HttpError { status, body }) = error.downcast_ref::<GraphQLError>() {
+        return *status == StatusCode::FORBIDDEN
+            && (body.is_empty()
+                || body.to_ascii_lowercase().contains("too large")
+                || body.to_ascii_lowercase().contains("conversation size")
+                || body.to_ascii_lowercase().contains("50mb"));
+    }
+
+    let message = format!("{error:#}").to_ascii_lowercase();
+    message.contains("403")
+        && (message.contains("too large")
+            || message.contains("conversation size")
+            || message.contains("50mb")
+            || message.contains("forbidden"))
+}
 
 /// Prints a non-blocking warning to stderr when the CLI is invoked with a team-scoped API key.
 fn maybe_warn_team_api_key(ctx: &AppContext) {
@@ -1222,10 +1241,16 @@ impl AgentDriverRunner {
                     })
                     .await?;
                 let token = ServerConversationToken::new(conversation_id.clone());
-                let (conversation_data, metadata) = server_api
-                    .get_ai_conversation(token)
-                    .await
-                    .map_err(|err| AgentDriverError::ConversationLoadFailed(format!("{err}")))?;
+                let (conversation_data, metadata) =
+                    server_api.get_ai_conversation(token).await.map_err(|err| {
+                        if is_oversized_cloud_conversation_error(&err) {
+                            AgentDriverError::ConversationTooLargeToResume {
+                                conversation_id: conversation_id.clone(),
+                            }
+                        } else {
+                            AgentDriverError::ConversationLoadFailed(format!("{err}"))
+                        }
+                    })?;
                 let conversation = convert_conversation_data_to_ai_conversation(
                     AIConversationId::default(),
                     &conversation_data,
