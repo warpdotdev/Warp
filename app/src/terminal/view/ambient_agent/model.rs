@@ -877,6 +877,10 @@ impl AmbientAgentViewModel {
         self.last_ended_execution_session_id = Some(session_id);
     }
 
+    /// Attach a new execution session to an existing ambient agent pane (e.g. when the
+    /// owner reopens a cloud conversation whose orchestrator has spun up a follow-up
+    /// session). The emitted `ExecutionSessionReady` event drives the view-side
+    /// `TerminalManager::attach_execution_session` swap to the new shared session.
     pub fn attach_execution_session(
         &mut self,
         session_id: SessionId,

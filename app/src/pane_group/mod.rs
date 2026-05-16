@@ -1849,7 +1849,8 @@ impl PaneGroup {
                             ctx,
                         ) {
                             Some(WorkspaceAction::OpenOrAttachAmbientAgentConversation {
-                                session_id, ..
+                                session_id,
+                                ..
                             }) => AmbientRestoreKind::SharedSession { session_id },
                             // Transcript viewer and other non-session actions depend on conversation metadata from
                             // BlocklistAIHistoryModel, which is loaded asynchronously.
@@ -7115,8 +7116,10 @@ impl PaneGroup {
             return false;
         };
 
-        if let Some(ambient_agent_view_model) =
-            terminal_view.as_ref(ctx).ambient_agent_view_model().cloned()
+        if let Some(ambient_agent_view_model) = terminal_view
+            .as_ref(ctx)
+            .ambient_agent_view_model()
+            .cloned()
         {
             ambient_agent_view_model.update(ctx, |model, ctx| {
                 model.attach_execution_session(session_id, ctx);
@@ -7124,9 +7127,9 @@ impl PaneGroup {
             return true;
         }
 
-        let Some(terminal_manager) =
-            self.terminal_session_by_id(pane_id)
-                .map(|session| session.terminal_manager(ctx))
+        let Some(terminal_manager) = self
+            .terminal_session_by_id(pane_id)
+            .map(|session| session.terminal_manager(ctx))
         else {
             log::warn!("Tried to attach execution session to pane without terminal manager");
             return false;

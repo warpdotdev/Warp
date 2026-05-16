@@ -2,8 +2,8 @@
 
 use anyhow::anyhow;
 use chrono::{DateTime, Utc};
-use session_sharing_protocol::common::SessionId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use session_sharing_protocol::common::SessionId;
 use url::Url;
 use warp_cli::agent::Harness;
 use warp_core::report_error;
@@ -92,15 +92,13 @@ impl HarnessConfig {
 }
 
 fn parse_session_id_from_link(session_link: &str) -> Option<SessionId> {
-    Url::parse(session_link)
-        .ok()
-        .and_then(|url| {
-            url.path_segments()
-                .into_iter()
-                .flatten()
-                .last()
-                .and_then(|segment| segment.parse().ok())
-        })
+    Url::parse(session_link).ok().and_then(|url| {
+        url.path_segments()
+            .into_iter()
+            .flatten()
+            .last()
+            .and_then(|segment| segment.parse().ok())
+    })
 }
 
 fn parse_execution_session_id(execution: RunExecution<'_>) -> Option<SessionId> {

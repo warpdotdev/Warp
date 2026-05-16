@@ -22289,7 +22289,8 @@ impl TypedActionView for Workspace {
                     self.find_pane_with_ambient_agent_conversation(*task_id, ctx)
                 {
                     self.focus_pane(locator, ctx);
-                    if let Some(pane_group) = self.get_pane_group_view_with_id(locator.pane_group_id)
+                    if let Some(pane_group) =
+                        self.get_pane_group_view_with_id(locator.pane_group_id)
                     {
                         pane_group.update(ctx, |pane_group, ctx| {
                             pane_group.attach_execution_session_to_ambient_pane(

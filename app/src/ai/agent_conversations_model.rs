@@ -1179,9 +1179,11 @@ impl AgentConversationsModel {
                 Some(AmbientAgentLiveSessionState::ActiveUnattachable) => {
                     return active_views_model
                         .get_terminal_view_id_for_ambient_task(task_id)
-                        .map(|terminal_view_id| WorkspaceAction::FocusTerminalViewInWorkspace {
-                            terminal_view_id,
-                        });
+                        .map(
+                            |terminal_view_id| WorkspaceAction::FocusTerminalViewInWorkspace {
+                                terminal_view_id,
+                            },
+                        );
                 }
                 Some(AmbientAgentLiveSessionState::Inactive) | None => {}
             }
