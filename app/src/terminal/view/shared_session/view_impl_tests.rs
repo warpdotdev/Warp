@@ -1408,7 +1408,7 @@ fn test_non_owned_tombstone_is_removed_for_followup_and_reinserted_after_complet
             );
 
             view.handle_ambient_agent_event(
-                &crate::terminal::view::ambient_agent::AmbientAgentViewModelEvent::FollowupSessionReady {
+                &crate::terminal::view::ambient_agent::AmbientAgentViewModelEvent::ExecutionSessionReady {
                     session_id: SessionId::new(),
                 },
                 ctx,

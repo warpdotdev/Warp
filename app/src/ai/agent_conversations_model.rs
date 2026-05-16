@@ -10,7 +10,9 @@ use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::ambient_agents::{AgentSource, AmbientAgentTask, AmbientAgentTaskState};
+use crate::ai::ambient_agents::{
+    AgentSource, AmbientAgentLiveSessionState, AmbientAgentTask, AmbientAgentTaskState,
+};
 use crate::ai::artifacts::Artifact;
 use crate::ai::blocklist::{
     BlocklistAIHistoryEvent, BlocklistAIHistoryModel, ConversationStatusUpdate,
@@ -1163,6 +1165,27 @@ impl AgentConversationsModel {
         let active_views_model = ActiveAgentViewsModel::as_ref(app);
 
         if let Some(task_id) = entry.identity.ambient_agent_task_id {
+            match self
+                .tasks
+                .get(&task_id)
+                .map(AmbientAgentTask::active_live_session_state)
+            {
+                Some(AmbientAgentLiveSessionState::Attachable { session_id }) => {
+                    return Some(WorkspaceAction::OpenOrAttachAmbientAgentConversation {
+                        session_id,
+                        task_id,
+                    });
+                }
+                Some(AmbientAgentLiveSessionState::ActiveUnattachable) => {
+                    return active_views_model
+                        .get_terminal_view_id_for_ambient_task(task_id)
+                        .map(|terminal_view_id| WorkspaceAction::FocusTerminalViewInWorkspace {
+                            terminal_view_id,
+                        });
+                }
+                Some(AmbientAgentLiveSessionState::Inactive) | None => {}
+            }
+
             if let Some(terminal_view_id) =
                 active_views_model.get_terminal_view_id_for_ambient_task(task_id)
             {
@@ -1193,20 +1216,6 @@ impl AgentConversationsModel {
                         terminal_view_id,
                     });
                 }
-            }
-        }
-
-        if let Some(task_id) = entry.identity.ambient_agent_task_id {
-            if let Some(session_id) = self
-                .tasks
-                .get(&task_id)
-                .and_then(AmbientAgentTask::active_execution_session_id)
-                .and_then(entry::parse_session_id)
-            {
-                return Some(WorkspaceAction::OpenAmbientAgentSession {
-                    session_id,
-                    task_id,
-                });
             }
         }
 

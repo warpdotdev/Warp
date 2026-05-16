@@ -109,8 +109,8 @@ pub fn create_cloud_mode_view(
                         manager.start_cloud_mode_setup_command_tracking();
                     }
                 }
-                AmbientAgentViewModelEvent::FollowupSessionReady { session_id } => {
-                    manager.attach_followup_session(*session_id, ctx);
+                AmbientAgentViewModelEvent::ExecutionSessionReady { session_id } => {
+                    manager.attach_execution_session(*session_id, ctx);
                 }
                 AmbientAgentViewModelEvent::EnteredSetupState
                 | AmbientAgentViewModelEvent::EnteredComposingState

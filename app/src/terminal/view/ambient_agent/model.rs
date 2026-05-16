@@ -870,22 +870,24 @@ impl AmbientAgentViewModel {
         );
     }
 
-    /// Attach the view model to the shared session created for a follow-up prompt and notify the
-    /// terminal manager to append that session's scrollback to the existing transcript.
-    pub fn attach_followup_session(&mut self, session_id: SessionId, ctx: &mut ModelContext<Self>) {
-        self.stop_progress_timer();
-        self.pending_followup_prompt = None;
-        self.active_execution_session_id = Some(session_id);
-        self.last_ended_execution_session_id = None;
-        self.status = Status::AgentRunning;
-        ctx.emit(AmbientAgentViewModelEvent::FollowupSessionReady { session_id });
-    }
-
     pub fn record_ambient_execution_ended(&mut self, session_id: SessionId) {
         if self.active_execution_session_id.as_ref() == Some(&session_id) {
             self.active_execution_session_id = None;
         }
         self.last_ended_execution_session_id = Some(session_id);
+    }
+
+    pub fn attach_execution_session(
+        &mut self,
+        session_id: SessionId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.stop_progress_timer();
+        self.active_execution_session_id = Some(session_id);
+        self.last_ended_execution_session_id = None;
+        self.pending_followup_prompt = None;
+        self.status = Status::AgentRunning;
+        ctx.emit(AmbientAgentViewModelEvent::ExecutionSessionReady { session_id });
     }
 
     pub fn submit_cloud_followup(&mut self, prompt: String, ctx: &mut ModelContext<Self>) {
@@ -1236,7 +1238,7 @@ impl AmbientAgentViewModel {
                             ..
                         }
                         | Status::AgentRunning => {
-                            AmbientAgentViewModelEvent::FollowupSessionReady {
+                            AmbientAgentViewModelEvent::ExecutionSessionReady {
                                 session_id: event_session_id,
                             }
                         }
@@ -1568,8 +1570,8 @@ pub enum AmbientAgentViewModelEvent {
     SessionReady {
         session_id: SessionId,
     },
-    /// A follow-up execution has started sharing a fresh session.
-    FollowupSessionReady {
+    /// An execution has started sharing a session for an already-canonical ambient pane.
+    ExecutionSessionReady {
         session_id: SessionId,
     },
     /// An environment was selected.

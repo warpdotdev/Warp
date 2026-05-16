@@ -1848,7 +1848,7 @@ impl PaneGroup {
                             None,
                             ctx,
                         ) {
-                            Some(WorkspaceAction::OpenAmbientAgentSession {
+                            Some(WorkspaceAction::OpenOrAttachAmbientAgentConversation {
                                 session_id, ..
                             }) => AmbientRestoreKind::SharedSession { session_id },
                             // Transcript viewer and other non-session actions depend on conversation metadata from
@@ -3677,7 +3677,7 @@ impl PaneGroup {
                 None,
                 ctx,
             ) {
-                Some(WorkspaceAction::OpenAmbientAgentSession {
+                Some(WorkspaceAction::OpenOrAttachAmbientAgentConversation {
                     session_id,
                     task_id: _,
                 }) => {
@@ -7102,6 +7102,47 @@ impl PaneGroup {
     ) -> Option<ViewHandle<TerminalView>> {
         self.terminal_session_by_id(pane_id)
             .map(|session| session.terminal_view(ctx))
+    }
+
+    pub fn attach_execution_session_to_ambient_pane(
+        &mut self,
+        pane_id: PaneId,
+        session_id: SessionId,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        let Some(terminal_view) = self.terminal_view_from_pane_id(pane_id, ctx) else {
+            log::warn!("Tried to attach execution session to non-terminal pane {pane_id:?}");
+            return false;
+        };
+
+        if let Some(ambient_agent_view_model) =
+            terminal_view.as_ref(ctx).ambient_agent_view_model().cloned()
+        {
+            ambient_agent_view_model.update(ctx, |model, ctx| {
+                model.attach_execution_session(session_id, ctx);
+            });
+            return true;
+        }
+
+        let Some(terminal_manager) =
+            self.terminal_session_by_id(pane_id)
+                .map(|session| session.terminal_manager(ctx))
+        else {
+            log::warn!("Tried to attach execution session to pane without terminal manager");
+            return false;
+        };
+
+        terminal_manager.update(ctx, |terminal_manager, ctx| {
+            let Some(manager) = terminal_manager
+                .as_any_mut()
+                .downcast_mut::<shared_session::viewer::TerminalManager>()
+            else {
+                log::warn!("Tried to attach execution session to non-viewer terminal manager");
+                return;
+            };
+            manager.attach_execution_session(session_id, ctx);
+        });
+        true
     }
 
     /// Resolve the pane id that owns a given conversation's `TerminalView`,

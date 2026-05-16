@@ -194,12 +194,13 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::SessionReady { .. }
-            | AmbientAgentViewModelEvent::FollowupSessionReady { .. } => {
+            | AmbientAgentViewModelEvent::ExecutionSessionReady { .. } => {
                 if matches!(
                     event,
-                    AmbientAgentViewModelEvent::FollowupSessionReady { .. }
+                    AmbientAgentViewModelEvent::ExecutionSessionReady { .. }
                 ) {
                     self.pending_cloud_followup_task_id = None;
+                    self.remove_conversation_ended_tombstone(ctx);
                 }
                 if FeatureFlag::HandoffCloudCloud.is_enabled() {
                     self.refresh_conversation_details_panel_if_open(ctx);
