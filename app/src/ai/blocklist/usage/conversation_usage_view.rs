@@ -2,6 +2,7 @@ use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::blocklist::agent_view::orchestration_pill_bar::{
     render_agent_avatar_disc, render_orchestrator_avatar_disc,
 };
+use crate::ai::blocklist::orchestration_topology::descendant_conversation_ids_in_spawn_order;
 use crate::ai::blocklist::usage::render_context_window_usage_icon;
 use crate::ai::blocklist::usage::rollup::{
     compute_orchestration_rollup, AgentAvatar, OrchestrationCreditRollup, PerAgentCreditEntry,
@@ -141,19 +142,49 @@ impl ConversationUsageView {
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let history_model = BlocklistAIHistoryModel::handle(ctx);
-        ctx.subscribe_to_model(&history_model, move |_, _, event, ctx| match event {
-            BlocklistAIHistoryEvent::ConversationUsageMetadataUpdated { .. }
-            | BlocklistAIHistoryEvent::RemoveConversation { .. }
-            | BlocklistAIHistoryEvent::DeletedConversation { .. }
-            | BlocklistAIHistoryEvent::StartedNewConversation { .. } => {
-                // Any of these can change the orchestration rollup: a
-                // descendant's credits changed, a descendant was pruned
-                // (invariant 9), or a new descendant was spawned
-                // (invariant 8). Trigger a re-render; the actual rollup
-                // is recomputed from the history model in `render`.
+        ctx.subscribe_to_model(&history_model, move |_, history, event, ctx| {
+            // Narrow to events that can actually change *this* orchestrator's
+            // rollup. Without this filter the closure wakes on every history
+            // event in the app (one terminal view's typing storm fans out to
+            // every other rollup subscriber), and `ctx.notify()` forces a
+            // full footer re-render on each wake — orders of magnitude more
+            // expensive than the subtree walk below.
+            //
+            // `StartedNewConversation` is intentionally omitted: a freshly
+            // spawned descendant always has zero credits, so the rollup
+            // result is unchanged until its first
+            // `ConversationUsageMetadataUpdated` event (which this filter
+            // will then pick up). Invariant 8 ("new descendant’s row appears
+            // when it first spends a credit") is satisfied by the
+            // credits-update path, not by the spawn event itself.
+            let touched_id = match event {
+                BlocklistAIHistoryEvent::ConversationUsageMetadataUpdated { conversation_id }
+                | BlocklistAIHistoryEvent::RemoveConversation {
+                    conversation_id, ..
+                }
+                | BlocklistAIHistoryEvent::DeletedConversation {
+                    conversation_id, ..
+                } => *conversation_id,
+                _ => return,
+            };
+            if touched_id == parent_conversation_id {
+                ctx.notify();
+                return;
+            }
+            // `RemoveConversation` / `DeletedConversation` fire *after* the
+            // conversation is dropped from `conversations_by_id`, but the
+            // `children_by_parent` index that this walker consults is not
+            // cleaned up on remove, so a just-pruned descendant is still
+            // listed here. That lets us correctly notify on prune (invariant
+            // 9) — the render-time rollup then skips the missing
+            // conversation via the loaded-descendants filter and the row
+            // disappears.
+            let history = history.as_ref(ctx);
+            if descendant_conversation_ids_in_spawn_order(history, parent_conversation_id)
+                .contains(&touched_id)
+            {
                 ctx.notify();
             }
-            _ => {}
         });
 
         Self {
