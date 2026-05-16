@@ -426,10 +426,9 @@ impl AIContextMenu {
                     categories.push(AIContextMenuCategory::CurrentFolderFiles);
                 }
             }
-            if FeatureFlag::AIContextMenuCode.is_enabled()
-                && *InputSettings::as_ref(app)
-                    .outline_codebase_symbols_for_at_context_menu
-                    .value()
+            if *InputSettings::as_ref(app)
+                .outline_codebase_symbols_for_at_context_menu
+                .value()
                 && is_active_dir_in_git_repo
                 && !is_shared_session_viewer
             {
@@ -468,10 +467,9 @@ impl AIContextMenu {
                 categories.push(AIContextMenuCategory::Commands);
             }
             categories.push(AIContextMenuCategory::Blocks);
-            if FeatureFlag::AIContextMenuCode.is_enabled()
-                && *InputSettings::as_ref(app)
-                    .outline_codebase_symbols_for_at_context_menu
-                    .value()
+            if *InputSettings::as_ref(app)
+                .outline_codebase_symbols_for_at_context_menu
+                .value()
                 && is_active_dir_in_git_repo
                 && !is_shared_session_viewer
             {
@@ -505,10 +503,9 @@ impl AIContextMenu {
             };
 
             // Also show Code category in terminal mode when enabled
-            if FeatureFlag::AIContextMenuCode.is_enabled()
-                && *InputSettings::as_ref(app)
-                    .outline_codebase_symbols_for_at_context_menu
-                    .value()
+            if *InputSettings::as_ref(app)
+                .outline_codebase_symbols_for_at_context_menu
+                .value()
                 && is_active_dir_in_git_repo
             {
                 categories.push(AIContextMenuCategory::Code);

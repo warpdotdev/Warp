@@ -329,9 +329,6 @@ pub enum FeatureFlag {
     /// Enables sending stderr warnings in FileGlobV2 results.
     FileGlobV2Warnings,
 
-    /// Enables code symbols in AI context menu
-    AIContextMenuCode,
-
     /// Enables Warp Drive objects (like workflows) as context in AI context menu
     DriveObjectsAsContext,
 
