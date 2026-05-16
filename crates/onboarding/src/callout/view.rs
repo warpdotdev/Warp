@@ -112,7 +112,7 @@ fn get_agent_modality_callout_options(
     };
 
     match state {
-        AgentModalityCalloutState::NaturalLanguageSupport => {
+        AgentModalityCalloutState::TerminalMode => {
             let is_final_step = intention == OnboardingIntention::Terminal;
             // Show different callout content based on initial NL detection state
             if initial_natural_language_detection_enabled {
@@ -154,7 +154,7 @@ fn get_agent_modality_callout_options(
                 })
             }
         }
-        AgentModalityCalloutState::IntroducingAgentExperience => {
+        AgentModalityCalloutState::AgentMode => {
             if has_project {
                 Some(CalloutOptions {
                     title: "You're in agent mode",
@@ -353,7 +353,7 @@ impl OnboardingCalloutView {
         !matches!(
             self.model.as_ref(app).state(),
             OnboardingCalloutState::AgentModality(
-                AgentModalityCalloutState::IntroducingAgentExperience
+                AgentModalityCalloutState::AgentMode
             )
         )
     }
