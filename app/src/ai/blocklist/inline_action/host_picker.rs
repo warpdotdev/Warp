@@ -243,7 +243,14 @@ impl HostPicker {
 
     /// Commits the editor contents. Empty input reverts to the previous slug.
     fn commit_custom(&mut self, ctx: &mut ViewContext<Self>) {
-        let raw = normalize_slug(&self.editor.as_ref(ctx).buffer_text(ctx));
+        // Trim manually here — we must distinguish empty input (revert) from
+        // a literal "warp" entry (commit). `normalize_slug` collapses both
+        // into `"warp"`, so it's not safe to use on the commit path.
+        let raw = self.editor.as_ref(ctx).buffer_text(ctx).trim().to_string();
+        if raw.is_empty() {
+            self.cancel_custom(ctx);
+            return;
+        }
         if raw.eq_ignore_ascii_case(ORCHESTRATION_WARP_WORKER_HOST) {
             // Treat "warp" typed in custom mode as a normal warp selection.
             self.current_slug = ORCHESTRATION_WARP_WORKER_HOST.to_string();
@@ -255,10 +262,6 @@ impl HostPicker {
             });
             ctx.emit(HostPickerEvent::Closed);
             ctx.notify();
-            return;
-        }
-        if raw.is_empty() {
-            self.cancel_custom(ctx);
             return;
         }
         self.current_slug = raw.clone();
