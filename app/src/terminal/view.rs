@@ -13950,7 +13950,7 @@ impl TerminalView {
             return;
         }
 
-        // The MeetTerminalInput step expects terminal mode. If the default
+        // The first Agent Modality callout expects terminal mode. If the default
         // session mode is Agent (e.g. from cloud-synced settings), the tab
         // may already be in agent view — exit it first.
         self.exit_agent_view(ctx);
@@ -25651,7 +25651,7 @@ impl TypedActionView for TerminalView {
                         self.add_agentic_suggestions_block(ctx);
                     }
                     OnboardingVersion::Agent(agent_version) => {
-                        // The MeetTerminalInput step expects terminal mode. If the
+                        // The first Agent Modality callout expects terminal mode. If the
                         // default session mode is Agent (e.g. cloud-synced settings),
                         // the tab may already be in agent view — exit it first.
                         // This also removes any zero-state welcome blocks.
@@ -26341,7 +26341,7 @@ impl View for TerminalView {
         let viewport = self.viewport_state(model.block_list(), input_mode, app);
         let is_alt_screen_active = { model.is_alt_screen_active() };
         // Compute callout positioning early while we have the model lock.
-        // For UpdatedAgentInput state, always position relative to the input box,
+        // For the final Agent Modality callout, always position relative to the input box,
         // even when the zero state is visible.
         let should_position_callout_above_zero_state = self
             .onboarding_callout_view

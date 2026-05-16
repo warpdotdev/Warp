@@ -44,6 +44,7 @@ Figma: none provided. This change uses the existing onboarding callout component
    - A secondary action lets the user skip initialization.
    - Choosing `Initialize` submits the initialization flow just as the current final onboarding callout does.
    - Choosing skip finishes the tutorial without submitting initialization.
+   - Pressing `ESC` while this callout is focused still exits the scoped agent experience and returns to terminal context.
 16. For users who did not select a project before the tutorial:
    - Callout 2 offers a primary `Finish` action.
    - Callout 2 offers a secondary `Back to terminal` action with the `ESC` keybinding.
@@ -57,7 +58,7 @@ Figma: none provided. This change uses the existing onboarding callout component
 19. Keyboard shortcuts continue to work while each callout is focused:
    - `Enter` advances or activates the primary action.
    - `Backspace`/delete activates the skip action only when a skip action is visible.
-   - `Escape` returns to terminal only when `Back to terminal` is visible.
+   - `Escape` returns to terminal while the final agent-experience callout is visible.
 20. Existing telemetry concepts remain meaningful:
    - A display event is recorded for each visible callout.
    - A next event is recorded when the user advances.

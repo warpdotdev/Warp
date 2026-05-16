@@ -64,14 +64,10 @@ pub(super) enum UniversalInputCalloutState {
 pub(super) enum AgentModalityCalloutState {
     #[default]
     Off,
-    /// Step 1: "Meet your terminal input" / "Meet your updated terminal input"
-    MeetTerminalInput,
-    /// Step 2: "Natural language support" with checkbox
+    /// Step 1: terminal input with natural language support.
     NaturalLanguageSupport,
-    /// Step 3: "Introducing Warp's new agent experience" (Agent intention only)
+    /// Step 2: "Introducing Warp's new agent experience" (Agent intention only).
     IntroducingAgentExperience,
-    /// Step 4: "Updated agent input" (Agent intention only)
-    UpdatedAgentInput,
     /// Terminal state
     Complete(FinalState),
 }
@@ -186,10 +182,7 @@ impl OnboardingCalloutModel {
         ctx: &mut ModelContext<Self>,
     ) {
         let (next_state, emit_enter_agent_modality) = match state {
-            AgentModalityCalloutState::Off => {
-                (Some(AgentModalityCalloutState::MeetTerminalInput), false)
-            }
-            AgentModalityCalloutState::MeetTerminalInput => (
+            AgentModalityCalloutState::Off => (
                 Some(AgentModalityCalloutState::NaturalLanguageSupport),
                 false,
             ),
@@ -211,9 +204,6 @@ impl OnboardingCalloutModel {
                 }
             }
             AgentModalityCalloutState::IntroducingAgentExperience => {
-                (Some(AgentModalityCalloutState::UpdatedAgentInput), false)
-            }
-            AgentModalityCalloutState::UpdatedAgentInput => {
                 // For Agent with project: Initialize
                 // For Agent without project: Finish
                 let final_state = if self.has_project {
@@ -246,7 +236,9 @@ impl OnboardingCalloutModel {
                     ctx,
                 );
             }
-            OnboardingCalloutState::AgentModality(AgentModalityCalloutState::UpdatedAgentInput) => {
+            OnboardingCalloutState::AgentModality(
+                AgentModalityCalloutState::IntroducingAgentExperience,
+            ) if self.has_project => {
                 // Skip initialization
                 self.set_state(
                     OnboardingCalloutState::AgentModality(AgentModalityCalloutState::Complete(
@@ -283,7 +275,9 @@ impl OnboardingCalloutModel {
                     ctx,
                 );
             }
-            OnboardingCalloutState::AgentModality(AgentModalityCalloutState::UpdatedAgentInput) => {
+            OnboardingCalloutState::AgentModality(
+                AgentModalityCalloutState::IntroducingAgentExperience,
+            ) if !self.has_project => {
                 // Agent without project finishes here
                 self.set_state(
                     OnboardingCalloutState::AgentModality(AgentModalityCalloutState::Complete(
@@ -296,10 +290,12 @@ impl OnboardingCalloutModel {
         }
     }
 
-    /// Handle "Back to terminal" action (ESC in UpdatedAgentInput without project)
+    /// Handle "Back to terminal" action (ESC in IntroducingAgentExperience).
     pub fn back_to_terminal(&mut self, ctx: &mut ModelContext<Self>) {
         match &self.state {
-            OnboardingCalloutState::AgentModality(AgentModalityCalloutState::UpdatedAgentInput) => {
+            OnboardingCalloutState::AgentModality(
+                AgentModalityCalloutState::IntroducingAgentExperience,
+            ) => {
                 self.set_state(
                     OnboardingCalloutState::AgentModality(AgentModalityCalloutState::Complete(
                         FinalState::BackToTerminal,
@@ -342,18 +338,12 @@ impl OnboardingCalloutModel {
             OnboardingCalloutState::UniversalInput(UniversalInputCalloutState::TalkToAgent) => {
                 Some("talk_to_agent")
             }
-            OnboardingCalloutState::AgentModality(AgentModalityCalloutState::MeetTerminalInput) => {
-                Some("meet_terminal_input")
-            }
             OnboardingCalloutState::AgentModality(
                 AgentModalityCalloutState::NaturalLanguageSupport,
             ) => Some("natural_language_support"),
             OnboardingCalloutState::AgentModality(
                 AgentModalityCalloutState::IntroducingAgentExperience,
             ) => Some("introducing_agent_experience"),
-            OnboardingCalloutState::AgentModality(AgentModalityCalloutState::UpdatedAgentInput) => {
-                Some("updated_agent_input")
-            }
             _ => None,
         };
         if let Some(callout) = callout_name {
@@ -435,16 +425,10 @@ impl OnboardingCalloutModel {
     fn prompt_for_agent_modality(&self, state: AgentModalityCalloutState) -> OnboardingQuery {
         match state {
             AgentModalityCalloutState::Off => OnboardingQuery::None,
-            AgentModalityCalloutState::MeetTerminalInput => {
+            AgentModalityCalloutState::NaturalLanguageSupport => {
                 OnboardingQuery::TerminalCommand("Run a command...".to_string())
             }
-            AgentModalityCalloutState::NaturalLanguageSupport => {
-                OnboardingQuery::AgentPrompt("help me terraform my Gcloud setup".to_string())
-            }
             AgentModalityCalloutState::IntroducingAgentExperience => {
-                OnboardingQuery::AgentPrompt("Tell the agent what to build...".to_string())
-            }
-            AgentModalityCalloutState::UpdatedAgentInput => {
                 if self.has_project {
                     OnboardingQuery::AgentPrompt("/init".to_string())
                 } else {
@@ -470,10 +454,10 @@ impl OnboardingCalloutModel {
                 );
             }
             OnboardingCalloutState::AgentModality(_) => {
-                log::info!("Transitioning to AgentModality::MeetTerminalInput");
+                log::info!("Transitioning to AgentModality::NaturalLanguageSupport");
                 self.set_state(
                     OnboardingCalloutState::AgentModality(
-                        AgentModalityCalloutState::MeetTerminalInput,
+                        AgentModalityCalloutState::NaturalLanguageSupport,
                     ),
                     ctx,
                 );

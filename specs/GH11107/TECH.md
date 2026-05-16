@@ -71,7 +71,7 @@ The current model handles these actions on `UpdatedAgentInput`.
 Move that behavior to `IntroducingAgentExperience`:
 - `skip()` should complete with `FinalState::Skip` when the state is `IntroducingAgentExperience` and `has_project` is true.
 - `finish()` should complete with `FinalState::Finish` when the state is `IntroducingAgentExperience` and `has_project` is false.
-- `back_to_terminal()` should complete with `FinalState::BackToTerminal` when the state is `IntroducingAgentExperience`.
+- `back_to_terminal()` should complete with `FinalState::BackToTerminal` when the state is `IntroducingAgentExperience`, regardless of whether the user selected a project. This keeps the `ESC` behavior aligned with the final callout copy.
 Keep logging for invalid actions, but update messages and match arms so valid new-state actions do not log errors.
 ### 6. Update prompt mapping
 Update `prompt_for_agent_modality`:
@@ -122,7 +122,7 @@ flowchart TD
     IntroducingAgentExperience -- Has project / Initialize --> CompleteInitialize[Complete: Initialize]
     IntroducingAgentExperience -- Has project / Skip initialization --> CompleteSkip[Complete: Skip]
     IntroducingAgentExperience -- No project / Finish --> CompleteFinish2[Complete: Finish]
-    IntroducingAgentExperience -- No project / Back to terminal --> CompleteBack[Complete: BackToTerminal]
+    IntroducingAgentExperience -- ESC / Back to terminal --> CompleteBack[Complete: BackToTerminal]
 ```
 ## Testing and validation
 ### Unit tests
@@ -146,6 +146,7 @@ Validate:
 - Clicking `Next` on the first callout enters agent view and shows the second callout.
 - Project flow primary action initializes with `/init`.
 - Project flow skip action completes without initialization.
+- Project flow `ESC` exits agent view and returns to terminal.
 - No-project flow `Finish` completes without submitting.
 - No-project flow `Back to terminal` exits agent view and clears input.
 - Natural language detection checkbox appears only when initially disabled and updates the setting immediately.

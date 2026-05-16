@@ -105,46 +105,23 @@ fn get_agent_modality_callout_options(
     keybindings: &OnboardingKeybindings,
 ) -> Option<CalloutOptions> {
     let total_steps = match intention {
-        OnboardingIntention::Terminal => 2,
-        OnboardingIntention::AgentDrivenDevelopment => 4,
+        OnboardingIntention::Terminal => 1,
+        OnboardingIntention::AgentDrivenDevelopment => 2,
     };
 
     match state {
-        AgentModalityCalloutState::MeetTerminalInput => {
-            let title: &'static str  = if has_project || intention == OnboardingIntention::Terminal {
-                "Meet your terminal input"
-            } else {
-                "Meet your updated terminal input"
-            };
-            Some(CalloutOptions {
-                title,
-                text: format!(
-                    "Run commands from the terminal, or use {} or {} to start or send to a local or cloud agent respectively.",
-                    keybindings.submit_to_local_agent,
-                    keybindings.submit_to_cloud_agent
-                ),
-                step: StepStatus::new(0, total_steps),
-                left_button: None,
-                right_button: ButtonOptions {
-                    text: "Next",
-                    action: OnboardingCalloutViewAction::NextClicked,
-                    keystroke: Some(Keystroke::parse("enter").unwrap_or_default()),
-                },
-                checkbox: None,
-            })
-        }
         AgentModalityCalloutState::NaturalLanguageSupport => {
             let is_final_step = intention == OnboardingIntention::Terminal;
             // Show different callout content based on initial NL detection state
             if initial_natural_language_detection_enabled {
                 // NL detection was already enabled - show simpler "overrides" callout without checkbox
                 Some(CalloutOptions {
-                    title: "Natural language overrides",
+                    title: "Terminal input with natural language support",
                     text: format!(
-                        "You can always override any auto-detection using {}.",
+                        "Run commands from the terminal, or type in plain English for the agent. You can always override any auto-detection using {}.",
                         keybindings.toggle_input_mode
                     ),
-                    step: StepStatus::new(1, total_steps),
+                    step: StepStatus::new(0, total_steps),
                     left_button: None,
                     right_button: ButtonOptions {
                         text: if is_final_step { "Finish" } else { "Next" },
@@ -156,12 +133,12 @@ fn get_agent_modality_callout_options(
             } else {
                 // NL detection was disabled - show full explanation with checkbox to enable
                 Some(CalloutOptions {
-                    title: "Natural language support",
+                    title: "Terminal input with natural language support",
                     text: format!(
-                        "Natural language input is off by default. If enabled, you can type requests in plain English and Warp will autodetect queries for the agent. You can always override them using {}.",
+                        "Run commands from the terminal. Natural language input is off by default. If enabled, you can type requests in plain English and Warp will autodetect queries for the agent. You can always override them using {}.",
                         keybindings.toggle_input_mode
                     ),
-                    step: StepStatus::new(1, total_steps),
+                    step: StepStatus::new(0, total_steps),
                     left_button: None,
                     right_button: ButtonOptions {
                         text: if is_final_step { "Finish" } else { "Next" },
@@ -175,24 +152,12 @@ fn get_agent_modality_callout_options(
                 })
             }
         }
-        AgentModalityCalloutState::IntroducingAgentExperience => Some(CalloutOptions {
-            title: "Introducing Warp's new agent experience",
-            text: "Agent conversations are now their own scoped view outside of your terminal. Simply hit ESC to return to the terminal at any point.".to_string(),
-            step: StepStatus::new(2, total_steps),
-            left_button: None,
-            right_button: ButtonOptions {
-                text: "Next",
-                action: OnboardingCalloutViewAction::NextClicked,
-                keystroke: Some(Keystroke::parse("enter").unwrap_or_default()),
-            },
-            checkbox: None,
-        }),
-        AgentModalityCalloutState::UpdatedAgentInput => {
+        AgentModalityCalloutState::IntroducingAgentExperience => {
             if has_project {
                 Some(CalloutOptions {
-                    title: "Updated agent input",
-                    text: "Your agent input will detect natural language as well as commands by default. Use ! to lock the input in bash mode to write commands.\n\nSubmit the query below to have the agent initialize this project, or ⊗ to clear the input and start your own!".to_string(),
-                    step: StepStatus::new(3, total_steps),
+                    title: "Welcome to Warp's agent experience",
+                    text: "Agent conversations are their own scoped view outside of your terminal. Simply hit ESC to return to the terminal at any point.\n\nSubmit the query below to have the agent initialize this project, or ⊗ to clear the input and start your own!".to_string(),
+                    step: StepStatus::new(1, total_steps),
                     left_button: Some(ButtonOptions {
                         text: "Skip initialization",
                         action: OnboardingCalloutViewAction::SkipClicked,
@@ -207,9 +172,9 @@ fn get_agent_modality_callout_options(
                 })
             } else {
                 Some(CalloutOptions {
-                    title: "Updated agent input",
-                    text: "Your agent input will detect natural language as well as commands by default. Use ! to lock the input in bash mode to write commands.".to_string(),
-                    step: StepStatus::new(3, total_steps),
+                    title: "Welcome to Warp's agent experience",
+                    text: "Agent conversations are their own scoped view outside of your terminal. Simply hit ESC to return to the terminal at any point.".to_string(),
+                    step: StepStatus::new(1, total_steps),
                     left_button: Some(ButtonOptions {
                         text: "Back to terminal",
                         action: OnboardingCalloutViewAction::BackToTerminalClicked,
@@ -378,11 +343,13 @@ impl OnboardingCalloutView {
     }
 
     /// Returns true if the callout should be positioned above the zero state.
-    /// For UpdatedAgentInput state, always position relative to the input box instead.
+    /// For the agent experience state, always position relative to the input box instead.
     pub fn should_position_above_zero_state(&self, app: &AppContext) -> bool {
         !matches!(
             self.model.as_ref(app).state(),
-            OnboardingCalloutState::AgentModality(AgentModalityCalloutState::UpdatedAgentInput)
+            OnboardingCalloutState::AgentModality(
+                AgentModalityCalloutState::IntroducingAgentExperience
+            )
         )
     }
 
