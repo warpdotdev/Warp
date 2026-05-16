@@ -520,15 +520,13 @@ impl TerminalView {
 
     /// Syncs agent view for a live shared-session viewer of a non-oz cloud run, so every
     /// viewer lands in the same agent-view chrome regardless of which entry point opened the
-    /// conversation. Called once the viewer has resolved the run's harness asynchronously, and
-    /// after later shared-session block starts.
+    /// conversation. Called from two independent signals that race:
+    /// - `ViewerHarnessUpdated`: ambient model resolved the harness from the task fetch
+    /// - `apply_cli_agent_state_update`: CLI session synced on viewer join/reconnect
     ///
     /// Transcript viewer entry is handled directly in `load_data_into_transcript_viewer` so
     /// the snapshot block exists before we retag — we intentionally do not trigger that path
     /// here.
-    ///
-    /// The viewer-context guard is load-bearing because this is also called from shared-session
-    /// block replay, before all server task state may be resolved.
     pub(crate) fn sync_agent_view_for_shared_third_party_viewer(
         &mut self,
         ctx: &mut ViewContext<Self>,

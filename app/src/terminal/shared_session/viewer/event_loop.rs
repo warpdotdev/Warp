@@ -248,13 +248,6 @@ impl EventLoop {
                             reconstructed_ai_metadata.clone(),
                         );
 
-                    // The harness command block now exists, so a third-party cloud viewer can enter agent view.
-                    if let Some(view) = self.terminal_view.upgrade(ctx) {
-                        view.update(ctx, |view, ctx| {
-                            view.sync_agent_view_for_shared_third_party_viewer(ctx);
-                        });
-                    }
-
                     // Notify the action model that the action is now executing on the sharer's side
                     // This allows the viewer's UI to show the command as running rather than queued
                     // (which is essential for long running commands to be expandable in the UI).
