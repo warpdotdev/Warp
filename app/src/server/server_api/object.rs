@@ -17,13 +17,13 @@ use crate::{
             json_model::JsonSerializer,
         },
         BulkCreateCloudObjectResult, BulkCreateGenericStringObjectsRequest,
-        CreateCloudObjectResult, CreateObjectRequest, CreatedCloudObject, FromGraphql,
-        GenericCloudObject, GenericServerObject, GenericStringObjectFormat,
-        GenericStringObjectUniqueKey, JsonObjectType, ObjectDeleteResult, ObjectIdType,
-        ObjectMetadataUpdateResult, ObjectPermissionUpdateResult, ObjectPermissionsUpdateData,
-        ObjectType, ObjectsToUpdate, Owner, Revision, RevisionAndLastEditor, ServerCloudObject,
-        ServerFolder, ServerMetadata, ServerNotebook, ServerObject, ServerPermissions,
-        ServerWorkflow, UpdateCloudObjectResult,
+        CreateCloudObjectResult, CreateObjectRequest, CreatedCloudObject, GenericCloudObject,
+        GenericServerObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
+        JsonObjectType, ObjectDeleteResult, ObjectIdType, ObjectMetadataUpdateResult,
+        ObjectPermissionUpdateResult, ObjectPermissionsUpdateData, ObjectType, ObjectsToUpdate,
+        Owner, Revision, RevisionAndLastEditor, ServerCloudObject, ServerFolder, ServerMetadata,
+        ServerNotebook, ServerObject, ServerPermissions, ServerWorkflow, TryFromGql,
+        UpdateCloudObjectResult,
     },
     drive::{folders::FolderId, sharing::SharingAccessLevel},
     env_vars::EnvVarCollection,
@@ -421,7 +421,7 @@ impl ObjectClient for ServerApi {
                 }
                 WorkflowUpdate::WorkflowUpdateRejected(rejected) => {
                     Ok(UpdateCloudObjectResult::Rejected {
-                        object: ServerWorkflow::from_graphql(rejected.conflicting_workflow)?,
+                        object: ServerWorkflow::try_from_gql(rejected.conflicting_workflow)?,
                     })
                 }
                 WorkflowUpdate::Unknown => Err(anyhow!("WorkflowUpdate has unknown variant")),
@@ -669,7 +669,7 @@ impl ObjectClient for ServerApi {
                 }
                 NotebookUpdate::NotebookUpdateRejected(rejected) => {
                     Ok(UpdateCloudObjectResult::Rejected {
-                        object: ServerNotebook::from_graphql(rejected.conflicting_notebook)?,
+                        object: ServerNotebook::try_from_gql(rejected.conflicting_notebook)?,
                     })
                 }
                 NotebookUpdate::Unknown => Err(anyhow!("NotebookUpdate has unknown variant")),
@@ -914,7 +914,7 @@ impl ObjectClient for ServerApi {
                     .map(|notebooks| {
                         notebooks
                             .into_iter()
-                            .filter_map(|notebook| ServerNotebook::from_graphql(notebook).ok())
+                            .filter_map(|notebook| ServerNotebook::try_from_gql(notebook).ok())
                             .collect()
                     })
                     .unwrap_or_default();
@@ -924,7 +924,7 @@ impl ObjectClient for ServerApi {
                     .map(|workflows| {
                         workflows
                             .into_iter()
-                            .filter_map(|workflow| ServerWorkflow::from_graphql(workflow).ok())
+                            .filter_map(|workflow| ServerWorkflow::try_from_gql(workflow).ok())
                             .collect()
                     })
                     .unwrap_or_default();
@@ -934,7 +934,7 @@ impl ObjectClient for ServerApi {
                     .map(|folders| {
                         folders
                             .into_iter()
-                            .filter_map(|folder| ServerFolder::from_graphql(folder).ok())
+                            .filter_map(|folder| ServerFolder::try_from_gql(folder).ok())
                             .collect()
                     })
                     .unwrap_or_default();
@@ -1573,7 +1573,7 @@ fn parse_server_gso<T, S>(
     S: Serializer<T>,
 {
     let uid = ServerId::from_string_lossy(gso.metadata.uid.inner());
-    match GenericServerObject::<GenericStringObjectId, GenericStringModel<T, S>>::from_graphql(gso)
+    match GenericServerObject::<GenericStringObjectId, GenericStringModel<T, S>>::try_from_gql(gso)
     {
         Ok(object) => {
             map.entry(format).or_default().push(Box::new(object));

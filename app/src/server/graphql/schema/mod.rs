@@ -2,10 +2,10 @@ pub mod util;
 
 use crate::{
     cloud_object::{
-        FromGraphql, RevisionAndLastEditor, ServerAIExecutionProfile, ServerAIFact,
+        RevisionAndLastEditor, ServerAIExecutionProfile, ServerAIFact,
         ServerAmbientAgentEnvironment, ServerEnvVarCollection, ServerFolder, ServerMCPServer,
         ServerObject, ServerPreference, ServerScheduledAmbientAgent, ServerTemplatableMCPServer,
-        ServerWorkflowEnum, UpdateCloudObjectResult,
+        ServerWorkflowEnum, TryFromGql, UpdateCloudObjectResult,
     },
     server::graphql::get_user_facing_error_message,
 };
@@ -22,11 +22,11 @@ fn boxed_rejected_generic_string_object<T>(
     object: warp_graphql::generic_string_object::GenericStringObject,
 ) -> Result<Box<dyn ServerObject>>
 where
-    T: FromGraphql<warp_graphql::generic_string_object::GenericStringObject>
+    T: TryFromGql<GqlType = warp_graphql::generic_string_object::GenericStringObject>
         + ServerObject
         + 'static,
 {
-    Ok(Box::new(T::from_graphql(object)?))
+    Ok(Box::new(T::try_from_gql(object)?))
 }
 
 pub fn update_generic_string_object_result_to_update_result(

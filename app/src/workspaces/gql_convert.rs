@@ -35,10 +35,9 @@ use crate::{
 };
 use crate::{
     cloud_object::{
-        FromGraphql, ServerAmbientAgentEnvironment, ServerCloudObject, ServerEnvVarCollection,
-        ServerFolder, ServerMCPServer, ServerNotebook, ServerPreference,
-        ServerScheduledAmbientAgent, ServerTemplatableMCPServer, ServerWorkflow,
-        ServerWorkflowEnum,
+        ServerAmbientAgentEnvironment, ServerCloudObject, ServerEnvVarCollection, ServerFolder,
+        ServerMCPServer, ServerNotebook, ServerPreference, ServerScheduledAmbientAgent,
+        ServerTemplatableMCPServer, ServerWorkflow, ServerWorkflowEnum, TryFromGql,
     },
     convert_to_server_experiment,
     server::cloud_objects::listener::ObjectUpdateMessage,
@@ -1141,44 +1140,44 @@ impl TryFrom<warp_graphql::object::CloudObject> for ServerCloudObject {
                 "AIConversation is not a supported object type for this operation"
             )),
             warp_graphql::object::CloudObject::Folder(folder) => Ok(ServerCloudObject::Folder(
-                ServerFolder::from_graphql(folder)?,
+                ServerFolder::try_from_gql(folder)?,
             )),
             warp_graphql::object::CloudObject::GenericStringObject(gso) => {
                 match gso.format.clone() {
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonEnvVarCollection => {
-                        Ok(ServerCloudObject::EnvVarCollection(ServerEnvVarCollection::from_graphql(gso)?))
+                        Ok(ServerCloudObject::EnvVarCollection(ServerEnvVarCollection::try_from_gql(gso)?))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonPreference => {
-                        Ok(ServerCloudObject::Preference(ServerPreference::from_graphql(gso)?))
+                        Ok(ServerCloudObject::Preference(ServerPreference::try_from_gql(gso)?))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonWorkflowEnum => {
-                        Ok(ServerCloudObject::WorkflowEnum(ServerWorkflowEnum::from_graphql(gso)?))
+                        Ok(ServerCloudObject::WorkflowEnum(ServerWorkflowEnum::try_from_gql(gso)?))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIFact => {
-                        Ok(ServerCloudObject::AIFact(ServerAIFact::from_graphql(gso)?))
+                        Ok(ServerCloudObject::AIFact(ServerAIFact::try_from_gql(gso)?))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonMCPServer => {
-                        Ok(ServerCloudObject::MCPServer(ServerMCPServer::from_graphql(gso)?))
+                        Ok(ServerCloudObject::MCPServer(ServerMCPServer::try_from_gql(gso)?))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIExecutionProfile => {
-                        Ok(ServerCloudObject::AIExecutionProfile(ServerAIExecutionProfile::from_graphql(gso)?))
+                        Ok(ServerCloudObject::AIExecutionProfile(ServerAIExecutionProfile::try_from_gql(gso)?))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer => {
-                        Ok(ServerCloudObject::TemplatableMCPServer(ServerTemplatableMCPServer::from_graphql(gso)?))
+                        Ok(ServerCloudObject::TemplatableMCPServer(ServerTemplatableMCPServer::try_from_gql(gso)?))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonCloudEnvironment => {
-                        Ok(ServerCloudObject::AmbientAgentEnvironment(ServerAmbientAgentEnvironment::from_graphql(gso)?))
+                        Ok(ServerCloudObject::AmbientAgentEnvironment(ServerAmbientAgentEnvironment::try_from_gql(gso)?))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonScheduledAmbientAgent => {
-                        Ok(ServerCloudObject::ScheduledAmbientAgent(ServerScheduledAmbientAgent::from_graphql(gso)?))
+                        Ok(ServerCloudObject::ScheduledAmbientAgent(ServerScheduledAmbientAgent::try_from_gql(gso)?))
                     }
                 }
             }
             warp_graphql::object::CloudObject::Notebook(notebook) => Ok(
-                ServerCloudObject::Notebook(ServerNotebook::from_graphql(notebook)?),
+                ServerCloudObject::Notebook(ServerNotebook::try_from_gql(notebook)?),
             ),
             warp_graphql::object::CloudObject::Workflow(workflow) => Ok(
-                ServerCloudObject::Workflow(Box::new(ServerWorkflow::from_graphql(workflow)?)),
+                ServerCloudObject::Workflow(Box::new(ServerWorkflow::try_from_gql(workflow)?)),
             ),
             warp_graphql::object::CloudObject::Unknown => {
                 Err(anyhow::anyhow!("Unable to convert cloud object type"))
@@ -1196,39 +1195,39 @@ impl TryFrom<CloudObjectWithDescendants> for ServerCloudObject {
                 Err(anyhow::anyhow!("AIConversation is not a supported object type for this operation"))
             }
             CloudObjectWithDescendants::FolderWithDescendants(fwd) => {
-                Ok(ServerCloudObject::Folder(ServerFolder::from_graphql(fwd.folder)?))
+                Ok(ServerCloudObject::Folder(ServerFolder::try_from_gql(fwd.folder)?))
             }
             CloudObjectWithDescendants::GenericStringObject(gso) => match gso.format.clone() {
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonEnvVarCollection => {
-                    Ok(ServerCloudObject::EnvVarCollection(ServerEnvVarCollection::from_graphql(gso)?))
+                    Ok(ServerCloudObject::EnvVarCollection(ServerEnvVarCollection::try_from_gql(gso)?))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonPreference => {
-                    Ok(ServerCloudObject::Preference(ServerPreference::from_graphql(gso)?))
+                    Ok(ServerCloudObject::Preference(ServerPreference::try_from_gql(gso)?))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonWorkflowEnum => {
-                    Ok(ServerCloudObject::WorkflowEnum(ServerWorkflowEnum::from_graphql(gso)?))
+                    Ok(ServerCloudObject::WorkflowEnum(ServerWorkflowEnum::try_from_gql(gso)?))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIFact => {
-                    Ok(ServerCloudObject::AIFact(ServerAIFact::from_graphql(gso)?))
+                    Ok(ServerCloudObject::AIFact(ServerAIFact::try_from_gql(gso)?))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonMCPServer => {
-                    Ok(ServerCloudObject::MCPServer(ServerMCPServer::from_graphql(gso)?))
+                    Ok(ServerCloudObject::MCPServer(ServerMCPServer::try_from_gql(gso)?))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIExecutionProfile => {
-                    Ok(ServerCloudObject::AIExecutionProfile(ServerAIExecutionProfile::from_graphql(gso)?))
+                    Ok(ServerCloudObject::AIExecutionProfile(ServerAIExecutionProfile::try_from_gql(gso)?))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer => {
-                    Ok(ServerCloudObject::TemplatableMCPServer(ServerTemplatableMCPServer::from_graphql(gso)?))
+                    Ok(ServerCloudObject::TemplatableMCPServer(ServerTemplatableMCPServer::try_from_gql(gso)?))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonCloudEnvironment => {
-                    Ok(ServerCloudObject::AmbientAgentEnvironment(ServerAmbientAgentEnvironment::from_graphql(gso)?))
+                    Ok(ServerCloudObject::AmbientAgentEnvironment(ServerAmbientAgentEnvironment::try_from_gql(gso)?))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonScheduledAmbientAgent => {
-                    Ok(ServerCloudObject::ScheduledAmbientAgent(ServerScheduledAmbientAgent::from_graphql(gso)?))
+                    Ok(ServerCloudObject::ScheduledAmbientAgent(ServerScheduledAmbientAgent::try_from_gql(gso)?))
                 }
             }
-            CloudObjectWithDescendants::Notebook(notebook) => Ok(ServerCloudObject::Notebook(ServerNotebook::from_graphql(notebook)?)),
-            CloudObjectWithDescendants::Workflow(workflow) => Ok(ServerCloudObject::Workflow(Box::new(ServerWorkflow::from_graphql(workflow)?))),
+            CloudObjectWithDescendants::Notebook(notebook) => Ok(ServerCloudObject::Notebook(ServerNotebook::try_from_gql(notebook)?)),
+            CloudObjectWithDescendants::Workflow(workflow) => Ok(ServerCloudObject::Workflow(Box::new(ServerWorkflow::try_from_gql(workflow)?))),
             CloudObjectWithDescendants::Unknown => Err(anyhow::anyhow!("Unable to convert cloud object with descendants type")),
         }
     }

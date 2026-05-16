@@ -1303,22 +1303,23 @@ pub type ServerScheduledAmbientAgent =
     GenericServerObject<GenericStringObjectId, CloudScheduledAmbientAgentModel>;
 pub type ServerCloudAgentConfig = GenericServerObject<GenericStringObjectId, CloudAgentConfigModel>;
 
-/// Converts a GraphQL object payload into a local server object.
-pub trait FromGraphql<GqlType>: Sized {
-    fn from_graphql(value: GqlType) -> Result<Self>;
+/// Tries to convert a GraphQL object payload into a local server object.
+pub trait TryFromGql: Sized {
+    type GqlType;
+
+    fn try_from_gql(value: Self::GqlType) -> Result<Self>;
 }
 
-impl<T, S> FromGraphql<warp_graphql::generic_string_object::GenericStringObject>
-    for GenericServerObject<GenericStringObjectId, GenericStringModel<T, S>>
+impl<T, S> TryFromGql for GenericServerObject<GenericStringObjectId, GenericStringModel<T, S>>
 where
     T: StringModel<
         CloudObjectType = GenericCloudObject<GenericStringObjectId, GenericStringModel<T, S>>,
     >,
     S: Serializer<T>,
 {
-    fn from_graphql(
-        value: warp_graphql::generic_string_object::GenericStringObject,
-    ) -> Result<Self> {
+    type GqlType = warp_graphql::generic_string_object::GenericStringObject;
+
+    fn try_from_gql(value: Self::GqlType) -> Result<Self> {
         let uid = ServerId::from_string_lossy(value.metadata.uid.inner());
         let model = GenericStringModel::<T, S>::deserialize_owned(&value.serialized_model)?;
         Ok(Self::new(
@@ -1330,8 +1331,10 @@ where
     }
 }
 
-impl FromGraphql<warp_graphql::folder::Folder> for ServerFolder {
-    fn from_graphql(value: warp_graphql::folder::Folder) -> Result<Self> {
+impl TryFromGql for ServerFolder {
+    type GqlType = warp_graphql::folder::Folder;
+
+    fn try_from_gql(value: Self::GqlType) -> Result<Self> {
         let uid = ServerId::from_string_lossy(value.metadata.uid.inner());
         Ok(Self::new(
             SyncId::ServerId(uid),
@@ -1342,8 +1345,10 @@ impl FromGraphql<warp_graphql::folder::Folder> for ServerFolder {
     }
 }
 
-impl FromGraphql<warp_graphql::notebook::Notebook> for ServerNotebook {
-    fn from_graphql(value: warp_graphql::notebook::Notebook) -> Result<Self> {
+impl TryFromGql for ServerNotebook {
+    type GqlType = warp_graphql::notebook::Notebook;
+
+    fn try_from_gql(value: Self::GqlType) -> Result<Self> {
         let uid = ServerId::from_string_lossy(value.metadata.uid.inner());
         let ai_document_id: Option<AIDocumentId> = value
             .ai_document_id
@@ -1363,8 +1368,10 @@ impl FromGraphql<warp_graphql::notebook::Notebook> for ServerNotebook {
     }
 }
 
-impl FromGraphql<warp_graphql::workflow::Workflow> for ServerWorkflow {
-    fn from_graphql(value: warp_graphql::workflow::Workflow) -> Result<Self> {
+impl TryFromGql for ServerWorkflow {
+    type GqlType = warp_graphql::workflow::Workflow;
+
+    fn try_from_gql(value: Self::GqlType) -> Result<Self> {
         let uid = ServerId::from_string_lossy(value.metadata.uid.inner());
         let workflow = serde_json::from_str(value.data.as_str())?;
         Ok(Self::new(
