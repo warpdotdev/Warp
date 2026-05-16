@@ -1,13 +1,14 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use pathfinder_geometry::vector::vec2f;
 use warp_cli::agent::Harness;
 use warp_core::ui::appearance::Appearance;
-use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::Fill;
+use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
-    Border, ChildAnchor, ChildView, OffsetPositioning, ParentAnchor, ParentElement as _,
-    ParentOffsetBounds, Stack,
+    Border, ChildAnchor, ChildView, Hoverable, MouseStateHandle, OffsetPositioning, ParentAnchor,
+    ParentElement as _, ParentOffsetBounds, Stack,
 };
 use warpui::fonts::Properties;
 use warpui::{
@@ -58,6 +59,8 @@ const NEW_ITEM_LABEL: &str = "New";
 
 const MAIN_MENU_SAVE_POSITION_ID: &str = "auth_secret_selector_main_menu";
 
+const SIDECAR_HOVER_OUT_DELAY: Duration = Duration::from_millis(75);
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum AuthSecretSelectorAction {
     ToggleMenu,
@@ -65,6 +68,8 @@ pub enum AuthSecretSelectorAction {
     ClearSecret,
     OpenNewTypeSidecar,
     SelectNewType(usize),
+    MainMenuHoverChanged(bool),
+    NewTypeSidecarHoverChanged(bool),
 }
 
 pub enum AuthSecretSelectorEvent {
@@ -76,8 +81,12 @@ pub struct AuthSecretSelector {
     button: ViewHandle<ActionButton>,
     menu: ViewHandle<Menu<AuthSecretSelectorAction>>,
     new_type_sidecar: ViewHandle<Menu<AuthSecretSelectorAction>>,
+    menu_mouse_state: MouseStateHandle,
+    new_type_sidecar_mouse_state: MouseStateHandle,
     is_menu_open: bool,
     is_new_type_sidecar_open: bool,
+    is_menu_hovered: bool,
+    is_new_type_sidecar_hovered: bool,
     menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
     ambient_agent_model: ModelHandle<AmbientAgentViewModel>,
 }
@@ -171,8 +180,12 @@ impl AuthSecretSelector {
             button,
             menu,
             new_type_sidecar,
+            menu_mouse_state: MouseStateHandle::default(),
+            new_type_sidecar_mouse_state: MouseStateHandle::default(),
             is_menu_open: false,
             is_new_type_sidecar_open: false,
+            is_menu_hovered: false,
+            is_new_type_sidecar_hovered: false,
             menu_positioning_provider,
             ambient_agent_model,
         };
@@ -238,6 +251,7 @@ impl AuthSecretSelector {
             ctx.focus(&self.menu);
         } else {
             self.set_new_type_sidecar_open(false, ctx);
+            self.is_menu_hovered = false;
         }
         ctx.emit(AuthSecretSelectorEvent::MenuVisibilityChanged { open: is_open });
         ctx.notify();
@@ -249,6 +263,7 @@ impl AuthSecretSelector {
         }
         self.is_new_type_sidecar_open = is_open;
         if !is_open {
+            self.is_new_type_sidecar_hovered = false;
             self.menu.update(ctx, |menu, _ctx| {
                 menu.set_safe_zone_target(None);
                 menu.set_submenu_being_shown_for_item_index(None);
@@ -257,6 +272,26 @@ impl AuthSecretSelector {
             self.refresh_sidecar(ctx);
         }
         ctx.notify();
+    }
+
+    fn update_menu_hovered(&mut self, is_hovered: bool, ctx: &mut ViewContext<Self>) {
+        self.is_menu_hovered = is_hovered;
+        self.maybe_close_sidecar_after_hover_change(ctx);
+    }
+
+    fn update_new_type_sidecar_hovered(&mut self, is_hovered: bool, ctx: &mut ViewContext<Self>) {
+        self.is_new_type_sidecar_hovered = is_hovered;
+        self.maybe_close_sidecar_after_hover_change(ctx);
+    }
+
+    fn maybe_close_sidecar_after_hover_change(&mut self, ctx: &mut ViewContext<Self>) {
+        if !self.is_new_type_sidecar_open {
+            return;
+        }
+        if self.is_menu_hovered || self.is_new_type_sidecar_hovered {
+            return;
+        }
+        self.set_new_type_sidecar_open(false, ctx);
     }
 
     fn update_sidecar_visibility_from_hover(&mut self, ctx: &mut ViewContext<Self>) {
@@ -546,6 +581,12 @@ impl TypedActionView for AuthSecretSelector {
                     type_index,
                 });
             }
+            AuthSecretSelectorAction::MainMenuHoverChanged(is_hovered) => {
+                self.update_menu_hovered(*is_hovered, ctx);
+            }
+            AuthSecretSelectorAction::NewTypeSidecarHoverChanged(is_hovered) => {
+                self.update_new_type_sidecar_hovered(*is_hovered, ctx);
+            }
         }
     }
 }
@@ -565,16 +606,134 @@ impl View for AuthSecretSelector {
                 MAIN_MENU_SAVE_POSITION_ID,
             )
             .finish();
+            let main_menu = Hoverable::new(self.menu_mouse_state.clone(), move |_| main_menu)
+                .with_hover_out_delay(SIDECAR_HOVER_OUT_DELAY)
+                .on_hover(|is_hovered, ctx, _, _| {
+                    ctx.dispatch_typed_action(AuthSecretSelectorAction::MainMenuHoverChanged(
+                        is_hovered,
+                    ));
+                })
+                .finish();
             stack.add_positioned_overlay_child(main_menu, self.menu_positioning(app));
 
             if self.is_new_type_sidecar_open {
-                stack.add_positioned_overlay_child(
-                    ChildView::new(&self.new_type_sidecar).finish(),
-                    self.sidecar_positioning(app),
-                );
+                let sidecar = ChildView::new(&self.new_type_sidecar).finish();
+                let sidecar =
+                    Hoverable::new(self.new_type_sidecar_mouse_state.clone(), move |_| sidecar)
+                        .with_hover_out_delay(SIDECAR_HOVER_OUT_DELAY)
+                        .on_hover(|is_hovered, ctx, _, _| {
+                            ctx.dispatch_typed_action(
+                                AuthSecretSelectorAction::NewTypeSidecarHoverChanged(is_hovered),
+                            );
+                        })
+                        .finish();
+                stack.add_positioned_overlay_child(sidecar, self.sidecar_positioning(app));
             }
         }
 
         stack.finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use warpui::platform::WindowStyle;
+    use warpui::{App, EntityId};
+
+    use crate::test_util::terminal::initialize_app_for_terminal_view;
+
+    struct FixedMenuPositioningProvider;
+
+    impl MenuPositioningProvider for FixedMenuPositioningProvider {
+        fn menu_position(&self, _app: &AppContext) -> MenuPositioning {
+            MenuPositioning::BelowInputBox
+        }
+    }
+
+    struct TestRoot {
+        selector: ViewHandle<AuthSecretSelector>,
+    }
+
+    impl Entity for TestRoot {
+        type Event = ();
+    }
+
+    impl TypedActionView for TestRoot {
+        type Action = ();
+    }
+
+    impl View for TestRoot {
+        fn ui_name() -> &'static str {
+            "AuthSecretSelectorTestRoot"
+        }
+
+        fn render(&self, _app: &AppContext) -> Box<dyn Element> {
+            ChildView::new(&self.selector).finish()
+        }
+    }
+
+    fn add_selector(app: &mut App) -> ViewHandle<AuthSecretSelector> {
+        let ambient_agent_model =
+            app.add_model(|ctx| AmbientAgentViewModel::new(EntityId::new(), ctx));
+        let (_, root) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
+            let selector = ctx.add_typed_action_view(|ctx| {
+                AuthSecretSelector::new(
+                    Arc::new(FixedMenuPositioningProvider),
+                    ambient_agent_model,
+                    ctx,
+                )
+            });
+            TestRoot { selector }
+        });
+        root.read(app, |root, _| root.selector.clone())
+    }
+
+    #[test]
+    fn new_type_sidecar_stays_open_while_sidecar_is_hovered() {
+        App::test((), |mut app| async move {
+            initialize_app_for_terminal_view(&mut app);
+            let selector = add_selector(&mut app);
+
+            selector.update(&mut app, |selector, ctx| {
+                selector.set_menu_visibility(true, ctx);
+                selector.set_new_type_sidecar_open(true, ctx);
+
+                selector.handle_action(&AuthSecretSelectorAction::MainMenuHoverChanged(true), ctx);
+                selector.handle_action(
+                    &AuthSecretSelectorAction::NewTypeSidecarHoverChanged(true),
+                    ctx,
+                );
+                selector.handle_action(&AuthSecretSelectorAction::MainMenuHoverChanged(false), ctx);
+
+                assert!(selector.is_new_type_sidecar_open);
+            });
+        });
+    }
+
+    #[test]
+    fn new_type_sidecar_closes_when_menu_and_sidecar_are_not_hovered() {
+        App::test((), |mut app| async move {
+            initialize_app_for_terminal_view(&mut app);
+            let selector = add_selector(&mut app);
+
+            selector.update(&mut app, |selector, ctx| {
+                selector.set_menu_visibility(true, ctx);
+                selector.set_new_type_sidecar_open(true, ctx);
+
+                selector.handle_action(&AuthSecretSelectorAction::MainMenuHoverChanged(true), ctx);
+                selector.handle_action(
+                    &AuthSecretSelectorAction::NewTypeSidecarHoverChanged(true),
+                    ctx,
+                );
+                selector.handle_action(&AuthSecretSelectorAction::MainMenuHoverChanged(false), ctx);
+                selector.handle_action(
+                    &AuthSecretSelectorAction::NewTypeSidecarHoverChanged(false),
+                    ctx,
+                );
+
+                assert!(!selector.is_new_type_sidecar_open);
+            });
+        });
     }
 }
