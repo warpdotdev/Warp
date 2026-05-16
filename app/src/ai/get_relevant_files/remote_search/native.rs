@@ -66,10 +66,6 @@ pub(super) fn send_request(
         RemoteCodebaseSearchAvailability::Ready(search_context) => {
             if search_context.is_stale {
                 let remote_path = search_context.remote_path.clone();
-                log::debug!(
-                    "[Remote codebase indexing] Remote search triggering incremental sync for stale index: repo_path={}",
-                    remote_path.path.as_str()
-                );
                 remote_server::manager::RemoteServerManager::handle(ctx).update(
                     ctx,
                     |manager, ctx| {

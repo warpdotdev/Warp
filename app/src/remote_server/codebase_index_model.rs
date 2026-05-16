@@ -388,7 +388,7 @@ impl RemoteCodebaseIndexModel {
         statuses: &[RemoteCodebaseIndexStatusWithPath],
     ) -> (bool, Vec<RemoteCodebaseIndexStatusTelemetryUpdate>) {
         let status_count = statuses.len();
-        log::debug!(
+        log::info!(
             "[Remote codebase indexing] Client received bootstrap codebase index statuses snapshot: host_id={host_id} status_count={status_count}"
         );
         for status_with_path in statuses {

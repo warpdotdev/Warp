@@ -1245,8 +1245,8 @@ impl RemoteServerManager {
             )));
         }
 
-        log::debug!(
-            "Remote server initialize handshake complete: session={session_id:?} \
+        log::info!(
+            "[Remote codebase indexing] Remote server initialize handshake complete: session={session_id:?} \
              host={} server_version={:?}",
             resp.host_id,
             resp.server_version,
@@ -1536,7 +1536,7 @@ impl RemoteServerManager {
             );
             return;
         };
-        log::debug!(
+        log::info!(
             "[Remote codebase indexing] Manager requesting codebase index mutation: \
              operation={operation:?} host={host_id} session={session_id:?} \
              remote_identity_key={remote_identity_key} repo_path={repo_path}"
@@ -1571,7 +1571,7 @@ impl RemoteServerManager {
 
                 match mutation_kind.send(client, repo_path, auth_token).await {
                     Ok(status) => {
-                        log::debug!(
+                        log::info!(
                             "[Remote codebase indexing] Manager received codebase index mutation response: \
                              operation={operation:?} host={host_id} session={session_id:?} \
                              remote_identity_key={remote_identity_key} repo_path={} state={:?}",
