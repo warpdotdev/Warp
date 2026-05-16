@@ -18,6 +18,7 @@ use crate::ai::blocklist::block::view_impl::common::{
 use crate::ai::blocklist::inline_action::aws_bedrock_credentials_error::AwsBedrockCredentialsErrorView;
 use crate::ai::blocklist::inline_action::create_or_edit_document::CreateOrEditDocumentAction;
 use crate::ai::blocklist::secret_redaction::SecretRedactionState;
+use crate::ai::blocklist::usage::rollup::compute_orchestration_rollup;
 use crate::ai::blocklist::view_util::format_credits;
 use crate::ai::skills::SkillOpenOrigin;
 use crate::ai::skills::{
@@ -3254,10 +3255,8 @@ fn render_usage_button(props: Props, app: &AppContext) -> Box<dyn Element> {
     // orchestrator's own credits. The rollup helper returns `None` for
     // conversations with no descendants, so callers that aren't
     // orchestrators pay only the cost of one descendant-index probe.
-    let rollup = crate::ai::blocklist::usage::rollup::compute_orchestration_rollup(
-        conversation.id(),
-        BlocklistAIHistoryModel::as_ref(app),
-    );
+    let rollup =
+        compute_orchestration_rollup(conversation.id(), BlocklistAIHistoryModel::as_ref(app));
 
     // If this conversation has no usage metadata (e.g. a forked conversation from
     // mid-way through a prior conversation where the server did not send

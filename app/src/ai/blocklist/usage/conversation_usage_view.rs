@@ -214,6 +214,7 @@ impl ConversationUsageView {
         let history = BlocklistAIHistoryModel::as_ref(app);
         compute_orchestration_rollup(parent_id, history)
     }
+
     /// Helper to collect models grouped by category.
     /// Returns a HashMap mapping category name to list of (model_id, is_byok) tuples.
     /// Handles both category-based fields and legacy warp_tokens/byok_tokens fields.
@@ -604,11 +605,12 @@ impl ConversationUsageView {
             return;
         }
         let total_entries = rollup.per_agent.len();
-        let shown_entries: usize = if total_entries > 5 && !self.show_all_clicked {
-            5
-        } else {
-            total_entries
-        };
+        let shown_entries: usize =
+            if total_entries > PER_AGENT_BREAKDOWN_TRUNCATION_CAP && !self.show_all_clicked {
+                PER_AGENT_BREAKDOWN_TRUNCATION_CAP
+            } else {
+                total_entries
+            };
         for entry in rollup.per_agent.iter().take(shown_entries) {
             let (label_el, value_el) = self.render_per_agent_row(entry, appearance);
             labels.push(label_el);
@@ -936,6 +938,12 @@ fn render_value_text_placeholder(appearance: &Appearance) -> Box<dyn Element> {
 /// footer's name treatment never exceeds what the pill bar already
 /// enforces at the top of the agent view.
 const PER_AGENT_LABEL_MAX_WIDTH: f32 = 110.;
+
+/// Maximum number of rows shown in the per-agent breakdown before the
+/// "Show N more" affordance truncates the list. Matches PRODUCT
+/// invariants 5e (≤ 5 rows render in full) and 5f (> 5 rows render the
+/// first 5 followed by a "Show N more" link).
+const PER_AGENT_BREAKDOWN_TRUNCATION_CAP: usize = 5;
 
 #[cfg(test)]
 #[path = "conversation_usage_view_tests.rs"]
