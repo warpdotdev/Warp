@@ -80,6 +80,7 @@ const clientMutations = [
 const clientQueries = [
   'cloudObject',
   'codebaseContextConfig',
+  'freeAvailableModels',
   'getRelevantFragments',
   'rerankFragments',
   'listWarpDevImages',
