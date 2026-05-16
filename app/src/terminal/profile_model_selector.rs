@@ -82,6 +82,11 @@ const MAX_PROFILE_NAME_WIDTH_SCALE_FACTOR: f32 = 10.0;
 
 const PROFILE_SELECTOR_POSITION_ID: &str = "profile_selector";
 
+const PROFILE_PICKER_TOOLTIP: &str = "Choose an AI execution profile";
+const MODEL_PICKER_TOOLTIP: &str = "Choose an agent model";
+const MODEL_LOCKED_FOR_FOLLOWUP_TOOLTIP: &str = "Follow-ups use the original run's model";
+const MODEL_REQUIRES_EDIT_ACCESS_TOOLTIP: &str = "Request edit access to change model";
+
 pub fn calculate_scaled_font_size(appearance: &warp_core::ui::appearance::Appearance) -> f32 {
     if FeatureFlag::AgentView.is_enabled() {
         udi_font_size(appearance)
@@ -258,7 +263,7 @@ impl ProfileModelSelector {
                 ),
                 is_blurred: false,
             })
-            .with_tooltip("Choose an AI execution profile")
+            .with_tooltip(PROFILE_PICKER_TOOLTIP)
             .with_size(ButtonSize::UDIButton)
             .with_icon(Icon::Psychology)
         });
@@ -286,14 +291,14 @@ impl ProfileModelSelector {
                 ),
                 is_blurred: false,
             })
-            .with_tooltip("Choose an agent model")
+            .with_tooltip(MODEL_PICKER_TOOLTIP)
             .with_size(ButtonSize::UDIButton)
         });
 
         let profile_compact_button = ctx.add_typed_action_view(|_| {
             ActionButton::new("", PromptIconButtonTheme::new(false))
                 .with_icon(Icon::Psychology)
-                .with_tooltip("Choose an AI execution profile")
+                .with_tooltip(PROFILE_PICKER_TOOLTIP)
                 .with_size(ButtonSize::UDIButton)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(ProfileModelSelectorAction::ToggleProfileMenu);
@@ -303,7 +308,7 @@ impl ProfileModelSelector {
         let model_compact_button = ctx.add_typed_action_view(|_| {
             ActionButton::new("", PromptIconButtonTheme::new(false))
                 .with_icon(Icon::Neurology)
-                .with_tooltip("Choose an agent model")
+                .with_tooltip(MODEL_PICKER_TOOLTIP)
                 .with_size(ButtonSize::UDIButton)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(ProfileModelSelectorAction::ToggleModelMenu);
@@ -609,22 +614,33 @@ impl ProfileModelSelector {
         format!("{PROFILE_SELECTOR_POSITION_ID}_{llm_id}")
     }
 
-    /// Returns true when the model selector should be locked (disabled and
-    /// non-interactive). The selector is locked when either:
-    /// - The session has ended and the user is composing a follow-up (all
-    ///   harnesses), because the server inherits the original task's config.
-    /// - A non-Oz cloud run has been spawned (live or ended), because
-    ///   changing the harness model locally has no effect.
-    fn is_model_locked(&self, app: &AppContext) -> bool {
+    /// Locked because the user is composing a follow-up to a Cloud Mode run
+    /// that has ended. The server inherits the original task's model config
+    /// when accepting the follow-up, so changing the model locally is
+    /// meaningless.
+    fn is_locked_for_cloud_followup(&self, app: &AppContext) -> bool {
+        self.ambient_agent_view_model
+            .as_ref()
+            .is_some_and(|m| m.as_ref(app).is_ready_for_cloud_followup_prompt())
+    }
+
+    /// Locked because a non-Oz cloud run (e.g. Claude Code, Codex) has been
+    /// spawned. The harness owns model selection, so changing the model
+    /// locally has no effect on the run. We lock silently in this case
+    /// because the harness selection itself communicates the lock.
+    fn is_locked_for_non_oz_run(&self, app: &AppContext) -> bool {
         self.ambient_agent_view_model.as_ref().is_some_and(|m| {
             let model = m.as_ref(app);
-            model.is_ready_for_cloud_followup_prompt()
-                || (model.task_id().is_some()
-                    && !matches!(
-                        model.selected_harness(),
-                        warp_cli::agent::Harness::Oz | warp_cli::agent::Harness::Unknown
-                    ))
+            model.task_id().is_some()
+                && !matches!(
+                    model.selected_harness(),
+                    warp_cli::agent::Harness::Oz | warp_cli::agent::Harness::Unknown
+                )
         })
+    }
+
+    fn is_model_locked(&self, app: &AppContext) -> bool {
+        self.is_locked_for_cloud_followup(app) || self.is_locked_for_non_oz_run(app)
     }
 
     fn refresh_state(&mut self, ctx: &mut ViewContext<Self>) {
@@ -666,20 +682,30 @@ impl ProfileModelSelector {
             }
         };
 
-        let locked = self.is_model_locked(ctx);
-        let model_tooltip = if locked {
-            "Model is locked for follow-up runs"
+        // Non-Oz runs lock silently: the harness owns model selection, and the
+        // user already knows that, so no tooltip is shown.
+        let model_tooltip: Option<&str> = if self.is_locked_for_cloud_followup(ctx) {
+            Some(MODEL_LOCKED_FOR_FOLLOWUP_TOOLTIP)
+        } else if self.is_locked_for_non_oz_run(ctx) {
+            None
         } else {
-            "Choose an agent model"
+            Some(MODEL_PICKER_TOOLTIP)
         };
+        let locked = self.is_model_locked(ctx);
         self.model_button.update(ctx, |button, ctx| {
             button.set_label(model_name, ctx);
             button.set_disabled(locked, ctx);
-            button.set_tooltip(Some(model_tooltip), ctx);
+            match model_tooltip {
+                Some(t) => button.set_tooltip(Some(t), ctx),
+                None => button.clear_tooltip(ctx),
+            }
         });
         self.model_compact_button.update(ctx, |button, ctx| {
             button.set_disabled(locked, ctx);
-            button.set_tooltip(Some(model_tooltip), ctx);
+            match model_tooltip {
+                Some(t) => button.set_tooltip(Some(t), ctx),
+                None => button.clear_tooltip(ctx),
+            }
         });
         ctx.notify();
     }
@@ -1455,16 +1481,16 @@ impl ProfileModelSelector {
                     )))
                     .finish();
 
-                let tooltip_text = "Choose an AI execution profile".to_owned();
-
-                let tooltip = appearance.ui_builder().tool_tip(tooltip_text);
+                let tooltip = appearance
+                    .ui_builder()
+                    .tool_tip(PROFILE_PICKER_TOOLTIP.to_owned());
                 let mut stack = Stack::new();
                 stack.add_child(button_with_hover);
-                stack.add_positioned_child(
+                stack.add_positioned_overlay_child(
                     tooltip.build().finish(),
                     OffsetPositioning::offset_from_parent(
                         vec2f(0., -10.),
-                        ParentOffsetBounds::Unbounded,
+                        ParentOffsetBounds::WindowByPosition,
                         ParentAnchor::TopLeft,
                         ChildAnchor::BottomLeft,
                     ),
@@ -1587,7 +1613,9 @@ impl ProfileModelSelector {
         let button_with_save_position =
             SavePosition::new(button, "profile_model_selector_model_button").finish();
 
-        let is_locked = self.is_model_locked(app);
+        let is_locked_for_followup = self.is_locked_for_cloud_followup(app);
+        let is_locked_for_non_oz = self.is_locked_for_non_oz_run(app);
+        let is_locked = is_locked_for_followup || is_locked_for_non_oz;
         let can_interact = has_edit_access && !is_locked;
 
         let hoverable = Hoverable::new(self.model_mouse_state.clone(), move |state| {
@@ -1599,41 +1627,48 @@ impl ProfileModelSelector {
                     )))
                     .finish();
 
-                let tooltip_text = "Choose an agent model".to_owned();
-
-                let tooltip = appearance.ui_builder().tool_tip(tooltip_text);
+                let tooltip = appearance
+                    .ui_builder()
+                    .tool_tip(MODEL_PICKER_TOOLTIP.to_owned());
                 let mut stack = Stack::new();
                 stack.add_child(button_with_hover);
-                stack.add_positioned_child(
+                stack.add_positioned_overlay_child(
                     tooltip.build().finish(),
                     OffsetPositioning::offset_from_parent(
                         vec2f(0., -10.),
-                        ParentOffsetBounds::Unbounded,
+                        ParentOffsetBounds::WindowByPosition,
                         ParentAnchor::TopLeft,
                         ChildAnchor::BottomLeft,
                     ),
                 );
                 stack.finish()
             } else if state.is_hovered() {
-                let tooltip_text = if is_locked {
-                    "Model is locked for follow-up runs"
+                // Non-Oz runs lock silently — skip the tooltip entirely.
+                let tooltip_text: Option<&str> = if is_locked_for_followup {
+                    Some(MODEL_LOCKED_FOR_FOLLOWUP_TOOLTIP)
+                } else if is_locked_for_non_oz {
+                    None
                 } else {
-                    "Request edit access to change model"
+                    Some(MODEL_REQUIRES_EDIT_ACCESS_TOOLTIP)
                 };
 
-                let tooltip = appearance.ui_builder().tool_tip(tooltip_text.to_owned());
-                let mut stack = Stack::new();
-                stack.add_child(button_with_save_position);
-                stack.add_positioned_child(
-                    tooltip.build().finish(),
-                    OffsetPositioning::offset_from_parent(
-                        vec2f(0., -10.),
-                        ParentOffsetBounds::Unbounded,
-                        ParentAnchor::TopLeft,
-                        ChildAnchor::BottomLeft,
-                    ),
-                );
-                stack.finish()
+                if let Some(text) = tooltip_text {
+                    let tooltip = appearance.ui_builder().tool_tip(text.to_owned());
+                    let mut stack = Stack::new();
+                    stack.add_child(button_with_save_position);
+                    stack.add_positioned_overlay_child(
+                        tooltip.build().finish(),
+                        OffsetPositioning::offset_from_parent(
+                            vec2f(0., -10.),
+                            ParentOffsetBounds::WindowByPosition,
+                            ParentAnchor::TopLeft,
+                            ChildAnchor::BottomLeft,
+                        ),
+                    );
+                    stack.finish()
+                } else {
+                    button_with_save_position
+                }
             } else {
                 button_with_save_position
             }
