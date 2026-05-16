@@ -713,6 +713,9 @@ fn to_string(b: bool) -> String {
 }
 
 impl FeaturesPageAction {
+    fn should_send_telemetry(&self) -> bool {
+        !matches!(self, Self::SetCodeEditorLineNumberMode(_))
+    }
     fn telemetry_event(&self, ctx: &AppContext) -> TelemetryEvent {
         let workflow_settings = CommandSearchSettings::as_ref(ctx);
         let reporting_settings = AltScreenReporting::as_ref(ctx);
@@ -1927,7 +1930,9 @@ impl TypedActionView for FeaturesPageView {
             }
         }
 
-        send_telemetry_from_ctx!(action.telemetry_event(ctx), ctx);
+        if action.should_send_telemetry() {
+            send_telemetry_from_ctx!(action.telemetry_event(ctx), ctx);
+        }
     }
 }
 
