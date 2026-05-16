@@ -319,58 +319,56 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
         ),
     );
 
-    if FeatureFlag::FullScreenZenMode.is_enabled() {
-        // Add bindings for each visibility option.
-        app.register_fixed_bindings([
-            FixedBinding::empty(
-                "Always show tab bar".to_string(),
-                builder(SettingsAction::AppearancePageToggle(
-                    AppearancePageAction::SetWorkspaceDecorationVisibility(
-                        WorkspaceDecorationVisibility::AlwaysShow,
-                    ),
-                )),
-                context.to_owned(),
-            )
-            .with_group(bindings::BindingGroup::Settings.as_str()),
-            FixedBinding::empty(
-                "Hide tab bar if fullscreen".to_string(),
-                builder(SettingsAction::AppearancePageToggle(
-                    AppearancePageAction::SetWorkspaceDecorationVisibility(
-                        WorkspaceDecorationVisibility::HideFullscreen,
-                    ),
-                )),
-                context.to_owned(),
-            )
-            .with_group(bindings::BindingGroup::Settings.as_str()),
-            FixedBinding::empty(
-                "Only show tab bar on hover".to_string(),
-                builder(SettingsAction::AppearancePageToggle(
-                    AppearancePageAction::SetWorkspaceDecorationVisibility(
-                        WorkspaceDecorationVisibility::OnHover,
-                    ),
-                )),
-                context.to_owned(),
-            )
-            .with_group(bindings::BindingGroup::Settings.as_str()),
-        ]);
-
-        // Add a toggle alias for "Zen mode".
-        toggle_binding_pairs.push(
-            ToggleSettingActionPair::new(
-                "zen mode",
-                builder(SettingsAction::AppearancePageToggle(
-                    AppearancePageAction::ToggleWorkspaceDecorationVisibility,
-                )),
-                context,
-                flags::HIDE_WORKSPACE_DECORATIONS_CONTEXT_FLAG,
-            )
-            .is_supported_on_current_platform(
-                TabSettings::as_ref(app)
-                    .workspace_decoration_visibility
-                    .is_supported_on_current_platform(),
-            ),
+    // Add bindings for each visibility option.
+    app.register_fixed_bindings([
+        FixedBinding::empty(
+            "Always show tab bar".to_string(),
+            builder(SettingsAction::AppearancePageToggle(
+                AppearancePageAction::SetWorkspaceDecorationVisibility(
+                    WorkspaceDecorationVisibility::AlwaysShow,
+                ),
+            )),
+            context.to_owned(),
         )
-    }
+        .with_group(bindings::BindingGroup::Settings.as_str()),
+        FixedBinding::empty(
+            "Hide tab bar if fullscreen".to_string(),
+            builder(SettingsAction::AppearancePageToggle(
+                AppearancePageAction::SetWorkspaceDecorationVisibility(
+                    WorkspaceDecorationVisibility::HideFullscreen,
+                ),
+            )),
+            context.to_owned(),
+        )
+        .with_group(bindings::BindingGroup::Settings.as_str()),
+        FixedBinding::empty(
+            "Only show tab bar on hover".to_string(),
+            builder(SettingsAction::AppearancePageToggle(
+                AppearancePageAction::SetWorkspaceDecorationVisibility(
+                    WorkspaceDecorationVisibility::OnHover,
+                ),
+            )),
+            context.to_owned(),
+        )
+        .with_group(bindings::BindingGroup::Settings.as_str()),
+    ]);
+
+    // Add a toggle alias for "Zen mode".
+    toggle_binding_pairs.push(
+        ToggleSettingActionPair::new(
+            "zen mode",
+            builder(SettingsAction::AppearancePageToggle(
+                AppearancePageAction::ToggleWorkspaceDecorationVisibility,
+            )),
+            context,
+            flags::HIDE_WORKSPACE_DECORATIONS_CONTEXT_FLAG,
+        )
+        .is_supported_on_current_platform(
+            TabSettings::as_ref(app)
+                .workspace_decoration_visibility
+                .is_supported_on_current_platform(),
+        ),
+    );
 
     if FeatureFlag::VerticalTabs.is_enabled() {
         toggle_binding_pairs.push(ToggleSettingActionPair::new(
@@ -1373,10 +1371,9 @@ impl AppearanceSettingsPageView {
         if !FeatureFlag::OpenWarpNewSettingsModes.is_enabled() {
             tab_settings_widgets.push(Box::new(CodeReviewButtonWidget::default()));
         }
-        if FeatureFlag::FullScreenZenMode.is_enabled()
-            && tab_settings
-                .workspace_decoration_visibility
-                .is_supported_on_current_platform()
+        if tab_settings
+            .workspace_decoration_visibility
+            .is_supported_on_current_platform()
         {
             tab_settings_widgets.push(Box::new(ZenModeWidget::default()));
         }

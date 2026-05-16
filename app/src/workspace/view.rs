@@ -12209,10 +12209,6 @@ impl Workspace {
             return ShowTabBar::Stacked;
         }
 
-        if !FeatureFlag::FullScreenZenMode.is_enabled() {
-            return ShowTabBar::default();
-        }
-
         let is_fullscreen = app
             .windows()
             .platform_window(self.window_id)
@@ -12264,11 +12260,10 @@ impl Workspace {
     #[cfg(target_os = "macos")]
     pub fn sync_window_button_visibility(&self, ctx: &mut ViewContext<Self>) {
         use warpui::platform::mac::WindowExt;
-        let show = if FeatureFlag::FullScreenZenMode.is_enabled()
-            && TabSettings::as_ref(ctx)
-                .workspace_decoration_visibility
-                .value()
-                == &WorkspaceDecorationVisibility::OnHover
+        let show = if TabSettings::as_ref(ctx)
+            .workspace_decoration_visibility
+            .value()
+            == &WorkspaceDecorationVisibility::OnHover
         {
             self.tab_bar_mode(ctx).has_tab_bar()
         } else {

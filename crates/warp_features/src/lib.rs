@@ -154,10 +154,6 @@ pub enum FeatureFlag {
     /// https://github.com/warpdotdev/session-sharing-server/blob/b6590ebd0b0e7f6847d6b2228b4e77d63939ce22/server/Cargo.toml#L13
     SessionSharingAcls,
 
-    /// Enables the full-screen "zen mode" setting, where we hide the tab bar if there's only one
-    /// tab.
-    FullScreenZenMode,
-
     /// Playground for reducing Warp UI clutter.
     MinimalistUI,
 

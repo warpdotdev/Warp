@@ -2616,8 +2616,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::SimulateGithubUnauthed,
         #[cfg(feature = "session_sharing_acls")]
         FeatureFlag::SessionSharingAcls,
-        #[cfg(feature = "full_screen_zen_mode")]
-        FeatureFlag::FullScreenZenMode,
         #[cfg(feature = "minimalist_ui")]
         FeatureFlag::MinimalistUI,
         #[cfg(feature = "avatar_in_tab_bar")]
