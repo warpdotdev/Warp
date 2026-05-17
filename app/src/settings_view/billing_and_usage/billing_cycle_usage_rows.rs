@@ -1,18 +1,3 @@
-//! Per-row rendering for the cycle usage section, mirroring the admin-panel
-//! visual model in `warp-server/client/src/components/admin/billing/`
-//! (`memberUsageUtils.ts` + `MemberUsageTable.tsx`), adapted to the resolved
-//! client-side [`UsageVisibility`] model:
-//!
-//! * `OwnOnly` — one row for the viewer (zero row if no entries).
-//! * `TeamAggregate` — one synthetic "Team" row aggregated across all entries.
-//! * `PerUserTotals` — one row per workspace member; members with no entries
-//!   still get a zero row.
-//! * `FullBreakdown` — never reaches here; enterprise admins short-circuit to
-//!   the admin-panel CTA before [`render_rows`] runs.
-//!
-//! The categorical `Voice` / `SuggestedCodeDiffs` buckets and the `Team`
-//! subject are filtered out before aggregation, matching the admin panel.
-
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -45,41 +30,25 @@ use crate::{
     },
 };
 
+// for a bunch of this (min fill ratio, cost type order, ... )
+// you will find analogous ts code in warp-server
 const BAR_HEIGHT: f32 = 8.;
-/// Reserve at least 5% width for the filled portion so even tiny usages
-/// remain visible, matching the admin panel's `Math.max(pct, 5)`.
 const MIN_FILL_RATIO: f32 = 0.05;
 const ROW_BORDER_RADIUS: f32 = 8.;
 const ROW_PADDING: f32 = 12.;
 const TOOLTIP_GAP: f32 = 6.;
-/// Width bounds for the per-row hover tooltip. Without these bounds the
-/// tooltip's overlay layout would inherit the window width (via
-/// `ParentOffsetBounds::WindowByPosition`) and stretch across the entire
-/// page — the inner row children use `MainAxisSize::Max` for their
-/// `SpaceBetween` alignment, so they greedily expand to whatever space the
-/// parent offers.
-const TOOLTIP_MIN_WIDTH: f32 = 240.;
-const TOOLTIP_MAX_WIDTH: f32 = 360.;
-
-/// All cost-type buckets the admin panel considers, in the order they are
-/// rendered within a single bar (and listed in tooltips).
 const COST_TYPE_ORDER: &[AiCreditsUsageAndCostType] = &[
     AiCreditsUsageAndCostType::BaseLimit,
     AiCreditsUsageAndCostType::BonusGrant,
     AiCreditsUsageAndCostType::Payg,
     AiCreditsUsageAndCostType::AmbientBonusGrant,
 ];
-
-/// Usage-bucket ordering used as a secondary sort key inside a single cost
-/// type. Mirrors `BUCKET_ORDER` in `memberUsageUtils.ts`.
 const BUCKET_ORDER: &[AiCreditsUsageBucket] = &[
     AiCreditsUsageBucket::Ai,
     AiCreditsUsageBucket::Compute,
     AiCreditsUsageBucket::Platform,
 ];
 
-/// Source filter for the "Usage" table when the workspace has any cloud
-/// (ambient agent) usage. The toggle is hidden when no cloud usage exists.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SourceFilter {
     #[default]
@@ -106,10 +75,6 @@ impl SourceFilter {
     }
 }
 
-/// Persistent mouse state owned by the section view. Pre-allocated for the
-/// three filter toggles plus a dynamically grown set of per-row tooltip
-/// states keyed by subject UID. Subject-less rows (e.g. the synthetic
-/// `TeamAggregate` row) get a stable sentinel key.
 pub struct RowMouseStates {
     pub filter_all: MouseStateHandle,
     pub filter_local: MouseStateHandle,
@@ -160,13 +125,10 @@ pub struct MemberUsageRow {
     pub total_credits: i64,
     pub total_cost_cents: i64,
     /// Segments sorted by [`COST_TYPE_ORDER`] then [`BUCKET_ORDER`], with
-    /// any zero-credit entries filtered out.
+    /// any zero-credit entries filtered out. Used both for the stacked bar
+    /// and as the source of the per-cost-type breakdown shown in the row's
+    /// hover tooltip.
     pub segments: Vec<BarSegment>,
-    /// Same as [`MemberUsageRow::segments`] but retains zero-credit entries
-    /// so tooltips can show the full breakdown. Currently identical to
-    /// `segments` since we don't synthesize zero-credit lines, but kept as a
-    /// distinct field to mirror the admin-panel structure.
-    pub tooltip_lines: Vec<BarSegment>,
 }
 
 /// Returns the next-cycle reset / period-end label color and label for one
@@ -312,7 +274,6 @@ pub fn build_own_usage_row(
         display_name: viewer_display_name,
         total_credits,
         total_cost_cents,
-        tooltip_lines: segments.clone(),
         segments,
     }
 }
@@ -337,7 +298,6 @@ pub fn build_team_aggregate_row(
         display_name: "Team total".to_string(),
         total_credits,
         total_cost_cents,
-        tooltip_lines: segments.clone(),
         segments,
     }
 }
@@ -414,7 +374,6 @@ pub fn build_member_usage_rows(
             display_name: member.email.clone(),
             total_credits,
             total_cost_cents,
-            tooltip_lines: segments.clone(),
             segments,
         });
     }
@@ -433,7 +392,6 @@ pub fn build_member_usage_rows(
             display_name,
             total_credits,
             total_cost_cents,
-            tooltip_lines: segments.clone(),
             segments,
         });
     }
@@ -551,7 +509,7 @@ fn render_usage_tooltip_content(row: &MemberUsageRow, appearance: &Appearance) -
         .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
         .with_spacing(6.);
 
-    for line in &row.tooltip_lines {
+    for line in &row.segments {
         let label = if matches!(line.usage_bucket, AiCreditsUsageBucket::Aggregate) {
             cost_type_label(&line.cost_type).to_string()
         } else {
@@ -663,8 +621,8 @@ fn render_usage_tooltip_content(row: &MemberUsageRow, appearance: &Appearance) -
             .with_uniform_padding(10.)
             .finish(),
     )
-    .with_min_width(TOOLTIP_MIN_WIDTH)
-    .with_max_width(TOOLTIP_MAX_WIDTH)
+    .with_min_width(240.)
+    .with_max_width(360.)
     .finish()
 }
 
@@ -765,16 +723,11 @@ fn render_member_row(
     tooltip_mouse_state: MouseStateHandle,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
-    // Empty tooltip lines means the viewer hasn't used any credits this
-    // cycle — nothing useful to show in a tooltip, so don't bother
-    // wrapping in a Hoverable that opens an empty popover.
-    if row.tooltip_lines.is_empty() {
+    // the viewer hasn't used any credits this cycle => don't bother wrapping in a Hoverable
+    if row.segments.is_empty() {
         return build_row_card(row, team_max_credits, appearance);
     }
 
-    // `Hoverable::new`'s `build_child` closure is `FnOnce` without a
-    // `'static` bound and is invoked immediately, so we can capture `row`
-    // and `appearance` by reference without any cloning.
     Hoverable::new(tooltip_mouse_state, move |state| {
         let mut stack = Stack::new();
         stack.add_child(build_row_card(row, team_max_credits, appearance));
@@ -796,10 +749,6 @@ fn render_member_row(
     .finish()
 }
 
-/// Callback signature for source-filter clicks. Receives the newly-clicked
-/// filter and the active [`EventContext`] so callers can dispatch their own
-/// typed action without this module needing to know about the section's
-/// action enum.
 pub type FilterChangeFn = std::sync::Arc<dyn Fn(SourceFilter, &mut EventContext) + 'static>;
 
 /// Inline pill toggle for filtering between All / Local / Cloud entries.
