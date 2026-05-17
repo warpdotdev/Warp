@@ -31,8 +31,7 @@ use crate::settings::{
     respect_system_theme, AIFontName, AppEditorSettings, CursorBlink, CursorBlinkEnabled,
     EnforceMinimumContrast, FocusPaneOnHover, FontSettings, FontSettingsChangedEvent, InputBoxType,
     InputModeSettings, InputModeState, MonospaceFontName, PaneSettings, PaneSpecificFontSize,
-    ShouldDimInactivePanes,
-    ThemeSettings, UseSystemTheme, DEFAULT_MONOSPACE_FONT_NAME,
+    ShouldDimInactivePanes, ThemeSettings, UseSystemTheme, DEFAULT_MONOSPACE_FONT_NAME,
 };
 use crate::settings::{CursorDisplayType, GPUSettings, InputSettings, InputSettingsChangedEvent};
 use crate::terminal::block_list_viewport::InputMode;

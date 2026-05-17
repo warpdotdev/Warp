@@ -49,6 +49,7 @@ use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
 use crate::ai::harness_display;
 use crate::features::FeatureFlag;
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
+use crate::pane_group::focus_state::{PaneFocusHandle, PaneGroupFocusEvent};
 use crate::pane_group::pane::view::PaneHeaderAction;
 use crate::terminal::view::TerminalAction;
 use crate::ui_components::icon_with_status::{
@@ -274,6 +275,8 @@ pub struct OrchestrationPillBar {
     menu_open_for: Option<AIConversationId>,
     /// `Some(id)` when the cursor is hovering that pill (drives the details card).
     hovered_pill: Option<AIConversationId>,
+    /// Per-pane focus handle for resolving the effective monospace font size.
+    focus_handle: Option<PaneFocusHandle>,
 }
 
 impl Entity for OrchestrationPillBar {
@@ -300,8 +303,12 @@ impl OrchestrationPillBar {
 
     pub fn new(
         agent_view_controller: ModelHandle<AgentViewController>,
+        focus_handle: Option<PaneFocusHandle>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
+        if let Some(handle) = focus_handle.clone() {
+            Self::subscribe_to_font_size_overrides(handle, ctx);
+        }
         let history_model = BlocklistAIHistoryModel::handle(ctx);
         ctx.subscribe_to_model(&history_model, |this, _, event, ctx| match event {
             BlocklistAIHistoryEvent::UpdatedConversationStatus { .. }
@@ -380,7 +387,43 @@ impl OrchestrationPillBar {
             menu,
             menu_open_for: None,
             hovered_pill: None,
+            focus_handle,
         }
+    }
+
+    fn effective_monospace_font_size(&self, app: &AppContext) -> f32 {
+        self.focus_handle
+            .as_ref()
+            .map(|h| h.effective_monospace_font_size(app))
+            .unwrap_or_else(|| Appearance::as_ref(app).monospace_font_size())
+    }
+
+    /// Wires this pill bar to a pane's focus handle so its rendered text honors
+    /// the pane-specific font-size override. Called from
+    /// `TerminalView::set_focus_handle` because the pill bar is constructed in
+    /// `TerminalView::new`, before the pane group hands the focus handle down.
+    pub fn set_focus_handle(
+        &mut self,
+        focus_handle: PaneFocusHandle,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.focus_handle = Some(focus_handle.clone());
+        Self::subscribe_to_font_size_overrides(focus_handle, ctx);
+        ctx.notify();
+    }
+
+    fn subscribe_to_font_size_overrides(
+        handle: PaneFocusHandle,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let focus_state = handle.focus_state_handle().clone();
+        ctx.subscribe_to_model(&focus_state, move |_, _, event, ctx| {
+            if matches!(event, PaneGroupFocusEvent::FontSizeOverrideChanged { .. })
+                && handle.is_affected(event)
+            {
+                ctx.notify();
+            }
+        });
     }
 
     /// Rebuilds menu items for the given child and opens the menu.
@@ -789,6 +832,8 @@ impl View for OrchestrationPillBar {
             return Empty::new().finish();
         };
 
+        let font_size = self.effective_monospace_font_size(app);
+
         // Row reports its intrinsic width so the wrapping horizontal
         // scrollable below has something larger than the pane width to
         // pan through when there are many child pills.
@@ -848,6 +893,7 @@ impl View for OrchestrationPillBar {
                 pin_mouse_state,
                 menu_is_open_for_this,
                 self_terminal_view_id,
+                font_size,
                 app,
             );
             match (kind, pin_state) {
@@ -949,7 +995,7 @@ impl View for OrchestrationPillBar {
                 if !still_over_pill {
                     return None;
                 }
-                render_hover_card(id, self.agent_view_controller.as_ref(app), app)
+                render_hover_card(id, self.agent_view_controller.as_ref(app), font_size, app)
                     .map(|card| MenuOrCard::Card { id, card })
             })
         };
@@ -1034,6 +1080,7 @@ enum MenuOrCard {
 fn render_hover_card(
     conversation_id: AIConversationId,
     _agent_view_controller: &AgentViewController,
+    font_size: f32,
     app: &AppContext,
 ) -> Option<Box<dyn Element>> {
     let history = BlocklistAIHistoryModel::as_ref(app);
@@ -1064,19 +1111,15 @@ fn render_hover_card(
     } else {
         render_agent_avatar_disc(&name, AVATAR_SIZE, theme, appearance)
     };
-    let name_text = Text::new(
-        name,
-        appearance.ui_font_family(),
-        appearance.monospace_font_size(),
-    )
-    .with_color(main_text)
-    .with_style(Properties {
-        weight: Weight::Semibold,
-        ..Default::default()
-    })
-    .with_clip(ClipConfig::ellipsis())
-    .soft_wrap(false)
-    .finish();
+    let name_text = Text::new(name, appearance.ui_font_family(), font_size)
+        .with_color(main_text)
+        .with_style(Properties {
+            weight: Weight::Semibold,
+            ..Default::default()
+        })
+        .with_clip(ClipConfig::ellipsis())
+        .soft_wrap(false)
+        .finish();
     // The orchestrator's `ConversationStatus` reflects its own last
     // exchange's outcome (often `Cancelled` after the user cancels to
     // delegate to subagents, or `Success` once the orchestrator's own
@@ -1093,6 +1136,7 @@ fn render_hover_card(
             conversation.status(),
             theme,
             appearance,
+            font_size,
         ))
         .with_max_width(STATUS_BADGE_MAX_WIDTH)
         .finish()
@@ -1154,7 +1198,7 @@ fn render_hover_card(
             Text::new(
                 warp_util::path::user_friendly_path(&cwd, home_dir_str).into_owned(),
                 appearance.ui_font_family(),
-                appearance.monospace_font_size() - 1.,
+                font_size - 1.,
             )
             .with_color(main_text)
             .with_clip(ClipConfig {
@@ -1179,14 +1223,10 @@ fn render_hover_card(
         } else {
             description
         };
-        Text::new(
-            trimmed,
-            appearance.ui_font_family(),
-            appearance.monospace_font_size() - 1.,
-        )
-        .with_color(sub_text)
-        .soft_wrap(true)
-        .finish()
+        Text::new(trimmed, appearance.ui_font_family(), font_size - 1.)
+            .with_color(sub_text)
+            .soft_wrap(true)
+            .finish()
     });
 
     // Chips row: branch (if known via a PR artifact) + PR (if known) +
@@ -1211,6 +1251,7 @@ fn render_hover_card(
         main_text,
         theme,
         appearance,
+        font_size,
     ));
 
     for artifact in conversation.artifacts() {
@@ -1229,6 +1270,7 @@ fn render_hover_card(
                     main_text,
                     theme,
                     appearance,
+                    font_size,
                 ));
             }
             if let (Some(repo), Some(number)) = (repo, number) {
@@ -1239,6 +1281,7 @@ fn render_hover_card(
                     main_text,
                     theme,
                     appearance,
+                    font_size,
                 ));
             }
             // Only one PR artifact is meaningful per conversation; bail.
@@ -1303,6 +1346,7 @@ fn render_status_badge(
     status: &ConversationStatus,
     theme: &WarpTheme,
     appearance: &Appearance,
+    font_size: f32,
 ) -> Box<dyn Element> {
     let (icon, color) = status.status_icon_and_color(theme, StatusColorStyle::Standard);
     let icon_el = ConstrainedBox::new(icon.to_warpui_icon(color.into()).finish())
@@ -1312,7 +1356,7 @@ fn render_status_badge(
     let label = Text::new(
         status.to_string(),
         appearance.ui_font_family(),
-        appearance.monospace_font_size() - 2.,
+        font_size - 2.,
     )
     .with_color(color)
     .soft_wrap(false)
@@ -1342,20 +1386,17 @@ fn render_chip(
     text_color: ColorU,
     theme: &WarpTheme,
     appearance: &Appearance,
+    font_size: f32,
 ) -> Box<dyn Element> {
     let icon_el = ConstrainedBox::new(icon.to_warpui_icon(icon_color.into()).finish())
         .with_width(12.)
         .with_height(12.)
         .finish();
-    let text = Text::new(
-        label,
-        appearance.ui_font_family(),
-        appearance.monospace_font_size() - 2.,
-    )
-    .with_color(text_color)
-    .soft_wrap(false)
-    .with_clip(ClipConfig::ellipsis())
-    .finish();
+    let text = Text::new(label, appearance.ui_font_family(), font_size - 2.)
+        .with_color(text_color)
+        .soft_wrap(false)
+        .with_clip(ClipConfig::ellipsis())
+        .finish();
     let row = Flex::row()
         .with_cross_axis_alignment(CrossAxisAlignment::Center)
         .with_main_axis_size(MainAxisSize::Min)
@@ -1448,6 +1489,7 @@ fn render_pill(
     pin_button_mouse_state: MouseStateHandle,
     menu_is_open_for_this: bool,
     self_terminal_view_id: warpui::EntityId,
+    font_size: f32,
     app: &AppContext,
 ) -> Box<dyn Element> {
     let appearance = Appearance::as_ref(app);
@@ -1520,16 +1562,12 @@ fn render_pill(
             pill_label_width(&label, label_style, appearance, app).min(PILL_LABEL_MAX_WIDTH)
         });
 
-        let label_text = Text::new(
-            label,
-            appearance.ui_font_family(),
-            appearance.monospace_font_size() - 1.,
-        )
-        .with_color(text_color)
-        .soft_wrap(false)
-        .with_clip(ClipConfig::ellipsis())
-        .with_style(label_style)
-        .finish();
+        let label_text = Text::new(label, appearance.ui_font_family(), font_size - 1.)
+            .with_color(text_color)
+            .soft_wrap(false)
+            .with_clip(ClipConfig::ellipsis())
+            .with_style(label_style)
+            .finish();
 
         let label_element = if let Some(label_slot_width) = hover_label_slot_width {
             let clipped_label_width = (label_slot_width - OVERFLOW_BUTTON_LABEL_RESERVE).max(0.);
@@ -1943,6 +1981,7 @@ pub fn render_orchestration_breadcrumbs(
     agent_view_controller: &AgentViewController,
     parent_crumb_mouse_state: MouseStateHandle,
     horizontal_scroll_state: ClippedScrollStateHandle,
+    font_size: f32,
     app: &AppContext,
 ) -> Option<Box<dyn Element>> {
     // Mirror the gating used by `maybe_add_parent_navigation_card` in
@@ -2055,6 +2094,7 @@ pub fn render_orchestration_breadcrumbs(
         self_terminal_view_id,
         theme,
         appearance,
+        font_size,
     ));
     row.add_child(chevron);
     row.add_child(render_crumb(
@@ -2063,6 +2103,7 @@ pub fn render_orchestration_breadcrumbs(
         self_terminal_view_id,
         theme,
         appearance,
+        font_size,
     ));
 
     let scrollable = NewScrollable::horizontal(
@@ -2110,6 +2151,7 @@ fn render_crumb(
     self_terminal_view_id: EntityId,
     theme: &WarpTheme,
     appearance: &Appearance,
+    font_size: f32,
 ) -> Box<dyn Element> {
     let conversation_id = spec.conversation_id;
     let is_active = spec.is_active;
@@ -2128,6 +2170,7 @@ fn render_crumb(
             false, /* is_hovered */
             theme,
             appearance,
+            font_size,
         );
         return ConstrainedBox::new(inner)
             .with_height(CRUMB_HEIGHT)
@@ -2147,6 +2190,7 @@ fn render_crumb(
             hover_state.is_hovered() || hover_state.is_clicked(),
             theme,
             appearance,
+            font_size,
         );
         ConstrainedBox::new(inner)
             .with_height(CRUMB_HEIGHT)
@@ -2206,6 +2250,7 @@ fn render_crumb(
 /// Builds the inner content (background + padding + avatar + label row) for a
 /// single crumb. Shared between active (non-interactive) and interactive paths
 /// so both render at the same height with consistent padding.
+#[allow(clippy::too_many_arguments)]
 fn build_crumb_inner(
     label: String,
     avatar_color: ColorU,
@@ -2214,6 +2259,7 @@ fn build_crumb_inner(
     is_hovered: bool,
     theme: &WarpTheme,
     appearance: &Appearance,
+    font_size: f32,
 ) -> Box<dyn Element> {
     let text_color = if is_active || is_hovered {
         internal_colors::text_main(theme, theme.background())
@@ -2221,15 +2267,11 @@ fn build_crumb_inner(
         internal_colors::text_sub(theme, theme.background())
     };
 
-    let label_text = Text::new(
-        label,
-        appearance.ui_font_family(),
-        appearance.monospace_font_size(),
-    )
-    .with_color(text_color)
-    .soft_wrap(false)
-    .with_clip(ClipConfig::ellipsis())
-    .finish();
+    let label_text = Text::new(label, appearance.ui_font_family(), font_size)
+        .with_color(text_color)
+        .soft_wrap(false)
+        .with_clip(ClipConfig::ellipsis())
+        .finish();
 
     let avatar = render_avatar_disc(avatar_color, avatar_glyph, AVATAR_SIZE, theme, appearance);
 
