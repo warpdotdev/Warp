@@ -111,11 +111,20 @@ impl Error {
     /// SSH remote-server failed banner, using `stage` to provide
     /// context-appropriate copy.
     pub fn user_facing_error(&self, stage: SetupStage) -> UserFacingError {
+        if matches!(self, Self::TimedOut) {
+            return UserFacingError {
+                body: format!("Timed out while trying to {}", stage.action_description()),
+                detail: Some(
+                    "Warp stopped waiting for the SSH extension to respond. Your SSH session is \
+                    still running, but advanced features are unavailable for now."
+                        .into(),
+                ),
+            };
+        }
+
         let body = format!("Failed to {}", stage.action_description());
         let detail = match self {
-            Self::TimedOut => {
-                Some("The operation timed out — check your network connection".into())
-            }
+            Self::TimedOut => unreachable!("handled above"),
             Self::UnsupportedOs { os } => Some(format!("Unsupported OS: {os}")),
             Self::UnsupportedArch { arch } => Some(format!("Unsupported architecture: {arch}")),
             Self::ScriptFailed { exit_code, stderr } => {
@@ -134,6 +143,36 @@ impl Error {
             Self::Other(_) => None,
         };
         UserFacingError { body, detail }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timed_out_error_copy_leads_with_timeout() {
+        let error = Error::TimedOut.user_facing_error(SetupStage::Launch);
+
+        assert_eq!(error.body, "Timed out while trying to start SSH extension");
+        assert_eq!(
+            error.detail.as_deref(),
+            Some(
+                "Warp stopped waiting for the SSH extension to respond. Your SSH session is \
+                 still running, but advanced features are unavailable for now."
+            )
+        );
+    }
+
+    #[test]
+    fn non_timeout_error_copy_still_leads_with_failure() {
+        let error = Error::UnsupportedOs {
+            os: "plan9".to_string(),
+        }
+        .user_facing_error(SetupStage::CheckBinary);
+
+        assert_eq!(error.body, "Failed to verify SSH extension");
+        assert_eq!(error.detail.as_deref(), Some("Unsupported OS: plan9"));
     }
 }
 
