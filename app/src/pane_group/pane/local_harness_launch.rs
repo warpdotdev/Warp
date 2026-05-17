@@ -69,11 +69,20 @@ pub(super) fn build_local_codex_child_command(prompt: &str) -> String {
     format!("codex --dangerously-bypass-approvals-and-sandbox {quoted_prompt}")
 }
 
-fn local_child_task_config(harness: Harness) -> Option<AgentConfigSnapshot> {
+pub(super) fn local_child_task_config(
+    harness: Harness,
+    agent_name: Option<String>,
+) -> Option<AgentConfigSnapshot> {
+    // Normalize whitespace-only/empty orchestrator names to absent.
+    let agent_name = agent_name.and_then(|name| {
+        let trimmed = name.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    });
     match harness {
         Harness::Oz | Harness::Unknown => None,
         Harness::Claude | Harness::OpenCode | Harness::Gemini | Harness::Codex => {
             Some(AgentConfigSnapshot {
+                name: agent_name,
                 harness: Some(HarnessConfig::from_harness_type(harness)),
                 ..Default::default()
             })
@@ -81,11 +90,13 @@ fn local_child_task_config(harness: Harness) -> Option<AgentConfigSnapshot> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn prepare_local_harness_child_launch(
     prompt: String,
     harness_type: String,
     model_id: Option<String>,
     parent_run_id: Option<String>,
+    agent_name: Option<String>,
     shell_type: Option<ShellType>,
     startup_directory: Option<PathBuf>,
     ai_client: Arc<dyn AIClient>,
@@ -177,7 +188,7 @@ pub(super) async fn prepare_local_harness_child_launch(
             prompt.clone(),
             None,
             parent_run_id.clone(),
-            local_child_task_config(harness),
+            local_child_task_config(harness, agent_name),
         )
         .await
         .map_err(|error| {

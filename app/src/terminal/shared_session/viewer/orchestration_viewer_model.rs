@@ -297,11 +297,13 @@ impl OrchestrationViewerModel {
                 continue;
             };
 
-            let name = if task.title.is_empty() {
-                "Agent".to_string()
-            } else {
-                task.title.clone()
-            };
+            // QUALITY-731: prefer the orchestrator-supplied short name (carried
+            // on `agent_config_snapshot.name`) for the child pill label; keep
+            // the descriptive `task.title` as the conversation's fallback
+            // display title so `AIConversation::title()` still surfaces it
+            // when no task description or initial query exists.
+            let name = task.display_name().to_string();
+            let fallback_title = task.title.clone();
             let harness = task
                 .agent_config_snapshot
                 .as_ref()
@@ -323,6 +325,9 @@ impl OrchestrationViewerModel {
                 history.set_viewing_shared_session_for_conversation(conversation_id, true);
                 if let Some(conversation) = history.conversation_mut(&conversation_id) {
                     conversation.set_task_id(task_id);
+                    if !fallback_title.is_empty() {
+                        conversation.set_fallback_display_title(fallback_title);
+                    }
                 }
                 history.update_conversation_status(
                     terminal_view_id,

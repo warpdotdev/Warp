@@ -1714,10 +1714,26 @@ fn launch_local_no_harness_child(
         .and_then(|view| host_terminal_shared_session_source_type(&view, ctx));
 
     let prompt_for_create = prompt.clone();
+    // QUALITY-731: stamp the orchestrator-supplied short name into the
+    // task's AgentConfigSnapshot so a viewer reconstructing the child can
+    // recover it via `AmbientAgentTask::display_name()`. Trim whitespace at
+    // the construction site; treat empty/whitespace-only as absent.
+    let agent_name_for_create = {
+        let trimmed = request_name.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    };
     let _ = ctx.spawn(
         async move {
             ai_client
-                .create_agent_task(prompt_for_create, None, parent_run_id, None)
+                .create_agent_task(
+                    prompt_for_create,
+                    None,
+                    parent_run_id,
+                    Some(AgentConfigSnapshot {
+                        name: agent_name_for_create,
+                        ..Default::default()
+                    }),
+                )
                 .await
         },
         move |group, result, ctx| match result {
@@ -1861,6 +1877,10 @@ fn launch_local_harness_child(
         .and_then(|view| host_terminal_shared_session_source_type(&view, ctx));
 
     let model_id_for_harness_env = model_id.clone();
+    // QUALITY-731: forward the orchestrator's short name into the
+    // local-harness task's AgentConfigSnapshot.name. Trim is handled inside
+    // `local_child_task_config`.
+    let agent_name_for_task = Some(request_name.clone());
     let _ = ctx.spawn(
         async move {
             prepare_local_harness_child_launch(
@@ -1868,6 +1888,7 @@ fn launch_local_harness_child(
                 harness_type,
                 model_id_for_harness_env,
                 parent_run_id,
+                agent_name_for_task,
                 shell_type,
                 startup_directory,
                 ai_client,
@@ -2034,6 +2055,11 @@ fn launch_remote_child(
         return None;
     };
 
+    // QUALITY-731: clone the orchestrator-supplied short name before it is
+    // moved into `start_new_child_conversation`. The clone is stamped into
+    // `AgentConfigSnapshot.name` on the outbound `SpawnAgentRequest` below.
+    let request_name = request.name.clone();
+
     let new_pane_id = group.insert_ambient_agent_pane_hidden_for_child_agent(parent_pane_id, ctx);
 
     let Some(new_terminal_view) = group.terminal_view_from_pane_id(new_pane_id, ctx) else {
@@ -2133,10 +2159,18 @@ fn launch_remote_child(
             }),
             Harness::Oz | Harness::OpenCode | Harness::Gemini | Harness::Unknown => None,
         });
+    // QUALITY-731: stamp the orchestrator-supplied short name into the
+    // outbound `AgentConfigSnapshot.name`. Trim whitespace at the
+    // construction site; treat empty/whitespace-only as absent.
+    let agent_name = {
+        let trimmed = request_name.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    };
     let spawn_request = SpawnAgentRequest {
         prompt: request.prompt,
         mode: UserQueryMode::Normal,
         config: Some(AgentConfigSnapshot {
+            name: agent_name,
             environment_id,
             model_id: (!model_id.is_empty()).then_some(model_id),
             worker_host: (!worker_host.is_empty()).then_some(worker_host),

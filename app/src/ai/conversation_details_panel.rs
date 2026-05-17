@@ -373,6 +373,10 @@ impl ConversationDetailsData {
                 environment_id,
                 conversation_id: task.conversation_id().map(str::to_string),
             },
+            // QUALITY-731: side-pane header intentionally keeps `task.title`
+            // (descriptive) rather than `task.display_name()` (the short
+            // orchestrator label) while product evaluates whether to show
+            // both. See specs/QUALITY-731/TECH.md before changing this.
             title: task.title.clone(),
             created_at: Some(task.created_at.with_timezone(&Local)),
             artifacts: task.artifacts.clone(),
