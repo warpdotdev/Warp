@@ -11,7 +11,7 @@ use crate::code::editor::{add_color, remove_color};
 use crate::code_review::code_review_view::CODE_REVIEW_TOOLTIP_TEXT;
 use crate::code_review::diff_state::DiffStats;
 use crate::context_chips::git_branch_on_click::{
-    GitBranchOnClickValue, is_plausible_new_branch_name,
+    is_plausible_new_branch_name, GitBranchOnClickValue,
 };
 use crate::context_chips::node_version_popup::{NodeVersionPopupEvent, NodeVersionPopupView};
 use crate::context_chips::spacing;
@@ -28,7 +28,7 @@ use crate::util::truncation::truncate_from_beginning;
 use crate::view_components::action_button::{ActionButtonTheme, NakedTheme};
 use crate::view_components::{FeaturePopup, NewFeaturePopupEvent, NewFeaturePopupLabel};
 use pathfinder_color::ColorU;
-use pathfinder_geometry::vector::{Vector2F, vec2f};
+use pathfinder_geometry::vector::{vec2f, Vector2F};
 use std::path::PathBuf;
 use warp_core::ui::theme::Fill;
 use warp_core::{features::FeatureFlag, ui::theme::color::internal_colors};
@@ -38,27 +38,27 @@ use warpui::platform::Cursor;
 use warpui::ui_components::components::UiComponentStyles;
 use warpui::ui_components::components::{Coords, UiComponent};
 use warpui::{
-    AppContext, Element, Entity, EntityId, Gradient, ModelHandle, SingletonEntity, TypedActionView,
-    View, ViewContext, ViewHandle,
     elements::{
         Border, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius,
-        CrossAxisAlignment, DEFAULT_UI_LINE_HEIGHT_RATIO, Flex, Hoverable, MouseStateHandle,
-        OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Stack, Text,
+        CrossAxisAlignment, Flex, Hoverable, MouseStateHandle, OffsetPositioning, ParentAnchor,
+        ParentElement, ParentOffsetBounds, Radius, Stack, Text, DEFAULT_UI_LINE_HEIGHT_RATIO,
     },
     fonts::{Cache, FamilyId, Properties, Weight},
+    AppContext, Element, Entity, EntityId, Gradient, ModelHandle, SingletonEntity, TypedActionView,
+    View, ViewContext, ViewHandle,
 };
 
 use crate::appearance::Appearance;
 use crate::completer::SessionContext;
-use crate::{TelemetryEvent, send_telemetry_from_ctx};
+use crate::{send_telemetry_from_ctx, TelemetryEvent};
 
 use super::{
-    ChipResult, ContextChipKind, agent_view_chip_color,
+    agent_view_chip_color,
     directory_fetcher::{DirectoryFetcher, DirectoryFetcherEvent, DirectoryItem, DirectoryType},
     display_menu::{
         ChipMenuType, DisplayChipMenu, FixedFooter, GenericMenuItem, PromptDisplayMenuEvent,
     },
-    github_pr_display_text_from_url, render_text_from_kind,
+    github_pr_display_text_from_url, render_text_from_kind, ChipResult, ContextChipKind,
 };
 use crate::workspace::view::TOGGLE_RIGHT_PANEL_BINDING_NAME;
 
@@ -613,21 +613,20 @@ impl DisplayChip {
                 ctx.subscribe_to_view(&menu_view, |me, _, event, ctx| match event {
                     PromptDisplayMenuEvent::MenuAction(generic_event) => {
                         let action_item = generic_event.action_item.as_any();
-                        let command = if let Some(git_branch) =
-                            action_item.downcast_ref::<GitBranch>()
-                        {
-                            git_branch.command()
-                        } else if let Some(create_branch) =
-                            action_item.downcast_ref::<CreateGitBranch>()
-                        {
-                            create_branch.command()
-                        } else {
-                            log::warn!(
+                        let command =
+                            if let Some(git_branch) = action_item.downcast_ref::<GitBranch>() {
+                                git_branch.command()
+                            } else if let Some(create_branch) =
+                                action_item.downcast_ref::<CreateGitBranch>()
+                            {
+                                create_branch.command()
+                            } else {
+                                log::warn!(
                                 "MenuAction event should contain a GitBranch or CreateGitBranch \
                                  action item"
                             );
-                            return;
-                        };
+                                return;
+                            };
 
                         ctx.emit(PromptDisplayChipEvent::TryExecuteCommand(command));
                         me.close_git_branch_menu(ctx);

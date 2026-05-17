@@ -1,10 +1,10 @@
 use super::{
-    CreateGitBranch, GitBranch, GitLineChanges, format_create_git_branch_command,
-    format_git_branch_command, truncate_from_beginning,
+    format_create_git_branch_command, format_git_branch_command, truncate_from_beginning,
+    CreateGitBranch, GitBranch, GitLineChanges,
 };
 use crate::context_chips::display_menu::GenericMenuItem;
 use crate::context_chips::{
-    ContextChipKind, git_branch_on_click::GitBranchOnClickValue, github_pr_display_text_from_url,
+    git_branch_on_click::GitBranchOnClickValue, github_pr_display_text_from_url, ContextChipKind,
 };
 use crate::ui_components::icons::Icon;
 
