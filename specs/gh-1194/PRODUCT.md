@@ -35,17 +35,20 @@ Warp's UI is entirely hardcoded in English. Non-English-speaking developers must
     4. Default: `"en"`
 
     The candidate is then classified:
-    - Starts with `"zh"` → `"zh-CN"`
-    - Otherwise → `"en"`
+    - `zh`, `zh-CN`, `zh_CN`, `zh-Hans*`, or `zh_Hans*` → `"zh-CN"`
+    - Everything else, including `zh-TW`, `zh-HK`, `zh-Hant*`, and other non-Simplified Chinese locales → `"en"`
 
     Examples:
     - `WARP_LANG=zh-CN` → "zh-CN" candidate → zh-CN
+    - `WARP_LANG=zh-Hans` → "zh-Hans" candidate → zh-CN
+    - `WARP_LANG=zh-TW` → "zh-TW" candidate → en (Traditional Chinese is not shipped yet)
     - `WARP_LANG=fr` → "fr" candidate → en (non-zh candidate, no fallthrough to system)
-    - No env vars, Chinese OS → system "zh-CN" → zh-CN
+    - No env vars, Simplified Chinese OS → system "zh-CN" → zh-CN
+    - No env vars, Traditional Chinese OS → system "zh-TW" → en (Traditional Chinese is not shipped yet)
     - No env vars, English OS → system "en_US" → en
     - No env vars, no system locale → default "en" → en
 
-1.3. The application ships with exactly two locale files: `en.yml` and `zh-CN.yml`.
+1.2. The application ships with exactly two locale files: `en.yml` and `zh-CN.yml`.
 
 ### 2. Translation rendering
 
@@ -54,7 +57,7 @@ Warp's UI is entirely hardcoded in English. Non-English-speaking developers must
 2.2. When a translation is requested for a given key:
     1. The active locale file is checked first.
     2. If the key is missing from the active locale, the English (`en`) locale file is checked.
-    3. If the key is missing from both, the raw key string is displayed (e.g., `"menu.file"`).
+    3. For ordinary, non-sensitive UI, if the key is missing from both, the raw key string is displayed (e.g., `"menu.file"`). Security-sensitive exceptions are defined in section 6.
 
 2.3. The entire UI surface is covered: macOS menu bar, tab context menus, workspace toolbar, settings panels (AI, appearance, keybindings, billing, features), agent UI, onboarding, auth dialogs, resource center, code review, terminal prompts, tooltips, notifications, and all modal dialogs. In total, approximately 2,700 distinct UI strings are translated.
 
@@ -64,7 +67,7 @@ Warp's UI is entirely hardcoded in English. Non-English-speaking developers must
 
 3.2. At render time, the translation macro accepts named arguments: `t!("key", name = value)`. The value is converted to a string and substituted for `{name}` in the translated template.
 
-3.3. If a key with interpolation arguments is missing from both locale files, the raw key is displayed (interpolation is not applied to the fallback key).
+3.3. If a key with interpolation arguments is missing from both locale files, ordinary non-sensitive UI displays the raw key (interpolation is not applied to the fallback key). Security-sensitive exceptions are defined in section 6.
 
 ### 4. Locale file format
 
@@ -87,19 +90,21 @@ Warp's UI is entirely hardcoded in English. Non-English-speaking developers must
 
 5.2. To change locale, the user sets `WARP_LANG=zh-CN` (or `WARP_LANG=zh`) before launching Warp, and the change takes effect on next launch.
 
-5.3. Setting `WARP_LANG` to a non-Chinese value (or unsetting it) restores the system-locale-based default (English for non-Chinese systems).
+5.3. Setting `WARP_LANG` to a non-Simplified-Chinese value explicitly forces English, even on a Chinese-system machine. Only unsetting `WARP_LANG` restores system-locale detection.
 
 ### 6. Fallback and missing translations
 
 6.1. If a translation key is present in `en.yml` but missing from `zh-CN.yml`, the English string is shown. No warning or error is surfaced to the user.
 
-6.2. If a translation key is missing from both `en.yml` and `zh-CN.yml` (e.g., a newly-added UI string that has not been localized yet), the raw key string is shown. This ensures the application never panics or renders empty text due to a missing translation.
+6.2. For ordinary, non-sensitive UI, if a translation key is missing from both `en.yml` and `zh-CN.yml` (e.g., a newly-added UI string that has not been localized yet), the raw key string is shown. This ensures the application never panics or renders empty text due to a missing translation.
 
-6.3. The English locale file (`en.yml`) is always loaded regardless of the active locale, to serve as the fallback.
+6.3. Security-sensitive UI must not degrade to raw dot-path keys. Auth, billing, sharing/permission, and agent-consent surfaces must either render meaningful embedded English fallback text or fail closed by disabling the affected action and showing a readable English error.
+
+6.4. The English locale file (`en.yml`) is always loaded regardless of the active locale, to serve as the fallback.
 
 ### 7. Platform consistency
 
-7.1. macOS menu bar items are fully localized. Chinese users see localized menu labels (e.g., "文件" for "File", "编辑" for "Edit").
+7.1. macOS menu bar items are fully localized. zh-CN users see localized menu labels (e.g., "文件" for "File", "编辑" for "Edit").
 
 7.2. Onboarding slides shown to new users on first launch are localized.
 

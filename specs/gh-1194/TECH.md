@@ -35,18 +35,19 @@ pub fn interpolate(template: &str, args: &[(&str, String)]) -> Cow<'static, str>
 
 **Locale resolution** (`init_locale`):
 1. Select a candidate locale: first non-empty value from `WARP_LANG` > `LANG` > `LANGUAGE` > `LC_ALL` > `LC_MESSAGES` > system locale API > `"en"` (default).
-2. Classify: if candidate starts with `"zh"` → `"zh-CN"`, otherwise → `"en"`.
+2. Classify: `zh`, `zh-CN`, `zh_CN`, `zh-Hans*`, and `zh_Hans*` map to `"zh-CN"`; all other candidates, including `zh-TW`, `zh-HK`, and `zh-Hant*`, map to `"en"` until a Traditional Chinese locale ships.
 3. The candidate is NOT used as a raw locale string; it is always mapped to one of the two supported values.
 
 **Translation lookup** (`t`):
 1. Look up key in `TRANSLATIONS[current_locale]`.
 2. If missing, fall back to `TRANSLATIONS["en"]`.
-3. If still missing, return the key string itself as a borrowed `Cow` (never panic, never render empty text).
+3. If still missing, ordinary non-sensitive UI returns the key string itself as a borrowed `Cow` (never panic, never render empty text). Security-sensitive UI must follow the no-locale fallback rule below instead of rendering raw dot-path keys.
 
 **Interpolation** (`interpolate`):
 - Simple `str::replace` of `{name}` placeholders with provided values.
 - Not a template engine — no escaping, no positional arguments, no format specifiers.
 - Values are pre-formatted to `String` by the `t!()` macro before reaching `interpolate`.
+- Interpolated values are treated as plain text. Call sites that render into rich, Markdown, link-capable, or otherwise parsed UI must pass interpolated values through the appropriate escaping layer or build the rich UI from structured fragments rather than by concatenating formatted strings. File paths, branch names, agent-provided labels, and server-provided metadata must never be allowed to inject markup, links, or formatting through translation interpolation.
 
 **YAML loading:**
 ```rust
@@ -75,7 +76,7 @@ Release builds (`#[cfg(not(debug_assertions))]`) only search the platform bundle
 
 **Security:** Paths 1, 3, and 4 are compiled out of release binaries. This prevents shipped builds from loading arbitrary YAML from environment variables or the current working directory into the startup parsing and UI rendering pipeline. In debug builds, locale files loaded from dev-only paths are subject to a size cap (8 MB per file) to prevent intentionally large or malformed YAML from causing excessive startup parsing in poisoned local environments. If a file loaded from a dev-only path exceeds the cap or is malformed, it is silently skipped and the next discovery path is tried — the application does not crash.
 
-**No-locale fallback:** If no locale file can be loaded from any discovery path (e.g., corrupt installation, missing resource directory), `init_locale()` still completes successfully. The translation map remains empty, and every `t!()` call returns its raw key string as the rendered text. The application starts and functions normally — menu items, buttons, and labels display their dot-path keys (e.g., `"menu.file"`, `"common.save"`) instead of English text. This degraded mode ensures the application never fails to launch due to missing locale data.
+**No-locale fallback:** If no locale file can be loaded from any discovery path (e.g., corrupt installation, missing resource directory), `init_locale()` still completes successfully. For ordinary non-sensitive UI, the translation map remains empty and `t!()` returns the raw key string as the rendered text. Security-sensitive UI is different: auth, billing, sharing/permission, and agent-consent surfaces must not render raw dot-path keys. Those call sites must either use embedded English fallback strings that do not depend on locale files, or fail closed by disabling the affected action and showing a readable English error.
 
 ### 2. `t!()` macro (defined in `app/src/lib.rs`)
 
@@ -150,8 +151,8 @@ The `app/src/i18n.rs` file re-exports `warp_i18n::*` so the rest of the applicat
 
 ### Security-sensitive translation review (manual)
 - Strings in security-relevant UI surfaces must be manually reviewed by a maintainer before merge. These surfaces include: auth dialogs (sign-in, sign-up, permission prompts), billing pages (pricing, plan descriptions, credit consumption warnings), sharing/permission controls (access grant text, visibility labels), and agent-mode consent prompts (data-handling disclosures, handoff confirmations).
-- The reviewer verifies that Chinesetranslations preserve the legal and behavioral intent of the original English text — warnings are not weakened, consent semantics are not altered, and permission descriptions remain accurate.
-- A checklist of security-sensitive keys (identified by YAML section prefix: `auth.*`, `billing.*`, `teams.*`, `shared_session.*`, `hoa_onboarding.*`) is maintained alongside the locale files for targeted review.
+- The reviewer verifies that Chinese translations preserve the legal and behavioral intent of the original English text — warnings are not weakened, consent semantics are not altered, and permission descriptions remain accurate.
+- A checklist of security-sensitive keys is maintained alongside the locale files for targeted review. It must include exact YAML sections and prefixes for auth, billing, sharing, agent consent, and data-handling surfaces: `auth.*`, `billing.*`, `billing_ext.*`, `teams.*`, `privacy.*`, `shared_session.*`, `agent_management.*`, `hoa_onboarding.*`, `ai_ext.grant_access_files`, `ai_ext.grant_access_repository`, `ai_ext.missing_github_auth`, `ai_ext.authenticate_github`, `ai_ext.hand_off_to_cloud`, `ai_ext.handoff_to_cloud`, `ai_ext.hand_off_to_environment`, `ai_output.manage_ai_autonomy_permissions`, `ai_output.read_mcp_resource_permission`, `ai_output.upload_artifact_permission`, `ai_output.manage_agent_permissions`, and `ai_output.use_computer_permission`. When new permission, handoff, data-retention, or account/billing warning keys are added, the checklist must be updated in the same PR.
 
 ### Locale file integrity (automated)
 - Every key present in `en.yml` must have a corresponding key in `zh-CN.yml`. A script or build-time check verifies this invariant — missing keys in `zh-CN.yml` should cause a CI failure.
