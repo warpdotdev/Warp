@@ -360,6 +360,12 @@ pub struct TaskAttachment {
     pub mime_type: String,
 }
 
+/// Returns the trimmed orchestrator agent name, or `None` when empty / whitespace-only.
+pub fn normalize_orchestrator_agent_name(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
 impl AmbientAgentTask {
     pub fn run_id(&self) -> AmbientAgentTaskId {
         self.task_id

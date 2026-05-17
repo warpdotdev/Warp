@@ -21,7 +21,10 @@ use crate::{
             conversation::{AIConversationId, ConversationStatus},
             StartAgentExecutionMode,
         },
-        ambient_agents::{task::HarnessConfig, AgentConfigSnapshot, AmbientAgentTaskId},
+        ambient_agents::{
+            task::{normalize_orchestrator_agent_name, HarnessConfig},
+            AgentConfigSnapshot, AmbientAgentTaskId,
+        },
         blocklist::{
             agent_view::{AgentViewControllerEvent, AgentViewEntryOrigin},
             orchestration_event_streamer::OrchestrationEventStreamer,
@@ -81,10 +84,7 @@ use session_sharing_protocol::sharer::SessionSourceType;
 use warp_core::execution_mode::AppExecutionMode;
 
 #[cfg(not(target_family = "wasm"))]
-use super::local_harness_launch::{
-    normalize_orchestrator_agent_name, prepare_local_harness_child_launch,
-    PreparedLocalHarnessLaunch,
-};
+use super::local_harness_launch::{prepare_local_harness_child_launch, PreparedLocalHarnessLaunch};
 use super::{
     DetachType, PaneConfiguration, PaneContent, PaneId, PaneStackEvent, PaneView, ShareableLink,
     ShareableLinkError, TerminalPaneId,

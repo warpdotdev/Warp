@@ -13,7 +13,7 @@ use crate::ai::{
         task_env_vars, validate_cli_installed,
     },
     ambient_agents::{
-        task::{HarnessConfig, HarnessModelConfig},
+        task::{normalize_orchestrator_agent_name, HarnessConfig, HarnessModelConfig},
         AgentConfigSnapshot, AmbientAgentTaskId,
     },
 };
@@ -67,12 +67,6 @@ pub(super) fn build_local_opencode_child_command(prompt: &str) -> String {
 pub(super) fn build_local_codex_child_command(prompt: &str) -> String {
     let quoted_prompt = shell_quote(prompt);
     format!("codex --dangerously-bypass-approvals-and-sandbox {quoted_prompt}")
-}
-
-/// Returns the trimmed orchestrator agent name, or `None` when empty / whitespace-only.
-pub(super) fn normalize_orchestrator_agent_name(raw: &str) -> Option<String> {
-    let trimmed = raw.trim();
-    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
 pub(super) fn local_child_task_config(

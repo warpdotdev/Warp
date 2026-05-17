@@ -6,10 +6,9 @@ use warp_cli::agent::Harness;
 use super::{
     build_local_claude_child_command, build_local_codex_child_command,
     build_local_opencode_child_command, local_child_task_config, normalize_local_child_harness,
-    normalize_orchestrator_agent_name, prepare_local_harness_child_launch,
-    validate_local_harness_shell,
+    prepare_local_harness_child_launch, validate_local_harness_shell,
 };
-use crate::ai::ambient_agents::task::HarnessConfig;
+use crate::ai::ambient_agents::task::{normalize_orchestrator_agent_name, HarnessConfig};
 use crate::server::server_api::ai::MockAIClient;
 use crate::terminal::shell::ShellType;
 use warp_core::features::FeatureFlag;
