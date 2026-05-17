@@ -268,17 +268,43 @@ impl BillingCycleUsageSectionView {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
+        let theme = appearance.theme();
         let mut row = Flex::row()
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max);
 
-        row.add_child(
+        // Left side: "Usage" title + secondary "Resets ..." subtext when
+        // looking at the current cycle. When a past cycle is selected, the
+        // period selector on the right shows the cycle name, so we hide the
+        // reset text to avoid mixed signals.
+        let mut left_side = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
+        left_side.add_child(
             Text::new_inline("Usage", appearance.ui_font_family(), HEADER_FONT_SIZE)
                 .with_style(Properties::default().weight(Weight::Bold))
-                .with_color(appearance.theme().active_ui_text_color().into())
+                .with_color(theme.active_ui_text_color().into())
                 .finish(),
         );
+        if self.selected_period_end.is_none() {
+            let reset_str = AIRequestUsageModel::as_ref(app)
+                .next_refresh_time_local()
+                .format("Resets %b %d at %-I:%M %p")
+                .to_string();
+            left_side.add_child(
+                Container::new(
+                    Text::new_inline(
+                        reset_str,
+                        appearance.ui_font_family(),
+                        appearance.ui_font_size(),
+                    )
+                    .with_color(theme.sub_text_color(theme.background()).into())
+                    .finish(),
+                )
+                .with_margin_left(12.)
+                .finish(),
+            );
+        }
+        row.add_child(left_side.finish());
 
         let mut right_side = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -297,12 +323,6 @@ impl BillingCycleUsageSectionView {
                     .with_margin_right(12.)
                     .finish(),
             );
-        } else {
-            right_side.add_child(
-                Container::new(self.render_resets_label(workspace, appearance, app))
-                    .with_margin_right(12.)
-                    .finish(),
-            );
         }
 
         right_side.add_child(self.render_refresh_button(appearance));
@@ -312,32 +332,6 @@ impl BillingCycleUsageSectionView {
         Container::new(row.finish())
             .with_margin_bottom(12.)
             .finish()
-    }
-
-    fn render_resets_label(
-        &self,
-        workspace: &Workspace,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let theme = appearance.theme();
-        let label = match self.selected_period_end {
-            Some(_) => self
-                .current_summary(workspace)
-                .map(format_period_label)
-                .unwrap_or_default(),
-            None => AIRequestUsageModel::as_ref(app)
-                .next_refresh_time_local()
-                .format("Resets %b %d at %-I:%M %p")
-                .to_string(),
-        };
-        Text::new_inline(
-            label,
-            appearance.ui_font_family(),
-            appearance.ui_font_size(),
-        )
-        .with_color(theme.sub_text_color(theme.background()).into())
-        .finish()
     }
 
     fn render_refresh_button(&self, appearance: &Appearance) -> Box<dyn Element> {
