@@ -134,6 +134,8 @@ impl StartAgentExecutor {
                         streamer.register_watched_run_id(pending.parent_conversation_id, id, ctx);
                     });
                 } else {
+                    // TODO(QUALITY-733): Remove the legacy v1 orchestration event-service path
+                    // once all orchestration startup events use v2 event streaming.
                     OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
                         svc.emit_child_startup_started(child_conversation_id, ctx);
                     });
@@ -147,6 +149,8 @@ impl StartAgentExecutor {
                     "Server did not assign an agent identifier".to_string(),
                 ));
                 if !FeatureFlag::OrchestrationV2.is_enabled() {
+                    // TODO(QUALITY-733): Remove the legacy v1 orchestration event-service path
+                    // once all orchestration startup errors use v2 event streaming.
                     OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
                         svc.emit_child_startup_errored(
                             child_conversation_id,
@@ -174,6 +178,8 @@ impl StartAgentExecutor {
             .sender
             .try_send(StartAgentOutcome::Error(error_msg.clone()));
         if !FeatureFlag::OrchestrationV2.is_enabled() {
+            // TODO(QUALITY-733): Remove the legacy v1 orchestration event-service path once all
+            // orchestration lifecycle errors use v2 event streaming.
             OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
                 svc.emit_child_startup_errored(
                     child_conversation_id,

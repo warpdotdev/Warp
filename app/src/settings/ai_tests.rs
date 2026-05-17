@@ -391,36 +391,12 @@ fn test_toolbar_command_map_matched_agent() {
 }
 
 #[test]
-fn orchestration_user_setting_is_visible_only_for_legacy_orchestration() {
-    let _orchestration_flag = FeatureFlag::Orchestration.override_enabled(true);
-    let _orchestration_v2_flag = FeatureFlag::OrchestrationV2.override_enabled(false);
-
-    assert!(AISettings::is_orchestration_user_setting_visible());
-}
-
-#[test]
-fn orchestration_user_setting_is_hidden_when_orchestration_v2_is_enabled() {
-    let _orchestration_flag = FeatureFlag::Orchestration.override_enabled(true);
-    let _orchestration_v2_flag = FeatureFlag::OrchestrationV2.override_enabled(true);
-
-    assert!(!AISettings::is_orchestration_user_setting_visible());
-}
-
-#[test]
-fn orchestration_v2_ignores_disabled_legacy_user_setting() {
-    let _orchestration_flag = FeatureFlag::Orchestration.override_enabled(false);
+fn orchestration_v2_enables_orchestration_when_ai_is_enabled() {
     let _orchestration_v2_flag = FeatureFlag::OrchestrationV2.override_enabled(true);
 
     App::test((), |mut app| async move {
         initialize_settings_for_tests(&mut app);
         add_ai_enablement_dependencies_for_test(&mut app);
-
-        AISettings::handle(&app).update(&mut app, |settings, ctx| {
-            settings
-                .orchestration_enabled
-                .set_value(false, ctx)
-                .unwrap();
-        });
 
         AISettings::handle(&app).read(&app, |settings, ctx| {
             assert!(settings.is_orchestration_enabled(ctx));
@@ -429,20 +405,12 @@ fn orchestration_v2_ignores_disabled_legacy_user_setting() {
 }
 
 #[test]
-fn legacy_orchestration_respects_disabled_user_setting() {
-    let _orchestration_flag = FeatureFlag::Orchestration.override_enabled(true);
+fn orchestration_v2_disabled_disables_orchestration() {
     let _orchestration_v2_flag = FeatureFlag::OrchestrationV2.override_enabled(false);
 
     App::test((), |mut app| async move {
         initialize_settings_for_tests(&mut app);
         add_ai_enablement_dependencies_for_test(&mut app);
-
-        AISettings::handle(&app).update(&mut app, |settings, ctx| {
-            settings
-                .orchestration_enabled
-                .set_value(false, ctx)
-                .unwrap();
-        });
 
         AISettings::handle(&app).read(&app, |settings, ctx| {
             assert!(!settings.is_orchestration_enabled(ctx));
