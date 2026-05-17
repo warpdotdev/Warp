@@ -501,7 +501,11 @@ fn render_stacked_bar(
 fn render_usage_tooltip_content(row: &MemberUsageRow, appearance: &Appearance) -> Box<dyn Element> {
     let theme = appearance.theme();
     let font_family = appearance.ui_font_family();
-    let bg = theme.tooltip_background();
+    // Use the page background and let the outline border do the work of
+    // separating the tooltip from the rows beneath it. This keeps the
+    // tooltip visually quiet (no extra surface tier) and lets it read as a
+    // clean card-on-page popover.
+    let bg = theme.background().into_solid();
     let main = blended_colors::text_main(theme, bg);
     let sub = blended_colors::text_sub(theme, bg);
 
@@ -571,7 +575,7 @@ fn render_usage_tooltip_content(row: &MemberUsageRow, appearance: &Appearance) -
     column.add_child(
         Container::new(Empty::new().finish())
             .with_padding_top(1.)
-            .with_background_color(blended_colors::neutral_5(theme))
+            .with_background_color(theme.outline().into_solid())
             .finish(),
     );
 
@@ -617,7 +621,9 @@ fn render_usage_tooltip_content(row: &MemberUsageRow, appearance: &Appearance) -
         Container::new(column.finish())
             .with_background_color(bg)
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
-            .with_border(Border::all(1.).with_border_color(blended_colors::neutral_5(theme)))
+            // Use the same outline color as the row cards so the tooltip
+            // reads as part of the same surface family.
+            .with_border(Border::all(1.).with_border_color(theme.outline().into_solid()))
             .with_uniform_padding(10.)
             .finish(),
     )
@@ -752,7 +758,6 @@ fn render_member_row(
 pub type FilterChangeFn = std::sync::Arc<dyn Fn(SourceFilter, &mut EventContext) + 'static>;
 
 /// Inline pill toggle for filtering between All / Local / Cloud entries.
-/// Invokes `on_change` when a button is clicked.
 fn render_source_filter_toggle(
     current: SourceFilter,
     mouse_states: &RowMouseStates,
