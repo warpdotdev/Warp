@@ -28,10 +28,10 @@ Warp's UI is entirely hardcoded in English. Non-English-speaking developers must
 
 1.1. The active locale is always exactly `"zh-CN"` or `"en"`. These are the only two supported locales. The determination is:
 
-    Candidate locale strings are selected from the first available source:
+    Candidate locale strings are selected from:
     1. `WARP_LANG` environment variable
-    2. `LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG` environment variables
-    3. Platform-native system locale API
+    2. Platform-native system locale API
+    3. `LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG` environment variables, only when the platform-native locale API is unavailable or returns no locale
     4. Default: `"en"`
 
     Each candidate is normalized before classification:
@@ -42,8 +42,9 @@ Warp's UI is entirely hardcoded in English. Non-English-speaking developers must
 
     The first non-empty source is authoritative:
     - `WARP_LANG` is an explicit override. If it is set, `zh`, `zh-CN`, `zh_CN`, `zh-Hans*`, or `zh_Hans*` resolve to `"zh-CN"`; every other value resolves to `"en"` and no lower-priority source is consulted.
-    - For `LANGUAGE`, entries are evaluated in order as a preference list. The first Simplified Chinese entry resolves to `"zh-CN"`. Unsupported entries, including `fr`, `zh-TW`, `zh-HK`, and `zh-Hant*`, are skipped within that list; if no entry resolves to zh-CN, the result is `"en"` and no lower-priority source is consulted.
-    - For `LC_ALL`, `LC_MESSAGES`, `LANG`, and the platform system locale API, Simplified Chinese values resolve to `"zh-CN"`; every other value resolves to `"en"` and no lower-priority source is consulted.
+    - The platform-native system locale API is the zero-configuration desktop default. If it returns a locale, Simplified Chinese values resolve to `"zh-CN"`; every other value resolves to `"en"` and POSIX locale environment variables are not consulted.
+    - POSIX locale environment variables are a fallback for headless, test, or platform API unavailable cases. For `LANGUAGE`, entries are evaluated in order as a preference list. The first Simplified Chinese entry resolves to `"zh-CN"`. Unsupported entries, including `fr`, `zh-TW`, `zh-HK`, and `zh-Hant*`, are skipped within that list; if no entry resolves to zh-CN, the result is `"en"` and no lower-priority source is consulted.
+    - For fallback `LC_ALL`, `LC_MESSAGES`, and `LANG`, Simplified Chinese values resolve to `"zh-CN"`; every other value resolves to `"en"` and no lower-priority source is consulted.
 
     Examples:
     - `WARP_LANG=zh-CN` → "zh-CN" candidate → zh-CN
@@ -51,10 +52,12 @@ Warp's UI is entirely hardcoded in English. Non-English-speaking developers must
     - `WARP_LANG=zh-Hans` → "zh-Hans" candidate → zh-CN
     - `WARP_LANG=zh-TW` → "zh-TW" candidate → en (Traditional Chinese is not shipped yet)
     - `WARP_LANG=fr` → "fr" candidate → en (non-zh candidate, no fallthrough to system)
-    - `LANGUAGE=fr:zh_CN:en` with `WARP_LANG` unset → first supported candidate is "zh-CN" → zh-CN
-    - `LANGUAGE=fr:zh_TW:en` with `WARP_LANG` unset → no Simplified Chinese candidate → en, no fallthrough to `LANG` or system locale
-    - `LC_ALL=fr_FR.UTF-8` and `LANG=zh_CN.UTF-8` with `WARP_LANG`/`LANGUAGE` unset → en because `LC_ALL` is the first non-empty source
-    - `LANG=zh_CN.UTF-8@pinyin` → "zh-CN" candidate → zh-CN
+    - No `WARP_LANG`, Simplified Chinese OS, `LANG=en_US.UTF-8` → system "zh-CN" → zh-CN
+    - No `WARP_LANG`, English OS, `LANG=zh_CN.UTF-8` → system "en-US" → en
+    - `LANGUAGE=fr:zh_CN:en` with `WARP_LANG` unset and no system locale → first supported fallback candidate is "zh-CN" → zh-CN
+    - `LANGUAGE=fr:zh_TW:en` with `WARP_LANG` unset and no system locale → no Simplified Chinese fallback candidate → en, no fallthrough to `LANG`
+    - `LC_ALL=fr_FR.UTF-8` and `LANG=zh_CN.UTF-8` with `WARP_LANG` unset and no system locale → en because `LC_ALL` is the first non-empty fallback source
+    - `LANG=zh_CN.UTF-8@pinyin` with `WARP_LANG` unset and no system locale → "zh-CN" candidate → zh-CN
     - No env vars, Simplified Chinese OS → system "zh-CN" → zh-CN
     - No env vars, Traditional Chinese OS → system "zh-TW" → en (Traditional Chinese is not shipped yet)
     - No env vars, English OS → system "en_US" → en

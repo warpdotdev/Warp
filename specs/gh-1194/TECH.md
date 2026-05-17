@@ -23,13 +23,15 @@ A new workspace crate at `crates/i18n/` with dependencies `serde_yaml` (for pars
 
 **Core types:**
 - `Translations`: `HashMap<Locale, HashMap<Key, String>>` — double-map structure where the outer key is locale (`"en"`, `"zh-CN"`) and the inner key is a dot-separated path (e.g., `"menu.file"`).
+- `TranslationLookup`: enum with `Found(Cow<'static, str>)` and `Missing` variants. Missing state is explicit and is never inferred by comparing rendered text to the lookup key.
 - Global state: `TRANSLATIONS` (lazy-initialized via `OnceLock`) and `CURRENT_LOCALE` (backed by `RwLock<&'static str>`).
 
 **Public API:**
 ```rust
 pub fn init_locale()                                    // Resolve & set current locale
 pub fn set_locale(locale: &str)                         // Force a specific locale
-pub fn t(key: &'static str) -> Cow<'static, str>        // Primary translation lookup
+pub fn lookup(key: &'static str) -> TranslationLookup   // Primary translation lookup
+pub fn t(key: &'static str) -> Cow<'static, str>        // Ordinary UI convenience wrapper
 pub fn t_required(key: &'static str, fallback: &'static str) -> Cow<'static, str>
 pub fn interpolate(template: &str, args: &[(&str, String)]) -> String
 #[macro_export]
@@ -39,7 +41,7 @@ macro_rules! t_required { ... }
 ```
 
 **Locale resolution** (`init_locale`):
-1. Select candidates from the first non-empty source in priority order: `WARP_LANG` > `LANGUAGE` > `LC_ALL` > `LC_MESSAGES` > `LANG` > system locale API > `"en"` (default). `WARP_LANG` is Warp-specific and has highest priority. `LANGUAGE` is treated as the message-translation preference list on Linux-like environments.
+1. Select candidates from the first available source in priority order: `WARP_LANG` > platform-native system locale API > POSIX locale env fallback (`LANGUAGE` > `LC_ALL` > `LC_MESSAGES` > `LANG`) > `"en"` (default). `WARP_LANG` is Warp-specific and has highest priority. The platform-native API is the zero-configuration desktop default. POSIX environment variables are consulted only when the platform API is unavailable or returns no locale, so ordinary shell locale variables do not override desktop language on normal app launches. `LANGUAGE` is treated as the message-translation preference list on Linux-like fallback paths.
 2. Normalize each candidate before classification:
    - Trim whitespace.
    - For `LANGUAGE`, split colon-separated preference lists and evaluate entries in order.
@@ -47,20 +49,23 @@ macro_rules! t_required { ... }
    - Convert `_` to `-`, compare language/script/region subtags case-insensitively, and normalize script/region casing for tests (`zh-hans-cn` → `zh-Hans-CN`).
 3. Resolve the first non-empty source authoritatively:
    - `WARP_LANG`: if the normalized value is Simplified Chinese (`zh`, `zh-CN`, `zh_CN`, `zh-Hans*`, or `zh_Hans*`), return `"zh-CN"`; otherwise return `"en"` without consulting lower-priority sources.
-   - `LANGUAGE`: evaluate colon-separated entries in order. Return `"zh-CN"` for the first Simplified Chinese entry. Skip unsupported entries within the list (`fr`, `zh-TW`, `zh-HK`, `zh-Hant*`, etc.); if no entry is Simplified Chinese, return `"en"` without consulting lower-priority sources.
-   - `LC_ALL`, `LC_MESSAGES`, `LANG`, and system locale API: return `"zh-CN"` for Simplified Chinese values; otherwise return `"en"` without consulting lower-priority sources.
+   - Platform-native system locale API: return `"zh-CN"` for Simplified Chinese values; otherwise return `"en"` without consulting POSIX locale environment variables.
+   - Fallback `LANGUAGE`: evaluate colon-separated entries in order. Return `"zh-CN"` for the first Simplified Chinese entry. Skip unsupported entries within the list (`fr`, `zh-TW`, `zh-HK`, `zh-Hant*`, etc.); if no entry is Simplified Chinese, return `"en"` without consulting lower-priority fallback sources.
+   - Fallback `LC_ALL`, `LC_MESSAGES`, and `LANG`: return `"zh-CN"` for Simplified Chinese values; otherwise return `"en"` without consulting lower-priority fallback sources.
 4. No raw candidate is ever used as a locale key; runtime locale is always one of the two supported values.
 
-**Translation lookup** (`t`):
+**Translation lookup** (`lookup` / `t`):
 1. Look up key in `TRANSLATIONS[current_locale]`.
 2. If missing, fall back to `TRANSLATIONS["en"]`.
-3. If still missing, ordinary non-sensitive UI returns the key string itself as a borrowed `Cow` (never panic, never render empty text). Security-sensitive UI must follow the no-locale fallback rule below instead of rendering raw dot-path keys.
+3. If a value is found, return `TranslationLookup::Found(value)`.
+4. If still missing, return `TranslationLookup::Missing`. The ordinary `t(key)` wrapper converts `Missing` to `Cow::Borrowed(key)` for non-sensitive UI. Security-sensitive UI must use `t_required` / `t_required!()` instead of the ordinary wrapper.
 
 **Required translation lookup** (`t_required`):
 1. Look up key in `TRANSLATIONS[current_locale]`.
 2. If missing, fall back to `TRANSLATIONS["en"]`.
 3. If still missing, return the embedded English fallback passed by the call site.
 4. `t_required` never returns the raw key. Auth, billing, privacy, sharing/permission, and agent-consent surfaces must use this API, either directly or through the `t_required!()` macro.
+5. The fallback literal is not an independent source of English copy. CI verifies that each `t_required!("key", "fallback")` literal is byte-identical to the canonical `en.yml` value for that key, after normalizing line endings. Any exception must be listed in a checked-in allowlist with a reason and owner approval.
 
 **Interpolation** (`interpolate`):
 - Simple `str::replace` of `{name}` placeholders with provided values.
@@ -130,6 +135,8 @@ The release resource path is platform-specific and must be shared by runtime dis
 
 **Security:** Paths 1, 3, and 4 are compiled out of release binaries. This prevents shipped builds from loading arbitrary YAML from environment variables or the current working directory into the startup parsing and UI rendering pipeline. Every runtime-loaded locale file, including release-bundled files, is subject to parser bounds before `serde_yaml` parsing: maximum 8 MB per file, maximum YAML nesting depth 16, maximum 10,000 flattened keys per locale, and scalar string values only after flattening. If a locale file exceeds the bounds, has unsupported YAML shape, is malformed, or fails directory completeness checks, the directory is skipped and the next discovery path is tried. The application does not crash.
 
+**Parser dependency posture:** `serde_yaml` is treated as a security-sensitive startup parser dependency. The implementation must pin it through `Cargo.lock`, include it in the repository's dependency review / audit workflow, and avoid enabling optional features beyond YAML parsing. Locale files use a deliberately restricted YAML subset: one top-level locale mapping, nested mappings, and string scalar leaves only. Anchors, aliases, merge keys, custom tags, non-string leaves, and multi-document YAML are rejected by shape validation before the flattened map is accepted. Dependency updates to `serde_yaml` or its parser stack must run the malformed/oversized locale tests before merge.
+
 **No-locale fallback:** If no locale file can be loaded from any discovery path (e.g., corrupt installation, missing resource directory), `init_locale()` still completes successfully. For ordinary non-sensitive UI, the translation map remains empty and `t!()` returns the raw key string as the rendered text. Security-sensitive UI is different: auth, billing, privacy, sharing/permission, and agent-consent surfaces must not render raw dot-path keys. Those call sites must use `t_required!()` with an embedded English fallback, or fail closed by disabling the affected action and showing a readable English error that also uses `t_required!()`.
 
 ### 2. `t!()` and `t_required!()` macros (defined once in `crates/i18n`)
@@ -142,29 +149,33 @@ The macro has three match arms. The actual expansion uses `match` (not combinato
 // Arm 1: Simple lookup
 t!("menu.file")
 // Expands to:
-match $crate::t("menu.file") {
-    value if value == "menu.file" => Cow::Owned("menu.file".to_string()),
-    value => value,
+match $crate::lookup("menu.file") {
+    $crate::TranslationLookup::Found(value) => value,
+    $crate::TranslationLookup::Missing => Cow::Borrowed("menu.file"),
 }
 
 // Arm 2: Explicit interpolation
 t!("terminal.hand_off", environment = name)
 // Expands to:
-match $crate::t("terminal.hand_off") {
-    value if value == "terminal.hand_off" => Cow::Owned("terminal.hand_off".to_string()),
-    value => Cow::Owned($crate::interpolate(value.as_ref(), &[("environment", format!("{}", name))])),
+match $crate::lookup("terminal.hand_off") {
+    $crate::TranslationLookup::Found(value) => {
+        Cow::Owned($crate::interpolate(value.as_ref(), &[("environment", format!("{}", name))]))
+    }
+    $crate::TranslationLookup::Missing => Cow::Borrowed("terminal.hand_off"),
 }
 
 // Arm 3: Implicit interpolation (variable name = key name)
 t!("some.key", count)
 // Expands to:
-match $crate::t("some.key") {
-    value if value == "some.key" => Cow::Owned("some.key".to_string()),
-    value => Cow::Owned($crate::interpolate(value.as_ref(), &[("count", format!("{}", count))])),
+match $crate::lookup("some.key") {
+    $crate::TranslationLookup::Found(value) => {
+        Cow::Owned($crate::interpolate(value.as_ref(), &[("count", format!("{}", count))]))
+    }
+    $crate::TranslationLookup::Missing => Cow::Borrowed("some.key"),
 }
 ```
 
-The match guard `value if value == key` detects when `t()` returned the key itself (translation missing). In that case, the key string is returned as `Cow::Owned` — interpolation is skipped because there is no template to interpolate into.
+The macros branch on `TranslationLookup::Found` versus `TranslationLookup::Missing`. They must not infer missing state by comparing the rendered string to the key, because a valid translation may intentionally equal its key text. When lookup is missing, interpolation is skipped because there is no template to interpolate into.
 
 `t_required!()` is the security-sensitive variant. It mirrors the same simple and interpolated call shapes, but requires an embedded English fallback literal:
 
@@ -243,6 +254,7 @@ The `app/src/i18n.rs` file re-exports `warp_i18n::*` for direct function access 
 - The reviewer verifies that Chinese translations preserve the legal and behavioral intent of the original English text — warnings are not weakened, consent semantics are not altered, and permission descriptions remain accurate.
 - A checklist of security-sensitive keys is maintained alongside the locale files for targeted review. It must include exact YAML sections and prefixes for auth, billing, sharing, agent consent, and data-handling surfaces: `auth.*`, `billing.*`, `billing_ext.*`, `teams.*`, `privacy.*`, `shared_session.*`, `agent_management.*`, `hoa_onboarding.*`, `ai_ext.grant_access_files`, `ai_ext.grant_access_repository`, `ai_ext.missing_github_auth`, `ai_ext.authenticate_github`, `ai_ext.hand_off_to_cloud`, `ai_ext.handoff_to_cloud`, `ai_ext.hand_off_to_environment`, `ai_output.manage_ai_autonomy_permissions`, `ai_output.read_mcp_resource_permission`, `ai_output.upload_artifact_permission`, `ai_output.manage_agent_permissions`, and `ai_output.use_computer_permission`. When new permission, handoff, data-retention, or account/billing warning keys are added, the checklist must be updated in the same PR.
 - Every key in that checklist must be reached through `t_required!()` or an explicit fail-closed path. A CI lint rejects security-sensitive keys rendered through plain `t!()` and rejects `t_required!()` calls whose fallback is not a string literal.
+- Every `t_required!()` fallback literal must match the canonical English value in `en.yml` for the same key, after normalizing line endings. A fallback that intentionally differs must be listed in a checked-in allowlist with the key, call site, reason, and product/legal owner approval. This prevents security-sensitive embedded fallback copy from drifting away from reviewed English locale text.
 
 ### Locale file integrity (automated)
 - Every key present in `en.yml` must have a corresponding key in `zh-CN.yml`. A script or build-time check verifies this invariant — missing keys in `zh-CN.yml` cause a CI failure.
@@ -254,12 +266,14 @@ The `app/src/i18n.rs` file re-exports `warp_i18n::*` for direct function access 
 - Copied-English detection: a CI check rejects `zh-CN.yml` values that are byte-identical to their English value, except keys in a checked-in allowlist for brand names, product names, protocol identifiers, keyboard shortcuts, commands, file extensions, URLs, and intentionally untranslated technical terms.
 - zh-CN script coverage: for non-allowlisted values longer than two visible characters, the translation must contain at least one CJK Unified Ideograph or full-width CJK punctuation character. This catches accidental English-only translations without blocking short symbols or brand terms.
 - Security-sensitive translation quality: keys in the security-sensitive checklist must pass the copied-English and CJK checks with no broad section-level allowlist. Any exception requires an inline reason naming the legal/product owner who approved preserving the English text.
+- Required fallback drift check: AST extraction of `t_required!()` calls compares each fallback literal to the corresponding `en.yml` value and fails CI on mismatch unless the exact call site is allowlisted with owner approval.
 - No stale locale keys: every key in `en.yml` is either referenced by `t!()` / `t_required!()` or listed in a checked-in allowlist for platform/resource-only strings.
 - No unlocalized required-scope strings: the static extractor scans the migration-scope directories for UI literals passed to common label/button/menu/tooltip/modal APIs without `t!()` or `t_required!()`. Remaining literals must be intentionally allowed with a reason.
 - Rich/parsed text interpolation audit: a lint scans call sites that pass translated strings into Markdown, rich text, URL/link-capable text, or formatted-fragment APIs. Interpolated values from file paths, branch names, agent labels, server metadata, repository names, or URLs must either be escaped for that renderer or supplied as structured plain-text fragments. The lint rejects direct string concatenation or direct `t!()`/`t_required!()` interpolation into parsed markup.
 - Release bundle check: every packaged app artifact must contain both `en.yml` and `zh-CN.yml` at the exact runtime path for that artifact: macOS `<Warp*.app>/Contents/Resources/bundled/locales`, Windows `{app}\resources\bundled\locales`, Linux app packages/AppImage `/opt/warpdotdev/<package>/resources/bundled/locales`, and Linux CLI `<bundle-output>/resources/bundled/locales`. CI fails if either file is missing from any packaging output or if the validation path differs from runtime discovery.
 - Dev-only locale loading check: release binaries must not reference `$WARP_LOCALES_DIR`, `$PWD/resources/bundled/locales`, or source-tree fallback paths. A binary/string or build-time assertion verifies those discovery paths are compiled out outside `debug_assertions`.
 - Runtime locale bounds check: unit tests cover oversized files, excessive YAML nesting, non-string scalar values after flattening, too many flattened keys, missing `en.yml`, missing `zh-CN.yml`, mismatched key sets, and placeholder mismatch. Every one of these cases must skip the directory rather than partially loading it.
+- YAML parser supply-chain check: dependency review and audit tooling must cover `serde_yaml` and its parser dependencies, and parser updates must run malformed, oversized, multi-document, alias/tag, and unsupported-shape locale tests.
 
 ### Unit tests
 
@@ -268,20 +282,24 @@ The `app/src/i18n.rs` file re-exports `warp_i18n::*` for direct function access 
   - `t()` with a key present only in English falls back to English
   - `t()` with a missing key returns the key string itself
   - `t_required()` with a missing key returns the embedded English fallback, never the raw key
+  - `t_required!()` fallback literals match `en.yml` canonical English values or fail the drift lint
   - `interpolate()` correctly substitutes one and multiple placeholders
   - exported `t!()` and `t_required!()` macros compile from both `app` and `crates/onboarding` without local macro copies
   - `set_locale("zh-CN")` correctly switches the active locale
   - `set_locale("fr")` falls back to `en`
   - locale normalization handles `zh_CN.UTF-8`, `zh_CN.utf8`, `zh_CN.UTF-8@pinyin`, mixed-case `zh-hans-cn`, and colon-separated `LANGUAGE` lists
   - `WARP_LANG=fr` forces `en` even when lower-priority locale sources are Simplified Chinese
-  - `LANGUAGE=fr:zh_TW:en` resolves to `en` without falling through to `LANG` or system locale
-  - `LC_ALL=fr_FR.UTF-8` with `LANG=zh_CN.UTF-8` resolves to `en` because `LC_ALL` is the first non-empty source
+  - platform-native Simplified Chinese locale resolves to `zh-CN` even when `LANG=en_US.UTF-8`
+  - platform-native English locale resolves to `en` even when `LANG=zh_CN.UTF-8`
+  - `LANGUAGE=fr:zh_TW:en` resolves to `en` without falling through to `LANG` when the platform-native locale API is unavailable
+  - `LC_ALL=fr_FR.UTF-8` with `LANG=zh_CN.UTF-8` resolves to `en` when the platform-native locale API is unavailable because `LC_ALL` is the first non-empty fallback source
   - `zh-TW`, `zh-HK`, and `zh-Hant*` resolve to `en`
   - `load_complete_dir()` correctly parses YAML and produces flattened keys
   - partial locale directories are skipped and do not shadow later complete directories
   - malformed or over-size dev locale files are skipped without panicking
   - malformed or over-size release-bundled locale files are skipped without panicking
   - YAML shape bounds reject excessive nesting, too many flattened keys, and non-string flattened values
+  - YAML shape validation rejects anchors, aliases, merge keys, custom tags, and multi-document YAML
   - AST-based key extraction finds single-line and multiline `t!()` / `t_required!()` calls, including security-sensitive required fallback calls
   - Markdown/rich-text lint rejects unescaped interpolation into parsed renderers and accepts approved escaping or structured-fragment APIs
   - locale quality checks reject empty zh-CN values, copied-English values, and non-allowlisted English-only zh-CN values
@@ -297,10 +315,12 @@ Manual verification must cover platform resource loading and locale detection, n
 | macOS release artifact | `WARP_LANG=zh-TW` | English UI |
 | Windows MSVC release artifact | Simplified Chinese system locale with no `WARP_LANG` | zh-CN UI after bundled resource load |
 | Windows MSVC release artifact | `WARP_LANG=fr` on Simplified Chinese system locale | English UI, proving explicit override behavior |
-| Linux release artifact | `LANG=zh_CN.UTF-8` | zh-CN UI |
-| Linux release artifact | `LANGUAGE=fr:zh_CN:en` with `WARP_LANG` unset | zh-CN UI |
-| Linux release artifact | `LANGUAGE=fr:zh_TW:en` and `LANG=zh_CN.UTF-8` with `WARP_LANG` unset | English UI, proving unsupported `LANGUAGE` preferences do not fall through to `LANG` |
-| Linux release artifact | `LC_ALL=fr_FR.UTF-8` and `LANG=zh_CN.UTF-8` with `WARP_LANG`/`LANGUAGE` unset | English UI, proving first-source-wins fallback semantics |
+| Linux desktop release artifact | Simplified Chinese system locale, `LANG=en_US.UTF-8`, no `WARP_LANG` | zh-CN UI, proving native desktop locale beats ordinary POSIX env |
+| Linux desktop release artifact | English system locale, `LANG=zh_CN.UTF-8`, no `WARP_LANG` | English UI, proving ordinary POSIX env does not override native desktop locale |
+| Linux fallback/headless test build | no platform-native locale, `LANG=zh_CN.UTF-8` | zh-CN UI |
+| Linux fallback/headless test build | no platform-native locale, `LANGUAGE=fr:zh_CN:en` with `WARP_LANG` unset | zh-CN UI |
+| Linux fallback/headless test build | no platform-native locale, `LANGUAGE=fr:zh_TW:en` and `LANG=zh_CN.UTF-8` with `WARP_LANG` unset | English UI, proving unsupported `LANGUAGE` preferences do not fall through to `LANG` |
+| Linux fallback/headless test build | no platform-native locale, `LC_ALL=fr_FR.UTF-8` and `LANG=zh_CN.UTF-8` with `WARP_LANG`/`LANGUAGE` unset | English UI, proving first-source-wins fallback semantics |
 | All platforms | bundled locale directory missing or unreadable | app launches; ordinary UI may show raw keys; security-sensitive surfaces show embedded English fallback or disabled fail-closed action |
 | All platforms | terminal PTY output under zh-CN UI | shell output is unchanged |
 | All platforms | deliberate ordinary missing key in a test-only build | raw key renders without panic |
@@ -310,7 +330,7 @@ Manual verification must cover platform resource loading and locale detection, n
 - The `cargo check` / `cargo build` pipeline for the `warp-oss` binary must pass on macOS, Windows MSVC, and Linux
 - All existing tests must pass after the migration — no test assertions may be broken by i18n
 - Behavior invariants from `PRODUCT.md` map to verification steps above
-- CI must run the locale integrity script, translation quality checks, security-sensitive key lint, rich/parsed interpolation lint, macro drift lint, release bundle check, and locale normalization tests before the implementation PR can merge
+- CI must run the locale integrity script, translation quality checks, required-fallback drift lint, security-sensitive key lint, rich/parsed interpolation lint, macro drift lint, release bundle check, parser dependency audit, and locale normalization tests before the implementation PR can merge
 
 ## Parallelization
 
