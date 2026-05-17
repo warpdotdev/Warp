@@ -20,7 +20,7 @@ use warpui::{
 use crate::{
     settings_view::billing_and_usage_page_v2::{
         AGGREGATE_CREDITS_DOT_COLOR, AMBIENT_CREDITS_DOT_COLOR, BASE_CREDITS_DOT_COLOR,
-        BONUS_CREDITS_DOT_COLOR, PAYG_CREDITS_DOT_COLOR,
+        BONUS_CREDITS_DOT_COLOR, CARD_BORDER_COLOR, PAYG_CREDITS_DOT_COLOR,
     },
     ui_components::{blended_colors, icons::Icon},
     workspaces::workspace::{
@@ -38,22 +38,7 @@ const ROW_BORDER_RADIUS: f32 = 8.;
 const ROW_BORDER_WIDTH: f32 = 1.;
 /// Size of the leading icons in the row credit cluster (coin + credit-card).
 const ROW_ICON_SIZE: f32 = 12.;
-/// Gap between the coin/credit cluster and the cost cluster on a row. Two
-/// pixels larger than the within-cluster icon-to-text gap (4px) so the
-/// credits and cost read as distinct columns.
-const ROW_CLUSTER_GAP: f32 = 6.;
-/// Right-aligned fixed widths for the tooltip's credit and cost columns,
-/// so the numbers line up vertically across rows even though each row is
-/// laid out independently.
-const TOOLTIP_CREDITS_COL_WIDTH: f32 = 60.;
-const TOOLTIP_COST_COL_WIDTH: f32 = 64.;
-/// Corner radius for elements painted directly against the card's inner
-/// edge (e.g. the stacked bar's leftmost/rightmost ends). `Container`
-/// paints its child *inside* the border, so the bar starts
-/// `ROW_BORDER_WIDTH` pixels in from the card's outer edge. Using the
-/// card's full outer radius on the bar produces a visible 1px step
-/// between the bar's rounded corner and the card's rounded corner. The
-/// inner radius compensates so the two curves are flush.
+/// Inner radius so the bar's curve sits flush against the card's inner border.
 const BAR_CORNER_RADIUS: f32 = ROW_BORDER_RADIUS - ROW_BORDER_WIDTH;
 const ROW_PADDING: f32 = 12.;
 const TOOLTIP_GAP: f32 = 6.;
@@ -123,9 +108,8 @@ impl RowMouseStates {
     }
 }
 
-/// One colored slice of the stacked bar. `cost_type` drives color and
-/// `usage_bucket` is preserved for tooltip breakdown (no overlay striping
-/// for now — that can be ported later if we want admin-panel parity).
+/// One colored slice of the stacked bar. `cost_type` drives color; `usage_bucket`
+/// drives the tooltip breakdown.
 #[derive(Clone, Debug)]
 pub struct BarSegment {
     pub cost_type: AiCreditsUsageAndCostType,
@@ -134,9 +118,7 @@ pub struct BarSegment {
     pub cost_cents: i64,
 }
 
-/// Aggregated usage for a single subject (or the synthetic team), ready to
-/// be rendered. `subject_key` is the stable key used to look up the row's
-/// tooltip mouse state on subsequent renders.
+/// Aggregated usage for one subject (or the synthetic team aggregate).
 #[derive(Debug)]
 pub struct MemberUsageRow {
     pub subject_type: AiCreditsUsageAndCostSubjectType,
@@ -144,16 +126,10 @@ pub struct MemberUsageRow {
     pub display_name: String,
     pub total_credits: i64,
     pub total_cost_cents: i64,
-    /// Per-user base credit limit, if the row is a workspace member with a
-    /// finite base limit. `None` for service accounts, team-aggregate
-    /// rows, and members marked `is_unlimited`. When `Some`, the row
-    /// renders `total_credits / base_limit` instead of just
-    /// `total_credits`.
+    /// Per-user base credit limit, rendered as `used / limit`. None for service
+    /// accounts, team-aggregate rows, and unlimited members.
     pub base_limit: Option<i64>,
-    /// Segments sorted by [`COST_TYPE_ORDER`] then [`BUCKET_ORDER`], with
-    /// any zero-credit entries filtered out. Used both for the stacked bar
-    /// and as the source of the per-cost-type breakdown shown in the row's
-    /// hover tooltip.
+    /// Sorted by [`COST_TYPE_ORDER`] then [`BUCKET_ORDER`]; zero-credit entries dropped.
     pub segments: Vec<BarSegment>,
 }
 
@@ -165,8 +141,7 @@ fn member_base_limit(member: &WorkspaceMember) -> Option<i64> {
     }
 }
 
-/// Returns the next-cycle reset / period-end label color and label for one
-/// cost-type bucket, mirroring the legend palette already used by the page.
+/// Swatch color for one cost-type bucket, mirroring the legend palette.
 pub fn cost_type_color(cost_type: &AiCreditsUsageAndCostType) -> ColorU {
     match cost_type {
         AiCreditsUsageAndCostType::BaseLimit => BASE_CREDITS_DOT_COLOR,
@@ -222,24 +197,17 @@ fn segment_sort_key(segment: &BarSegment) -> (usize, usize) {
     )
 }
 
-/// Entries we never want to surface in the rows — voice and suggested code
-/// diffs are billed separately and shouldn't pollute the bars/tooltips, and
-/// any pre-synthesized `Team` subject is handled by the `TeamAggregate`
-/// branch instead.
+/// Voice and suggested code diffs are billed separately; pre-synthesized `Team`
+/// rows are handled by the `TeamAggregate` branch.
 fn entry_is_renderable(entry: &BillingCycleUsageEntry) -> bool {
     entry.usage_bucket != AiCreditsUsageBucket::Voice
         && entry.usage_bucket != AiCreditsUsageBucket::SuggestedCodeDiffs
         && entry.subject_type != AiCreditsUsageAndCostSubjectType::Team
 }
 
-/// Group `entries` by `(cost_type, usage_bucket)` and turn each non-empty
-/// group into a [`BarSegment`]. Returns the sorted segments plus the row
-/// totals.
-///
-/// The cynic-generated enums don't implement `Hash`, so we accumulate into
-/// a small `Vec` and do linear lookups — the per-row entry count is bounded
-/// (at most ~12 cells: 4 cost-types × 3 buckets), making this faster than
-/// allocating a HashMap with string-keyed indirection.
+/// Group `entries` by `(cost_type, usage_bucket)` into [`BarSegment`]s; returns
+/// sorted segments plus row totals. Linear Vec lookup since cynic enums don't
+/// impl Hash and per-row entry counts are small.
 fn aggregate_segments<'a>(
     entries: impl IntoIterator<Item = &'a BillingCycleUsageEntry>,
 ) -> (Vec<BarSegment>, i64, i64) {
@@ -271,9 +239,7 @@ fn aggregate_segments<'a>(
     (segments, total_credits, total_cost_cents)
 }
 
-/// Build the single row shown to `OwnOnly` viewers — the viewer's own
-/// aggregated usage. Returns a zero row when the viewer has no entries this
-/// cycle.
+/// Single row for `OwnOnly` viewers — the viewer's own aggregated usage.
 pub fn build_own_usage_row(
     entries: &[BillingCycleUsageEntry],
     viewer_uid: Option<&str>,
@@ -285,16 +251,10 @@ pub fn build_own_usage_row(
         .iter()
         .filter(|e| entry_is_renderable(e))
         .filter(|e| source_filter.matches(&e.usage_source))
-        // Defensive: even when the server has already redacted to the
-        // viewer's own entries (OwnOnly), filter again so a stale server
-        // can't leak peers into the OwnOnly row.
+        // Defensive: filter to viewer-only even though OwnOnly should already be redacted.
         .filter(|e| match (viewer_uid, e.subject_uid.as_deref()) {
             (Some(uid), Some(entry_uid)) => uid == entry_uid,
-            // If the entry is missing a subject UID (shouldn't happen for
-            // OwnOnly per the server contract), keep it conservatively.
             (_, None) => true,
-            // If the viewer's UID is unknown, just trust the server's
-            // redaction and render whatever it sent.
             (None, _) => true,
         })
         .collect();
@@ -313,9 +273,8 @@ pub fn build_own_usage_row(
     }
 }
 
-/// Build the single synthetic team-aggregate row shown to `TeamAggregate`
-/// viewers. Re-aggregates the entries client-side so the row is correct
-/// even if the server hasn't collapsed them yet.
+/// Synthetic team-aggregate row for `TeamAggregate` viewers. Re-aggregates
+/// client-side in case the server hasn't collapsed yet.
 pub fn build_team_aggregate_row(
     entries: &[BillingCycleUsageEntry],
     source_filter: SourceFilter,
@@ -333,24 +292,20 @@ pub fn build_team_aggregate_row(
         display_name: "Team total".to_string(),
         total_credits,
         total_cost_cents,
-        // Team aggregate is not bound by any individual base limit.
         base_limit: None,
         segments,
     }
 }
 
-/// Build per-member rows shown to `PerUserTotals` viewers. Iterates the
-/// workspace's member list as the source of truth so members with zero
-/// usage still get a row. Service-account / unknown-subject entries that
-/// don't correspond to any workspace member surface as additional rows at
-/// the bottom (mirroring the admin panel's behavior).
+/// Per-member rows for `PerUserTotals` viewers. Iterates the workspace member
+/// list so zero-usage members still get a row. Service accounts and other
+/// non-member subjects surface as extra rows at the bottom.
 pub fn build_member_usage_rows(
     entries: &[BillingCycleUsageEntry],
     members: &[WorkspaceMember],
     source_filter: SourceFilter,
 ) -> Vec<MemberUsageRow> {
-    // First, group entries by subject so we can join against the member
-    // list below.
+    // Group entries by subject for joining against the member list below.
     let mut grouped: HashMap<
         String,
         (
@@ -388,9 +343,7 @@ pub fn build_member_usage_rows(
 
     let mut rows: Vec<MemberUsageRow> = Vec::with_capacity(members.len());
 
-    // Render one row per workspace member, including those without any
-    // entries — they get a zero row. Members are keyed by their UID, which
-    // matches the `subject_uid` carried on entries.
+    // One row per workspace member, including zero-usage members.
     let mut seen_keys: std::collections::HashSet<String> = Default::default();
     for member in members {
         let key = format!(
@@ -416,9 +369,7 @@ pub fn build_member_usage_rows(
         });
     }
 
-    // Anything left in `grouped` is a subject not present in the member
-    // list (typically service accounts). Render those after the member
-    // rows. Skip entries that were already accounted for above.
+    // Subjects not in the member list (typically service accounts) render after.
     for (key, (subject_type, display_name, entries)) in grouped {
         if seen_keys.contains(&key) {
             continue;
@@ -430,15 +381,12 @@ pub fn build_member_usage_rows(
             display_name,
             total_credits,
             total_cost_cents,
-            // Service accounts and other non-member subjects don't have a
-            // per-user base limit.
             base_limit: None,
             segments,
         });
     }
 
-    // Sort by total credits descending, matching the admin panel. Stable
-    // by `subject_key` to keep zero rows in a deterministic order.
+    // Sort by total credits desc, stable by subject_key.
     rows.sort_by(|a, b| {
         b.total_credits
             .cmp(&a.total_credits)
@@ -448,8 +396,7 @@ pub fn build_member_usage_rows(
     rows
 }
 
-/// True when any entry carries cloud usage, used to decide whether to show
-/// the Local/Cloud source filter toggle.
+/// True if any entry is cloud-sourced; gates the source filter toggle.
 pub fn has_cloud_usage(entries: &[BillingCycleUsageEntry]) -> bool {
     entries
         .iter()
@@ -484,7 +431,7 @@ fn render_stacked_bar(
     let corner = Radius::Pixels(BAR_CORNER_RADIUS);
 
     if team_max_credits == 0 || total_credits == 0 || segments.is_empty() {
-        // Empty bar: a single muted track, top-rounded on both ends.
+        // Empty track, top-rounded on both ends.
         return ConstrainedBox::new(
             Container::new(Empty::new().finish())
                 .with_background(track_bg)
@@ -500,10 +447,8 @@ fn render_stacked_bar(
     let has_unfill = unfill_ratio > 0.0;
     let last_segment_idx = segments.len() - 1;
 
-    // Build the filled portion: one Expanded child per segment, weighted
-    // by the segment's share of `total_credits`. The first segment gets a
-    // rounded top-left; the last segment gets a rounded top-right only if
-    // there's no muted track tail after it.
+    // One Expanded per segment, weighted by share of total_credits. First/last
+    // segment get rounded top corners (last only if no muted tail).
     let mut filled = Flex::row();
     for (idx, seg) in segments.iter().enumerate() {
         let weight = seg.credits as f32 / total_credits as f32;
@@ -550,15 +495,10 @@ fn render_stacked_bar(
         .finish()
 }
 
-/// The per-cost-type breakdown grid shown inside the row's hover tooltip,
-/// plus a "Total usage" row at the bottom.
+/// Per-cost-type tooltip breakdown with a "Total usage" footer.
 fn render_usage_tooltip_content(row: &MemberUsageRow, appearance: &Appearance) -> Box<dyn Element> {
     let theme = appearance.theme();
     let font_family = appearance.ui_font_family();
-    // Use the page background and let the outline border do the work of
-    // separating the tooltip from the rows beneath it. This keeps the
-    // tooltip visually quiet (no extra surface tier) and lets it read as a
-    // clean card-on-page popover.
     let bg = theme.background().into_solid();
     let main = blended_colors::text_main(theme, bg);
     let sub = blended_colors::text_sub(theme, bg);
@@ -590,7 +530,7 @@ fn render_usage_tooltip_content(row: &MemberUsageRow, appearance: &Appearance) -
         ));
     }
 
-    // Total row, separated by a thin divider line.
+    // Divider before the total row.
     column.add_child(
         Container::new(Empty::new().finish())
             .with_padding_top(1.)
@@ -613,11 +553,8 @@ fn render_usage_tooltip_content(row: &MemberUsageRow, appearance: &Appearance) -
         Container::new(column.finish())
             .with_background_color(bg)
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
-            // Use the same outline color as the row cards so the tooltip
-            // reads as part of the same surface family.
-            .with_border(Border::all(1.).with_border_color(theme.outline().into_solid()))
+            .with_border(Border::all(1.).with_border_color(CARD_BORDER_COLOR))
             .with_uniform_padding(10.)
-            // Soft drop shadow so the tooltip clearly floats above the rows.
             .with_drop_shadow(
                 DropShadow::new_with_standard_offset_and_spread(ColorU::new(0, 0, 0, 48))
                     .with_offset(vec2f(0., 4.)),
@@ -629,12 +566,8 @@ fn render_usage_tooltip_content(row: &MemberUsageRow, appearance: &Appearance) -
     .finish()
 }
 
-/// Single row inside the tooltip. Lays out as three columns to keep
-/// numbers aligned vertically across rows:
-/// `[swatch + label | flex spacer | credits/$cost cluster]`. The credits
-/// and `$cost` text are each right-aligned inside fixed-width
-/// `ConstrainedBox`es so columns line up even though rows are laid out
-/// independently.
+/// Single tooltip row: `[swatch + label] [spacer] [credits / cost]` with
+/// fixed-width right-aligned number columns.
 #[allow(clippy::too_many_arguments)]
 fn render_tooltip_row(
     swatch_color: Option<ColorU>,
@@ -689,10 +622,10 @@ fn render_tooltip_row(
         .finish();
 
     let credits_col = ConstrainedBox::new(Align::new(credits_text).right().finish())
-        .with_width(TOOLTIP_CREDITS_COL_WIDTH)
+        .with_width(60.)
         .finish();
     let cost_col = ConstrainedBox::new(Align::new(cost_text).right().finish())
-        .with_width(TOOLTIP_COST_COL_WIDTH)
+        .with_width(64.)
         .finish();
 
     let right = Flex::row()
@@ -711,19 +644,13 @@ fn render_tooltip_row(
         .finish()
 }
 
-/// Build a single row card (stacked bar + name/total). Shared between the
-/// non-hoverable fast path and the Hoverable closure body — the closure
-/// can borrow `&Appearance` directly since `Hoverable::new`'s `FnOnce` has
-/// no `'static` bound and is invoked immediately inside `new()`.
+/// Builds one row card (stacked bar + name/totals).
 fn build_row_card(
     row: &MemberUsageRow,
     team_max_credits: i64,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
-    // Match the tooltip: sit on the page background with just the outline
-    // border for definition, so the rows read as part of the page rather
-    // than a separate surface tier.
     let card_bg = theme.background().into_solid();
     let main = blended_colors::text_main(theme, card_bg);
     let sub = blended_colors::text_sub(theme, card_bg);
@@ -766,10 +693,7 @@ fn build_row_card(
         );
     }
 
-    // Credit + cost cluster: `[coin] X[/limit]   [card] $cost`. Uses
-    // `Icon::Credits` (the same coin icon as the "Buy credits"
-    // denomination buttons) for the credits side and `Icon::CreditCard`
-    // for the cost side.
+    // Credit + cost cluster: `[coin] X[/limit]   [card] $cost`.
     let credits_str = match row.base_limit {
         Some(limit) => format!(
             "{}/{}",
@@ -792,8 +716,6 @@ fn build_row_card(
     )
     .with_color(main)
     .finish();
-    // `to_warpui_icon` takes a `Fill`, so use the theme helper that already
-    // returns one rather than wrapping a `ColorU` from `blended_colors`.
     let icon_color = theme.sub_text_color(theme.background());
     let coin_icon = ConstrainedBox::new(Icon::Credits.to_warpui_icon(icon_color).finish())
         .with_width(ROW_ICON_SIZE)
@@ -817,11 +739,7 @@ fn build_row_card(
     let credits_and_cost = Flex::row()
         .with_cross_axis_alignment(CrossAxisAlignment::Center)
         .with_child(credits_cluster)
-        .with_child(
-            Container::new(cost_cluster)
-                .with_margin_left(ROW_CLUSTER_GAP)
-                .finish(),
-        )
+        .with_child(Container::new(cost_cluster).with_margin_left(6.).finish())
         .finish();
 
     let body = Container::new(
@@ -848,20 +766,19 @@ fn build_row_card(
             .finish(),
     )
     .with_background_color(card_bg)
-    .with_border(Border::all(ROW_BORDER_WIDTH).with_border_color(theme.outline().into_solid()))
+    .with_border(Border::all(ROW_BORDER_WIDTH).with_border_color(CARD_BORDER_COLOR))
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(ROW_BORDER_RADIUS)))
     .finish()
 }
 
-/// Render a single row: stacked bar on top, name + total credits below,
-/// wrapped in a Hoverable that surfaces the breakdown tooltip on hover.
+/// Row card wrapped in a Hoverable that opens the breakdown tooltip.
 fn render_member_row(
     row: &MemberUsageRow,
     team_max_credits: i64,
     tooltip_mouse_state: MouseStateHandle,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
-    // the viewer hasn't used any credits this cycle => don't bother wrapping in a Hoverable
+    // No segments => no tooltip needed.
     if row.segments.is_empty() {
         return build_row_card(row, team_max_credits, appearance);
     }
@@ -889,7 +806,7 @@ fn render_member_row(
 
 pub type FilterChangeFn = std::sync::Arc<dyn Fn(SourceFilter, &mut EventContext) + 'static>;
 
-/// Inline pill toggle for filtering between All / Local / Cloud entries.
+/// All / Local / Cloud pill toggle.
 fn render_source_filter_toggle(
     current: SourceFilter,
     mouse_states: &RowMouseStates,
@@ -946,10 +863,8 @@ fn render_source_filter_toggle(
         .finish()
 }
 
-/// Top-level dispatcher invoked from the section view's `render_body`.
-/// `on_filter_change` is only consumed in the `PerUserTotals` branch (the
-/// only one that renders the source-filter toggle) — other branches drop
-/// the closure on the floor.
+/// Top-level row dispatcher. `on_filter_change` is only consumed by the
+/// `PerUserTotals` branch.
 #[allow(clippy::too_many_arguments)]
 pub fn render_rows(
     workspace: &Workspace,
@@ -969,9 +884,7 @@ pub fn render_rows(
     match visibility.granularity {
         UsageVisibilityGranularity::OwnOnly => {
             let display_name = viewer_display_name.unwrap_or("Your usage").to_string();
-            // If the viewer is a workspace member with a finite request
-            // limit, surface their base limit on the row so they see
-            // `used / limit` like admins see for other members.
+            // Surface the viewer's own base limit so they see `used / limit`.
             let viewer_base_limit = viewer_uid.and_then(|uid| {
                 workspace
                     .members
@@ -1007,10 +920,10 @@ pub fn render_rows(
             ));
         }
         UsageVisibilityGranularity::PerUserTotals => {
-            let rows = build_member_usage_rows(entries, &workspace.members, source_filter);
+            let team_row = build_team_aggregate_row(entries, source_filter);
+            let member_rows = build_member_usage_rows(entries, &workspace.members, source_filter);
 
-            // Source filter is only useful when the workspace actually has
-            // cloud usage — otherwise the toggle is a confusing no-op.
+            // Only show the toggle if there's cloud usage to filter against.
             if has_cloud_usage(entries) {
                 column.add_child(
                     Container::new(
@@ -1031,16 +944,21 @@ pub fn render_rows(
                 );
             }
 
-            if rows.is_empty() {
+            if team_row.total_credits == 0 && member_rows.iter().all(|r| r.total_credits == 0) {
                 column.add_child(render_empty_filter_state(source_filter, appearance));
             } else {
-                let max_credits = rows
-                    .iter()
-                    .map(|r| r.total_credits)
-                    .max()
-                    .unwrap_or(0)
-                    .max(1);
-                for row in &rows {
+                // Size all bars against the team total: the team row fills the
+                // bar entirely, and each member's bar reads as their share of
+                // the team's usage.
+                let max_credits = team_row.total_credits.max(1);
+                let team_tooltip_state = mouse_states.tooltip_mouse_state(&team_row.subject_key);
+                column.add_child(render_member_row(
+                    &team_row,
+                    max_credits,
+                    team_tooltip_state,
+                    appearance,
+                ));
+                for row in &member_rows {
                     let tooltip_state = mouse_states.tooltip_mouse_state(&row.subject_key);
                     column.add_child(render_member_row(
                         row,
@@ -1052,11 +970,8 @@ pub fn render_rows(
             }
         }
         UsageVisibilityGranularity::FullBreakdown => {
-            // Enterprise admins short-circuit to the admin-panel CTA
-            // before `render_body` runs, so this branch should be
-            // unreachable in practice. Render an empty container so the
-            // section gracefully degrades if the short-circuit ever
-            // changes.
+            // Enterprise admins short-circuit to the admin-panel CTA before
+            // render_body runs, so this branch is unreachable in practice.
             column.add_child(Empty::new().finish());
         }
     }
@@ -1091,7 +1006,7 @@ fn render_empty_filter_state(
             .finish(),
     )
     .with_background_color(bg)
-    .with_border(Border::all(1.).with_border_color(theme.outline().into_solid()))
+    .with_border(Border::all(1.).with_border_color(CARD_BORDER_COLOR))
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(ROW_BORDER_RADIUS)))
     .with_vertical_padding(24.)
     .finish()

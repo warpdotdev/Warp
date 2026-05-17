@@ -86,7 +86,7 @@ const RESTRICTED_BILLING_USAGE_WARNING_STRING: &str =
 
 const HEADER_FONT_SIZE: f32 = 16.;
 
-const CARD_BORDER_COLOR: ColorU = ColorU {
+pub(super) const CARD_BORDER_COLOR: ColorU = ColorU {
     r: 43,
     g: 43,
     b: 43,
@@ -116,11 +116,8 @@ pub(super) const AMBIENT_CREDITS_DOT_COLOR: ColorU = ColorU {
     b: 241,
     a: 255,
 };
-/// Used for cycle-usage rows whose `cost_type` is the synthetic
-/// `Aggregate` sentinel (TeamAggregate / PerUserTotals visibility, where
-/// the server collapses individual cost types into a single row). A pure
-/// neutral gray so it reads as "no specific cost type" and stays
-/// distinct from the four chromatic cost-type colors above.
+/// Neutral gray for the synthetic `Aggregate` cost type, distinct from the
+/// four chromatic cost-type colors above.
 pub(super) const AGGREGATE_CREDITS_DOT_COLOR: ColorU = ColorU {
     r: 140,
     g: 140,
