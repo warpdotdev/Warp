@@ -31,7 +31,7 @@ pub fn init_locale()                                    // Resolve & set current
 pub fn set_locale(locale: &str)                         // Force a specific locale
 pub fn t(key: &'static str) -> Cow<'static, str>        // Primary translation lookup
 pub fn t_required(key: &'static str, fallback: &'static str) -> Cow<'static, str>
-pub fn interpolate(template: &str, args: &[(&str, String)]) -> Cow<'static, str>
+pub fn interpolate(template: &str, args: &[(&str, String)]) -> String
 ```
 
 **Locale resolution** (`init_locale`):
@@ -41,9 +41,11 @@ pub fn interpolate(template: &str, args: &[(&str, String)]) -> Cow<'static, str>
    - For `LANGUAGE`, split colon-separated preference lists and evaluate entries in order.
    - Strip encoding and modifier suffixes after `.` or `@` (`zh_CN.UTF-8`, `zh_CN.utf8`, and `zh_CN.UTF-8@pinyin` all normalize to `zh-CN`).
    - Convert `_` to `-`, compare language/script/region subtags case-insensitively, and normalize script/region casing for tests (`zh-hans-cn` → `zh-Hans-CN`).
-3. Classify the first supported normalized candidate: `zh`, `zh-CN`, `zh_CN`, `zh-Hans*`, and `zh_Hans*` map to `"zh-CN"`; all other candidates, including `zh-TW`, `zh-HK`, and `zh-Hant*`, map to `"en"` until a Traditional Chinese locale ships.
-4. `WARP_LANG` is an explicit override. If it is set but does not classify to `"zh-CN"`, resolution returns `"en"` and does not fall through to lower-priority system locale sources.
-5. No raw candidate is ever used as a locale key; runtime locale is always one of the two supported values.
+3. Resolve the first non-empty source authoritatively:
+   - `WARP_LANG`: if the normalized value is Simplified Chinese (`zh`, `zh-CN`, `zh_CN`, `zh-Hans*`, or `zh_Hans*`), return `"zh-CN"`; otherwise return `"en"` without consulting lower-priority sources.
+   - `LANGUAGE`: evaluate colon-separated entries in order. Return `"zh-CN"` for the first Simplified Chinese entry. Skip unsupported entries within the list (`fr`, `zh-TW`, `zh-HK`, `zh-Hant*`, etc.); if no entry is Simplified Chinese, return `"en"` without consulting lower-priority sources.
+   - `LC_ALL`, `LC_MESSAGES`, `LANG`, and system locale API: return `"zh-CN"` for Simplified Chinese values; otherwise return `"en"` without consulting lower-priority sources.
+4. No raw candidate is ever used as a locale key; runtime locale is always one of the two supported values.
 
 **Translation lookup** (`t`):
 1. Look up key in `TRANSLATIONS[current_locale]`.
@@ -60,6 +62,7 @@ pub fn interpolate(template: &str, args: &[(&str, String)]) -> Cow<'static, str>
 - Simple `str::replace` of `{name}` placeholders with provided values.
 - Not a template engine — no escaping, no positional arguments, no format specifiers.
 - Values are pre-formatted to `String` by the `t!()` macro before reaching `interpolate`.
+- `interpolate()` returns an owned `String`; the macros wrap it in `Cow::Owned(...)`. This avoids returning a borrowed value tied to a temporary `Cow` from `t()` or `t_required()`.
 - Interpolated values are treated as plain text. Call sites that render into rich, Markdown, link-capable, or otherwise parsed UI must pass interpolated values through the appropriate escaping layer or build the rich UI from structured fragments rather than by concatenating formatted strings. File paths, branch names, agent-provided labels, and server-provided metadata must never be allowed to inject markup, links, or formatting through translation interpolation.
 
 **YAML loading:**
@@ -87,6 +90,15 @@ Release builds (`#[cfg(not(debug_assertions))]`) only search the platform bundle
 | 3 | `$CARGO_MANIFEST_DIR/../resources/bundled/locales` (and up to 4 ancestor levels) | `#[cfg(debug_assertions)]` |
 | 4 | `$PWD/resources/bundled/locales` | `#[cfg(debug_assertions)]` |
 
+The release resource path is platform-specific and must be shared by runtime discovery and bundle validation:
+
+| Platform/artifact | Runtime locale directory |
+|-------------------|--------------------------|
+| macOS `.app` | `<Warp*.app>/Contents/Resources/bundled/locales` |
+| Windows installer output | `<install-dir>\resources\bundled\locales` (Inno `{app}\resources\bundled\locales`) |
+| Linux app packages/AppImage | `/opt/warpdotdev/<package>/resources/bundled/locales` inside the package/AppDir |
+| Linux CLI artifact | `<bundle-output>/resources/bundled/locales` adjacent to the CLI binary bundle |
+
 **Security:** Paths 1, 3, and 4 are compiled out of release binaries. This prevents shipped builds from loading arbitrary YAML from environment variables or the current working directory into the startup parsing and UI rendering pipeline. In debug builds, locale files loaded from dev-only paths are subject to a size cap (8 MB per file) to prevent intentionally large or malformed YAML from causing excessive startup parsing in poisoned local environments. If a file loaded from a dev-only path exceeds the cap or is malformed, it is silently skipped and the next discovery path is tried — the application does not crash.
 
 **No-locale fallback:** If no locale file can be loaded from any discovery path (e.g., corrupt installation, missing resource directory), `init_locale()` still completes successfully. For ordinary non-sensitive UI, the translation map remains empty and `t!()` returns the raw key string as the rendered text. Security-sensitive UI is different: auth, billing, privacy, sharing/permission, and agent-consent surfaces must not render raw dot-path keys. Those call sites must use `t_required!()` with an embedded English fallback, or fail closed by disabling the affected action and showing a readable English error that also uses `t_required!()`.
@@ -109,7 +121,7 @@ t!("terminal.hand_off", environment = name)
 // Expands to:
 match i18n::t("terminal.hand_off") {
     value if value == "terminal.hand_off" => Cow::Owned("terminal.hand_off".to_string()),
-    value => i18n::interpolate(value.as_ref(), &[("environment", format!("{}", name))]),
+    value => Cow::Owned(i18n::interpolate(value.as_ref(), &[("environment", format!("{}", name))])),
 }
 
 // Arm 3: Implicit interpolation (variable name = key name)
@@ -117,7 +129,7 @@ t!("some.key", count)
 // Expands to:
 match i18n::t("some.key") {
     value if value == "some.key" => Cow::Owned("some.key".to_string()),
-    value => i18n::interpolate(value.as_ref(), &[("count", format!("{}", count))]),
+    value => Cow::Owned(i18n::interpolate(value.as_ref(), &[("count", format!("{}", count))])),
 }
 ```
 
@@ -134,7 +146,7 @@ t_required!(
 )
 ```
 
-The required macro expands through `i18n::t_required(key, fallback)`, then applies interpolation to the translated value or embedded fallback. It must never branch back to the raw key. The fallback argument must be a string literal so static analysis can verify that every security-sensitive call site has readable English text even when locale files are missing.
+The required macro expands through `i18n::t_required(key, fallback)`, then applies interpolation to the translated value or embedded fallback and wraps interpolated output with `Cow::Owned(...)`. It must never branch back to the raw key. The fallback argument must be a string literal so static analysis can verify that every security-sensitive call site has readable English text even when locale files are missing.
 
 Duplicate `t!()` and `t_required!()` macros exist in `crates/onboarding/src/lib.rs` so the onboarding binary can use translations without depending on the full `app` crate. The macro copies are structurally identical — same call shapes, same fallback logic, same interpolation semantics. The only difference is the function reference: `$crate::i18n::*` in the app crate vs `warp_i18n::*` in onboarding. When changes to either macro are needed, both copies must be updated in the same commit. A code comment at each macro location references the other copy's file path to prevent drift.
 
@@ -208,7 +220,8 @@ The `app/src/i18n.rs` file re-exports `warp_i18n::*` so the rest of the applicat
 - The number of keys in `en.yml` and `zh-CN.yml` must be equal (after accounting for any intentionally untranslatable keys).
 - No stale locale keys: every key in `en.yml` is either referenced by `t!()` / `t_required!()` or listed in a checked-in allowlist for platform/resource-only strings.
 - No unlocalized required-scope strings: the static extractor scans the migration-scope directories for UI literals passed to common label/button/menu/tooltip/modal APIs without `t!()` or `t_required!()`. Remaining literals must be intentionally allowed with a reason.
-- Release bundle check: every packaged app artifact must contain both `resources/bundled/locales/en.yml` and `resources/bundled/locales/zh-CN.yml` at the path searched by release builds. CI fails if either file is missing from macOS, Windows, or Linux packaging outputs.
+- Rich/parsed text interpolation audit: a lint scans call sites that pass translated strings into Markdown, rich text, URL/link-capable text, or formatted-fragment APIs. Interpolated values from file paths, branch names, agent labels, server metadata, repository names, or URLs must either be escaped for that renderer or supplied as structured plain-text fragments. The lint rejects direct string concatenation or direct `t!()`/`t_required!()` interpolation into parsed markup.
+- Release bundle check: every packaged app artifact must contain both `en.yml` and `zh-CN.yml` at the exact runtime path for that artifact: macOS `<Warp*.app>/Contents/Resources/bundled/locales`, Windows `{app}\resources\bundled\locales`, Linux app packages/AppImage `/opt/warpdotdev/<package>/resources/bundled/locales`, and Linux CLI `<bundle-output>/resources/bundled/locales`. CI fails if either file is missing from any packaging output or if the validation path differs from runtime discovery.
 - Dev-only locale loading check: release binaries must not reference `$WARP_LOCALES_DIR`, `$PWD/resources/bundled/locales`, or source-tree fallback paths. A binary/string or build-time assertion verifies those discovery paths are compiled out outside `debug_assertions`.
 
 ### Unit tests
@@ -223,6 +236,8 @@ The `app/src/i18n.rs` file re-exports `warp_i18n::*` so the rest of the applicat
   - `set_locale("fr")` falls back to `en`
   - locale normalization handles `zh_CN.UTF-8`, `zh_CN.utf8`, `zh_CN.UTF-8@pinyin`, mixed-case `zh-hans-cn`, and colon-separated `LANGUAGE` lists
   - `WARP_LANG=fr` forces `en` even when lower-priority locale sources are Simplified Chinese
+  - `LANGUAGE=fr:zh_TW:en` resolves to `en` without falling through to `LANG` or system locale
+  - `LC_ALL=fr_FR.UTF-8` with `LANG=zh_CN.UTF-8` resolves to `en` because `LC_ALL` is the first non-empty source
   - `zh-TW`, `zh-HK`, and `zh-Hant*` resolve to `en`
   - `load_dir()` correctly parses YAML and produces flattened keys
   - malformed or over-size dev locale files are skipped without panicking
@@ -240,6 +255,8 @@ Manual verification must cover platform resource loading and locale detection, n
 | Windows MSVC release artifact | `WARP_LANG=fr` on Simplified Chinese system locale | English UI, proving explicit override behavior |
 | Linux release artifact | `LANG=zh_CN.UTF-8` | zh-CN UI |
 | Linux release artifact | `LANGUAGE=fr:zh_CN:en` with `WARP_LANG` unset | zh-CN UI |
+| Linux release artifact | `LANGUAGE=fr:zh_TW:en` and `LANG=zh_CN.UTF-8` with `WARP_LANG` unset | English UI, proving unsupported `LANGUAGE` preferences do not fall through to `LANG` |
+| Linux release artifact | `LC_ALL=fr_FR.UTF-8` and `LANG=zh_CN.UTF-8` with `WARP_LANG`/`LANGUAGE` unset | English UI, proving first-source-wins fallback semantics |
 | All platforms | bundled locale directory missing or unreadable | app launches; ordinary UI may show raw keys; security-sensitive surfaces show embedded English fallback or disabled fail-closed action |
 | All platforms | terminal PTY output under zh-CN UI | shell output is unchanged |
 | All platforms | deliberate ordinary missing key in a test-only build | raw key renders without panic |

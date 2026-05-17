@@ -40,10 +40,10 @@ Warp's UI is entirely hardcoded in English. Non-English-speaking developers must
     - Strip encoding and modifier suffixes after `.` or `@` (for example, `.UTF-8`, `.utf8`, `@pinyin`).
     - Treat `_` and `-` as equivalent separators, and compare language/script/region subtags case-insensitively.
 
-    The first supported normalized candidate is then classified:
-    - `zh`, `zh-CN`, `zh_CN`, `zh-Hans*`, or `zh_Hans*` → `"zh-CN"`
-    - Everything else, including `zh-TW`, `zh-HK`, `zh-Hant*`, and other non-Simplified Chinese locales → `"en"`
-    - `WARP_LANG` is an explicit override: if it is set but does not resolve to zh-CN, the active locale is `"en"` and no lower-priority source is consulted.
+    The first non-empty source is authoritative:
+    - `WARP_LANG` is an explicit override. If it is set, `zh`, `zh-CN`, `zh_CN`, `zh-Hans*`, or `zh_Hans*` resolve to `"zh-CN"`; every other value resolves to `"en"` and no lower-priority source is consulted.
+    - For `LANGUAGE`, entries are evaluated in order as a preference list. The first Simplified Chinese entry resolves to `"zh-CN"`. Unsupported entries, including `fr`, `zh-TW`, `zh-HK`, and `zh-Hant*`, are skipped within that list; if no entry resolves to zh-CN, the result is `"en"` and no lower-priority source is consulted.
+    - For `LC_ALL`, `LC_MESSAGES`, `LANG`, and the platform system locale API, Simplified Chinese values resolve to `"zh-CN"`; every other value resolves to `"en"` and no lower-priority source is consulted.
 
     Examples:
     - `WARP_LANG=zh-CN` → "zh-CN" candidate → zh-CN
@@ -52,6 +52,8 @@ Warp's UI is entirely hardcoded in English. Non-English-speaking developers must
     - `WARP_LANG=zh-TW` → "zh-TW" candidate → en (Traditional Chinese is not shipped yet)
     - `WARP_LANG=fr` → "fr" candidate → en (non-zh candidate, no fallthrough to system)
     - `LANGUAGE=fr:zh_CN:en` with `WARP_LANG` unset → first supported candidate is "zh-CN" → zh-CN
+    - `LANGUAGE=fr:zh_TW:en` with `WARP_LANG` unset → no Simplified Chinese candidate → en, no fallthrough to `LANG` or system locale
+    - `LC_ALL=fr_FR.UTF-8` and `LANG=zh_CN.UTF-8` with `WARP_LANG`/`LANGUAGE` unset → en because `LC_ALL` is the first non-empty source
     - `LANG=zh_CN.UTF-8@pinyin` → "zh-CN" candidate → zh-CN
     - No env vars, Simplified Chinese OS → system "zh-CN" → zh-CN
     - No env vars, Traditional Chinese OS → system "zh-TW" → en (Traditional Chinese is not shipped yet)
