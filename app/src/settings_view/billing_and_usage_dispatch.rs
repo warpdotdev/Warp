@@ -50,6 +50,7 @@ impl BillingAndUsageDispatchView {
                     || bm.is_on_build_max_plan()
                     || bm.is_on_build_business_plan()
                     || bm.is_enterprise_plan()
+                    || bm.is_free_plan()
             })
     }
 
