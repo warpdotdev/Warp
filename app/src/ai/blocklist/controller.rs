@@ -377,19 +377,19 @@ enum FollowUpTrigger {
     Auto,
     UserRequested,
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum LocalClaudeWakeTrigger {
     PendingEvents,
-    WakeOnlyStream,
+    WakeOnlyStream {
+        wake_message: AgentMessageEventMetadata,
+    },
 }
 
 impl LocalClaudeWakeTrigger {
-    #[cfg(not(target_family = "wasm"))]
-    fn requires_pending_events(self) -> bool {
+    fn requires_pending_events(&self) -> bool {
         match self {
             Self::PendingEvents => true,
-            Self::WakeOnlyStream => false,
+            Self::WakeOnlyStream { .. } => false,
         }
     }
 }
@@ -1576,7 +1576,6 @@ impl BlocklistAIController {
         &mut self,
         _conversation_id: AIConversationId,
         _trigger: LocalClaudeWakeTrigger,
-        _wake_message: Option<AgentMessageEventMetadata>,
         _ctx: &mut ModelContext<Self>,
     ) -> bool {
         false
@@ -1587,7 +1586,6 @@ impl BlocklistAIController {
         &mut self,
         conversation_id: AIConversationId,
         trigger: LocalClaudeWakeTrigger,
-        wake_message: Option<AgentMessageEventMetadata>,
         ctx: &mut ModelContext<Self>,
     ) -> bool {
         if self
@@ -1627,8 +1625,11 @@ impl BlocklistAIController {
             .cloned()
             .map(PathBuf::from);
         let task_id = conversation.task_id();
-        let wake_message_for_prepare = wake_message.clone();
-        let wake_message_for_retry = wake_message;
+        let wake_message_for_prepare = match &trigger {
+            LocalClaudeWakeTrigger::PendingEvents => None,
+            LocalClaudeWakeTrigger::WakeOnlyStream { wake_message } => Some(wake_message.clone()),
+        };
+        let trigger_for_callback = trigger.clone();
 
         let server_api = ServerApiProvider::as_ref(ctx).get();
         let handle = ctx.spawn(
@@ -1649,6 +1650,20 @@ impl BlocklistAIController {
                 me.pending_local_claude_wakes.remove(&conversation_id);
                 match result {
                     Ok(Some(command)) => {
+                        if let LocalClaudeWakeTrigger::WakeOnlyStream { wake_message } =
+                            &trigger_for_callback
+                        {
+                            OrchestrationEventStreamer::handle(ctx).update(
+                                ctx,
+                                |streamer, ctx| {
+                                    streamer.persist_dormant_claude_wake_cursor(
+                                        conversation_id,
+                                        wake_message,
+                                        ctx,
+                                    );
+                                },
+                            );
+                        }
                         log::info!(
                             "Executing dormant Claude wake command: conversation_id={conversation_id:?} task_id={task_id:?}"
                         );
@@ -1668,26 +1683,20 @@ impl BlocklistAIController {
                         });
                     }
                     Ok(None) => {
-                        match trigger {
+                        match &trigger_for_callback {
                             LocalClaudeWakeTrigger::PendingEvents => {
                                 log::info!(
                                     "Falling back to generic pending-event injection after dormant Claude wake eligibility check: conversation_id={conversation_id:?} task_id={task_id:?}"
                                 );
                                 me.inject_pending_events_for_request(conversation_id, ctx);
                             }
-                            LocalClaudeWakeTrigger::WakeOnlyStream => {
+                            LocalClaudeWakeTrigger::WakeOnlyStream { wake_message } => {
                                 log::info!(
                                     "Retrying wake-only dormant Claude eligibility check: conversation_id={conversation_id:?} task_id={task_id:?}"
                                 );
-                                let Some(wake_message) = wake_message_for_retry.clone() else {
-                                    log::warn!(
-                                        "Cannot retry dormant Claude wake without wake message metadata: conversation_id={conversation_id:?} task_id={task_id:?}"
-                                    );
-                                    return;
-                                };
                                 me.schedule_dormant_claude_wake_ready_retry(
                                     conversation_id,
-                                    wake_message,
+                                    wake_message.clone(),
                                     ctx,
                                 );
                             }
@@ -1697,20 +1706,14 @@ impl BlocklistAIController {
                         log::warn!(
                             "Failed to prepare dormant Claude wake command for {conversation_id:?} task_id={task_id:?}: {err:#}"
                         );
-                        match trigger {
+                        match &trigger_for_callback {
                             LocalClaudeWakeTrigger::PendingEvents => {
                                 me.schedule_pending_events_ready_retry(conversation_id, ctx);
                             }
-                            LocalClaudeWakeTrigger::WakeOnlyStream => {
-                                let Some(wake_message) = wake_message_for_retry.clone() else {
-                                    log::warn!(
-                                        "Cannot retry dormant Claude wake without wake message metadata: conversation_id={conversation_id:?} task_id={task_id:?}"
-                                    );
-                                    return;
-                                };
+                            LocalClaudeWakeTrigger::WakeOnlyStream { wake_message } => {
                                 me.schedule_dormant_claude_wake_ready_retry(
                                     conversation_id,
-                                    wake_message,
+                                    wake_message.clone(),
                                     ctx,
                                 );
                             }
@@ -1809,7 +1812,6 @@ impl BlocklistAIController {
         if self.maybe_prepare_local_claude_wake(
             conversation_id,
             LocalClaudeWakeTrigger::PendingEvents,
-            None,
             ctx,
         ) {
             return;
@@ -1826,8 +1828,7 @@ impl BlocklistAIController {
     ) {
         if !self.maybe_prepare_local_claude_wake(
             conversation_id,
-            LocalClaudeWakeTrigger::WakeOnlyStream,
-            Some(wake_message),
+            LocalClaudeWakeTrigger::WakeOnlyStream { wake_message },
             ctx,
         ) {
             log::info!(

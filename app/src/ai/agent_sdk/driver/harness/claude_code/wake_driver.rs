@@ -21,9 +21,7 @@ use super::super::claude_transcript::{
 };
 use super::super::task_env_vars;
 use super::parent_bridge::{
-    acknowledge_parent_bridge_hook_output, ensure_parent_bridge_state_dir,
-    parent_bridge_max_context_chars, parent_bridge_root, prepare_parent_bridge_hook_output,
-    stage_parent_bridge_message, write_parent_bridge_event_cursor, MessageBridgeMessageRecord,
+    ensure_parent_bridge_state_dir, parent_bridge_root, prime_parent_bridge_for_wake,
 };
 use super::{claude_command, prepare_claude_environment_config, ClaudeHarness};
 
@@ -212,10 +210,7 @@ impl ClaudeHarness {
         let state_dir = parent_bridge_root()?.join(remote.session_id.to_string());
         ensure_parent_bridge_state_dir(&state_dir)?;
         let hydrator = MessageHydrator::for_task(server_api, task_id);
-        acknowledge_parent_bridge_hook_output(&hydrator, &state_dir).await?;
-        if let Some(wake_message) = wake_message.as_ref() {
-            prime_parent_bridge_state_for_wake(&hydrator, &state_dir, wake_message).await?;
-        }
+        prime_parent_bridge_for_wake(&hydrator, &state_dir, wake_message.as_ref()).await?;
         let prompt_path = state_dir.join(CLAUDE_WAKE_PROMPT_FILE_NAME);
         std::fs::write(&prompt_path, remote.wake_prompt.as_bytes())
             .with_context(|| format!("Failed to write {}", prompt_path.display()))?;
@@ -232,26 +227,6 @@ impl ClaudeHarness {
 
         Ok(prefix_command_with_env_vars(command, env_vars))
     }
-}
-
-pub(super) async fn prime_parent_bridge_state_for_wake(
-    hydrator: &MessageHydrator,
-    state_dir: &std::path::Path,
-    wake_message: &AgentMessageEventMetadata,
-) -> Result<()> {
-    stage_parent_bridge_message(
-        state_dir,
-        &MessageBridgeMessageRecord {
-            sequence: wake_message.sequence,
-            message_id: wake_message.message_id.clone(),
-            sender_run_id: String::new(),
-            subject: String::new(),
-            body: String::new(),
-            occurred_at: wake_message.occurred_at.clone(),
-        },
-    )?;
-    write_parent_bridge_event_cursor(state_dir, wake_message.sequence)?;
-    prepare_parent_bridge_hook_output(hydrator, state_dir, parent_bridge_max_context_chars()).await
 }
 
 fn local_wake_task_env_vars(

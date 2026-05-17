@@ -774,7 +774,7 @@ fn prepare_local_wake_command_rehydrates_transcript_with_self_managed_listener()
 }
 
 #[tokio::test]
-async fn prime_parent_bridge_state_for_wake_clears_acked_output_and_surfaces_new_message() {
+async fn prime_parent_bridge_for_wake_clears_acked_output_and_surfaces_new_message() {
     let tmp = TempDir::new().unwrap();
     let state_dir = tmp.path().join("session-123");
     ensure_parent_bridge_state_dir(&state_dir).unwrap();
@@ -833,11 +833,7 @@ async fn prime_parent_bridge_state_for_wake_clears_acked_output_and_surfaces_new
             })
         });
     let hydrator = MessageHydrator::new(Arc::new(ai_client) as Arc<dyn AIClient>);
-    acknowledge_parent_bridge_hook_output(&hydrator, &state_dir)
-        .await
-        .unwrap();
-
-    prime_parent_bridge_state_for_wake(&hydrator, &state_dir, &wake_message)
+    prime_parent_bridge_for_wake(&hydrator, &state_dir, Some(&wake_message))
         .await
         .unwrap();
 

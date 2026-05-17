@@ -372,6 +372,69 @@ fn persist_event_cursor_keeps_the_max_sequence_and_updates_history_model() {
 }
 
 #[test]
+fn wake_ready_does_not_advance_cursor_before_wake_preparation() {
+    use crate::ai::agent::conversation::AIConversation;
+    use crate::ai::agent_events::AgentMessageEventMetadata;
+    use crate::server::server_api::ai::{AIClient, MockAIClient};
+    use crate::server::server_api::ServerApiProvider;
+    use std::sync::Arc;
+    use warpui::App;
+
+    App::test((), |mut app| async move {
+        let _v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
+
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+
+        let mut conversation = AIConversation::new(false, false);
+        conversation.set_last_event_sequence(17);
+        let conversation_id = conversation.id();
+        let terminal_view_id = warpui::EntityId::new();
+        history_model.update(&mut app, |model, ctx| {
+            model.restore_conversations(terminal_view_id, vec![conversation], ctx);
+        });
+
+        let mock = MockAIClient::new();
+        let ai_client: Arc<dyn AIClient> = Arc::new(mock);
+        let server_api = ServerApiProvider::new_for_test().get();
+
+        let streamer = app.add_singleton_model(|ctx| {
+            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
+        });
+
+        streamer.update(&mut app, |me, ctx| {
+            me.streams.entry(conversation_id).or_default().event_cursor = 17;
+            me.finish_dormant_claude_wake_listener(
+                conversation_id,
+                1,
+                Ok(Some(AgentMessageEventMetadata {
+                    sequence: 42,
+                    message_id: "message-123".to_string(),
+                    occurred_at: "2026-01-01T00:00:01Z".to_string(),
+                })),
+                ctx,
+            );
+        });
+
+        streamer.read(&app, |me, _| {
+            assert_eq!(
+                me.streams
+                    .get(&conversation_id)
+                    .map(|stream| stream.event_cursor),
+                Some(17)
+            );
+        });
+        history_model.read(&app, |model, _| {
+            assert_eq!(
+                model
+                    .conversation(&conversation_id)
+                    .and_then(|conversation| conversation.last_event_sequence()),
+                Some(17)
+            );
+        });
+    });
+}
+
+#[test]
 fn dormant_local_claude_child_uses_task_harness_when_server_metadata_missing() {
     use crate::ai::agent::conversation::{AIConversation, ConversationStatus};
     use crate::server::server_api::ai::MockAIClient;

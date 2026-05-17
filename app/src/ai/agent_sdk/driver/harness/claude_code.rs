@@ -46,17 +46,16 @@ use parent_bridge::{
     parent_bridge_char_count, parent_bridge_event_cursor_file, parent_bridge_hook_output_ack_file,
     parent_bridge_hook_output_file, parent_bridge_root, parent_bridge_staged_message_path,
     parent_bridge_surfaced_message_path, prepare_parent_bridge_hook_output,
-    read_parent_bridge_event_cursor, render_parent_bridge_message_block,
-    stage_parent_bridge_message, write_parent_bridge_event_cursor, MessageBridgeHookOutput,
-    MessageBridgeMessageRecord, MESSAGE_BRIDGE_CONTEXT_PREAMBLE,
+    prime_parent_bridge_for_wake, read_parent_bridge_event_cursor,
+    render_parent_bridge_message_block, stage_parent_bridge_message,
+    write_parent_bridge_event_cursor, MessageBridgeHookOutput, MessageBridgeMessageRecord,
+    MESSAGE_BRIDGE_CONTEXT_PREAMBLE,
 };
 use parent_bridge::{MessageBridge, MessageBridgeCleanupDisposition};
 #[cfg(test)]
 use shell_words::quote as shell_quote;
 #[cfg(test)]
-use wake_driver::{
-    prime_parent_bridge_state_for_wake, ClaudeWakeRemoteContext, CLAUDE_WAKE_PROMPT_FILE_NAME,
-};
+use wake_driver::{ClaudeWakeRemoteContext, CLAUDE_WAKE_PROMPT_FILE_NAME};
 
 pub(crate) struct ClaudeHarness;
 #[cfg_attr(not(target_family = "wasm"), async_trait)]

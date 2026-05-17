@@ -254,6 +254,15 @@ impl OrchestrationEventStreamer {
             );
         }
     }
+
+    pub(crate) fn persist_dormant_claude_wake_cursor(
+        &mut self,
+        conversation_id: AIConversationId,
+        wake_message: &AgentMessageEventMetadata,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.persist_event_cursor(conversation_id, wake_message.sequence, ctx);
+    }
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         let provider = ServerApiProvider::as_ref(ctx);
         let ai_client = provider.get_ai_client();
@@ -1104,43 +1113,7 @@ impl OrchestrationEventStreamer {
                     return;
                 }
 
-                if let Some(stream) = me.streams.get_mut(&conversation_id) {
-                    stream.wake_connection = None;
-                }
-
-                match result {
-                    Ok(Some(wake_message)) => {
-                        log::info!(
-                            "Dormant Claude wake listener observed wake message for \
-                             {conversation_id:?} at sequence {} message_id={}",
-                            wake_message.sequence,
-                            wake_message.message_id
-                        );
-                        me.persist_event_cursor(conversation_id, wake_message.sequence, ctx);
-                        ctx.emit(OrchestrationEventStreamerEvent::DormantClaudeWakeReady {
-                            conversation_id,
-                            wake_message,
-                        });
-                    }
-                    Ok(None) => {
-                        log::warn!(
-                            "Dormant Claude wake listener stopped for {conversation_id:?} \
-                             without observing an event"
-                        );
-                        if me.is_dormant_claude_wake_listener_eligible(conversation_id, ctx) {
-                            me.start_dormant_claude_wake_listener(conversation_id, ctx);
-                        }
-                    }
-                    Err(err) => {
-                        log::warn!(
-                            "Dormant Claude wake listener failed for {conversation_id:?} \
-                             (gen={generation}): {err:#}"
-                        );
-                        if me.is_dormant_claude_wake_listener_eligible(conversation_id, ctx) {
-                            me.start_dormant_claude_wake_listener(conversation_id, ctx);
-                        }
-                    }
-                }
+                me.finish_dormant_claude_wake_listener(conversation_id, generation, result, ctx);
             },
         );
 
@@ -1149,6 +1122,55 @@ impl OrchestrationEventStreamer {
             generation,
             task: handle,
         });
+    }
+
+    fn finish_dormant_claude_wake_listener(
+        &mut self,
+        conversation_id: AIConversationId,
+        generation: u64,
+        result: anyhow::Result<Option<AgentMessageEventMetadata>>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if let Some(stream) = self.streams.get_mut(&conversation_id) {
+            stream.wake_connection = None;
+        }
+
+        match result {
+            Ok(Some(wake_message)) => {
+                log::info!(
+                    "Dormant Claude wake listener observed wake message for \
+                     {conversation_id:?} at sequence {} message_id={}",
+                    wake_message.sequence,
+                    wake_message.message_id
+                );
+                // Leave the durable cursor untouched here. The controller only
+                // persists the wake sequence after Claude wake preparation
+                // successfully stages/surfaces the message into the parent
+                // bridge, so failed prepares can still replay the event.
+                ctx.emit(OrchestrationEventStreamerEvent::DormantClaudeWakeReady {
+                    conversation_id,
+                    wake_message,
+                });
+            }
+            Ok(None) => {
+                log::warn!(
+                    "Dormant Claude wake listener stopped for {conversation_id:?} \
+                     without observing an event"
+                );
+                if self.is_dormant_claude_wake_listener_eligible(conversation_id, ctx) {
+                    self.start_dormant_claude_wake_listener(conversation_id, ctx);
+                }
+            }
+            Err(err) => {
+                log::warn!(
+                    "Dormant Claude wake listener failed for {conversation_id:?} \
+                     (gen={generation}): {err:#}"
+                );
+                if self.is_dormant_claude_wake_listener_eligible(conversation_id, ctx) {
+                    self.start_dormant_claude_wake_listener(conversation_id, ctx);
+                }
+            }
+        }
     }
 
     fn teardown_dormant_claude_wake_listener(&mut self, conversation_id: AIConversationId) {
