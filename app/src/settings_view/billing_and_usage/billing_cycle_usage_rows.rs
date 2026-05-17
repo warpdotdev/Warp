@@ -51,7 +51,15 @@ const BAR_HEIGHT: f32 = 8.;
 const MIN_FILL_RATIO: f32 = 0.05;
 const ROW_BORDER_RADIUS: f32 = 8.;
 const ROW_PADDING: f32 = 12.;
-const TOOLTIP_GAP: f32 = 4.;
+const TOOLTIP_GAP: f32 = 6.;
+/// Width bounds for the per-row hover tooltip. Without these bounds the
+/// tooltip's overlay layout would inherit the window width (via
+/// `ParentOffsetBounds::WindowByPosition`) and stretch across the entire
+/// page — the inner row children use `MainAxisSize::Max` for their
+/// `SpaceBetween` alignment, so they greedily expand to whatever space the
+/// parent offers.
+const TOOLTIP_MIN_WIDTH: f32 = 240.;
+const TOOLTIP_MAX_WIDTH: f32 = 360.;
 
 /// All cost-type buckets the admin panel considers, in the order they are
 /// rendered within a single bar (and listed in tooltips).
@@ -647,12 +655,17 @@ fn render_usage_tooltip_content(row: &MemberUsageRow, appearance: &Appearance) -
             .finish(),
     );
 
-    Container::new(column.finish())
-        .with_background_color(bg)
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
-        .with_border(Border::all(1.).with_border_color(blended_colors::neutral_5(theme)))
-        .with_uniform_padding(10.)
-        .finish()
+    ConstrainedBox::new(
+        Container::new(column.finish())
+            .with_background_color(bg)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+            .with_border(Border::all(1.).with_border_color(blended_colors::neutral_5(theme)))
+            .with_uniform_padding(10.)
+            .finish(),
+    )
+    .with_min_width(TOOLTIP_MIN_WIDTH)
+    .with_max_width(TOOLTIP_MAX_WIDTH)
+    .finish()
 }
 
 /// Build a single row card (stacked bar + name/total). Shared between the
