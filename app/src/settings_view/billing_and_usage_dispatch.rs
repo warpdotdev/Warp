@@ -2,7 +2,7 @@
 //! pages.
 
 use warp_core::{features::FeatureFlag, ui::appearance::Appearance};
-use warpui::elements::{ChildView, Container, ParentElement};
+use warpui::elements::{ChildView, Container};
 use warpui::{AppContext, Element, Entity, SingletonEntity, View, ViewContext, ViewHandle};
 
 use crate::auth::AuthStateProvider;
