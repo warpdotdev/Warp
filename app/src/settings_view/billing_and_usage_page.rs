@@ -74,8 +74,7 @@ use super::{
     },
     settings_page::{
         build_sub_header, render_body_item, render_customer_type_badge, render_info_icon,
-        AdditionalInfo, Category, PageType, SettingsPageMeta, SettingsPageViewHandle,
-        SettingsWidget, HEADER_PADDING,
+        AdditionalInfo, Category, PageType, SettingsPageMeta, SettingsWidget, HEADER_PADDING,
     },
     MatchData, SettingsSection,
 };
@@ -660,6 +659,22 @@ impl BillingAndUsagePageView {
             .collect();
     }
 
+    pub(crate) fn deactivate_subscriptions(&mut self, ctx: &mut ViewContext<Self>) {
+        let user_workspaces = UserWorkspaces::handle(ctx);
+        let auth_manager = AuthManager::handle(ctx);
+        let team_update_manager = TeamUpdateManager::handle(ctx);
+        let request_usage_model = AIRequestUsageModel::handle(ctx);
+        let pricing_info_model = PricingInfoModel::handle(ctx);
+        let usage_history_model = self.usage_history_model.clone();
+
+        ctx.unsubscribe_to_model(&user_workspaces);
+        ctx.unsubscribe_to_model(&auth_manager);
+        ctx.unsubscribe_to_model(&team_update_manager);
+        ctx.unsubscribe_to_model(&request_usage_model);
+        ctx.unsubscribe_to_model(&pricing_info_model);
+        ctx.unsubscribe_to_model(&usage_history_model);
+    }
+
     fn show_addon_credit_modal(&mut self, ctx: &mut ViewContext<Self>) {
         self.addon_credit_modal_state.open();
 
@@ -714,11 +729,11 @@ impl SettingsPageMeta for BillingAndUsagePageView {
         self.page.update_filter(query, ctx)
     }
 
-    fn scroll_to_widget(&mut self, widget_id: &'static str) {
+    fn scroll_to_widget(&mut self, widget_id: &'static str, _ctx: &mut ViewContext<Self>) {
         self.page.scroll_to_widget(widget_id)
     }
 
-    fn clear_highlighted_widget(&mut self) {
+    fn clear_highlighted_widget(&mut self, _ctx: &mut ViewContext<Self>) {
         self.page.clear_highlighted_widget();
     }
 }
@@ -1007,12 +1022,6 @@ impl TypedActionView for BillingAndUsagePageView {
                 });
             }
         }
-    }
-}
-
-impl From<ViewHandle<BillingAndUsagePageView>> for SettingsPageViewHandle {
-    fn from(view_handle: ViewHandle<BillingAndUsagePageView>) -> Self {
-        SettingsPageViewHandle::BillingAndUsage(view_handle)
     }
 }
 

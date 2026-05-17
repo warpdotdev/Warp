@@ -9,8 +9,7 @@ use super::{
     about_page::AboutPageView,
     ai_page::{AISettingsPageAction, AISettingsPageView},
     appearance_page::AppearanceSettingsPageView,
-    billing_and_usage_page::BillingAndUsagePageView,
-    billing_and_usage_page_v2::BillingAndUsagePageV2View,
+    billing_and_usage_router_page::BillingAndUsageRouterPageView,
     code_page::CodeSettingsPageView,
     environments_page::EnvironmentsPageView,
     features_page::FeaturesPageView,
@@ -98,9 +97,9 @@ pub trait SettingsPageMeta {
 
     fn update_filter(&mut self, query: &str, ctx: &mut ViewContext<Self>) -> MatchData;
 
-    fn scroll_to_widget(&mut self, widget_id: &'static str);
+    fn scroll_to_widget(&mut self, widget_id: &'static str, ctx: &mut ViewContext<Self>);
 
-    fn clear_highlighted_widget(&mut self);
+    fn clear_highlighted_widget(&mut self, ctx: &mut ViewContext<Self>);
 }
 
 /// Page enum lists all the pages that we want to support.
@@ -121,8 +120,7 @@ pub enum SettingsPageViewHandle {
     Referrals(ViewHandle<ReferralsPageView>),
     AI(ViewHandle<AISettingsPageView>),
     CloudEnvironments(ViewHandle<EnvironmentsPageView>),
-    BillingAndUsage(ViewHandle<BillingAndUsagePageView>),
-    BillingAndUsageV2(ViewHandle<BillingAndUsagePageV2View>),
+    BillingAndUsageRouter(ViewHandle<BillingAndUsageRouterPageView>),
     MCPServers(ViewHandle<MCPServersSettingsPageView>),
     WarpDrive(ViewHandle<WarpDriveSettingsPageView>),
 }
@@ -145,8 +143,7 @@ impl SettingsPageViewHandle {
             Referrals(view_handle) => ChildView::new(view_handle).finish(),
             AI(view_handle) => ChildView::new(view_handle).finish(),
             CloudEnvironments(view_handle) => ChildView::new(view_handle).finish(),
-            BillingAndUsage(view_handle) => ChildView::new(view_handle).finish(),
-            BillingAndUsageV2(view_handle) => ChildView::new(view_handle).finish(),
+            BillingAndUsageRouter(view_handle) => ChildView::new(view_handle).finish(),
             MCPServers(view_handle) => ChildView::new(view_handle).finish(),
             WarpDrive(view_handle) => ChildView::new(view_handle).finish(),
         }

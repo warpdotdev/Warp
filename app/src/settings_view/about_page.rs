@@ -142,11 +142,11 @@ impl SettingsPageMeta for AboutPageView {
         self.page.update_filter(query, ctx)
     }
 
-    fn scroll_to_widget(&mut self, widget_id: &'static str) {
+    fn scroll_to_widget(&mut self, widget_id: &'static str, _ctx: &mut ViewContext<Self>) {
         self.page.scroll_to_widget(widget_id)
     }
 
-    fn clear_highlighted_widget(&mut self) {
+    fn clear_highlighted_widget(&mut self, _ctx: &mut ViewContext<Self>) {
         self.page.clear_highlighted_widget();
     }
 }

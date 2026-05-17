@@ -70,7 +70,7 @@ use super::{
     billing_and_usage_page::{BillingAndUsagePageAction, BillingUsageTab},
     settings_page::{
         render_customer_type_badge, render_info_icon, render_sub_header, AdditionalInfo, MatchData,
-        SettingsPageMeta, SettingsPageViewHandle, PAGE_PADDING,
+        SettingsPageMeta, PAGE_PADDING,
     },
     SettingsSection,
 };
@@ -87,6 +87,7 @@ const RESTRICTED_BILLING_USAGE_WARNING_STRING: &str =
     "Auto reload is disabled due to recent failed reload. Please update your payment method and try again.";
 
 const HEADER_FONT_SIZE: f32 = 16.;
+const SEARCH_TERMS: &str = "billing usage plan credits buy credits manage billing admin panel usage history cloud agent trial auto reload monthly spend limit add-on credits";
 
 const CARD_BORDER_COLOR: ColorU = ColorU {
     r: 43,
@@ -411,6 +412,22 @@ impl BillingAndUsagePageV2View {
             }
             _ => {}
         }
+    }
+
+    pub(crate) fn deactivate_subscriptions(&mut self, ctx: &mut ViewContext<Self>) {
+        let user_workspaces = UserWorkspaces::handle(ctx);
+        let auth_manager = AuthManager::handle(ctx);
+        let team_update_manager = TeamUpdateManager::handle(ctx);
+        let request_usage_model = AIRequestUsageModel::handle(ctx);
+        let pricing_info_model = PricingInfoModel::handle(ctx);
+        let usage_history_model = self.usage_history.model.clone();
+
+        ctx.unsubscribe_to_model(&user_workspaces);
+        ctx.unsubscribe_to_model(&auth_manager);
+        ctx.unsubscribe_to_model(&team_update_manager);
+        ctx.unsubscribe_to_model(&request_usage_model);
+        ctx.unsubscribe_to_model(&pricing_info_model);
+        ctx.unsubscribe_to_model(&usage_history_model);
     }
 
     fn show_toast(&self, message: &str, flavor: ToastFlavor, ctx: &mut ViewContext<Self>) {
@@ -1606,13 +1623,13 @@ impl SettingsPageMeta for BillingAndUsagePageV2View {
         self.refresh_addon_credits_settings(ctx);
     }
 
-    fn update_filter(&mut self, _query: &str, _ctx: &mut ViewContext<Self>) -> MatchData {
-        MatchData::Uncounted(false)
+    fn update_filter(&mut self, query: &str, _ctx: &mut ViewContext<Self>) -> MatchData {
+        search_terms_match(SEARCH_TERMS, query).into()
     }
 
-    fn scroll_to_widget(&mut self, _widget_id: &'static str) {}
+    fn scroll_to_widget(&mut self, _widget_id: &'static str, _ctx: &mut ViewContext<Self>) {}
 
-    fn clear_highlighted_widget(&mut self) {}
+    fn clear_highlighted_widget(&mut self, _ctx: &mut ViewContext<Self>) {}
 }
 
 impl Entity for BillingAndUsagePageV2View {
@@ -1880,6 +1897,17 @@ impl TypedActionView for BillingAndUsagePageV2View {
     }
 }
 
+fn search_terms_match(terms: &str, query: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+
+    let terms_lower = terms.to_lowercase();
+    query
+        .to_lowercase()
+        .split_whitespace()
+        .all(|word| terms_lower.contains(word))
+}
 fn render_balance_card(
     appearance: &Appearance,
     dot_color: ColorU,
@@ -1964,8 +1992,24 @@ fn render_balance_card(
     .finish()
 }
 
-impl From<warpui::ViewHandle<BillingAndUsagePageV2View>> for SettingsPageViewHandle {
-    fn from(view_handle: warpui::ViewHandle<BillingAndUsagePageV2View>) -> Self {
-        SettingsPageViewHandle::BillingAndUsageV2(view_handle)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn search_terms_match_empty_query() {
+        assert!(search_terms_match(SEARCH_TERMS, ""));
+    }
+
+    #[test]
+    fn search_terms_match_billing_page_terms() {
+        assert!(search_terms_match(SEARCH_TERMS, "billing"));
+        assert!(search_terms_match(SEARCH_TERMS, "usage history"));
+        assert!(search_terms_match(SEARCH_TERMS, "buy credits"));
+    }
+
+    #[test]
+    fn search_terms_do_not_match_unrelated_terms() {
+        assert!(!search_terms_match(SEARCH_TERMS, "keyboard shortcuts"));
     }
 }
