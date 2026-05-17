@@ -16,6 +16,130 @@ use string_offset::CharOffset;
 use super::{Engine, Match, SearchConfig};
 
 #[test]
+fn test_search_cjk_literal() {
+    // CJK literal search
+    App::test((), |mut app| async move {
+        let (buffer, _selection) = Buffer::mock_from_markdown(
+            "OpenWarp 是基于 Warp 的社区分支，保留账户与同步能力。",
+            None,
+            Box::new(|_, _| IndentBehavior::Ignore),
+            &mut app,
+        );
+        buffer.read(&app, |buffer, _| {
+            assert_matches(
+                buffer,
+                &SearchConfig {
+                    query: "账户",
+                    case_sensitive: true,
+                    regex: false,
+                    skip_hidden: false,
+                    hidden_ranges: None,
+                },
+                [(27, 29, "账户")],
+            );
+        });
+    });
+}
+
+#[test]
+fn test_search_cjk_multiple_matches() {
+    // 多个 CJK 匹配与大小写不敏感
+    App::test((), |mut app| async move {
+        let (buffer, _selection) = Buffer::mock_from_markdown(
+            "账户与同步。再试一次账户。",
+            None,
+            Box::new(|_, _| IndentBehavior::Ignore),
+            &mut app,
+        );
+        buffer.read(&app, |buffer, _| {
+            assert_matches(
+                buffer,
+                &SearchConfig {
+                    query: "账户",
+                    case_sensitive: true,
+                    regex: false,
+                    skip_hidden: false,
+                    hidden_ranges: None,
+                },
+                [(1, 3, "账户"), (11, 13, "账户")],
+            );
+        });
+    });
+}
+
+#[test]
+fn test_search_japanese_literal() {
+    // 日语平假名 / 片假名 / 汉字 混合
+    App::test((), |mut app| async move {
+        let (buffer, _selection) = Buffer::mock_from_markdown(
+            "これはテストです。ターミナルを起動します。",
+            None,
+            Box::new(|_, _| IndentBehavior::Ignore),
+            &mut app,
+        );
+        buffer.read(&app, |buffer, _| {
+            assert_matches(
+                buffer,
+                &SearchConfig {
+                    query: "ターミナル",
+                    case_sensitive: true,
+                    regex: false,
+                    skip_hidden: false,
+                    hidden_ranges: None,
+                },
+                [(10, 15, "ターミナル")],
+            );
+        });
+    });
+}
+
+#[test]
+fn test_search_cjk_regex() {
+    // CJK 与正则接起来
+    App::test((), |mut app| async move {
+        let (buffer, _selection) = Buffer::mock_from_markdown(
+            "版本 v1.2.3\n版本 v2.0.0",
+            None,
+            Box::new(|_, _| IndentBehavior::Ignore),
+            &mut app,
+        );
+        buffer.read(&app, |buffer, _| {
+            assert_matches(
+                buffer,
+                &SearchConfig::regex(r"版本 v\d+"),
+                [(1, 6, "版本 v1"), (11, 16, "版本 v2")],
+            );
+        });
+    });
+}
+
+#[test]
+fn test_search_emoji_literal() {
+    // 4 字节 UTF-8 字符(emoji 补充平面)
+    App::test((), |mut app| async move {
+        let (buffer, _selection) = Buffer::mock_from_markdown(
+            "hello 🚀 world 🚀!",
+            None,
+            Box::new(|_, _| IndentBehavior::Ignore),
+            &mut app,
+        );
+        buffer.read(&app, |buffer, _| {
+            assert_matches(
+                buffer,
+                &SearchConfig {
+                    query: "🚀",
+                    case_sensitive: true,
+                    regex: false,
+                    skip_hidden: false,
+                    hidden_ranges: None,
+                },
+                [(7, 8, "🚀"), (15, 16, "🚀")],
+            );
+        });
+    });
+}
+
+#[test]
 fn test_search_inline_styles() {
     App::test((), |mut app| async move {
         let (buffer, _selection) = Buffer::mock_from_markdown(

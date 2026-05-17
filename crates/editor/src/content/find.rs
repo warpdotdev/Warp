@@ -319,7 +319,15 @@ impl Engine {
                         }
                     } else if let Some(character) = cursor.char() {
                         let mut bytes = [0u8; 4];
-                        for byte in character.encode_utf8(&mut bytes).bytes() {
+                        let utf8_len = character.encode_utf8(&mut bytes).len();
+                        // 反向 DFA 需按字节反序喂入,以匹配 query 的字节反向序列。
+                        let byte_iter: &mut dyn Iterator<Item = u8> = match direction {
+                            SearchDirection::Forward => &mut bytes[..utf8_len].iter().copied(),
+                            SearchDirection::Reverse => {
+                                &mut bytes[..utf8_len].iter().rev().copied()
+                            }
+                        };
+                        for byte in byte_iter {
                             state = dfa
                                 .next_state(cache, state, byte)
                                 .context("Couldn't advance to next state")?;
