@@ -564,6 +564,7 @@ impl TerminalView {
         self.model
             .lock()
             .set_shared_session_status(SharedSessionStatus::SharePending);
+        log::info!("Emitting request to start sharing current session");
 
         ctx.emit(Event::StartSharingCurrentSession {
             scrollback_type,

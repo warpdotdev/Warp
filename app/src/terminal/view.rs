@@ -12746,6 +12746,7 @@ impl TerminalView {
             _ => None,
         };
         if let Some(source_type) = source_type_opt {
+            log::info!("Terminal bootstrapped with pending shared session; attempting to share");
             self.attempt_to_share_session(
                 SharedSessionScrollbackType::All,
                 None,
