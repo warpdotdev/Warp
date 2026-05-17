@@ -5,12 +5,12 @@
 Warp has no existing i18n infrastructure. Every user-facing string in the codebase is a hardcoded English literal — `"Save"`, `"File"`, `"Close tab"`, etc. This spec proposes a custom, lightweight i18n framework built directly into the Warp Rust codebase, with zh-CN as the first non-English locale.
 
 **Relevant files:**
-- `crates/i18n/src/lib.rs` — core i18n engine (new crate)
-- `app/src/lib.rs:4-30` — `t!()` macro definition
+- `crates/i18n/src/lib.rs` — core i18n engine plus single exported `t!()` and `t_required!()` macro definitions
 - `app/src/lib.rs:610` — `init_locale()` call in application startup
 - `resources/bundled/locales/en.yml` — English locale file (2,944 lines)
 - `resources/bundled/locales/zh-CN.yml` — Chinese locale file (2,944 lines)
-- `crates/onboarding/src/lib.rs:3-29` — duplicate `t!()` macro for onboarding binary
+- `app/src/i18n.rs` — re-export of `warp_i18n::*` for app call sites
+- `crates/onboarding/src/lib.rs` — import/re-export of `warp_i18n::{t, t_required}` for onboarding call sites
 - `crates/onboarding/src/bin/main.rs:43` — `init_locale()` for onboarding
 
 **Why not a third-party crate?** Existing Rust i18n crates (Fluent, gettext, ICU4X) add significant complexity and dependencies for a feature that currently only needs two locales with simple key-value lookups. A custom solution keeps the surface area small and the build fast.
@@ -32,6 +32,10 @@ pub fn set_locale(locale: &str)                         // Force a specific loca
 pub fn t(key: &'static str) -> Cow<'static, str>        // Primary translation lookup
 pub fn t_required(key: &'static str, fallback: &'static str) -> Cow<'static, str>
 pub fn interpolate(template: &str, args: &[(&str, String)]) -> String
+#[macro_export]
+macro_rules! t { ... }
+#[macro_export]
+macro_rules! t_required { ... }
 ```
 
 **Locale resolution** (`init_locale`):
@@ -64,6 +68,21 @@ pub fn interpolate(template: &str, args: &[(&str, String)]) -> String
 - Values are pre-formatted to `String` by the `t!()` macro before reaching `interpolate`.
 - `interpolate()` returns an owned `String`; the macros wrap it in `Cow::Owned(...)`. This avoids returning a borrowed value tied to a temporary `Cow` from `t()` or `t_required()`.
 - Interpolated values are treated as plain text. Call sites that render into rich, Markdown, link-capable, or otherwise parsed UI must pass interpolated values through the appropriate escaping layer or build the rich UI from structured fragments rather than by concatenating formatted strings. File paths, branch names, agent-provided labels, and server-provided metadata must never be allowed to inject markup, links, or formatting through translation interpolation.
+
+**Rich/parsed rendering contract:**
+
+Interpolated translations are allowed to enter only these renderer categories:
+
+| Renderer category | Approved strategy |
+|-------------------|-------------------|
+| Plain UI text, labels, buttons, menus, tooltips, toasts without links | Use `t!()` / `t_required!()` directly; interpolation values are plain text. |
+| Formatted text fragments | Build structured fragments and pass dynamic values only through plain-text fragment constructors such as `FormattedTextFragment::plain_text(...)`; do not concatenate dynamic values into markup-bearing fragments. |
+| Markdown body text | Escape dynamic values with `warp_i18n::escape_markdown_text(...)` before interpolation, or avoid interpolation and insert the dynamic value as a plain-text fragment after Markdown parsing. |
+| Markdown link text | Escape dynamic values with `warp_i18n::escape_markdown_link_text(...)`; URLs must not be interpolated into Markdown source. |
+| Link destinations / hrefs | Do not translate or interpolate raw hrefs. Build links with typed link APIs such as `ToastLink::with_href(...)`, `ctx.open_url(...)`, or the relevant URL type after validating the URL with existing URL parsing/allowlist logic. |
+| HTML, webview, or other markup-capable renderers | Do not pass interpolated translated strings directly. Use renderer-specific escaping or structured nodes, with a local allowlist entry naming the API used. |
+
+The approved helper functions live in `warp_i18n` so the lint can recognize them. New renderer APIs that parse markup must be added to the lint configuration in the same PR that introduces their first translated call site.
 
 **YAML loading:**
 ```rust
@@ -103,15 +122,17 @@ The release resource path is platform-specific and must be shared by runtime dis
 
 **No-locale fallback:** If no locale file can be loaded from any discovery path (e.g., corrupt installation, missing resource directory), `init_locale()` still completes successfully. For ordinary non-sensitive UI, the translation map remains empty and `t!()` returns the raw key string as the rendered text. Security-sensitive UI is different: auth, billing, privacy, sharing/permission, and agent-consent surfaces must not render raw dot-path keys. Those call sites must use `t_required!()` with an embedded English fallback, or fail closed by disabling the affected action and showing a readable English error that also uses `t_required!()`.
 
-### 2. `t!()` and `t_required!()` macros (defined in `app/src/lib.rs`)
+### 2. `t!()` and `t_required!()` macros (defined once in `crates/i18n`)
 
-`t!()` is a `macro_rules!` macro with three match arms. The actual expansion uses `match` (not combinator chains) to preserve `Cow<'static, str>` type flow:
+`t!()` is a `#[macro_export] macro_rules!` macro owned by `crates/i18n`. The app and onboarding binaries import the same macro from `warp_i18n`; they must not maintain local duplicate macro definitions. This keeps fallback and security-sensitive behavior single-sourced.
+
+The macro has three match arms. The actual expansion uses `match` (not combinator chains) to preserve `Cow<'static, str>` type flow:
 
 ```rust
 // Arm 1: Simple lookup
 t!("menu.file")
 // Expands to:
-match i18n::t("menu.file") {
+match $crate::t("menu.file") {
     value if value == "menu.file" => Cow::Owned("menu.file".to_string()),
     value => value,
 }
@@ -119,17 +140,17 @@ match i18n::t("menu.file") {
 // Arm 2: Explicit interpolation
 t!("terminal.hand_off", environment = name)
 // Expands to:
-match i18n::t("terminal.hand_off") {
+match $crate::t("terminal.hand_off") {
     value if value == "terminal.hand_off" => Cow::Owned("terminal.hand_off".to_string()),
-    value => Cow::Owned(i18n::interpolate(value.as_ref(), &[("environment", format!("{}", name))])),
+    value => Cow::Owned($crate::interpolate(value.as_ref(), &[("environment", format!("{}", name))])),
 }
 
 // Arm 3: Implicit interpolation (variable name = key name)
 t!("some.key", count)
 // Expands to:
-match i18n::t("some.key") {
+match $crate::t("some.key") {
     value if value == "some.key" => Cow::Owned("some.key".to_string()),
-    value => Cow::Owned(i18n::interpolate(value.as_ref(), &[("count", format!("{}", count))])),
+    value => Cow::Owned($crate::interpolate(value.as_ref(), &[("count", format!("{}", count))])),
 }
 ```
 
@@ -146,9 +167,9 @@ t_required!(
 )
 ```
 
-The required macro expands through `i18n::t_required(key, fallback)`, then applies interpolation to the translated value or embedded fallback and wraps interpolated output with `Cow::Owned(...)`. It must never branch back to the raw key. The fallback argument must be a string literal so static analysis can verify that every security-sensitive call site has readable English text even when locale files are missing.
+The required macro expands through `$crate::t_required(key, fallback)`, then applies interpolation to the translated value or embedded fallback and wraps interpolated output with `Cow::Owned(...)`. It must never branch back to the raw key. The fallback argument must be a string literal so static analysis can verify that every security-sensitive call site has readable English text even when locale files are missing.
 
-Duplicate `t!()` and `t_required!()` macros exist in `crates/onboarding/src/lib.rs` so the onboarding binary can use translations without depending on the full `app` crate. The macro copies are structurally identical — same call shapes, same fallback logic, same interpolation semantics. The only difference is the function reference: `$crate::i18n::*` in the app crate vs `warp_i18n::*` in onboarding. When changes to either macro are needed, both copies must be updated in the same commit. A code comment at each macro location references the other copy's file path to prevent drift.
+Both `app` and `crates/onboarding` import these exported macros from `warp_i18n`. A CI lint rejects any local `macro_rules! t` or `macro_rules! t_required` definitions outside `crates/i18n`, preventing macro drift across binaries.
 
 ### 3. Locale files
 
@@ -165,7 +186,7 @@ The dot-separated YAML path (e.g., `menu.file`) is the lookup key used in `t!()`
 
 ### 4. Usage patterns in the codebase
 
-All user-facing string literals are replaced with `t!()` or `t_required!()` calls. ~4,700+ callsites across `app/src/`. Key patterns:
+All user-facing string literals in the required source tree are replaced with `t!()` or `t_required!()` calls. The initial app migration is expected to touch ~4,700+ call sites, plus onboarding, shared UI crates, and platform resource copy discovered by the extractor. Key patterns:
 
 | Pattern | Example | When |
 |---------|---------|------|
@@ -182,23 +203,24 @@ The migration scope must match the product requirement for the whole Warp UI sur
 
 | Area | Required coverage |
 |------|-------------------|
-| macOS app/menu chrome | app menu, tab/window menus, context menus, command palette labels |
-| Core app UI in `app/src/` | workspace, panes, tabs, toolbars, settings, modals, notifications, toasts, tooltips, empty states |
+| `app/src/**` | workspace, panes, tabs, toolbars, settings, modals, notifications, toasts, tooltips, empty states, command palette labels, terminal-adjacent UI chrome |
+| `crates/onboarding/src/**` | first-run onboarding screens, onboarding prompts, onboarding buttons, onboarding error text |
+| UI support crates used by the app (`crates/ui_components/**`, `crates/warpui*/**`, `crates/editor/**` where user-visible labels are authored) | reusable controls, formatted text components, editor labels, shared prompts, and component-owned empty/error states |
+| Platform/app resources (`app/channels/**`, macOS menu/plist resources, Windows installer-visible app metadata when rendered in Warp UI, Linux desktop metadata shown by the app) | app/menu chrome, platform-visible labels owned by Warp, resource strings that surface inside the running application |
 | Account and monetization | auth, onboarding login, teams, billing, plan/credit warnings, payment restriction copy |
 | Sharing and permissions | Warp Drive sharing, shared sessions, access labels, permission prompts |
 | AI and agent surfaces | agent input/output chrome, Oz/cloud handoff, autonomy permissions, MCP/tool permissions, code review UI, agent management |
-| Onboarding binary | first-run onboarding screens and prompts in `crates/onboarding` |
-| Bundled resources | `resources/bundled/locales/en.yml` and `resources/bundled/locales/zh-CN.yml` included in platform release artifacts |
+| Bundled locale resources | `resources/bundled/locales/en.yml` and `resources/bundled/locales/zh-CN.yml` included in platform release artifacts |
 
 Explicit non-goals remain untranslated: PTY output, shell command output, file contents opened by the user, keyboard shortcut glyphs, protocol/log/debug identifiers, telemetry event names, test fixtures, and developer-only tracing.
 
-Coverage is verified by a static extractor that scans Rust call sites for remaining user-visible string literals in the required areas and by locale parity checks against `en.yml`. Any intentional exception must be listed in a checked-in allowlist with a short reason.
+Coverage is verified by a static extractor that scans Rust call sites, macro invocations, platform resource files, and known UI-construction APIs in the required areas. The extractor must include common button/menu/tooltip/modal/toast/settings/action/empty-state constructors and renderer APIs, not only direct `t!()` call sites. Any intentional exception must be listed in a checked-in allowlist with a short reason and an owning surface.
 
 ### 6. Application integration
 
 `init_locale()` is called at the top of `app::run()` (`app/src/lib.rs:610`), before feature flags are initialized and before any UI is created. This ensures translations are available for the entire application lifecycle.
 
-The `app/src/i18n.rs` file re-exports `warp_i18n::*` so the rest of the application uses `crate::i18n::t()` without needing to depend on `warp_i18n` directly.
+The `app/src/i18n.rs` file re-exports `warp_i18n::*` for direct function access from app modules. The `t!()` and `t_required!()` macros are imported from `warp_i18n` itself so both the app and onboarding binaries share one macro implementation.
 
 ### 7. Windows compiler support
 
@@ -214,10 +236,14 @@ The `app/src/i18n.rs` file re-exports `warp_i18n::*` so the rest of the applicat
 
 ### Locale file integrity (automated)
 - Every key present in `en.yml` must have a corresponding key in `zh-CN.yml`. A script or build-time check verifies this invariant — missing keys in `zh-CN.yml` cause a CI failure.
+- Every `zh-CN.yml` value must be non-empty after trimming whitespace, unless the key is listed in a checked-in empty-value allowlist with a reason.
 - **Interpolation placeholder parity:** for every key whose English value contains `{name}` placeholders, the zh-CN value must contain the exact same set of placeholder names (same count, same names). Mismatched placeholder names (e.g., en has `{count}` but zh-CN has `{number}`) produce runtime rendering bugs and must be rejected at CI time.
 - Both YAML files must parse successfully as valid YAML and produce the expected top-level locale key (`en:` / `zh-CN:`).
 - No orphaned keys: every key referenced by a `t!()` or `t_required!()` call in the codebase must exist in `en.yml`. A static analysis script (e.g., `rg 't(_required)?!\("([^"]+)"' --only-matching | sort -u` diffed against keys extracted from `en.yml`) must run locally and in CI to catch callsite-locale drift.
 - The number of keys in `en.yml` and `zh-CN.yml` must be equal (after accounting for any intentionally untranslatable keys).
+- Copied-English detection: a CI check rejects `zh-CN.yml` values that are byte-identical to their English value, except keys in a checked-in allowlist for brand names, product names, protocol identifiers, keyboard shortcuts, commands, file extensions, URLs, and intentionally untranslated technical terms.
+- zh-CN script coverage: for non-allowlisted values longer than two visible characters, the translation must contain at least one CJK Unified Ideograph or full-width CJK punctuation character. This catches accidental English-only translations without blocking short symbols or brand terms.
+- Security-sensitive translation quality: keys in the security-sensitive checklist must pass the copied-English and CJK checks with no broad section-level allowlist. Any exception requires an inline reason naming the legal/product owner who approved preserving the English text.
 - No stale locale keys: every key in `en.yml` is either referenced by `t!()` / `t_required!()` or listed in a checked-in allowlist for platform/resource-only strings.
 - No unlocalized required-scope strings: the static extractor scans the migration-scope directories for UI literals passed to common label/button/menu/tooltip/modal APIs without `t!()` or `t_required!()`. Remaining literals must be intentionally allowed with a reason.
 - Rich/parsed text interpolation audit: a lint scans call sites that pass translated strings into Markdown, rich text, URL/link-capable text, or formatted-fragment APIs. Interpolated values from file paths, branch names, agent labels, server metadata, repository names, or URLs must either be escaped for that renderer or supplied as structured plain-text fragments. The lint rejects direct string concatenation or direct `t!()`/`t_required!()` interpolation into parsed markup.
@@ -232,6 +258,7 @@ The `app/src/i18n.rs` file re-exports `warp_i18n::*` so the rest of the applicat
   - `t()` with a missing key returns the key string itself
   - `t_required()` with a missing key returns the embedded English fallback, never the raw key
   - `interpolate()` correctly substitutes one and multiple placeholders
+  - exported `t!()` and `t_required!()` macros compile from both `app` and `crates/onboarding` without local macro copies
   - `set_locale("zh-CN")` correctly switches the active locale
   - `set_locale("fr")` falls back to `en`
   - locale normalization handles `zh_CN.UTF-8`, `zh_CN.utf8`, `zh_CN.UTF-8@pinyin`, mixed-case `zh-hans-cn`, and colon-separated `LANGUAGE` lists
@@ -241,6 +268,8 @@ The `app/src/i18n.rs` file re-exports `warp_i18n::*` so the rest of the applicat
   - `zh-TW`, `zh-HK`, and `zh-Hant*` resolve to `en`
   - `load_dir()` correctly parses YAML and produces flattened keys
   - malformed or over-size dev locale files are skipped without panicking
+  - Markdown/rich-text lint rejects unescaped interpolation into parsed renderers and accepts approved escaping or structured-fragment APIs
+  - locale quality checks reject empty zh-CN values, copied-English values, and non-allowlisted English-only zh-CN values
 
 ### Integration / manual verification
 
@@ -266,7 +295,7 @@ Manual verification must cover platform resource loading and locale detection, n
 - The `cargo check` / `cargo build` pipeline for the `warp-oss` binary must pass on macOS, Windows MSVC, and Linux
 - All existing tests must pass after the migration — no test assertions may be broken by i18n
 - Behavior invariants from `PRODUCT.md` map to verification steps above
-- CI must run the locale integrity script, security-sensitive key lint, release bundle check, and locale normalization tests before the implementation PR can merge
+- CI must run the locale integrity script, translation quality checks, security-sensitive key lint, rich/parsed interpolation lint, macro drift lint, release bundle check, and locale normalization tests before the implementation PR can merge
 
 ## Parallelization
 

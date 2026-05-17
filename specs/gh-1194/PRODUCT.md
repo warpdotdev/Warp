@@ -64,7 +64,7 @@ Warp's UI is entirely hardcoded in English. Non-English-speaking developers must
 
 ### 2. Translation rendering
 
-2.1. Every user-facing text string in the Warp UI is translated via the `t!("dot.path")` macro. The argument to `t!()` is a dot-separated path into a YAML locale file — this path is the lookup key. The English value at that path in `en.yml` serves as the fallback text when no translation exists for the active locale. The Chinese value at the same path in `zh-CN.yml` is shown when zh-CN is active.
+2.1. Every user-facing text string in the Warp UI is translated via the `t!("dot.path")` macro or the security-sensitive `t_required!("dot.path", "English fallback")` macro. The key argument is a dot-separated path into a YAML locale file. The English value at that path in `en.yml` serves as the fallback text when no translation exists for the active locale. The Chinese value at the same path in `zh-CN.yml` is shown when zh-CN is active.
 
 2.2. When a translation is requested for a given key:
     1. The active locale file is checked first.
