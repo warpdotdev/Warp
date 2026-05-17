@@ -547,12 +547,10 @@ impl WorkflowView {
             }
         }
 
-        if FeatureFlag::WorkflowAliases.is_enabled()
-            && matches!(
-                mode,
-                ArgumentEditorMode::WorkflowDefinition | ArgumentEditorMode::Alias
-            )
-            && !self.is_for_agent_mode
+        if matches!(
+            mode,
+            ArgumentEditorMode::WorkflowDefinition | ArgumentEditorMode::Alias
+        ) && !self.is_for_agent_mode
         {
             arguments_section.add_child(self.render_env_vars_selector(appearance, app));
         }

@@ -475,7 +475,6 @@ default = [
     "minimalist_ui",
     "avatar_in_tab_bar",
     "full_screen_zen_mode",
-    "workflow_aliases",
     "ligatures",
     "dynamic_workflow_enums",
     "rect_selection",
@@ -795,7 +794,6 @@ integration_tests = [
 ]
 traces = []
 viewing_shared_sessions = []
-workflow_aliases = []
 rect_selection = []
 alacritty_settings_import = []
 shared_with_me = []

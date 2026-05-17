@@ -12757,7 +12757,7 @@ impl Input {
                 ctx
             );
 
-            if FeatureFlag::WorkflowAliases.is_enabled() {
+            {
                 let mut command_string = self.editor.as_ref(ctx).buffer_text(ctx);
                 // If the alias was inserted from the completions menu, it will have trailing
                 // whitespace - trim it in-place.
