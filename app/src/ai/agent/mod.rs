@@ -1520,6 +1520,8 @@ pub enum SubagentType {
     Summarization,
     ConversationSearch {
         query: Option<String>,
+        /// Search targets are mutually exclusive; at most one of `conversation_id` or
+        /// `agent_run_id` should be populated for a single conversation search subagent.
         /// The ID of the conversation being searched.
         conversation_id: Option<String>,
         /// The ID of the agent run being searched.

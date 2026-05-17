@@ -1088,11 +1088,7 @@ impl AIBlock {
         ctx.subscribe_to_model(
             &AgentConversationsModel::handle(ctx),
             |me, _, event, ctx| {
-                if matches!(event, AgentConversationsModelEvent::TasksUpdated)
-                    && me.output_references_agent_run_for_conversation_search(ctx)
-                {
-                    ctx.notify();
-                }
+                me.handle_agent_conversations_model_event(event, ctx);
             },
         );
 
@@ -2144,6 +2140,21 @@ impl AIBlock {
             AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
                 model.get_or_async_fetch_task_data(&task_id, ctx);
             });
+        }
+    }
+
+    fn handle_agent_conversations_model_event(
+        &mut self,
+        event: &AgentConversationsModelEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        // Conversation-search labels may render with an agent-run fallback before the
+        // async task title fetch completes. `TasksUpdated` is the signal that the real
+        // title may now be cached, so only notify blocks that render those labels.
+        if matches!(event, AgentConversationsModelEvent::TasksUpdated)
+            && self.output_references_agent_run_for_conversation_search(ctx)
+        {
+            ctx.notify();
         }
     }
 
