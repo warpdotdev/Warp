@@ -200,6 +200,11 @@ impl TerminalView {
                     event,
                     AmbientAgentViewModelEvent::ExecutionSessionReady { .. }
                 ) {
+                    if self.pending_cloud_followup_task_id.is_some()
+                        && !self.is_conversation_details_panel_open
+                    {
+                        self.suppress_initial_conversation_details_panel_auto_open();
+                    }
                     self.pending_cloud_followup_task_id = None;
                     self.remove_conversation_ended_tombstone(ctx);
                 }
