@@ -2,6 +2,7 @@ mod command_builder;
 pub use command_builder::CommandBuilder;
 
 mod config;
+pub mod descriptor;
 mod language_server_candidate;
 pub use language_server_candidate::LanguageServerCandidate;
 pub mod install;
