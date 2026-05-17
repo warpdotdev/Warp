@@ -25,7 +25,8 @@ use crate::{
     settings_view::{
         admin_actions::AdminActions,
         billing_and_usage_page_v2::{
-            BASE_CREDITS_DOT_COLOR, BONUS_CREDITS_DOT_COLOR, PAYG_CREDITS_DOT_COLOR,
+            AMBIENT_CREDITS_DOT_COLOR, BASE_CREDITS_DOT_COLOR, BONUS_CREDITS_DOT_COLOR,
+            PAYG_CREDITS_DOT_COLOR,
         },
     },
     ui_components::icons::Icon,
@@ -33,7 +34,8 @@ use crate::{
         update_manager::TeamUpdateManager,
         user_workspaces::UserWorkspaces,
         workspace::{
-            AiCreditsUsageAndCostType, BillingCycleUsageSummary, MaxPriorCycles, UsageVisibility, UsageVisibilityGranularity, Workspace
+            AiCreditsUsageAndCostType, BillingCycleUsageSummary, MaxPriorCycles, UsageVisibility,
+            Workspace,
         },
     },
 };
@@ -180,9 +182,14 @@ impl View for BillingCycleUsageSectionView {
             .is_some_and(|email| workspace.is_workspace_admin(email));
         let visibility = workspace.resolve_usage_visibility(is_admin);
 
+        // Enterprise admins can set detailed usage limits in the admin panel that we're not going to support in the client for rn
+        if workspace.billing_metadata.is_enterprise_plan() && is_admin {
+            return self.render_admin_panel_cta(appearance);
+        }
+
         let mut column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
 
-        column.add_child(self.render_header(&workspace, appearance, app));
+        column.add_child(self.render_header(&workspace, &visibility, appearance, app));
 
         if let Some(legend) = self.render_legend(&workspace, appearance) {
             column.add_child(Container::new(legend).with_margin_top(8.).finish());
@@ -222,7 +229,6 @@ impl BillingCycleUsageSectionView {
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_alignment(MainAxisAlignment::End);
 
-        let viewer_email = Self::resolved_viewer_email(app);
         let summary_count = workspace
             .billing_cycle_usage
             .as_ref()
@@ -379,6 +385,7 @@ impl BillingCycleUsageSectionView {
             AiCreditsUsageAndCostType::BaseLimit,
             AiCreditsUsageAndCostType::BonusGrant,
             AiCreditsUsageAndCostType::Payg,
+            AiCreditsUsageAndCostType::AmbientBonusGrant,
         ] {
             if summary.entries.iter().any(|e| e.cost_type == cost_type) {
                 present_buckets.push(cost_type);
@@ -441,45 +448,11 @@ impl BillingCycleUsageSectionView {
 
     fn render_body(
         &self,
-        workspace: &Workspace,
-        visibility: &UsageVisibility,
+        _workspace: &Workspace,
+        _visibility: &UsageVisibility,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        if visibility.granularity == UsageVisibilityGranularity::FullBreakdown {
-            return self.render_admin_panel_cta(appearance);
-        }
-
-        let Some(data) = workspace.billing_cycle_usage.as_ref() else {
-            return self.render_empty_state(
-                "No usage yet this billing cycle",
-                "Kick off an agent task to see usage here.",
-                appearance,
-            );
-        };
-        if data.summaries.is_empty() {
-            return self.render_empty_state(
-                "No usage yet this billing cycle",
-                "Kick off an agent task to see usage here.",
-                appearance,
-            );
-        }
-
-        let Some(summary) = self.current_summary(workspace) else {
-            return self.render_empty_state(
-                "No usage in this period",
-                "Pick another period from the dropdown above.",
-                appearance,
-            );
-        };
-
-        if summary.entries.is_empty() {
-            return self.render_empty_state(
-                "No usage in this period",
-                "Pick another period from the dropdown above.",
-                appearance,
-            );
-        }
-
+        // TODO -- next pr
         self.render_empty_state(
             "Usage rows coming soon",
             "Per-user usage breakdown lands in a follow-up.",
@@ -503,8 +476,7 @@ impl BillingCycleUsageSectionView {
         let body = appearance
             .ui_builder()
             .paragraph(
-                "Per-user, per-bucket usage for Enterprise workspaces is available in the \
-                 admin panel.",
+                "Detailed team usage and spend limit controls live in the admin panel.",
             )
             .with_style(UiComponentStyles {
                 font_color: Some(theme.sub_text_color(bg).into()),
@@ -531,19 +503,22 @@ impl BillingCycleUsageSectionView {
             })
             .finish();
 
-        Container::new(
-            Flex::column()
-                .with_children([
-                    Container::new(header).with_margin_bottom(8.).finish(),
-                    Container::new(body).with_margin_bottom(12.).finish(),
-                    button,
-                ])
-                .finish(),
-        )
-        .with_background_color(theme.surface_1().into_solid())
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-        .with_uniform_padding(16.)
-        .finish()
+        let column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_children([
+                Container::new(header).with_margin_bottom(8.).finish(),
+                Container::new(body).with_margin_bottom(12.).finish(),
+                button,
+            ])
+            .finish();
+
+        Container::new(column)
+            .with_background_color(theme.surface_1().into_solid())
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+            .with_vertical_padding(40.)
+            .with_uniform_padding(16.)
+            .finish()
     }
 
     fn render_empty_state(
@@ -588,12 +563,15 @@ impl BillingCycleUsageSectionView {
 
 fn legend_style_for(cost_type: AiCreditsUsageAndCostType) -> (ColorU, &'static str) {
     match cost_type {
-        AiCreditsUsageAndCostType::BaseLimit => (BASE_CREDITS_DOT_COLOR, "Base credits"),
-        AiCreditsUsageAndCostType::BonusGrant => (BONUS_CREDITS_DOT_COLOR, "Add on"),
-        AiCreditsUsageAndCostType::Payg => (PAYG_CREDITS_DOT_COLOR, "Pay as you go"),
-        AiCreditsUsageAndCostType::AmbientBonusGrant
-        | AiCreditsUsageAndCostType::Aggregate
-        | AiCreditsUsageAndCostType::Other(_) => (BASE_CREDITS_DOT_COLOR, ""),
+        AiCreditsUsageAndCostType::BaseLimit => (BASE_CREDITS_DOT_COLOR, "Base"),
+        AiCreditsUsageAndCostType::BonusGrant => (BONUS_CREDITS_DOT_COLOR, "Add-ons"),
+        AiCreditsUsageAndCostType::Payg => (PAYG_CREDITS_DOT_COLOR, "Pay-as-you-go"),
+        AiCreditsUsageAndCostType::AmbientBonusGrant => {
+            (AMBIENT_CREDITS_DOT_COLOR, "Ambient-only")
+        }
+        AiCreditsUsageAndCostType::Aggregate | AiCreditsUsageAndCostType::Other(_) => {
+            (BASE_CREDITS_DOT_COLOR, "")
+        }
     }
 }
 
@@ -601,7 +579,7 @@ fn format_period_label(summary: &BillingCycleUsageSummary) -> String {
     let start = summary.period_start.with_timezone(&Local);
     let end = summary.period_end.with_timezone(&Local);
     format!(
-        "{} – {}",
+        "{} - {}",
         start.format("%b %d, %Y"),
         end.format("%b %d, %Y")
     )
