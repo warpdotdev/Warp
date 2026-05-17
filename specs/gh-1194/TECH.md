@@ -88,7 +88,7 @@ The approved helper functions live in `warp_i18n` so the lint can recognize them
 ```rust
 fn load_translations() -> Translations {
     for dir in locale_dirs() {          // Try multiple filesystem paths
-        if let Some(t) = load_dir(dir) { // First successful directory wins
+        if let Some(t) = load_complete_dir(dir) { // First complete directory wins
             return t;
         }
     }
@@ -96,7 +96,17 @@ fn load_translations() -> Translations {
 }
 ```
 
-`load_dir` reads all `.yml`/`.yaml` files in a directory, parses them with `serde_yaml`, identifies the locale from the top-level key, and recursively flattens nested YAML into dot-separated keys via `flatten_value`.
+`load_complete_dir` reads locale files from one directory, parses them with `serde_yaml`, identifies each locale from the top-level key, and recursively flattens nested YAML into dot-separated keys via `flatten_value`.
+
+A directory is accepted only if it is complete:
+- It contains parseable `en.yml`.
+- It contains parseable `zh-CN.yml`.
+- Both files have the expected top-level locale key (`en:` / `zh-CN:`).
+- Both flattened maps have the same key set after applying the checked-in intentional-exception allowlists.
+- Placeholder parity holds for every shared key.
+- Required security-sensitive keys are present in `en.yml`.
+
+If any completeness check fails, the whole directory is skipped and the next discovery path is tried. A partial `$WARP_LOCALES_DIR`, damaged source-tree checkout, or damaged bundle must not shadow a later complete directory.
 
 **File discovery order** (non-WASM):
 
@@ -118,7 +128,7 @@ The release resource path is platform-specific and must be shared by runtime dis
 | Linux app packages/AppImage | `/opt/warpdotdev/<package>/resources/bundled/locales` inside the package/AppDir |
 | Linux CLI artifact | `<bundle-output>/resources/bundled/locales` adjacent to the CLI binary bundle |
 
-**Security:** Paths 1, 3, and 4 are compiled out of release binaries. This prevents shipped builds from loading arbitrary YAML from environment variables or the current working directory into the startup parsing and UI rendering pipeline. In debug builds, locale files loaded from dev-only paths are subject to a size cap (8 MB per file) to prevent intentionally large or malformed YAML from causing excessive startup parsing in poisoned local environments. If a file loaded from a dev-only path exceeds the cap or is malformed, it is silently skipped and the next discovery path is tried — the application does not crash.
+**Security:** Paths 1, 3, and 4 are compiled out of release binaries. This prevents shipped builds from loading arbitrary YAML from environment variables or the current working directory into the startup parsing and UI rendering pipeline. Every runtime-loaded locale file, including release-bundled files, is subject to parser bounds before `serde_yaml` parsing: maximum 8 MB per file, maximum YAML nesting depth 16, maximum 10,000 flattened keys per locale, and scalar string values only after flattening. If a locale file exceeds the bounds, has unsupported YAML shape, is malformed, or fails directory completeness checks, the directory is skipped and the next discovery path is tried. The application does not crash.
 
 **No-locale fallback:** If no locale file can be loaded from any discovery path (e.g., corrupt installation, missing resource directory), `init_locale()` still completes successfully. For ordinary non-sensitive UI, the translation map remains empty and `t!()` returns the raw key string as the rendered text. Security-sensitive UI is different: auth, billing, privacy, sharing/permission, and agent-consent surfaces must not render raw dot-path keys. Those call sites must use `t_required!()` with an embedded English fallback, or fail closed by disabling the affected action and showing a readable English error that also uses `t_required!()`.
 
@@ -239,7 +249,7 @@ The `app/src/i18n.rs` file re-exports `warp_i18n::*` for direct function access 
 - Every `zh-CN.yml` value must be non-empty after trimming whitespace, unless the key is listed in a checked-in empty-value allowlist with a reason.
 - **Interpolation placeholder parity:** for every key whose English value contains `{name}` placeholders, the zh-CN value must contain the exact same set of placeholder names (same count, same names). Mismatched placeholder names (e.g., en has `{count}` but zh-CN has `{number}`) produce runtime rendering bugs and must be rejected at CI time.
 - Both YAML files must parse successfully as valid YAML and produce the expected top-level locale key (`en:` / `zh-CN:`).
-- No orphaned keys: every key referenced by a `t!()` or `t_required!()` call in the codebase must exist in `en.yml`. A static analysis script (e.g., `rg 't(_required)?!\("([^"]+)"' --only-matching | sort -u` diffed against keys extracted from `en.yml`) must run locally and in CI to catch callsite-locale drift.
+- No orphaned keys: every key referenced by a `t!()` or `t_required!()` call in the codebase must exist in `en.yml`. This check must use a Rust-aware parser (`syn` over Rust source files or tree-sitter-rust) to extract macro invocations, not regex-only matching. It must handle multiline macro calls, interpolation arguments, raw string literals, module-qualified macro imports, and both `t!` and `t_required!` forms. Regex may be used only as a fast prefilter before AST parsing.
 - The number of keys in `en.yml` and `zh-CN.yml` must be equal (after accounting for any intentionally untranslatable keys).
 - Copied-English detection: a CI check rejects `zh-CN.yml` values that are byte-identical to their English value, except keys in a checked-in allowlist for brand names, product names, protocol identifiers, keyboard shortcuts, commands, file extensions, URLs, and intentionally untranslated technical terms.
 - zh-CN script coverage: for non-allowlisted values longer than two visible characters, the translation must contain at least one CJK Unified Ideograph or full-width CJK punctuation character. This catches accidental English-only translations without blocking short symbols or brand terms.
@@ -249,6 +259,7 @@ The `app/src/i18n.rs` file re-exports `warp_i18n::*` for direct function access 
 - Rich/parsed text interpolation audit: a lint scans call sites that pass translated strings into Markdown, rich text, URL/link-capable text, or formatted-fragment APIs. Interpolated values from file paths, branch names, agent labels, server metadata, repository names, or URLs must either be escaped for that renderer or supplied as structured plain-text fragments. The lint rejects direct string concatenation or direct `t!()`/`t_required!()` interpolation into parsed markup.
 - Release bundle check: every packaged app artifact must contain both `en.yml` and `zh-CN.yml` at the exact runtime path for that artifact: macOS `<Warp*.app>/Contents/Resources/bundled/locales`, Windows `{app}\resources\bundled\locales`, Linux app packages/AppImage `/opt/warpdotdev/<package>/resources/bundled/locales`, and Linux CLI `<bundle-output>/resources/bundled/locales`. CI fails if either file is missing from any packaging output or if the validation path differs from runtime discovery.
 - Dev-only locale loading check: release binaries must not reference `$WARP_LOCALES_DIR`, `$PWD/resources/bundled/locales`, or source-tree fallback paths. A binary/string or build-time assertion verifies those discovery paths are compiled out outside `debug_assertions`.
+- Runtime locale bounds check: unit tests cover oversized files, excessive YAML nesting, non-string scalar values after flattening, too many flattened keys, missing `en.yml`, missing `zh-CN.yml`, mismatched key sets, and placeholder mismatch. Every one of these cases must skip the directory rather than partially loading it.
 
 ### Unit tests
 
@@ -266,8 +277,12 @@ The `app/src/i18n.rs` file re-exports `warp_i18n::*` for direct function access 
   - `LANGUAGE=fr:zh_TW:en` resolves to `en` without falling through to `LANG` or system locale
   - `LC_ALL=fr_FR.UTF-8` with `LANG=zh_CN.UTF-8` resolves to `en` because `LC_ALL` is the first non-empty source
   - `zh-TW`, `zh-HK`, and `zh-Hant*` resolve to `en`
-  - `load_dir()` correctly parses YAML and produces flattened keys
+  - `load_complete_dir()` correctly parses YAML and produces flattened keys
+  - partial locale directories are skipped and do not shadow later complete directories
   - malformed or over-size dev locale files are skipped without panicking
+  - malformed or over-size release-bundled locale files are skipped without panicking
+  - YAML shape bounds reject excessive nesting, too many flattened keys, and non-string flattened values
+  - AST-based key extraction finds single-line and multiline `t!()` / `t_required!()` calls, including security-sensitive required fallback calls
   - Markdown/rich-text lint rejects unescaped interpolation into parsed renderers and accepts approved escaping or structured-fragment APIs
   - locale quality checks reject empty zh-CN values, copied-English values, and non-allowlisted English-only zh-CN values
 
