@@ -614,12 +614,15 @@ impl TerminalView {
         // command instead so it stays in the existing setup-commands
         // group. The driver's harness impls are the single source of
         // truth for what an auth check command looks like.
-        let command_trimmed = command.trim();
-        if let Some(auth_cmd) =
-            crate::ai::agent_sdk::driver::harness::auth_check_command_for(selected_harness)
+        #[cfg(not(target_family = "wasm"))]
         {
-            if auth_cmd.trim() == command_trimmed {
-                return false;
+            let command_trimmed = command.trim();
+            if let Some(auth_cmd) =
+                crate::ai::agent_sdk::driver::harness::auth_check_command_for(selected_harness)
+            {
+                if auth_cmd.trim() == command_trimmed {
+                    return false;
+                }
             }
         }
         match selected_harness {
