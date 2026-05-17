@@ -216,12 +216,12 @@ fn host_terminal_shared_session_source_type(
 ///
 /// Non-`AmbientAgent` host shares (e.g. a user manually sharing their own
 /// terminal via the share modal) explicitly do NOT cascade to child panes:
-/// the viewer-side pill bar at
-/// `shared_session/viewer/terminal_manager.rs:803` only materializes for
-/// `AmbientAgent` host source types, so auto-sharing children of a manual
-/// share would consume share-server capacity and publish a child session
-/// transcript without producing any pill-bar UI for the host's viewers to
-/// reach it — strictly worse than leaving children unshared.
+/// the viewer-side pill bar in `shared_session/viewer/terminal_manager.rs`
+/// only materializes for `AmbientAgent` host source types, so auto-sharing
+/// children of a manual share would consume share-server capacity and
+/// publish a child session transcript without producing any pill-bar UI
+/// for the host's viewers to reach it — strictly worse than leaving
+/// children unshared.
 #[cfg(not(target_family = "wasm"))]
 fn inherit_share_for_local_child(
     host_source_type: Option<&SessionSourceType>,
@@ -1678,9 +1678,9 @@ fn dispatch_start_agent_conversation(
 /// row via `AIClient::create_agent_task` at dispatch time, mirroring the
 /// third-party-harness path (see [`launch_local_harness_child`]). The
 /// resulting `task_id` is stamped onto the child's `AIConversation` (so the
-/// per-`Network` share-reporter at `local_tty/terminal_manager.rs:1531-1563`
-/// can link the shared session id to the child task once the shell
-/// bootstraps) and onto the child's `BlocklistAIController` via the
+/// per-`Network` share-reporter in `local_tty/terminal_manager.rs` can link
+/// the shared session id to the child task once the shell bootstraps) and
+/// onto the child's `BlocklistAIController` via the
 /// `HiddenChildAgentTaskContext` (so the agent UI reflects it). On failure
 /// the child surfaces as an error conversation instead.
 ///
@@ -1747,20 +1747,16 @@ fn launch_local_no_harness_child(
                 ) {
                     apply_child_model_id_override(terminal_view_id, model_id.as_deref(), ctx);
 
-                    // Stamp the task id on the child conversation directly so
-                    // the share-reporter at
-                    // `local_tty/terminal_manager.rs:1531-1563` can resolve
-                    // it from the selected conversation when the share
-                    // handshake succeeds. Mirrors the pattern used by
+                    // Stamp the task id on the child conversation directly
+                    // so the share-reporter in
+                    // `local_tty/terminal_manager.rs` can resolve it from
+                    // the selected conversation when the share handshake
+                    // succeeds. Mirrors the pattern used by
                     // `OrchestrationViewerModel::apply_children_fetch`.
-                    BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, _ctx| {
-                        if let Some(conversation) = history_model.conversation_mut(&conversation_id)
-                        {
+                    BlocklistAIHistoryModel::handle(ctx).update(ctx, |model, ctx| {
+                        if let Some(conversation) = model.conversation_mut(&conversation_id) {
                             conversation.set_task_id(child_task_id);
                         }
-                    });
-
-                    BlocklistAIHistoryModel::handle(ctx).update(ctx, |model, ctx| {
                         model.record_new_conversation_request_complete(
                             request_id,
                             conversation_id,
