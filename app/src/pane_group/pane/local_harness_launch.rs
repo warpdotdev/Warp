@@ -69,15 +69,26 @@ pub(super) fn build_local_codex_child_command(prompt: &str) -> String {
     format!("codex --dangerously-bypass-approvals-and-sandbox {quoted_prompt}")
 }
 
+/// Normalizes the orchestrator-supplied short name for QUALITY-731 round-trip.
+///
+/// Trims leading/trailing whitespace and treats empty / whitespace-only
+/// strings as absent. Use this at every site that converts an external
+/// orchestrator-supplied name into the `Option<String>` stored on
+/// `AgentConfigSnapshot.name` so the same input always normalizes to the
+/// same value across paths.
+pub(super) fn normalize_orchestrator_agent_name(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
 pub(super) fn local_child_task_config(
     harness: Harness,
     agent_name: Option<String>,
 ) -> Option<AgentConfigSnapshot> {
-    // Normalize whitespace-only/empty orchestrator names to absent.
-    let agent_name = agent_name.and_then(|name| {
-        let trimmed = name.trim();
-        (!trimmed.is_empty()).then(|| trimmed.to_string())
-    });
+    // Re-normalize defensively in case a caller passed `Some("  ")`.
+    let agent_name = agent_name
+        .as_deref()
+        .and_then(normalize_orchestrator_agent_name);
     match harness {
         Harness::Oz | Harness::Unknown => None,
         Harness::Claude | Harness::OpenCode | Harness::Gemini | Harness::Codex => {

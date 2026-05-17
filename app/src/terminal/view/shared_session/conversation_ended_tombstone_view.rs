@@ -123,6 +123,13 @@ impl TombstoneDisplayData {
             self.source = Some(source.display_name().to_string());
         }
         if let Some(config) = &task.agent_config_snapshot {
+            // QUALITY-731 follow-up: `config.name` now doubles as the
+            // orchestrator-supplied short agent name (e.g. "frontend-tests")
+            // when set via the round-trip path. Treating it as a skill name
+            // here can mis-label tombstones for orchestrated children whose
+            // skill is actually carried on `config.skill_spec`. Tracked
+            // separately; do not rename this field without updating
+            // tombstone rendering callers.
             self.skill_name = config.name.clone();
         }
 

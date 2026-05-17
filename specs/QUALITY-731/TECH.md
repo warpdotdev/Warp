@@ -2,6 +2,8 @@
 ## Context
 QUALITY-731 is a shared-session viewer bug: the orchestrator's own client labels children with `agent_run_configs[i].name`, but a viewer reconstructs child conversations from server task records and currently does not have access to that short name. As a result, viewer-side pills, hover cards, breadcrumbs, status cards, and transcript participant labels fall back to `title`, which can be a long descriptive sentence or a truncated prompt.
 The fix sources the orchestrator's short label from the existing `agent_config_snapshot.name` field instead of introducing a parallel top-level `name` field on the task or request types. This aligns with the paired warp-server spec, which uses `AgentConfigSnapshot.Name` as the canonical home for the orchestrator-supplied label.
+## Scope
+This PR delivers the orchestrator → server → viewer round-trip plus the single highest-value display surface: the orchestration pill bar in `OrchestrationViewerModel::apply_children_fetch`. Other surfaces that still render `task.title` (or `entry.display.title`) directly are left for follow-up work, tracked under "Out of scope (follow-ups)" below. The wire contract and `display_name()` helper this PR introduces are the prerequisites those follow-ups will consume.
 Relevant existing client surfaces:
 - `app/src/server/server_api/ai.rs` — `SpawnAgentRequest.config: Option<AgentConfigSnapshot>` already exists. `CreateAgentTaskInput.agent_config_snapshot: Option<String>` (serialized JSON) already exists. Both REST and GraphQL channels can carry an `AgentConfigSnapshot` payload today.
 - `app/src/ai/ambient_agents/task.rs` — `AgentConfigSnapshot.name: Option<String>` (`#[serde(default, skip_serializing_if = "Option::is_none")]`) already exists. `AmbientAgentTask.agent_config_snapshot: Option<AgentConfigSnapshot>` already deserializes from the server.
@@ -60,10 +62,10 @@ flowchart LR
 ```
 ## Testing and validation
 Unit/client tests:
-- `app/src/ai/ambient_agents/task_tests.rs`: `display_name()` precedence (snapshot.name > title > "Agent") and trim behavior.
-- `app/src/terminal/shared_session/viewer/orchestration_viewer_model_tests.rs`: viewer registration of orchestrator name via `agent_config_snapshot.name`, fallback to title, "Agent" final fallback.
-- `app/src/pane_group/pane/local_harness_launch_tests.rs`: `local_child_task_config` carries the orchestrator name in its snapshot.
-- Add a focused test (in `terminal_pane`'s test file or via integration) that `launch_remote_child` constructs `SpawnAgentRequest.config.name` with the trimmed orchestrator name.
+- `app/src/ai/ambient_agents/task_tests.rs`: `display_name()` precedence (snapshot.name > title > "Agent") and trim behavior, including whitespace-only title.
+- `app/src/terminal/shared_session/viewer/orchestration_viewer_model_tests.rs`: viewer registration of orchestrator name via `agent_config_snapshot.name`, fallback to title (using distinct snapshot/title values so the two channels are distinguishable), "Agent" final fallback, whitespace-only title gating of `set_fallback_display_title`.
+- `app/src/pane_group/pane/local_harness_launch_tests.rs`: `local_child_task_config` carries the orchestrator name in its snapshot, trims whitespace, returns `None` for Oz/Unknown harnesses. `normalize_orchestrator_agent_name` covers the trim/empty-vs-Some contract.
+- The construction-site wiring in `launch_remote_child` (the `SpawnAgentRequest.config.name` field is stamped with the result of `normalize_orchestrator_agent_name(&request.name)`) is covered indirectly by the `normalize_orchestrator_agent_name` unit tests + visible inspection of the struct literal in `terminal_pane.rs::launch_remote_child`. A dedicated test for the assembled `SpawnAgentRequest` would require factoring out a `build_spawn_request` helper, which is deferred as out of scope here (the function takes a `&mut PaneGroup` + `ViewContext<PaneGroup>` and resolves runtime skills + snapshot-disabled flag through them, none of which are unit-testable as-is).
 Manual validation:
 1. Start or load an orchestrated shared session where the orchestrator's outbound spawn populates `agent_config_snapshot.name = "frontend-tests"` and a long descriptive `title`.
 2. Open the session as a viewer.
@@ -89,9 +91,18 @@ PR hygiene:
 - Force-push removes the QUALITY-731 v1 commits from each PR. Rewrite the PR descriptions to call out the pivot and link to the paired PR.
 - Mark the `Warp Agent Mode` checkbox on the client PR template.
 - Keep both PRs in draft.
+## Out of scope (follow-ups)
+The pivot delivers the wire contract and the orchestration viewer pill. The following surfaces still render `task.title` (or the denormalized `entry.display.title`) directly and would benefit from a follow-up that fans `display_name()` through them, but each requires an additional plumbing decision (the entry-based ones in particular don't have access to `agent_config_snapshot` today):
+- `app/src/ai/agent_conversations_model/entry.rs` — `AgentConversationEntry` is hydrated from `ListConversationsItem` and only carries `display.title` today. Routing `display_name()` here means denormalizing `agent_config_snapshot.name` onto the entry (or fetching the task) before render time.
+- `app/src/ai/conversation_details_panel.rs::from_agent_conversation_entry` — same source as above; downstream of the entry.
+- `app/src/terminal/view/shared_session/conversation_ended_tombstone_view.rs` — the tombstone reuses `task.title` for its header and reuses `agent_config_snapshot.name` as `skill_name`; the latter is now mislabeled (an inline `QUALITY-731 follow-up` comment marks this). Splitting orchestrator-supplied agent name from skill-spec rendering belongs to a follow-up.
+- `app/src/ai/agent_sdk/ambient.rs` (~line 845) — CLI/SDK-side surface that already reads task records; can adopt `display_name()` once the helper is publicly reachable from that path.
+- `app/src/workspace/view/conversation_list/item.rs` and `app/src/workspace/view.rs` — workspace conversation list labels flow from `entry.display.title`; same plumbing decision as the entry-based surfaces.
+The `ConversationDetailsData::from_task` side-pane header is intentionally not in scope: product still evaluates whether to show both the short name and the descriptive title. The inline deferral comment remains in place.
 ## Risks and mitigations
 - `display_name()` change: anywhere that read `AmbientAgentTask.name` directly (instead of going through the helper) must be moved to the helper to pick up the new source. Mitigation: deleting the field forces a compile error at every direct read; fix them at the call site.
 - Existing test fixtures with explicit `name: None` will no longer compile. Mitigation: blanket-revert the `name: None` lines as part of the same change.
 - A future caller that sets both `agent_config.name` and an orchestrator name via some other channel: server enforces the always-override precedence; client only stamps when an orchestrator name is provided. No client-side collision.
 - The details panel surface stays on `task.title` per the v1 deferral. Mitigation: the deferral comment in `conversation_details_panel.rs` remains.
+- Whitespace-only `task.title` would desync `agent_name()` (trimmed → `"Agent"`) from `title()` (untrimmed) if the viewer fallback gate were not also trimmed. Mitigation: the gate in `OrchestrationViewerModel::apply_children_fetch` calls `task.title.trim().to_string()` before checking and before storing on the conversation. A dedicated test (`registers_child_agent_name_does_not_set_fallback_for_whitespace_only_title`) locks this in.
 - Force-push removes the v1 commits from the PR history; existing reviewer comments on those commits stay attached to the orphaned commits. Mitigation: PR description rewrite explains the pivot and links to the v1 review history.

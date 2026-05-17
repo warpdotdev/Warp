@@ -61,6 +61,12 @@ fn display_name_returns_literal_agent_when_both_sources_are_empty() {
 }
 
 #[test]
+fn display_name_returns_literal_agent_for_whitespace_only_title() {
+    let task = make_task(None, "   \t\n  ");
+    assert_eq!(task.display_name(), "Agent");
+}
+
+#[test]
 fn display_name_trims_whitespace_at_each_layer() {
     let task = make_task(Some("  frontend-tests  "), "  Long descriptive title  ");
     assert_eq!(task.display_name(), "frontend-tests");

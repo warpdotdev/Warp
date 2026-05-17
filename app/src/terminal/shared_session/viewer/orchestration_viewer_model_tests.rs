@@ -504,13 +504,18 @@ fn registers_child_agent_name_falls_back_to_title_when_snapshot_name_is_missing(
         let (_, parent_conv_id, model) = setup_model(&mut app, parent);
         let model_handle = app.add_model(|_| model);
 
+        // Use a long descriptive title (distinct from any short name) so a
+        // regression that wires `fallback_display_title = display_name()` —
+        // or that fails to set the fallback at all — is observable: in that
+        // case both channels would collapse to `agent_name()` or the title
+        // surface would be `None`.
         model_handle.update(&mut app, |model, ctx| {
             model.apply_children_fetch(
                 vec![make_task_with_name(
                     CHILD_A_TASK_ID,
                     AmbientAgentTaskState::InProgress,
                     None,
-                    "Worker",
+                    "Long descriptive task title",
                     None,
                 )],
                 ctx,
@@ -523,8 +528,51 @@ fn registers_child_agent_name_falls_back_to_title_when_snapshot_name_is_missing(
             let child = history
                 .conversation(&child_ids[0])
                 .expect("child conversation exists");
-            assert_eq!(child.agent_name(), Some("Worker"));
-            assert_eq!(child.title().as_deref(), Some("Worker"));
+            assert_eq!(child.agent_name(), Some("Long descriptive task title"));
+            assert_eq!(
+                child.title().as_deref(),
+                Some("Long descriptive task title")
+            );
+        });
+    });
+}
+
+#[test]
+fn registers_child_agent_name_does_not_set_fallback_for_whitespace_only_title() {
+    App::test((), |mut app| async move {
+        let parent = task_id(PARENT_TASK_ID);
+        let (_, parent_conv_id, model) = setup_model(&mut app, parent);
+        let model_handle = app.add_model(|_| model);
+
+        // QUALITY-731 finding 3: `display_name()` trims, so the pill label
+        // collapses to `"Agent"` for a whitespace-only title. The conversation
+        // fallback must trim too, or `title()` would return `"  "` while
+        // `agent_name()` returns `"Agent"`.
+        model_handle.update(&mut app, |model, ctx| {
+            model.apply_children_fetch(
+                vec![make_task_with_name(
+                    CHILD_A_TASK_ID,
+                    AmbientAgentTaskState::InProgress,
+                    None,
+                    "   ",
+                    None,
+                )],
+                ctx,
+            );
+        });
+
+        let history = BlocklistAIHistoryModel::handle(&app);
+        history.read(&app, |history, _| {
+            let child_ids = history.child_conversation_ids_of(&parent_conv_id);
+            let child = history
+                .conversation(&child_ids[0])
+                .expect("child conversation exists");
+            assert_eq!(child.agent_name(), Some("Agent"));
+            assert_eq!(
+                child.title(),
+                None,
+                "whitespace-only title must not become a fallback display title"
+            );
         });
     });
 }

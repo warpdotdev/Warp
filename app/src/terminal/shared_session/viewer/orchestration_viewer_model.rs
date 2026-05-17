@@ -302,8 +302,14 @@ impl OrchestrationViewerModel {
             // the descriptive `task.title` as the conversation's fallback
             // display title so `AIConversation::title()` still surfaces it
             // when no task description or initial query exists.
+            //
+            // Trim before checking AND before storing so a whitespace-only
+            // `task.title` (e.g. `"   "`) does not desync from
+            // `display_name()` (which also trims): without this,
+            // `agent_name()` would return `"Agent"` while `title()` returned
+            // the untrimmed whitespace string.
             let name = task.display_name().to_string();
-            let fallback_title = task.title.clone();
+            let fallback_title = task.title.trim().to_string();
             let harness = task
                 .agent_config_snapshot
                 .as_ref()

@@ -81,7 +81,10 @@ use session_sharing_protocol::sharer::SessionSourceType;
 use warp_core::execution_mode::AppExecutionMode;
 
 #[cfg(not(target_family = "wasm"))]
-use super::local_harness_launch::{prepare_local_harness_child_launch, PreparedLocalHarnessLaunch};
+use super::local_harness_launch::{
+    normalize_orchestrator_agent_name, prepare_local_harness_child_launch,
+    PreparedLocalHarnessLaunch,
+};
 use super::{
     DetachType, PaneConfiguration, PaneContent, PaneId, PaneStackEvent, PaneView, ShareableLink,
     ShareableLinkError, TerminalPaneId,
@@ -1698,7 +1701,15 @@ fn launch_local_no_harness_child(
 ) {
     let ai_client = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
     let request_id = request.id;
-    let request_name = request.name.clone();
+    // QUALITY-731: normalize the orchestrator-supplied short name once and
+    // use the same trimmed value at every site (the hidden child
+    // conversation's `agent_name`, the task snapshot's
+    // `agent_config_snapshot.name`, and any error-fallback conversation).
+    // Without this, a `request.name` of `"  frontend-tests  "` would set
+    // the conversation's `agent_name` to the untrimmed value while the
+    // snapshot dropped the whitespace, producing inconsistent labels.
+    let agent_name = normalize_orchestrator_agent_name(&request.name);
+    let request_name = agent_name.clone().unwrap_or_default();
     let parent_conversation_id = request.parent_conversation_id;
     let parent_run_id = request.parent_run_id.clone();
     let prompt = request.prompt.clone();
@@ -1714,14 +1725,7 @@ fn launch_local_no_harness_child(
         .and_then(|view| host_terminal_shared_session_source_type(&view, ctx));
 
     let prompt_for_create = prompt.clone();
-    // QUALITY-731: stamp the orchestrator-supplied short name into the
-    // task's AgentConfigSnapshot so a viewer reconstructing the child can
-    // recover it via `AmbientAgentTask::display_name()`. Trim whitespace at
-    // the construction site; treat empty/whitespace-only as absent.
-    let agent_name_for_create = {
-        let trimmed = request_name.trim();
-        (!trimmed.is_empty()).then(|| trimmed.to_string())
-    };
+    let agent_name_for_create = agent_name.clone();
     let _ = ctx.spawn(
         async move {
             ai_client
@@ -1857,7 +1861,9 @@ fn launch_local_harness_child(
     let startup_directory = group.startup_path_for_new_session(Some(terminal_pane_id), ctx);
     let ai_client = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
     let request_id = request.id;
-    let request_name = request.name.clone();
+    // QUALITY-731: same normalize-once treatment as launch_local_no_harness_child.
+    let agent_name = normalize_orchestrator_agent_name(&request.name);
+    let request_name = agent_name.clone().unwrap_or_default();
     let parent_conversation_id = request.parent_conversation_id;
     let parent_run_id = request.parent_run_id.clone();
     let prompt = request.prompt.clone();
@@ -1877,10 +1883,7 @@ fn launch_local_harness_child(
         .and_then(|view| host_terminal_shared_session_source_type(&view, ctx));
 
     let model_id_for_harness_env = model_id.clone();
-    // QUALITY-731: forward the orchestrator's short name into the
-    // local-harness task's AgentConfigSnapshot.name. Trim is handled inside
-    // `local_child_task_config`.
-    let agent_name_for_task = Some(request_name.clone());
+    let agent_name_for_task = agent_name.clone();
     let _ = ctx.spawn(
         async move {
             prepare_local_harness_child_launch(
@@ -2055,10 +2058,13 @@ fn launch_remote_child(
         return None;
     };
 
-    // QUALITY-731: clone the orchestrator-supplied short name before it is
-    // moved into `start_new_child_conversation`. The clone is stamped into
-    // `AgentConfigSnapshot.name` on the outbound `SpawnAgentRequest` below.
-    let request_name = request.name.clone();
+    // QUALITY-731: normalize the orchestrator-supplied short name once and
+    // use the same trimmed value for both the hidden child conversation's
+    // `agent_name` (via `start_new_child_conversation`) and the task
+    // snapshot's `agent_config_snapshot.name` on the outbound
+    // `SpawnAgentRequest`.
+    let agent_name = normalize_orchestrator_agent_name(&request.name);
+    let request_name = agent_name.clone().unwrap_or_default();
 
     let new_pane_id = group.insert_ambient_agent_pane_hidden_for_child_agent(parent_pane_id, ctx);
 
@@ -2072,7 +2078,7 @@ fn launch_remote_child(
     let conversation_id = BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
         let id = history_model.start_new_child_conversation(
             terminal_view_id,
-            request.name,
+            request_name.clone(),
             request.parent_conversation_id,
             Some(orchestration_harness),
             ctx,
@@ -2159,13 +2165,6 @@ fn launch_remote_child(
             }),
             Harness::Oz | Harness::OpenCode | Harness::Gemini | Harness::Unknown => None,
         });
-    // QUALITY-731: stamp the orchestrator-supplied short name into the
-    // outbound `AgentConfigSnapshot.name`. Trim whitespace at the
-    // construction site; treat empty/whitespace-only as absent.
-    let agent_name = {
-        let trimmed = request_name.trim();
-        (!trimmed.is_empty()).then(|| trimmed.to_string())
-    };
     let spawn_request = SpawnAgentRequest {
         prompt: request.prompt,
         mode: UserQueryMode::Normal,

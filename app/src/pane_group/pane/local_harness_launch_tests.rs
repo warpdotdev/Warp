@@ -6,7 +6,8 @@ use warp_cli::agent::Harness;
 use super::{
     build_local_claude_child_command, build_local_codex_child_command,
     build_local_opencode_child_command, local_child_task_config, normalize_local_child_harness,
-    prepare_local_harness_child_launch, validate_local_harness_shell,
+    normalize_orchestrator_agent_name, prepare_local_harness_child_launch,
+    validate_local_harness_shell,
 };
 use crate::ai::ambient_agents::task::HarnessConfig;
 use crate::server::server_api::ai::MockAIClient;
@@ -197,6 +198,21 @@ fn local_child_task_config_trims_whitespace_only_name() {
 fn local_child_task_config_returns_none_for_oz_and_unknown() {
     assert!(local_child_task_config(Harness::Oz, Some("name".to_string())).is_none());
     assert!(local_child_task_config(Harness::Unknown, Some("name".to_string())).is_none());
+}
+
+#[test]
+fn normalize_orchestrator_agent_name_trims_and_drops_empty() {
+    assert_eq!(
+        normalize_orchestrator_agent_name("frontend-tests"),
+        Some("frontend-tests".to_string())
+    );
+    assert_eq!(
+        normalize_orchestrator_agent_name("  frontend-tests  "),
+        Some("frontend-tests".to_string())
+    );
+    assert_eq!(normalize_orchestrator_agent_name(""), None);
+    assert_eq!(normalize_orchestrator_agent_name("   "), None);
+    assert_eq!(normalize_orchestrator_agent_name("\t\n  "), None);
 }
 
 #[tokio::test]
