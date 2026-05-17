@@ -15,6 +15,7 @@ use warpui::platform::Cursor;
 use warpui::{AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext};
 
 use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::blocklist::inline_action::host_picker::{HostPicker, HostPickerEvent};
 use crate::ai::blocklist::inline_action::orchestration_controls::{
     self as oc, OrchestrationControlAction, OrchestrationEditState, OrchestrationPickerHandles,
 };
@@ -98,9 +99,6 @@ impl OrchestrationControlAction for OrchestrationConfigBlockAction {
     }
     fn environment_changed(environment_id: String) -> Self {
         Self::EnvironmentChanged { environment_id }
-    }
-    fn worker_host_changed(worker_host: String) -> Self {
-        Self::WorkerHostChanged { worker_host }
     }
     fn auth_secret_changed(auth_secret_name: Option<String>) -> Self {
         Self::AuthSecretChanged { auth_secret_name }
@@ -304,8 +302,13 @@ impl OrchestrationConfigBlockView {
         };
         let mut filled_defaults = false;
         if needs_host {
-            self.edit_state
-                .set_worker_host(oc::ORCHESTRATION_WARP_WORKER_HOST.to_string());
+            // Prefer the workspace default (or the dev env-var override)
+            // over the bare "warp" fallback so self-hosted teams see
+            // their default pre-selected. Mirrors the Oz webapp's
+            // `HostSelector` initial-selection behavior.
+            let default_host = oc::resolve_default_host_slug(ctx)
+                .unwrap_or_else(|| oc::ORCHESTRATION_WARP_WORKER_HOST.to_string());
+            self.edit_state.set_worker_host(default_host);
             filled_defaults = true;
         }
         if needs_env {
@@ -329,9 +332,20 @@ impl OrchestrationConfigBlockView {
             RunAgentsExecutionMode::Remote { worker_host, .. } => worker_host.as_str(),
             RunAgentsExecutionMode::Local => oc::ORCHESTRATION_WARP_WORKER_HOST,
         };
-        let host_handle = oc::new_standard_picker_dropdown(&colors, ctx);
-        host_handle.update(ctx, |d, c| d.set_use_overlay_layer(true, c));
+        let host_handle = ctx.add_typed_action_view(HostPicker::new);
+        // Paint the open menu in the overlay layer so it doesn't get covered
+        // by sibling pickers, matching the other pickers in this view.
+        host_handle.update(ctx, |picker, picker_ctx| {
+            picker.set_use_overlay_layer(true, picker_ctx);
+        });
         oc::populate_host_picker(&host_handle, initial_host, ctx);
+        ctx.subscribe_to_view(&host_handle, |_me, _, event, ctx| {
+            if let HostPickerEvent::HostChanged { slug } = event {
+                ctx.dispatch_typed_action(&OrchestrationConfigBlockAction::WorkerHostChanged {
+                    worker_host: slug.clone(),
+                });
+            }
+        });
         self.pickers.host_picker = Some(host_handle);
 
         // Seed the auth secret from persisted per-harness settings before
@@ -608,6 +622,7 @@ impl TypedActionView for OrchestrationConfigBlockView {
             }
             OrchestrationConfigBlockAction::WorkerHostChanged { worker_host } => {
                 self.edit_state.set_worker_host(worker_host.clone());
+                oc::persist_host_selection(worker_host, ctx);
                 self.apply_field_change(ctx);
                 ctx.notify();
             }

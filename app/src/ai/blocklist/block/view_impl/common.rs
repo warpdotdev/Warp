@@ -3017,17 +3017,23 @@ pub fn render_failed_output(props: FailedOutputProps, app: &AppContext) -> Box<d
     let error_apology_text = t!("ai_ext.error_apology").to_string();
 
     let error_text = match props.error {
-        RenderableAIError::QuotaLimit => {
-            let ai_request_usage_model = AIRequestUsageModel::as_ref(app);
-            let formatted_next_refresh_time = ai_request_usage_model
-                .next_refresh_time()
-                .format("%B %d")
-                .to_string();
+        RenderableAIError::QuotaLimit {
+            user_display_message,
+        } => {
+            if let Some(message) = user_display_message {
+                format!("{error_apology_text}\n\n{message}")
+            } else {
+                let ai_request_usage_model = AIRequestUsageModel::as_ref(app);
+                let formatted_next_refresh_time = ai_request_usage_model
+                    .next_refresh_time()
+                    .format("%B %d")
+                    .to_string();
 
-            format!(
-                "{error_apology_text}\n\n{}",
-                t!("ai_ext.credit_limit_resets", formatted_next_refresh_time)
-            )
+                format!(
+                    "{error_apology_text}\n\n{}",
+                    t!("ai_ext.credit_limit_resets", formatted_next_refresh_time)
+                )
+            }
         }
         RenderableAIError::ServerOverloaded => t!("ai_ext.server_overloaded").to_string(),
         RenderableAIError::InternalWarpError => {

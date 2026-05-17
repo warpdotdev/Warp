@@ -277,7 +277,7 @@ impl LocalDiffStateModel {
 
         if let Some(repo_path) = &repo_path {
             let fut = DetectedRepositories::handle(ctx).update(ctx, |model, ctx| {
-                model.detect_possible_git_repo(
+                model.detect_possible_local_git_repo(
                     repo_path,
                     RepoDetectionSource::CodeReviewInitialization,
                     ctx,
@@ -286,8 +286,8 @@ impl LocalDiffStateModel {
 
             ctx.spawn(fut, move |me, repo_path, ctx| {
                 if let Some(repo_path) = &repo_path {
-                    if let Some(repo_handle) =
-                        DetectedRepositories::as_ref(ctx).get_watched_repo_for_path(repo_path, ctx)
+                    if let Some(repo_handle) = DetectedRepositories::as_ref(ctx)
+                        .get_local_watched_repo_for_path(repo_path, ctx)
                     {
                         me.set_active_repository(repo_handle, ctx);
                         return;
@@ -898,25 +898,29 @@ impl LocalDiffStateModel {
     ) {
         use std::time::Duration;
 
-        let new_repository_root = new_repository.as_ref(ctx).root_dir().to_local_path_lossy();
+        // Assign the repository handle before spawning the registration future.
+        // `registration_future` may resolve immediately (e.g. watcher already active), and
+        // `handle_repository_updated` relies on `self.repository` being available for cleanup.
+        self.repository = Some(new_repository.clone());
 
-        // Always include base branch metadata since only code review uses this model now.
-        let include_base_branch = true;
-        let abort_handle =
-            ctx.spawn(
+        // Only kick off the expensive metadata + diff loading when the code
+        // review pane is actually open.  When the pane opens later, `on_open`
+        // calls `set_code_review_metadata_refresh_enabled(true)` (which
+        // triggers metadata) and `load_diffs_for_current_repo` (which triggers
+        // diffs), so nothing is lost — just deferred.
+        if self.metadata_refresh_enabled {
+            let new_repository_root = new_repository.as_ref(ctx).root_dir().to_local_path_lossy();
+            // Always include base branch metadata since only code review uses this model now.
+            let include_base_branch = true;
+            let abort_handle = ctx.spawn(
                 async move {
                     Self::load_metadata_for_repo(new_repository_root, include_base_branch).await
                 },
                 move |me, res, ctx| me.handle_updated_metadata_for_repo(res, true, ctx),
             );
-
-        self.computing_metadata_abort_handle = Some(abort_handle);
-        self.state = InternalDiffState::Loading;
-
-        // Assign the repository handle before spawning the registration future.
-        // `registration_future` may resolve immediately (e.g. watcher already active), and
-        // `handle_repository_updated` relies on `self.repository` being available for cleanup.
-        self.repository = Some(new_repository.clone());
+            self.computing_metadata_abort_handle = Some(abort_handle);
+            self.state = InternalDiffState::Loading;
+        }
 
         let (repository_update_tx, repository_update_rx) = async_channel::unbounded();
         let (throttled_repository_update_tx, throttled_repository_update_rx) =
@@ -991,6 +995,14 @@ impl LocalDiffStateModel {
             index_lock_detected,
             remote_ref_updated,
         } = update;
+
+        // When the code review pane is closed (metadata_refresh_enabled ==
+        // false), skip diff reloads and per-file invalidations.  The throttled
+        // metadata path already respects this flag, and `on_open` will trigger
+        // a full reload when the pane becomes visible.
+        if !self.metadata_refresh_enabled {
+            return false;
+        }
 
         if commit_updated || remote_ref_updated {
             self.load_diffs_for_current_repo(false, ctx);

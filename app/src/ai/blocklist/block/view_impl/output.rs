@@ -8,28 +8,31 @@ use crate::ai::agent::{
     AIAgentInput, CreateDocumentsResult, EditDocumentsResult, ReadFilesResult, SubagentCall,
     SubagentType, TodoOperation, UploadArtifactResult,
 };
+use crate::ai::agent_conversations_model::AgentConversationsModel;
+use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::util::truncation::truncate_from_end;
 use ai::agent::file_locations::group_file_contexts_for_display;
 
 use crate::ai::blocklist::block::view_impl::common::{
-    blocked_action_message_for_grep_or_file_glob, blocked_action_message_for_reading_files,
-    blocked_action_message_for_searching_codebase, MaybeShimmeringText,
+    MaybeShimmeringText, blocked_action_message_for_grep_or_file_glob,
+    blocked_action_message_for_reading_files, blocked_action_message_for_searching_codebase,
 };
 use crate::ai::blocklist::inline_action::aws_bedrock_credentials_error::AwsBedrockCredentialsErrorView;
 use crate::ai::blocklist::inline_action::create_or_edit_document::CreateOrEditDocumentAction;
 use crate::ai::blocklist::secret_redaction::SecretRedactionState;
+use crate::ai::blocklist::usage::rollup::compute_orchestration_rollup;
 use crate::ai::blocklist::view_util::format_credits;
 use crate::ai::skills::SkillOpenOrigin;
 use crate::ai::skills::{
     icon_override_for_skill_name, render_skill_button, skill_path_from_file_path,
 };
 
+use crate::AIAgentTodoList;
 use crate::code::editor_management::CodeSource;
 use crate::terminal::shared_session::SharedSessionStatus;
 use crate::view_components::compactible_action_button::{
     CompactibleActionButton, RenderCompactibleActionButton, SMALL_SIZE_SWITCH_THRESHOLD,
 };
-use crate::AIAgentTodoList;
 
 #[allow(unused_imports)]
 use std::path::{Component, Path, PathBuf};
@@ -40,15 +43,15 @@ use ai::agent::action::{
 use ai::skills::SkillReference;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
-use ui_components::{button, Component as _, Options as _};
+use ui_components::{Component as _, Options as _, button};
 use warp_core::ui::theme::color::internal_colors;
 #[allow(unused_imports)]
-use warp_util::path::{common_path, CleanPathResult};
+use warp_util::path::{CleanPathResult, common_path};
+use warpui::EntityId;
 use warpui::elements::new_scrollable::SingleAxisConfig;
 use warpui::elements::{
     ChildAnchor, NewScrollable, OffsetPositioning, ParentAnchor, ParentOffsetBounds, Stack,
 };
-use warpui::EntityId;
 
 use crate::ai::blocklist::block::{
     CollapsibleElementState, CollapsibleExpansionState, FinishReason, ImportedCommentGroup,
@@ -56,36 +59,38 @@ use crate::ai::blocklist::block::{
 use indexmap::IndexMap;
 use std::{cell::OnceCell, cmp::Ordering, collections::HashMap, rc::Rc, sync::Arc};
 
-use crate::util::link_detection::{add_link_detection_mouse_interactions, DetectedLinksState};
+use crate::util::link_detection::{DetectedLinksState, add_link_detection_mouse_interactions};
 use crate::{
+    FeatureFlag,
     ai::{
         agent::{
-            icons::{self, gray_stop_icon, yellow_stop_icon},
             AIAgentAction, AIAgentActionId, AIAgentActionResult, AIAgentActionResultType,
             AIAgentActionType, AIAgentCitation, AIAgentOutputMessage, AIAgentOutputMessageType,
             AIAgentText, AIAgentTextSection, MessageId, ReadFilesRequest,
             RequestCommandOutputResult, SearchCodebaseFailureReason, SearchCodebaseResult,
             SuggestNewConversationResult, SummarizationType,
+            icons::{self, gray_stop_icon, yellow_stop_icon},
         },
         blocklist::{
+            AIBlockResponseRating, BlocklistAIActionModel, SuggestionChipView,
             action_model::AIActionStatus,
             block::{
-                model::{AIBlockModel, AIBlockModelHelper, AIBlockOutputStatus},
                 AIBlock, AIBlockAction, AIBlockStateHandles, ActionButtons,
                 AutonomySettingSpeedbump, EmbeddedCodeEditorView, RequestedEdit, TextLocation,
                 TodoListElementState,
+                model::{AIBlockModel, AIBlockModelHelper, AIBlockOutputStatus},
             },
             history_model::BlocklistAIHistoryModel,
             inline_action::{
                 ask_user_question_view::AskUserQuestionView,
                 inline_action_header::{
-                    HeaderConfig, InteractionMode, INLINE_ACTION_HEADER_VERTICAL_PADDING,
-                    INLINE_ACTION_HORIZONTAL_PADDING,
+                    HeaderConfig, INLINE_ACTION_HEADER_VERTICAL_PADDING,
+                    INLINE_ACTION_HORIZONTAL_PADDING, InteractionMode,
                 },
                 inline_action_icons::{self, icon_size},
                 requested_action::{
-                    render_requested_action_body_text, render_requested_action_row_for_text,
-                    RenderableAction,
+                    RenderableAction, render_requested_action_body_text,
+                    render_requested_action_row_for_text,
                 },
                 requested_command::RequestedCommand,
                 search_codebase::SearchCodebaseView,
@@ -94,7 +99,6 @@ use crate::{
                 web_search::WebSearchView,
             },
             keyboard_navigable_buttons::KeyboardNavigableButtons,
-            AIBlockResponseRating, BlocklistAIActionModel, SuggestionChipView,
         },
         paths::shell_native_absolute_path,
         skills::SkillManager,
@@ -106,29 +110,29 @@ use crate::{
     ui_components::{blended_colors, buttons::icon_button, icons::Icon},
     view_components::action_button::ActionButton,
     workspace::WorkspaceAction,
-    FeatureFlag,
 };
 use itertools::Itertools;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use warp_core::channel::ChannelState;
 
+use super::CONTENT_HORIZONTAL_PADDING;
 use super::common::{
-    format_elapsed_seconds, render_debug_footer, render_failed_output, render_informational_footer,
-    render_output_status_text, render_scrollable_collapsible_content, render_text_sections,
-    DebugFooterProps, FailedOutputProps, FindContext, TextSectionsProps,
-    STATUS_FOOTER_VERTICAL_PADDING, STATUS_ICON_SIZE_DELTA,
+    DebugFooterProps, FailedOutputProps, FindContext, STATUS_FOOTER_VERTICAL_PADDING,
+    STATUS_ICON_SIZE_DELTA, TextSectionsProps, format_elapsed_seconds, render_debug_footer,
+    render_failed_output, render_informational_footer, render_output_status_text,
+    render_scrollable_collapsible_content, render_text_sections,
 };
 use super::imported_comments::render_imported_comments;
 use super::orchestration;
 use super::todos::render_todos;
-use super::CONTENT_HORIZONTAL_PADDING;
 use super::{
-    add_highlights_to_rich_text, render_autonomy_checkbox_setting_speedbump_footer,
-    render_citation_chips, todos::render_completed_todo_items, WithContentItemSpacing,
-    CONTENT_ITEM_VERTICAL_MARGIN,
+    CONTENT_ITEM_VERTICAL_MARGIN, WithContentItemSpacing, add_highlights_to_rich_text,
+    render_autonomy_checkbox_setting_speedbump_footer, render_citation_chips,
+    todos::render_completed_todo_items,
 };
 use crate::ai::blocklist::inline_action::run_agents_card_view::RunAgentsCardView;
 use warpui::{
+    Action, AppContext, Element, ModelHandle, SingletonEntity, View, ViewHandle,
     elements::{
         Align, Border, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
         Empty, Expanded, Fill, Flex, FormattedTextElement, Hoverable, MainAxisAlignment,
@@ -140,7 +144,6 @@ use warpui::{
         components::{Coords, UiComponent, UiComponentStyles},
         radio_buttons::{RadioButtonItem, RadioButtonLayout},
     },
-    Action, AppContext, Element, ModelHandle, SingletonEntity, View, ViewHandle,
 };
 
 /// Data required to render the AI block output component.
@@ -791,7 +794,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                 },
                             id,
                             ..
-                        }) if FeatureFlag::Orchestration.is_enabled() => {
+                        }) if FeatureFlag::OrchestrationV2.is_enabled() => {
                             should_render_footer = false;
                             should_render_suggestions = false;
                             output_items.add_child(orchestration::render_start_agent(
@@ -829,7 +832,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                 },
                             id,
                             ..
-                        }) if FeatureFlag::Orchestration.is_enabled() => {
+                        }) if FeatureFlag::OrchestrationV2.is_enabled() => {
                             should_render_footer = false;
                             should_render_suggestions = false;
                             output_items.add_child(orchestration::render_send_message(
@@ -917,7 +920,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                             }
                         }
                         AIAgentOutputMessageType::MessagesReceivedFromAgents { messages }
-                            if FeatureFlag::Orchestration.is_enabled() =>
+                            if FeatureFlag::OrchestrationV2.is_enabled() =>
                         {
                             output_items.add_child(
                                 orchestration::render_messages_received_from_agents(
@@ -942,6 +945,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                 SubagentType::ConversationSearch {
                                     ref query,
                                     ref conversation_id,
+                                    ref agent_run_id,
                                 },
                             task_id: subagent_task_id,
                         }) => {
@@ -970,13 +974,12 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                 icons::yellow_running_icon(appearance)
                             };
 
-                            // Resolve which conversation is being searched. If
-                            // conversation_id is set and differs from the current
-                            // conversation, try to resolve a display name from
-                            // the history model; otherwise label it "this
-                            // conversation".
-                            let conversation_label =
-                                conversation_id.as_ref().and_then(|target_id| {
+                            // Resolve which conversation is being searched. Conversation IDs use
+                            // conversation history titles; agent run IDs use ambient task titles
+                            // once fetched. If neither target exists, label it "this conversation".
+                            let target_label = conversation_id
+                                .as_ref()
+                                .and_then(|target_id| {
                                     let history = BlocklistAIHistoryModel::as_ref(app);
                                     let token = ServerConversationToken::new(target_id.clone());
                                     let local_id =
@@ -994,7 +997,25 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                     let title = target_conversation
                                         .and_then(|c| c.title())
                                         .map(|q| truncate_from_end(&q, 40));
-                                    Some(title.unwrap_or_else(|| target_id.clone()))
+                                    Some((
+                                        "conversation",
+                                        title.unwrap_or_else(|| target_id.clone()),
+                                    ))
+                                })
+                                .or_else(|| {
+                                    let target_id = agent_run_id.as_ref()?;
+                                    let title = target_id
+                                        .parse::<AmbientAgentTaskId>()
+                                        .ok()
+                                        .and_then(|task_id| {
+                                            AgentConversationsModel::as_ref(app)
+                                                .get_task_data(&task_id)
+                                        })
+                                        .map(|task| truncate_from_end(&task.title, 40));
+                                    Some((
+                                        "agent run",
+                                        title.unwrap_or_else(|| truncate_from_end(target_id, 40)),
+                                    ))
                                 });
 
                             let done = is_finished || is_cancelled;
@@ -1009,11 +1030,19 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                     "ai_output.conversation_search_prefix",
                                     verb
                                 ))];
-                            match &conversation_label {
-                                Some(name) => {
-                                    fragments.push(FormattedTextFragment::plain_text(t!(
-                                        "ai_output.conversation_label_prefix"
-                                    )));
+                            match &target_label {
+                                Some((target_kind, name)) => {
+                                    let target_prefix = match *target_kind {
+                                        "conversation" => {
+                                            t!("ai_output.conversation_label_prefix").to_string()
+                                        }
+                                        "agent run" => {
+                                            t!("ai_output.agent_run_label_prefix").to_string()
+                                        }
+                                        _ => format!("{target_kind} "),
+                                    };
+                                    fragments
+                                        .push(FormattedTextFragment::plain_text(target_prefix));
                                     fragments.push(FormattedTextFragment::weighted(
                                         name.as_str(),
                                         Some(markdown_parser::weight::CustomWeight::Bold),
@@ -3293,10 +3322,25 @@ fn render_usage_button(props: Props, app: &AppContext) -> Box<dyn Element> {
         return Empty::new().finish();
     };
 
+    // Optional orchestration credit rollup. When the conversation has at
+    // least one locally-loaded descendant with credits spent, the pill's
+    // headline number and "has any usage" suppression check both switch
+    // over to the orchestration total (PRODUCT invariants 11, 11b). The
+    // `(+N)` last-block annotation below stays bound to the
+    // orchestrator's own credits. The rollup helper returns `None` for
+    // conversations with no descendants, so callers that aren't
+    // orchestrators pay only the cost of one descendant-index probe.
+    let rollup =
+        compute_orchestration_rollup(conversation.id(), BlocklistAIHistoryModel::as_ref(app));
+
     // If this conversation has no usage metadata (e.g. a forked conversation from
     // mid-way through a prior conversation where the server did not send
     // ConversationUsageMetadata), avoid rendering the usage button entirely.
-    let has_any_usage = conversation.credits_spent() > 0.0
+    let headline_credits = rollup
+        .as_ref()
+        .map(|r| r.total_credits)
+        .unwrap_or_else(|| conversation.credits_spent());
+    let has_any_usage = headline_credits > 0.0
         || conversation.credits_spent_for_last_block().is_some()
         || !conversation.token_usage().is_empty()
         || conversation.tool_usage_metadata().total_tool_calls() > 0;
@@ -3313,7 +3357,7 @@ fn render_usage_button(props: Props, app: &AppContext) -> Box<dyn Element> {
         Icon::ChevronRight
     };
 
-    let total_credits_spent = conversation.credits_spent();
+    let total_credits_spent = headline_credits;
     let mut credit_usage_text = format_credits(total_credits_spent);
     if let Some(credits_spent_for_last_block) = conversation.credits_spent_for_last_block() {
         // Only show the credits spent for the last block if it is different from the total credits spent

@@ -578,7 +578,9 @@ impl BlocklistAIController {
 
         // Subscribe to the orchestration event service to inject events
         // (e.g. MessagesReceivedFromAgents) into conversations that receive inter-agent messages.
-        if FeatureFlag::Orchestration.is_enabled() {
+        if FeatureFlag::OrchestrationV2.is_enabled() {
+            // TODO(QUALITY-733): Remove the legacy v1 orchestration event-service path once
+            // v2 event streaming no longer drains through OrchestrationEventService.
             let svc = OrchestrationEventService::handle(ctx);
             ctx.subscribe_to_model(&svc, move |me, event, ctx| {
                 let OrchestrationEventServiceEvent::EventsReady { conversation_id } = event;
@@ -1494,7 +1496,9 @@ impl BlocklistAIController {
         // subagent is or will be active — events will be delivered via the idle
         // path once the subagent session ends.
         let mut has_piggybacked_events = false;
-        if FeatureFlag::Orchestration.is_enabled() {
+        if FeatureFlag::OrchestrationV2.is_enabled() {
+            // TODO(QUALITY-733): Remove the legacy event-service piggyback path once v2 event
+            // delivery no longer reuses OrchestrationEventService queues.
             if will_trigger_server_subagent || has_active_subagent {
                 log::debug!(
                     "Skipping event piggyback for conversation {conversation_id:?}: \
@@ -2580,7 +2584,7 @@ impl BlocklistAIController {
                         }
                     }
                     Err(e) => {
-                        if matches!(e.as_ref(), AIApiError::QuotaLimit) {
+                        if matches!(e.as_ref(), AIApiError::QuotaLimit { .. }) {
                             // If the error is a quota limit, we want to refresh workspace metadata
                             // So the current state of AI overages is immediately up to date.
                             TeamUpdateManager::handle(ctx).update(
@@ -2726,7 +2730,7 @@ impl BlocklistAIController {
 
                     // Now that the stream is cleaned up, re-check for pending
                     // orchestration events that couldn't be drained earlier.
-                    if FeatureFlag::Orchestration.is_enabled() {
+                    if FeatureFlag::OrchestrationV2.is_enabled() {
                         self.handle_pending_events_ready(conversation_id, ctx);
                     }
                 }
@@ -2843,7 +2847,7 @@ impl BlocklistAIController {
         ctx: &mut ModelContext<Self>,
     ) {
         let history_model = BlocklistAIHistoryModel::handle(ctx);
-        history_model.update(ctx, |history_model, _| {
+        history_model.update(ctx, |history_model, ctx| {
             // Update conversation cost and usage information before updating and
             // persisting the conversation.
             history_model.update_conversation_cost_and_usage_for_request(
@@ -2855,6 +2859,7 @@ impl BlocklistAIController {
                 finished_event.token_usage,
                 finished_event.conversation_usage_metadata.take(),
                 did_request_contain_user_query,
+                ctx,
             );
         });
 
@@ -2901,7 +2906,9 @@ impl BlocklistAIController {
             Some(warp_multi_agent_api::response_event::stream_finished::Reason::QuotaLimit(_)) => {
                 history_model.update(ctx, |history_model, ctx| {
                     history_model.mark_response_stream_completed_with_error(
-                        RenderableAIError::QuotaLimit,
+                        RenderableAIError::QuotaLimit {
+                            user_display_message: None,
+                        },
                         stream_id,
                         conversation_id,
                         self.terminal_view_id,

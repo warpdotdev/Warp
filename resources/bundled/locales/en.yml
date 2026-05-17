@@ -2557,6 +2557,7 @@ en:
     searching: "Searching"
     conversation_search_prefix: "{verb} "
     conversation_label_prefix: "conversation "
+    agent_run_label_prefix: "agent run "
     this_conversation: "this conversation"
     query_suffix: ": {query}"
     ellipsis: "..."

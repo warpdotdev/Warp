@@ -5,9 +5,7 @@ use chrono::{DateTime, Utc};
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent_conversations_model::AgentConversationEntryId;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::blocklist::agent_view::{
-    AgentViewController, AgentViewControllerEvent, AgentViewEntryOrigin,
-};
+use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
 use crate::ai::blocklist::orchestration_event_streamer::{
     register_agent_event_consumer, unregister_agent_event_consumer,
 };
@@ -489,20 +487,6 @@ impl ActiveAgentViewsModel {
         }
 
         None
-    }
-
-    /// Returns the active agent-view entry origin for a terminal view.
-    pub fn agent_view_origin_for_terminal_view(
-        &self,
-        terminal_view_id: EntityId,
-        ctx: &AppContext,
-    ) -> Option<AgentViewEntryOrigin> {
-        let controller = self
-            .agent_view_handles
-            .get(&terminal_view_id)?
-            .controller
-            .upgrade(ctx)?;
-        controller.as_ref(ctx).agent_view_state().origin()
     }
 
     /// Get all currently active conversation IDs.

@@ -97,7 +97,7 @@ impl TabData {
     pub fn local_path(&self) -> Option<PathBuf> {
         self.location
             .as_ref()
-            .and_then(|loc| loc.to_local_path().map(|p| p.to_path_buf()))
+            .and_then(|loc| PathBuf::try_from(loc.clone()).ok())
     }
 }
 
@@ -142,7 +142,7 @@ impl CodeView {
         line_col: Option<LineAndColumnArg>,
         ctx: &mut ViewContext<Self>,
     ) {
-        if let Some(path) = location.and_then(|loc| loc.to_local_path().map(|p| p.to_path_buf())) {
+        if let Some(path) = location.and_then(|loc| PathBuf::try_from(loc).ok()) {
             self.open_local(None, path, line_col, ctx);
         }
     }

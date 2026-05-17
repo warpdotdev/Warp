@@ -1,20 +1,28 @@
 #[cfg(feature = "local_fs")]
 use super::features::external_editor::ExternalEditorView;
 use super::{
+    LocalOnlyIconState, SettingsAction, SettingsSection, ToggleSettingActionPair, ToggleState,
     flags,
     settings_page::{
-        build_sub_header, render_body_item, render_separator, Category, MatchData, PageType,
-        SettingsPageMeta, SettingsPageViewHandle, SettingsWidget, HEADER_PADDING,
-        TOGGLE_BUTTON_RIGHT_PADDING,
+        Category, HEADER_PADDING, MatchData, PageType, SettingsPageMeta, SettingsPageViewHandle,
+        SettingsWidget, TOGGLE_BUTTON_RIGHT_PADDING, build_sub_header, render_body_item,
+        render_separator,
     },
-    LocalOnlyIconState, SettingsAction, SettingsSection, ToggleSettingActionPair, ToggleState,
+};
+#[cfg(not(target_family = "wasm"))]
+use crate::remote_server::codebase_index_model::{
+    RemoteCodebaseIndexModel, RemoteCodebaseIndexModelEvent, RemoteCodebaseIndexSettingsEntry,
 };
 use crate::{
+    TelemetryEvent,
     ai::persisted_workspace::{
         EnablementState, LspRepoStatus, PersistedWorkspace, PersistedWorkspaceEvent,
     },
     appearance::Appearance,
-    code::lsp_telemetry::{LspControlActionType, LspEnablementSource, LspTelemetryEvent},
+    code::{
+        buffer_location::LocalOrRemotePath,
+        lsp_telemetry::{LspControlActionType, LspEnablementSource, LspTelemetryEvent},
+    },
     send_telemetry_from_ctx,
     settings::{AISettings, CodeSettings},
     terminal::general_settings::GeneralSettings,
@@ -24,27 +32,28 @@ use crate::{
         icons::Icon,
     },
     view_components::{
-        action_button::{ActionButton, SecondaryTheme},
         DismissibleToast,
+        action_button::{ActionButton, SecondaryTheme},
     },
-    workspace::tab_settings::TabSettings,
     workspace::ToastStack,
+    workspace::tab_settings::TabSettings,
     workspaces::{
         update_manager::TeamUpdateManager, user_workspaces::UserWorkspaces,
         workspace::AdminEnablementSetting,
     },
-    TelemetryEvent,
 };
+use ai::index::full_source_code_embedding::SyncProgress;
 use ai::index::full_source_code_embedding::manager::{
     CodebaseIndexFinishedStatus, CodebaseIndexManager, CodebaseIndexManagerEvent,
     CodebaseIndexStatus, CodebaseIndexingError,
 };
-use ai::index::full_source_code_embedding::SyncProgress;
 use ai::project_context::model::{ProjectContextModel, ProjectContextModelEvent};
 use ai::workspace::WorkspaceMetadata;
 use lsp::supported_servers::LSPServerType;
 use lsp::{LspManagerModel, LspManagerModelEvent, LspServerModel, LspState};
 use pathfinder_color::ColorU;
+#[cfg(not(target_family = "wasm"))]
+use remote_server::codebase_index_proto::{RemoteCodebaseIndexState, RemoteCodebaseIndexStatus};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -55,7 +64,11 @@ use warp_core::{
     ui::theme::{AnsiColorIdentifier, Fill as ThemeFill},
 };
 use warp_util::path::user_friendly_path;
+#[cfg(not(target_family = "wasm"))]
+use warp_util::remote_path::RemotePath;
 use warpui::{
+    Action, AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
+    ViewHandle,
     elements::{
         ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Empty,
         Expanded, Fill, Flex, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement,
@@ -70,8 +83,6 @@ use warpui::{
         components::{Coords, UiComponent, UiComponentStyles},
         switch::{SwitchStateHandle, TooltipConfig},
     },
-    Action, AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
-    ViewHandle,
 };
 
 const MAIN_SECTION_MARGIN: f32 = 12.;
@@ -119,8 +130,21 @@ struct LspServerRowMouseStates {
 struct InitializedFoldersMouseStates {
     codebase_manual_resync: Vec<MouseStateHandle>,
     codebase_delete: Vec<MouseStateHandle>,
+    #[cfg(not(target_family = "wasm"))]
+    remote_codebase_manual_resync: Vec<MouseStateHandle>,
+    #[cfg(not(target_family = "wasm"))]
+    remote_codebase_delete: Vec<MouseStateHandle>,
     lsp_rows: Vec<LspServerRowMouseStates>,
     open_project_rules: Vec<MouseStateHandle>,
+}
+
+#[derive(Clone)]
+struct IndexingStatusPresentation {
+    text: Cow<'static, str>,
+    color: ColorU,
+    icon: Option<Icon>,
+    show_retry: bool,
+    show_delete: bool,
 }
 
 pub struct CodeSettingsPageView {
@@ -128,6 +152,10 @@ pub struct CodeSettingsPageView {
     active_subpage: Option<CodeSubpage>,
     codebase_manual_resync_mouse_states: Vec<MouseStateHandle>,
     codebase_delete_mouse_states: Vec<MouseStateHandle>,
+    #[cfg(not(target_family = "wasm"))]
+    remote_codebase_manual_resync_mouse_states: Vec<MouseStateHandle>,
+    #[cfg(not(target_family = "wasm"))]
+    remote_codebase_delete_mouse_states: Vec<MouseStateHandle>,
     /// Mouse states for LSP server row buttons.
     /// This is kept separate from the codebase mouse states because each workspace/folder
     /// can have 0 to multiple LSP servers, so the count doesn't match 1:1 with workspaces.
@@ -169,6 +197,26 @@ impl CodeSettingsPageView {
                 ctx.notify();
             }
         });
+
+        #[cfg(not(target_family = "wasm"))]
+        let remote_codebase_count = {
+            let remote_index_model = RemoteCodebaseIndexModel::handle(ctx);
+            let remote_codebase_count = remote_index_model.as_ref(ctx).entries_for_settings().len();
+            ctx.subscribe_to_model(&remote_index_model, |me, model, event, ctx| match event {
+                RemoteCodebaseIndexModelEvent::SettingsEntriesChanged => {
+                    let remote_codebase_count = model.as_ref(ctx).entries_for_settings().len();
+                    if me.remote_codebase_manual_resync_mouse_states.len() != remote_codebase_count
+                    {
+                        me.remote_codebase_manual_resync_mouse_states
+                            .resize_with(remote_codebase_count, Default::default);
+                        me.remote_codebase_delete_mouse_states
+                            .resize_with(remote_codebase_count, Default::default);
+                    }
+                    ctx.notify();
+                }
+            });
+            remote_codebase_count
+        };
 
         // Calculate total LSP server count across all workspaces (enabled + disabled + suggested)
         let lsp_server_count = PersistedWorkspace::as_ref(ctx).total_lsp_server_count(true);
@@ -322,6 +370,14 @@ impl CodeSettingsPageView {
                 .map(|_| Default::default())
                 .collect(),
             codebase_delete_mouse_states: (0..codebase_count).map(|_| Default::default()).collect(),
+            #[cfg(not(target_family = "wasm"))]
+            remote_codebase_manual_resync_mouse_states: (0..remote_codebase_count)
+                .map(|_| Default::default())
+                .collect(),
+            #[cfg(not(target_family = "wasm"))]
+            remote_codebase_delete_mouse_states: (0..remote_codebase_count)
+                .map(|_| Default::default())
+                .collect(),
             lsp_row_mouse_states: (0..lsp_server_count).map(|_| Default::default()).collect(),
             open_project_rules_mouse_states: (0..workspace_count)
                 .map(|_| Default::default())
@@ -517,6 +573,10 @@ pub enum CodeSettingsPageAction {
     ToggleAutoIndexing,
     ManualResync(PathBuf),
     DeleteIndex(PathBuf),
+    #[cfg(not(target_family = "wasm"))]
+    ManualResyncRemote(RemotePath),
+    #[cfg(not(target_family = "wasm"))]
+    DeleteRemoteIndex(RemotePath),
     ManualAddDirectory,
     SignupAnonymousUser,
     /// Toggle an LSP server on/off for a workspace.
@@ -615,6 +675,18 @@ impl TypedActionView for CodeSettingsPageView {
                     manager.drop_index(repo_path.clone(), ctx);
                 });
             }
+            #[cfg(not(target_family = "wasm"))]
+            CodeSettingsPageAction::ManualResyncRemote(remote_path) => {
+                RemoteCodebaseIndexModel::handle(ctx).update(ctx, |model, ctx| {
+                    model.request_index(remote_path.clone(), ctx);
+                });
+            }
+            #[cfg(not(target_family = "wasm"))]
+            CodeSettingsPageAction::DeleteRemoteIndex(remote_path) => {
+                RemoteCodebaseIndexModel::handle(ctx).update(ctx, |model, ctx| {
+                    model.drop_index(remote_path.clone(), ctx);
+                });
+            }
             CodeSettingsPageAction::ManualAddDirectory => {
                 self.open_directory_picker(ctx);
             }
@@ -703,9 +775,11 @@ impl TypedActionView for CodeSettingsPageView {
             }
             CodeSettingsPageAction::ToggleShowCodeReviewDiffStats => {
                 TabSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings
-                        .show_code_review_diff_stats
-                        .toggle_and_save_value(ctx));
+                    report_if_error!(
+                        settings
+                            .show_code_review_diff_stats
+                            .toggle_and_save_value(ctx)
+                    );
                 });
                 ctx.notify();
             }
@@ -723,9 +797,11 @@ impl TypedActionView for CodeSettingsPageView {
             }
             CodeSettingsPageAction::ToggleAutoOpenCodeReviewPane => {
                 GeneralSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings
-                        .auto_open_code_review_pane_on_first_agent_change
-                        .toggle_and_save_value(ctx));
+                    report_if_error!(
+                        settings
+                            .auto_open_code_review_pane_on_first_agent_change
+                            .toggle_and_save_value(ctx)
+                    );
                 });
                 send_telemetry_from_ctx!(
                     TelemetryEvent::FeaturesPageAction {
@@ -888,6 +964,10 @@ impl SettingsWidget for CodePageWidget {
         let mouse_states = InitializedFoldersMouseStates {
             codebase_manual_resync: view.codebase_manual_resync_mouse_states.clone(),
             codebase_delete: view.codebase_delete_mouse_states.clone(),
+            #[cfg(not(target_family = "wasm"))]
+            remote_codebase_manual_resync: view.remote_codebase_manual_resync_mouse_states.clone(),
+            #[cfg(not(target_family = "wasm"))]
+            remote_codebase_delete: view.remote_codebase_delete_mouse_states.clone(),
             lsp_rows: view.lsp_row_mouse_states.clone(),
             open_project_rules: view.open_project_rules_mouse_states.clone(),
         };
@@ -1137,6 +1217,10 @@ impl CodePageWidget {
         let InitializedFoldersMouseStates {
             codebase_manual_resync: codebase_manual_resync_mouse_states,
             codebase_delete: codebase_delete_mouse_states,
+            #[cfg(not(target_family = "wasm"))]
+                remote_codebase_manual_resync: remote_codebase_manual_resync_mouse_states,
+            #[cfg(not(target_family = "wasm"))]
+                remote_codebase_delete: remote_codebase_delete_mouse_states,
             lsp_rows: lsp_row_mouse_states,
             open_project_rules: open_project_rules_mouse_states,
         } = mouse_states;
@@ -1173,27 +1257,19 @@ impl CodePageWidget {
         // Get workspaces from PersistedWorkspace
         let workspaces: Vec<WorkspaceMetadata> =
             PersistedWorkspace::as_ref(app).workspaces().collect();
-
-        if workspaces.is_empty() {
-            content.add_child(
-                Container::new(
-                    appearance
-                        .ui_builder()
-                        .paragraph(t!("settings.no_folders_initialized").to_string())
-                        .build()
-                        .finish(),
-                )
-                .with_margin_bottom(MAIN_SECTION_MARGIN)
-                .finish(),
-            );
-            return content.finish();
-        }
+        #[cfg(not(target_family = "wasm"))]
+        let remote_entries = if FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
+            RemoteCodebaseIndexModel::as_ref(app).entries_for_settings()
+        } else {
+            Vec::new()
+        };
 
         let codebase_manager = CodebaseIndexManager::as_ref(app);
         let lsp_manager = LspManagerModel::as_ref(app);
         let persisted_workspace = PersistedWorkspace::as_ref(app);
 
         let mut lsp_mouse_index = 0;
+        let mut rendered_folder = false;
 
         for (workspace_idx, workspace) in workspaces.iter().enumerate() {
             let workspace_path = &workspace.path;
@@ -1222,6 +1298,8 @@ impl CodePageWidget {
             if index_status.is_none() && all_servers.is_empty() {
                 continue;
             }
+
+            rendered_folder = true;
 
             // Get LSP server mouse states
             let lsp_mouse_states: Vec<LspServerRowMouseStates> = all_servers
@@ -1256,6 +1334,39 @@ impl CodePageWidget {
                 appearance,
                 app,
             ));
+        }
+        #[cfg(not(target_family = "wasm"))]
+        for (entry_idx, entry) in remote_entries.iter().enumerate() {
+            rendered_folder = true;
+            let resync_mouse = remote_codebase_manual_resync_mouse_states
+                .get(entry_idx)
+                .cloned()
+                .unwrap_or_default();
+            let delete_mouse = remote_codebase_delete_mouse_states
+                .get(entry_idx)
+                .cloned()
+                .unwrap_or_default();
+
+            content.add_child(self.render_remote_workspace_row(
+                entry,
+                resync_mouse,
+                delete_mouse,
+                appearance,
+            ));
+        }
+
+        if !rendered_folder {
+            content.add_child(
+                Container::new(
+                    appearance
+                        .ui_builder()
+                        .paragraph(t!("settings.no_folders_initialized").to_string())
+                        .build()
+                        .finish(),
+                )
+                .with_margin_bottom(MAIN_SECTION_MARGIN)
+                .finish(),
+            );
         }
 
         content.finish()
@@ -1295,30 +1406,8 @@ impl CodePageWidget {
         let workspace_rule_paths =
             ProjectContextModel::as_ref(app).rules_for_workspace(workspace_path);
 
-        let workspace_header_label = Shrinkable::new(
-            1.,
-            ui_builder
-                .span(user_friendly)
-                .with_style(UiComponentStyles {
-                    font_family_id: Some(appearance.monospace_font_family()),
-                    font_size: Some(appearance.ui_font_size()),
-                    font_weight: Some(Weight::Bold),
-                    font_color: Some(theme.active_ui_text_color().into()),
-                    ..Default::default()
-                })
-                .build()
-                .finish(),
-        )
-        .finish();
-
-        let mut header_row = Flex::row()
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center);
-        header_row.add_child(Expanded::new(1., workspace_header_label).finish());
-
         // Only show "Open project rules" button if rules exist for this workspace
-        if !workspace_rule_paths.is_empty() {
+        let open_rules_button: Option<Box<dyn Element>> = if !workspace_rule_paths.is_empty() {
             let open_rules_button = ui_builder
                 .button(ButtonVariant::Secondary, open_rules_mouse)
                 .with_style(UiComponentStyles {
@@ -1357,10 +1446,16 @@ impl CodePageWidget {
                     });
                 })
                 .finish();
-            header_row.add_child(open_rules_button);
-        }
+            Some(open_rules_button)
+        } else {
+            None
+        };
 
-        workspace_content.add_child(header_row.finish());
+        workspace_content.add_child(self.render_workspace_header(
+            user_friendly,
+            open_rules_button,
+            appearance,
+        ));
 
         // Indexing section (always rendered per design)
         workspace_content.add_child(self.render_indexing_subsection(
@@ -1384,7 +1479,79 @@ impl CodePageWidget {
             ));
         }
 
-        Container::new(workspace_content.finish())
+        self.render_workspace_row_container(workspace_content.finish(), appearance)
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn render_remote_workspace_row(
+        &self,
+        entry: &RemoteCodebaseIndexSettingsEntry,
+        resync_mouse: MouseStateHandle,
+        delete_mouse: MouseStateHandle,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let mut workspace_content = Flex::column().with_spacing(MAIN_SECTION_MARGIN);
+
+        let remote_path_label = format!("{}:{}", entry.host_label, entry.remote_path.path.as_str());
+        workspace_content.add_child(self.render_workspace_header(
+            remote_path_label,
+            None,
+            appearance,
+        ));
+
+        workspace_content.add_child(self.render_indexing_subsection_for_target(
+            self.remote_indexing_status_presentation(&entry.status, appearance),
+            Some(LocalOrRemotePath::Remote(entry.remote_path.clone())),
+            resync_mouse,
+            delete_mouse,
+            appearance,
+        ));
+
+        self.render_workspace_row_container(workspace_content.finish(), appearance)
+    }
+
+    fn render_workspace_header(
+        &self,
+        label: String,
+        action_button: Option<Box<dyn Element>>,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let path_label = Shrinkable::new(
+            1.,
+            appearance
+                .ui_builder()
+                .span(label)
+                .with_style(UiComponentStyles {
+                    font_family_id: Some(appearance.monospace_font_family()),
+                    font_size: Some(appearance.ui_font_size()),
+                    font_weight: Some(Weight::Bold),
+                    font_color: Some(theme.active_ui_text_color().into()),
+                    ..Default::default()
+                })
+                .build()
+                .finish(),
+        )
+        .finish();
+
+        let mut header_row = Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+        header_row.add_child(Expanded::new(1., path_label).finish());
+        if let Some(action_button) = action_button {
+            header_row.add_child(action_button);
+        }
+        header_row.finish()
+    }
+
+    fn render_workspace_row_container(
+        &self,
+        workspace_content: Box<dyn Element>,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        Container::new(workspace_content)
             .with_uniform_padding(MAIN_SECTION_MARGIN)
             .with_background(theme.surface_1())
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
@@ -1401,12 +1568,27 @@ impl CodePageWidget {
         delete_mouse: MouseStateHandle,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
+        self.render_indexing_subsection_for_target(
+            self.local_indexing_status_presentation(index_status, appearance),
+            Some(LocalOrRemotePath::Local(workspace_path.to_path_buf())),
+            resync_mouse,
+            delete_mouse,
+            appearance,
+        )
+    }
+
+    fn render_indexing_subsection_for_target(
+        &self,
+        presentation: IndexingStatusPresentation,
+        action_target: Option<LocalOrRemotePath>,
+        resync_mouse: MouseStateHandle,
+        delete_mouse: MouseStateHandle,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         let theme = appearance.theme();
 
         let mut column = Flex::column().with_spacing(SUB_SECTION_MARGIN);
-
-        // "INDEXING" label on its own row
         column.add_child(
             ui_builder
                 .span(t!("settings.indexing_label").to_string())
@@ -1420,84 +1602,44 @@ impl CodePageWidget {
                 .finish(),
         );
 
-        if let Some(index_status) = index_status {
-            // Status row: status label on left, action buttons on right
-            let (status_label, action_buttons) = self.render_index_status_parts(
-                index_status,
-                workspace_path,
-                resync_mouse,
-                delete_mouse,
-                appearance,
-            );
-
-            column.add_child(
-                Flex::row()
-                    .with_main_axis_size(MainAxisSize::Max)
-                    .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_child(status_label)
-                    .with_child(action_buttons)
-                    .finish(),
-            );
-        } else {
-            // No index exists for this workspace
-            let status_color = theme.disabled_ui_text_color().into_solid();
-            column.add_child(
-                Flex::row()
-                    .with_main_axis_size(MainAxisSize::Min)
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_child(
-                        Container::new(
-                            ConstrainedBox::new(
-                                Icon::SlashCircle
-                                    .to_warpui_icon(ThemeFill::Solid(status_color))
-                                    .finish(),
-                            )
-                            .with_width(STATUS_ICON_SIZE)
-                            .with_height(STATUS_ICON_SIZE)
-                            .finish(),
-                        )
-                        .with_margin_right(4.)
-                        .finish(),
-                    )
-                    .with_child(
-                        ui_builder
-                            .label(t!("settings.no_index_created").to_string())
-                            .with_style(UiComponentStyles {
-                                font_color: Some(status_color),
-                                font_size: Some(12.),
-                                ..Default::default()
-                            })
-                            .build()
-                            .finish(),
-                    )
-                    .finish(),
-            );
-        }
+        let (status_label, action_buttons) = self.render_index_status_parts(
+            presentation,
+            action_target,
+            resync_mouse,
+            delete_mouse,
+            appearance,
+        );
+        column.add_child(
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_child(status_label)
+                .with_child(action_buttons)
+                .finish(),
+        );
 
         column.finish()
     }
 
-    /// Returns (status_label, action_buttons) as separate elements for the indexing row.
-    fn render_index_status_parts(
+    fn local_indexing_status_presentation(
         &self,
-        index_state: &CodebaseIndexStatus,
-        codebase_path: &Path,
-        manual_resync_mouse_state: MouseStateHandle,
-        delete_mouse_state: MouseStateHandle,
+        index_state: Option<&CodebaseIndexStatus>,
         appearance: &Appearance,
-    ) -> (Box<dyn Element>, Box<dyn Element>) {
+    ) -> IndexingStatusPresentation {
         let theme = appearance.theme();
-        let ui_builder = appearance.ui_builder();
+        let Some(index_state) = index_state else {
+            return IndexingStatusPresentation {
+                text: Cow::Owned(t!("settings.no_index_created").to_string()),
+                color: theme.disabled_ui_text_color().into_solid(),
+                icon: Some(Icon::SlashCircle),
+                show_retry: false,
+                show_delete: false,
+            };
+        };
 
-        // Build status label (icon + text)
-        let mut label_row = Flex::row()
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center);
-        let mut should_render_retry = false;
-
-        let (status_text, status_color) = if index_state.has_pending() {
-            let progress_text = match index_state.sync_progress() {
+        if index_state.has_pending() {
+            let text = match index_state.sync_progress() {
                 Some(SyncProgress::Discovering { total_nodes }) => {
                     Cow::Owned(t!("settings.discovered_chunks", count = total_nodes).to_string())
                 }
@@ -1514,10 +1656,18 @@ impl CodePageWidget {
                 ),
                 None => Cow::Owned(t!("settings.syncing").to_string()),
             };
-            (progress_text, theme.disabled_ui_text_color().into_solid())
-        } else if let Some(completed_successfully) = index_state.last_sync_successful() {
-            should_render_retry = true;
-            let (text, color, status_icon) = if completed_successfully {
+
+            return IndexingStatusPresentation {
+                text,
+                color: theme.disabled_ui_text_color().into_solid(),
+                icon: None,
+                show_retry: false,
+                show_delete: true,
+            };
+        }
+
+        if let Some(completed_successfully) = index_state.last_sync_successful() {
+            let (text, color, icon) = if completed_successfully {
                 (
                     Cow::Owned(t!("settings.synced").to_string()),
                     theme.ansi_fg_green(),
@@ -1547,10 +1697,126 @@ impl CodePageWidget {
                 )
             };
 
+            return IndexingStatusPresentation {
+                text,
+                color,
+                icon: Some(icon),
+                show_retry: true,
+                show_delete: true,
+            };
+        }
+
+        log::warn!("No index state for codebase");
+        IndexingStatusPresentation {
+            text: Cow::Owned(t!("settings.no_index_built").to_string()),
+            color: theme.nonactive_ui_text_color().into_solid(),
+            icon: None,
+            show_retry: false,
+            show_delete: true,
+        }
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn remote_indexing_status_presentation(
+        &self,
+        status: &RemoteCodebaseIndexStatus,
+        appearance: &Appearance,
+    ) -> IndexingStatusPresentation {
+        let theme = appearance.theme();
+
+        match status.state {
+            RemoteCodebaseIndexState::NotEnabled => IndexingStatusPresentation {
+                text: Cow::from("No index created"),
+                color: theme.disabled_ui_text_color().into_solid(),
+                icon: Some(Icon::SlashCircle),
+                show_retry: true,
+                show_delete: true,
+            },
+            RemoteCodebaseIndexState::Unavailable => IndexingStatusPresentation {
+                text: Cow::from("Unavailable"),
+                color: theme.disabled_ui_text_color().into_solid(),
+                icon: Some(Icon::SlashCircle),
+                show_retry: false,
+                show_delete: true,
+            },
+            RemoteCodebaseIndexState::Disabled => IndexingStatusPresentation {
+                text: Cow::from("Disabled"),
+                color: theme.disabled_ui_text_color().into_solid(),
+                icon: Some(Icon::SlashCircle),
+                show_retry: true,
+                show_delete: true,
+            },
+            RemoteCodebaseIndexState::Queued => IndexingStatusPresentation {
+                text: Cow::from("Queued"),
+                color: theme.disabled_ui_text_color().into_solid(),
+                icon: None,
+                show_retry: false,
+                show_delete: true,
+            },
+            RemoteCodebaseIndexState::Indexing => {
+                let text = match (status.progress_completed, status.progress_total) {
+                    (Some(completed), Some(total)) => {
+                        Cow::from(format!("Indexing - {completed} / {total}"))
+                    }
+                    (Some(completed), None) => Cow::from(format!("Indexing - {completed}")),
+                    (None, Some(total)) => Cow::from(format!("Indexing - 0 / {total}")),
+                    (None, None) => Cow::from("Indexing..."),
+                };
+
+                IndexingStatusPresentation {
+                    text,
+                    color: theme.disabled_ui_text_color().into_solid(),
+                    icon: None,
+                    show_retry: false,
+                    show_delete: true,
+                }
+            }
+            RemoteCodebaseIndexState::Ready => IndexingStatusPresentation {
+                text: Cow::from("Synced"),
+                color: theme.ansi_fg_green(),
+                icon: Some(Icon::Check),
+                show_retry: true,
+                show_delete: true,
+            },
+            RemoteCodebaseIndexState::Stale => IndexingStatusPresentation {
+                text: Cow::from("Stale"),
+                color: theme.nonactive_ui_detail().into_solid(),
+                icon: Some(Icon::ClockRefresh),
+                show_retry: true,
+                show_delete: true,
+            },
+            RemoteCodebaseIndexState::Failed => IndexingStatusPresentation {
+                text: Cow::from("Failed"),
+                color: theme.ui_error_color(),
+                icon: Some(Icon::AlertTriangle),
+                show_retry: true,
+                show_delete: true,
+            },
+        }
+    }
+
+    /// Returns (status_label, action_buttons) as separate elements for the indexing row.
+    fn render_index_status_parts(
+        &self,
+        presentation: IndexingStatusPresentation,
+        action_target: Option<LocalOrRemotePath>,
+        manual_resync_mouse_state: MouseStateHandle,
+        delete_mouse_state: MouseStateHandle,
+        appearance: &Appearance,
+    ) -> (Box<dyn Element>, Box<dyn Element>) {
+        let theme = appearance.theme();
+        let ui_builder = appearance.ui_builder();
+
+        let mut label_row = Flex::row()
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+        if let Some(status_icon) = presentation.icon {
             label_row.add_child(
                 Container::new(
                     ConstrainedBox::new(
-                        status_icon.to_warpui_icon(ThemeFill::Solid(color)).finish(),
+                        status_icon
+                            .to_warpui_icon(ThemeFill::Solid(presentation.color))
+                            .finish(),
                     )
                     .with_width(STATUS_ICON_SIZE)
                     .with_height(STATUS_ICON_SIZE)
@@ -1559,71 +1825,81 @@ impl CodePageWidget {
                 .with_margin_right(4.)
                 .finish(),
             );
-            (text, color)
-        } else {
-            log::warn!("No index state for codebase");
-            (
-                Cow::Owned(t!("settings.no_index_built").to_string()),
-                theme.nonactive_ui_text_color().into_solid(),
-            )
-        };
+        }
 
         label_row.add_child(
             ui_builder
-                .label(status_text)
+                .label(presentation.text)
                 .with_style(UiComponentStyles {
-                    font_color: Some(status_color),
+                    font_color: Some(presentation.color),
+                    font_size: Some(12.),
                     ..Default::default()
                 })
                 .build()
                 .finish(),
         );
 
-        // Build action buttons
         let mut buttons_row = Flex::row()
             .with_main_axis_size(MainAxisSize::Min)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(4.);
-
-        if should_render_retry {
-            let codebase_path = codebase_path.to_path_buf();
-            let is_active = false;
-            buttons_row.add_child(
-                icon_button(
-                    appearance,
-                    Icon::Refresh,
-                    is_active,
-                    manual_resync_mouse_state,
-                )
-                .with_active_styles(UiComponentStyles {
-                    background: Some(theme.surface_1().into()),
-                    ..Default::default()
-                })
-                .build()
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(CodeSettingsPageAction::ManualResync(
-                        codebase_path.clone(),
-                    ));
-                })
-                .finish(),
-            );
+        if presentation.show_retry {
+            if let Some(action_target) = action_target.clone() {
+                buttons_row.add_child(
+                    icon_button(appearance, Icon::Refresh, false, manual_resync_mouse_state)
+                        .with_active_styles(UiComponentStyles {
+                            background: Some(theme.surface_1().into()),
+                            ..Default::default()
+                        })
+                        .build()
+                        .on_click(move |ctx, _, _| match &action_target {
+                            LocalOrRemotePath::Local(codebase_path) => {
+                                ctx.dispatch_typed_action(CodeSettingsPageAction::ManualResync(
+                                    codebase_path.clone(),
+                                ));
+                            }
+                            #[cfg(not(target_family = "wasm"))]
+                            LocalOrRemotePath::Remote(remote_path) => {
+                                ctx.dispatch_typed_action(
+                                    CodeSettingsPageAction::ManualResyncRemote(remote_path.clone()),
+                                );
+                            }
+                            #[cfg(target_family = "wasm")]
+                            LocalOrRemotePath::Remote(_) => {}
+                        })
+                        .finish(),
+                );
+            }
         }
 
-        let delete_codebase_path = codebase_path.to_path_buf();
-        buttons_row.add_child(
-            icon_button(appearance, Icon::Trash, false, delete_mouse_state)
-                .with_active_styles(UiComponentStyles {
-                    background: Some(theme.surface_1().into()),
-                    ..Default::default()
-                })
-                .build()
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(CodeSettingsPageAction::DeleteIndex(
-                        delete_codebase_path.clone(),
-                    ));
-                })
-                .finish(),
-        );
+        if presentation.show_delete {
+            if let Some(action_target) = action_target {
+                buttons_row.add_child(
+                    icon_button(appearance, Icon::Trash, false, delete_mouse_state)
+                        .with_active_styles(UiComponentStyles {
+                            background: Some(theme.surface_1().into()),
+                            ..Default::default()
+                        })
+                        .build()
+                        .on_click(move |ctx, _, _| match &action_target {
+                            LocalOrRemotePath::Local(codebase_path) => {
+                                ctx.dispatch_typed_action(CodeSettingsPageAction::DeleteIndex(
+                                    codebase_path.clone(),
+                                ));
+                            }
+                            #[cfg(not(target_family = "wasm"))]
+                            LocalOrRemotePath::Remote(remote_path) => {
+                                ctx.dispatch_typed_action(
+                                    CodeSettingsPageAction::DeleteRemoteIndex(remote_path.clone()),
+                                );
+                            }
+                            #[cfg(target_family = "wasm")]
+                            LocalOrRemotePath::Remote(_) => {}
+                        })
+                        .finish(),
+                );
+            }
+        }
 
         (label_row.finish(), buttons_row.finish())
     }
@@ -2195,6 +2471,10 @@ impl SettingsWidget for CodebaseIndexingCategorizedWidget {
         let mouse_states = InitializedFoldersMouseStates {
             codebase_manual_resync: view.codebase_manual_resync_mouse_states.clone(),
             codebase_delete: view.codebase_delete_mouse_states.clone(),
+            #[cfg(not(target_family = "wasm"))]
+            remote_codebase_manual_resync: view.remote_codebase_manual_resync_mouse_states.clone(),
+            #[cfg(not(target_family = "wasm"))]
+            remote_codebase_delete: view.remote_codebase_delete_mouse_states.clone(),
             lsp_rows: view.lsp_row_mouse_states.clone(),
             open_project_rules: view.open_project_rules_mouse_states.clone(),
         };

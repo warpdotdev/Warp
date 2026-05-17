@@ -18,7 +18,7 @@ use warp_core::ui::theme::Fill;
 use settings::Setting as _;
 
 use crate::ai::blocklist::agent_view::agent_input_footer::AgentInputButtonTheme;
-use crate::ai::cloud_agent_settings::CloudAgentSettings;
+use crate::ai::cloud_agent_settings::{CloudAgentSettings, HarnessModelSelection};
 use crate::ai::execution_profiles::model_menu_items::is_auto;
 use crate::ai::harness_availability::{HarnessAvailabilityEvent, HarnessAvailabilityModel};
 use crate::ai::harness_display::icon_for as harness_icon_for;
@@ -68,6 +68,7 @@ pub enum ModelSelectorAction {
     SelectHarnessModel {
         harness: Harness,
         model_id: String,
+        reasoning_level: Option<String>,
     },
 }
 
@@ -79,6 +80,7 @@ pub enum ModelSelectorEvent {
 pub struct HarnessSelection {
     pub harness: Harness,
     pub model_id: String,
+    pub reasoning_level: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -208,6 +210,11 @@ impl ModelSelector {
                     me.refresh_button(ctx);
                     me.refresh_menu(ctx);
                 }
+                AmbientAgentViewModelEvent::SessionReady { .. }
+                | AmbientAgentViewModelEvent::FollowupDispatched
+                | AmbientAgentViewModelEvent::RunLifecycleChanged => {
+                    me.refresh_button(ctx);
+                }
                 _ => {}
             });
         }
@@ -246,18 +253,26 @@ impl ModelSelector {
         {
             return;
         }
-        let saved_id = CloudAgentSettings::as_ref(ctx)
+        let saved = CloudAgentSettings::as_ref(ctx)
             .last_selected_harness_model
             .value()
             .get(harness.config_name())
             .cloned();
-        if let Some(saved_id) = saved_id {
+        if let Some(saved) = saved {
             if HarnessAvailabilityModel::as_ref(ctx)
                 .models_for(harness)
-                .is_some_and(|models| models.iter().any(|m| m.id == saved_id))
+                .is_some_and(|models| {
+                    models.iter().any(|m| {
+                        m.id == saved.model_id && m.reasoning_level == saved.reasoning_level
+                    })
+                })
             {
                 ambient_model.update(ctx, |model, ctx| {
-                    model.set_harness_model_id(Some(saved_id), ctx);
+                    model.set_harness_model_selection(
+                        Some(saved.model_id),
+                        saved.reasoning_level,
+                        ctx,
+                    );
                 });
             }
         }
@@ -267,6 +282,12 @@ impl ModelSelector {
         self.ambient_agent_model
             .as_ref()
             .map(|m| m.as_ref(app).selected_harness())
+    }
+
+    fn is_configuring(&self, app: &AppContext) -> bool {
+        self.ambient_agent_model
+            .as_ref()
+            .is_none_or(|m| m.as_ref(app).is_configuring_ambient_agent())
     }
 
     pub fn is_menu_open(&self) -> bool {
@@ -284,12 +305,15 @@ impl ModelSelector {
         harness: Harness,
         app: &AppContext,
     ) -> Option<HarnessSelection> {
-        let model_id = self
-            .ambient_agent_model
-            .as_ref()
-            .and_then(|m| m.as_ref(app).selected_harness_model_id())
-            .map(str::to_owned)?;
-        Some(HarnessSelection { harness, model_id })
+        let ambient_agent_model = self.ambient_agent_model.as_ref()?;
+        let model = ambient_agent_model.as_ref(app);
+        let model_id = model.selected_harness_model_id().map(str::to_owned)?;
+        let reasoning_level = model.selected_harness_reasoning_level().map(str::to_owned);
+        Some(HarnessSelection {
+            harness,
+            model_id,
+            reasoning_level,
+        })
     }
 
     fn set_menu_visibility(&mut self, is_open: bool, ctx: &mut ViewContext<Self>) {
@@ -348,6 +372,11 @@ impl ModelSelector {
     }
 
     fn refresh_button(&mut self, ctx: &mut ViewContext<Self>) {
+        let is_configuring = self.is_configuring(ctx);
+        self.button.update(ctx, |button, ctx| {
+            button.set_disabled(!is_configuring, ctx);
+        });
+
         let active_label = match self.active_harness(ctx) {
             Some(harness) if !matches!(harness, Harness::Oz | Harness::Unknown) => self
                 .resolved_harness_selection(harness, ctx)
@@ -357,11 +386,14 @@ impl ModelSelector {
                         .and_then(|models| {
                             models
                                 .iter()
-                                .find(|m| m.id == selection.model_id)
+                                .find(|m| {
+                                    m.id == selection.model_id
+                                        && m.reasoning_level == selection.reasoning_level
+                                })
                                 .map(|info| info.display_name.clone())
                         })
                 })
-                .unwrap_or_else(|| "Default".to_string()),
+                .unwrap_or_else(|| "default".to_string()),
             _ => LLMPreferences::as_ref(ctx)
                 .get_active_base_model(ctx, Some(self.terminal_view_id))
                 .display_name
@@ -482,43 +514,69 @@ impl ModelSelector {
         hover_background: Fill,
         ctx: &AppContext,
     ) -> (Vec<MenuItem<ModelSelectorAction>>, ModelSelectorAction) {
-        let active_id = self
-            .resolved_harness_selection(harness, ctx)
-            .map(|selection| selection.model_id)
-            .unwrap_or_default();
+        let active_action = match self.resolved_harness_selection(harness, ctx) {
+            Some(HarnessSelection {
+                model_id,
+                reasoning_level,
+                ..
+            }) => ModelSelectorAction::SelectHarnessModel {
+                harness,
+                model_id,
+                reasoning_level,
+            },
+            None => ModelSelectorAction::SelectHarnessModel {
+                harness,
+                model_id: String::new(),
+                reasoning_level: None,
+            },
+        };
         let icon = harness_icon_for(harness);
 
-        let models = HarnessAvailabilityModel::as_ref(ctx).models_for(harness);
-        let items: Vec<MenuItem<ModelSelectorAction>> = models
-            .into_iter()
-            .flat_map(|slice| slice.iter())
-            .filter_map(|model| {
-                let display_name = model.display_name.clone();
-                if !query.is_empty() && !display_name.to_lowercase().contains(query) {
-                    return None;
-                }
-                Some(MenuItem::Item(
-                    MenuItemFields::new(display_name)
-                        .with_icon(icon)
-                        .with_icon_size_override(ITEM_ICON_SIZE)
-                        .with_font_size_override(ITEM_FONT_SIZE)
-                        .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
-                        .with_override_hover_background_color(hover_background)
-                        .with_on_select_action(ModelSelectorAction::SelectHarnessModel {
-                            harness,
-                            model_id: model.id.clone(),
-                        }),
-                ))
-            })
-            .collect();
+        let default_action = ModelSelectorAction::SelectHarnessModel {
+            harness,
+            model_id: String::new(),
+            reasoning_level: None,
+        };
+        let mut items: Vec<MenuItem<ModelSelectorAction>> = Vec::new();
+        if query.is_empty() || "default".contains(query) {
+            items.push(MenuItem::Item(
+                MenuItemFields::new("default")
+                    .with_icon(icon)
+                    .with_icon_size_override(ITEM_ICON_SIZE)
+                    .with_font_size_override(ITEM_FONT_SIZE)
+                    .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
+                    .with_override_hover_background_color(hover_background)
+                    .with_on_select_action(default_action),
+            ));
+        }
 
-        (
-            items,
-            ModelSelectorAction::SelectHarnessModel {
-                harness,
-                model_id: active_id,
-            },
-        )
+        let models = HarnessAvailabilityModel::as_ref(ctx).models_for(harness);
+        items.extend(
+            models
+                .into_iter()
+                .flat_map(|slice| slice.iter())
+                .filter_map(|model| {
+                    let display_name = model.display_name.clone();
+                    if !query.is_empty() && !display_name.to_lowercase().contains(query) {
+                        return None;
+                    }
+                    Some(MenuItem::Item(
+                        MenuItemFields::new(display_name)
+                            .with_icon(icon)
+                            .with_icon_size_override(ITEM_ICON_SIZE)
+                            .with_font_size_override(ITEM_FONT_SIZE)
+                            .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
+                            .with_override_hover_background_color(hover_background)
+                            .with_on_select_action(ModelSelectorAction::SelectHarnessModel {
+                                harness,
+                                model_id: model.id.clone(),
+                                reasoning_level: model.reasoning_level.clone(),
+                            }),
+                    ))
+                }),
+        );
+
+        (items, active_action)
     }
 
     fn menu_positioning(&self, app: &AppContext) -> OffsetPositioning {
@@ -567,8 +625,10 @@ impl TypedActionView for ModelSelector {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             ModelSelectorAction::ToggleMenu => {
-                let new_state = !self.is_menu_open;
-                self.set_menu_visibility(new_state, ctx);
+                if self.is_configuring(ctx) {
+                    let new_state = !self.is_menu_open;
+                    self.set_menu_visibility(new_state, ctx);
+                }
             }
             ModelSelectorAction::SelectModel(llm_id) => {
                 let terminal_view_id = self.terminal_view_id;
@@ -578,18 +638,41 @@ impl TypedActionView for ModelSelector {
                 });
                 self.set_menu_visibility(false, ctx);
             }
-            ModelSelectorAction::SelectHarnessModel { harness, model_id } => {
+            ModelSelectorAction::SelectHarnessModel {
+                harness,
+                model_id,
+                reasoning_level,
+            } => {
+                let is_default = model_id.is_empty();
                 if let Some(ambient_agent_model) = self.ambient_agent_model.clone() {
                     if ambient_agent_model.as_ref(ctx).selected_harness() == *harness {
                         ambient_agent_model.update(ctx, |model, ctx| {
-                            model.set_harness_model_id(Some(model_id.clone()), ctx);
+                            model.set_harness_model_selection(
+                                (!is_default).then(|| model_id.clone()),
+                                if is_default {
+                                    None
+                                } else {
+                                    reasoning_level.clone()
+                                },
+                                ctx,
+                            );
                         });
                     }
                 }
                 // Persist the selection per-harness to settings for next time.
                 CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
                     let mut map = settings.last_selected_harness_model.value().clone();
-                    map.insert(harness.config_name().to_string(), model_id.clone());
+                    if is_default {
+                        map.remove(harness.config_name());
+                    } else {
+                        map.insert(
+                            harness.config_name().to_string(),
+                            HarnessModelSelection {
+                                model_id: model_id.clone(),
+                                reasoning_level: reasoning_level.clone(),
+                            },
+                        );
+                    }
                     report_if_error!(settings.last_selected_harness_model.set_value(map, ctx));
                 });
                 self.set_menu_visibility(false, ctx);

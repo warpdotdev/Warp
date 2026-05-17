@@ -2557,6 +2557,7 @@ zh-CN:
     searching: "正在搜索"
     conversation_search_prefix: "{verb}"
     conversation_label_prefix: "会话 "
+    agent_run_label_prefix: "Agent 运行 "
     this_conversation: "此会话"
     query_suffix: "：{query}"
     ellipsis: "..."

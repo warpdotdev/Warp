@@ -11,6 +11,8 @@ use crate::{
     },
     pane_group::PaneGroup,
 };
+#[cfg(feature = "local_fs")]
+use std::path::PathBuf;
 
 use super::{
     DetachType, PaneConfiguration, PaneContent, PaneId, PaneView, ShareableLink, ShareableLinkError,
@@ -142,8 +144,9 @@ impl PaneContent for CodePane {
                         use crate::code::opened_files::OpenedFilesModel;
                         use repo_metadata::repositories::DetectedRepositories;
 
-                        if let Some(repo_path) =
-                            DetectedRepositories::as_ref(ctx).get_root_for_path(file_path)
+                        if let Some(repo_path) = DetectedRepositories::as_ref(ctx)
+                            .get_root_for_path(&LocalOrRemotePath::Local(file_path.to_path_buf()))
+                            .and_then(|r| PathBuf::try_from(r).ok())
                         {
                             OpenedFilesModel::handle(ctx).update(ctx, |opened_files, ctx| {
                                 opened_files.file_opened(repo_path, file_path.clone(), ctx);
