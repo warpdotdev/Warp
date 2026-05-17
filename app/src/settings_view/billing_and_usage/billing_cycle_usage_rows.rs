@@ -436,6 +436,14 @@ fn format_cost_cents(cents: i64) -> String {
 /// team_max_credits` (clamped to a minimum of 5%), with each segment
 /// proportional to its slice of `total_credits`. The unfilled portion uses
 /// the muted track color.
+///
+/// The bar sits flush against the top edge of the row card, so we round
+/// the leftmost and rightmost children to match the card's `with_top`
+/// corner radius. `Container::with_corner_radius` only rounds the
+/// element's own painted rect (it doesn't clip its child), so we have to
+/// apply the radii on the actual segment containers — wrapping the whole
+/// bar in a rounded `Container` would leave the rectangular colored
+/// children visibly overflowing into the corner.
 fn render_stacked_bar(
     segments: &[BarSegment],
     total_credits: i64,
@@ -444,11 +452,14 @@ fn render_stacked_bar(
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
     let track_bg = theme.surface_overlay_1();
+    let corner = Radius::Pixels(ROW_BORDER_RADIUS);
 
-    if team_max_credits == 0 || total_credits == 0 {
+    if team_max_credits == 0 || total_credits == 0 || segments.is_empty() {
+        // Empty bar: a single muted track, top-rounded on both ends.
         return ConstrainedBox::new(
             Container::new(Empty::new().finish())
                 .with_background(track_bg)
+                .with_corner_radius(CornerRadius::with_top(corner))
                 .finish(),
         )
         .with_height(BAR_HEIGHT)
@@ -457,20 +468,33 @@ fn render_stacked_bar(
 
     let fill_ratio = (total_credits as f32 / team_max_credits as f32).clamp(MIN_FILL_RATIO, 1.0);
     let unfill_ratio = 1.0 - fill_ratio;
+    let has_unfill = unfill_ratio > 0.0;
+    let last_segment_idx = segments.len() - 1;
 
-    // Build the filled portion: one Expanded child per segment, weighted by
-    // the segment's share of `total_credits`.
+    // Build the filled portion: one Expanded child per segment, weighted
+    // by the segment's share of `total_credits`. The first segment gets a
+    // rounded top-left; the last segment gets a rounded top-right only if
+    // there's no muted track tail after it.
     let mut filled = Flex::row();
-    for seg in segments {
+    for (idx, seg) in segments.iter().enumerate() {
         let weight = seg.credits as f32 / total_credits as f32;
         if weight <= 0.0 {
             continue;
         }
+        let is_first = idx == 0;
+        let is_last_visible = idx == last_segment_idx && !has_unfill;
+        let segment_corner = match (is_first, is_last_visible) {
+            (true, true) => CornerRadius::with_top(corner),
+            (true, false) => CornerRadius::with_top_left(corner),
+            (false, true) => CornerRadius::with_top_right(corner),
+            (false, false) => CornerRadius::default(),
+        };
         filled.add_child(
             Expanded::new(
                 weight,
                 Container::new(Empty::new().finish())
                     .with_background_color(cost_type_color(&seg.cost_type))
+                    .with_corner_radius(segment_corner)
                     .finish(),
             )
             .finish(),
@@ -479,12 +503,13 @@ fn render_stacked_bar(
 
     let mut bar = Flex::row();
     bar.add_child(Expanded::new(fill_ratio, filled.finish()).finish());
-    if unfill_ratio > 0.0 {
+    if has_unfill {
         bar.add_child(
             Expanded::new(
                 unfill_ratio,
                 Container::new(Empty::new().finish())
                     .with_background(track_bg)
+                    .with_corner_radius(CornerRadius::with_top_right(corner))
                     .finish(),
             )
             .finish(),
