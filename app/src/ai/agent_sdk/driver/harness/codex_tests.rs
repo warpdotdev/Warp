@@ -182,13 +182,14 @@ fn prepare_codex_environment_config_honors_codex_home() {
         OsString::from("sk-from-secret"),
     )]);
 
+    let model_config = harness_model_config("gpt-5.5", None);
     let result = prepare_codex_environment_config(
         &working_dir,
         Some("system prompt"),
         &resolved,
         &HashMap::new(),
         &HashMap::new(),
-        Some("gpt-5.5"),
+        Some(&model_config),
     );
 
     match prev_codex_home {

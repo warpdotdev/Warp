@@ -27,8 +27,8 @@ use warp_managed_secrets::ManagedSecretValue;
 use super::super::terminal::{CommandHandle, TerminalDriver};
 use super::super::{AgentDriver, AgentDriverError};
 use super::claude_transcript::{
-    claude_config_dir, read_envelope, write_envelope, write_session_index_entry, ClaudeResumeInfo,
-    ClaudeTranscriptEnvelope,
+    claude_config_dir, home_dir_for_claude_config, read_envelope, write_envelope,
+    write_session_index_entry, ClaudeResumeInfo, ClaudeTranscriptEnvelope,
 };
 use super::json_utils::{read_json_file_or_default, write_json_file};
 use super::{
@@ -594,7 +594,7 @@ fn claude_global_config_path() -> Result<PathBuf> {
         }
     }
 
-    dirs::home_dir()
+    home_dir_for_claude_config()
         .map(|home| home.join(CLAUDE_JSON_FILE_NAME))
         .ok_or_else(|| anyhow::anyhow!("could not determine home directory"))
 }
