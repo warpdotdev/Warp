@@ -767,10 +767,10 @@ fn build_row_card(
         );
     }
 
-    // Credit + cost cluster: `[coin] X[/limit]   [credits-icon] $cost`.
-    // We don't have a dedicated credit-card icon in the bundled set yet, so
-    // `Icon::Credits` stands in to the left of the cost value. Swap to a
-    // real credit-card icon when one is added.
+    // Credit + cost cluster: `[coin] X[/limit]   [card] $cost`. Uses
+    // `Icon::Credits` (the same coin icon as the "Buy credits"
+    // denomination buttons) for the credits side and `Icon::CreditCard`
+    // for the cost side.
     let credits_str = match row.base_limit {
         Some(limit) => format!(
             "{}/{}",
@@ -796,11 +796,11 @@ fn build_row_card(
     // `to_warpui_icon` takes a `Fill`, so use the theme helper that already
     // returns one rather than wrapping a `ColorU` from `blended_colors`.
     let icon_color = theme.sub_text_color(theme.background());
-    let coin_icon = ConstrainedBox::new(Icon::CoinsStacked.to_warpui_icon(icon_color).finish())
+    let coin_icon = ConstrainedBox::new(Icon::Credits.to_warpui_icon(icon_color).finish())
         .with_width(ROW_ICON_SIZE)
         .with_height(ROW_ICON_SIZE)
         .finish();
-    let card_icon = ConstrainedBox::new(Icon::Credits.to_warpui_icon(icon_color).finish())
+    let card_icon = ConstrainedBox::new(Icon::CreditCard.to_warpui_icon(icon_color).finish())
         .with_width(ROW_ICON_SIZE)
         .with_height(ROW_ICON_SIZE)
         .finish();
