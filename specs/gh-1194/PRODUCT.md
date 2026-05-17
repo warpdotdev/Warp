@@ -28,21 +28,31 @@ Warp's UI is entirely hardcoded in English. Non-English-speaking developers must
 
 1.1. The active locale is always exactly `"zh-CN"` or `"en"`. These are the only two supported locales. The determination is:
 
-    A candidate locale string is selected from the first available source:
+    Candidate locale strings are selected from the first available source:
     1. `WARP_LANG` environment variable
-    2. `LANG`, `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` environment variables
+    2. `LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG` environment variables
     3. Platform-native system locale API
     4. Default: `"en"`
 
-    The candidate is then classified:
+    Each candidate is normalized before classification:
+    - Trim whitespace.
+    - For `LANGUAGE`, split colon-separated preference lists and evaluate each entry in order.
+    - Strip encoding and modifier suffixes after `.` or `@` (for example, `.UTF-8`, `.utf8`, `@pinyin`).
+    - Treat `_` and `-` as equivalent separators, and compare language/script/region subtags case-insensitively.
+
+    The first supported normalized candidate is then classified:
     - `zh`, `zh-CN`, `zh_CN`, `zh-Hans*`, or `zh_Hans*` → `"zh-CN"`
     - Everything else, including `zh-TW`, `zh-HK`, `zh-Hant*`, and other non-Simplified Chinese locales → `"en"`
+    - `WARP_LANG` is an explicit override: if it is set but does not resolve to zh-CN, the active locale is `"en"` and no lower-priority source is consulted.
 
     Examples:
     - `WARP_LANG=zh-CN` → "zh-CN" candidate → zh-CN
+    - `WARP_LANG=zh_CN.UTF-8` → "zh-CN" candidate → zh-CN
     - `WARP_LANG=zh-Hans` → "zh-Hans" candidate → zh-CN
     - `WARP_LANG=zh-TW` → "zh-TW" candidate → en (Traditional Chinese is not shipped yet)
     - `WARP_LANG=fr` → "fr" candidate → en (non-zh candidate, no fallthrough to system)
+    - `LANGUAGE=fr:zh_CN:en` with `WARP_LANG` unset → first supported candidate is "zh-CN" → zh-CN
+    - `LANG=zh_CN.UTF-8@pinyin` → "zh-CN" candidate → zh-CN
     - No env vars, Simplified Chinese OS → system "zh-CN" → zh-CN
     - No env vars, Traditional Chinese OS → system "zh-TW" → en (Traditional Chinese is not shipped yet)
     - No env vars, English OS → system "en_US" → en
@@ -100,7 +110,9 @@ Warp's UI is entirely hardcoded in English. Non-English-speaking developers must
 
 6.3. Security-sensitive UI must not degrade to raw dot-path keys. Auth, billing, sharing/permission, and agent-consent surfaces must either render meaningful embedded English fallback text or fail closed by disabling the affected action and showing a readable English error.
 
-6.4. The English locale file (`en.yml`) is always loaded regardless of the active locale, to serve as the fallback.
+6.4. Security-sensitive call sites must use the required-translation API defined in the technical spec. That API accepts an embedded English fallback string and records the key as security-sensitive for automated checks. Raw-key fallback is allowed only for ordinary UI that has no auth, billing, permission, privacy, sharing, or agent-consent meaning.
+
+6.5. The English locale file (`en.yml`) is always loaded regardless of the active locale, to serve as the fallback.
 
 ### 7. Platform consistency
 
