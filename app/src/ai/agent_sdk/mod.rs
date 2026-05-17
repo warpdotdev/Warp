@@ -64,7 +64,7 @@ use warp_graphql::object_permissions::OwnerType;
 
 use crate::ai::attachment_utils::attachments_download_dir;
 use crate::ai::skills::{
-    clone_repo_for_skill, resolve_skill_spec, ResolveSkillError, ResolvedSkill,
+    clone_repo_for_skill, resolve_skill_spec, ResolveSkillError, ResolvedSkill, SkillManager,
 };
 
 pub(crate) use driver::harness::{task_env_vars, validate_cli_installed, ClaudeHarness};
@@ -248,7 +248,7 @@ fn run_agent(
                     "unexpected argument '--conversation' found"
                 ));
             }
-            if args.skill.is_some() && !FeatureFlag::OzPlatformSkills.is_enabled() {
+            if !args.skill.is_empty() && !FeatureFlag::OzPlatformSkills.is_enabled() {
                 return Err(anyhow::anyhow!("unexpected argument '--skill' found"));
             }
             if args.harness != Harness::Oz && !FeatureFlag::AgentHarness.is_enabled() {
@@ -749,44 +749,72 @@ impl AgentDriverRunner {
     /// In sandboxed mode with a fully-qualified spec (org + repo), the repo is
     /// cloned first since it may not exist locally. Otherwise we resolve directly
     /// against the local filesystem.
-    async fn resolve_skill(
+    async fn resolve_skills(
         foreground: &ModelSpawner<Self>,
         args: &RunAgentArgs,
         working_dir: &Path,
-    ) -> Result<Option<ResolvedSkill>, AgentDriverError> {
+    ) -> Result<Vec<ResolvedSkill>, AgentDriverError> {
         if !FeatureFlag::OzPlatformSkills.is_enabled() {
-            return Ok(None);
+            return Ok(Vec::new());
         }
-        let Some(skill_spec) = args.skill.clone() else {
-            return Ok(None);
-        };
+        if args.skill.is_empty() {
+            return Ok(Vec::new());
+        }
 
-        // In sandboxed mode with a fully-qualified spec, clone the repo first.
-        let needs_clone = args.sandboxed && skill_spec.org.is_some() && skill_spec.repo.is_some();
-        if needs_clone {
-            let org = skill_spec.org.as_ref().expect("org checked above");
-            let repo_name = skill_spec.repo.as_ref().expect("repo checked above");
-            log::info!("Cloning {org}/{repo_name} for skill resolution in sandboxed mode");
-            clone_repo_for_skill(org, repo_name, working_dir)
-                .await
+        let mut resolved_skills = Vec::with_capacity(args.skill.len());
+        for skill_spec in args.skill.clone() {
+            // In sandboxed mode with a fully-qualified spec, clone the repo first.
+            let needs_clone =
+                args.sandboxed && skill_spec.org.is_some() && skill_spec.repo.is_some();
+            if needs_clone {
+                let org = skill_spec.org.as_ref().expect("org checked above");
+                let repo_name = skill_spec.repo.as_ref().expect("repo checked above");
+                log::info!("Cloning {org}/{repo_name} for skill resolution in sandboxed mode");
+                clone_repo_for_skill(org, repo_name, working_dir)
+                    .await
+                    .map_err(|err| {
+                        AgentDriverError::SkillResolutionFailed(format_skill_resolution_error(err))
+                    })?;
+            }
+
+            let working_dir_buf = working_dir.to_path_buf();
+            let skill = foreground
+                .spawn(move |_, ctx| resolve_skill_spec(&skill_spec, &working_dir_buf, ctx))
+                .await?
                 .map_err(|err| {
                     AgentDriverError::SkillResolutionFailed(format_skill_resolution_error(err))
                 })?;
+            log::debug!(
+                "Resolved skill '{}' from {}",
+                skill.name,
+                skill.skill_path.display()
+            );
+            resolved_skills.push(skill);
         }
 
-        let working_dir_buf = working_dir.to_path_buf();
-        let skill = foreground
-            .spawn(move |_, ctx| resolve_skill_spec(&skill_spec, &working_dir_buf, ctx))
-            .await?
-            .map_err(|err| {
-                AgentDriverError::SkillResolutionFailed(format_skill_resolution_error(err))
-            })?;
-        log::debug!(
-            "Resolved skill '{}' from {}",
-            skill.name,
-            skill.skill_path.display()
-        );
-        Ok(Some(skill))
+        Ok(resolved_skills)
+    }
+
+    async fn add_resolved_skills_to_manager(
+        foreground: &ModelSpawner<Self>,
+        resolved_skills: &[ResolvedSkill],
+    ) -> Result<(), AgentDriverError> {
+        if resolved_skills.is_empty() {
+            return Ok(());
+        }
+
+        let skills = resolved_skills
+            .iter()
+            .map(|skill| skill.parsed_skill.clone())
+            .collect::<Vec<_>>();
+        foreground
+            .spawn(move |_, ctx| {
+                SkillManager::handle(ctx).update(ctx, |manager, _| {
+                    manager.handle_skills_added(skills);
+                });
+            })
+            .await?;
+        Ok(())
     }
 
     /// Build the AgentDriverOptions and Task, handling task creation or existing task setup.
@@ -808,20 +836,23 @@ impl AgentDriverRunner {
         }
         .map_err(AgentDriverError::ConfigBuildFailed)?;
 
-        // Resolve the skill, if we have one
-        let resolved_skill = Self::resolve_skill(foreground, &args, &working_dir).await?;
+        // Resolve any explicitly requested skills. Only the first is invoked,
+        // but every resolved skill is registered so the agent can read it later.
+        let resolved_skills = Self::resolve_skills(foreground, &args, &working_dir).await?;
+        Self::add_resolved_skills_to_manager(foreground, &resolved_skills).await?;
+        let invoked_skill = resolved_skills.first().cloned();
 
         // Extract variables we want to use later before moving args into the closure
         let task_id_str = args.task_id.clone();
         let prompt = args.prompt_arg.to_prompt();
-        let skill = args.skill.clone();
+        let skill = args.invoked_skill().cloned();
 
         // Build the AgentConfigSnapshot, Task, and AgentDriverOptions
         let prompt_clone = prompt.clone();
         let (merged_config, mut task, mut driver_options) = foreground
             .spawn(move |_, ctx| -> anyhow::Result<_> {
                 let (merged_config, task) =
-                    build_merged_config_and_task(&args, &resolved_skill, &prompt_clone, ctx)?;
+                    build_merged_config_and_task(&args, &invoked_skill, &prompt_clone, ctx)?;
 
                 let task_id = args.task_id.as_ref().and_then(|s| s.parse().ok());
                 let should_share = (args.share.is_shared() || args.task_id.is_some())
