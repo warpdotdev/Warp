@@ -8,6 +8,8 @@ use crate::ai::agent::{
     AIAgentInput, CreateDocumentsResult, EditDocumentsResult, ReadFilesResult, SubagentCall,
     SubagentType, TodoOperation, UploadArtifactResult,
 };
+use crate::ai::agent_conversations_model::AgentConversationsModel;
+use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::util::truncation::truncate_from_end;
 use ai::agent::file_locations::group_file_contexts_for_display;
 
@@ -941,6 +943,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                 SubagentType::ConversationSearch {
                                     ref query,
                                     ref conversation_id,
+                                    ref agent_run_id,
                                 },
                             task_id: subagent_task_id,
                         }) => {
@@ -969,13 +972,12 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                 icons::yellow_running_icon(appearance)
                             };
 
-                            // Resolve which conversation is being searched. If
-                            // conversation_id is set and differs from the current
-                            // conversation, try to resolve a display name from
-                            // the history model; otherwise label it "this
-                            // conversation".
-                            let conversation_label =
-                                conversation_id.as_ref().and_then(|target_id| {
+                            // Resolve which conversation is being searched. Conversation IDs use
+                            // conversation history titles; agent run IDs use ambient task titles
+                            // once fetched. If neither target exists, label it "this conversation".
+                            let target_label = conversation_id
+                                .as_ref()
+                                .and_then(|target_id| {
                                     let history = BlocklistAIHistoryModel::as_ref(app);
                                     let token = ServerConversationToken::new(target_id.clone());
                                     let local_id =
@@ -993,7 +995,25 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                     let title = target_conversation
                                         .and_then(|c| c.title())
                                         .map(|q| truncate_from_end(&q, 40));
-                                    Some(title.unwrap_or_else(|| target_id.clone()))
+                                    Some((
+                                        "conversation",
+                                        title.unwrap_or_else(|| target_id.clone()),
+                                    ))
+                                })
+                                .or_else(|| {
+                                    let target_id = agent_run_id.as_ref()?;
+                                    let title = target_id
+                                        .parse::<AmbientAgentTaskId>()
+                                        .ok()
+                                        .and_then(|task_id| {
+                                            AgentConversationsModel::as_ref(app)
+                                                .get_task_data(&task_id)
+                                        })
+                                        .map(|task| truncate_from_end(&task.title, 40));
+                                    Some((
+                                        "agent run",
+                                        title.unwrap_or_else(|| truncate_from_end(target_id, 40)),
+                                    ))
                                 });
 
                             let done = is_finished || is_cancelled;
@@ -1001,10 +1021,11 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
 
                             let mut fragments: Vec<FormattedTextFragment> =
                                 vec![FormattedTextFragment::plain_text(format!("{verb} "))];
-                            match &conversation_label {
-                                Some(name) => {
-                                    fragments
-                                        .push(FormattedTextFragment::plain_text("conversation "));
+                            match &target_label {
+                                Some((target_kind, name)) => {
+                                    fragments.push(FormattedTextFragment::plain_text(format!(
+                                        "{target_kind} "
+                                    )));
                                     fragments.push(FormattedTextFragment::weighted(
                                         name.as_str(),
                                         Some(markdown_parser::weight::CustomWeight::Bold),
