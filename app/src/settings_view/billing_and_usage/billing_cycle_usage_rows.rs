@@ -35,6 +35,15 @@ use crate::{
 const BAR_HEIGHT: f32 = 8.;
 const MIN_FILL_RATIO: f32 = 0.05;
 const ROW_BORDER_RADIUS: f32 = 8.;
+const ROW_BORDER_WIDTH: f32 = 1.;
+/// Corner radius for elements painted directly against the card's inner
+/// edge (e.g. the stacked bar's leftmost/rightmost ends). `Container`
+/// paints its child *inside* the border, so the bar starts
+/// `ROW_BORDER_WIDTH` pixels in from the card's outer edge. Using the
+/// card's full outer radius on the bar produces a visible 1px step
+/// between the bar's rounded corner and the card's rounded corner. The
+/// inner radius compensates so the two curves are flush.
+const BAR_CORNER_RADIUS: f32 = ROW_BORDER_RADIUS - ROW_BORDER_WIDTH;
 const ROW_PADDING: f32 = 12.;
 const TOOLTIP_GAP: f32 = 6.;
 const COST_TYPE_ORDER: &[AiCreditsUsageAndCostType] = &[
@@ -432,18 +441,6 @@ fn format_cost_cents(cents: i64) -> String {
     }
 }
 
-/// Stacked horizontal bar: filled portion sized to `total_credits /
-/// team_max_credits` (clamped to a minimum of 5%), with each segment
-/// proportional to its slice of `total_credits`. The unfilled portion uses
-/// the muted track color.
-///
-/// The bar sits flush against the top edge of the row card, so we round
-/// the leftmost and rightmost children to match the card's `with_top`
-/// corner radius. `Container::with_corner_radius` only rounds the
-/// element's own painted rect (it doesn't clip its child), so we have to
-/// apply the radii on the actual segment containers — wrapping the whole
-/// bar in a rounded `Container` would leave the rectangular colored
-/// children visibly overflowing into the corner.
 fn render_stacked_bar(
     segments: &[BarSegment],
     total_credits: i64,
@@ -452,7 +449,7 @@ fn render_stacked_bar(
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
     let track_bg = theme.surface_overlay_1();
-    let corner = Radius::Pixels(ROW_BORDER_RADIUS);
+    let corner = Radius::Pixels(BAR_CORNER_RADIUS);
 
     if team_max_credits == 0 || total_credits == 0 || segments.is_empty() {
         // Empty bar: a single muted track, top-rounded on both ends.
@@ -667,9 +664,12 @@ fn build_row_card(
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
-    let surface_bg = theme.surface_1();
-    let main = blended_colors::text_main(theme, surface_bg);
-    let sub = blended_colors::text_sub(theme, surface_bg);
+    // Match the tooltip: sit on the page background with just the outline
+    // border for definition, so the rows read as part of the page rather
+    // than a separate surface tier.
+    let card_bg = theme.background().into_solid();
+    let main = blended_colors::text_main(theme, card_bg);
+    let sub = blended_colors::text_sub(theme, card_bg);
 
     let bar = render_stacked_bar(
         &row.segments,
@@ -740,8 +740,8 @@ fn build_row_card(
             .with_child(body)
             .finish(),
     )
-    .with_background_color(theme.surface_1().into_solid())
-    .with_border(Border::all(1.).with_border_color(theme.surface_3().into_solid()))
+    .with_background_color(card_bg)
+    .with_border(Border::all(ROW_BORDER_WIDTH).with_border_color(theme.outline().into_solid()))
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(ROW_BORDER_RADIUS)))
     .finish()
 }
@@ -946,7 +946,7 @@ fn render_empty_filter_state(
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
-    let bg = theme.surface_1();
+    let bg = theme.background().into_solid();
     let text = match source_filter {
         SourceFilter::All => "No usage this period",
         SourceFilter::Local => "No local usage this period",
@@ -967,7 +967,8 @@ fn render_empty_filter_state(
             )
             .finish(),
     )
-    .with_background_color(theme.surface_1().into_solid())
+    .with_background_color(bg)
+    .with_border(Border::all(1.).with_border_color(theme.outline().into_solid()))
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(ROW_BORDER_RADIUS)))
     .with_vertical_padding(24.)
     .finish()
