@@ -448,19 +448,14 @@ impl AuthSecretFtuxView {
         let sub_color = internal_colors::text_sub(theme, theme.surface_1());
         let accent_color = theme.accent().into_solid();
 
-        let main_text = if let Some(info) = self.current_type_info() {
-            Text::new_inline(
-                info.header_text.to_string(),
-                font_family,
-                DESCRIPTION_FONT_SIZE,
-            )
-            .with_color(theme.foreground().into())
-            .finish()
-        } else {
-            let harness = self.ambient_agent_model.as_ref(app).selected_harness();
-            let display_name = harness_display::display_name(harness);
-            let description =
-                format!("Please select an API key to use {display_name} in the cloud with Oz.");
+        let main_text = {
+            let description = if self.current_type_info().is_some() {
+                "Enter your credentials below.".to_string()
+            } else {
+                let harness = self.ambient_agent_model.as_ref(app).selected_harness();
+                let display_name = harness_display::display_name(harness);
+                format!("Select an API key type to use {display_name} in the cloud with Oz.")
+            };
             Text::new_inline(description, font_family, DESCRIPTION_FONT_SIZE)
                 .with_color(theme.foreground().into())
                 .soft_wrap(true)

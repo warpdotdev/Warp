@@ -16,7 +16,6 @@ pub struct AuthSecretTypeInfo {
     pub display_name: &'static str,
     pub secret_type: ManagedSecretType,
     pub fields: &'static [AuthSecretTypeField],
-    pub header_text: &'static str,
     pub learn_more_url: &'static str,
 }
 
@@ -102,7 +101,6 @@ pub fn build_managed_secret_value(
 static CODEX_AUTH_SECRET_TYPES: [AuthSecretTypeInfo; 1] = [AuthSecretTypeInfo {
     display_name: "OpenAI API Key",
     secret_type: ManagedSecretType::OpenaiApiKey,
-    header_text: "Please paste in an OpenAI API Key.",
     learn_more_url: CODEX_LEARN_MORE_URL,
     fields: &[
         AuthSecretTypeField {
@@ -124,7 +122,6 @@ static CLAUDE_AUTH_SECRET_TYPES: [AuthSecretTypeInfo; 3] = [
     AuthSecretTypeInfo {
         display_name: "Anthropic API Key",
         secret_type: ManagedSecretType::AnthropicApiKey,
-        header_text: "Please paste in an Anthropic API Key.",
         learn_more_url: CLAUDE_LEARN_MORE_URL,
         fields: &[AuthSecretTypeField {
             label: "ANTHROPIC_API_KEY",
@@ -136,7 +133,6 @@ static CLAUDE_AUTH_SECRET_TYPES: [AuthSecretTypeInfo; 3] = [
     AuthSecretTypeInfo {
         display_name: "Bedrock API Key",
         secret_type: ManagedSecretType::AnthropicBedrockApiKey,
-        header_text: "Please paste in a Bedrock token.",
         learn_more_url: CLAUDE_LEARN_MORE_URL,
         fields: &[
             AuthSecretTypeField {
@@ -156,7 +152,6 @@ static CLAUDE_AUTH_SECRET_TYPES: [AuthSecretTypeInfo; 3] = [
     AuthSecretTypeInfo {
         display_name: "Bedrock Access Key",
         secret_type: ManagedSecretType::AnthropicBedrockAccessKey,
-        header_text: "Please paste in a Bedrock Access Key.",
         learn_more_url: CLAUDE_LEARN_MORE_URL,
         fields: &[
             AuthSecretTypeField {
