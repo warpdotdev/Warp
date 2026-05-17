@@ -185,9 +185,6 @@ impl TerminalView {
         task_id: AmbientAgentTaskId,
         ctx: &mut ViewContext<Self>,
     ) {
-        if !self.is_conversation_details_panel_open {
-            self.suppress_initial_conversation_details_panel_auto_open();
-        }
         self.pending_cloud_followup_task_id = Some(task_id);
         self.input.update(ctx, |input, ctx| {
             input.reset_after_cloud_followup_submission(ctx);
