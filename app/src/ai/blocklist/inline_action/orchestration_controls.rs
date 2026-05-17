@@ -901,10 +901,11 @@ pub fn resolve_default_auth_secret_for_harness(
     }
 }
 
-/// `true` when the picker is showing "+ New API key…" (Unset + non-Oz +
-/// has managed-secret types + secrets loaded) and Accept must be blocked.
-/// Stays permissive while secrets are mid-fetch.
-pub fn auth_secret_creation_required(state: &OrchestrationEditState, ctx: &AppContext) -> bool {
+/// `true` when the user must pick an API key (or Inherit) before Accept is
+/// allowed. Fires on `Unset` for any non-Oz cloud harness with managed-secret
+/// types, regardless of fetch state — dispatching with an unintended
+/// `Inherit` while secrets are still loading would fail downstream.
+pub fn auth_secret_selection_required(state: &OrchestrationEditState, _ctx: &AppContext) -> bool {
     if !should_show_auth_secret_picker(state) {
         return false;
     }
@@ -917,15 +918,11 @@ pub fn auth_secret_creation_required(state: &OrchestrationEditState, ctx: &AppCo
     if harness == Harness::Oz || auth_secret_types_for_harness(harness).is_empty() {
         return false;
     }
-    let availability = HarnessAvailabilityModel::as_ref(ctx);
-    matches!(
-        availability.auth_secrets_for(harness),
-        AuthSecretFetchState::Loaded(_)
-    )
+    true
 }
 
 /// [`OrchestrationEditState::accept_disabled_reason`] plus the
-/// auth-secret-creation gate. Card views should prefer this.
+/// auth-secret-selection gate. Card views should prefer this.
 pub fn accept_disabled_reason_with_auth(
     state: &OrchestrationEditState,
     ctx: &AppContext,
@@ -933,8 +930,8 @@ pub fn accept_disabled_reason_with_auth(
     if let Some(reason) = state.accept_disabled_reason() {
         return Some(reason.to_string());
     }
-    if auth_secret_creation_required(state, ctx) {
-        return Some("Create an API key for this harness to continue.".to_string());
+    if auth_secret_selection_required(state, ctx) {
+        return Some("Select an API key for this harness to continue.".to_string());
     }
     None
 }
