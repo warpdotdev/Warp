@@ -7,10 +7,10 @@ use thousands::Separable;
 use warp_core::ui::appearance::Appearance;
 use warpui::{
     elements::{
-        Border, ChildAnchor, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
-        Expanded, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,
-        OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Shrinkable,
-        Stack, Text,
+        Align, Border, ChildAnchor, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
+        DropShadow, Empty, Expanded, Flex, Hoverable, MainAxisAlignment, MainAxisSize,
+        MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds,
+        Radius, Shrinkable, Stack, Text,
     },
     fonts::{Properties, Weight},
     platform::Cursor,
@@ -22,7 +22,7 @@ use crate::{
         AMBIENT_CREDITS_DOT_COLOR, BASE_CREDITS_DOT_COLOR, BONUS_CREDITS_DOT_COLOR,
         PAYG_CREDITS_DOT_COLOR,
     },
-    ui_components::blended_colors,
+    ui_components::{blended_colors, icons::Icon},
     workspaces::workspace::{
         AiCreditsUsageAndCostSubjectType, AiCreditsUsageAndCostType, AiCreditsUsageBucket,
         AiCreditsUsageSource, BillingCycleUsageEntry, UsageVisibilityGranularity, Workspace,
@@ -36,6 +36,17 @@ const BAR_HEIGHT: f32 = 8.;
 const MIN_FILL_RATIO: f32 = 0.05;
 const ROW_BORDER_RADIUS: f32 = 8.;
 const ROW_BORDER_WIDTH: f32 = 1.;
+/// Size of the leading icons in the row credit cluster (coin + credit-card).
+const ROW_ICON_SIZE: f32 = 12.;
+/// Gap between the coin/credit cluster and the cost cluster on a row. Two
+/// pixels larger than the within-cluster icon-to-text gap (4px) so the
+/// credits and cost read as distinct columns.
+const ROW_CLUSTER_GAP: f32 = 6.;
+/// Right-aligned fixed widths for the tooltip's credit and cost columns,
+/// so the numbers line up vertically across rows even though each row is
+/// laid out independently.
+const TOOLTIP_CREDITS_COL_WIDTH: f32 = 60.;
+const TOOLTIP_COST_COL_WIDTH: f32 = 64.;
 /// Corner radius for elements painted directly against the card's inner
 /// edge (e.g. the stacked bar's leftmost/rightmost ends). `Container`
 /// paints its child *inside* the border, so the bar starts
@@ -133,11 +144,25 @@ pub struct MemberUsageRow {
     pub display_name: String,
     pub total_credits: i64,
     pub total_cost_cents: i64,
+    /// Per-user base credit limit, if the row is a workspace member with a
+    /// finite base limit. `None` for service accounts, team-aggregate
+    /// rows, and members marked `is_unlimited`. When `Some`, the row
+    /// renders `total_credits / base_limit` instead of just
+    /// `total_credits`.
+    pub base_limit: Option<i64>,
     /// Segments sorted by [`COST_TYPE_ORDER`] then [`BUCKET_ORDER`], with
     /// any zero-credit entries filtered out. Used both for the stacked bar
     /// and as the source of the per-cost-type breakdown shown in the row's
     /// hover tooltip.
     pub segments: Vec<BarSegment>,
+}
+
+fn member_base_limit(member: &WorkspaceMember) -> Option<i64> {
+    if member.usage_info.is_unlimited {
+        None
+    } else {
+        Some(member.usage_info.request_limit as i64)
+    }
 }
 
 /// Returns the next-cycle reset / period-end label color and label for one
@@ -254,6 +279,7 @@ pub fn build_own_usage_row(
     entries: &[BillingCycleUsageEntry],
     viewer_uid: Option<&str>,
     viewer_display_name: String,
+    viewer_base_limit: Option<i64>,
     source_filter: SourceFilter,
 ) -> MemberUsageRow {
     let viewer_entries: Vec<&BillingCycleUsageEntry> = entries
@@ -283,6 +309,7 @@ pub fn build_own_usage_row(
         display_name: viewer_display_name,
         total_credits,
         total_cost_cents,
+        base_limit: viewer_base_limit,
         segments,
     }
 }
@@ -307,6 +334,8 @@ pub fn build_team_aggregate_row(
         display_name: "Team total".to_string(),
         total_credits,
         total_cost_cents,
+        // Team aggregate is not bound by any individual base limit.
+        base_limit: None,
         segments,
     }
 }
@@ -383,6 +412,7 @@ pub fn build_member_usage_rows(
             display_name: member.email.clone(),
             total_credits,
             total_cost_cents,
+            base_limit: member_base_limit(member),
             segments,
         });
     }
@@ -401,6 +431,9 @@ pub fn build_member_usage_rows(
             display_name,
             total_credits,
             total_cost_cents,
+            // Service accounts and other non-member subjects don't have a
+            // per-user base limit.
+            base_limit: None,
             segments,
         });
     }
@@ -546,51 +579,16 @@ fn render_usage_tooltip_content(row: &MemberUsageRow, appearance: &Appearance) -
             )
         };
 
-        let swatch = ConstrainedBox::new(
-            Container::new(Empty::new().finish())
-                .with_background_color(cost_type_color(&line.cost_type))
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(2.)))
-                .finish(),
-        )
-        .with_width(10.)
-        .with_height(10.)
-        .finish();
-
-        let label_text = Text::new_inline(label, font_family, 12.)
-            .with_color(sub)
-            .finish();
-        let credits_text = Text::new_inline(
-            format!("{} cr", format_credits(line.credits)),
+        column.add_child(render_tooltip_row(
+            Some(cost_type_color(&line.cost_type)),
+            label,
+            line.credits,
+            line.cost_cents,
+            sub,
+            main,
             font_family,
-            12.,
-        )
-        .with_color(sub)
-        .finish();
-        let cost_text = Text::new_inline(format_cost_cents(line.cost_cents), font_family, 12.)
-            .with_color(main)
-            .finish();
-
-        column.add_child(
-            Flex::row()
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-                .with_main_axis_size(MainAxisSize::Max)
-                .with_child(
-                    Flex::row()
-                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                        .with_child(swatch)
-                        .with_child(Container::new(label_text).with_margin_left(8.).finish())
-                        .finish(),
-                )
-                .with_child(
-                    Flex::row()
-                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                        .with_child(credits_text)
-                        .with_child(Container::new(cost_text).with_margin_left(12.).finish())
-                        .finish(),
-                )
-                .finish(),
-        );
+            /* bold */ false,
+        ));
     }
 
     // Total row, separated by a thin divider line.
@@ -601,43 +599,16 @@ fn render_usage_tooltip_content(row: &MemberUsageRow, appearance: &Appearance) -
             .finish(),
     );
 
-    let total_label = Text::new_inline("Total usage", font_family, 12.)
-        .with_color(main)
-        .with_style(Properties::default().weight(Weight::Semibold))
-        .finish();
-    let total_credits_text = Text::new_inline(
-        format!("{} cr", format_credits(row.total_credits)),
+    column.add_child(render_tooltip_row(
+        /* no swatch on the total row */ None,
+        "Total usage".to_string(),
+        row.total_credits,
+        row.total_cost_cents,
+        main,
+        main,
         font_family,
-        12.,
-    )
-    .with_color(main)
-    .with_style(Properties::default().weight(Weight::Semibold))
-    .finish();
-    let total_cost_text =
-        Text::new_inline(format_cost_cents(row.total_cost_cents), font_family, 12.)
-            .with_color(main)
-            .with_style(Properties::default().weight(Weight::Semibold))
-            .finish();
-
-    column.add_child(
-        Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_child(total_label)
-            .with_child(
-                Flex::row()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_child(total_credits_text)
-                    .with_child(
-                        Container::new(total_cost_text)
-                            .with_margin_left(12.)
-                            .finish(),
-                    )
-                    .finish(),
-            )
-            .finish(),
-    );
+        /* bold */ true,
+    ));
 
     ConstrainedBox::new(
         Container::new(column.finish())
@@ -647,11 +618,98 @@ fn render_usage_tooltip_content(row: &MemberUsageRow, appearance: &Appearance) -
             // reads as part of the same surface family.
             .with_border(Border::all(1.).with_border_color(theme.outline().into_solid()))
             .with_uniform_padding(10.)
+            // Soft drop shadow so the tooltip clearly floats above the rows.
+            .with_drop_shadow(
+                DropShadow::new_with_standard_offset_and_spread(ColorU::new(0, 0, 0, 48))
+                    .with_offset(vec2f(0., 4.)),
+            )
             .finish(),
     )
     .with_min_width(240.)
     .with_max_width(360.)
     .finish()
+}
+
+/// Single row inside the tooltip. Lays out as three columns to keep
+/// numbers aligned vertically across rows:
+/// `[swatch + label | flex spacer | credits/$cost cluster]`. The credits
+/// and `$cost` text are each right-aligned inside fixed-width
+/// `ConstrainedBox`es so columns line up even though rows are laid out
+/// independently.
+#[allow(clippy::too_many_arguments)]
+fn render_tooltip_row(
+    swatch_color: Option<ColorU>,
+    label: String,
+    credits: i64,
+    cost_cents: i64,
+    label_color: ColorU,
+    value_color: ColorU,
+    font_family: warpui::fonts::FamilyId,
+    bold: bool,
+) -> Box<dyn Element> {
+    let style = if bold {
+        Properties::default().weight(Weight::Semibold)
+    } else {
+        Properties::default()
+    };
+
+    let label_text = Text::new_inline(label, font_family, 12.)
+        .with_color(label_color)
+        .with_style(style)
+        .finish();
+
+    let mut left = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
+    if let Some(color) = swatch_color {
+        left.add_child(
+            ConstrainedBox::new(
+                Container::new(Empty::new().finish())
+                    .with_background_color(color)
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(2.)))
+                    .finish(),
+            )
+            .with_width(10.)
+            .with_height(10.)
+            .finish(),
+        );
+        left.add_child(Container::new(label_text).with_margin_left(8.).finish());
+    } else {
+        left.add_child(label_text);
+    }
+
+    let credits_text = Text::new_inline(format_credits(credits), font_family, 12.)
+        .with_color(value_color)
+        .with_style(style)
+        .finish();
+    let cost_text = Text::new_inline(format_cost_cents(cost_cents), font_family, 12.)
+        .with_color(value_color)
+        .with_style(style)
+        .finish();
+    let divider = Text::new_inline("/".to_string(), font_family, 12.)
+        .with_color(label_color)
+        .with_style(style)
+        .finish();
+
+    let credits_col = ConstrainedBox::new(Align::new(credits_text).right().finish())
+        .with_width(TOOLTIP_CREDITS_COL_WIDTH)
+        .finish();
+    let cost_col = ConstrainedBox::new(Align::new(cost_text).right().finish())
+        .with_width(TOOLTIP_COST_COL_WIDTH)
+        .finish();
+
+    let right = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_child(credits_col)
+        .with_child(Container::new(divider).with_horizontal_margin(6.).finish())
+        .with_child(cost_col)
+        .finish();
+
+    Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+        .with_main_axis_size(MainAxisSize::Max)
+        .with_child(Shrinkable::new(1., left.finish()).finish())
+        .with_child(right)
+        .finish()
 }
 
 /// Build a single row card (stacked bar + name/total). Shared between the
@@ -709,17 +767,63 @@ fn build_row_card(
         );
     }
 
-    let credits_text = Text::new_inline(
-        format!(
-            "{} cr · {}",
+    // Credit + cost cluster: `[coin] X[/limit]   [credits-icon] $cost`.
+    // We don't have a dedicated credit-card icon in the bundled set yet, so
+    // `Icon::Credits` stands in to the left of the cost value. Swap to a
+    // real credit-card icon when one is added.
+    let credits_str = match row.base_limit {
+        Some(limit) => format!(
+            "{}/{}",
             format_credits(row.total_credits),
-            format_cost_cents(row.total_cost_cents)
+            format_credits(limit)
         ),
+        None => format_credits(row.total_credits),
+    };
+    let credits_text = Text::new_inline(
+        credits_str,
         appearance.ui_font_family(),
         appearance.ui_font_size(),
     )
     .with_color(main)
     .finish();
+    let cost_text = Text::new_inline(
+        format_cost_cents(row.total_cost_cents),
+        appearance.ui_font_family(),
+        appearance.ui_font_size(),
+    )
+    .with_color(main)
+    .finish();
+    // `to_warpui_icon` takes a `Fill`, so use the theme helper that already
+    // returns one rather than wrapping a `ColorU` from `blended_colors`.
+    let icon_color = theme.sub_text_color(theme.background());
+    let coin_icon = ConstrainedBox::new(Icon::CoinsStacked.to_warpui_icon(icon_color).finish())
+        .with_width(ROW_ICON_SIZE)
+        .with_height(ROW_ICON_SIZE)
+        .finish();
+    let card_icon = ConstrainedBox::new(Icon::Credits.to_warpui_icon(icon_color).finish())
+        .with_width(ROW_ICON_SIZE)
+        .with_height(ROW_ICON_SIZE)
+        .finish();
+    let credits_cluster = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_child(coin_icon)
+        .with_child(Container::new(credits_text).with_margin_left(4.).finish())
+        .finish();
+    let cost_cluster = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_child(card_icon)
+        .with_child(Container::new(cost_text).with_margin_left(4.).finish())
+        .finish();
+
+    let credits_and_cost = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_child(credits_cluster)
+        .with_child(
+            Container::new(cost_cluster)
+                .with_margin_left(ROW_CLUSTER_GAP)
+                .finish(),
+        )
+        .finish();
 
     let body = Container::new(
         Flex::row()
@@ -727,7 +831,11 @@ fn build_row_card(
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
             .with_main_axis_size(MainAxisSize::Max)
             .with_child(Shrinkable::new(1., name_row.finish()).finish())
-            .with_child(Container::new(credits_text).with_margin_left(16.).finish())
+            .with_child(
+                Container::new(credits_and_cost)
+                    .with_margin_left(16.)
+                    .finish(),
+            )
             .finish(),
     )
     .with_uniform_padding(ROW_PADDING)
@@ -862,7 +970,23 @@ pub fn render_rows(
     match visibility.granularity {
         UsageVisibilityGranularity::OwnOnly => {
             let display_name = viewer_display_name.unwrap_or("Your usage").to_string();
-            let row = build_own_usage_row(entries, viewer_uid, display_name, source_filter);
+            // If the viewer is a workspace member with a finite request
+            // limit, surface their base limit on the row so they see
+            // `used / limit` like admins see for other members.
+            let viewer_base_limit = viewer_uid.and_then(|uid| {
+                workspace
+                    .members
+                    .iter()
+                    .find(|m| m.uid.as_str() == uid)
+                    .and_then(member_base_limit)
+            });
+            let row = build_own_usage_row(
+                entries,
+                viewer_uid,
+                display_name,
+                viewer_base_limit,
+                source_filter,
+            );
             let tooltip_state = mouse_states.tooltip_mouse_state(&row.subject_key);
             let max_credits = row.total_credits.max(1);
             column.add_child(render_member_row(

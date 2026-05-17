@@ -81,7 +81,15 @@ impl BillingCycleUsageSectionView {
         ctx.subscribe_to_model(&AuthManager::handle(ctx), |_, _, _, ctx| ctx.notify());
         ctx.subscribe_to_model(&TeamUpdateManager::handle(ctx), |_, _, _, ctx| ctx.notify());
 
-        let period_menu = ctx.add_typed_action_view(|_| Menu::new().with_drop_shadow());
+        // `prevent_interaction_with_other_elements` so a click on the
+        // trigger button while the menu is open is consumed by the menu's
+        // outside-click dismiss handler — without it, the trigger also
+        // received the click and immediately re-toggled the menu open.
+        let period_menu = ctx.add_typed_action_view(|_| {
+            Menu::new()
+                .with_drop_shadow()
+                .prevent_interaction_with_other_elements()
+        });
         ctx.subscribe_to_view(&period_menu, |me, _, event, ctx| {
             if let menu::Event::Close { .. } = event {
                 me.period_menu_open = false;
