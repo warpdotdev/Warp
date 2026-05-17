@@ -6,6 +6,7 @@ use ai::agent::action::RunAgentsExecutionMode;
 use ai::agent::orchestration_config::OrchestrationConfigStatus;
 use pathfinder_color::ColorU;
 use std::collections::HashMap;
+use warp_cli::agent::Harness;
 use warpui::elements::{
     ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Flex, Hoverable,
     MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Text,
@@ -14,9 +15,12 @@ use warpui::fonts::{Properties, Weight};
 use warpui::platform::Cursor;
 use warpui::{AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext};
 
+use crate::workspace::WorkspaceAction;
+
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::blocklist::inline_action::orchestration_controls::{
-    self as oc, OrchestrationControlAction, OrchestrationEditState, OrchestrationPickerHandles,
+    self as oc, AuthSecretSelection, OrchestrationControlAction, OrchestrationEditState,
+    OrchestrationPickerHandles,
 };
 use crate::ai::blocklist::BlocklistAIHistoryEvent;
 use crate::ai::document::ai_document_model::AIDocumentModel;
@@ -78,12 +82,28 @@ const BASE_MODEL_HELPER: &str = "The primary model all agents will use.";
 pub enum OrchestrationConfigBlockAction {
     ToggleApproval,
     ToggleDetails,
-    ExecutionModeToggled { is_remote: bool },
-    ModelChanged { model_id: String },
-    HarnessChanged { harness_type: String },
-    EnvironmentChanged { environment_id: String },
-    WorkerHostChanged { worker_host: String },
-    AuthSecretChanged { auth_secret_name: Option<String> },
+    ExecutionModeToggled {
+        is_remote: bool,
+    },
+    ModelChanged {
+        model_id: String,
+    },
+    HarnessChanged {
+        harness_type: String,
+    },
+    EnvironmentChanged {
+        environment_id: String,
+    },
+    WorkerHostChanged {
+        worker_host: String,
+    },
+    AuthSecretChanged {
+        auth_secret_name: Option<String>,
+    },
+    /// User picked the "New API key…" item in the auth secret picker. The
+    /// handler dispatches `WorkspaceAction::OpenCreateAuthSecretModal` so the
+    /// workspace-level modal opens for the current harness.
+    CreateNewAuthSecretRequested,
 }
 
 impl OrchestrationControlAction for OrchestrationConfigBlockAction {
@@ -104,6 +124,9 @@ impl OrchestrationControlAction for OrchestrationConfigBlockAction {
     }
     fn auth_secret_changed(auth_secret_name: Option<String>) -> Self {
         Self::AuthSecretChanged { auth_secret_name }
+    }
+    fn create_new_auth_secret_requested() -> Self {
+        Self::CreateNewAuthSecretRequested
     }
 }
 
@@ -196,9 +219,20 @@ impl OrchestrationConfigBlockView {
         ctx.subscribe_to_model(
             &HarnessAvailabilityModel::handle(ctx),
             |me, _, event, ctx| match event {
+                HarnessAvailabilityEvent::AuthSecretCreated { harness, name } => {
+                    if me.pickers_initialized {
+                        oc::apply_created_auth_secret_if_matches(
+                            &mut me.edit_state,
+                            *harness,
+                            name,
+                            ctx,
+                        );
+                        oc::repopulate_all_pickers(&mut me.edit_state, &me.pickers, ctx);
+                    }
+                    ctx.notify();
+                }
                 HarnessAvailabilityEvent::Changed
                 | HarnessAvailabilityEvent::AuthSecretsLoaded
-                | HarnessAvailabilityEvent::AuthSecretCreated { .. }
                 | HarnessAvailabilityEvent::AuthSecretsFetchFailed => {
                     // Repopulate on fetch failure too, otherwise the picker
                     // would stay on the "Loading…" placeholder we wrote
@@ -336,15 +370,19 @@ impl OrchestrationConfigBlockView {
 
         // Seed the auth secret from persisted per-harness settings before
         // building the picker so the dropdown shows the last selection.
-        if self.edit_state.auth_secret_name.is_none() {
-            self.edit_state.auth_secret_name =
-                oc::resolve_default_auth_secret_for_harness(&self.edit_state.harness_type, ctx);
+        if matches!(
+            self.edit_state.auth_secret_selection,
+            AuthSecretSelection::Unset
+        ) {
+            self.edit_state.auth_secret_selection = AuthSecretSelection::from_optional_name(
+                oc::resolve_default_auth_secret_for_harness(&self.edit_state.harness_type, ctx),
+            );
         }
         let auth_secret_handle = oc::new_standard_picker_dropdown(&colors, ctx);
         auth_secret_handle.update(ctx, |d, c| d.set_use_overlay_layer(true, c));
         oc::populate_auth_secret_picker_for_harness(
             &auth_secret_handle,
-            self.edit_state.auth_secret_name.as_deref(),
+            &self.edit_state.auth_secret_selection,
             &self.edit_state.harness_type,
             ctx,
         );
@@ -512,7 +550,7 @@ impl View for OrchestrationConfigBlockView {
                 column.add_child(Container::new(helper).with_margin_top(4.).finish());
 
                 // Validation
-                if let Some(reason) = self.edit_state.accept_disabled_reason() {
+                if let Some(reason) = oc::accept_disabled_reason_with_auth(&self.edit_state, app) {
                     column.add_child(oc::render_validation_error(
                         reason,
                         theme.ui_error_color(),
@@ -625,6 +663,20 @@ impl TypedActionView for OrchestrationConfigBlockView {
                     auth_secret_name.clone(),
                     ctx,
                 );
+                ctx.notify();
+            }
+            OrchestrationConfigBlockAction::CreateNewAuthSecretRequested => {
+                // Clear the current selection so that if the user cancels
+                // the create-key modal, the picker stays on "+ New API
+                // key…" and the validation error continues to render.
+                oc::apply_create_new_auth_secret_requested(&mut self.edit_state, ctx);
+                if let Some(harness) =
+                    Harness::parse_orchestration_harness(&self.edit_state.harness_type)
+                {
+                    ctx.dispatch_typed_action(&WorkspaceAction::OpenCreateAuthSecretModal {
+                        harness,
+                    });
+                }
                 ctx.notify();
             }
         }

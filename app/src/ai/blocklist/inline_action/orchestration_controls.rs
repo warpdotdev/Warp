@@ -67,6 +67,10 @@ const DEFAULT_MODEL_LABEL: &str = "Default model";
 const AUTH_SECRET_INHERIT_LABEL: &str = "Inherit key from environment";
 /// Label for the auth secret column.
 pub const AUTH_SECRET_COLUMN_LABEL: &str = "API key";
+/// Label for the "create new managed secret" entry appended to the auth
+/// secret picker. Clicking it bubbles a request up to the workspace, which
+/// opens a blocking modal hosting `AuthSecretFtuxView`.
+const AUTH_SECRET_CREATE_NEW_LABEL: &str = "New API key…";
 
 // ── Action trait ────────────────────────────────────────────────────
 
@@ -82,9 +86,50 @@ pub trait OrchestrationControlAction: Clone + Debug + Send + Sync + 'static {
     /// Fires when the auth secret picker selects a managed secret.
     /// `None` means "clear the selection / inherit from environment".
     fn auth_secret_changed(name: Option<String>) -> Self;
+    /// Fires when the picker's "New API key…" item is selected. The card
+    /// view handles this by emitting an event to the workspace, which opens
+    /// the `Modal<AuthSecretFtuxView>` for the current harness.
+    fn create_new_auth_secret_requested() -> Self;
 }
 
 // ── Shared edit state ───────────────────────────────────────────────
+
+/// The user's current selection in the auth secret picker. Encodes the
+/// three logically-distinct states that previously collapsed onto
+/// `Option<String>` and a sibling bool flag.
+///
+/// Cloud mode's picker only persists `Named(_)` between sessions —
+/// `Inherit` and `Unset` are per-session, per-harness state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthSecretSelection {
+    /// Default / "no choice yet". Picker shows `+ New API key…` and the
+    /// card auto-opens the create-key modal on first render. Accept is
+    /// blocked while in this state, since dispatching with no managed
+    /// secret here would silently fall through to env-inherited creds
+    /// that the user has not actually chosen.
+    Unset,
+    /// User explicitly clicked "Inherit key from environment" in the
+    /// picker. The child agent will inherit credentials from the worker's
+    /// shell env. Accept is allowed — this is a deliberate choice.
+    Inherit,
+    /// User selected a managed secret by name. Accept is allowed and the
+    /// name is propagated onto `RunAgentsRequest.harness_auth_secret_name`
+    /// at dispatch time.
+    Named(String),
+}
+
+impl AuthSecretSelection {
+    /// Convenience constructor: maps `Some(name)` to `Named(name)` and
+    /// `None` to `Unset`. Used when seeding state from a request payload
+    /// or persisted setting — neither carries an explicit Inherit signal,
+    /// so the absence of a name always means "no choice yet".
+    pub fn from_optional_name(name: Option<String>) -> Self {
+        match name {
+            Some(name) if !name.trim().is_empty() => Self::Named(name),
+            _ => Self::Unset,
+        }
+    }
+}
 
 /// Run-wide configuration fields shared between the confirmation card
 /// editor and the plan-card config block. Card-specific fields
@@ -95,12 +140,26 @@ pub struct OrchestrationEditState {
     pub model_id: String,
     pub harness_type: String,
     pub execution_mode: RunAgentsExecutionMode,
-    /// Managed-secret name selected for the active harness, when the
-    /// harness is non-Oz and the execution mode is Cloud.
-    /// Persisted side-channel via `CloudAgentSettings.last_selected_auth_secret`
-    /// and propagated onto `RunAgentsRequest.harness_auth_secret_name` at
-    /// dispatch time. The proto does NOT carry this field.
-    pub auth_secret_name: Option<String>,
+    /// The user's current selection in the auth secret picker. Drives
+    /// both the picker display and the Accept-disabled gate. Persisted
+    /// side-channel via `CloudAgentSettings.last_selected_auth_secret`
+    /// (only the `Named(_)` variant persists). The proto carries the
+    /// extracted name in `RunAgentsRequest.harness_auth_secret_name`,
+    /// not the enum itself.
+    pub auth_secret_selection: AuthSecretSelection,
+}
+
+impl OrchestrationEditState {
+    /// Convenience accessor for the managed-secret name to use at
+    /// dispatch time. `None` when no named secret is selected (Inherit
+    /// or Unset — both mean "don't send a managed-secret reference
+    /// on the wire").
+    pub fn auth_secret_name(&self) -> Option<&str> {
+        match &self.auth_secret_selection {
+            AuthSecretSelection::Named(name) => Some(name.as_str()),
+            AuthSecretSelection::Inherit | AuthSecretSelection::Unset => None,
+        }
+    }
 }
 
 impl OrchestrationEditState {
@@ -122,7 +181,7 @@ impl OrchestrationEditState {
             model_id: model_id.to_string(),
             harness_type: harness_type.to_string(),
             execution_mode: execution_mode.clone(),
-            auth_secret_name: None,
+            auth_secret_selection: AuthSecretSelection::Unset,
         }
     }
 
@@ -142,7 +201,7 @@ impl OrchestrationEditState {
             model_id: config.model_id.clone(),
             harness_type: config.harness_type.clone(),
             execution_mode,
-            auth_secret_name: None,
+            auth_secret_selection: AuthSecretSelection::Unset,
         };
         if matches!(state.execution_mode, RunAgentsExecutionMode::Local) {
             state.sanitize_for_local_execution();
@@ -807,9 +866,21 @@ pub fn should_show_auth_secret_picker(state: &OrchestrationEditState) -> bool {
     !auth_secret_types_for_harness(harness).is_empty()
 }
 
-/// Reads the user's last-selected auth secret for the given harness
-/// from `CloudAgentSettings.last_selected_auth_secret`. Returns `None`
-/// when no secret is saved or when the harness has no canonical name.
+/// Resolves the default auth-secret name to seed the picker with for the
+/// given harness. Mirrors cloud mode's `maybe_restore_auth_secret_from_settings`
+/// in `auth_secret_selector.rs` and matches the warp-server webapp
+/// (`HarnessAuthSecretSelector` + `use-agent-form-state.ts`): we only
+/// promote a persisted name; we never auto-pick the first loaded secret.
+/// When the user has loaded secrets but no persisted choice (e.g. first
+/// time on this harness in this session, or settings cleared), the
+/// caller's `Unset` state surfaces the "+ New API key…" placeholder and
+/// the Accept gate fires — same as the webapp's "Select {harness} auth
+/// secret" placeholder gating server-side validation.
+///
+/// Resolution order:
+///   1. The user's last-selected name from `CloudAgentSettings.last_selected_auth_secret`,
+///      validated against the harness's currently-loaded secrets when known
+///   2. `None` (caller should treat this as `Unset`, forcing an explicit pick)
 pub fn resolve_default_auth_secret_for_harness(
     harness_type: &str,
     ctx: &AppContext,
@@ -818,24 +889,102 @@ pub fn resolve_default_auth_secret_for_harness(
     if harness == Harness::Oz {
         return None;
     }
-    CloudAgentSettings::as_ref(ctx)
+    let persisted = CloudAgentSettings::as_ref(ctx)
         .last_selected_auth_secret
         .value()
         .get(harness.config_name())
         .cloned()
-        .filter(|name| !name.trim().is_empty())
+        .filter(|name| !name.trim().is_empty());
+
+    let availability = HarnessAvailabilityModel::as_ref(ctx);
+    match availability.auth_secrets_for(harness) {
+        AuthSecretFetchState::Loaded(secrets) => {
+            // When secrets are loaded, validate the persisted name. If it
+            // has been deleted server-side, drop it and return `None` so
+            // the caller treats this as `Unset` (matches webapp behavior
+            // of forcing an explicit user pick rather than silently
+            // jumping to some other key).
+            persisted.filter(|name| secrets.iter().any(|s| s.name == *name))
+        }
+        // Secrets haven't been fetched yet — return the persisted name
+        // optimistically so the picker shows a stable initial value while
+        // the fetch is in flight. Once `AuthSecretsLoaded` fires the
+        // card will repopulate and re-resolve.
+        _ => persisted,
+    }
+}
+
+/// Returns `true` when the picker is currently displaying the
+/// `+ New API key…` affordance — either because the harness has no
+/// loaded secrets, or because the user clicked `+ New API key…` and
+/// (possibly) cancelled the create-key modal. Whenever this is true the
+/// Accept button must be blocked: dispatching with no managed secret in
+/// this state would send the child agent off without credentials.
+pub fn auth_secret_creation_required(state: &OrchestrationEditState, ctx: &AppContext) -> bool {
+    if !should_show_auth_secret_picker(state) {
+        return false;
+    }
+    // Named or Inherit are both deliberate user choices — never blocked.
+    // Only `Unset` represents the "+ New API key…" placeholder.
+    if !matches!(state.auth_secret_selection, AuthSecretSelection::Unset) {
+        return false;
+    }
+    let Some(harness) = Harness::parse_orchestration_harness(&state.harness_type) else {
+        return false;
+    };
+    if harness == Harness::Oz {
+        return false;
+    }
+    if auth_secret_types_for_harness(harness).is_empty() {
+        return false;
+    }
+    // While the secrets list is mid-fetch we have no way to know whether
+    // the picker is *really* showing CreateNew (it could resolve to a real
+    // secret once loaded). Stay permissive in that window; the next
+    // `AuthSecretsLoaded` event will reconcile state and re-fire the gate
+    // if needed.
+    let availability = HarnessAvailabilityModel::as_ref(ctx);
+    matches!(
+        availability.auth_secrets_for(harness),
+        AuthSecretFetchState::Loaded(_)
+    )
+}
+
+/// Combines [`OrchestrationEditState::accept_disabled_reason`] with the
+/// auth-secret-creation gate. Returns the first reason that applies. Card
+/// views should prefer this over calling `accept_disabled_reason` directly
+/// so they pick up the "no API key yet" blocker.
+pub fn accept_disabled_reason_with_auth(
+    state: &OrchestrationEditState,
+    ctx: &AppContext,
+) -> Option<String> {
+    if let Some(reason) = state.accept_disabled_reason() {
+        return Some(reason.to_string());
+    }
+    if auth_secret_creation_required(state, ctx) {
+        return Some("Create an API key for this harness to continue.".to_string());
+    }
+    None
 }
 
 /// Populates the auth secret picker for the given harness. Items:
-///   1. "Inherit key from environment" (clears the selection)
-///   2. The loaded managed secrets for the harness
+///   1. "Inherit key from environment" (sets selection to `Inherit`)
+///   2. The loaded managed secrets (each sets selection to `Named(name)`)
+///   3. "+ New API key…" (opens the create-key modal; selection remains
+///      `Unset` if the user cancels)
+///
+/// `selection` is the current edit state's selection. Drives the
+/// trigger label: `Unset` falls back to "+ New API key…" when the
+/// harness supports managed-secret creation (matching the warp-server
+/// webapp's "Select {harness} auth secret" placeholder behavior). The
+/// trigger uses the dropdown's default text color in all cases.
 ///
 /// Also kicks off a lazy fetch of the harness's auth secrets when the
 /// menu opens, so the first paint shows "Loading…" and rerenders once
 /// the secrets arrive (via `HarnessAvailabilityEvent::AuthSecretsLoaded`).
 pub fn populate_auth_secret_picker_for_harness<A: OrchestrationControlAction, V: View>(
     dropdown: &ViewHandle<Dropdown<A>>,
-    initial_secret_name: Option<&str>,
+    selection: &AuthSecretSelection,
     harness_type: &str,
     ctx: &mut ViewContext<V>,
 ) {
@@ -850,7 +999,12 @@ pub fn populate_auth_secret_picker_for_harness<A: OrchestrationControlAction, V:
         model.ensure_auth_secrets_fetched(harness, ctx);
     });
 
-    let initial = initial_secret_name.map(str::to_string);
+    let initial = match selection {
+        AuthSecretSelection::Named(name) => Some(name.clone()),
+        _ => None,
+    };
+    let supports_create_new = !auth_secret_types_for_harness(harness).is_empty();
+    let selection = selection.clone();
     dropdown.update(ctx, |dropdown, ctx_dropdown| {
         let availability = HarnessAvailabilityModel::as_ref(ctx_dropdown);
         let mut items: Vec<MenuItem<DropdownAction<A>>> = Vec::new();
@@ -891,19 +1045,57 @@ pub fn populate_auth_secret_picker_for_harness<A: OrchestrationControlAction, V:
             }
         }
 
-        dropdown.set_rich_items(items, ctx_dropdown);
-        if let Some(name) = &selected_display_name {
-            dropdown.set_selected_by_name(name, ctx_dropdown);
-        } else {
-            dropdown.set_selected_by_name(AUTH_SECRET_INHERIT_LABEL, ctx_dropdown);
+        // Append a "New API key…" entry for harnesses with at least one
+        // supported managed secret type. The actual modal lives at the
+        // workspace level; this dispatch only bubbles a request up through
+        // the card view's event handler.
+        if supports_create_new {
+            items.push(MenuItem::Separator);
+            items.push(MenuItem::Item(
+                MenuItemFields::new(AUTH_SECRET_CREATE_NEW_LABEL).with_on_select_action(
+                    DropdownAction::SelectActionAndClose(A::create_new_auth_secret_requested()),
+                ),
+            ));
         }
+
+        // Derive the trigger label directly from the selection enum.
+        // `Named` always wins (even if the name isn't in the loaded list
+        // yet — transient during fetch). `Inherit` always shows the
+        // inherit label. `Unset` always shows "+ New API key…" when the
+        // harness supports it: we deliberately do NOT auto-pick the first
+        // loaded key as a placeholder, matching the warp-server webapp
+        // and cloud mode — the user must make an explicit pick.
+        let final_selection = match &selection {
+            AuthSecretSelection::Named(name) => name.clone(),
+            AuthSecretSelection::Inherit => AUTH_SECRET_INHERIT_LABEL.to_string(),
+            AuthSecretSelection::Unset if supports_create_new => {
+                AUTH_SECRET_CREATE_NEW_LABEL.to_string()
+            }
+            AuthSecretSelection::Unset => AUTH_SECRET_INHERIT_LABEL.to_string(),
+        };
+        // Suppress the unused-variable warning when selection happens to be
+        // `Named(_)` and we didn't need to look it up in `selected_display_name`.
+        let _ = selected_display_name;
+        // `availability` is consulted above only to drive `ensure_auth_secrets_fetched`
+        // and to enumerate menu items; the trigger label intentionally
+        // does not branch on loaded state.
+        let _ = &availability;
+
+        dropdown.set_rich_items(items, ctx_dropdown);
+        dropdown.set_selected_by_name(&final_selection, ctx_dropdown);
     });
 }
 
-/// Updates the edit state with a new auth secret selection and
-/// persists it to `CloudAgentSettings.last_selected_auth_secret` so the
-/// selection survives across sessions and stays in sync with cloud
-/// mode's single-agent picker.
+/// Updates the edit state with a new auth secret selection from the
+/// picker menu and persists it to `CloudAgentSettings.last_selected_auth_secret`
+/// so the selection survives across sessions and stays in sync with
+/// cloud mode's single-agent picker.
+///
+/// `new_name = Some(name)` corresponds to a managed-secret selection
+/// (`Named`); `new_name = None` corresponds to the user clicking
+/// "Inherit key from environment" (`Inherit`). The latter is recorded
+/// as a deliberate choice so the picker won't silently jump to the
+/// first loaded secret on the next repopulate.
 ///
 /// Does NOT call `populate_auth_secret_picker_for_harness` or
 /// `sync_picker_selections` — the auth secret picker dispatched this
@@ -915,8 +1107,61 @@ pub fn apply_auth_secret_change<A: OrchestrationControlAction, V: View>(
     new_name: Option<String>,
     ctx: &mut ViewContext<V>,
 ) {
-    state.auth_secret_name = new_name.filter(|s| !s.trim().is_empty());
-    persist_auth_secret_selection(&state.harness_type, state.auth_secret_name.clone(), ctx);
+    let normalized = new_name.filter(|s| !s.trim().is_empty());
+    state.auth_secret_selection = match normalized.clone() {
+        Some(name) => AuthSecretSelection::Named(name),
+        None => AuthSecretSelection::Inherit,
+    };
+    persist_auth_secret_selection(&state.harness_type, normalized, ctx);
+}
+
+/// Reacts to the user clicking "+ New API key…" in the auth secret
+/// picker. Resets the selection to `Unset` and clears any persisted
+/// name so that — if the user cancels the subsequent create-key modal
+/// — the picker stays on "+ New API key…" and the Accept gate keeps
+/// firing. The actual modal is opened by the card view via
+/// `WorkspaceAction::OpenCreateAuthSecretModal`; this helper only
+/// updates state.
+///
+/// Does NOT call `populate_auth_secret_picker_for_harness` or
+/// `sync_picker_selections` — the auth secret picker dispatched this
+/// action and must not be re-entered.
+pub fn apply_create_new_auth_secret_requested<V: View>(
+    state: &mut OrchestrationEditState,
+    ctx: &mut ViewContext<V>,
+) {
+    state.auth_secret_selection = AuthSecretSelection::Unset;
+    persist_auth_secret_selection(&state.harness_type, None, ctx);
+}
+
+/// Reacts to a `HarnessAvailabilityEvent::AuthSecretCreated` event on a
+/// card view. When the created secret's harness matches the card's
+/// current harness, adopt it as the active selection (`Named`) and
+/// persist the choice so subsequent dispatches use it. Returns `true`
+/// when state was mutated (so callers know to repopulate / sync pickers).
+///
+/// Without this, freshly-created secrets only become the active
+/// selection on a subsequent harness change or workspace restart — the
+/// existing `repopulate_all_pickers` call reuses the current selection,
+/// which still holds the pre-create value.
+pub fn apply_created_auth_secret_if_matches<V: View>(
+    state: &mut OrchestrationEditState,
+    created_harness: Harness,
+    created_name: &str,
+    ctx: &mut ViewContext<V>,
+) -> bool {
+    let Some(card_harness) = Harness::parse_orchestration_harness(&state.harness_type) else {
+        return false;
+    };
+    if card_harness != created_harness {
+        return false;
+    }
+    if state.auth_secret_name() == Some(created_name) {
+        return false;
+    }
+    state.auth_secret_selection = AuthSecretSelection::Named(created_name.to_string());
+    persist_auth_secret_selection(&state.harness_type, Some(created_name.to_string()), ctx);
+    true
 }
 
 /// Writes the selected secret name into `last_selected_auth_secret`
@@ -1010,12 +1255,16 @@ pub fn apply_harness_change<A: OrchestrationControlAction, V: View>(
         );
     }
 
-    // Re-resolve auth secret from settings for the new harness.
-    state.auth_secret_name = resolve_default_auth_secret_for_harness(new_harness_type, ctx);
+    // Re-resolve auth secret from settings for the new harness. Each
+    // harness has its own selection state — any prior `Inherit` choice
+    // from the old harness does NOT carry over.
+    state.auth_secret_selection = AuthSecretSelection::from_optional_name(
+        resolve_default_auth_secret_for_harness(new_harness_type, ctx),
+    );
     if let Some(handle) = &handles.auth_secret_picker {
         populate_auth_secret_picker_for_harness(
             handle,
-            state.auth_secret_name.as_deref(),
+            &state.auth_secret_selection,
             new_harness_type,
             ctx,
         );
@@ -1101,10 +1350,42 @@ pub fn repopulate_all_pickers<A: OrchestrationControlAction, V: View>(
             ctx,
         );
     }
+    // Validate any `Named(_)` selection against the freshly fetched
+    // catalog. The initial seed in `ensure_pickers` may have
+    // optimistically adopted a persisted name before the secrets list
+    // returned — if that name is no longer present (deleted server-side,
+    // or never existed), reset to `Unset` so the picker falls back to a
+    // real default and the Accept gate fires.
+    if let Some(harness) = Harness::parse_orchestration_harness(&state.harness_type) {
+        if harness != Harness::Oz {
+            if let AuthSecretFetchState::Loaded(secrets) =
+                HarnessAvailabilityModel::as_ref(ctx).auth_secrets_for(harness)
+            {
+                if let AuthSecretSelection::Named(name) = &state.auth_secret_selection {
+                    if !secrets.iter().any(|s| s.name == *name) {
+                        state.auth_secret_selection = AuthSecretSelection::Unset;
+                    }
+                }
+            }
+        }
+    }
+    // Re-resolve when the selection is `Unset` (either initial seed or
+    // just-invalidated above). The resolver only promotes a persisted
+    // name now — it does NOT fall back to first-loaded — so this can
+    // only mutate state when the user had previously chosen a key on
+    // this harness and that key still exists server-side. Matches the
+    // warp-server webapp behavior of never silently picking a key for
+    // the user. `Inherit` is left alone.
+    if matches!(state.auth_secret_selection, AuthSecretSelection::Unset) {
+        if let Some(name) = resolve_default_auth_secret_for_harness(&state.harness_type, ctx) {
+            state.auth_secret_selection = AuthSecretSelection::Named(name.clone());
+            persist_auth_secret_selection(&state.harness_type, Some(name), ctx);
+        }
+    }
     if let Some(handle) = &handles.auth_secret_picker {
         populate_auth_secret_picker_for_harness(
             handle,
-            state.auth_secret_name.as_deref(),
+            &state.auth_secret_selection,
             &state.harness_type,
             ctx,
         );
@@ -1193,12 +1474,20 @@ pub fn sync_picker_selections<A: OrchestrationControlAction, V: View>(
         });
     }
     if let Some(auth_secret_picker) = handles.auth_secret_picker.clone() {
-        let target = state.auth_secret_name.clone();
+        let selection = state.auth_secret_selection.clone();
+        let supports_create_new = Harness::parse_orchestration_harness(&state.harness_type)
+            .filter(|h| *h != Harness::Oz)
+            .map(|h| !auth_secret_types_for_harness(h).is_empty())
+            .unwrap_or(false);
         auth_secret_picker.update(ctx, |dropdown, ctx_dropdown| {
-            let label = target
-                .as_deref()
-                .unwrap_or(AUTH_SECRET_INHERIT_LABEL)
-                .to_string();
+            let label = match &selection {
+                AuthSecretSelection::Named(name) => name.clone(),
+                AuthSecretSelection::Inherit => AUTH_SECRET_INHERIT_LABEL.to_string(),
+                AuthSecretSelection::Unset if supports_create_new => {
+                    AUTH_SECRET_CREATE_NEW_LABEL.to_string()
+                }
+                AuthSecretSelection::Unset => AUTH_SECRET_INHERIT_LABEL.to_string(),
+            };
             dropdown.set_selected_by_name(&label, ctx_dropdown);
         });
     }

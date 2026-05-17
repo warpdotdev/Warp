@@ -107,6 +107,24 @@ impl CompactibleSplitActionButton {
     ) {
         self.primary_button.set_keybinding(keybinding, ctx);
     }
+
+    /// Sets the disabled state on both the primary button and the
+    /// trailing chevron menu button, so the entire split button reads
+    /// as inert when the parent view determines it shouldn't be
+    /// clickable.
+    pub fn set_disabled<T: View>(&mut self, disabled: bool, ctx: &mut ViewContext<T>) {
+        self.primary_button.set_disabled(disabled, ctx);
+        self.menu_button.update(ctx, |button, ctx| {
+            button.set_disabled(disabled, ctx);
+        });
+    }
+
+    /// Sets the tooltip on the primary button. Pass `Some(text)` to
+    /// surface a hover tooltip (typically used to explain why a
+    /// disabled button can't be clicked), or `None` to clear it.
+    pub fn set_tooltip<T: View>(&mut self, tooltip: Option<String>, ctx: &mut ViewContext<T>) {
+        self.primary_button.set_tooltip(tooltip, ctx);
+    }
 }
 
 impl RenderCompactibleActionButton for CompactibleSplitActionButton {

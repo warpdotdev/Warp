@@ -501,6 +501,15 @@ pub enum WorkspaceAction {
     /// environments exist.
     ShowHandoffEnvironmentCreationModal,
     ShowCloudModeV2EnvironmentCreationModal,
+    /// Open a workspace-level modal that hosts cloud mode's `AuthSecretFtuxView`
+    /// for creating a new managed auth secret for `harness`. Dispatched by the
+    /// orchestration card pickers (`RunAgentsCardView`, `OrchestrationConfigBlockView`)
+    /// when the user picks the "New API key…" item in the auth secret dropdown.
+    /// Cloud mode does not use this action — it still renders the FTUX view
+    /// inline by replacing the input box.
+    OpenCreateAuthSecretModal {
+        harness: warp_cli::agent::Harness,
+    },
     /// Summarize the active AI conversation in the focused pane.
     SummarizeAIConversation {
         prompt: Option<String>,
@@ -961,6 +970,7 @@ impl WorkspaceAction {
             | OpenLocalToCloudHandoffPane { .. }
             | ShowHandoffEnvironmentCreationModal
             | ShowCloudModeV2EnvironmentCreationModal
+            | OpenCreateAuthSecretModal { .. }
             | OpenNetworkLogPane => false,
             #[cfg(debug_assertions)]
             ShowHoaOnboardingFlow => false,

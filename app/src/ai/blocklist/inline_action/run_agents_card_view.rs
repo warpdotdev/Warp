@@ -37,12 +37,14 @@ use crate::ai::blocklist::block::AIBlock;
 use crate::ai::blocklist::inline_action::inline_action_header::{HeaderConfig, InteractionMode};
 use crate::ai::blocklist::inline_action::inline_action_icons;
 use crate::ai::blocklist::inline_action::orchestration_controls::{
-    self as oc, OrchestrationControlAction, OrchestrationPickerHandles,
+    self as oc, AuthSecretSelection, OrchestrationControlAction, OrchestrationPickerHandles,
 };
 use crate::ai::blocklist::inline_action::requested_action::{
     render_requested_action_row_for_text, CTRL_C_KEYSTROKE, ENTER_KEYSTROKE,
 };
-use crate::ai::harness_availability::{HarnessAvailabilityEvent, HarnessAvailabilityModel};
+use crate::ai::harness_availability::{
+    AuthSecretFetchState, HarnessAvailabilityEvent, HarnessAvailabilityModel,
+};
 use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
 use crate::appearance::Appearance;
 use crate::menu::{Event as MenuEvent, Menu, MenuItemFields, MenuVariant};
@@ -104,7 +106,11 @@ impl RunAgentsEditState {
         );
         // Carry the request's auth secret onto the edit state so an
         // explicit value from a previous dispatch survives the round trip.
-        orch.auth_secret_name = req.harness_auth_secret_name.clone();
+        // The wire format only carries `Named(_)` — absent name means
+        // "no choice yet" (Unset), which the picker / gate will
+        // re-resolve from persisted per-harness settings later.
+        orch.auth_secret_selection =
+            AuthSecretSelection::from_optional_name(req.harness_auth_secret_name.clone());
         if matches!(req.execution_mode, RunAgentsExecutionMode::Local) {
             orch.sanitize_for_local_execution();
         }
@@ -128,7 +134,7 @@ impl RunAgentsEditState {
             execution_mode: self.orch.execution_mode.clone(),
             agent_run_configs: self.agent_run_configs.clone(),
             plan_id: self.plan_id.clone(),
-            harness_auth_secret_name: self.orch.auth_secret_name.clone(),
+            harness_auth_secret_name: self.orch.auth_secret_name().map(str::to_string),
         }
     }
 }
@@ -152,6 +158,9 @@ impl OrchestrationControlAction for RunAgentsCardViewAction {
     fn auth_secret_changed(auth_secret_name: Option<String>) -> Self {
         Self::AuthSecretChanged { auth_secret_name }
     }
+    fn create_new_auth_secret_requested() -> Self {
+        Self::CreateNewAuthSecretRequested
+    }
 }
 
 /// Per-action UI handles for the confirmation card.
@@ -168,12 +177,28 @@ pub enum RunAgentsCardViewAction {
     AcceptWithoutOrchestration,
     ToggleAcceptMenu,
     Reject,
-    ExecutionModeToggled { is_remote: bool },
-    ModelChanged { model_id: String },
-    HarnessChanged { harness_type: String },
-    EnvironmentChanged { environment_id: String },
-    WorkerHostChanged { worker_host: String },
-    AuthSecretChanged { auth_secret_name: Option<String> },
+    ExecutionModeToggled {
+        is_remote: bool,
+    },
+    ModelChanged {
+        model_id: String,
+    },
+    HarnessChanged {
+        harness_type: String,
+    },
+    EnvironmentChanged {
+        environment_id: String,
+    },
+    WorkerHostChanged {
+        worker_host: String,
+    },
+    AuthSecretChanged {
+        auth_secret_name: Option<String>,
+    },
+    /// User picked the "New API key…" item in the auth secret picker. The
+    /// handler dispatches `WorkspaceAction::OpenCreateAuthSecretModal` so the
+    /// workspace-level modal opens for the current harness.
+    CreateNewAuthSecretRequested,
 }
 
 #[derive(Clone, Debug)]
@@ -207,6 +232,12 @@ pub struct RunAgentsCardView {
     /// UI-only per-harness model memory so switching harnesses preserves
     /// the user's previous model selection for each harness.
     saved_model_per_harness: HashMap<String, String>,
+    /// One-shot guard for the auto-open of the create-key modal. Set to
+    /// true the first time we open the modal because the harness has no
+    /// loaded secrets, so cancelling the modal does NOT re-pop on the
+    /// next render. Reset when the harness or execution mode changes so
+    /// the user gets a fresh prompt for the new harness.
+    has_auto_opened_create_modal: bool,
 }
 /// Computes the `is_denied` flag at construction time.
 ///
@@ -426,14 +457,33 @@ impl RunAgentsCardView {
         ctx.subscribe_to_model(
             &HarnessAvailabilityModel::handle(ctx),
             |me, _, event, ctx| match event {
+                HarnessAvailabilityEvent::AuthSecretCreated { harness, name } => {
+                    // If a managed secret was just created for our harness
+                    // (typically via the workspace's `Modal<AuthSecretFtuxView>`),
+                    // adopt it as the active selection before repopulating
+                    // the picker. Without this the picker would still show
+                    // whatever was selected before the modal opened.
+                    oc::apply_created_auth_secret_if_matches(
+                        &mut me.state.orch,
+                        *harness,
+                        name,
+                        ctx,
+                    );
+                    oc::repopulate_all_pickers(&mut me.state.orch, &me.handles.pickers, ctx);
+                    me.refresh_accept_button_state(ctx);
+                    ctx.notify();
+                }
                 HarnessAvailabilityEvent::Changed
                 | HarnessAvailabilityEvent::AuthSecretsLoaded
-                | HarnessAvailabilityEvent::AuthSecretCreated { .. }
                 | HarnessAvailabilityEvent::AuthSecretsFetchFailed => {
                     // Repopulate on fetch failure too, otherwise the picker
                     // would stay on the "Loading…" placeholder we wrote
                     // when the fetch started.
                     oc::repopulate_all_pickers(&mut me.state.orch, &me.handles.pickers, ctx);
+                    me.refresh_accept_button_state(ctx);
+                    // Now that we know the secrets list is empty, give
+                    // the user a one-shot nudge to create a key.
+                    me.maybe_auto_open_create_modal(ctx);
                     ctx.notify();
                 }
                 HarnessAvailabilityEvent::AuthSecretCreationFailed { .. } => {}
@@ -461,11 +511,18 @@ impl RunAgentsCardView {
             action_model,
             block_model,
             saved_model_per_harness: HashMap::new(),
+            has_auto_opened_create_modal: false,
         };
 
         // Eagerly create picker views so the editor section is always
         // visible without requiring a toggle.
         view.ensure_pickers(ctx);
+        view.refresh_accept_button_state(ctx);
+        // If the auth secrets list is already loaded at construction
+        // time and is empty, pop the modal immediately. When the list
+        // is still in flight this no-ops; the `AuthSecretsLoaded`
+        // subscription will retry once secrets resolve.
+        view.maybe_auto_open_create_modal(ctx);
 
         view
     }
@@ -495,9 +552,13 @@ impl RunAgentsCardView {
         // persisted per-harness setting so a plan-card selection (or a
         // previous confirmation-card pick) is honored at dispatch time,
         // even if the user never touches the picker on this card.
-        if new_state.orch.auth_secret_name.is_none() {
-            new_state.orch.auth_secret_name =
-                oc::resolve_default_auth_secret_for_harness(&new_state.orch.harness_type, ctx);
+        if matches!(
+            new_state.orch.auth_secret_selection,
+            AuthSecretSelection::Unset
+        ) {
+            new_state.orch.auth_secret_selection = AuthSecretSelection::from_optional_name(
+                oc::resolve_default_auth_secret_for_harness(&new_state.orch.harness_type, ctx),
+            );
         }
         if self.state != new_state {
             let harness_or_model_changed = self.state.orch.harness_type
@@ -510,7 +571,17 @@ impl RunAgentsCardView {
             // and re-sync the pickers so the UI matches the final state.
             if harness_or_model_changed {
                 oc::repopulate_all_pickers(&mut self.state.orch, &self.handles.pickers, ctx);
+                // The auto-open guard was set against the pre-streaming
+                // state (which may have been Oz with no auth picker).
+                // Reset it so the newly-streamed harness gets a fresh
+                // one-shot evaluation — important for the case where the
+                // agent dispatched the card directly with Cloud + a
+                // non-Oz harness, and the harness only fills in mid-
+                // stream.
+                self.has_auto_opened_create_modal = false;
             }
+            self.refresh_accept_button_state(ctx);
+            self.maybe_auto_open_create_modal(ctx);
             ctx.notify();
         }
     }
@@ -553,15 +624,16 @@ impl RunAgentsCardView {
 
                 // Always re-resolve the auth secret from settings keyed by
                 // the (now authoritative) harness from the approved config.
-                // Unconditional — not gated on `is_none()` — because if
-                // streaming had set `auth_secret_name` based on a different
-                // (proto-suggested) harness, the value belongs to that
-                // harness and must not be carried forward; otherwise we'd
-                // route e.g. a Codex secret name into Claude's auth field
-                // in `launch_remote_child`.
-                self.state.orch.auth_secret_name =
-                    oc::resolve_default_auth_secret_for_harness(&self.state.orch.harness_type, ctx);
-                if self.state.orch.accept_disabled_reason().is_none() {
+                // Unconditional — not gated on `Unset` — because if
+                // streaming had set `auth_secret_selection` based on a
+                // different (proto-suggested) harness, the value belongs
+                // to that harness and must not be carried forward;
+                // otherwise we'd route e.g. a Codex secret name into
+                // Claude's auth field in `launch_remote_child`.
+                self.state.orch.auth_secret_selection = AuthSecretSelection::from_optional_name(
+                    oc::resolve_default_auth_secret_for_harness(&self.state.orch.harness_type, ctx),
+                );
+                if oc::accept_disabled_reason_with_auth(&self.state.orch, ctx).is_none() {
                     self.auto_launched = true;
                     ctx.notify();
                     return;
@@ -579,6 +651,14 @@ impl RunAgentsCardView {
         }
         resolve_interactive_defaults(&mut self.state, &*self.block_model, ctx);
         oc::repopulate_all_pickers(&mut self.state.orch, &self.handles.pickers, ctx);
+        self.refresh_accept_button_state(ctx);
+        // Stream completion is the latest authoritative snapshot of
+        // harness + execution mode for an agent-dispatched card. Reset
+        // the guard so the final config gets a fresh one-shot prompt
+        // even if earlier construction-time / streaming evaluations
+        // already fired against a stale (e.g. empty harness) state.
+        self.has_auto_opened_create_modal = false;
+        self.maybe_auto_open_create_modal(ctx);
     }
 
     /// Validates and dispatches the resolved request.
@@ -590,7 +670,7 @@ impl RunAgentsCardView {
         if self.spawning.is_some() {
             return;
         }
-        if let Some(reason) = self.state.orch.accept_disabled_reason() {
+        if let Some(reason) = oc::accept_disabled_reason_with_auth(&self.state.orch, ctx) {
             log::warn!("RunAgentsCardView: refusing Accept because action is disabled: {reason}");
             return;
         }
@@ -599,6 +679,90 @@ impl RunAgentsCardView {
         self.action_model.update(ctx, |action_model, action_ctx| {
             action_model.execute_run_agents(&action_id, request, action_ctx);
         });
+    }
+
+    /// Opens the create-key modal automatically when the harness has
+    /// no loaded managed secrets and the user hasn't yet made a
+    /// selection. Only fires once per card lifetime (per harness /
+    /// execution-mode change — those reset the guard). Cancelling the
+    /// modal will leave the picker on "+ New API key…" and the gate
+    /// firing; the user can re-open the modal manually by clicking the
+    /// item.
+    fn maybe_auto_open_create_modal(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.has_auto_opened_create_modal {
+            return;
+        }
+        // Skip when the card isn't in an interactive confirmation state.
+        // `render` short-circuits to a status-only card in all of these
+        // cases (terminal result, denied, spawning, auto-launched,
+        // restored-from-history), so popping a create-key modal would be
+        // surprising — the user can't act on it anyway.
+        if self.is_denied || self.auto_launched || self.spawning.is_some() {
+            return;
+        }
+        if self.block_model.is_restored() {
+            return;
+        }
+        if matches!(
+            self.action_model
+                .as_ref(ctx)
+                .get_action_status(&self.action_id),
+            Some(AIActionStatus::Finished(_)) | Some(AIActionStatus::RunningAsync)
+        ) {
+            return;
+        }
+        if !oc::should_show_auth_secret_picker(&self.state.orch) {
+            return;
+        }
+        if !matches!(
+            self.state.orch.auth_secret_selection,
+            AuthSecretSelection::Unset
+        ) {
+            return;
+        }
+        let Some(harness) =
+            warp_cli::agent::Harness::parse_orchestration_harness(&self.state.orch.harness_type)
+        else {
+            return;
+        };
+        // Only auto-open when we are sure the harness has no loaded
+        // secrets (Loaded([])). NotFetched / Loading / Failed are
+        // ambiguous — the subscription will re-fire after
+        // `AuthSecretsLoaded` and retry if appropriate.
+        let has_zero_loaded = matches!(
+            HarnessAvailabilityModel::as_ref(ctx).auth_secrets_for(harness),
+            AuthSecretFetchState::Loaded(secrets) if secrets.is_empty()
+        );
+        if !has_zero_loaded {
+            return;
+        }
+        self.has_auto_opened_create_modal = true;
+        ctx.dispatch_typed_action(
+            &crate::workspace::WorkspaceAction::OpenCreateAuthSecretModal { harness },
+        );
+    }
+
+    /// Re-derives the Accept button's `disabled` + tooltip from the
+    /// current edit state. Call after every code path that mutates
+    /// `self.state.orch` (action handlers + model-subscription handlers)
+    /// so the button reflects the latest gate result. Cheap when nothing
+    /// has changed — the underlying `set_disabled`/`set_tooltip` no-ops
+    /// when the value is unchanged.
+    fn refresh_accept_button_state(&mut self, ctx: &mut ViewContext<Self>) {
+        let reason = oc::accept_disabled_reason_with_auth(&self.state.orch, ctx);
+        let Some(mut accept) = self.handles.accept_button.clone() else {
+            return;
+        };
+        accept.set_disabled(reason.is_some(), ctx);
+        // Pair the disabled visual with a tooltip explaining why — so
+        // the user can hover the Accept button to discover what to fix.
+        // Falls back to the button's default "Accept" label tooltip when
+        // the gate is clear.
+        accept.set_tooltip(reason.or_else(|| Some("Accept".to_string())), ctx);
+        // Persist the updated state object — `set_*` calls mutate the
+        // cloned struct's contained `ViewHandle`s in place (they're Rc),
+        // but writing it back keeps the field semantically authoritative.
+        self.handles.accept_button = Some(accept);
     }
 
     /// Construct the picker dropdown views (idempotent).
@@ -679,20 +843,19 @@ impl RunAgentsCardView {
             // Seed from the request's secret name first; otherwise fall
             // back to the persisted per-harness selection so the picker
             // matches what cloud-mode would show.
-            if self.state.orch.auth_secret_name.is_none() {
-                self.state.orch.auth_secret_name =
-                    oc::resolve_default_auth_secret_for_harness(&self.state.orch.harness_type, ctx);
+            if matches!(
+                self.state.orch.auth_secret_selection,
+                AuthSecretSelection::Unset
+            ) {
+                self.state.orch.auth_secret_selection = AuthSecretSelection::from_optional_name(
+                    oc::resolve_default_auth_secret_for_harness(&self.state.orch.harness_type, ctx),
+                );
             }
-            let initial_secret = self.state.orch.auth_secret_name.clone();
+            let selection = self.state.orch.auth_secret_selection.clone();
             let harness_type = self.state.orch.harness_type.clone();
             let handle = oc::new_standard_picker_dropdown(&colors, ctx);
             Self::set_upward_menu_position(&handle, ctx);
-            oc::populate_auth_secret_picker_for_harness(
-                &handle,
-                initial_secret.as_deref(),
-                &harness_type,
-                ctx,
-            );
+            oc::populate_auth_secret_picker_for_harness(&handle, &selection, &harness_type, ctx);
             Self::subscribe_picker_close(&handle, ctx);
             self.handles.pickers.auth_secret_picker = Some(handle);
         }
@@ -895,10 +1058,16 @@ impl TypedActionView for RunAgentsCardView {
                     |ctx| block_model.base_model(ctx).map(|id| id.to_string()),
                     ctx,
                 );
+                // Mode change can newly reveal the auth picker (Local
+                // → Cloud) — give the user a fresh auto-open prompt.
+                self.has_auto_opened_create_modal = false;
+                self.refresh_accept_button_state(ctx);
+                self.maybe_auto_open_create_modal(ctx);
                 ctx.notify();
             }
             RunAgentsCardViewAction::ModelChanged { model_id } => {
                 self.state.orch.model_id = model_id.clone();
+                self.refresh_accept_button_state(ctx);
                 ctx.notify();
             }
             RunAgentsCardViewAction::HarnessChanged { harness_type } => {
@@ -911,15 +1080,22 @@ impl TypedActionView for RunAgentsCardView {
                     |ctx| block_model.base_model(ctx).map(|id| id.to_string()),
                     ctx,
                 );
+                // Harness change resets per-harness selection state, so
+                // give the new harness a fresh auto-open prompt.
+                self.has_auto_opened_create_modal = false;
+                self.refresh_accept_button_state(ctx);
+                self.maybe_auto_open_create_modal(ctx);
                 ctx.notify();
             }
             RunAgentsCardViewAction::EnvironmentChanged { environment_id } => {
                 self.state.orch.set_environment_id(environment_id.clone());
                 oc::persist_environment_selection(environment_id, ctx);
+                self.refresh_accept_button_state(ctx);
                 ctx.notify();
             }
             RunAgentsCardViewAction::WorkerHostChanged { worker_host } => {
                 self.state.orch.set_worker_host(worker_host.clone());
+                self.refresh_accept_button_state(ctx);
                 ctx.notify();
             }
             RunAgentsCardViewAction::AuthSecretChanged { auth_secret_name } => {
@@ -929,6 +1105,19 @@ impl TypedActionView for RunAgentsCardView {
                     auth_secret_name.clone(),
                     ctx,
                 );
+                self.refresh_accept_button_state(ctx);
+                ctx.notify();
+            }
+            RunAgentsCardViewAction::CreateNewAuthSecretRequested => {
+                oc::apply_create_new_auth_secret_requested(&mut self.state.orch, ctx);
+                if let Some(harness) = warp_cli::agent::Harness::parse_orchestration_harness(
+                    &self.state.orch.harness_type,
+                ) {
+                    ctx.dispatch_typed_action(
+                        &crate::workspace::WorkspaceAction::OpenCreateAuthSecretModal { harness },
+                    );
+                }
+                self.refresh_accept_button_state(ctx);
                 ctx.notify();
             }
         }
@@ -1200,7 +1389,7 @@ fn render_editor(
         appearance,
     ));
 
-    if let Some(reason) = state.orch.accept_disabled_reason() {
+    if let Some(reason) = oc::accept_disabled_reason_with_auth(&state.orch, app) {
         column.add_child(oc::render_validation_error(
             reason,
             theme.ui_error_color(),
