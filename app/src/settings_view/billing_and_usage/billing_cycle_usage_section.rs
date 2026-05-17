@@ -683,29 +683,24 @@ fn legend_style_for(cost_type: AiCreditsUsageAndCostType) -> (ColorU, &'static s
 
 fn render_aggregate_legend_tooltip(appearance: &Appearance) -> Box<dyn Element> {
     let theme = appearance.theme();
-    let text = Text::new(
-        "Aggregates usage from base, add-on, pay-as-you-go, and ambient credits.".to_string(),
+    let text = Text::new_inline(
+        "Aggregates usage from base, add-on, pay-as-you-go, and ambient-only credits.".to_string(),
         appearance.ui_font_family(),
         12.,
     )
     .with_color(theme.sub_text_color(theme.background()).into())
     .finish();
-    ConstrainedBox::new(
-        Container::new(text)
-            .with_background_color(theme.background().into_solid())
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
-            .with_border(Border::all(1.).with_border_color(theme.outline().into_solid()))
-            .with_horizontal_padding(12.)
-            .with_vertical_padding(8.)
-            .with_drop_shadow(
-                DropShadow::new_with_standard_offset_and_spread(ColorU::new(0, 0, 0, 48))
-                    .with_offset(vec2f(0., 4.)),
-            )
-            .finish(),
-    )
-    .with_min_width(220.)
-    .with_max_width(280.)
-    .finish()
+    Container::new(text)
+        .with_background_color(theme.background().into_solid())
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+        .with_border(Border::all(1.).with_border_color(theme.outline().into_solid()))
+        .with_horizontal_padding(12.)
+        .with_vertical_padding(6.)
+        .with_drop_shadow(
+            DropShadow::new_with_standard_offset_and_spread(ColorU::new(0, 0, 0, 48))
+                .with_offset(vec2f(0., 4.)),
+        )
+        .finish()
 }
 
 fn format_period_label(summary: &BillingCycleUsageSummary) -> String {
