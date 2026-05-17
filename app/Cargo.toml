@@ -103,6 +103,7 @@ email_address = { git = "https://github.com/warpdotdev/rust-email_address", bran
 embed_plist = "1.2"
 enclose = "1.1.8"
 enum-iterator.workspace = true
+event-listener.workspace = true
 field_mask.workspace = true
 firebase.workspace = true
 flate2 = "1.0.17"
@@ -439,6 +440,7 @@ agent_mode_pre_plan_xml = []
 agent_onboarding = []
 agent_shared_sessions = []
 ask_user_question = []
+async_find = []
 changelog = []
 clear_autosuggestion_on_escape = []
 cloud_object_initial_load = ["enforce_revisions_to_cloud_objects"]

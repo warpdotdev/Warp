@@ -171,6 +171,13 @@ fn read_codex_config(path: &std::path::Path) -> toml::Table {
     toml::from_str(&content).unwrap()
 }
 
+fn harness_model_config(model_id: &str, reasoning_level: Option<&str>) -> HarnessModelConfig {
+    HarnessModelConfig {
+        model_id: model_id.to_string(),
+        reasoning_level: reasoning_level.map(str::to_string),
+    }
+}
+
 #[test]
 fn prepare_codex_config_toml_writes_fresh_config() {
     let tmp = TempDir::new().unwrap();
@@ -444,7 +451,7 @@ fn prepare_codex_config_toml_writes_model_when_specified() {
         &config_path,
         &working_dir,
         &HashMap::new(),
-        Some("gpt-5.5"),
+        Some(&harness_model_config("gpt-5.5", None)),
         None,
     )
     .unwrap();
@@ -470,7 +477,7 @@ fn prepare_codex_config_toml_writes_model_migration_for_older_model() {
         &config_path,
         &working_dir,
         &HashMap::new(),
-        Some("gpt-5.2"),
+        Some(&harness_model_config("gpt-5.2", None)),
         None,
     )
     .unwrap();
@@ -496,7 +503,7 @@ fn prepare_codex_config_toml_skips_model_for_default_sentinel() {
         &config_path,
         &working_dir,
         &HashMap::new(),
-        Some("default"),
+        Some(&harness_model_config("default", None)),
         None,
     )
     .unwrap();
@@ -532,6 +539,41 @@ fn prepare_codex_config_toml_skips_model_when_none() {
         cfg.get("notice").is_none(),
         "`[notice]` table should not be written without a pinned model id"
     );
+}
+
+#[test]
+fn prepare_codex_config_toml_writes_model_reasoning_effort_when_specified() {
+    let tmp = TempDir::new().unwrap();
+    let config_path = tmp.path().join("config.toml");
+    let working_dir = tmp.path().join("workspace");
+    fs::create_dir_all(&working_dir).unwrap();
+
+    prepare_codex_config_toml(
+        &config_path,
+        &working_dir,
+        &HashMap::new(),
+        Some(&harness_model_config("gpt-5.5", Some("medium"))),
+        None,
+    )
+    .unwrap();
+
+    let cfg = read_codex_config(&config_path);
+    assert_eq!(cfg["model"].as_str(), Some("gpt-5.5"));
+    assert_eq!(cfg["model_reasoning_effort"].as_str(), Some("medium"));
+}
+
+#[test]
+fn prepare_codex_config_toml_removes_stale_model_reasoning_effort_when_none() {
+    let tmp = TempDir::new().unwrap();
+    let config_path = tmp.path().join("config.toml");
+    let working_dir = tmp.path().join("workspace");
+    fs::create_dir_all(&working_dir).unwrap();
+    fs::write(&config_path, "model_reasoning_effort = \"high\"\n").unwrap();
+
+    prepare_codex_config_toml(&config_path, &working_dir, &HashMap::new(), None, None).unwrap();
+
+    let cfg = read_codex_config(&config_path);
+    assert!(cfg.get("model_reasoning_effort").is_none());
 }
 
 #[test]
