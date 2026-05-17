@@ -3,6 +3,7 @@ use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::appearance::Appearance;
 use warpui::{
+    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
     elements::{
         ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
         Empty, Flex, Hoverable, MainAxisAlignment, MainAxisSize,
@@ -15,7 +16,6 @@ use warpui::{
         button::ButtonVariant,
         components::{UiComponent, UiComponentStyles},
     },
-    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
 use crate::{
@@ -68,7 +68,10 @@ impl Entity for BillingCycleUsageSectionView {
 
 impl BillingCycleUsageSectionView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
-        ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |_, _, _, ctx| ctx.notify());
+        ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, _, _, ctx| {
+            me.reconcile_selected_period(ctx);
+            ctx.notify();
+        });
         ctx.subscribe_to_model(&AIRequestUsageModel::handle(ctx), |_, _, _, ctx| {
             ctx.notify()
         });
@@ -97,11 +100,28 @@ impl BillingCycleUsageSectionView {
         AuthStateProvider::as_ref(app).get().user_email()
     }
 
-    fn current_summary<'a>(&self, workspace: &'a Workspace) -> Option<&'a BillingCycleUsageSummary> {
+    fn current_summary<'a>(
+        &self,
+        workspace: &'a Workspace,
+    ) -> Option<&'a BillingCycleUsageSummary> {
         let data = workspace.billing_cycle_usage.as_ref()?;
         match self.selected_period_end {
             Some(end) => data.summaries.iter().find(|s| s.period_end == end),
             None => data.summaries.first(),
+        }
+    }
+
+    fn reconcile_selected_period(&mut self, ctx: &AppContext) {
+        let Some(selected) = self.selected_period_end else {
+            return;
+        };
+        let still_present = UserWorkspaces::as_ref(ctx)
+            .current_workspace()
+            .and_then(|ws| ws.billing_cycle_usage.as_ref())
+            .map(|data| data.summaries.iter().any(|s| s.period_end == selected))
+            .unwrap_or(false);
+        if !still_present {
+            self.selected_period_end = None;
         }
     }
 }
@@ -124,10 +144,10 @@ impl TypedActionView for BillingCycleUsageSectionView {
                 ctx.notify();
             }
             BillingCycleUsageAction::Refresh => {
-                std::mem::drop(
-                    TeamUpdateManager::handle(ctx)
-                        .update(ctx, |mgr, ctx| mgr.refresh_workspace_metadata(ctx)),
-                );
+                let _ = TeamUpdateManager::handle(ctx)
+                    .update(ctx, |mgr, ctx| mgr.refresh_workspace_metadata(ctx));
+                AIRequestUsageModel::handle(ctx)
+                    .update(ctx, |m, ctx| m.refresh_request_usage_async(ctx));
             }
             BillingCycleUsageAction::OpenAdminPanel => {
                 if let Some(team_uid) = UserWorkspaces::as_ref(ctx).current_team_uid() {
@@ -151,11 +171,9 @@ impl BillingCycleUsageSectionView {
             .iter()
             .map(|summary| {
                 let label = format_period_label(summary);
-                MenuItem::Item(
-                    MenuItemFields::new(label).with_on_select_action(
-                        BillingCycleUsageAction::SelectPeriod(Some(summary.period_end)),
-                    ),
-                )
+                MenuItem::Item(MenuItemFields::new(label).with_on_select_action(
+                    BillingCycleUsageAction::SelectPeriod(Some(summary.period_end)),
+                ))
             })
             .collect();
 
@@ -276,9 +294,13 @@ impl BillingCycleUsageSectionView {
                 .format("Resets %b %d at %-I:%M %p")
                 .to_string(),
         };
-        Text::new_inline(label, appearance.ui_font_family(), appearance.ui_font_size())
-            .with_color(theme.sub_text_color(theme.background()).into())
-            .finish()
+        Text::new_inline(
+            label,
+            appearance.ui_font_family(),
+            appearance.ui_font_size(),
+        )
+        .with_color(theme.sub_text_color(theme.background()).into())
+        .finish()
     }
 
     fn render_refresh_button(&self, appearance: &Appearance) -> Box<dyn Element> {
@@ -436,9 +458,13 @@ impl BillingCycleUsageSectionView {
         );
         row.add_child(
             Container::new(
-                Text::new_inline(label, appearance.ui_font_family(), appearance.ui_font_size())
-                    .with_color(theme.sub_text_color(theme.background()).into())
-                    .finish(),
+                Text::new_inline(
+                    label,
+                    appearance.ui_font_family(),
+                    appearance.ui_font_size(),
+                )
+                .with_color(theme.sub_text_color(theme.background()).into())
+                .finish(),
             )
             .with_margin_left(6.)
             .finish(),
