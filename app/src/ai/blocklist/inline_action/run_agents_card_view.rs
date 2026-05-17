@@ -611,9 +611,8 @@ impl RunAgentsCardView {
         resolve_interactive_defaults(&mut self.state, &*self.block_model, ctx);
         oc::repopulate_all_pickers(&mut self.state.orch, &self.handles.pickers, ctx);
         self.refresh_accept_button_state(ctx);
-        // Stream completion is the authoritative final snapshot — re-arm
-        // the auto-open in case earlier evaluations fired against stale state.
-        self.has_auto_opened_create_modal = false;
+        // First-chance fallback; don't reset the one-shot or we'd re-pop
+        // after the user cancelled.
         self.maybe_auto_open_create_modal(ctx);
     }
 
