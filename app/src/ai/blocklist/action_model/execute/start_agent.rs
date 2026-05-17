@@ -306,21 +306,36 @@ impl StartAgentExecutor {
                 harness_type: None,
                 model_id,
             } => {
-                // Legacy local Oz child agents do not use
-                // StartAgentRequest.parent_run_id. Instead, the child
-                // conversation is linked back to its parent on the first
-                // request via Request.metadata.parent_agent_id, sourced
-                // from the conversation's versioned orchestration_agent_id()
-                // (run_id in v2, server conversation token in v1). Remote
-                // child agents and local third-party harness children need
-                // parent_run_id here because their run is spawned before that
-                // first child request exists.
+                // Oz local children resolve their parent's run id from the
+                // parent conversation. This mirrors the third-party-harness
+                // and remote-child branches below; the child task row is
+                // created eagerly at dispatch (see
+                // `launch_local_no_harness_child`) using this value as the
+                // `parent_run_id` on `CreateAgentTask`. Bail out if the
+                // parent has no `run_id` yet — the eager-create path has no
+                // late-binding fallback (the pre-change lazy path would have
+                // linked via `Request.metadata.parent_agent_id` later), so
+                // proceeding would mint an orphan child with no server-side
+                // parent linkage.
+                let parent_run_id = BlocklistAIHistoryModel::as_ref(ctx)
+                    .conversation(&parent_conversation_id)
+                    .and_then(|conversation| conversation.run_id());
+                let Some(parent_run_id) = parent_run_id else {
+                    return ActionExecution::Sync(AIAgentActionResultType::StartAgent(
+                        StartAgentResult::Error {
+                            error:
+                                "Local Oz child agents require the parent run_id to be available."
+                                    .to_string(),
+                            version,
+                        },
+                    ));
+                };
                 (
                     StartAgentExecutionMode::Local {
                         harness_type: None,
                         model_id,
                     },
-                    None,
+                    Some(parent_run_id),
                 )
             }
             StartAgentExecutionMode::Local {

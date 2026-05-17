@@ -3393,8 +3393,15 @@ impl PaneGroup {
                         .or_else(|| child_conversation.initial_working_directory())
                         .map(PathBuf::from),
                 });
-        let new_pane_id =
-            self.insert_terminal_pane_hidden_for_child_agent(parent_pane_id, HashMap::new(), ctx);
+        // Restored hidden child panes don't inherit the host's shared
+        // session — the host's share decision is handled at original
+        // dispatch time, not on subsequent restores.
+        let new_pane_id = self.insert_terminal_pane_hidden_for_child_agent(
+            parent_pane_id,
+            HashMap::new(),
+            IsSharedSessionCreator::No,
+            ctx,
+        );
 
         if let Some(new_terminal_view) = self.terminal_view_from_pane_id(new_pane_id, ctx) {
             if let Some(task_context) = child_task_context.as_ref() {
@@ -4403,14 +4410,21 @@ impl PaneGroup {
         &mut self,
         base_pane_id: PaneId,
         env_vars: HashMap<OsString, OsString>,
+        is_shared_session_creator: IsSharedSessionCreator,
         ctx: &mut ViewContext<Self>,
     ) -> TerminalPaneId {
         let base_session_id = base_pane_id
             .as_terminal_pane_id()
             .or(self.active_session_id(ctx));
         let startup_directory = self.startup_path_for_new_session(base_session_id, ctx);
-        let (pane_data, _view) =
-            self.create_terminal_pane_data(startup_directory, env_vars, None, None, ctx);
+        let (pane_data, _view) = self.create_terminal_pane_data(
+            startup_directory,
+            env_vars,
+            is_shared_session_creator,
+            None,
+            None,
+            ctx,
+        );
         let new_pane_id = pane_data.terminal_pane_id();
         self.attach_child_pane_off_tree(Box::new(pane_data), ctx);
         new_pane_id
@@ -6638,10 +6652,12 @@ impl PaneGroup {
     /// Creates a new terminal session and wraps it in a `TerminalPane`.
     /// This is the shared session-creation boilerplate used by both
     /// `add_session_in_directory` and `insert_terminal_pane_hidden_for_child_agent`.
+    #[allow(clippy::too_many_arguments)]
     fn create_terminal_pane_data(
         &self,
         startup_directory: Option<PathBuf>,
         env_vars: HashMap<OsString, OsString>,
+        is_shared_session_creator: IsSharedSessionCreator,
         chosen_shell: Option<AvailableShell>,
         conversation_restoration: Option<ConversationRestorationInNewPaneType>,
         ctx: &mut ViewContext<Self>,
@@ -6657,7 +6673,7 @@ impl PaneGroup {
         let (view, terminal_manager) = PaneGroup::create_session(
             startup_directory,
             env_vars,
-            IsSharedSessionCreator::No,
+            is_shared_session_creator,
             resources,
             None,
             conversation_restoration,
@@ -6701,6 +6717,7 @@ impl PaneGroup {
         let (pane_data, view) = self.create_terminal_pane_data(
             startup_directory,
             HashMap::new(),
+            IsSharedSessionCreator::No,
             chosen_shell,
             conversation_restoration,
             ctx,
