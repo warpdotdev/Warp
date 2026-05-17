@@ -116,6 +116,17 @@ pub(super) const AMBIENT_CREDITS_DOT_COLOR: ColorU = ColorU {
     b: 241,
     a: 255,
 };
+/// Used for cycle-usage rows whose `cost_type` is the synthetic
+/// `Aggregate` sentinel (TeamAggregate / PerUserTotals visibility, where
+/// the server collapses individual cost types into a single row). A pure
+/// neutral gray so it reads as "no specific cost type" and stays
+/// distinct from the four chromatic cost-type colors above.
+pub(super) const AGGREGATE_CREDITS_DOT_COLOR: ColorU = ColorU {
+    r: 140,
+    g: 140,
+    b: 140,
+    a: 255,
+};
 const DEFAULT_MAX_MONTHLY_SPEND_CENTS: i32 = 20_000;
 const AMBIENT_AGENT_TRIAL_TITLE: &str = "Cloud agent trial";
 

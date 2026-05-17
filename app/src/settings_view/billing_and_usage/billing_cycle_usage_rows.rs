@@ -19,8 +19,8 @@ use warpui::{
 
 use crate::{
     settings_view::billing_and_usage_page_v2::{
-        AMBIENT_CREDITS_DOT_COLOR, BASE_CREDITS_DOT_COLOR, BONUS_CREDITS_DOT_COLOR,
-        PAYG_CREDITS_DOT_COLOR,
+        AGGREGATE_CREDITS_DOT_COLOR, AMBIENT_CREDITS_DOT_COLOR, BASE_CREDITS_DOT_COLOR,
+        BONUS_CREDITS_DOT_COLOR, PAYG_CREDITS_DOT_COLOR,
     },
     ui_components::{blended_colors, icons::Icon},
     workspaces::workspace::{
@@ -173,9 +173,8 @@ pub fn cost_type_color(cost_type: &AiCreditsUsageAndCostType) -> ColorU {
         AiCreditsUsageAndCostType::BonusGrant => BONUS_CREDITS_DOT_COLOR,
         AiCreditsUsageAndCostType::Payg => PAYG_CREDITS_DOT_COLOR,
         AiCreditsUsageAndCostType::AmbientBonusGrant => AMBIENT_CREDITS_DOT_COLOR,
-        AiCreditsUsageAndCostType::Aggregate | AiCreditsUsageAndCostType::Other(_) => {
-            BASE_CREDITS_DOT_COLOR
-        }
+        AiCreditsUsageAndCostType::Aggregate => AGGREGATE_CREDITS_DOT_COLOR,
+        AiCreditsUsageAndCostType::Other(_) => BASE_CREDITS_DOT_COLOR,
     }
 }
 
@@ -185,7 +184,7 @@ pub fn cost_type_label(cost_type: &AiCreditsUsageAndCostType) -> &'static str {
         AiCreditsUsageAndCostType::BonusGrant => "Add-ons",
         AiCreditsUsageAndCostType::Payg => "Pay-as-you-go",
         AiCreditsUsageAndCostType::AmbientBonusGrant => "Ambient-only",
-        AiCreditsUsageAndCostType::Aggregate => "Total",
+        AiCreditsUsageAndCostType::Aggregate => "Aggregated",
         AiCreditsUsageAndCostType::Other(_) => "Other",
     }
 }

@@ -3,7 +3,6 @@ use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::appearance::Appearance;
 use warpui::{
-    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
     elements::{
         ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
         Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning,
@@ -15,6 +14,7 @@ use warpui::{
         button::ButtonVariant,
         components::{UiComponent, UiComponentStyles},
     },
+    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
 use crate::{
@@ -25,8 +25,8 @@ use crate::{
         admin_actions::AdminActions,
         billing_and_usage::billing_cycle_usage_rows::{render_rows, RowMouseStates, SourceFilter},
         billing_and_usage_page_v2::{
-            AMBIENT_CREDITS_DOT_COLOR, BASE_CREDITS_DOT_COLOR, BONUS_CREDITS_DOT_COLOR,
-            PAYG_CREDITS_DOT_COLOR,
+            AGGREGATE_CREDITS_DOT_COLOR, AMBIENT_CREDITS_DOT_COLOR, BASE_CREDITS_DOT_COLOR,
+            BONUS_CREDITS_DOT_COLOR, PAYG_CREDITS_DOT_COLOR,
         },
     },
     ui_components::icons::Icon,
@@ -172,8 +172,10 @@ impl TypedActionView for BillingCycleUsageSectionView {
                 ctx.notify();
             }
             BillingCycleUsageAction::Refresh => {
-                let _ = TeamUpdateManager::handle(ctx)
-                    .update(ctx, |mgr, ctx| mgr.refresh_workspace_metadata(ctx));
+                std::mem::drop(
+                    TeamUpdateManager::handle(ctx)
+                        .update(ctx, |mgr, ctx| mgr.refresh_workspace_metadata(ctx)),
+                );
                 AIRequestUsageModel::handle(ctx)
                     .update(ctx, |m, ctx| m.refresh_request_usage_async(ctx));
             }
@@ -440,6 +442,7 @@ impl BillingCycleUsageSectionView {
             AiCreditsUsageAndCostType::BonusGrant,
             AiCreditsUsageAndCostType::Payg,
             AiCreditsUsageAndCostType::AmbientBonusGrant,
+            AiCreditsUsageAndCostType::Aggregate,
         ] {
             if summary.entries.iter().any(|e| e.cost_type == cost_type) {
                 present_buckets.push(cost_type);
@@ -642,9 +645,8 @@ fn legend_style_for(cost_type: AiCreditsUsageAndCostType) -> (ColorU, &'static s
         AiCreditsUsageAndCostType::BonusGrant => (BONUS_CREDITS_DOT_COLOR, "Add-ons"),
         AiCreditsUsageAndCostType::Payg => (PAYG_CREDITS_DOT_COLOR, "Pay-as-you-go"),
         AiCreditsUsageAndCostType::AmbientBonusGrant => (AMBIENT_CREDITS_DOT_COLOR, "Ambient-only"),
-        AiCreditsUsageAndCostType::Aggregate | AiCreditsUsageAndCostType::Other(_) => {
-            (BASE_CREDITS_DOT_COLOR, "")
-        }
+        AiCreditsUsageAndCostType::Aggregate => (AGGREGATE_CREDITS_DOT_COLOR, "Aggregated"),
+        AiCreditsUsageAndCostType::Other(_) => (BASE_CREDITS_DOT_COLOR, ""),
     }
 }
 
