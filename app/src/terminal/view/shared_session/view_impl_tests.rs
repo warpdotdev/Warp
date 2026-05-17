@@ -9,7 +9,9 @@ use warp_multi_agent_api::{self as api, client_action as api_client_action};
 
 use crate::ai::agent::conversation::{AIConversation, ConversationStatus};
 use crate::ai::agent::AIAgentInput;
-use crate::ai::agent_conversations_model::{AgentConversationsModel, AgentRunDisplayStatus};
+use crate::ai::agent_conversations_model::{
+    AgentConversationsModel, AgentConversationsModelEvent, AgentRunDisplayStatus,
+};
 use crate::ai::ambient_agents::task::{TaskPrincipalInfo, TaskStatusErrorCode, TaskStatusMessage};
 use crate::ai::ambient_agents::{
     AgentSource, AmbientAgentTask, AmbientAgentTaskId, AmbientAgentTaskState,
@@ -1472,6 +1474,82 @@ fn test_restored_owned_tombstone_hides_input_until_continue() {
             assert_eq!(view.pending_cloud_followup_task_id, Some(task_id));
             {
                 let model = view.model.lock();
+                assert!(view.is_input_box_visible(&model, ctx));
+            }
+            assert_eq!(
+                view.input()
+                    .as_ref(ctx)
+                    .editor()
+                    .as_ref(ctx)
+                    .interaction_state(ctx),
+                InteractionState::Editable
+            );
+        });
+    });
+}
+
+#[test]
+fn test_deep_linked_ambient_continuation_refreshes_when_task_data_arrives() {
+    let _handoff_flag = FeatureFlag::HandoffCloudCloud.override_enabled(true);
+    let _setup_v2_flag = FeatureFlag::CloudModeSetupV2.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        let terminal = cloud_mode_terminal_for_test(&mut app);
+        let task = create_cloud_mode_task_for_user(TEST_USER_UID);
+        let task_id = task.task_id;
+
+        terminal.update(&mut app, |view, ctx| {
+            // Mirrors opening a cloud conversation directly (for example, a
+            // Warp-on-Web deep link) before AgentConversationsModel has loaded
+            // the ambient task. The restored pane only has the task id from
+            // conversation metadata, so it first renders the conservative
+            // ended-session UI.
+            let mut model = view.model.lock();
+            model.set_shared_session_source_type(SessionSourceType::AmbientAgent {
+                task_id: Some(task_id.to_string()),
+            });
+            model.set_shared_session_status(SharedSessionStatus::FinishedViewer);
+            drop(model);
+
+            let ambient_agent_view_model = view
+                .ambient_agent_view_model()
+                .expect("cloud mode terminal should have ambient model")
+                .clone();
+            ambient_agent_view_model.update(ctx, |model, ctx| {
+                model.enter_viewing_existing_session(task_id, ctx);
+            });
+
+            view.insert_conversation_ended_tombstone_with_resolved_cta(ctx);
+
+            assert!(view.conversation_ended_tombstone_view_id.is_some());
+            assert_eq!(view.pending_cloud_followup_task_id, None);
+            {
+                let model = view.model.lock();
+                assert!(matches!(
+                    model.shared_session_status(),
+                    SharedSessionStatus::FinishedViewer
+                ));
+                assert!(!view.is_input_box_visible(&model, ctx));
+            }
+        });
+
+        AgentConversationsModel::handle(&app).update(&mut app, |model, ctx| {
+            // Once the task fetch or initial task sync finishes, the terminal
+            // subscription should re-resolve the continuation state and replace
+            // the conservative tombstone with owned follow-up input.
+            model.insert_task_for_test(task);
+            ctx.emit(AgentConversationsModelEvent::TasksUpdated);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            assert!(view.conversation_ended_tombstone_view_id.is_none());
+            assert_eq!(view.pending_cloud_followup_task_id, Some(task_id));
+            {
+                let model = view.model.lock();
+                assert!(matches!(
+                    model.shared_session_status(),
+                    SharedSessionStatus::NotShared
+                ));
                 assert!(view.is_input_box_visible(&model, ctx));
             }
             assert_eq!(

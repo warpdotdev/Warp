@@ -7207,20 +7207,33 @@ impl TerminalView {
         &mut self,
         ctx: &mut ViewContext<Self>,
     ) {
-        if !FeatureFlag::CloudModeSetupV2.is_enabled()
-            || self.conversation_ended_tombstone_view_id.is_some()
-        {
+        if !FeatureFlag::CloudModeSetupV2.is_enabled() {
             return;
         }
 
-        let task_id = {
+        let (task_id, is_active_shared_session, is_finished_viewer) = {
             let model = self.model.lock();
-            if !model.is_shared_ambient_agent_session()
-                || model.is_receiving_agent_conversation_replay()
-            {
+            if model.is_receiving_agent_conversation_replay() {
                 return;
             }
-            model.ambient_agent_task_id()
+
+            let status = model.shared_session_status();
+            // This method also handles restored cloud-mode panes that rendered
+            // a conservative tombstone before task data arrived. When the task
+            // cache updates, either the existing tombstone or FinishedViewer
+            // status tells us to re-resolve the CTA/input state.
+            let should_update = model.is_shared_ambient_agent_session()
+                || self.conversation_ended_tombstone_view_id.is_some()
+                || status.is_finished_viewer();
+            if !should_update {
+                return;
+            }
+
+            (
+                self.ambient_agent_task_id_for_details_panel_from_model(&model, ctx),
+                status.is_active_viewer() || status.is_active_sharer(),
+                status.is_finished_viewer(),
+            )
         };
 
         let Some(task_id) = task_id else {
@@ -7230,16 +7243,12 @@ impl TerminalView {
             return;
         };
 
-        if !task.is_no_longer_running() || self.pending_cloud_followup_task_id == Some(task_id) {
+        if !task.is_no_longer_running() || self.pending_cloud_followup_task_id.is_some() {
             return;
         }
 
         if FeatureFlag::HandoffCloudCloud.is_enabled() {
-            let has_live_shared_session = {
-                let status = self.model.lock().shared_session_status().clone();
-                status.is_active_viewer() || status.is_active_sharer()
-            };
-            if has_live_shared_session {
+            if is_active_shared_session {
                 return;
             }
             let Some(state) = self.cloud_conversation_continuation_ui_state(ctx) else {
@@ -7250,7 +7259,11 @@ impl TerminalView {
                     self.insert_conversation_ended_tombstone_with_cta(cta, ctx);
                 }
                 CloudConversationContinuationUiState::FollowupInput => {
-                    self.enable_cloud_followup_input(task_id, ctx);
+                    if self.conversation_ended_tombstone_view_id.is_some() || is_finished_viewer {
+                        self.insert_conversation_ended_tombstone_with_resolved_cta(ctx);
+                    } else {
+                        self.enable_cloud_followup_input(task_id, ctx);
+                    }
                 }
             }
         } else {

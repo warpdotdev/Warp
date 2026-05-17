@@ -5654,6 +5654,16 @@ impl PaneGroup {
         task_id: AmbientAgentTaskId,
         ctx: &mut ViewContext<Self>,
     ) {
+        // URL-loaded conversation transcripts (e.g. Warp-on-Web deep links)
+        // restore from conversation data before the ambient task cache is
+        // guaranteed to contain this task. Native continuation usually reaches
+        // this path after task-backed navigation, but the restored cloud-mode
+        // pane still needs task ownership/harness data to resolve the correct
+        // inline follow-up or tombstone CTA. Request the task and let
+        // TerminalView's TasksUpdated subscription re-resolve once it arrives.
+        AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
+            model.get_or_async_fetch_task_data(&task_id, ctx);
+        });
         let mut conversation_id = None;
         terminal_view.update(ctx, |view, ctx| {
             // The cloud-mode terminal model starts with
