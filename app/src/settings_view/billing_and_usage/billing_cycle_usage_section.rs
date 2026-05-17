@@ -4,9 +4,10 @@ use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::appearance::Appearance;
 use warpui::{
     elements::{
-        ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
-        Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning,
-        ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Stack, Text,
+        Border, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius,
+        CrossAxisAlignment, DropShadow, Empty, Flex, Hoverable, MainAxisAlignment, MainAxisSize,
+        MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds,
+        Radius, Stack, Text,
     },
     fonts::{Properties, Weight},
     platform::Cursor,
@@ -48,6 +49,7 @@ pub struct BillingCycleUsageSectionView {
     refresh_button_mouse_state: MouseStateHandle,
     period_selector_mouse_state: MouseStateHandle,
     admin_panel_button_mouse_state: MouseStateHandle,
+    aggregate_legend_mouse_state: MouseStateHandle,
     period_menu: ViewHandle<Menu<BillingCycleUsageAction>>,
     period_menu_open: bool,
     source_filter: SourceFilter,
@@ -102,6 +104,7 @@ impl BillingCycleUsageSectionView {
             refresh_button_mouse_state: MouseStateHandle::default(),
             period_selector_mouse_state: MouseStateHandle::default(),
             admin_panel_button_mouse_state: MouseStateHandle::default(),
+            aggregate_legend_mouse_state: MouseStateHandle::default(),
             period_menu,
             period_menu_open: false,
             source_filter: SourceFilter::default(),
@@ -473,38 +476,66 @@ impl BillingCycleUsageSectionView {
         cost_type: AiCreditsUsageAndCostType,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        let (color, label) = legend_style_for(cost_type);
+        let (color, label) = legend_style_for(cost_type.clone());
         let theme = appearance.theme();
-        let mut row = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_main_axis_size(MainAxisSize::Min);
-        row.add_child(
-            ConstrainedBox::new(
-                Container::new(Empty::new().finish())
-                    .with_background_color(color)
-                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
-                        LEGEND_DOT_SIZE / 2.,
-                    )))
-                    .finish(),
-            )
-            .with_height(LEGEND_DOT_SIZE)
-            .with_width(LEGEND_DOT_SIZE)
-            .finish(),
-        );
-        row.add_child(
-            Container::new(
-                Text::new_inline(
-                    label,
-                    appearance.ui_font_family(),
-                    appearance.ui_font_size(),
+        let entry = {
+            let mut row = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_size(MainAxisSize::Min);
+            row.add_child(
+                ConstrainedBox::new(
+                    Container::new(Empty::new().finish())
+                        .with_background_color(color)
+                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                            LEGEND_DOT_SIZE / 2.,
+                        )))
+                        .finish(),
                 )
-                .with_color(theme.sub_text_color(theme.background()).into())
+                .with_height(LEGEND_DOT_SIZE)
+                .with_width(LEGEND_DOT_SIZE)
                 .finish(),
-            )
-            .with_margin_left(6.)
-            .finish(),
-        );
-        row.finish()
+            );
+            row.add_child(
+                Container::new(
+                    Text::new_inline(
+                        label,
+                        appearance.ui_font_family(),
+                        appearance.ui_font_size(),
+                    )
+                    .with_color(theme.sub_text_color(theme.background()).into())
+                    .finish(),
+                )
+                .with_margin_left(6.)
+                .finish(),
+            );
+            row.finish()
+        };
+
+        // The Aggregate bucket replaces per-cost-type detail with a single
+        // "All sources" row, which isn't self-explanatory; surface a small
+        // hover tooltip clarifying what it includes.
+        if !matches!(cost_type, AiCreditsUsageAndCostType::Aggregate) {
+            return entry;
+        }
+
+        let mouse_state = self.aggregate_legend_mouse_state.clone();
+        Hoverable::new(mouse_state, move |state| {
+            let mut stack = Stack::new();
+            stack.add_child(entry);
+            if state.is_hovered() {
+                stack.add_positioned_overlay_child(
+                    render_aggregate_legend_tooltip(appearance),
+                    OffsetPositioning::offset_from_parent(
+                        vec2f(0., 6.),
+                        ParentOffsetBounds::WindowByPosition,
+                        ParentAnchor::BottomMiddle,
+                        ChildAnchor::TopMiddle,
+                    ),
+                );
+            }
+            stack.finish()
+        })
+        .finish()
     }
 
     fn render_body(
@@ -645,9 +676,31 @@ fn legend_style_for(cost_type: AiCreditsUsageAndCostType) -> (ColorU, &'static s
         AiCreditsUsageAndCostType::BonusGrant => (BONUS_CREDITS_DOT_COLOR, "Add-ons"),
         AiCreditsUsageAndCostType::Payg => (PAYG_CREDITS_DOT_COLOR, "Pay-as-you-go"),
         AiCreditsUsageAndCostType::AmbientBonusGrant => (AMBIENT_CREDITS_DOT_COLOR, "Ambient-only"),
-        AiCreditsUsageAndCostType::Aggregate => (AGGREGATE_CREDITS_DOT_COLOR, "Aggregated"),
+        AiCreditsUsageAndCostType::Aggregate => (AGGREGATE_CREDITS_DOT_COLOR, "All sources"),
         AiCreditsUsageAndCostType::Other(_) => (BASE_CREDITS_DOT_COLOR, ""),
     }
+}
+
+fn render_aggregate_legend_tooltip(appearance: &Appearance) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let text = Text::new_inline(
+        "Includes all credit sources.".to_string(),
+        appearance.ui_font_family(),
+        12.,
+    )
+    .with_color(theme.sub_text_color(theme.background()).into())
+    .finish();
+    Container::new(text)
+        .with_background_color(theme.background().into_solid())
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+        .with_border(Border::all(1.).with_border_color(theme.outline().into_solid()))
+        .with_horizontal_padding(10.)
+        .with_vertical_padding(6.)
+        .with_drop_shadow(
+            DropShadow::new_with_standard_offset_and_spread(ColorU::new(0, 0, 0, 48))
+                .with_offset(vec2f(0., 4.)),
+        )
+        .finish()
 }
 
 fn format_period_label(summary: &BillingCycleUsageSummary) -> String {

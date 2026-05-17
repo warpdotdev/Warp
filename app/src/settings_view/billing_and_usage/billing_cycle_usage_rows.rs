@@ -20,7 +20,7 @@ use warpui::{
 use crate::{
     settings_view::billing_and_usage_page_v2::{
         AGGREGATE_CREDITS_DOT_COLOR, AMBIENT_CREDITS_DOT_COLOR, BASE_CREDITS_DOT_COLOR,
-        BONUS_CREDITS_DOT_COLOR, CARD_BORDER_COLOR, PAYG_CREDITS_DOT_COLOR,
+        BONUS_CREDITS_DOT_COLOR, PAYG_CREDITS_DOT_COLOR,
     },
     ui_components::{blended_colors, icons::Icon},
     workspaces::workspace::{
@@ -159,7 +159,7 @@ pub fn cost_type_label(cost_type: &AiCreditsUsageAndCostType) -> &'static str {
         AiCreditsUsageAndCostType::BonusGrant => "Add-ons",
         AiCreditsUsageAndCostType::Payg => "Pay-as-you-go",
         AiCreditsUsageAndCostType::AmbientBonusGrant => "Ambient-only",
-        AiCreditsUsageAndCostType::Aggregate => "Aggregated",
+        AiCreditsUsageAndCostType::Aggregate => "All sources",
         AiCreditsUsageAndCostType::Other(_) => "Other",
     }
 }
@@ -553,7 +553,7 @@ fn render_usage_tooltip_content(row: &MemberUsageRow, appearance: &Appearance) -
         Container::new(column.finish())
             .with_background_color(bg)
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
-            .with_border(Border::all(1.).with_border_color(CARD_BORDER_COLOR))
+            .with_border(Border::all(1.).with_border_color(theme.outline().into_solid()))
             .with_uniform_padding(10.)
             .with_drop_shadow(
                 DropShadow::new_with_standard_offset_and_spread(ColorU::new(0, 0, 0, 48))
@@ -766,7 +766,7 @@ fn build_row_card(
             .finish(),
     )
     .with_background_color(card_bg)
-    .with_border(Border::all(ROW_BORDER_WIDTH).with_border_color(CARD_BORDER_COLOR))
+    .with_border(Border::all(ROW_BORDER_WIDTH).with_border_color(theme.outline().into_solid()))
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(ROW_BORDER_RADIUS)))
     .finish()
 }
@@ -947,22 +947,28 @@ pub fn render_rows(
             if team_row.total_credits == 0 && member_rows.iter().all(|r| r.total_credits == 0) {
                 column.add_child(render_empty_filter_state(source_filter, appearance));
             } else {
-                // Size all bars against the team total: the team row fills the
-                // bar entirely, and each member's bar reads as their share of
-                // the team's usage.
-                let max_credits = team_row.total_credits.max(1);
+                // Team row always fills the bar 100%; member rows are scaled
+                // against the top individual member so the heaviest user
+                // fills the bar and everyone else reads as a fraction of
+                // that user, not of the team total.
                 let team_tooltip_state = mouse_states.tooltip_mouse_state(&team_row.subject_key);
                 column.add_child(render_member_row(
                     &team_row,
-                    max_credits,
+                    team_row.total_credits.max(1),
                     team_tooltip_state,
                     appearance,
                 ));
+                let top_member_max = member_rows
+                    .iter()
+                    .map(|r| r.total_credits)
+                    .max()
+                    .unwrap_or(0)
+                    .max(1);
                 for row in &member_rows {
                     let tooltip_state = mouse_states.tooltip_mouse_state(&row.subject_key);
                     column.add_child(render_member_row(
                         row,
-                        max_credits,
+                        top_member_max,
                         tooltip_state,
                         appearance,
                     ));
@@ -1006,7 +1012,7 @@ fn render_empty_filter_state(
             .finish(),
     )
     .with_background_color(bg)
-    .with_border(Border::all(1.).with_border_color(CARD_BORDER_COLOR))
+    .with_border(Border::all(1.).with_border_color(theme.outline().into_solid()))
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(ROW_BORDER_RADIUS)))
     .with_vertical_padding(24.)
     .finish()
