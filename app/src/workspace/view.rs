@@ -1083,11 +1083,9 @@ pub struct Workspace {
     tab_config_action_sidecar_mouse_states: crate::tab_configs::action_sidecar::SidecarMouseStates,
     remove_tab_config_confirmation_dialog: ViewHandle<RemoveTabConfigConfirmationDialog>,
     handoff_environment_creation_modal: Option<ViewHandle<HandoffEnvironmentCreationModal>>,
-    /// Workspace-level modal that hosts cloud mode's `AuthSecretFtuxView`
-    /// for creating a new managed auth secret from the orchestration card
-    /// pickers (see `WorkspaceAction::OpenCreateAuthSecretModal`). Cloud
-    /// mode itself still renders the FTUX view inline by replacing the input
-    /// box — this modal is only used by the orchestration cards.
+    /// Workspace-level modal hosting `AuthSecretFtuxView` for the
+    /// orchestration cards' "New API key…" flow. Cloud mode renders the
+    /// FTUX view inline and does not use this.
     create_auth_secret_modal: Option<ViewHandle<Modal<AuthSecretFtuxView>>>,
 }
 
@@ -13275,21 +13273,10 @@ impl Workspace {
         ctx.notify();
     }
 
-    /// Opens a workspace-level blocking modal that hosts cloud mode's
-    /// `AuthSecretFtuxView` so the user can create a new managed auth secret
-    /// for `harness` from an orchestration card picker. On Created /
-    /// SecretSelected, persists the choice into
-    /// `CloudAgentSettings::last_selected_auth_secret` and marks the harness
-    /// FTUX as completed (mirroring cloud-mode wiring in `terminal/input.rs`)
-    /// before dismissing the modal. Cards re-resolve to the new secret via
-    /// their existing `HarnessAvailabilityEvent::AuthSecretCreated`
-    /// subscription. Cloud mode itself is unaffected.
+    /// Opens the workspace-level blocking modal for creating a new managed
+    /// auth secret. Persists the new secret on success and dismisses the
+    /// modal; cards adopt it via `HarnessAvailabilityEvent::AuthSecretCreated`.
     fn show_create_auth_secret_modal(&mut self, harness: Harness, ctx: &mut ViewContext<Self>) {
-        // Compact mode skips the existing-secrets dropdown UI and auto-enters
-        // creation state for the harness's first secret type, matching the
-        // entrypoint where the user has already picked "New API key…" from the
-        // orchestration card. The embedded harness picker also lets the user
-        // switch harness without leaving the modal.
         let body = ctx.add_typed_action_view(|ctx| {
             AuthSecretFtuxView::new(harness, ctx)
                 .with_skip_hidden()
@@ -13311,13 +13298,10 @@ impl Workspace {
             AuthSecretFtuxViewEvent::Cancelled | AuthSecretFtuxViewEvent::Skipped { .. } => {
                 me.dismiss_create_auth_secret_modal(ctx);
             }
-            // Toast is rendered inside the view; keep the modal open so the
-            // user can retry.
+            // Keep the modal open on Failed; the view already toasts.
             AuthSecretFtuxViewEvent::Failed { .. } => {}
         });
 
-        // The harness picker is now inside the view body, so keep the title
-        // generic.
         let title = "New API key".to_string();
         let modal = ctx.add_typed_action_view(|ctx| {
             Modal::new(Some(title), body, ctx).with_modal_style(UiComponentStyles {

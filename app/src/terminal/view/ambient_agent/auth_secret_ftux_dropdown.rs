@@ -72,12 +72,8 @@ pub struct AuthSecretFtuxDropdown {
     harness: Harness,
     display_label: Option<String>,
     label_mouse_state: MouseStateHandle,
-    /// When `true`, the menu does not auto-open on construction, the
-    /// existing-secrets list and "Skip" affordance are suppressed, and
-    /// only the "+ New …" entries for the current harness are shown.
-    /// Used by the orchestration card's `Modal<AuthSecretFtuxView>` where
-    /// the user has already picked "New API key…" and only needs to pick a
-    /// type (or stays on the default first type).
+    /// Compact mode (orchestration modal): no auto-open, suppresses the
+    /// existing-secrets list and Skip, shows only "+ New …" entries.
     compact_mode: bool,
 }
 
@@ -155,18 +151,14 @@ impl AuthSecretFtuxDropdown {
         me
     }
 
-    /// Switches this dropdown into the orchestration modal's compact
-    /// presentation: closes the menu (if open), suppresses the
-    /// existing-secrets list and the "Skip" item, and rebuilds the menu
-    /// so only the "+ New …" entries remain. Idempotent.
+    /// Toggle compact mode. See the `compact_mode` field for what changes.
+    /// Idempotent.
     pub fn set_compact_mode(&mut self, compact: bool, ctx: &mut ViewContext<Self>) {
         if self.compact_mode == compact {
             return;
         }
         self.compact_mode = compact;
         if compact {
-            // Auto-open from `new()` is harmless in cloud mode but the
-            // modal wants the menu closed by default.
             self.set_menu_visibility(false, ctx);
         }
         self.refresh_menu(ctx);

@@ -102,9 +102,7 @@ pub enum OrchestrationConfigBlockAction {
     AuthSecretChanged {
         auth_secret_name: Option<String>,
     },
-    /// User picked the "New API key…" item in the auth secret picker. The
-    /// handler dispatches `WorkspaceAction::OpenCreateAuthSecretModal` so the
-    /// workspace-level modal opens for the current harness.
+    /// User picked the "New API key…" item; opens the workspace create modal.
     CreateNewAuthSecretRequested,
 }
 
@@ -151,22 +149,14 @@ pub struct OrchestrationConfigBlockView {
     /// saves the config and the resulting event re-enters
     /// `refresh_from_model`.
     suppress_refresh: bool,
-    /// One-shot guard for the auto-open of the create-key modal. Mirrors
-    /// the equivalent flag on `RunAgentsCardView`. Set to `true` the
-    /// first time the modal opens because the harness has no loaded
-    /// secrets, so cancelling the modal does NOT re-pop on the next
-    /// render. Reset when the harness or execution mode changes so the
-    /// user gets a fresh prompt for the new state.
+    /// One-shot guard: cancelling the auto-popped modal must not re-pop.
+    /// Reset on harness / execution-mode change.
     has_auto_opened_create_modal: bool,
-    /// Tracks whether the user has interacted with this view in the
-    /// current session (toggled approval, changed harness, changed
-    /// execution mode). The plan card is reconstructed on session
-    /// restore with `is_approved=true` loaded from history, and there
-    /// is no `block_model.is_restored()` equivalent at the document
-    /// level. Gating the auto-pop on explicit interaction prevents the
-    /// create-key modal from popping on restoration while still firing
-    /// the first time the user enables orchestration / switches
-    /// harnesses in a live session.
+    /// Required before any auto-pop fires. The plan card is
+    /// reconstructed on session restore with `is_approved=true`; gating
+    /// on explicit interaction (toggle approval, change harness, switch
+    /// mode) suppresses the modal on restore while still firing for
+    /// live-session enablement.
     user_has_interacted: bool,
 }
 
@@ -254,14 +244,10 @@ impl OrchestrationConfigBlockView {
                 HarnessAvailabilityEvent::Changed
                 | HarnessAvailabilityEvent::AuthSecretsLoaded
                 | HarnessAvailabilityEvent::AuthSecretsFetchFailed => {
-                    // Repopulate on fetch failure too, otherwise the picker
-                    // would stay on the "Loading…" placeholder we wrote
-                    // when the fetch started.
+                    // Repopulate even on fetch failure to replace "Loading…".
                     if me.pickers_initialized {
                         oc::repopulate_all_pickers(&mut me.edit_state, &me.pickers, ctx);
                     }
-                    // Now that we know the secrets list is empty, give
-                    // the user a one-shot nudge to create a key.
                     me.maybe_auto_open_create_modal(ctx);
                     ctx.notify();
                 }
@@ -286,53 +272,33 @@ impl OrchestrationConfigBlockView {
         };
         if view.is_approved {
             view.ensure_pickers(ctx);
-            // Deliberately do NOT call `maybe_auto_open_create_modal`
-            // here. Construction time is the same code path used by
-            // session restoration (the plan card is reconstructed with
-            // `is_approved=true` loaded from history), and popping a
-            // modal on restore is jarring. The user's first interaction
-            // — toggling approval, changing harness, switching mode —
-            // arms the auto-open; the `AuthSecretsLoaded` subscription
-            // will pop the modal once secrets finish fetching.
+            // Skip auto-open here: construction is also the restore code
+            // path. The first user interaction (or `arm_for_fresh_dispatch`
+            // from a live config update) arms the auto-open instead.
         }
         view
     }
 
-    /// Arms the auto-open of the create-key modal when this view was
-    /// constructed in direct response to an agent-dispatched
-    /// orchestration config (the lazy-creation path in
-    /// `AIDocumentView`'s `OrchestrationConfigUpdated` handler).
-    /// Restoration goes through the eager-construction path in
-    /// `AIDocumentView::new`, which does NOT call this, so the modal
-    /// stays suppressed on restore.
+    /// Marks this view as eligible for auto-pop. Called by
+    /// `AIDocumentView`'s lazy-creation path when the agent dispatches a
+    /// live config update. Restoration goes through eager construction
+    /// and never calls this.
     pub fn arm_for_fresh_dispatch(&mut self, ctx: &mut ViewContext<Self>) {
         self.user_has_interacted = true;
         self.maybe_auto_open_create_modal(ctx);
     }
 
-    /// Opens the create-key modal automatically when the harness has no
-    /// loaded managed secrets and the user hasn't yet made a selection.
-    /// Only fires once per view lifetime per harness / execution-mode
-    /// change (those reset the guard). Also auto-expands the
-    /// "View details" panel so the user sees the picker + validation
-    /// context behind the modal — otherwise the source of the prompt
-    /// would be invisible while the modal is open.
+    /// Auto-pops the create-key modal once per view per harness/mode
+    /// change when the harness has no loaded secrets. Also auto-expands
+    /// the details panel so the modal opens with context visible behind it.
     fn maybe_auto_open_create_modal(&mut self, ctx: &mut ViewContext<Self>) {
         if self.has_auto_opened_create_modal {
             return;
         }
-        // Suppress auto-open on session restoration. The plan card is
-        // reconstructed from history with `is_approved` already true,
-        // and there is no document-level equivalent of
-        // `block_model.is_restored()`. Requiring an explicit interaction
-        // (toggle approval, change harness, switch mode) before any
-        // auto-pop fires both rules out restoration and matches the
-        // user's expectation that the nudge is tied to an action.
+        // Suppress on session restoration — see `user_has_interacted` doc.
         if !self.user_has_interacted {
             return;
         }
-        // Without orchestration enabled the picker doesn't exist at all,
-        // so there's nothing to prompt against.
         if !self.is_approved || !self.pickers_initialized {
             return;
         }
@@ -349,10 +315,8 @@ impl OrchestrationConfigBlockView {
         else {
             return;
         };
-        // Only auto-open when we are sure the harness has no loaded
-        // secrets (Loaded([])). NotFetched / Loading / Failed are
-        // ambiguous — the `AuthSecretsLoaded` subscription re-fires
-        // this check after the fetch resolves.
+        // Only auto-open on `Loaded([])`. Other fetch states are
+        // ambiguous; the `AuthSecretsLoaded` subscription will retry.
         let has_zero_loaded = matches!(
             HarnessAvailabilityModel::as_ref(ctx).auth_secrets_for(harness),
             AuthSecretFetchState::Loaded(secrets) if secrets.is_empty()
@@ -361,10 +325,7 @@ impl OrchestrationConfigBlockView {
             return;
         }
         self.has_auto_opened_create_modal = true;
-        // Auto-expand details so the modal opens with the picker /
-        // validation error visible behind it. Without this the user
-        // would see a modal pop on a collapsed plan card and have no
-        // visible context for where it came from.
+        // Show the picker / validation behind the modal.
         if !self.details_expanded {
             self.details_expanded = true;
         }
@@ -696,9 +657,7 @@ impl TypedActionView for OrchestrationConfigBlockView {
                     self.ensure_pickers(ctx);
                 }
                 self.apply_field_change(ctx);
-                // Turning on orchestration is the first moment the
-                // picker exists for this view — arm the auto-open and
-                // give the harness a fresh evaluation now.
+                // First moment the picker exists — arm and evaluate.
                 if self.is_approved {
                     self.user_has_interacted = true;
                     self.maybe_auto_open_create_modal(ctx);
@@ -727,9 +686,7 @@ impl TypedActionView for OrchestrationConfigBlockView {
                     ctx,
                 );
                 self.apply_field_change(ctx);
-                // Mode change can newly reveal the auth picker (Local
-                // → Cloud) — arm the auto-open and give the user a
-                // fresh prompt.
+                // Local → Cloud can newly reveal the auth picker.
                 self.user_has_interacted = true;
                 self.has_auto_opened_create_modal = false;
                 self.maybe_auto_open_create_modal(ctx);
@@ -756,9 +713,7 @@ impl TypedActionView for OrchestrationConfigBlockView {
                     ctx,
                 );
                 self.apply_field_change(ctx);
-                // Harness change resets per-harness selection state, so
-                // arm the auto-open and give the new harness a fresh
-                // prompt.
+                // Per-harness state reset — re-arm for the new harness.
                 self.user_has_interacted = true;
                 self.has_auto_opened_create_modal = false;
                 self.maybe_auto_open_create_modal(ctx);
@@ -776,13 +731,8 @@ impl TypedActionView for OrchestrationConfigBlockView {
                 ctx.notify();
             }
             OrchestrationConfigBlockAction::AuthSecretChanged { auth_secret_name } => {
-                // No `apply_field_change` here: managed secrets are user-scoped
-                // (not plan-scoped), so they are persisted side-channel via
-                // `CloudAgentSettings.last_selected_auth_secret` instead of
-                // being baked into `OrchestrationConfig`. Consequence: changing
-                // the picker doesn't surface a "config modified" signal, and
-                // two users on the same approved plan can have different secret
-                // selections without conflicting.
+                // No `apply_field_change`: secrets are user-scoped and
+                // persisted side-channel, not baked into `OrchestrationConfig`.
                 oc::apply_auth_secret_change(
                     &mut self.edit_state,
                     &self.pickers,
@@ -792,9 +742,6 @@ impl TypedActionView for OrchestrationConfigBlockView {
                 ctx.notify();
             }
             OrchestrationConfigBlockAction::CreateNewAuthSecretRequested => {
-                // Clear the current selection so that if the user cancels
-                // the create-key modal, the picker stays on "+ New API
-                // key…" and the validation error continues to render.
                 oc::apply_create_new_auth_secret_requested(&mut self.edit_state, ctx);
                 if let Some(harness) =
                     Harness::parse_orchestration_harness(&self.edit_state.harness_type)

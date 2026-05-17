@@ -127,9 +127,7 @@ impl CompactibleActionButton {
         });
     }
 
-    /// Sets the disabled state on both the compact and expanded
-    /// underlying [`ActionButton`]s. Use this to keep them in sync
-    /// when the parent view determines the button should be inert.
+    /// Sets the disabled state on both the compact and expanded buttons.
     pub fn set_disabled<T: View>(&mut self, disabled: bool, ctx: &mut ViewContext<T>) {
         self.compact_button.update(ctx, |button, ctx| {
             button.set_disabled(disabled, ctx);
@@ -139,14 +137,9 @@ impl CompactibleActionButton {
         });
     }
 
-    /// Sets the tooltip on both compact and expanded buttons. Pass
-    /// `Some(text)` to show a tooltip on hover, or `None` to clear it.
-    ///
-    /// The compact button always renders its label as a tooltip (since
-    /// the compact variant hides the label), so passing `None` here
-    /// will leave the compact button with no hover affordance. Callers
-    /// that need to preserve the label tooltip should call
-    /// [`set_label`](Self::set_label) instead.
+    /// Sets the tooltip on both buttons. Passing `None` clears the compact
+    /// button's hover affordance; use [`set_label`](Self::set_label) to
+    /// preserve the label tooltip.
     pub fn set_tooltip<T: View>(&mut self, tooltip: Option<String>, ctx: &mut ViewContext<T>) {
         let compact_tooltip = tooltip.clone();
         let expanded_tooltip = tooltip;

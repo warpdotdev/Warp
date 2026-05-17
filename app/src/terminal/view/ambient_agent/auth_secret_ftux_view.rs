@@ -66,23 +66,20 @@ pub enum AuthSecretFtuxAction {
     SelectHarness(Harness),
 }
 
-/// Events emitted by [`AuthSecretFtuxView`]. The view used to mutate the
-/// surrounding `AmbientAgentViewModel` and `CloudAgentSettings` directly; those
-/// side effects are now driven by the parent so the same view can be hosted
-/// inside a workspace-level modal (e.g. the orchestration card's "+ New…" path).
+/// Lifecycle events the view emits to its host. Side effects (persist
+/// selection, mark FTUX complete, etc.) are the host's responsibility so the
+/// same view can be embedded in cloud mode or in a workspace-level modal.
 #[derive(Debug, Clone)]
 pub enum AuthSecretFtuxViewEvent {
-    /// The user selected an existing secret from the in-view dropdown.
+    /// User picked an existing secret from the in-view dropdown.
     SecretSelected { harness: Harness, name: String },
-    /// The user created a new secret via the form. Parent should persist the
-    /// selection (see cloud mode's wiring in `terminal/input.rs`).
+    /// User created a new secret via the form.
     Created { harness: Harness, name: String },
-    /// The user dismissed the form via Cancel.
+    /// User dismissed the form via Cancel.
     Cancelled,
-    /// The user dismissed the FTUX via the in-dropdown "Skip" item.
+    /// User skipped via the in-dropdown "Skip" item.
     Skipped { harness: Harness },
-    /// The async `create_auth_secret` request failed. The view also surfaces
-    /// this as a toast so parents are not required to handle the event.
+    /// `create_auth_secret` failed. The view also shows a toast.
     Failed { error: String },
 }
 
@@ -100,24 +97,16 @@ pub struct AuthSecretFtuxView {
     creation_state: Option<SecretCreationState>,
     cancel_mouse_state: MouseStateHandle,
     continue_mouse_state: MouseStateHandle,
-    /// When true, the in-dropdown "Skip" item is suppressed and the
-    /// `Skipped` event will not fire. Defaults to `false` so cloud mode is
-    /// unchanged; the orchestration modal sets it to `true`.
+    /// Suppresses the in-dropdown "Skip" item; default `false` (cloud mode
+    /// keeps Skip, orchestration modal hides it).
     skip_hidden: bool,
-    /// When true the view renders the orchestration modal's compact
-    /// presentation: description is hidden, the embedded
-    /// [`AuthSecretFtuxDropdown`] runs in compact mode (no existing
-    /// secrets, no Skip), the view auto-enters creation state for the
-    /// harness's first secret type, and a harness picker is rendered
-    /// above the form so the user can switch harness without leaving
-    /// the modal. Cloud mode keeps the default (`false`).
+    /// Compact (orchestration-modal) presentation: no description, dropdown
+    /// hides existing secrets and Skip, auto-enters creation for the first
+    /// secret type, and renders a harness picker above the form.
     compact_mode: bool,
-    /// Mouse-state for the compact harness picker trigger button.
     harness_picker_mouse_state: MouseStateHandle,
-    /// Whether the compact harness picker overlay menu is currently open.
     is_harness_menu_open: bool,
-    /// Lazily-created `Menu` rendered as an overlay when the user clicks
-    /// the compact harness picker button. Only built in compact mode.
+    /// Lazily built; only in compact mode.
     harness_menu: Option<ViewHandle<Menu<AuthSecretFtuxAction>>>,
 }
 
@@ -218,15 +207,10 @@ impl AuthSecretFtuxView {
         }
     }
 
-    /// Switch this view into the orchestration modal's compact
-    /// presentation. Reconfigures the embedded dropdown to compact mode,
-    /// auto-enters creation state for the harness's first auth-secret
-    /// type, and lazily builds the harness picker menu. Cloud mode never
-    /// calls this and keeps its existing behavior.
+    /// Switch to the orchestration modal's compact presentation. See the
+    /// `compact_mode` field for what changes.
     pub fn with_compact_mode(mut self, ctx: &mut ViewContext<Self>) -> Self {
         self.compact_mode = true;
-        // Switch the embedded dropdown into compact mode so it stops
-        // showing existing secrets / Skip and closes its menu.
         let dropdown = self.ftux_dropdown.clone();
         dropdown.update(ctx, |dropdown, ctx| {
             dropdown.set_compact_mode(true, ctx);
@@ -261,8 +245,7 @@ impl AuthSecretFtuxView {
         self.compact_mode
     }
 
-    /// Hide the in-dropdown "Skip" affordance. Used by modal hosts where
-    /// skipping has no meaning. Cloud mode keeps the default (visible).
+    /// Hide the in-dropdown "Skip" affordance. Used by modal hosts.
     pub fn with_skip_hidden(mut self) -> Self {
         self.skip_hidden = true;
         self
@@ -273,10 +256,8 @@ impl AuthSecretFtuxView {
         self.harness
     }
 
-    /// Retargets this view at a new harness. Mirrors what the old in-view
-    /// `AmbientAgentViewModelEvent::HarnessSelected` subscription did: clears
-    /// any in-progress creation state and propagates the new harness to the
-    /// embedded dropdown so the next secret list reflects the change.
+    /// Retarget at a new harness: clear in-progress creation state and
+    /// propagate the harness change to the embedded dropdown.
     pub fn set_harness(&mut self, harness: Harness, ctx: &mut ViewContext<Self>) {
         if self.harness == harness {
             return;

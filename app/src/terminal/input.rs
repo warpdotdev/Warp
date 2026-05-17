@@ -2441,10 +2441,7 @@ impl Input {
                 let ftux_view =
                     ctx.add_typed_action_view(|ctx| AuthSecretFtuxView::new(initial_harness, ctx));
 
-                // Keep the FTUX view's harness in sync with the pane's harness
-                // selection. Previously the view subscribed to the pane model
-                // directly; we move that subscription up here so the view can
-                // be reused outside the cloud-mode pane.
+                // Forward the pane's harness changes into the FTUX view.
                 let ftux_for_harness_sub = ftux_view.clone();
                 ctx.subscribe_to_model(&state.view_model, move |_me, vm, event, ctx| {
                     if matches!(event, AmbientAgentViewModelEvent::HarnessSelected) {
@@ -2455,10 +2452,9 @@ impl Input {
                     }
                 });
 
-                // Drive the side effects that used to live inside the FTUX
-                // view. Cloud mode UX is unchanged: secret selection / creation
-                // updates the pane's harness auth secret, persists the choice
-                // to `last_selected_auth_secret`, and marks the FTUX completed.
+                // Cloud-mode side effects on FTUX events: update the pane's
+                // harness auth secret, persist `last_selected_auth_secret`,
+                // mark FTUX completed.
                 let vm_for_events = state.view_model.clone();
                 ctx.subscribe_to_view(&ftux_view, move |_me, _, event, ctx| match event {
                     AuthSecretFtuxViewEvent::SecretSelected { harness, name }
@@ -2486,7 +2482,6 @@ impl Input {
                             settings.mark_harness_auth_ftux_completed(harness, ctx);
                         });
                     }
-                    // Toast is rendered inside the view; nothing else to do here.
                     AuthSecretFtuxViewEvent::Failed { .. } => {}
                 });
 

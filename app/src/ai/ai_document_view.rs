@@ -294,15 +294,12 @@ impl AIDocumentView {
                         conversation_id: cid,
                         from_restore,
                     } => {
-                        // Re-render so the config block picks up changes
-                        // only for our document's conversation.
                         let our_conv = AIDocumentModel::as_ref(ctx)
                             .get_conversation_id_for_document_id(&document_id);
                         if our_conv.as_ref() == Some(cid) {
-                            // Lazily create the config block view if it
-                            // wasn't available at construction time (the
-                            // plan sidebar can open before the server
-                            // sends the orchestration config).
+                            // Lazily create the config block view if the
+                            // plan sidebar opened before the orchestration
+                            // config arrived.
                             let was_freshly_created = if me.orchestration_config_block.is_none() {
                                 let conv_id = *cid;
                                 // TODO: introduce DocumentId / PlanId newtypes to make this
@@ -316,18 +313,8 @@ impl AIDocumentView {
                             } else {
                                 false
                             };
-                            // When the block was freshly created in
-                            // response to a non-restore
-                            // `OrchestrationConfigUpdated` event, the
-                            // agent just dispatched a config (live wire
-                            // message or user-driven edit). Arm the
-                            // auto-open of the create-key modal so the
-                            // block prompts the user when the harness
-                            // has no keys yet. Restore-hydrated events
-                            // hit this branch too — with `from_restore`
-                            // true — but we deliberately do NOT arm in
-                            // that case so the modal stays suppressed
-                            // on session restoration.
+                            // Arm auto-pop for live agent dispatches but
+                            // not for restore-hydrated events.
                             if was_freshly_created && !*from_restore {
                                 if let Some(block) = &me.orchestration_config_block {
                                     block.update(ctx, |block, ctx| {

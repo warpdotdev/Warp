@@ -166,9 +166,7 @@ pub enum AIDocumentUpdateSource {
     Restoration,
 }
 
-/// Payload queued when the user edits the plan-card orchestration
-/// config block. Cleared after `send_request_input()` piggybacks it
-/// onto the outbound `UserInputs`.
+/// Queued plan-card edit; cleared once it piggybacks onto an outbound query.
 #[derive(Debug, Clone)]
 pub struct DirtyOrchestrationEvent {
     pub plan_id: String,
@@ -193,10 +191,7 @@ pub struct AIDocumentModel {
     /// tool calls to the corresponding AI document ID.
     streaming_create_documents: HashMap<(AIConversationId, AIAgentActionId, usize), AIDocumentId>,
 
-    /// Dirty event queued for the next outbound request.
-    /// Set when the user edits the config or toggles approval on the
-    /// plan card; cleared by the controller after piggybacking onto
-    /// the outbound `UserInputs`.
+    /// Pending plan-card edits, drained on the next outbound request.
     dirty_orchestration_events: HashMap<(AIConversationId, String), DirtyOrchestrationEvent>,
 }
 
@@ -1295,9 +1290,8 @@ impl AIDocumentModel {
         }
     }
 
-    /// Updates the per-plan orchestration config and status.
-    /// Called from the plan card config block when the user edits a field
-    /// or toggles the approval switch.
+    /// Updates the per-plan orchestration config and status; called from
+    /// the plan card config block on field edit / approval toggle.
     pub fn set_orchestration_config_for_plan(
         &mut self,
         conversation_id: AIConversationId,
