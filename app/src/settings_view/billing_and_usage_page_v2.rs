@@ -105,9 +105,15 @@ pub(super) const BONUS_CREDITS_DOT_COLOR: ColorU = ColorU {
     a: 255,
 };
 pub(super) const PAYG_CREDITS_DOT_COLOR: ColorU = ColorU {
-    r: 138,
-    g: 173,
-    b: 233,
+    r: 94,
+    g: 177,
+    b: 239,
+    a: 255,
+};
+pub(super) const AMBIENT_CREDITS_DOT_COLOR: ColorU = ColorU {
+    r: 99,
+    g: 102,
+    b: 241,
     a: 255,
 };
 const DEFAULT_MAX_MONTHLY_SPEND_CENTS: i32 = 20_000;
