@@ -1745,6 +1745,7 @@ input HarnessInput {
 type HarnessModel {
   displayName: String!
   id: ID!
+  reasoningLevel: String
 }
 
 """

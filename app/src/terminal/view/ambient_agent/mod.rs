@@ -131,7 +131,8 @@ pub fn create_cloud_mode_view(
                 | AmbientAgentViewModelEvent::PendingHandoffChanged
                 | AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { .. }
                 | AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility
-                | AmbientAgentViewModelEvent::AuthSecretSelected => {}
+                | AmbientAgentViewModelEvent::AuthSecretSelected
+                | AmbientAgentViewModelEvent::RunLifecycleChanged => {}
             }
         });
     });
