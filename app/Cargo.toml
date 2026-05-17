@@ -590,6 +590,7 @@ default = [
     "inline_model_selector",
     "oz_launch_modal",
     "open_warp_launch_modal",
+    "orchestration_launch_modal",
     "new_tab_styling",
     "richtext_multiselect",
     "inline_profile_selector",
@@ -915,6 +916,7 @@ oz_platform_skills = []
 oz_identity_federation = []
 oz_launch_modal = []
 open_warp_launch_modal = []
+orchestration_launch_modal = []
 new_tab_styling = []
 file_based_mcp = []
 skill_arguments = []

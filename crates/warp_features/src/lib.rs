@@ -942,7 +942,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::SshRemoteServer,
     FeatureFlag::CloudModeInputV2,
     FeatureFlag::DragTabsToWindows,
-    FeatureFlag::OrchestrationLaunchModal,
     FeatureFlag::HandoffCloudCloud,
     FeatureFlag::SoloUserByok,
     FeatureFlag::CustomInferenceEndpoints,
