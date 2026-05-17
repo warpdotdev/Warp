@@ -621,23 +621,11 @@ impl WorkingDirectoriesModel {
             let mut repos_to_insert = Vec::new();
             for (dir, terminal_id) in &new_root_to_terminal {
                 if *terminal_id == focused_id {
-                    match dir {
-                        LocalOrRemotePath::Local(local_path) => {
-                            if let Some(repo_root) = self.get_repo_root_for_path(local_path, ctx) {
-                                let repo_key = LocalOrRemotePath::Local(repo_root);
-                                repos_to_insert.push((repo_key.clone(), focused_id));
-                                focused_repo = Some(repo_key);
-                            }
-                        }
-                        LocalOrRemotePath::Remote(remote_path) => {
-                            let remote_key = LocalOrRemotePath::Remote(remote_path.clone());
-                            if let Some(repo_root) =
-                                DetectedRepositories::as_ref(ctx).get_root_for_path(&remote_key)
-                            {
-                                repos_to_insert.push((repo_root.clone(), focused_id));
-                                focused_repo = Some(repo_root);
-                            }
-                        }
+                    if let Some(repo_root) =
+                        DetectedRepositories::as_ref(ctx).get_root_for_path(dir)
+                    {
+                        repos_to_insert.push((repo_root.clone(), focused_id));
+                        focused_repo = Some(repo_root);
                     }
                 }
             }
