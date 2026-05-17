@@ -1434,15 +1434,11 @@ impl BillingAndUsagePageV2View {
         }
 
         content.add_child(
-            Container::new(
-                ChildView::new(&self.billing_cycle_usage_section).finish(),
-            )
-            .with_margin_top(16.)
-            .with_padding_top(24.)
-            .with_border(Border::top(1.).with_border_color(
-                appearance.theme().outline().into(),
-            ))
-            .finish(),
+            Container::new(ChildView::new(&self.billing_cycle_usage_section).finish())
+                .with_margin_top(16.)
+                .with_padding_top(24.)
+                .with_border(Border::top(1.).with_border_color(appearance.theme().outline().into()))
+                .finish(),
         );
 
         content.finish()
