@@ -186,10 +186,9 @@ fn conversation_blocked_is_blocked() {
 // --- Harness auth preflight errors ---
 
 #[test]
-fn harness_auth_login_failed_is_failed_with_auth_required() {
+fn harness_auth_check_failed_is_failed_with_auth_required() {
     let (state, update) = classify_driver_error(&AgentDriverError::HarnessAuthCheckFailed {
         harness: "claude".into(),
-        kind: crate::ai::agent_sdk::driver::HarnessAuthFailureKind::LoginFailed,
         detail: "exit code 1".into(),
     });
     assert_eq!(state, AgentTaskState::Failed);
@@ -201,18 +200,23 @@ fn harness_auth_login_failed_is_failed_with_auth_required() {
     assert!(update.message.contains("claude"));
 }
 
+// --- Runtime failure detection ---
+
 #[test]
-fn harness_auth_test_request_failed_is_failed_with_auth_required() {
-    let (state, update) = classify_driver_error(&AgentDriverError::HarnessAuthCheckFailed {
-        harness: "codex".into(),
-        kind: crate::ai::agent_sdk::driver::HarnessAuthFailureKind::TestRequestFailed,
-        detail: "exit code 1".into(),
+fn harness_runtime_failure_detected_is_failed_with_auth_required() {
+    let (state, update) = classify_driver_error(&AgentDriverError::HarnessRuntimeFailureDetected {
+        harness: "claude".into(),
+        pattern: "credit balance is too low".into(),
+        excerpt: "Error: Your credit balance is too low to make this request.".into(),
     });
     assert_eq!(state, AgentTaskState::Failed);
     assert_eq!(
         update.error_code,
         Some(PlatformErrorCode::AuthenticationRequired)
     );
-    assert!(update.message.contains("billing check failed"));
-    assert!(update.message.contains("codex"));
+    // The user-visible message must surface both the matched pattern and
+    // the excerpt so on-call/users have actionable context.
+    assert!(update.message.contains("claude"));
+    assert!(update.message.contains("credit balance is too low"));
+    assert!(update.message.contains("Your credit balance is too low"));
 }

@@ -1,4 +1,4 @@
-# Harness Auth Preflight Checks — Tech Spec
+# Harness Auth Preflight + Runtime Failure Detection — Tech Spec
 
 ## Context
 See `PRODUCT.md` for user-facing behavior. This document covers the implementation.
@@ -10,263 +10,257 @@ Third-party harnesses implement the `ThirdPartyHarness` trait (`app/src/ai/agent
 2. `ThirdPartyHarness::build_runner()` — writes config files (auth, trust, system prompt, MCP) and returns a `HarnessRunner`.
 3. `HarnessRunner::start()` — creates the external conversation on the server and launches the main CLI command.
 
-These steps are orchestrated in `AgentDriver::run_internal` (`driver.rs:1528`), which calls `setup_harness` → `prepare_harness` → `run_harness`.
+These steps are orchestrated in `AgentDriver::run_internal` (`driver.rs:1608`), which calls `setup_harness` → `prepare_harness` → `run_preflight_checks` → `run_harness`.
 
-Driver errors are classified in `error_classification.rs` into `(AgentTaskState, TaskStatusUpdate)` pairs and reported to the server via `report_driver_error` (`driver.rs:791`). The `PlatformErrorCode` enum (`agent_task.graphqls:87`) already has `AUTHENTICATION_REQUIRED`.
+Driver errors are classified in `error_classification.rs` into `(AgentTaskState, TaskStatusUpdate)` pairs and reported to the server via `report_driver_error`. The `PlatformErrorCode` enum already has `AUTHENTICATION_REQUIRED`.
 
 ### Relevant files
-- `app/src/ai/agent_sdk/driver/harness/mod.rs` — `ThirdPartyHarness` trait, `HarnessRunner` trait
-- `app/src/ai/agent_sdk/driver/harness/claude_code.rs` — Claude Code harness implementation
-- `app/src/ai/agent_sdk/driver/harness/codex.rs` — Codex harness implementation
-- `app/src/ai/agent_sdk/driver/harness/gemini.rs` — Gemini harness implementation
-- `app/src/ai/agent_sdk/driver.rs` — `AgentDriver`, `AgentDriverError` enum, `run_internal`, `prepare_harness`, `run_harness`
+- `app/src/ai/agent_sdk/driver/harness/mod.rs` — `ThirdPartyHarness` trait, `HarnessRunner` trait, `preflight_commands_for`
+- `app/src/ai/agent_sdk/driver/harness/claude_code.rs`, `harness/codex.rs`, `harness/gemini.rs` — per-harness implementations
+- `app/src/ai/agent_sdk/driver.rs` — `AgentDriver`, `AgentDriverError` enum, `run_internal`, `prepare_harness`, `run_harness`, `run_preflight_checks`
+- `app/src/ai/agent_sdk/driver/harness_output_monitor.rs` — runtime scanner (new)
 - `app/src/ai/agent_sdk/driver/error_classification.rs` — maps `AgentDriverError` → `(AgentTaskState, TaskStatusUpdate)`
-- `app/src/ai/agent_sdk/driver/terminal.rs` — `TerminalDriver::execute_silent_command` (line 406)
+- `app/src/ai/agent_sdk/driver/terminal.rs` — `TerminalDriver::execute_command`, `block_snapshot`, `find_first_match_in_block_output` (new)
+- `app/src/terminal/model/find.rs` — `RegexDFAs` machinery reused by the scanner
+- `app/src/terminal/model/blockgrid.rs` — `BlockGrid::find(&RegexDFAs)` returns matches over cell storage directly
 
 ## Proposed changes
 
-### 1. New error variant on `AgentDriverError`
+### 1. Trait surface changes on `ThirdPartyHarness`
 
-Add a new variant to `AgentDriverError` in `driver.rs`:
+Drop the billing preflight method and add a runtime-error-patterns method:
 
-```rust
-/// Which preflight check failed.
-#[derive(Debug, Clone, Copy)]
-pub enum HarnessAuthFailureKind {
-    /// The harness CLI's login/auth status check exited non-zero.
-    LoginFailed,
-    /// A lightweight test API request exited non-zero (billing, quota, etc.).
-    TestRequestFailed,
+```rust path=null start=null
+// Removed:
+// fn billing_check_command(&self) -> Option<String> { None }
+
+// Added:
+/// Substrings to scan for in the running harness block's output. A hit
+/// indicates the harness can't make a successful API request.
+fn runtime_error_patterns(&self) -> &'static [&'static str] {
+    &[]
 }
+```
 
-// In AgentDriverError:
+Per-harness:
+- **Claude Code** and **Codex**: drop `billing_check_command`, add `runtime_error_patterns` returning an empty slice with a `TODO(REMOTE-1385)` to fill in validated needles.
+- **Gemini**: inherits default `None` / empty.
+
+`preflight_commands_for(harness)` in `harness/mod.rs` now only pushes `auth_check_command()`. The viewer's "setup commands" grouping continues to recognize preflight blocks by exact string equality.
+
+### 2. New error variant + classification
+
+In `driver.rs`'s `AgentDriverError`:
+
+```rust path=null start=null
+// Removed: HarnessAuthFailureKind enum and the `kind` field on
+// HarnessAuthCheckFailed.
+
 #[error("Harness '{harness}' auth preflight failed")]
 HarnessAuthCheckFailed {
     harness: String,
-    kind: HarnessAuthFailureKind,
-    /// Stderr/stdout captured from the failing command, for logs.
     detail: String,
 },
-```
 
-### 2. Error classification
-
-Add a match arm in `classify_driver_error` (`error_classification.rs`):
-
-```rust
-AgentDriverError::HarnessAuthCheckFailed { harness, kind, detail } => {
-    let message = match kind {
-        HarnessAuthFailureKind::LoginFailed => format!(
-            "Harness '{harness}' authentication check failed: login credentials \
-             are invalid or expired. Verify that the authentication secret \
-             configured for this harness is correct."
-        ),
-        HarnessAuthFailureKind::TestRequestFailed => format!(
-            "Harness '{harness}' billing check failed: a test API request did not \
-             succeed. This usually means the API key lacks billing access, credits \
-             are exhausted, or the account is misconfigured."
-        ),
-    };
-    log::error!("Preflight detail for {harness}: {detail}");
-    (
-        AgentTaskState::Failed,
-        TaskStatusUpdate::with_error_code(
-            message,
-            PlatformErrorCode::AuthenticationRequired,
-        ),
-    )
+// Added:
+#[error("Harness '{harness}' reported a runtime failure matching '{pattern}'")]
+HarnessRuntimeFailureDetected {
+    harness: String,
+    pattern: String,
+    excerpt: String,
 },
 ```
 
-### 3. New trait methods on `ThirdPartyHarness`
+In `error_classification.rs`, both variants map to `(AgentTaskState::Failed, PlatformErrorCode::AuthenticationRequired)` with distinct user-visible messages. The runtime failure message surfaces both the matched needle and the excerpt from the harness output.
 
-Add two default-`None` methods to the `ThirdPartyHarness` trait (`harness/mod.rs`):
+### 3. New `find_first_match_in_block_output` helper on `TerminalDriver`
 
-```rust
-/// Shell command to verify authentication credentials are valid.
-/// Exit code 0 = pass; non-zero = fail.
-fn auth_check_command(&self) -> Option<String> {
-    None
+Add a sibling to `block_snapshot` in `driver/terminal.rs` that runs the existing DFA machinery against the block's output grid directly:
+
+```rust path=null start=null
+pub struct BlockOutputMatch {
+    pub matched_text: String,
+    pub excerpt: String,
 }
 
-/// Shell command to send a cheap test API request to verify billing/quota.
-/// Exit code 0 = pass; non-zero = fail.
-fn billing_check_command(&self) -> Option<String> {
-    None
-}
+pub fn find_first_match_in_block_output(
+    &self,
+    block_id: &BlockId,
+    dfas: &RegexDFAs,
+    ctx: &AppContext,
+) -> Option<BlockOutputMatch>;
 ```
 
-### 4. Per-harness implementations
+Internally:
+- Acquire the terminal model lock (same scope as `block_snapshot`).
+- Look up the block by ID; return `None` if missing.
+- Run `block.output_grid().find(dfas).next()` to get the first `Match = RangeInclusive<Point>`.
+- Use the grid handler's `bounds_to_string` to extract the matched substring (used to identify the originating needle) and the full row(s) the match touches (used as the user-visible excerpt). Both with `include_esc_sequences=false` and `RespectObfuscatedSecrets::Yes` so the failure message never leaks credentials.
 
-**Claude Code** (`claude_code.rs`):
-```rust
-fn auth_check_command(&self) -> Option<String> {
-    let cli = self.cli_agent().command_prefix();
-    Some(format!("{cli} auth status --json"))
+No new grid-side code is required — `BlockGrid::find` is the same path the find feature uses on every keystroke.
+
+### 4. New `harness_output_monitor` module
+
+File: `app/src/ai/agent_sdk/driver/harness_output_monitor.rs`.
+
+```rust path=null start=null
+pub(crate) struct DetectedHarnessError {
+    pub pattern: String,
+    pub excerpt: String,
 }
 
-fn billing_check_command(&self) -> Option<String> {
-    let cli = self.cli_agent().command_prefix();
-    Some(format!("{cli} -p hello"))
-}
+const SCAN_SCHEDULE: &[(Duration, Duration)] = &[
+    (Duration::from_secs(5), Duration::from_secs(30)),
+    (Duration::from_secs(15), Duration::from_secs(60)),
+];
+
+pub(crate) fn build_dfas(patterns: &[&'static str]) -> Option<RegexDFAs>;
+pub(crate) fn pattern_for_match(matched_text: &str, patterns: &[&'static str]) -> Option<&'static str>;
+pub(crate) async fn watch_block_for_errors(
+    block_id: BlockId,
+    patterns: &'static [&'static str],
+    foreground: &ModelSpawner<AgentDriver>,
+) -> Option<DetectedHarnessError>;
 ```
 
-**Codex** (`codex.rs`):
-```rust
-fn auth_check_command(&self) -> Option<String> {
-    let cli = self.cli_agent().command_prefix();
-    Some(format!("{cli} login status"))
+Implementation notes:
+- Resolve immediately with `None` when `patterns.is_empty()` so Gemini/Oz pay zero runtime cost.
+- Build the combined DFA once at scanner entry via `RegexDFAs::new_many` (with regex-escaped needles + case-insensitive matching). Wrap in `Arc` so each tick can clone cheaply.
+- Use `warpui::r#async::Timer::after` for ticks, matching the existing `run_harness` periodic-save pattern.
+- Each tick spawns onto `foreground` to call `TerminalDriver::find_first_match_in_block_output(&dfas)`. On `Some`, the scanner runs the **stall confirmation loop** (see below) before mapping `matched_text` → originating needle via `pattern_for_match`, capping the excerpt to ~240 chars, and resolving the future with `DetectedHarnessError`.
+- The DFA scans cell storage from the start each tick, so no `last_scanned_len` cursor is needed — the regex_automata cache memoizes transitions.
+
+#### Stall confirmation loop
+After a pattern hit, the scanner runs `confirm_stall` before reporting a failure. This guards against false positives when a harness prints a transient API error and then automatically retries.
+
+```rust path=null start=null
+/// Gap between consecutive plaintext snapshots while confirming a hit.
+const STALL_POLL_INTERVAL: Duration = Duration::from_secs(10);
+
+/// Total budget for the stall-confirmation loop.
+const STALL_CONFIRMATION_BUDGET: Duration = Duration::from_secs(60);
+
+/// Pure equality check kept out of the async body for easy unit tests.
+fn outputs_stalled(before: Option<&str>, after: Option<&str>) -> bool {
+    matches!((before, after), (Some(a), Some(b)) if a == b)
 }
 
-fn billing_check_command(&self) -> Option<String> {
-    let cli = self.cli_agent().command_prefix();
-    Some(format!("{cli} exec hello"))
-}
+/// Polls the block plaintext every `STALL_POLL_INTERVAL` for up to
+/// `STALL_CONFIRMATION_BUDGET`. Returns `(Some(hit), elapsed)` once two
+/// consecutive snapshots are byte-identical AND a pattern is still
+/// present after the second snapshot; otherwise `(None, elapsed)`.
+async fn confirm_stall(
+    block_id: &BlockId,
+    dfas: &Arc<RegexDFAs>,
+    foreground: &ModelSpawner<AgentDriver>,
+) -> (Option<BlockOutputMatch>, Duration);
 ```
 
-**Gemini** — inherits defaults (`None` for both). No changes needed.
+Design notes:
+- **Why plaintext equality over `dirty_cells_range`?** `GridHandler::dirty_cells_range` is per-pty-pass-scoped — it resets to the cursor point on every `on_finish_byte_processing` call, so it's not a usable "has anything happened lately" oracle. Sampling the visible plaintext twice and comparing them gives us the same information directly, and works for spinner-only retries (the spinner cell changes between samples → the snapshots differ → the loop keeps running).
+- **Why count confirmation time against the outer scan-schedule budget?** A flaky harness that keeps retripping the same pattern would otherwise extend the watch window indefinitely — each candidate hit would buy another 60 seconds. Adding `confirmation_elapsed` back to the outer `elapsed` counter caps the total observation period at the outer 90-second budget plus whatever final confirmation was in flight when the schedule exhausted.
+- A new helper `TerminalDriver::block_output_plaintext(block_id, ctx) -> Option<String>` is added alongside `find_first_match_in_block_output`. It reads `block.output_grid().contents_to_string(false, None)` under the same model lock and obfuscates secrets identically.
 
-### 5. Preflight runner in `AgentDriver`
+### 5. Wire the scanner into `run_harness`
 
-Add a new method on `AgentDriver` and call it from `run_internal`, between `prepare_harness` and `run_harness`. The preflight commands are executed through `TerminalDriver::execute_command` (the same path used by environment setup commands), so each check appears as a collapsible block in the shared session UI. On failure, the driver fetches the resulting block's `stylized_output` via `TerminalDriver::block_snapshot` and stashes the rendered text in the error `detail`, which both server logs and the failure status message consume. This makes it easy for the user to inspect the failure output and for on-call to see the captured stderr.
+`run_harness` gains two new parameters and a fourth select arm:
 
-```rust
-/// Timeout for individual preflight commands.
-const PREFLIGHT_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
-
-async fn run_preflight_checks(
-    harness: &dyn ThirdPartyHarness,
+```rust path=null start=null
+async fn run_harness(
+    runner: Arc<dyn HarnessRunner>,
+    harness_name: String,
+    runtime_error_patterns: &'static [&'static str],
     foreground: &ModelSpawner<Self>,
+    harness_exit_rx: oneshot::Receiver<()>,
 ) -> Result<(), AgentDriverError> {
-    let harness_name = harness.cli_agent().command_prefix().to_owned();
+    let command_handle = runner.start(foreground).await?;
+    let block_id = command_handle.block_id().clone();
+    let mut command_handle = command_handle.fuse();
+    let mut harness_exit_rx = harness_exit_rx.fuse();
 
-    if let Some(cmd) = harness.auth_check_command() {
-        Self::run_single_preflight(
-            &cmd,
-            &harness_name,
-            HarnessAuthFailureKind::LoginFailed,
-            foreground,
-        )
-        .await?;
-    }
+    let scanner_fut = harness_output_monitor::watch_block_for_errors(
+        block_id, runtime_error_patterns, foreground,
+    )
+    .fuse();
+    futures::pin_mut!(scanner_fut);
 
-    if let Some(cmd) = harness.billing_check_command() {
-        Self::run_single_preflight(
-            &cmd,
-            &harness_name,
-            HarnessAuthFailureKind::TestRequestFailed,
-            foreground,
-        )
-        .await?;
-    }
+    let mut detected_runtime_failure: Option<harness_output_monitor::DetectedHarnessError> = None;
 
-    Ok(())
-}
-
-async fn run_single_preflight(
-    command: &str,
-    harness_name: &str,
-    failure_kind: HarnessAuthFailureKind,
-    foreground: &ModelSpawner<Self>,
-) -> Result<(), AgentDriverError> {
-    let cmd = command.to_owned();
-    let start_future = foreground
-        .spawn(move |me, ctx| {
-            me.terminal_driver
-                .update(ctx, |driver, ctx| driver.execute_command(&cmd, ctx))
-        })
-        .await??;
-
-    let command_handle = start_future.await?;
-
-    let exit_code = match command_handle.with_timeout(PREFLIGHT_CHECK_TIMEOUT).await {
-        Err(TimeoutError) => {
-            return Err(AgentDriverError::HarnessAuthCheckFailed {
-                harness: harness_name.to_owned(),
-                kind: failure_kind,
-                detail: "command timed out".to_owned(),
-            });
+    let command_result = loop {
+        futures::select! {
+            exit_code = command_handle => break exit_code,
+            _ = warpui::r#async::Timer::after(HARNESS_SAVE_INTERVAL).fuse() => {
+                /* existing periodic save */
+            }
+            _ = harness_exit_rx => {
+                /* existing graceful-exit branch */
+            }
+            detected = scanner_fut => {
+                if let Some(error) = detected {
+                    // Ask the harness to exit gracefully so cleanup runs;
+                    // record the failure and let the command future complete.
+                    let _ = runner.exit(foreground).await;
+                    detected_runtime_failure = Some(error);
+                }
+                // When the schedule exhausts without a hit, the `Fuse`
+                // wrapper makes this branch stay Pending forever.
+            }
         }
-        Ok(result) => result?,
     };
 
-    if !exit_code.was_successful() {
-        return Err(AgentDriverError::HarnessAuthCheckFailed {
-            harness: harness_name.to_owned(),
-            kind: failure_kind,
-            detail: format!("exit code {}", exit_code.value()),
+    /* existing final save + cleanup */
+
+    if let Some(error) = detected_runtime_failure {
+        return Err(AgentDriverError::HarnessRuntimeFailureDetected {
+            harness: harness_name,
+            pattern: error.pattern,
+            excerpt: error.excerpt,
         });
     }
 
-    Ok(())
+    /* existing exit-code mapping */
 }
 ```
 
-### 6. Integration point in `run_internal`
+Notes:
+- After `scanner_fut` resolves to `None`, the `Fuse` wrapper makes the branch stay `Pending` forever, so we don't busy-loop.
+- A detected runtime failure takes precedence over the harness's own exit code: surface the actionable detail rather than a generic "exit code N".
+- The cleanup-disposition computation also factors `detected_runtime_failure` so we always drop resumption state on a runtime failure (a failed run shouldn't be silently resumable).
 
-In `run_internal` (`driver.rs`), insert the preflight check call between `prepare_harness` and `run_harness` inside the `HarnessKind::ThirdParty` branch (around line 1773):
+### 6. Caller update in `run_internal`
 
-```rust
-HarnessKind::ThirdParty(harness) => {
-    let harness_exit_rx = Self::setup_harness(harness.as_ref(), &foreground).await?;
-    let runner = Self::prepare_harness(
-        &task.prompt,
-        &task.mcp_specs,
-        harness.as_ref(),
-        &foreground,
-    )
-    .await?;
+The third-party branch in `run_internal` already has `harness.as_ref()` in hand. Plumb the harness name and runtime patterns through both the credentials-refresh branch and the no-refresh branch:
 
-    // NEW: Run auth and billing preflight checks before starting
-    // the main harness command.
-    Self::run_preflight_checks(harness.as_ref(), &foreground).await?;
-
-    // Existing harness execution continues unchanged.
-    if let Some(task_id) = task_id_for_refresh {
-        // ...
-    }
-}
+```rust path=null start=null
+let harness_name = harness.cli_agent().command_prefix().to_owned();
+let runtime_error_patterns = harness.runtime_error_patterns();
+Self::run_harness(runner, harness_name, runtime_error_patterns, &foreground, harness_exit_rx).await
 ```
 
-This placement ensures:
-- Config files (auth.json, etc.) are already written by `prepare_harness`.
-- The harness CLI binary is validated by `setup_harness`.
-- The preflight commands run in the terminal session with the correct env vars (secrets, cloud provider vars).
-- On failure, the error propagates up through `run_internal` → `run` → `report_driver_error`, which will send the `updateAgentTask` mutation and terminate the process.
+### 7. Server-side changes
 
-### 7. Treating preflight blocks as setup commands in the viewer
-
-The cloud-mode shared-session viewer wraps environment-setup blocks in a collapsible "Set up environment commands" group. The viewer toggles out of this mode the moment it sees a block whose command is detected as the run's third-party harness CLI (via `TerminalView::block_matches_run_harness` in `app/src/terminal/view/ambient_agent/view_impl.rs`). Because the preflight commands share the harness CLI prefix (e.g. `claude auth status --json` starts with `claude`), the unmodified detector would mis-classify the first preflight command as the harness session start and tear down the setup-commands group prematurely.
-
-To route preflight blocks into the existing setup-commands UI instead:
-
-1. Expose a `pub(crate)` helper `preflight_commands_for(harness: Harness) -> Vec<String>` in `harness/mod.rs` next to `harness_kind`. It reuses `harness_kind` to dispatch and returns the union of `auth_check_command()` and `billing_check_command()` for the matching `ThirdPartyHarness` impl. Returns an empty `Vec` for `Oz`, unsupported harnesses, and harnesses with no preflight commands (e.g. Gemini). This is the single source of truth for the viewer.
-2. In `block_matches_run_harness`, after `CLIAgent::detect` resolves a hit, compare the block's command (trimmed) against `preflight_commands_for(selected_harness)` by exact string equality. If any entry matches, return `false`. This keeps the block-list flag set, lets `maybe_insert_setup_command_blocks` append the preflight blocks into the existing setup-commands group, and defers `HarnessCommandStarted` until the actual harness invocation arrives.
-
-String equality is exact and reliable: the driver constructs the preflight command via `format!("{cli} auth status --json", …)`, passes that exact string to `TerminalDriver::execute_command`, and the viewer reads the same string back via `block.command_with_secrets_obfuscated(false)`. The real harness invocations have very different shapes (`claude --session-id <uuid> --dangerously-skip-permissions …`, `codex --dangerously-bypass-approvals-and-sandbox "$(cat '…')"`) and never collide with the short preflight strings.
-
-Adding a new preflight check in the future means adding a new `Some("…")` return in a `ThirdPartyHarness` impl. `preflight_commands_for` picks it up automatically; the viewer needs no edits.
-
-### 8. Server-side changes
-
-No new `PlatformErrorCode` variants are needed. Both failures map to the existing `AUTHENTICATION_REQUIRED` code, differentiated by the human-readable `statusMessage`. The server already handles `AUTHENTICATION_REQUIRED` in task state transitions. The client UI already renders `PlatformErrorCode::AuthenticationRequired` with appropriate styling.
+None. Both failure modes map to the existing `AUTHENTICATION_REQUIRED` `PlatformErrorCode`, differentiated only by the human-readable `statusMessage`. The server already handles `AUTHENTICATION_REQUIRED` in task state transitions.
 
 ## Testing and validation
 
 ### Unit tests
-- `error_classification_tests.rs`: Add tests verifying that `HarnessAuthCheckFailed` with `LoginFailed` and `TestRequestFailed` map to `(AgentTaskState::Failed, AUTHENTICATION_REQUIRED)` with the expected messages.
-- `harness/mod_tests.rs`: Add tests verifying that `auth_check_command()` and `billing_check_command()` return the expected commands for Claude, Codex, and `None` for Gemini. Also tests that `preflight_commands_for` returns the union of the two for Claude/Codex, and an empty `Vec` for Gemini, Oz, OpenCode (unsupported), and Unknown.
+- **`harness_output_monitor_tests.rs`** (new):
+  - `build_dfas` returns `None` for empty patterns and `Some` otherwise; regex metacharacters in needles are escaped.
+  - `pattern_for_match` maps a case-different matched text back to the originating `'static` needle; returns `None` when no needle matches; picks the first matching needle when multiple lowercase-equal candidates exist.
+- **`error_classification_tests.rs`**:
+  - `HarnessAuthCheckFailed` maps to `(Failed, AuthenticationRequired)` with the auth-failure message. (Existing `harness_auth_test_request_failed_*` test removed since the `TestRequestFailed` variant is gone.)
+  - `HarnessRuntimeFailureDetected` maps to `(Failed, AuthenticationRequired)`; the user-visible message contains both the matched `pattern` and the `excerpt`.
+- **`harness/mod_tests.rs`**:
+  - Billing tests removed (`*_billing_check_command`, billing assertions in `preflight_commands_for_*`).
+  - `preflight_commands_for_claude_returns_auth_only` / `preflight_commands_for_codex_returns_auth_only` pin the auth check string to the trait impl.
+  - `runtime_error_patterns()` is callable on Claude/Codex (slice may be empty); Gemini returns an empty slice.
 
-### Manual validation (per PRODUCT.md invariants 1–22)
-Covers invariants 2, 3, 4, 6, 7, 10, 12, 13, 14:
-- Claude Code with a valid API key → both checks pass, run proceeds normally.
-- Claude Code with an invalid API key → auth check fails, task is marked FAILED with "login credentials are invalid" message.
-- Claude Code with a valid key but exhausted credits → auth check passes, billing check fails, task marked FAILED with "test API request did not succeed" message.
+### Manual validation
+- Claude Code with a valid API key → auth check passes, harness runs, scanner finds no match in 90 seconds → run completes normally.
+- Claude Code with an invalid API key → auth check fails, task is marked FAILED with the auth-failure message.
+- Claude Code with a valid key but exhausted credits → auth check passes, harness emits a credit-balance error to its block, scanner detects it, task is marked FAILED with the runtime-failure message including the matched pattern + excerpt.
 - Same matrix for Codex.
-- Gemini → no preflight checks run, harness proceeds directly to the main command.
-
-Covers invariant 15 (timeout):
-- Simulate a hanging command (e.g. network blocklist) → check fails after 30s with timeout detail.
+- Gemini → auth check skipped, scanner is a no-op, harness proceeds and behaves as before.
 
 ## Parallelization
-This feature is small and tightly coupled (trait changes, one new error variant, one new driver method, and error classification). Parallelization is not beneficial — the changes touch overlapping files and are best implemented sequentially.
+Single-agent task. The change is tightly coupled (trait method, classifier, driver loop, scanner module, new helper, tests) and lives in one crate; parallel agents would step on each other.

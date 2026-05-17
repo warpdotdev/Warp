@@ -63,9 +63,29 @@ impl ThirdPartyHarness for CodexHarness {
         Some(format!("{cli} login status"))
     }
 
-    fn billing_check_command(&self) -> Option<String> {
-        let cli = self.cli_agent().command_prefix();
-        Some(format!("{cli} exec hello --skip-git-repo-check"))
+    fn runtime_error_patterns(&self) -> &'static [&'static str] {
+        // Substrings emitted by the Codex CLI (or the upstream OpenAI API
+        // through Codex) when the harness cannot make a successful request.
+        // All patterns are matched case-insensitively against the harness
+        // block's plaintext output via the same DFA infrastructure used by
+        // the find feature. See `harness_output_monitor` for the scan
+        // cadence and reporting flow.
+        &[
+            // Quota / billing.
+            "Quota exceeded. Check your plan and billing details.",
+            "You've hit your usage limit",
+            // Upstream HTTP failures Codex surfaces verbatim. The 401 form
+            // matches invalid-API-key and wrong-endpoint variants.
+            "unexpected status 401",
+            "Incorrect API key provided",
+            "invalid API key",
+            // Region/endpoint block (Anthropic-style global vs US-only
+            // routing surfaced through Codex's upstream client).
+            "Access blocked by Cloudflare",
+            // OAuth refresh failures — all five Codex variants share this
+            // substring (see upstream session/token messages).
+            "could not be refreshed",
+        ]
     }
 
     /// Fetch the codex transcript for the current task's conversation and wrap it into a

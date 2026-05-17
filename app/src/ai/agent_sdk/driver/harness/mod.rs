@@ -144,10 +144,13 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
         None
     }
 
-    /// Shell command to send a cheap test API request to verify billing/quota.
-    /// Exit code 0 = pass; non-zero = fail.
-    fn billing_check_command(&self) -> Option<String> {
-        None
+    /// Substrings to scan for in the running harness block's output. A hit
+    /// indicates the harness can't make a successful API request (e.g.
+    /// invalid key, no billing, quota exhausted). The driver matches
+    /// case-insensitively against the block's plaintext via the same DFA
+    /// machinery used by the find feature.
+    fn runtime_error_patterns(&self) -> &'static [&'static str] {
+        &[]
     }
 
     /// Fetch the harness-specific resume payload for an existing conversation.
@@ -252,8 +255,8 @@ pub(crate) fn harness_kind(harness: Harness) -> Result<HarnessKind, AgentDriverE
 /// source of truth for what a preflight command looks like.
 ///
 /// Returns an empty `Vec` for [`Harness::Oz`], for unsupported harnesses, and
-/// for any third-party harness whose `auth_check_command` and
-/// `billing_check_command` both return `None` (e.g. Gemini today).
+/// for any third-party harness whose `auth_check_command` returns `None`
+/// (e.g. Gemini today).
 pub(crate) fn preflight_commands_for(harness: Harness) -> Vec<String> {
     let Ok(kind) = harness_kind(harness) else {
         return Vec::new();
@@ -261,11 +264,8 @@ pub(crate) fn preflight_commands_for(harness: Harness) -> Vec<String> {
     let HarnessKind::ThirdParty(third_party) = kind else {
         return Vec::new();
     };
-    let mut commands = Vec::with_capacity(2);
+    let mut commands = Vec::with_capacity(1);
     if let Some(cmd) = third_party.auth_check_command() {
-        commands.push(cmd);
-    }
-    if let Some(cmd) = third_party.billing_check_command() {
         commands.push(cmd);
     }
     commands

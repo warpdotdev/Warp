@@ -37,83 +37,79 @@ fn validate_cli_installed_includes_docs_url_in_error() {
 
 #[test]
 fn claude_returns_auth_check_command() {
-    use super::claude_code::ClaudeHarness;
     use super::ThirdPartyHarness;
+    use super::claude_code::ClaudeHarness;
     let harness = ClaudeHarness;
     let cmd = harness.auth_check_command().expect("should return Some");
     assert!(cmd.contains("auth status --json"));
 }
 
 #[test]
-fn claude_returns_billing_check_command() {
-    use super::claude_code::ClaudeHarness;
-    use super::ThirdPartyHarness;
-    let harness = ClaudeHarness;
-    let cmd = harness.billing_check_command().expect("should return Some");
-    assert!(cmd.contains("-p hello"));
-}
-
-#[test]
 fn codex_returns_auth_check_command() {
-    use super::codex::CodexHarness;
     use super::ThirdPartyHarness;
+    use super::codex::CodexHarness;
     let harness = CodexHarness;
     let cmd = harness.auth_check_command().expect("should return Some");
     assert!(cmd.contains("login status"));
 }
 
 #[test]
-fn codex_returns_billing_check_command() {
-    use super::codex::CodexHarness;
-    use super::ThirdPartyHarness;
-    let harness = CodexHarness;
-    let cmd = harness.billing_check_command().expect("should return Some");
-    assert!(cmd.contains("exec hello"));
-}
-
-#[test]
 fn gemini_returns_no_preflight_commands() {
-    use super::gemini::GeminiHarness;
     use super::ThirdPartyHarness;
+    use super::gemini::GeminiHarness;
     let harness = GeminiHarness;
     assert!(harness.auth_check_command().is_none());
-    assert!(harness.billing_check_command().is_none());
 }
 
 #[test]
-fn preflight_commands_for_claude_returns_auth_and_billing() {
-    use super::claude_code::ClaudeHarness;
+fn preflight_commands_for_claude_returns_auth_only() {
     use super::ThirdPartyHarness;
+    use super::claude_code::ClaudeHarness;
     let commands = preflight_commands_for(Harness::Claude);
-    assert_eq!(commands.len(), 2);
     // The helper's output is the single source of truth for the viewer's
     // preflight detection, so pin the strings to the trait impls directly.
+    assert_eq!(commands.len(), 1);
     assert_eq!(
         commands[0],
         ClaudeHarness.auth_check_command().expect("auth check")
     );
-    assert_eq!(
-        commands[1],
-        ClaudeHarness
-            .billing_check_command()
-            .expect("billing check")
-    );
 }
 
 #[test]
-fn preflight_commands_for_codex_returns_auth_and_billing() {
-    use super::codex::CodexHarness;
+fn preflight_commands_for_codex_returns_auth_only() {
     use super::ThirdPartyHarness;
+    use super::codex::CodexHarness;
     let commands = preflight_commands_for(Harness::Codex);
-    assert_eq!(commands.len(), 2);
+    assert_eq!(commands.len(), 1);
     assert_eq!(
         commands[0],
         CodexHarness.auth_check_command().expect("auth check")
     );
-    assert_eq!(
-        commands[1],
-        CodexHarness.billing_check_command().expect("billing check")
-    );
+}
+
+// --- Runtime error pattern tests ---
+
+#[test]
+fn claude_runtime_error_patterns_returns_slice() {
+    use super::ThirdPartyHarness;
+    use super::claude_code::ClaudeHarness;
+    // Patterns are initially empty until validated needles are filled in.
+    // The trait method must still be callable.
+    let _: &[&str] = ClaudeHarness.runtime_error_patterns();
+}
+
+#[test]
+fn codex_runtime_error_patterns_returns_slice() {
+    use super::ThirdPartyHarness;
+    use super::codex::CodexHarness;
+    let _: &[&str] = CodexHarness.runtime_error_patterns();
+}
+
+#[test]
+fn gemini_runtime_error_patterns_is_empty_by_default() {
+    use super::ThirdPartyHarness;
+    use super::gemini::GeminiHarness;
+    assert!(GeminiHarness.runtime_error_patterns().is_empty());
 }
 
 #[test]

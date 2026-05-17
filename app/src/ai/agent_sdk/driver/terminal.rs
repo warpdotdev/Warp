@@ -18,22 +18,29 @@ use warp_core::command::ExitCode;
 use warp_core::features::FeatureFlag;
 use warp_util::{path::ShellFamily, sync::Condition};
 use warpui::{
-    r#async::FutureExt, AppContext, Entity, ModelContext, ModelHandle, SingletonEntity as _,
-    ViewHandle,
+    AppContext, Entity, ModelContext, ModelHandle, SingletonEntity as _, ViewHandle,
+    r#async::FutureExt,
 };
 
 use crate::terminal::model::session::ExecuteCommandOptions;
+use warp_terminal::model::grid::Dimensions;
 
 use crate::{
     ai::ambient_agents::AmbientAgentTaskId,
     pane_group::NewTerminalOptions,
-    root_view::{open_new_with_workspace_source, NewWorkspaceSource},
+    root_view::{NewWorkspaceSource, open_new_with_workspace_source},
     terminal::{
-        model::block::{BlockId, SerializedBlock},
+        TerminalView,
+        model::{
+            RespectObfuscatedSecrets,
+            block::{BlockId, SerializedBlock},
+            find::RegexDFAs,
+            grid::RespectDisplayedOutput,
+            index::Point,
+        },
         shared_session::{self, IsSharedSessionCreator},
         shell::ShellType,
         view::ConversationRestorationInNewPaneType,
-        TerminalView,
     },
     workspaces::user_workspaces::UserWorkspaces,
 };
@@ -362,6 +369,77 @@ impl TerminalDriver {
             .map(SerializedBlock::from)
     }
 
+    /// Full visible plaintext of `block_id`'s output grid (no ANSI escape
+    /// sequences; secrets obfuscated). Used by the harness output monitor
+    /// to detect whether the block has stalled — two byte-identical
+    /// snapshots taken N seconds apart imply the harness has produced no
+    /// new output and no spinner activity.
+    ///
+    /// We intentionally pass `None` for `max_rows` so we compare the entire
+    /// visible output; capping the row count could falsely report "stalled"
+    /// when content scrolled below the cap actually changed.
+    pub fn block_output_plaintext(&self, block_id: &BlockId, ctx: &AppContext) -> Option<String> {
+        let terminal = self.terminal_view.as_ref(ctx);
+        let model = terminal.model.lock();
+        let block = model.block_list().block_with_id(block_id)?;
+        Some(block.output_grid().contents_to_string(
+            false, // include_escape_sequences
+            None,  // max_rows: full visible output
+        ))
+    }
+
+    /// First DFA match in the visible output of `block_id`, if any.
+    ///
+    /// Runs the same `BlockGrid::find` machinery used by the find feature
+    /// directly against the cell storage — no string materialization happens
+    /// unless a match is found, in which case we extract the matched
+    /// substring and the row(s) containing it as plaintext.
+    ///
+    /// Used by the harness output monitor to detect runtime API failures
+    /// (invalid key, out-of-credits, quota exhausted, etc.) by scanning the
+    /// active harness block for known failure substrings supplied by each
+    /// `ThirdPartyHarness` impl.
+    pub fn find_first_match_in_block_output(
+        &self,
+        block_id: &BlockId,
+        dfas: &RegexDFAs,
+        ctx: &AppContext,
+    ) -> Option<BlockOutputMatch> {
+        let terminal = self.terminal_view.as_ref(ctx);
+        let model = terminal.model.lock();
+        let block = model.block_list().block_with_id(block_id)?;
+        let grid = block.output_grid();
+        let m = grid.find(dfas).next()?;
+        let handler = grid.grid_handler();
+        // Pull the matched cells as plaintext — used by the scanner to map
+        // back to the originating needle.
+        let matched_text = handler.bounds_to_string(
+            *m.start(),
+            *m.end(),
+            false, // include_esc_sequences
+            RespectObfuscatedSecrets::Yes,
+            false, // force_secrets_obfuscated
+            RespectDisplayedOutput::Yes,
+        );
+        // Expand to the full row(s) the match touches for the user-visible
+        // excerpt.
+        let cols = handler.columns();
+        let row_start = Point::new(m.start().row, 0);
+        let row_end = Point::new(m.end().row, cols.saturating_sub(1));
+        let excerpt = handler.bounds_to_string(
+            row_start,
+            row_end,
+            false,
+            RespectObfuscatedSecrets::Yes,
+            false,
+            RespectDisplayedOutput::Yes,
+        );
+        Some(BlockOutputMatch {
+            matched_text: matched_text.trim().to_owned(),
+            excerpt: excerpt.trim().to_owned(),
+        })
+    }
+
     /// Execute a command in the terminal and return a future that resolves to a
     /// [`CommandHandle`] once the command starts executing.
     pub fn execute_command(
@@ -545,6 +623,19 @@ impl TerminalDriver {
             }
         }
     }
+}
+
+/// The first DFA match returned by
+/// [`TerminalDriver::find_first_match_in_block_output`].
+///
+/// `matched_text` is the exact substring from the grid (no ANSI escapes),
+/// used by the harness output monitor to map the hit back to the originating
+/// pattern. `excerpt` is the full row(s) containing the match, also as
+/// plaintext, suitable for surfacing in user-visible error messages.
+#[derive(Debug, Clone)]
+pub(crate) struct BlockOutputMatch {
+    pub matched_text: String,
+    pub excerpt: String,
 }
 
 /// A handle to a running terminal command.

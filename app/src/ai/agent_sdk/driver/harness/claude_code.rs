@@ -77,9 +77,34 @@ impl ThirdPartyHarness for ClaudeHarness {
         Some(format!("{cli} auth status --json"))
     }
 
-    fn billing_check_command(&self) -> Option<String> {
-        let cli = self.cli_agent().command_prefix();
-        Some(format!("{cli} -p hello"))
+    fn runtime_error_patterns(&self) -> &'static [&'static str] {
+        // Substrings emitted by Claude Code (or the upstream Anthropic API
+        // through Claude Code) when the harness cannot make a successful
+        // request. All patterns are matched case-insensitively against the
+        // harness block's plaintext output via the same DFA infrastructure
+        // used by the find feature. See `harness_output_monitor` for the
+        // scan cadence and reporting flow.
+        &[
+            // Out-of-credits / billing.
+            "Credit balance too low",
+            // Plan/usage limits emitted as `You've hit your <kind> limit`.
+            // We match on the common prefix so the variants (session,
+            // weekly, Opus, etc.) all hit.
+            "You've hit your",
+            // Invalid or malformed API key.
+            "Invalid API key",
+            "This organization has been disabled",
+            "belongs to a disabled organization",
+            // OAuth / login state.
+            "Not logged in",
+            "OAuth token revoked",
+            "OAuth token has expired",
+            // Routines disabled by org policy.
+            "Routines are disabled by your organization's policy",
+            // Generic upstream API failures Claude Code surfaces verbatim.
+            "API Error: Request rejected (429)",
+            "authentication_error",
+        ]
     }
 
     /// Fetch the Claude Code transcript for the current task's conversation and wrap it
