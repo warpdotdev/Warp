@@ -5,7 +5,7 @@ use warp_core::{features::FeatureFlag, ui::appearance::Appearance};
 use warpui::elements::{ChildView, Container};
 use warpui::{AppContext, Element, Entity, SingletonEntity, View, ViewContext, ViewHandle};
 
-use crate::auth::AuthStateProvider;
+use crate::auth::{AuthManager, AuthStateProvider};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
 use super::billing_and_usage_page::{BillingAndUsagePageEvent, BillingAndUsagePageView};
@@ -31,6 +31,13 @@ impl BillingAndUsageDispatchView {
         });
         ctx.subscribe_to_view(&v2, |_, _, event, ctx| {
             ctx.emit(event.clone());
+        });
+
+        ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |_, _, _, ctx| {
+            ctx.notify();
+        });
+        ctx.subscribe_to_model(&AuthManager::handle(ctx), |_, _, _, ctx| {
+            ctx.notify();
         });
 
         let page = PageType::new_monolith(BillingAndUsageWidget, Some("Billing and Usage"), true);
@@ -85,8 +92,7 @@ impl SettingsPageMeta for BillingAndUsageDispatchView {
     fn should_render(&self, ctx: &AppContext) -> bool {
         !AuthStateProvider::as_ref(ctx)
             .get()
-            .is_user_anonymous()
-            .unwrap_or_default()
+            .is_anonymous_or_logged_out()
     }
 
     fn on_page_selected(&mut self, allow_steal_focus: bool, ctx: &mut ViewContext<Self>) {
