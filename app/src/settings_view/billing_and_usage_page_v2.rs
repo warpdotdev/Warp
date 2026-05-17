@@ -1346,7 +1346,6 @@ impl BillingAndUsagePageV2View {
                 .finish(),
         )
         .with_uniform_padding(16.)
-        .with_border(Border::top(1.).with_border_color(theme.outline().into()))
         .finish();
 
         Container::new(
