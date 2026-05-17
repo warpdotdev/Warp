@@ -620,6 +620,7 @@ impl AgentConversationsModel {
                     self.update_polling_state(ctx);
                 }
             }
+            StateEvent::WindowZoomFactorChanged { .. } => {}
         }
     }
 
