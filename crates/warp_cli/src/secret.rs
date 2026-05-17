@@ -9,7 +9,8 @@ use crate::scope::ObjectScope;
 pub enum SecretCommand {
     /// Create a new secret.
     ///
-    /// Use `oz secret create anthropic api-key <NAME>` to create a Claude/Anthropic auth secret.
+    /// Use `oz secret create anthropic api-key <NAME>` to create a Claude/Anthropic auth secret,
+    /// or `oz secret create codex api-key <NAME>` to create a Codex/OpenAI auth secret.
     Create(CreateSecretArgs),
     /// Delete a secret.
     Delete(DeleteSecretArgs),
@@ -52,6 +53,8 @@ pub struct CreateSecretArgs {
 pub enum CreateProvider {
     /// Create a Claude/Anthropic auth secret.
     Anthropic(AnthropicCreateArgs),
+    /// Create a Codex/OpenAI auth secret.
+    Codex(CodexCreateArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -111,6 +114,36 @@ pub struct BedrockApiKeyArgs {
     /// AWS region for the Bedrock endpoint. If not provided, prompts interactively.
     #[arg(long = "region")]
     pub region: Option<String>,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct CodexCreateArgs {
+    #[command(subcommand)]
+    pub method: CodexMethod,
+}
+
+/// Codex credential type.
+#[derive(Debug, Clone, Subcommand)]
+pub enum CodexMethod {
+    /// Direct OpenAI API key.
+    #[command(name = "api-key")]
+    ApiKey(OpenAiApiKeyArgs),
+}
+
+/// Arguments for creating an OpenAI API key secret used by the Codex harness.
+#[derive(Debug, Clone, Args)]
+pub struct OpenAiApiKeyArgs {
+    #[clap(flatten)]
+    pub common: CommonSecretCreateArgs,
+
+    #[clap(flatten)]
+    pub value: ValueArgs,
+
+    /// Optional base URL for the OpenAI API (e.g. a regional endpoint like
+    /// `https://us.api.openai.com/v1`). When omitted, the harness uses the
+    /// provider's default endpoint.
+    #[arg(long = "base-url")]
+    pub base_url: Option<String>,
 }
 
 /// Arguments for creating an Anthropic Bedrock access key secret.
@@ -190,6 +223,9 @@ pub enum SecretType {
     // Not exposed via the CLI `--type` flag; constructed internally for provider subcommands.
     #[value(skip)]
     AnthropicBedrockApiKey,
+    // Not exposed via the CLI `--type` flag; constructed internally for provider subcommands.
+    #[value(skip)]
+    OpenaiApiKey,
 }
 
 impl fmt::Display for SecretType {
@@ -198,6 +234,7 @@ impl fmt::Display for SecretType {
             SecretType::RawValue => write!(f, "raw-value"),
             SecretType::AnthropicApiKey => write!(f, "anthropic-api-key"),
             SecretType::AnthropicBedrockApiKey => write!(f, "anthropic-bedrock-api-key"),
+            SecretType::OpenaiApiKey => write!(f, "openai-api-key"),
         }
     }
 }
