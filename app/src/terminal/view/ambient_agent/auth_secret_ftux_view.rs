@@ -1,14 +1,18 @@
 use crate::view_components::DismissibleToast;
 use crate::workspace::ToastStack;
+use crate::workspaces::user_workspaces::UserWorkspaces;
 use warp_cli::agent::Harness;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::Fill;
+use warp_managed_secrets::client::SecretOwner;
 use warpui::elements::{
     Border, ChildView, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
-    Expanded, Flex, Hoverable, MainAxisSize, MouseStateHandle, ParentElement as _, Radius, Text,
+    Expanded, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,
+    ParentElement as _, Radius, Text, Wrap,
 };
 use warpui::fonts::{Properties, Weight};
+use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::{
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
@@ -17,7 +21,8 @@ use warpui::{
 use settings::Setting as _;
 
 use crate::ai::auth_secret_types::{
-    auth_secret_types_for_harness, build_managed_secret_value, AuthSecretTypeInfo,
+    auth_secret_types_for_harness, build_managed_secret_value, learn_more_url_for_harness,
+    AuthSecretTypeInfo,
 };
 use crate::ai::cloud_agent_settings::CloudAgentSettings;
 use crate::ai::harness_availability::{HarnessAvailabilityEvent, HarnessAvailabilityModel};
@@ -40,8 +45,6 @@ const BUTTON_FONT_SIZE: f32 = 14.;
 
 const EDITOR_FONT_SIZE: f32 = 14.;
 
-const ROW_SPACING: f32 = 24.;
-
 const CONTENT_SECTION_SPACING: f32 = 12.;
 
 const FORM_FIELD_SPACING: f32 = 8.;
@@ -54,11 +57,18 @@ const CORNER_RADIUS: f32 = 4.;
 
 const FIELD_EDITOR_MIN_HEIGHT: f32 = 32.;
 
+const TYPE_DESCRIPTION_FONT_SIZE: f32 = 12.;
+
+const CHECKBOX_SIZE: f32 = 14.;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum AuthSecretFtuxAction {
     Skip,
     Cancel,
     Continue,
+    Back,
+    LearnMore(&'static str),
+    ToggleTeamScope,
 }
 
 struct SecretCreationState {
@@ -73,8 +83,11 @@ pub struct AuthSecretFtuxView {
     name_editor: ViewHandle<EditorView>,
     field_editors: Vec<ViewHandle<EditorView>>,
     creation_state: Option<SecretCreationState>,
-    cancel_mouse_state: MouseStateHandle,
+    back_button_mouse_state: MouseStateHandle,
+    share_with_team: bool,
     continue_mouse_state: MouseStateHandle,
+    learn_more_mouse_state: MouseStateHandle,
+    team_checkbox_mouse_state: MouseStateHandle,
 }
 
 impl AuthSecretFtuxView {
@@ -82,7 +95,7 @@ impl AuthSecretFtuxView {
         ambient_agent_model: ModelHandle<AmbientAgentViewModel>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let name_editor = make_single_line_editor(Some("NICKNAME"), false, ctx);
+        let name_editor = make_single_line_editor(Some("e.g. My API Key"), false, ctx);
 
         ctx.subscribe_to_view(&name_editor, |me, _, event, ctx| {
             me.handle_form_editor_nav(0, event, ctx);
@@ -180,8 +193,11 @@ impl AuthSecretFtuxView {
             name_editor,
             field_editors: Vec::new(),
             creation_state: None,
-            cancel_mouse_state: MouseStateHandle::default(),
+            back_button_mouse_state: MouseStateHandle::default(),
+            share_with_team: false,
             continue_mouse_state: MouseStateHandle::default(),
+            learn_more_mouse_state: MouseStateHandle::default(),
+            team_checkbox_mouse_state: MouseStateHandle::default(),
         }
     }
 
@@ -273,6 +289,7 @@ impl AuthSecretFtuxView {
             editors.push(editor);
         }
         self.field_editors = editors;
+        self.share_with_team = false;
         self.creation_state = Some(SecretCreationState {
             harness,
             secret_type_index: type_index,
@@ -358,14 +375,27 @@ impl AuthSecretFtuxView {
         }
         ctx.notify();
 
+        let owner = self.resolve_secret_owner(ctx);
         HarnessAvailabilityModel::handle(ctx).update(ctx, |model, ctx| {
-            model.create_auth_secret(harness, name, value, ctx);
+            model.create_auth_secret(harness, name, value, owner, ctx);
         });
+    }
+
+    fn resolve_secret_owner(&self, ctx: &ViewContext<Self>) -> SecretOwner {
+        if self.share_with_team {
+            if let Some(team) = UserWorkspaces::as_ref(ctx).current_team() {
+                return SecretOwner::Team {
+                    team_uid: team.uid.uid(),
+                };
+            }
+        }
+        SecretOwner::CurrentUser
     }
 
     fn clear_creation_state(&mut self, ctx: &mut ViewContext<Self>) {
         if self.creation_state.is_some() {
             self.creation_state = None;
+            self.share_with_team = false;
             self.clear_all_editor_buffers(ctx);
             self.field_editors.clear();
             self.ftux_dropdown.update(ctx, |dropdown, ctx| {
@@ -414,20 +444,80 @@ impl AuthSecretFtuxView {
     fn render_description(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
-        let harness = self.ambient_agent_model.as_ref(app).selected_harness();
-        let display_name = harness_display::display_name(harness);
-        let description = format!(
-            "Please select an API key or create a new one to use \
-             {display_name} as a cloud agent."
-        );
-        Text::new_inline(
-            description,
-            appearance.ui_font_family(),
-            DESCRIPTION_FONT_SIZE,
+        let font_family = appearance.ui_font_family();
+        let sub_color = internal_colors::text_sub(theme, theme.surface_1());
+        let accent_color = theme.accent().into_solid();
+
+        let main_text = if let Some(info) = self.current_type_info() {
+            Text::new_inline(
+                info.header_text.to_string(),
+                font_family,
+                DESCRIPTION_FONT_SIZE,
+            )
+            .with_color(theme.foreground().into())
+            .finish()
+        } else {
+            let harness = self.ambient_agent_model.as_ref(app).selected_harness();
+            let display_name = harness_display::display_name(harness);
+            let description =
+                format!("Please select an API key to use {display_name} in the cloud with Oz.");
+            Text::new_inline(description, font_family, DESCRIPTION_FONT_SIZE)
+                .with_color(theme.foreground().into())
+                .soft_wrap(true)
+                .finish()
+        };
+
+        let privacy_text = Text::new_inline(
+            "Your credentials are encrypted end-to-end. ".to_string(),
+            font_family,
+            TYPE_DESCRIPTION_FONT_SIZE,
         )
-        .with_color(theme.foreground().into())
+        .with_color(sub_color)
         .soft_wrap(true)
-        .finish()
+        .finish();
+
+        let harness = self.ambient_agent_model.as_ref(app).selected_harness();
+        let harness_name = harness_display::display_name(harness);
+        let learn_more_url = self
+            .current_type_info()
+            .map(|info| info.learn_more_url)
+            .unwrap_or_else(|| learn_more_url_for_harness(harness));
+        let learn_more_label =
+            format!("Learn more about authentication for {harness_name} in Warp.");
+        let learn_more = Hoverable::new(self.learn_more_mouse_state.clone(), move |state| {
+            let color = if state.is_hovered() {
+                accent_color
+            } else {
+                sub_color
+            };
+            Text::new_inline(
+                learn_more_label.clone(),
+                font_family,
+                TYPE_DESCRIPTION_FONT_SIZE,
+            )
+            .with_color(color)
+            .with_style(Properties::default().weight(Weight::Semibold))
+            .soft_wrap(true)
+            .finish()
+        })
+        .with_cursor(warpui::platform::Cursor::PointingHand)
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(AuthSecretFtuxAction::LearnMore(learn_more_url));
+        })
+        .finish();
+
+        let privacy_row = Wrap::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(privacy_text)
+            .with_child(learn_more)
+            .finish();
+
+        Flex::column()
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(4.)
+            .with_child(main_text)
+            .with_child(privacy_row)
+            .finish()
     }
 
     fn render_field_label(&self, label: &str, app: &AppContext) -> Box<dyn Element> {
@@ -474,6 +564,49 @@ impl AuthSecretFtuxView {
         .finish()
     }
 
+    fn render_scope_checkbox(&self, app: &AppContext) -> Box<dyn Element> {
+        let has_team = UserWorkspaces::as_ref(app).current_team().is_some();
+        if !has_team {
+            return Empty::new().finish();
+        }
+
+        let appearance = Appearance::as_ref(app);
+        let zero = Coords::uniform(0.);
+        let checkbox = appearance
+            .ui_builder()
+            .checkbox(self.team_checkbox_mouse_state.clone(), Some(CHECKBOX_SIZE))
+            .with_style(UiComponentStyles {
+                margin: Some(zero),
+                ..Default::default()
+            })
+            .check(self.share_with_team)
+            .build()
+            .on_click(|ctx, _, _| {
+                ctx.dispatch_typed_action(AuthSecretFtuxAction::ToggleTeamScope);
+            })
+            .with_cursor(warpui::platform::Cursor::PointingHand)
+            .finish();
+
+        let theme = appearance.theme();
+        let label_color = internal_colors::text_sub(theme, theme.surface_1());
+        let label = Text::new_inline(
+            "Share with team".to_string(),
+            appearance.ui_font_family(),
+            TYPE_DESCRIPTION_FONT_SIZE,
+        )
+        .with_color(label_color)
+        .finish();
+
+        Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::End)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(6.)
+            .with_child(checkbox)
+            .with_child(label)
+            .finish()
+    }
+
     fn render_creation_form(&self, app: &AppContext) -> Box<dyn Element> {
         let Some(info) = self.current_type_info() else {
             return Empty::new().finish();
@@ -483,7 +616,11 @@ impl AuthSecretFtuxView {
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(FORM_FIELD_SPACING);
 
-        column.add_child(self.render_field_label("NICKNAME", app));
+        column.add_child(
+            Container::new(self.render_field_label("NAME", app))
+                .with_padding_top(CONTENT_SECTION_SPACING)
+                .finish(),
+        );
         column.add_child(self.render_editor_container(&self.name_editor, app));
 
         for (idx, field) in info.fields.iter().enumerate() {
@@ -497,6 +634,9 @@ impl AuthSecretFtuxView {
                 column.add_child(self.render_editor_container(editor, app));
             }
         }
+
+        column.add_child(self.render_scope_checkbox(app));
+
         column.finish()
     }
 
@@ -543,11 +683,16 @@ impl AuthSecretFtuxView {
         let mut row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
         row.add_child(Expanded::new(1., Empty::new().finish()).finish());
 
+        let (label, action) = if self.creation_state.is_some() {
+            ("Back", AuthSecretFtuxAction::Back)
+        } else {
+            ("Cancel", AuthSecretFtuxAction::Cancel)
+        };
         row.add_child(self.render_button(
-            "Cancel",
-            self.cancel_mouse_state.clone(),
+            label,
+            self.back_button_mouse_state.clone(),
             None,
-            AuthSecretFtuxAction::Cancel,
+            action,
             app,
         ));
 
@@ -604,6 +749,14 @@ impl TypedActionView for AuthSecretFtuxView {
             AuthSecretFtuxAction::Skip => self.handle_skip(ctx),
             AuthSecretFtuxAction::Cancel => self.handle_cancel(ctx),
             AuthSecretFtuxAction::Continue => self.handle_continue(ctx),
+            AuthSecretFtuxAction::Back => self.clear_creation_state(ctx),
+            AuthSecretFtuxAction::LearnMore(url) => {
+                ctx.open_url(url);
+            }
+            AuthSecretFtuxAction::ToggleTeamScope => {
+                self.share_with_team = !self.share_with_team;
+                ctx.notify();
+            }
         }
     }
 }
@@ -616,22 +769,27 @@ impl View for AuthSecretFtuxView {
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let mut column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(ROW_SPACING);
+            .with_main_axis_size(MainAxisSize::Min);
 
         let mut content_section = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(CONTENT_SECTION_SPACING);
         content_section.add_child(self.render_description(app));
-        content_section.add_child(ChildView::new(&self.ftux_dropdown).finish());
+        if self.creation_state.is_none() {
+            content_section.add_child(ChildView::new(&self.ftux_dropdown).finish());
+        }
         column.add_child(content_section.finish());
 
         if self.creation_state.is_some() {
             column.add_child(self.render_creation_form(app));
         }
 
-        column.add_child(self.render_bottom_row(app));
+        column.add_child(
+            Container::new(self.render_bottom_row(app))
+                .with_padding_top(CONTENT_SECTION_SPACING)
+                .finish(),
+        );
 
         column.finish()
     }
