@@ -292,6 +292,7 @@ impl AIDocumentView {
                     }
                     BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
                         conversation_id: cid,
+                        from_restore,
                     } => {
                         // Re-render so the config block picks up changes
                         // only for our document's conversation.
@@ -316,17 +317,18 @@ impl AIDocumentView {
                                 false
                             };
                             // When the block was freshly created in
-                            // response to this `OrchestrationConfigUpdated`
-                            // event, the agent just dispatched a config
-                            // (the event is only fired for incoming
-                            // `OrchestrationConfigSnapshot` messages, not
-                            // session restoration). Arm the auto-open of
-                            // the create-key modal so the block prompts
-                            // the user when the harness has no keys yet.
-                            // Restoration goes through the eager
-                            // construction path in `Self::new` and never
-                            // hits this branch.
-                            if was_freshly_created {
+                            // response to a non-restore
+                            // `OrchestrationConfigUpdated` event, the
+                            // agent just dispatched a config (live wire
+                            // message or user-driven edit). Arm the
+                            // auto-open of the create-key modal so the
+                            // block prompts the user when the harness
+                            // has no keys yet. Restore-hydrated events
+                            // hit this branch too — with `from_restore`
+                            // true — but we deliberately do NOT arm in
+                            // that case so the modal stays suppressed
+                            // on session restoration.
+                            if was_freshly_created && !*from_restore {
                                 if let Some(block) = &me.orchestration_config_block {
                                     block.update(ctx, |block, ctx| {
                                         block.arm_for_fresh_dispatch(ctx);

@@ -204,6 +204,7 @@ impl OrchestrationConfigBlockView {
             move |me, _, event, ctx| {
                 if let BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
                     conversation_id: cid,
+                    ..
                 } = event
                 {
                     if *cid == me.conversation_id {

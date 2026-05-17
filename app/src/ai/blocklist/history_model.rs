@@ -2391,10 +2391,16 @@ pub enum BlocklistAIHistoryEvent {
         conversation_id: AIConversationId,
     },
 
-    /// Emitted when a conversation's orchestration config is updated reactively
-    /// from an incoming `OrchestrationConfigSnapshot` message.
+    /// Emitted when a conversation's orchestration config is updated.
+    /// Fired in three situations:
+    /// - A live `OrchestrationConfigSnapshot` arrives over the wire (`from_restore = false`).
+    /// - The user edits a field or toggles approval in the plan-card config block (`from_restore = false`).
+    /// - The config is hydrated from persisted history on session restore (`from_restore = true`).
+    /// Consumers that perform UI side effects (e.g. auto-opening the create-key modal)
+    /// should suppress those effects when `from_restore` is true.
     OrchestrationConfigUpdated {
         conversation_id: AIConversationId,
+        from_restore: bool,
     },
 }
 

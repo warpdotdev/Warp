@@ -1254,6 +1254,7 @@ impl AIDocumentModel {
                     if conversation.set_orchestration_configs(configs) {
                         hctx.emit(BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
                             conversation_id,
+                            from_restore: true,
                         });
                     }
                 }
@@ -1317,7 +1318,10 @@ impl AIDocumentModel {
             if let Some(conversation) = history.conversation_mut(&conversation_id) {
                 conversation.set_orchestration_config_for_plan(plan_id, config, status);
             }
-            hctx.emit(BlocklistAIHistoryEvent::OrchestrationConfigUpdated { conversation_id });
+            hctx.emit(BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
+                conversation_id,
+                from_restore: false,
+            });
         });
     }
 
