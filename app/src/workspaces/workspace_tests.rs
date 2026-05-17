@@ -33,7 +33,10 @@ fn missing_policy_returns_defaults_for_admin_and_non_admin() {
     assert_eq!(as_admin.max_prior_cycles, MaxPriorCycles::None);
 
     let as_non_admin = workspace.resolve_usage_visibility(false);
-    assert_eq!(as_non_admin.granularity, UsageVisibilityGranularity::OwnOnly);
+    assert_eq!(
+        as_non_admin.granularity,
+        UsageVisibilityGranularity::OwnOnly
+    );
     assert_eq!(as_non_admin.max_prior_cycles, MaxPriorCycles::None);
 }
 
