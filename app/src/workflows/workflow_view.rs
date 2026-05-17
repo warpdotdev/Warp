@@ -971,9 +971,6 @@ impl WorkflowView {
     }
 
     fn are_aliases_dirty(&self, app: &AppContext) -> bool {
-        if !FeatureFlag::WorkflowAliases.is_enabled() {
-            return false;
-        }
         self.alias_bar.as_ref(app).has_unsaved_changes()
     }
 
@@ -1186,10 +1183,6 @@ impl WorkflowView {
     }
 
     fn handle_alias_bar_event(&mut self, event: &AliasBarEvent, ctx: &mut ViewContext<Self>) {
-        if !FeatureFlag::WorkflowAliases.is_enabled() {
-            return;
-        }
-
         match event {
             AliasBarEvent::SelectedAliasChanged => {
                 // Clone the arguments so that we can update the argument editors.
@@ -1582,7 +1575,7 @@ impl WorkflowView {
     /// Save the workflow and associated state. This makes a best-effort attempt to not
     /// unnecessarily modify the backing Warp Drive object.
     fn save(&mut self, ctx: &mut ViewContext<Self>) {
-        if FeatureFlag::WorkflowAliases.is_enabled() && self.are_aliases_dirty(ctx) {
+        if self.are_aliases_dirty(ctx) {
             self.save_aliases(ctx);
         }
         if self.is_workflow_dirty(ctx) {
@@ -2947,7 +2940,7 @@ impl View for WorkflowView {
         let mut main_section = Flex::column();
         main_section.add_child(self.render_workflow_details(appearance));
 
-        if FeatureFlag::WorkflowAliases.is_enabled() && !self.is_for_agent_mode {
+        if !self.is_for_agent_mode {
             main_section.add_child(self.render_alias_section(appearance));
         }
 

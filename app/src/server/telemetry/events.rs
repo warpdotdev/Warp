@@ -5578,9 +5578,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::WorkflowAliasAdded
             | Self::WorkflowAliasRemoved
             | Self::WorkflowAliasArgumentEdited
-            | Self::WorkflowAliasEnvVarsAttached => {
-                EnablementState::Flag(FeatureFlag::WorkflowAliases)
-            }
+            | Self::WorkflowAliasEnvVarsAttached => EnablementState::Always,
             Self::ToggledAgentModeAutoexecuteReadonlyCommandsSetting
             | Self::ChangedAgentModeCodingPermissions
             | Self::ChangedAgentModeAskUserQuestionPermission
