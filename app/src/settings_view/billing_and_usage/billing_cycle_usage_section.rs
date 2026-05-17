@@ -5,10 +5,9 @@ use warp_core::ui::appearance::Appearance;
 use warpui::{
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
     elements::{
-        ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
-        Empty, Flex, Hoverable, MainAxisAlignment, MainAxisSize,
-        MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds,
-        Radius, Stack, Text,
+        ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
+        Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning,
+        ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Stack, Text,
     },
     fonts::{Properties, Weight},
     platform::Cursor,
@@ -24,6 +23,7 @@ use crate::{
     menu::{self, Menu, MenuItem, MenuItemFields},
     settings_view::{
         admin_actions::AdminActions,
+        billing_and_usage::billing_cycle_usage_rows::{render_rows, RowMouseStates, SourceFilter},
         billing_and_usage_page_v2::{
             AMBIENT_CREDITS_DOT_COLOR, BASE_CREDITS_DOT_COLOR, BONUS_CREDITS_DOT_COLOR,
             PAYG_CREDITS_DOT_COLOR,
@@ -50,6 +50,8 @@ pub struct BillingCycleUsageSectionView {
     admin_panel_button_mouse_state: MouseStateHandle,
     period_menu: ViewHandle<Menu<BillingCycleUsageAction>>,
     period_menu_open: bool,
+    source_filter: SourceFilter,
+    row_mouse_states: RowMouseStates,
 }
 
 pub enum BillingCycleUsageEvent {}
@@ -60,6 +62,7 @@ pub enum BillingCycleUsageAction {
     TogglePeriodMenu,
     Refresh,
     OpenAdminPanel,
+    ChangeSourceFilter(SourceFilter),
 }
 
 impl Entity for BillingCycleUsageSectionView {
@@ -93,11 +96,28 @@ impl BillingCycleUsageSectionView {
             admin_panel_button_mouse_state: MouseStateHandle::default(),
             period_menu,
             period_menu_open: false,
+            source_filter: SourceFilter::default(),
+            row_mouse_states: RowMouseStates::default(),
         }
     }
 
     fn resolved_viewer_email(app: &AppContext) -> Option<String> {
         AuthStateProvider::as_ref(app).get().user_email()
+    }
+
+    fn resolved_viewer_uid(app: &AppContext) -> Option<String> {
+        AuthStateProvider::as_ref(app)
+            .get()
+            .user_id()
+            .map(|uid| uid.as_string())
+    }
+
+    fn resolved_viewer_display_name(app: &AppContext) -> Option<String> {
+        let state = AuthStateProvider::as_ref(app).get();
+        state
+            .display_name()
+            .or_else(|| state.username_for_display())
+            .or_else(|| state.user_email())
     }
 
     fn current_summary<'a>(
@@ -153,6 +173,10 @@ impl TypedActionView for BillingCycleUsageSectionView {
                 if let Some(team_uid) = UserWorkspaces::as_ref(ctx).current_team_uid() {
                     AdminActions::open_admin_panel(team_uid, ctx);
                 }
+            }
+            BillingCycleUsageAction::ChangeSourceFilter(filter) => {
+                self.source_filter = *filter;
+                ctx.notify();
             }
         }
     }
@@ -214,7 +238,7 @@ impl View for BillingCycleUsageSectionView {
         }
 
         column.add_child(
-            Container::new(self.render_body(&workspace, &visibility, appearance))
+            Container::new(self.render_body(&workspace, &visibility, appearance, app))
                 .with_margin_top(16.)
                 .finish(),
         );
@@ -474,15 +498,34 @@ impl BillingCycleUsageSectionView {
 
     fn render_body(
         &self,
-        _workspace: &Workspace,
-        _visibility: &UsageVisibility,
+        workspace: &Workspace,
+        visibility: &UsageVisibility,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
-        // TODO -- next pr
-        self.render_empty_state(
-            "Usage rows coming soon",
-            "Per-user usage breakdown lands in a follow-up.",
+        let Some(summary) = self.current_summary(workspace) else {
+            return self.render_empty_state(
+                "No usage this period",
+                "Usage will appear here once you start making agent requests.",
+                appearance,
+            );
+        };
+
+        let viewer_uid = Self::resolved_viewer_uid(app);
+        let viewer_display_name = Self::resolved_viewer_display_name(app);
+
+        render_rows(
+            workspace,
+            &summary.entries,
+            viewer_uid.as_deref(),
+            viewer_display_name.as_deref(),
+            visibility,
+            self.source_filter,
+            &self.row_mouse_states,
             appearance,
+            std::sync::Arc::new(|filter, ctx| {
+                ctx.dispatch_typed_action(BillingCycleUsageAction::ChangeSourceFilter(filter));
+            }),
         )
     }
 
@@ -501,9 +544,7 @@ impl BillingCycleUsageSectionView {
 
         let body = appearance
             .ui_builder()
-            .paragraph(
-                "Detailed team usage and spend limit controls live in the admin panel.",
-            )
+            .paragraph("Detailed team usage and spend limit controls live in the admin panel.")
             .with_style(UiComponentStyles {
                 font_color: Some(theme.sub_text_color(bg).into()),
                 ..Default::default()
@@ -592,9 +633,7 @@ fn legend_style_for(cost_type: AiCreditsUsageAndCostType) -> (ColorU, &'static s
         AiCreditsUsageAndCostType::BaseLimit => (BASE_CREDITS_DOT_COLOR, "Base"),
         AiCreditsUsageAndCostType::BonusGrant => (BONUS_CREDITS_DOT_COLOR, "Add-ons"),
         AiCreditsUsageAndCostType::Payg => (PAYG_CREDITS_DOT_COLOR, "Pay-as-you-go"),
-        AiCreditsUsageAndCostType::AmbientBonusGrant => {
-            (AMBIENT_CREDITS_DOT_COLOR, "Ambient-only")
-        }
+        AiCreditsUsageAndCostType::AmbientBonusGrant => (AMBIENT_CREDITS_DOT_COLOR, "Ambient-only"),
         AiCreditsUsageAndCostType::Aggregate | AiCreditsUsageAndCostType::Other(_) => {
             (BASE_CREDITS_DOT_COLOR, "")
         }
