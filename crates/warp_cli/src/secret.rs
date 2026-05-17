@@ -140,8 +140,9 @@ pub struct OpenAiApiKeyArgs {
     pub value: ValueArgs,
 
     /// Optional base URL for the OpenAI API (e.g. a regional endpoint like
-    /// `https://us.api.openai.com/v1`). When omitted, the harness uses the
-    /// provider's default endpoint.
+    /// `https://us.api.openai.com/v1`). When omitted in interactive mode the
+    /// CLI prompts for it; pressing Enter at the prompt skips it. When omitted
+    /// in non-interactive mode the harness uses the provider's default endpoint.
     #[arg(long = "base-url")]
     pub base_url: Option<String>,
 }

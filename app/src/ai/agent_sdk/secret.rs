@@ -614,10 +614,14 @@ fn make_secret_value_from_gql_type(
 
 /// Read an OpenAI API key secret from CLI flags or interactive prompts.
 ///
-/// The API key value is read from `--value-file`, stdin, or an interactive prompt (in that
-/// order), matching the behavior of other simple secret types. `base_url` is optional and is
-/// taken verbatim from the `--base-url` flag; we do not prompt for it interactively, since the
-/// vast majority of users use the default endpoint.
+/// The API key value is read from `--value-file`, stdin, or an interactive password prompt (in
+/// that order), matching the behavior of other simple secret types.
+///
+/// `base_url` is optional. When `--base-url` is provided we use it verbatim (an empty value is
+/// treated as "no base URL"). When it is not provided and we are running interactively, we
+/// prompt for it; pressing Enter at the prompt skips the base URL. In non-interactive mode we
+/// silently default to no base URL, since the vast majority of users use the provider's default
+/// endpoint.
 fn read_openai_api_key_secret_value(
     value_args: &ValueArgs,
     base_url: Option<String>,
@@ -626,15 +630,44 @@ fn read_openai_api_key_secret_value(
         Some(v) => v,
         None => return Ok(None),
     };
-    // Treat an empty `--base-url` value as "no base URL" rather than persisting a blank string.
-    let base_url = base_url.and_then(|s| {
-        let trimmed = s.trim();
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed.to_owned())
+
+    // The base URL is optional. An empty `--base-url` flag, empty interactive submission, or
+    // omission in non-interactive mode all map to `None` so we never persist a blank string.
+    let base_url: Option<String> = match base_url {
+        Some(s) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_owned())
+            }
         }
-    });
+        None => {
+            if !io::stdin().is_terminal() {
+                // Non-interactive: leave the base URL unset rather than prompting or failing.
+                None
+            } else {
+                match inquire::Text::new("OpenAI base URL (optional, press Enter to skip):")
+                    .with_help_message("e.g. https://us.api.openai.com/v1 for a regional endpoint")
+                    .prompt()
+                {
+                    Ok(value) => {
+                        let trimmed = value.trim();
+                        if trimmed.is_empty() {
+                            None
+                        } else {
+                            Some(trimmed.to_owned())
+                        }
+                    }
+                    Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
+                        return Ok(None);
+                    }
+                    Err(err) => return Err(err.into()),
+                }
+            }
+        }
+    };
+
     Ok(Some(ManagedSecretValue::openai_api_key(api_key, base_url)))
 }
 
