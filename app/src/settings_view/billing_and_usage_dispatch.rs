@@ -2,7 +2,7 @@
 //! pages.
 
 use warp_core::{features::FeatureFlag, ui::appearance::Appearance};
-use warpui::elements::ChildView;
+use warpui::elements::{ChildView, Container, ParentElement};
 use warpui::{AppContext, Element, Entity, SingletonEntity, View, ViewContext, ViewHandle};
 
 use crate::auth::AuthStateProvider;
@@ -11,7 +11,7 @@ use crate::workspaces::user_workspaces::UserWorkspaces;
 use super::billing_and_usage_page::{BillingAndUsagePageEvent, BillingAndUsagePageView};
 use super::billing_and_usage_page_v2::BillingAndUsagePageV2View;
 use super::settings_page::{
-    MatchData, PageType, SettingsPageMeta, SettingsPageViewHandle, SettingsWidget,
+    MatchData, PageType, SettingsPageMeta, SettingsPageViewHandle, SettingsWidget, HEADER_PADDING,
 };
 use super::SettingsSection;
 
@@ -133,10 +133,13 @@ impl SettingsWidget for BillingAndUsageWidget {
         _appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        if view.use_v2(app) {
+        let inner = if view.use_v2(app) {
             ChildView::new(&view.v2).finish()
         } else {
             ChildView::new(&view.v1).finish()
-        }
+        };
+        Container::new(inner)
+            .with_margin_top(HEADER_PADDING)
+            .finish()
     }
 }
