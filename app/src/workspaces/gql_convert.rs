@@ -478,7 +478,7 @@ fn from_gql_max_prior_cycles(value: i32) -> MaxPriorCycles {
             report_error!(anyhow!(
                 "Unexpected maxPriorCycles value '{other}' from server; treating as unlimited"
             ));
-            MaxPriorCycles::Unlimited
+            MaxPriorCycles::None
         }
     }
 }
@@ -997,7 +997,6 @@ impl From<GqlWorkspace> for Workspace {
                 .unwrap_or_default(),
             billing_cycle_usage: gql_workspace
                 .billing_cycle_usage_history
-                .clone()
                 .map(convert_billing_cycle_usage),
             has_billing_history: gql_workspace.has_billing_history,
             settings: gql_workspace.settings.clone().into(),
