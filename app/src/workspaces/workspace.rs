@@ -92,6 +92,20 @@ impl Workspace {
             .is_some_and(|member| member.role.is_admin_or_owner())
     }
 
+    pub fn resolve_usage_visibility(&self, is_admin: bool) -> UsageVisibility {
+        let Some(policy) = self.billing_metadata.tier.usage_visibility_policy else {
+            return UsageVisibility::default();
+        };
+        UsageVisibility {
+            granularity: if is_admin {
+                policy.admin_granularity
+            } else {
+                UsageVisibilityGranularity::OwnOnly
+            },
+            max_prior_cycles: policy.max_prior_cycles,
+        }
+    }
+
     pub fn can_be_deleted(&self, current_user_email: &str) -> bool {
         // Current user needs to be an admin and be the only user remaining
         self.is_workspace_admin(current_user_email)
@@ -426,10 +440,7 @@ pub struct UsageVisibilityPolicy {
 /// `UsageVisibilityPolicy` with the viewer's admin status. Non-admins always
 /// collapse to `granularity == OwnOnly`; `max_prior_cycles` is plan-wide and
 /// applies to admins and non-admins alike. Built by
-/// [`super::usage_visibility::resolve_usage_visibility`].
-// `dead_code` is suppressed until the UI scaffold PR consumes this struct;
-// the resolver tests exercise it but the lint only counts non-test usage.
-#[allow(dead_code)]
+/// [`Workspace::resolve_usage_visibility`].
 #[derive(Clone, Copy, Debug, Default)]
 pub struct UsageVisibility {
     pub granularity: UsageVisibilityGranularity,
@@ -713,6 +724,10 @@ impl BillingMetadata {
                 .is_some_and(|policy| policy.enabled)
     }
 }
+
+#[cfg(test)]
+#[path = "workspace_tests.rs"]
+mod tests;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct LlmHostSettings {
