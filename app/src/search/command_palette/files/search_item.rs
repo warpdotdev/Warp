@@ -97,17 +97,17 @@ impl SearchItem for FileSearchItem {
 
     fn accessibility_label(&self) -> String {
         if self.is_directory {
-            format!("Directory: {}", self.path.display())
+            t!("file_search.directory_label", path = self.path.display()).to_string()
         } else {
-            format!("File: {}", self.path.display())
+            t!("file_search.file_label", path = self.path.display()).to_string()
         }
     }
 
     fn accessibility_help_message(&self) -> Option<String> {
         Some(if self.is_directory {
-            "Press Enter to navigate to this directory".to_string()
+            t!("file_search.navigate_directory_help").to_string()
         } else {
-            "Press Enter to open this file".to_string()
+            t!("file_search.open_file_help").to_string()
         })
     }
 
@@ -161,7 +161,7 @@ impl SearchItem for CreateFileSearchItem {
         let text_color = highlight_state.sub_text_fill(appearance).into_solid();
 
         let label = Text::new_inline(
-            format!("Create {}…", &self.file_name),
+            t!("file_search.create_file", name = &self.file_name).to_string(),
             appearance.ui_font_family(),
             appearance.monospace_font_size(),
         )
@@ -195,14 +195,11 @@ impl SearchItem for CreateFileSearchItem {
     }
 
     fn accessibility_label(&self) -> String {
-        format!("Create file: {}", self.file_name)
+        t!("file_search.create_file_label", name = &self.file_name).to_string()
     }
 
     fn accessibility_help_message(&self) -> Option<String> {
-        Some(format!(
-            "Press Enter to create {} in the current directory",
-            self.file_name
-        ))
+        Some(t!("file_search.create_file_help", name = &self.file_name).to_string())
     }
 
     fn render_details(&self, _ctx: &AppContext) -> Option<Box<dyn Element>> {

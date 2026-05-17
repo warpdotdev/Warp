@@ -43,7 +43,6 @@ pub(super) const BASE_INDENT: f32 = 30.;
 
 const FILE_TYPE_DOCS_URL: &str =
     "https://docs.warp.dev/knowledge-and-collaboration/warp-drive#import-and-export";
-const SUPPORTED_FILE_TYPE_TEXT: &str = "md, yaml, yml";
 
 #[cfg(test)]
 #[path = "import_tests.rs"]
@@ -387,13 +386,13 @@ impl ImportModalBody {
 
         let file_picker_button = if is_loading {
             base_button
-                .with_centered_text_label("Preparing...".to_string())
+                .with_centered_text_label(t!("drive.preparing").to_string())
                 .disabled()
         } else {
             base_button.with_text_and_icon_label(
                 TextAndIcon::new(
                     TextAndIconAlignment::TextFirst,
-                    "Choose files...".to_string(),
+                    t!("drive.choose_files").to_string(),
                     Icon::Import.to_warpui_icon(
                         appearance
                             .theme()
@@ -417,7 +416,7 @@ impl ImportModalBody {
 
         let supported_file_type = appearance
             .ui_builder()
-            .span(SUPPORTED_FILE_TYPE_TEXT)
+            .span(t!("drive.supported_import_file_types").to_string())
             .with_style(UiComponentStyles {
                 font_color: Some(
                     appearance

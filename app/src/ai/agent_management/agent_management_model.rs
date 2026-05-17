@@ -158,17 +158,21 @@ impl AgentNotificationsModel {
                     );
                 }
                 CLIAgentSessionStatus::Success => {
-                    let title = session_context
-                        .display_title()
-                        .unwrap_or_else(|| format!("{} completed", agent.display_name()));
+                    let title = session_context.display_title().unwrap_or_else(|| {
+                        t!(
+                            "agent_management.agent_completed",
+                            agent = agent.display_name()
+                        )
+                        .to_string()
+                    });
                     let message = match agent {
-                        CLIAgent::Codex => "Notification from Codex",
-                        _ => "Task completed.",
+                        CLIAgent::Codex => t!("agent_management.notification_from_codex"),
+                        _ => t!("agent_management.task_completed"),
                     };
                     let metadata = TerminalViewMetadata::lookup(*terminal_view_id, ctx);
                     self.add_notification(
                         title,
-                        message.to_owned(),
+                        message.to_string(),
                         NotificationCategory::Complete,
                         NotificationSourceAgent::CLI {
                             agent: *agent,
@@ -182,15 +186,19 @@ impl AgentNotificationsModel {
                     );
                 }
                 CLIAgentSessionStatus::Blocked { message } => {
-                    let title = session_context
-                        .display_title()
-                        .unwrap_or_else(|| format!("{} needs attention", agent.display_name()));
+                    let title = session_context.display_title().unwrap_or_else(|| {
+                        t!(
+                            "agent_management.agent_needs_attention",
+                            agent = agent.display_name()
+                        )
+                        .to_string()
+                    });
                     let metadata = TerminalViewMetadata::lookup(*terminal_view_id, ctx);
                     self.add_notification(
                         title,
-                        message
-                            .clone()
-                            .unwrap_or_else(|| "Waiting for input.".to_owned()),
+                        message.clone().unwrap_or_else(|| {
+                            t!("agent_management.waiting_for_input").to_string()
+                        }),
                         NotificationCategory::Request,
                         NotificationSourceAgent::CLI {
                             agent: *agent,
@@ -335,7 +343,7 @@ impl AgentNotificationsModel {
                 let artifacts = self.flush_pending_artifacts(conversation_id);
                 self.add_notification(
                     title,
-                    "Task completed.".to_owned(),
+                    t!("agent_management.task_completed").to_string(),
                     NotificationCategory::Complete,
                     oz_agent,
                     origin,

@@ -315,7 +315,7 @@ impl SuggestedUnitTestsView {
 
         let checkbox_text = appearance
             .ui_builder()
-            .span("Don't show me suggested code banners again")
+            .span(t!("ai.dont_show_suggested_code_banners_again").to_string())
             .with_style(UiComponentStyles {
                 font_color: Some(font_color),
                 font_size: Some(font_size),

@@ -4,9 +4,9 @@ use super::{
     cli_controller::{CLISubagentController, CLISubagentEvent, UserTakeOverReason},
     model::{AIBlockModel, AIBlockModelImpl, AIBlockOutputStatus},
     view_impl::common::{
-        render_switch_control_to_user_button, render_warping_indicator,
-        render_warping_indicator_base, ButtonProps, ForceRefreshButtonProps, MaybeShimmeringText,
-        WarpingIndicatorProps, WarpingProps, LOAD_OUTPUT_MESSAGE, WAITING_FOR_USER_INPUT_MESSAGE,
+        ButtonProps, ForceRefreshButtonProps, MaybeShimmeringText, WarpingIndicatorProps,
+        WarpingProps, load_output_message, render_switch_control_to_user_button,
+        render_warping_indicator, render_warping_indicator_base, waiting_for_user_input_message,
     },
 };
 use crate::{
@@ -18,73 +18,73 @@ use crate::{
 };
 use crate::{
     ai::blocklist::agent_view::{
-        agent_view_bg_fill, child_agent_status_card::ChildAgentStatusCard, AgentMessageBar,
-        AgentViewController, EphemeralMessageModel,
+        AgentMessageBar, AgentViewController, EphemeralMessageModel, agent_view_bg_fill,
+        child_agent_status_card::ChildAgentStatusCard,
     },
     terminal::input::{
+        HandoffComposeState,
         buffer_model::InputBufferModel,
         message_bar::common::render_standard_message_bar,
         message_bar::{Message, MessageItem},
         slash_command_model::SlashCommandModel,
         suggestions_mode_model::InputSuggestionsModeModel,
-        HandoffComposeState,
     },
 };
 use warp_multi_agent_api as api;
 
 use crate::{
+    BlocklistAIHistoryModel,
     ai::{
+        AgentTip,
         agent::{
-            conversation::AIConversationId, icons, AIAgentExchangeId, AIAgentOutput,
-            AIAgentOutputMessageType, CancellationReason, SummarizationType,
+            AIAgentExchangeId, AIAgentOutput, AIAgentOutputMessageType, CancellationReason,
+            SummarizationType, conversation::AIConversationId, icons,
         },
         blocklist::{
+            BlocklistAIActionEvent, BlocklistAIActionModel, BlocklistAIContextEvent,
+            BlocklistAIContextModel, BlocklistAIController, BlocklistAIHistoryEvent,
+            BlocklistAIInputEvent, BlocklistAIInputModel, ResponseStreamId,
             agent_view::shortcuts::AgentShortcutViewModel,
             ai_brand_color,
             model::AIBlockModelHelper,
             summarization_cancel_dialog::{
                 self, SummarizationCancelDialog, SummarizationCancelDialogEvent,
             },
-            BlocklistAIActionEvent, BlocklistAIActionModel, BlocklistAIContextEvent,
-            BlocklistAIContextModel, BlocklistAIController, BlocklistAIHistoryEvent,
-            BlocklistAIInputEvent, BlocklistAIInputModel, ResponseStreamId,
         },
         llms::LLMPreferences,
-        AgentTip,
     },
     send_telemetry_from_app_ctx,
     server::telemetry::TelemetryEvent,
     settings::{InputModeSettings, InputSettings},
     settings_view::keybindings::KeybindingChangedNotifier,
     terminal::{
+        CANCEL_COMMAND_KEYBINDING, TOGGLE_AUTOEXECUTE_MODE_KEYBINDING,
+        TOGGLE_HIDE_CLI_RESPONSES_KEYBINDING, TOGGLE_QUEUE_NEXT_PROMPT_KEYBINDING, TerminalModel,
         input::SET_INPUT_MODE_TERMINAL_ACTION_NAME,
         model::block::LONG_RUNNING_COMMAND_DURATION_MS,
         model_events::{ModelEvent, ModelEventDispatcher},
         view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent},
         warpify::render::LEFT_STRIPE_WIDTH,
-        TerminalModel, CANCEL_COMMAND_KEYBINDING, TOGGLE_AUTOEXECUTE_MODE_KEYBINDING,
-        TOGGLE_HIDE_CLI_RESPONSES_KEYBINDING, TOGGLE_QUEUE_NEXT_PROMPT_KEYBINDING,
     },
     util::bindings::keybinding_name_to_keystroke,
-    BlocklistAIHistoryModel,
 };
 use instant::Instant;
 use parking_lot::FairMutex;
 use pathfinder_color::ColorU;
 use warp_core::{
     features::FeatureFlag,
-    ui::{appearance::Appearance, theme::Fill, Icon as CoreIcon},
+    ui::{Icon as CoreIcon, appearance::Appearance, theme::Fill},
 };
 use warpui::elements::shimmering_text::ShimmeringTextStateHandle;
 use warpui::{
+    AppContext, Element, Entity, EntityId, ModelHandle, SingletonEntity, View, ViewContext,
+    ViewHandle,
+    r#async::SpawnedFutureHandle,
     elements::{Border, Container, Empty, Flex, MouseStateHandle, ParentElement, Text},
     keymap::Keystroke,
     presenter::ChildView,
-    r#async::SpawnedFutureHandle,
-    AppContext, Element, Entity, EntityId, ModelHandle, SingletonEntity, View, ViewContext,
-    ViewHandle,
 };
-use warpui::{r#async::Timer, TypedActionView};
+use warpui::{TypedActionView, r#async::Timer};
 
 pub fn init(app: &mut AppContext) {
     summarization_cancel_dialog::init(app);
@@ -817,8 +817,8 @@ impl BlocklistAIStatusBar {
         );
         let default_warping_text = fallback_warping_text
             .as_deref()
-            .unwrap_or(LOAD_OUTPUT_MESSAGE)
-            .to_owned();
+            .map(str::to_owned)
+            .unwrap_or_else(|| load_output_message().to_string());
         let secondary_element = if fallback_warping_text.is_some() {
             Some(render_fallback_explanation(model.as_ref(), app))
         } else {
@@ -898,7 +898,13 @@ impl BlocklistAIStatusBar {
         }
 
         let progress = ambient_agent_model.agent_progress()?;
-        let progress_text = progress.setup_status_text();
+        let progress_text = if progress.harness_started_at.is_some() {
+            t!("ai_ext.starting_environment_step").to_string()
+        } else if progress.claimed_at.is_some() {
+            t!("ai_ext.creating_environment_step").to_string()
+        } else {
+            t!("ai_ext.connecting_to_host_step").to_string()
+        };
         Some(render_warping_indicator_base(
             WarpingIndicatorProps {
                 icon: None,
@@ -935,11 +941,11 @@ impl BlocklistAIStatusBar {
                     color: Some(error_color),
                 },
                 MessageItem::Text {
-                    content: "Missing GitHub authentication. ".into(),
+                    content: t!("ai_ext.missing_github_auth").to_string().into(),
                     color: Some(error_color),
                 },
                 MessageItem::hyperlink(
-                    "Authenticate GitHub",
+                    t!("ai_ext.authenticate_github").to_string(),
                     auth_url.to_owned(),
                     self.state_handles.github_auth_link.clone(),
                 ),
@@ -954,7 +960,7 @@ impl BlocklistAIStatusBar {
                     color: Some(color),
                 },
                 MessageItem::Text {
-                    content: "Cloud agent run cancelled".into(),
+                    content: t!("ai_ext.cloud_agent_run_cancelled").to_string().into(),
                     color: Some(color),
                 },
             ]));
@@ -1018,7 +1024,10 @@ fn render_agent_tip(tip: &AgentTip, app: &AppContext) -> Box<dyn Element> {
         fragments.push(FormattedTextFragment::hyperlink_action(text, action));
     } else if let Some(link_target) = tip.link.clone() {
         fragments.push(FormattedTextFragment::plain_text(" "));
-        fragments.push(FormattedTextFragment::hyperlink("Learn more", link_target));
+        fragments.push(FormattedTextFragment::hyperlink(
+            t!("workspace.learn_more"),
+            link_target,
+        ));
     }
 
     let formatted_text =
@@ -1077,10 +1086,8 @@ fn render_fallback_explanation<V: View>(
         .and_then(|base_id| llm_prefs.get_llm_info(base_id))
         .map(|info| info.base_model_name.as_str());
     let text = match primary_name {
-        Some(primary) => {
-            format!("The primary model ({primary}) failed. Retrying with the fallback model.")
-        }
-        None => "The primary model failed. Retrying with the fallback model.".to_owned(),
+        Some(primary) => t!("ai_ext.primary_model_failed_named", primary).to_string(),
+        None => t!("ai_ext.primary_model_failed").to_string(),
     };
     let appearance = Appearance::as_ref(app);
     Text::new_inline(
@@ -1133,8 +1140,8 @@ fn resolve_fallback_warping_message<V: View>(
         return None;
     }
     Some(match display_name.as_deref() {
-        Some(name) => format!("Warping with {name}."),
-        None => "Warping with another model.".to_owned(),
+        Some(name) => t!("ai_ext.warping_with_model", name).to_string(),
+        None => t!("ai_ext.warping_with_another_model").to_string(),
     })
 }
 
@@ -1172,7 +1179,7 @@ impl View for BlocklistAIStatusBar {
                     WarpingIndicatorProps {
                         icon: None,
                         warping_indicator_text: MaybeShimmeringText::Shimmering {
-                            text: "Setting up environment".into(),
+                            text: t!("ai_ext.setting_up_environment"),
                             shimmering_text_handle: self.shimmering_text_handle.clone(),
                         },
                         non_shimmering_text: None,
@@ -1199,13 +1206,13 @@ impl View for BlocklistAIStatusBar {
                     WarpingIndicatorProps {
                         icon: Some(icons::gray_clock_icon(appearance).finish()),
                         warping_indicator_text: MaybeShimmeringText::Static(
-                            WAITING_FOR_USER_INPUT_MESSAGE.into(),
+                            waiting_for_user_input_message(),
                         ),
                         non_shimmering_text: None,
                         non_shimmering_suffix: None,
                         buttons: Some(render_switch_control_to_user_button(
-                            "Exit",
-                            "Exit agent input",
+                            t!("common.exit").to_string(),
+                            t!("ai_ext.exit_agent_input").to_string(),
                             ButtonProps {
                                 button_handle: &self.state_handles.take_over_button,
                                 keystroke: self.set_terminal_input_keystroke.as_ref(),

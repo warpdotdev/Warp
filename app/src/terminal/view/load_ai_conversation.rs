@@ -32,7 +32,7 @@ use crate::ai::agent::{
     AIAgentAction, AIAgentActionType, AIAgentOutputMessage, AIAgentOutputMessageType,
     CreateDocumentsResult, EditDocumentsResult,
 };
-use crate::ai::ai_document_view::DEFAULT_PLANNING_DOCUMENT_TITLE;
+use crate::ai::ai_document_view::default_planning_document_title;
 use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::{
     ai::{
@@ -367,9 +367,9 @@ impl TerminalView {
                                                 let title = document_titles
                                                     .get(index)
                                                     .cloned()
-                                                    .unwrap_or_else(|| {
-                                                        DEFAULT_PLANNING_DOCUMENT_TITLE.to_string()
-                                                    });
+                                                    .unwrap_or_else(
+                                                        default_planning_document_title,
+                                                    );
 
                                                 doc_model.restore_document(
                                                     doc_context.document_id,

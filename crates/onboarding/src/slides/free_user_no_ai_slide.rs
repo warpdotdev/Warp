@@ -11,29 +11,16 @@ use warpui::prelude::Align;
 use warpui::{
     elements::{
         Border, ClippedScrollStateHandle, ConstrainedBox, Container, CornerRadius,
-        CrossAxisAlignment, DropShadow, Flex, FormattedTextElement, Hoverable, MainAxisAlignment,
-        MainAxisSize, MouseStateHandle, ParentElement, Radius, SizeConstraintCondition,
-        SizeConstraintSwitch,
+        CrossAxisAlignment, DropShadow, Flex, Hoverable, MainAxisAlignment, MainAxisSize,
+        MouseStateHandle, ParentElement, Radius, SizeConstraintCondition, SizeConstraintSwitch,
     },
     fonts::Weight,
     keymap::Keystroke,
     platform::Cursor,
-    text_layout::TextAlignment,
     ui_components::components::{UiComponent as _, UiComponentStyles},
     AppContext, Element, Entity, ModelHandle, SingletonEntity as _, TypedActionView, View,
     ViewContext,
 };
-
-const SUBSCRIBE_ITEMS: &[&str] = &[
-    "1,500 credits per month",
-    "Access to frontier OpenAI, Anthropic, and Google models",
-    "Access to Reload credits and volume-based discounts",
-    "Extended cloud agents access",
-    "Highest codebase indexing limits",
-    "Unlimited Warp Drive objects and collaboration",
-    "Private email support",
-    "Unlimited cloud conversation storage",
-];
 
 #[derive(Debug, Clone)]
 pub enum FreeUserNoAiSlideAction {
@@ -101,7 +88,7 @@ impl FreeUserNoAiSlide {
     fn render_header(&self, appearance: &Appearance) -> Box<dyn Element> {
         appearance
             .ui_builder()
-            .paragraph("Let's get started.")
+            .paragraph(crate::t!("onboarding.free_user_no_ai.title").to_string())
             .with_style(UiComponentStyles {
                 font_size: Some(36.),
                 font_weight: Some(Weight::Medium),
@@ -121,8 +108,8 @@ impl FreeUserNoAiSlide {
             appearance,
             0,
             Icon::Code2,
-            "Agent driven development with Warp's built-in agent",
-            "Iterate, plan, and build with Oz: Warp's built-in agent. Available locally or in the cloud.",
+            crate::t!("onboarding.free_user_no_ai.agent_title").to_string(),
+            crate::t!("onboarding.free_user_no_ai.agent_description").to_string(),
             agent_price_badge.to_string(),
             true, // badge is green
             self.agent_mouse_state.clone(),
@@ -133,9 +120,9 @@ impl FreeUserNoAiSlide {
             appearance,
             1,
             Icon::Terminal,
-            "Classic terminal with third-party agents",
-            "A modern terminal that supports third-party agents (Claude Code, Codex, Gemini CLI) and classic terminal workflows.",
-            "Free".to_string(),
+            crate::t!("onboarding.free_user_no_ai.terminal_title").to_string(),
+            crate::t!("onboarding.free_user_no_ai.terminal_description").to_string(),
+            crate::t!("onboarding.free_user_no_ai.free_badge").to_string(),
             false, // badge is gray
             self.classic_terminal_mouse_state.clone(),
             selected_index,
@@ -190,8 +177,8 @@ impl FreeUserNoAiSlide {
         appearance: &Appearance,
         index: usize,
         icon: Icon,
-        label: &'static str,
-        description: &'static str,
+        label: String,
+        description: String,
         badge_text: String,
         badge_green: bool,
         mouse_state: MouseStateHandle,
@@ -257,11 +244,17 @@ impl FreeUserNoAiSlide {
                 .build()
                 .finish();
 
-            let description_el = FormattedTextElement::from_str(description, ui_font_family, 12.)
-                .with_color(text_color)
-                .with_weight(Weight::Normal)
-                .with_alignment(TextAlignment::Left)
-                .with_line_height_ratio(1.4)
+            let description_el = appearance
+                .ui_builder()
+                .paragraph(description)
+                .with_style(UiComponentStyles {
+                    font_family_id: Some(ui_font_family),
+                    font_size: Some(12.),
+                    font_weight: Some(Weight::Normal),
+                    font_color: Some(text_color),
+                    ..Default::default()
+                })
+                .build()
                 .finish();
 
             let content = Flex::column()
@@ -300,7 +293,7 @@ impl FreeUserNoAiSlide {
         let back_button = self.back_button.render(
             appearance,
             button::Params {
-                content: button::Content::Label("Back".into()),
+                content: button::Content::Label(crate::t!("onboarding.back")),
                 theme: &button::themes::Naked,
                 options: button::Options {
                     on_click: Some(Box::new(|ctx, _app, _pos| {
@@ -316,7 +309,7 @@ impl FreeUserNoAiSlide {
             self.next_button.render(
                 appearance,
                 button::Params {
-                    content: button::Content::Label("Get Warping".into()),
+                    content: button::Content::Label(crate::t!("onboarding.get_warping")),
                     theme: &button::themes::Primary,
                     options: button::Options {
                         keystroke: Some(enter),
@@ -331,7 +324,9 @@ impl FreeUserNoAiSlide {
             self.subscribe_nav_button.render(
                 appearance,
                 button::Params {
-                    content: button::Content::Label("Subscribe".into()),
+                    content: button::Content::Label(crate::t!(
+                        "onboarding.free_user_no_ai.subscribe"
+                    )),
                     theme: &button::themes::Primary,
                     options: button::Options {
                         on_click: Some(Box::new(|ctx, _app, _pos| {
@@ -345,7 +340,7 @@ impl FreeUserNoAiSlide {
             self.next_button.render(
                 appearance,
                 button::Params {
-                    content: button::Content::Label("Next".into()),
+                    content: button::Content::Label(crate::t!("onboarding.next")),
                     theme: &button::themes::Primary,
                     options: button::Options {
                         disabled: true,
@@ -367,23 +362,36 @@ impl FreeUserNoAiSlide {
         let text_main = internal_colors::text_main(theme, internal_colors::neutral_2(theme));
         let text_sub = internal_colors::text_sub(theme, internal_colors::neutral_2(theme));
 
-        let title = FormattedTextElement::from_str(
-            "Subscribe to access agent driven development in Warp.",
-            ui_font_family,
-            24.,
-        )
-        .with_color(text_main)
-        .with_weight(Weight::Medium)
-        .with_alignment(TextAlignment::Left)
-        .with_line_height_ratio(1.3)
-        .finish();
+        let title = appearance
+            .ui_builder()
+            .paragraph(crate::t!("onboarding.free_user_no_ai.subscribe_title").to_string())
+            .with_style(UiComponentStyles {
+                font_family_id: Some(ui_font_family),
+                font_size: Some(24.),
+                font_weight: Some(Weight::Medium),
+                font_color: Some(text_main),
+                ..Default::default()
+            })
+            .build()
+            .finish();
 
         let mut items_col = Flex::column()
             .with_main_axis_size(MainAxisSize::Min)
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
             .with_spacing(8.);
 
-        for item_text in SUBSCRIBE_ITEMS {
+        let subscribe_items = [
+            crate::t!("onboarding.free_user_no_ai.subscribe_item_credits").to_string(),
+            crate::t!("onboarding.free_user_no_ai.subscribe_item_models").to_string(),
+            crate::t!("onboarding.free_user_no_ai.subscribe_item_reload").to_string(),
+            crate::t!("onboarding.free_user_no_ai.subscribe_item_cloud_agents").to_string(),
+            crate::t!("onboarding.free_user_no_ai.subscribe_item_indexing").to_string(),
+            crate::t!("onboarding.free_user_no_ai.subscribe_item_drive").to_string(),
+            crate::t!("onboarding.free_user_no_ai.subscribe_item_email").to_string(),
+            crate::t!("onboarding.free_user_no_ai.subscribe_item_cloud_storage").to_string(),
+        ];
+
+        for item_text in subscribe_items {
             let bullet = appearance
                 .ui_builder()
                 .paragraph(format!("\u{2022} {item_text}"))
@@ -415,18 +423,20 @@ impl FreeUserNoAiSlide {
                     .with_main_axis_alignment(MainAxisAlignment::Center)
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_child(
-                        warpui::elements::Text::new_inline(
-                            "Subscribe",
-                            appearance.ui_font_family(),
-                            14.,
-                        )
-                        .with_color(fg_color)
-                        .with_style(warpui::fonts::Properties {
-                            weight: Weight::Semibold,
-                            style: warpui::fonts::Style::Normal,
-                        })
-                        .with_selectable(false)
-                        .finish(),
+                        appearance
+                            .ui_builder()
+                            .paragraph(
+                                crate::t!("onboarding.free_user_no_ai.subscribe").to_string(),
+                            )
+                            .with_style(UiComponentStyles {
+                                font_family_id: Some(appearance.ui_font_family()),
+                                font_size: Some(14.),
+                                font_weight: Some(Weight::Semibold),
+                                font_color: Some(fg_color),
+                                ..Default::default()
+                            })
+                            .build()
+                            .finish(),
                     )
                     .finish();
 

@@ -271,7 +271,7 @@ impl SettingsImportView {
                     font_size: Some(FONT_SIZE),
                     ..Default::default()
                 })
-                .with_centered_text_label("Import".to_owned())
+                .with_centered_text_label(t!("drive.import").to_string())
                 .build()
                 .on_click(move |ctx, _, _| {
                     ctx.dispatch_typed_action(SettingsImportAction::ImportButtonClicked);
@@ -298,7 +298,7 @@ impl SettingsImportView {
                 background: Some(appearance.theme().outline().into()),
                 ..Default::default()
             })
-            .with_centered_text_label("Reset to Warp defaults".to_owned())
+            .with_centered_text_label(t!("settings.reset_to_warp_defaults").to_string())
             .build()
             .on_click(move |ctx, _, _| {
                 ctx.dispatch_typed_action(SettingsImportAction::ResetButtonClicked);

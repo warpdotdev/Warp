@@ -15,9 +15,6 @@ use warpui::{
 
 use crate::{terminal::model::terminal_model::ExitReason, ui_components};
 
-const FILE_ISSUE_TEXT: &str = "File issue";
-const MORE_INFO_TEXT: &str = "More info";
-
 /// A banner to display when the shell process terminates.
 ///
 /// This can be a simple informational banner or one giving information about
@@ -165,9 +162,13 @@ impl TerminationType {
 
     fn text(&self, appearance: &Appearance) -> Box<dyn Element> {
         let text = match self {
-            TerminationType::Normal => "Shell process exited",
-            TerminationType::PtySpawnFailure { .. } => "Shell process could not start!",
-            TerminationType::Premature { .. } => "Shell process exited prematurely!",
+            TerminationType::Normal => t!("terminal_banner.shell_process_exited").to_string(),
+            TerminationType::PtySpawnFailure { .. } => {
+                t!("terminal_banner.shell_process_could_not_start").to_string()
+            }
+            TerminationType::Premature { .. } => {
+                t!("terminal_banner.shell_process_exited_prematurely").to_string()
+            }
         };
 
         Text::new(text, appearance.ui_font_family(), 14.)
@@ -182,10 +183,9 @@ impl TerminationType {
             TerminationType::PtySpawnFailure { pty_spawn_error } => {
                 format!("{pty_spawn_error:#}").into()
             }
-            TerminationType::Premature { shell_detail, .. } => format!(
-                "Something went wrong while starting {shell_detail} and Warpifying it, causing the \
-                process to terminate. Warpify script output is displayed here, which may point at \
-                a cause."
+            TerminationType::Premature { shell_detail, .. } => t!(
+                "terminal_banner.premature_shell_subtext",
+                shell = shell_detail
             )
             .into(),
         };
@@ -212,7 +212,7 @@ impl TerminationType {
                 vec![
                     ui_builder
                         .button(ButtonVariant::Text, handles[0].clone())
-                        .with_text_label(FILE_ISSUE_TEXT.to_string())
+                        .with_text_label(t!("terminal_banner.file_issue").to_string())
                         .build()
                         .on_click(|ctx, _, _| {
                             ctx.dispatch_typed_action(Action::OpenUrl(
@@ -222,7 +222,7 @@ impl TerminationType {
                         .finish(),
                     ui_builder
                         .button(ButtonVariant::Outlined, handles[1].clone())
-                        .with_text_label(MORE_INFO_TEXT.to_string())
+                        .with_text_label(t!("terminal_banner.more_info").to_string())
                         .build()
                         .on_click(|ctx, _, _| {
                             ctx.dispatch_typed_action(Action::OpenUrl(
@@ -240,7 +240,7 @@ impl TerminationType {
                 vec![
                     ui_builder
                         .button(ButtonVariant::Text, handles[0].clone())
-                        .with_text_label("Copy error".to_string())
+                        .with_text_label(t!("terminal_banner.copy_error").to_string())
                         .build()
                         .on_click(move |evt_ctx, _ctx, _position| {
                             evt_ctx.dispatch_typed_action(Action::CopyPtySpawnError(
@@ -250,7 +250,7 @@ impl TerminationType {
                         .finish(),
                     ui_builder
                         .button(ButtonVariant::Text, handles[1].clone())
-                        .with_text_label(FILE_ISSUE_TEXT.to_string())
+                        .with_text_label(t!("terminal_banner.file_issue").to_string())
                         .build()
                         .on_click(|ctx, _, _| {
                             ctx.dispatch_typed_action(Action::OpenUrl(
@@ -260,7 +260,7 @@ impl TerminationType {
                         .finish(),
                     ui_builder
                         .button(ButtonVariant::Outlined, handles[2].clone())
-                        .with_text_label(MORE_INFO_TEXT.to_string())
+                        .with_text_label(t!("terminal_banner.more_info").to_string())
                         .build()
                         .on_click(|ctx, _, _| {
                             ctx.dispatch_typed_action(Action::OpenUrl(

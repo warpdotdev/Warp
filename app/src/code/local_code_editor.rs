@@ -1943,10 +1943,10 @@ impl LocalCodeEditorView {
     /// Creates menu items for the context menu
     fn context_menu_items(&self) -> Vec<MenuItem<LocalCodeEditorAction>> {
         vec![
-            MenuItemFields::new("Go to definition")
+            MenuItemFields::new(t!("code.go_to_definition"))
                 .with_on_select_action(LocalCodeEditorAction::GotoDefinition)
                 .into_item(),
-            MenuItemFields::new("Find references")
+            MenuItemFields::new(t!("code.find_references"))
                 .with_on_select_action(LocalCodeEditorAction::FindReferences)
                 .into_item(),
         ]
@@ -2361,7 +2361,7 @@ pub fn render_unsaved_changes_banner(
             Shrinkable::new(
                 1.,
                 Text::new(
-                    "This file has saved changes that are not reflected here.",
+                    t!("code.saved_changes_not_reflected").to_string(),
                     appearance.ui_font_family(),
                     appearance.ui_font_size(),
                 )
@@ -2379,7 +2379,7 @@ pub fn render_unsaved_changes_banner(
             appearance
                 .ui_builder()
                 .button(ButtonVariant::Text, discard_mouse_state)
-                .with_text_label("Discard this version".into())
+                .with_text_label(t!("code.discard_this_version").to_string())
                 .with_style(UiComponentStyles {
                     height: Some(24.),
                     padding: Some(Coords {
@@ -2401,7 +2401,7 @@ pub fn render_unsaved_changes_banner(
                 appearance
                     .ui_builder()
                     .button(ButtonVariant::Outlined, overwrite_mouse_state)
-                    .with_text_label("Overwrite".into())
+                    .with_text_label(t!("code.overwrite").to_string())
                     .with_style(UiComponentStyles {
                         font_color: Some(appearance.theme().active_ui_text_color().into()),
                         ..Default::default()

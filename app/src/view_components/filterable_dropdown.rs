@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use super::dropdown::{
     DropdownAction, DropdownItem, MenuHeaderTextFormatter, DROPDOWN_PADDING, TOP_MENU_BAR_HEIGHT,
     TOP_MENU_BAR_MAX_WIDTH,
@@ -53,7 +55,7 @@ pub struct FilterableDropdown<A: Action + Clone> {
     selected_item: Option<MenuItem<DropdownAction<A>>>,
     items: Vec<DropdownItem<A>>,
     orientation: FilterableDropdownOrientation,
-    static_menu_header: Option<&'static str>,
+    static_menu_header: Option<Cow<'static, str>>,
     button_variant: ButtonVariant,
     style_override: Option<UiComponentStyles>,
     hovered_style_override: Option<UiComponentStyles>,
@@ -103,7 +105,7 @@ where
                 },
                 ctx,
             );
-            editor.set_placeholder_text("Search", ctx);
+            editor.set_placeholder_text(t!("common.search"), ctx);
             editor
         });
         ctx.subscribe_to_view(&filter_editor, |me, _, event, ctx| {
@@ -408,7 +410,7 @@ where
     }
 
     fn render_closed_top_bar(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let (selected_item_text, font_family_id) = match self.static_menu_header {
+        let (selected_item_text, font_family_id) = match &self.static_menu_header {
             Some(header) => (header.to_string(), None),
             None => match self.selected_item.clone() {
                 Some(MenuItem::Item(fields)) => {
@@ -537,7 +539,7 @@ where
         let background_fill = appearance.theme().surface_2();
         let empty_text = appearance
             .ui_builder()
-            .span("No matches found.")
+            .span(t!("common.no_matches_found").to_string())
             .with_style(UiComponentStyles {
                 font_color: Some(appearance.theme().sub_text_color(background_fill).into()),
                 ..Default::default()
@@ -675,8 +677,8 @@ where
         });
     }
 
-    pub fn set_menu_header_to_static(&mut self, header: &'static str) {
-        self.static_menu_header = Some(header);
+    pub fn set_menu_header_to_static(&mut self, header: impl Into<Cow<'static, str>>) {
+        self.static_menu_header = Some(header.into());
     }
 }
 

@@ -48,7 +48,7 @@ pub fn render_skip_button<A: Action + Clone>(
             background: Some(appearance.theme().outline().into()),
             ..Default::default()
         })
-        .with_centered_text_label("Skip".to_owned())
+        .with_centered_text_label(t!("onboarding.skip").to_string())
         .build()
         .with_cursor(Cursor::PointingHand)
         .on_click(move |ctx, _, _| ctx.dispatch_typed_action(action.clone()))
@@ -118,7 +118,7 @@ pub fn render_input_row<A: Action + Clone>(
             height: Some(SKIP_BUTTON_HEIGHT),
             ..Default::default()
         })
-        .with_centered_text_label("Create team".to_owned());
+        .with_centered_text_label(t!("teams.create_team").to_string());
     if name(ctx, team_name_editor).is_none() {
         create_team_button = create_team_button
             .with_style(UiComponentStyles {

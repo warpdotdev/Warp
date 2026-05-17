@@ -21,6 +21,8 @@ OS_TYPE="$(uname -s)"
 FEATURES="gui"
 INSTALL_COMMON_SKILLS=1
 FORCE_COMMON_SKILLS=0
+FAST_LINKER="${WARP_FAST_LINKER:-auto}"
+CODEGEN_BACKEND="${WARP_CODEGEN_BACKEND:-}"
 COMMON_SKILLS_TARGET="${WARP_COMMON_SKILLS_INSTALL_TARGET:-}"
 
 ./script/install_channel_config || echo "Skipping internal channel config installation (no repo access)."
@@ -75,6 +77,28 @@ while (( "$#" )); do
       CARGO_PARAMS+=("$1")
       MAC_ARGS+=("$1")
       shift
+      ;;
+    --cranelift)
+      CODEGEN_BACKEND="cranelift"
+      shift
+      ;;
+    --codegen-backend|--codegen)
+      if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+        CODEGEN_BACKEND="$2"
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+    --fast-linker)
+      if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+        FAST_LINKER="$2"
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
       ;;
     --profile)
       if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
@@ -144,17 +168,71 @@ export WARP_BIN_NAME
 export WARP_CHANNEL
 
 if [[ "$OS_TYPE" = "Darwin" ]]; then
+  if [[ -n "$CODEGEN_BACKEND" || ( -n "$FAST_LINKER" && "$FAST_LINKER" != "auto" && "$FAST_LINKER" != "off" ) ]]; then
+    echo "--codegen-backend/--cranelift and --fast-linker are only wired for direct cargo run platforms." >&2
+    exit 1
+  fi
+
   if [[ ${#WARP_ARGS[@]} -gt 0 ]]; then
     exec ./script/macos/run "${MAC_ARGS[@]}" -- "${WARP_ARGS[@]}"
   else
     exec ./script/macos/run "${MAC_ARGS[@]}"
   fi
 elif [[ "$OS_TYPE" = "Linux" ]] || [[ "$OS_TYPE" =~ ^(MINGW64_NT|MSYS_NT) ]]; then
+  CARGO_CMD=(cargo)
+
+  if [[ "$FAST_LINKER" = "auto" ]]; then
+    if [[ "$OS_TYPE" = "Linux" ]] && command -v mold &>/dev/null; then
+      FAST_LINKER="mold"
+    elif [[ "$OS_TYPE" = "Linux" ]] && { command -v ld.lld &>/dev/null || command -v lld &>/dev/null; }; then
+      FAST_LINKER="lld"
+    else
+      FAST_LINKER=""
+    fi
+  fi
+
+  if [[ -n "$FAST_LINKER" && "$FAST_LINKER" != "off" ]]; then
+    if [[ "$OS_TYPE" != "Linux" ]]; then
+      echo "--fast-linker is only supported on Linux." >&2
+      exit 1
+    fi
+
+    if [[ "$FAST_LINKER" != "mold" && "$FAST_LINKER" != "lld" ]]; then
+      echo "--fast-linker must be 'mold' or 'lld'." >&2
+      exit 1
+    fi
+
+    if [[ "$FAST_LINKER" = "mold" ]] && ! command -v mold &>/dev/null; then
+      echo "mold is not installed or not on PATH." >&2
+      exit 1
+    fi
+
+    export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-fuse-ld=$FAST_LINKER"
+    echo "Using $FAST_LINKER as the dev linker."
+  fi
+
+  if [[ -n "$CODEGEN_BACKEND" ]]; then
+    if [[ "$CODEGEN_BACKEND" != "cranelift" ]]; then
+      echo "--codegen-backend currently only supports 'cranelift'." >&2
+      exit 1
+    fi
+
+    if [[ " ${CARGO_PARAMS[*]} " =~ " --release " ]]; then
+      echo "Cranelift is only intended for local debug builds; remove --release." >&2
+      exit 1
+    fi
+
+    CARGO_CMD=(cargo +nightly)
+    CARGO_PARAMS=("-Zcodegen-backend" "${CARGO_PARAMS[@]}")
+    export CARGO_PROFILE_DEV_CODEGEN_BACKEND="cranelift"
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target/cranelift}"
+  fi
+
   echo "Running cargo run --bin $WARP_BIN_NAME --features \"$FEATURES\" ${CARGO_PARAMS[*]}"
   if [[ ${#WARP_ARGS[@]} -gt 0 ]]; then
-    cargo run --bin "$WARP_BIN_NAME" --features "$FEATURES" "${CARGO_PARAMS[@]}" -- "${WARP_ARGS[@]}"
+    "${CARGO_CMD[@]}" run --bin "$WARP_BIN_NAME" --features "$FEATURES" "${CARGO_PARAMS[@]}" -- "${WARP_ARGS[@]}"
   else
-    cargo run --bin "$WARP_BIN_NAME" --features "$FEATURES" "${CARGO_PARAMS[@]}"
+    "${CARGO_CMD[@]}" run --bin "$WARP_BIN_NAME" --features "$FEATURES" "${CARGO_PARAMS[@]}"
   fi
 else
   echo "No run script defined for the current platform ($OS_TYPE)!" >&2

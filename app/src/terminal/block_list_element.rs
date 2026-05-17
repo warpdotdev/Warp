@@ -1,6 +1,6 @@
 use crate::ai::blocklist::agent_view::{agent_view_bg_fill, AgentViewState};
 use crate::ai::blocklist::{ai_brand_color, ATTACH_AS_AGENT_MODE_CONTEXT_TEXT};
-use crate::ai_assistant::{AI_ASSISTANT_SVG_PATH, ASK_AI_ASSISTANT_TEXT};
+use crate::ai_assistant::AI_ASSISTANT_SVG_PATH;
 use crate::appearance::Appearance;
 use crate::drive::settings::WarpDriveSettings;
 use crate::features::FeatureFlag;
@@ -152,11 +152,6 @@ const LINEAR_SCROLLING: ScrollingAcceleration = ScrollingAcceleration::Polynomia
 /// Without making the vertical size fixed, for some reason some elements (bookmark, block filter, shared session avatar)
 /// have a height that extends down to the bottom of the window when there's a horizontal scroll bar, which messes with the on-hover behavior.
 const BLOCK_HOVER_BUTTON_HEIGHT: f32 = 28.;
-
-const TAG_AGENT_FOR_ASSISTANCE_TEXT: &str = "Tag agent for assistance";
-
-const SAVE_AS_WORKFLOW_TEXT: &str = "Save as Workflow";
-const SAVE_AS_WORKFLOW_SECRETS_TEXT: &str = "Blocks containing secrets cannot be saved.";
 
 enum ScrollingAcceleration {
     Polynomial(f32),
@@ -1164,23 +1159,23 @@ impl BlockListElement {
                 if has_active_long_running_command && active_block.index() == block_index {
                     (
                         Some(TerminalAction::SetInputModeAgent),
-                        TAG_AGENT_FOR_ASSISTANCE_TEXT,
+                        t!("block_list.tag_agent_for_assistance").to_string(),
                     )
                 } else {
                     (
                         Some(TerminalAction::AskAIAssistant { block_index }),
-                        *ATTACH_AS_AGENT_MODE_CONTEXT_TEXT,
+                        (*ATTACH_AS_AGENT_MODE_CONTEXT_TEXT).to_string(),
                     )
                 }
             } else {
                 (
                     Some(TerminalAction::AskAIAssistant { block_index }),
-                    ASK_AI_ASSISTANT_TEXT,
+                    t!("ai_assistant.ask_warp_ai").to_string(),
                 )
             };
 
             let tooltip = ToolbeltButtonTooltip {
-                label: ai_button_tooltip.to_owned(),
+                label: ai_button_tooltip,
                 tool_tip_below_button: should_render_tooltip_below_button,
             };
 
@@ -1225,7 +1220,7 @@ impl BlockListElement {
                 render_hoverable_block_button(
                     icon,
                     Some(ToolbeltButtonTooltip {
-                        label: SAVE_AS_WORKFLOW_SECRETS_TEXT.to_owned(),
+                        label: t!("block_list.save_as_workflow_secrets").to_string(),
                         tool_tip_below_button: should_render_tooltip_below_button,
                     }),
                     false,
@@ -1245,7 +1240,7 @@ impl BlockListElement {
                 render_hoverable_block_button(
                     icon,
                     Some(ToolbeltButtonTooltip {
-                        label: SAVE_AS_WORKFLOW_TEXT.to_owned(),
+                        label: t!("block_list.save_as_workflow").to_string(),
                         tool_tip_below_button: should_render_tooltip_below_button,
                     }),
                     false,

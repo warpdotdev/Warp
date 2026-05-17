@@ -93,7 +93,10 @@ impl View for CloseSessionConfirmationDialog {
         let dont_show_again_checkbox = appearance
             .ui_builder()
             .checkbox(self.dont_show_again_mouse_state.clone(), Some(14.))
-            .with_label(Span::new("Don't show again.", Default::default()))
+            .with_label(Span::new(
+                t!("close_session_confirmation.dont_show_again"),
+                Default::default(),
+            ))
             .check(self.dont_show_again)
             .build()
             .with_cursor(Cursor::PointingHand)
@@ -106,7 +109,7 @@ impl View for CloseSessionConfirmationDialog {
         let close_session_button = appearance
             .ui_builder()
             .button(ButtonVariant::Accent, self.confirm_mouse_state.clone())
-            .with_centered_text_label("Close session".into())
+            .with_centered_text_label(t!("close_session_confirmation.close_session").into())
             .with_style(button_style)
             .build()
             .with_cursor(Cursor::PointingHand)
@@ -120,7 +123,7 @@ impl View for CloseSessionConfirmationDialog {
         let cancel_button = appearance
             .ui_builder()
             .button(ButtonVariant::Basic, self.cancel_mouse_state.clone())
-            .with_centered_text_label("Cancel".into())
+            .with_centered_text_label(t!("common.cancel").into())
             .with_style(button_style)
             .build()
             .with_cursor(Cursor::PointingHand)
@@ -131,11 +134,8 @@ impl View for CloseSessionConfirmationDialog {
 
         let dialog = Container::new(
             Dialog::new(
-                "Close session?".into(),
-                Some(
-                    "You are about to close a session that is currently being shared. Closing it will end sharing for everyone."
-                        .into(),
-                ),
+                t!("close_session_confirmation.title").into(),
+                Some(t!("close_session_confirmation.description").into()),
                 UiComponentStyles {
                     width: Some(460.),
                     padding: Some(Coords::uniform(24.)),
@@ -146,7 +146,7 @@ impl View for CloseSessionConfirmationDialog {
             .with_bottom_row_child(cancel_button)
             .with_bottom_row_child(close_session_button)
             .build()
-            .finish()
+            .finish(),
         )
         .with_margin_top(35.)
         .finish();

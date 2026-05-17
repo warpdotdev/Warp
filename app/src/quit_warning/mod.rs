@@ -1,6 +1,5 @@
 use itertools::Itertools;
 use settings::ToggleableSetting as _;
-use std::fmt::Write;
 use warpui::{
     modals::{AlertDialogWithCallbacks, AppModalCallback, ModalButton},
     AppContext, EntityId, SingletonEntity, ViewContext, WeakViewHandle, WindowId,
@@ -292,49 +291,75 @@ impl<'a> UnsavedStateSummary<'a> {
     pub fn warning_text(&self) -> String {
         let mut info_text_lines = Vec::<String>::new();
 
-        let scope_suffix = match self.scope {
-            QuitScope::Tabs(ref tabs) if tabs.len() == 1 => " in this tab.",
-            QuitScope::Window(_) => " in this window.",
-            QuitScope::Pane { .. } => " in this pane.",
-            QuitScope::App | QuitScope::Tabs(_) | QuitScope::EditorTab { .. } => ".",
+        let scope = match self.scope {
+            QuitScope::Tabs(ref tabs) if tabs.len() == 1 => {
+                t!("quit_warning.scope_this_tab").to_string()
+            }
+            QuitScope::Window(_) => t!("quit_warning.scope_this_window").to_string(),
+            QuitScope::Pane { .. } => t!("quit_warning.scope_this_pane").to_string(),
+            QuitScope::App | QuitScope::Tabs(_) | QuitScope::EditorTab { .. } => String::new(),
         };
 
         if self.total_long_running_commands > 0 {
-            let mut process_info_text = format!(
-                "You have {} {} running",
-                self.total_long_running_commands,
-                pluralize(self.total_long_running_commands, "process", "processes")
-            );
-            if self.windows_with_long_running_commands > 1 {
-                let _ = write!(
-                    &mut process_info_text,
-                    " in {} windows",
-                    self.windows_with_long_running_commands
-                );
+            let process_noun = if self.total_long_running_commands > 1 {
+                t!("quit_warning.process_plural")
+            } else {
+                t!("quit_warning.process_singular")
+            };
+            let location = if self.windows_with_long_running_commands > 1 {
+                t!(
+                    "quit_warning.running_processes_windows_location",
+                    count = self.windows_with_long_running_commands
+                )
+                .to_string()
             } else if self.tabs_with_long_running_commands > 1 {
-                let _ = write!(
-                    &mut process_info_text,
-                    " in {} tabs",
-                    self.tabs_with_long_running_commands
-                );
-            }
-            process_info_text.push_str(scope_suffix);
-            info_text_lines.push(process_info_text);
+                t!(
+                    "quit_warning.running_processes_tabs_location",
+                    count = self.tabs_with_long_running_commands
+                )
+                .to_string()
+            } else {
+                String::new()
+            };
+            info_text_lines.push(
+                t!(
+                    "quit_warning.running_processes",
+                    count = self.total_long_running_commands,
+                    process = process_noun,
+                    location = location,
+                    scope = scope
+                )
+                .to_string(),
+            );
         }
 
         if self.shared_sessions > 0 {
-            info_text_lines.push(format!(
-                "You are sharing {} {}{scope_suffix}",
-                self.shared_sessions,
-                pluralize(self.shared_sessions, "session", "sessions")
-            ));
+            let session_noun = if self.shared_sessions > 1 {
+                t!("quit_warning.session_plural")
+            } else {
+                t!("quit_warning.session_singular")
+            };
+            info_text_lines.push(
+                t!(
+                    "quit_warning.sharing_sessions",
+                    count = self.shared_sessions,
+                    session = session_noun,
+                    scope = scope
+                )
+                .to_string(),
+            );
         }
 
         if self.unsaved_code_changes {
             if let QuitScope::EditorTab { ref file_name, .. } = self.scope {
-                info_text_lines.push(format!("Do you want to save the changes you made to {}? Your changes will be discarded if you don't save them.", file_name.clone().unwrap_or("this file".to_string())));
+                let file = file_name
+                    .clone()
+                    .unwrap_or_else(|| t!("quit_warning.this_file").to_string());
+                info_text_lines
+                    .push(t!("quit_warning.unsaved_editor_file", file = file).to_string());
             } else {
-                info_text_lines.push(format!("You have unsaved file changes{scope_suffix}"));
+                info_text_lines
+                    .push(t!("quit_warning.unsaved_file_changes", scope = scope).to_string());
             }
         }
 
@@ -400,25 +425,33 @@ impl<'a> QuitWarningDialog<'a> {
 
         if let Some(callback) = on_confirm {
             let confirm_title = match state.scope {
-                QuitScope::Window(_) | QuitScope::Tabs(_) | QuitScope::Pane { .. } => "Yes, close",
-                QuitScope::App => "Yes, quit",
-                _ => "",
+                QuitScope::Window(_) | QuitScope::Tabs(_) | QuitScope::Pane { .. } => {
+                    t!("quit_warning.yes_close").to_string()
+                }
+                QuitScope::App => t!("quit_warning.yes_quit").to_string(),
+                _ => String::new(),
             };
-            buttons.push(ModalButton::for_app(confirm_title.to_string(), callback));
+            buttons.push(ModalButton::for_app(confirm_title, callback));
         }
 
         if let Some(callback) = on_save_changes {
-            buttons.push(ModalButton::for_app("Save".to_string(), callback));
+            buttons.push(ModalButton::for_app(
+                t!("common.save").to_string(),
+                callback,
+            ));
         }
 
         if let Some(callback) = on_discard_changes {
-            buttons.push(ModalButton::for_app("Don't Save".to_string(), callback));
+            buttons.push(ModalButton::for_app(
+                t!("quit_warning.dont_save").to_string(),
+                callback,
+            ));
         }
 
         if let Some(callback) = on_show_processes {
             if state.total_long_running_commands > 0 {
                 buttons.push(ModalButton::for_app(
-                    "Show running processes".to_string(),
+                    t!("quit_warning.show_running_processes").to_string(),
                     move |app| {
                         callback(app);
                     },
@@ -427,16 +460,21 @@ impl<'a> QuitWarningDialog<'a> {
         }
 
         if let Some(callback) = on_cancel {
-            buttons.push(ModalButton::for_app("Cancel".to_string(), callback));
+            buttons.push(ModalButton::for_app(
+                t!("common.cancel").to_string(),
+                callback,
+            ));
         }
 
         let title = match &state.scope {
-            QuitScope::Pane { .. } => "Close pane?",
-            QuitScope::Tabs(tabs) if tabs.len() == 1 => "Close tab?",
-            QuitScope::Tabs(_) => "Close tabs?",
-            QuitScope::Window(_) => "Close window?",
-            QuitScope::App => "Quit Warp?",
-            QuitScope::EditorTab { .. } => "Save changes?",
+            QuitScope::Pane { .. } => t!("quit_warning.close_pane_title").to_string(),
+            QuitScope::Tabs(tabs) if tabs.len() == 1 => {
+                t!("quit_warning.close_tab_title").to_string()
+            }
+            QuitScope::Tabs(_) => t!("quit_warning.close_tabs_title").to_string(),
+            QuitScope::Window(_) => t!("quit_warning.close_window_title").to_string(),
+            QuitScope::App => t!("quit_warning.quit_warp_title").to_string(),
+            QuitScope::EditorTab { .. } => t!("quit_warning.save_changes_title").to_string(),
         };
 
         AlertDialogWithCallbacks::for_app(
@@ -490,14 +528,6 @@ impl<'a> QuitWarningDialog<'a> {
             }
         }
         shown
-    }
-}
-
-fn pluralize<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str {
-    if count > 1 {
-        plural
-    } else {
-        singular
     }
 }
 

@@ -124,43 +124,102 @@ use warpui::elements::{Highlight, HighlightedRange};
 
 pub const STATUS_ICON_SIZE_DELTA: f32 = 4.;
 pub const STATUS_FOOTER_VERTICAL_PADDING: f32 = 4.;
-pub const WAITING_FOR_USER_INPUT_MESSAGE: &str = "Agent waiting for instructions...";
 const IMAGE_SOURCE_LINK_LINE_INDEX: usize = 1;
 
-const ERROR_APOLOGY_TEXT: &str = "I'm sorry, I couldn't complete that request.";
-const INTERNAL_WARP_ERROR: &str = "Internal Warp error.";
+pub fn waiting_for_user_input_message() -> Cow<'static, str> {
+    t!("ai_ext.agent_waiting_for_instructions")
+}
 
-pub const LOAD_OUTPUT_MESSAGE: &str = "Warping...";
-pub const LOAD_OUTPUT_MESSAGE_FOR_ADJUSTING: &str = "Adjusting tasks...";
-pub const LOAD_OUTPUT_MESSAGE_FOR_PASSIVE_CODE_GEN: &str = "Generating fix...";
-pub const LOAD_OUTPUT_MESSAGE_FOR_CREATING_DIFF: &str = "Creating diff...";
-pub const LOAD_OUTPUT_MESSAGE_FOR_PREPARING_QUESTION: &str = "Preparing question...";
-pub const LOAD_OUTPUT_MESSAGE_FOR_GENERATING_PLAN: &str = "Generating plan...";
-pub const LOAD_OUTPUT_MESSAGE_FOR_UPDATING_PLAN: &str = "Updating plan...";
-pub const LOAD_OUTPUT_MESSAGE_FOR_SUMMARIZING_CONVERSATION: &str = "Summarizing conversation...";
-pub const LOAD_OUTPUT_MESSAGE_FOR_SUMMARIZING_TOOL_CALL_RESULT: &str =
-    "Summarizing command output...";
-pub const LOAD_OUTPUT_MESSAGE_FOR_SEARCH_CODEBASE: &str = "Searching codebase...";
-pub const LOAD_OUTPUT_MESSAGE_FOR_READING_FILES: &str = "Reading files...";
-pub const LOAD_OUTPUT_MESSAGE_FOR_GREP: &str = "Grepping...";
-pub const LOAD_OUTPUT_MESSAGE_FOR_FILE_GLOB: &str = "Finding files...";
-pub const LOAD_OUTPUT_MESSAGE_FOR_RUNNING_COMMAND: &str = "Executing command...";
-pub const LOAD_OUTPUT_MESSAGE_FOR_WRITING_TO_COMMAND: &str = "Writing command input...";
-pub const LOAD_OUTPUT_MESSAGE_FOR_WAITING_FOR_COMMAND_COMPLETION: &str =
-    "Waiting for command to exit...";
-pub const LOAD_OUTPUT_MESSAGE_FOR_WEB_SEARCH: &str = "Searching the web...";
-pub const LOAD_OUTPUT_MESSAGE_FOR_FETCHING_REVIEW_COMMENTS: &str = "Fetching PR comments...";
+pub fn load_output_message() -> Cow<'static, str> {
+    t!("ai_ext.warping")
+}
+
+pub fn load_output_message_for_adjusting() -> Cow<'static, str> {
+    t!("ai_ext.adjusting_tasks")
+}
+
+pub fn load_output_message_for_passive_code_gen() -> Cow<'static, str> {
+    t!("ai_ext.generating_fix")
+}
+
+pub fn load_output_message_for_creating_diff() -> Cow<'static, str> {
+    t!("ai_ext.creating_diff")
+}
+
+pub fn load_output_message_for_preparing_question() -> Cow<'static, str> {
+    t!("ai_ext.preparing_question")
+}
+
+pub fn load_output_message_for_generating_plan() -> Cow<'static, str> {
+    t!("ai_ext.generating_plan")
+}
+
+pub fn load_output_message_for_updating_plan() -> Cow<'static, str> {
+    t!("ai_ext.updating_plan")
+}
+
+pub fn load_output_message_for_summarizing_conversation() -> Cow<'static, str> {
+    t!("ai_ext.summarizing_conversation")
+}
+
+pub fn load_output_message_for_summarizing_tool_call_result() -> Cow<'static, str> {
+    t!("ai_ext.summarizing_command_output")
+}
+
+pub fn load_output_message_for_search_codebase() -> Cow<'static, str> {
+    t!("ai_ext.searching_codebase")
+}
+
+pub fn load_output_message_for_reading_files() -> Cow<'static, str> {
+    t!("ai_ext.reading_files")
+}
+
+pub fn load_output_message_for_grep() -> Cow<'static, str> {
+    t!("ai_ext.grepping")
+}
+
+pub fn load_output_message_for_file_glob() -> Cow<'static, str> {
+    t!("ai_ext.finding_files")
+}
+
+pub fn load_output_message_for_running_command() -> Cow<'static, str> {
+    t!("ai_ext.executing_command")
+}
+
+pub fn load_output_message_for_writing_to_command() -> Cow<'static, str> {
+    t!("ai_ext.writing_command_input")
+}
+
+pub fn load_output_message_for_waiting_for_command_completion() -> Cow<'static, str> {
+    t!("ai_ext.waiting_for_command_exit")
+}
+
+pub fn load_output_message_for_web_search() -> Cow<'static, str> {
+    t!("ai_ext.searching_web")
+}
+
+pub fn load_output_message_for_fetching_review_comments() -> Cow<'static, str> {
+    t!("ai_ext.fetching_pr_comments")
+}
 
 #[cfg(feature = "local_fs")]
 pub(crate) type ResolvedBlocklistImageSources = HashMap<String, Option<AssetSource>>;
 
-pub const BLOCKED_ACTION_MESSAGE_FOR_WRITE_TO_LONG_RUNNING_SHELL_COMMAND: &str =
-    "Can I write the following to this running command?";
-pub const BLOCKED_ACTION_MESSAGE_FOR_READING_FILES: &str = "Grant access to the following files?";
-pub const BLOCKED_ACTION_MESSAGE_FOR_SEARCHING_CODEBASE: &str =
-    "Grant access to the following repository?";
-pub const BLOCKED_ACTION_MESSAGE_FOR_GREP_OR_FILE_GLOB: &str =
-    "OK if I search the files in this directory?";
+pub fn blocked_action_message_for_write_to_long_running_shell_command() -> Cow<'static, str> {
+    t!("ai_ext.write_to_running_command_prompt")
+}
+
+pub fn blocked_action_message_for_reading_files() -> Cow<'static, str> {
+    t!("ai_ext.grant_access_files")
+}
+
+pub fn blocked_action_message_for_searching_codebase() -> Cow<'static, str> {
+    t!("ai_ext.grant_access_repository")
+}
+
+pub fn blocked_action_message_for_grep_or_file_glob() -> Cow<'static, str> {
+    t!("ai_ext.search_files_directory_prompt")
+}
 
 const BLOCKLIST_VISUAL_SECTION_HEIGHT_LINE_MULTIPLIER: f32 = 10.0;
 const INLINE_IMAGE_HEIGHT: f32 = 164.;
@@ -300,10 +359,10 @@ pub fn render_warping_indicator<V: View>(
         // Choose the appropriate message based on summarization type
         let base_message = match summarization_type {
             SummarizationType::ConversationSummary => {
-                LOAD_OUTPUT_MESSAGE_FOR_SUMMARIZING_CONVERSATION
+                load_output_message_for_summarizing_conversation()
             }
             SummarizationType::ToolCallResultSummary => {
-                LOAD_OUTPUT_MESSAGE_FOR_SUMMARIZING_TOOL_CALL_RESULT
+                load_output_message_for_summarizing_tool_call_result()
             }
         };
 
@@ -319,31 +378,31 @@ pub fn render_warping_indicator<V: View>(
             // Move the timer / token text outside of the base message, we don't want it to shimmer
             // since that would cause the animation to reset every time the tokens or time changes.
             non_shimmering_text = Some(timer_text.to_string());
-            base_message.into()
+            base_message.to_string()
         } else {
             base_message.to_string()
         }
     } else if props.model.contains_update_document_action(app) {
-        LOAD_OUTPUT_MESSAGE_FOR_UPDATING_PLAN.to_string()
+        load_output_message_for_updating_plan().to_string()
     } else if props.model.contains_create_document_action(app) {
-        LOAD_OUTPUT_MESSAGE_FOR_GENERATING_PLAN.to_string()
+        load_output_message_for_generating_plan().to_string()
     } else if props.model.request_type(app).is_passive_code_diff() {
-        LOAD_OUTPUT_MESSAGE_FOR_PASSIVE_CODE_GEN.to_string()
+        load_output_message_for_passive_code_gen().to_string()
     } else if is_last_message_requesting_file_edits {
-        LOAD_OUTPUT_MESSAGE_FOR_CREATING_DIFF.to_string()
+        load_output_message_for_creating_diff().to_string()
     } else if is_last_message_asking_user_question {
-        LOAD_OUTPUT_MESSAGE_FOR_PREPARING_QUESTION.to_string()
+        load_output_message_for_preparing_question().to_string()
     } else if is_searching_web {
-        LOAD_OUTPUT_MESSAGE_FOR_WEB_SEARCH.to_string()
+        load_output_message_for_web_search().to_string()
     } else if is_fetching_review_comments {
-        LOAD_OUTPUT_MESSAGE_FOR_FETCHING_REVIEW_COMMENTS.to_string()
+        load_output_message_for_fetching_review_comments().to_string()
     } else if is_interrupt_query_for_same_conversation
         && output_to_render
             .as_ref()
             .is_none_or(|output| output.get().messages.is_empty())
     {
         // Only "Adjusting..." if nothing from the current exchange has streamed yet.
-        LOAD_OUTPUT_MESSAGE_FOR_ADJUSTING.to_string()
+        load_output_message_for_adjusting().to_string()
     } else {
         match props
             .action_model
@@ -351,21 +410,21 @@ pub fn render_warping_indicator<V: View>(
             .map(|action| &action.action)
         {
             Some(AIAgentActionType::SearchCodebase(..)) => {
-                LOAD_OUTPUT_MESSAGE_FOR_SEARCH_CODEBASE.to_owned()
+                load_output_message_for_search_codebase().to_string()
             }
-            Some(AIAgentActionType::Grep { .. }) => LOAD_OUTPUT_MESSAGE_FOR_GREP.to_owned(),
+            Some(AIAgentActionType::Grep { .. }) => load_output_message_for_grep().to_string(),
             Some(AIAgentActionType::CallMCPTool { name, .. }) => {
-                format!("Calling \"{name}\" MCP tool...")
+                t!("ai_ext.calling_mcp_tool", name).to_string()
             }
             Some(AIAgentActionType::ReadMCPResource { name, .. }) => {
-                format!("Reading \"{name}\" MCP resource...")
+                t!("ai_ext.reading_mcp_resource", name).to_string()
             }
             Some(AIAgentActionType::FileGlob { .. })
             | Some(AIAgentActionType::FileGlobV2 { .. }) => {
-                LOAD_OUTPUT_MESSAGE_FOR_FILE_GLOB.to_owned()
+                load_output_message_for_file_glob().to_string()
             }
             Some(AIAgentActionType::WriteToLongRunningShellCommand { .. }) => {
-                LOAD_OUTPUT_MESSAGE_FOR_WRITING_TO_COMMAND.to_owned()
+                load_output_message_for_writing_to_command().to_string()
             }
             action => {
                 let active_block = props.terminal_model.block_list().active_block();
@@ -375,7 +434,7 @@ pub fn render_warping_indicator<V: View>(
                 {
                     if action.is_none() {
                         should_render_waiting_icon = true;
-                        WAITING_FOR_USER_INPUT_MESSAGE.to_owned()
+                        waiting_for_user_input_message().to_string()
                     } else {
                         // Choose the base message depending on whether the agent is waiting
                         // for the command to exit or polling at a fixed interval.
@@ -383,8 +442,8 @@ pub fn render_warping_indicator<V: View>(
                             Some(AIAgentActionType::ReadShellCommandOutput {
                                 delay: Some(ShellCommandDelay::OnCompletion),
                                 ..
-                            }) => LOAD_OUTPUT_MESSAGE_FOR_WAITING_FOR_COMMAND_COMPLETION,
-                            _ => LOAD_OUTPUT_MESSAGE_FOR_RUNNING_COMMAND,
+                            }) => load_output_message_for_waiting_for_command_completion(),
+                            _ => load_output_message_for_running_command(),
                         };
                         // Compute "Next check in {time}" for fixed-interval polls. Only
                         // `ReadShellCommandOutput { delay: Duration(_) }` has a meaningful
@@ -411,16 +470,16 @@ pub fn render_warping_indicator<V: View>(
                             } else {
                                 format!("{}m", secs / 60)
                             };
-                            let suffix = format!(" · Next check in {formatted}");
+                            let suffix = format!(" · {}", t!("ai_ext.next_check_in", formatted));
 
                             // Keep the base message constant so the shimmering animation
                             // isn't interrupted every time the countdown ticks. The
                             // suffix is rendered as a separate non-shimmering element,
                             // matching the same pattern used by the summarization timer.
                             non_shimmering_text = Some(suffix);
-                            base.to_owned()
+                            base.to_string()
                         } else {
-                            base.to_owned()
+                            base.to_string()
                         }
                     }
                 } else {
@@ -447,8 +506,8 @@ pub fn render_warping_indicator<V: View>(
     if let Some(take_over_button_props) = props.take_over_lrc_control_button {
         has_buttons = true;
         buttons_row.add_child(render_switch_control_to_user_button(
-            "Take over",
-            "Take over control of the command",
+            t!("ai_ext.take_over").to_string(),
+            t!("ai_ext.take_over_control").to_string(),
             take_over_button_props,
             appearance,
         ));
@@ -758,13 +817,13 @@ fn render_hide_responses_button(
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
     let button_text = if should_hide_responses {
-        "Show responses"
+        t!("ai_ext.show_responses").to_string()
     } else {
-        "Hide responses"
+        t!("ai_ext.hide_responses").to_string()
     };
     let text = Container::new(
         Text::new(
-            button_text,
+            button_text.clone(),
             appearance.ui_font_family(),
             get_keybinding_font_size(appearance),
         )
@@ -774,9 +833,9 @@ fn render_hide_responses_button(
     .finish();
 
     let tooltip_text = if should_hide_responses {
-        "Show agent responses"
+        t!("ai_ext.show_agent_responses").to_string()
     } else {
-        "Hide agent responses"
+        t!("ai_ext.hide_agent_responses").to_string()
     };
 
     render_warping_indicator_button(
@@ -784,7 +843,7 @@ fn render_hide_responses_button(
         appearance,
         text,
         props.keystroke,
-        tooltip_text.to_string(),
+        tooltip_text,
         props.is_active,
         |ctx| {
             ctx.dispatch_typed_action(BlocklistAIStatusBarAction::ToggleHideResponses);
@@ -793,8 +852,8 @@ fn render_hide_responses_button(
 }
 
 pub fn render_switch_control_to_user_button(
-    text: &'static str,
-    tooltip: &'static str,
+    text: String,
+    tooltip: String,
     props: ButtonProps,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
@@ -815,7 +874,7 @@ pub fn render_switch_control_to_user_button(
         appearance,
         text,
         props.keystroke,
-        tooltip.to_string(),
+        tooltip,
         props.is_active,
         |ctx| {
             ctx.dispatch_typed_action(TerminalAction::SetInputModeTerminal);
@@ -838,7 +897,7 @@ fn render_stop_button(props: ButtonProps, appearance: &Appearance) -> Box<dyn El
         appearance,
         stop_icon,
         props.keystroke,
-        "Stop agent task".to_string(),
+        t!("ai_ext.stop_agent_task").to_string(),
         props.is_active,
         |ctx: &mut EventContext<'_>| {
             ctx.dispatch_typed_action(BlocklistAIStatusBarAction::Stop);
@@ -865,9 +924,9 @@ fn render_queue_next_prompt_button(
     .finish();
 
     let tooltip_text = if props.is_active {
-        "Auto-queue is on: your next prompt will be queued"
+        t!("ai_ext.auto_queue_on").to_string()
     } else {
-        "Auto-queue next prompt while agent is responding"
+        t!("ai_ext.auto_queue_next_prompt").to_string()
     };
 
     render_warping_indicator_button(
@@ -875,7 +934,7 @@ fn render_queue_next_prompt_button(
         appearance,
         icon,
         props.keystroke,
-        tooltip_text.to_string(),
+        tooltip_text,
         props.is_active,
         |ctx| {
             ctx.dispatch_typed_action(TerminalAction::ToggleQueueNextPrompt);
@@ -902,9 +961,9 @@ fn render_auto_approve_button(props: ButtonProps, appearance: &Appearance) -> Bo
     .finish();
 
     let tooltip_text = if props.is_active {
-        "Turn off auto-approve all agent actions"
+        t!("ai_ext.turn_off_auto_approve").to_string()
     } else {
-        "Auto-approve all agent actions for this task"
+        t!("ai_ext.auto_approve_actions").to_string()
     };
 
     render_warping_indicator_button(
@@ -912,7 +971,7 @@ fn render_auto_approve_button(props: ButtonProps, appearance: &Appearance) -> Bo
         appearance,
         icon,
         props.keystroke,
-        tooltip_text.to_string(),
+        tooltip_text,
         props.is_active,
         |ctx| {
             ctx.dispatch_typed_action(TerminalAction::ToggleAutoexecuteMode);
@@ -954,13 +1013,17 @@ fn render_force_refresh_inline(
         // Mirror `render_output_status_text` exactly: same `Text` configuration plus
         // the `Container::with_margin_top(1.)` wrapper so this sits on the same
         // baseline as the adjacent `Last seen by agent ...` text.
-        let text = Text::new(" · Check now".to_string(), font_family, font_size)
-            .with_color(color)
-            .with_style(Properties::default())
-            .with_clip(ClipConfig::end())
-            .with_selectable(false)
-            .soft_wrap(false)
-            .finish();
+        let text = Text::new(
+            t!("ai_output.check_now").to_string(),
+            font_family,
+            font_size,
+        )
+        .with_color(color)
+        .with_style(Properties::default())
+        .with_clip(ClipConfig::end())
+        .with_selectable(false)
+        .soft_wrap(false)
+        .finish();
         let text_with_margin = Container::new(text).with_margin_top(1.).finish();
 
         // Tooltip overlay, positioned above the element on hover. Same pattern as
@@ -968,7 +1031,7 @@ fn render_force_refresh_inline(
         let mut stack = Stack::new().with_child(text_with_margin);
         if state.is_hovered() {
             let tool_tip = ui_builder
-                .tool_tip("Ask the agent to check this command now, skipping its timer.".to_owned())
+                .tool_tip(t!("ai_output.check_now_tooltip").to_string())
                 .build()
                 .finish();
             stack.add_positioned_overlay_child(
@@ -2110,7 +2173,7 @@ fn render_mermaid_diagram_section<A: Action>(
         .finish();
 
     render_visual_card(
-        "Mermaid diagram".to_string(),
+        t!("ai_ext.mermaid_diagram").to_string(),
         Icon::Dataflow,
         Container::new(mermaid_canvas)
             .with_background(theme.background())
@@ -2951,13 +3014,14 @@ pub struct FailedOutputProps<'a> {
 
 pub fn render_failed_output(props: FailedOutputProps, app: &AppContext) -> Box<dyn Element> {
     let appearance = Appearance::as_ref(app);
+    let error_apology_text = t!("ai_ext.error_apology").to_string();
 
     let error_text = match props.error {
         RenderableAIError::QuotaLimit {
             user_display_message,
         } => {
             if let Some(message) = user_display_message {
-                format!("{ERROR_APOLOGY_TEXT}\n\n{message}")
+                format!("{error_apology_text}\n\n{message}")
             } else {
                 let ai_request_usage_model = AIRequestUsageModel::as_ref(app);
                 let formatted_next_refresh_time = ai_request_usage_model
@@ -2966,15 +3030,17 @@ pub fn render_failed_output(props: FailedOutputProps, app: &AppContext) -> Box<d
                     .to_string();
 
                 format!(
-                    "{ERROR_APOLOGY_TEXT}\n\nYou've reached your credit limit. Your credit limit resets on {formatted_next_refresh_time}.",
+                    "{error_apology_text}\n\n{}",
+                    t!("ai_ext.credit_limit_resets", formatted_next_refresh_time)
                 )
             }
         }
-        RenderableAIError::ServerOverloaded => {
-            "Warp is currently overloaded. Please try again later.".to_string()
-        }
+        RenderableAIError::ServerOverloaded => t!("ai_ext.server_overloaded").to_string(),
         RenderableAIError::InternalWarpError => {
-            format!("{ERROR_APOLOGY_TEXT}\n\n{INTERNAL_WARP_ERROR}")
+            format!(
+                "{error_apology_text}\n\n{}",
+                t!("ai_ext.internal_warp_error")
+            )
         }
         RenderableAIError::Other {
             error_message,
@@ -2984,13 +3050,17 @@ pub fn render_failed_output(props: FailedOutputProps, app: &AppContext) -> Box<d
             if *will_attempt_resume {
                 if *waiting_for_network {
                     format!(
-                        "{error_message}\n\nWill resume conversation when network connectivity is restored..."
+                        "{error_message}\n\n{}",
+                        t!("ai_ext.resume_when_network_restored")
                     )
                 } else {
-                    format!("{error_message}\n\nAttempting to resume conversation...")
+                    format!(
+                        "{error_message}\n\n{}",
+                        t!("ai_ext.attempting_resume_conversation")
+                    )
                 }
             } else {
-                format!("{ERROR_APOLOGY_TEXT}\n\n{error_message}")
+                format!("{error_apology_text}\n\n{error_message}")
             }
         }
         RenderableAIError::InvalidApiKey {
@@ -3018,8 +3088,8 @@ pub fn render_failed_output(props: FailedOutputProps, app: &AppContext) -> Box<d
             }
             // Fallback for contexts that don't have the stateful view (e.g. CLI subagent)
             format!(
-                "{ERROR_APOLOGY_TEXT}\n\nAWS credentials expired or missing for {model_name}. \
-                 Please refresh your AWS credentials."
+                "{error_apology_text}\n\n{}",
+                t!("ai_ext.aws_credentials_error", model_name)
             )
         }
     };
@@ -3087,7 +3157,7 @@ fn render_invalid_api_key_error(
     .finish();
 
     let alert_text = Text::new(
-        "Provided API key is not valid",
+        t!("ai_ext.invalid_api_key").to_string(),
         appearance.ui_font_family(),
         14.,
     )
@@ -3096,10 +3166,7 @@ fn render_invalid_api_key_error(
     .finish();
 
     let detail_text = Text::new(
-        format!(
-            "Failed to authenticate with {provider} when using {model_name}. \
-                     Double-check that your API key is correct."
-        ),
+        t!("ai_ext.invalid_api_key_detail", provider, model_name).to_string(),
         appearance.ui_font_family(),
         14.,
     )
@@ -3128,7 +3195,7 @@ fn render_invalid_api_key_error(
             background: Some(internal_colors::fg_overlay_3(theme).into()),
             ..Default::default()
         })
-        .with_text_label("Edit API Keys".to_string())
+        .with_text_label(t!("ai_ext.edit_api_keys").to_string())
         .with_cursor(Some(Cursor::PointingHand))
         .build()
         .on_click(move |ctx, _, _| {
@@ -3261,7 +3328,7 @@ pub(crate) fn render_debug_footer<V: View>(
                     warpui::ui_components::button::ButtonVariant::Text,
                     props.submit_issue_button_handle,
                 )
-                .with_centered_text_label("Send Feedback".to_string())
+                .with_centered_text_label(t!("ai_output.send_feedback").to_string())
                 .with_style(submit_button_style)
                 .with_hovered_styles(submit_button_hover_style)
                 .with_clicked_styles(submit_button_hover_style)
@@ -3321,7 +3388,7 @@ pub(crate) fn render_debug_footer<V: View>(
     })
     .finish();
     let copy_button_with_tooltip = appearance.ui_builder().tool_tip_on_element(
-        "Copy debug ID".to_string(),
+        t!("ai_ext.copy_debug_id").to_string(),
         props.debug_copy_button_handle,
         copy_button,
         warpui::elements::ParentAnchor::TopRight,

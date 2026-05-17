@@ -156,9 +156,13 @@ impl SshRemoteServerChoiceView {
 
         let checkbox_label =
             Hoverable::new(self.do_not_ask_again_label_mouse_state.clone(), move |_| {
-                Text::new("Don't ask me this again", ui_font_family, footer_font_size)
-                    .with_color(muted_color)
-                    .finish()
+                Text::new(
+                    t!("ssh_remote_server_choice.dont_ask_again"),
+                    ui_font_family,
+                    footer_font_size,
+                )
+                .with_color(muted_color)
+                .finish()
             })
             .with_cursor(Cursor::PointingHand)
             .on_click(|ctx, _, _| {

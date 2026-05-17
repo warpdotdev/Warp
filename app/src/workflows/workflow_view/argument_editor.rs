@@ -44,9 +44,6 @@ const ARGUMENT_INPUT_HEIGHT: f32 = 30.;
 const ARGUMENT_LABEL_TEXT: &str = "Arguments";
 const ARGUMENT_LABEL_HEIGHT: f32 = 20.;
 const ARGUMENT_LABEL_MARGIN_BOTTOM: f32 = 5.;
-const ARGUMENT_DESCRIPTION_PLACEHOLDER_TEXT: &str = "Description";
-const ARGUMENT_ALIAS_DESCRIPTION_PLACEHOLDER_TEXT: &str = "Value (optional)";
-const ARGUMENT_DEFAULT_VALUE_PLACEHOLDER_TEXT: &str = "Default value (optional)";
 pub const DEFAULT_ARGUMENT_PREFIX: &str = "argument";
 
 /// Width of the argument editor in alias mode.
@@ -122,11 +119,12 @@ impl WorkflowView {
                         if index == self.arguments_rows.len()
                             || !argument.name.eq(&self.arguments_rows[index].name)
                         {
+                            let description_placeholder = t!("drive.description").to_string();
                             let description_editor = Self::create_editor_handle(
                                 ctx,
                                 Some(EDITOR_FONT_SIZE),
                                 Some(ui_font_family),
-                                Some(ARGUMENT_DESCRIPTION_PLACEHOLDER_TEXT),
+                                Some(&description_placeholder),
                                 false, /* vim_keybindings */
                                 true,
                                 false,
@@ -139,11 +137,13 @@ impl WorkflowView {
                                 },
                             );
 
+                            let default_value_placeholder =
+                                t!("drive.default_value_optional").to_string();
                             let default_value_editor = Self::create_editor_handle(
                                 ctx,
                                 Some(EDITOR_FONT_SIZE),
                                 Some(ui_font_family),
-                                Some(ARGUMENT_DEFAULT_VALUE_PLACEHOLDER_TEXT),
+                                Some(&default_value_placeholder),
                                 false, /* vim_keybindings */
                                 true,
                                 false,
@@ -588,7 +588,7 @@ impl WorkflowView {
                 )
                 .with_tooltip(move || {
                     ui_builder
-                        .tool_tip("Add a workflow argument".to_string())
+                        .tool_tip(t!("arguments.add_workflow_argument").to_string())
                         .build()
                         .finish()
                 })
@@ -597,26 +597,27 @@ impl WorkflowView {
                 .finish(),
             )
         } else {
-            arguments_section_row.add_child(Shrinkable::new(
+            arguments_section_row.add_child(
+                Shrinkable::new(
                     1.,
                     Container::new(
                         appearance
-                        .ui_builder()
-                        .span("Fill out the arguments in this workflow and copy it to run in your terminal session")
-                        .with_soft_wrap()
-                        .with_style(UiComponentStyles {
-                            font_size: Some(EDITOR_FONT_SIZE),
-                            font_color: Some(sub_text_color),
-                            ..Default::default()
-                        })
-                        .build()
-                        .finish(),
+                            .ui_builder()
+                            .span(t!("arguments.fill_out_workflow_arguments").to_string())
+                            .with_soft_wrap()
+                            .with_style(UiComponentStyles {
+                                font_size: Some(EDITOR_FONT_SIZE),
+                                font_color: Some(sub_text_color),
+                                ..Default::default()
+                            })
+                            .build()
+                            .finish(),
                     )
                     .with_margin_left(40.)
-                    .finish()
+                    .finish(),
                 )
-                .finish()
-                );
+                .finish(),
+            );
         }
 
         arguments_section_row.finish()
@@ -777,7 +778,7 @@ impl WorkflowView {
 
             // If the description is empty, show a placeholder text.
             if current_description.is_empty() {
-                current_description.push_str(ARGUMENT_ALIAS_DESCRIPTION_PLACEHOLDER_TEXT);
+                current_description.push_str(&t!("arguments.value_optional").to_string());
                 styles.font_color = Some(theme.sub_text_color(theme.background()).into_solid());
             }
 
@@ -826,7 +827,7 @@ impl WorkflowView {
                         .add_environment_variables_mouse_state
                         .clone(),
                 )
-                .with_centered_text_label("Add environment variables".to_string())
+                .with_centered_text_label(t!("arguments.add_environment_variables").to_string())
                 .build()
                 .on_click(|ctx, _, _| {
                     ctx.dispatch_typed_action(WorkspaceAction::CreatePersonalEnvVarCollection);
@@ -838,7 +839,7 @@ impl WorkflowView {
             .with_children([
                 appearance
                     .ui_builder()
-                    .span("Environment variables")
+                    .span(t!("arguments.environment_variables").to_string())
                     .with_style(UiComponentStyles {
                         font_size: Some(13.),
                         ..Default::default()

@@ -1643,7 +1643,7 @@ impl View for BillingAndUsagePageV2View {
 
         page.add_child(tab_selector::render_tab_selector(
             tabs,
-            self.selected_tab.label(),
+            &self.selected_tab.label(),
             |label, ctx| {
                 ctx.dispatch_typed_action(BillingAndUsagePageAction::SelectTab(
                     BillingUsageTab::get_tab_from_label(label),

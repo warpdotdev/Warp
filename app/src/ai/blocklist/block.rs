@@ -24,7 +24,7 @@ use crate::ai::agent::PassiveSuggestionTrigger;
 use crate::ai::agent::SuggestPromptRequest;
 use crate::ai::agent::SuggestPromptResult;
 use crate::ai::agent::TodoOperation;
-use crate::ai::ai_document_view::DEFAULT_PLANNING_DOCUMENT_TITLE;
+use crate::ai::ai_document_view::default_planning_document_title;
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewEntryOrigin};
 use crate::ai::blocklist::context_model::AttachmentType;
 use crate::ai::blocklist::inline_action::code_diff_view::convert_file_edits_to_file_diffs;
@@ -565,7 +565,7 @@ impl ImportedCommentElementState {
                 ActionButton::new("", NakedTheme)
                     .with_icon(Icon::Github)
                     .with_size(ButtonSize::Small)
-                    .with_tooltip("Open in GitHub")
+                    .with_tooltip(t!("ai_ext.open_in_github"))
                     .on_click({
                         let url = url.clone();
                         move |ctx| {
@@ -579,7 +579,7 @@ impl ImportedCommentElementState {
 
         let action_id_for_open_button = action_id.clone();
         let open_in_code_review_button = ctx.add_typed_action_view(move |_| {
-            ActionButton::new("Open in code review", SecondaryTheme)
+            ActionButton::new(t!("ai_ext.open_in_code_review"), SecondaryTheme)
                 .with_size(ButtonSize::Small)
                 .on_click(move |ctx| {
                     ctx.dispatch_typed_action(AIBlockAction::OpenImportedCommentInCodeReview {
@@ -1166,7 +1166,7 @@ impl AIBlock {
         });
 
         let manage_rules_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Manage rules", NakedTheme)
+            ActionButton::new(t!("ai_ext.manage_rules"), NakedTheme)
                 .on_click(|ctx| ctx.dispatch_typed_action(AIBlockAction::OpenAIFactCollection))
         });
 
@@ -1297,7 +1297,7 @@ impl AIBlock {
         });
 
         let review_changes_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Review changes", SecondaryTheme)
+            ActionButton::new(t!("ai_ext.review_changes"), SecondaryTheme)
                 .with_icon(Icon::Diff)
                 .with_size(ButtonSize::Small)
                 .on_click(|ctx| {
@@ -1306,7 +1306,7 @@ impl AIBlock {
         });
 
         let open_all_comments_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Open all in code review", SecondaryTheme)
+            ActionButton::new(t!("ai_ext.open_all_in_code_review"), SecondaryTheme)
                 .with_size(ButtonSize::Small)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(AIBlockAction::OpenAllImportedCommentsInCodeReview);
@@ -1314,7 +1314,7 @@ impl AIBlock {
         });
 
         let dismiss_suggestion_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Dismiss", SuggestionDismissButtonTheme)
+            ActionButton::new(t!("ai_ext.dismiss"), SuggestionDismissButtonTheme)
                 .with_icon(Icon::X)
                 .with_size(ButtonSize::Small)
                 .on_click(|ctx| {
@@ -1323,7 +1323,7 @@ impl AIBlock {
         });
 
         let disable_rule_suggestions_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Don't show again", SuggestionDismissButtonTheme)
+            ActionButton::new(t!("ai_ext.dont_show_again"), SuggestionDismissButtonTheme)
                 .with_size(ButtonSize::Small)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(AIBlockAction::DisableRuleSuggestions);
@@ -1334,9 +1334,9 @@ impl AIBlock {
         let exchange_id = client_ids.client_exchange_id;
         let conversation_id = client_ids.conversation_id;
         let rewind_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Rewind", RewindButtonTheme)
+            ActionButton::new(t!("ai_ext.rewind"), RewindButtonTheme)
                 .with_size(ButtonSize::XSmall)
-                .with_tooltip("Rewind to before this block")
+                .with_tooltip(t!("ai_ext.rewind_tooltip"))
                 .on_click(move |ctx| {
                     ctx.dispatch_typed_action(TerminalAction::RewindAIConversation {
                         ai_block_view_id,
@@ -3630,7 +3630,7 @@ impl AIBlock {
 
         for (index, document) in documents.iter().enumerate() {
             let title = if document.title.is_empty() {
-                DEFAULT_PLANNING_DOCUMENT_TITLE.to_string()
+                default_planning_document_title()
             } else {
                 document.title.clone()
             };
@@ -6079,7 +6079,7 @@ impl TypedActionView for AIBlock {
                 let window_id = ctx.window_id();
                 ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     toast_stack.add_ephemeral_toast(
-                        DismissibleToast::success(String::from("Copied to clipboard")),
+                        DismissibleToast::success(t!("ai_ext.copied_to_clipboard").to_string()),
                         window_id,
                         ctx,
                     );
@@ -6386,7 +6386,7 @@ impl TypedActionView for AIBlock {
                 let window_id = ctx.window_id();
                 ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     let toast =
-                        DismissibleToast::default(String::from("Thank you for the feedback!"));
+                        DismissibleToast::default(t!("ai_ext.thank_you_feedback").to_string());
                     toast_stack.add_ephemeral_toast(toast, window_id, ctx);
                 });
 

@@ -504,7 +504,7 @@ pub(super) fn render_send_message(
         || status.as_ref().is_some_and(|s| s.is_queued());
 
     let label_fragments = vec![
-        FormattedTextFragment::plain_text("Sending message to "),
+        FormattedTextFragment::plain_text(t!("ai_output.sending_message_to")),
         FormattedTextFragment::bold(&recipients),
         FormattedTextFragment::plain_text(format!(": {subject}")),
     ];
@@ -581,7 +581,7 @@ pub(super) fn render_start_agent(
         let (label_fragments, status_icon) = match result {
             StartAgentResult::Success { .. } => (
                 vec![
-                    FormattedTextFragment::plain_text("Started agent "),
+                    FormattedTextFragment::plain_text(t!("ai_output.started_agent")),
                     FormattedTextFragment::bold(name),
                     FormattedTextFragment::plain_text(start_agent_success_suffix(execution_mode)),
                 ],
@@ -599,7 +599,7 @@ pub(super) fn render_start_agent(
                 vec![
                     FormattedTextFragment::plain_text(start_agent_cancelled_prefix(execution_mode)),
                     FormattedTextFragment::bold(name),
-                    FormattedTextFragment::plain_text(" cancelled."),
+                    FormattedTextFragment::plain_text(t!("ai_output.cancelled_suffix")),
                 ],
                 inline_action_icons::cancelled_icon(appearance).finish(),
             ),

@@ -102,7 +102,7 @@ impl AliasBar {
                 },
                 ctx,
             );
-            view.set_placeholder_text("alias name", ctx);
+            view.set_placeholder_text(t!("drive.alias_name_placeholder").to_string(), ctx);
 
             view
         });
@@ -435,7 +435,7 @@ impl View for AliasBar {
                     |_state, background| {
                         appearance
                             .ui_builder()
-                            .span("Default")
+                            .span(t!("workflows.default_alias").to_string())
                             .with_style(UiComponentStyles {
                                 font_color: Some(
                                     appearance.theme().main_text_color(background).into_solid(),
@@ -471,7 +471,7 @@ impl View for AliasBar {
             .with_text_and_icon_label(
                 TextAndIcon::new(
                     TextAndIconAlignment::IconFirst,
-                    "Add alias",
+                    t!("workflows.add_alias").to_string(),
                     Icon::Plus.to_warpui_icon(
                         appearance
                             .theme()

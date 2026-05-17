@@ -1,6 +1,34 @@
 // Suppress warnings about rustdoc style.
 #![allow(clippy::doc_lazy_continuation)]
 
+#[macro_export]
+macro_rules! t {
+    ($key:literal, $($name:ident = $value:expr),+ $(,)?) => {
+        match $crate::i18n::t($key) {
+            value if value == $key => std::borrow::Cow::Owned(format!($key)),
+            value => $crate::i18n::interpolate(
+                value.as_ref(),
+                &[$((stringify!($name), format!("{}", $value))),+],
+            ),
+        }
+    };
+    ($key:literal, $($name:ident),+ $(,)?) => {
+        match $crate::i18n::t($key) {
+            value if value == $key => std::borrow::Cow::Owned(format!($key)),
+            value => $crate::i18n::interpolate(
+                value.as_ref(),
+                &[$((stringify!($name), format!("{}", $name))),+],
+            ),
+        }
+    };
+    ($key:literal) => {
+        match $crate::i18n::t($key) {
+            value if value == $key => std::borrow::Cow::Owned(format!($key)),
+            value => value,
+        }
+    };
+}
+
 mod ai;
 mod alloc;
 mod antivirus;
@@ -41,6 +69,7 @@ mod external_secrets;
 mod font_fallback;
 mod global_resource_handles;
 mod gpu_state;
+pub mod i18n;
 mod input_classifier;
 mod interval_timer;
 mod linear;
@@ -605,6 +634,8 @@ fn apply_scroll_multiplier(event: &mut Event, app: &AppContext) {
 
 /// Runs the app. If a subcommand was requested, it'll be run instead of the main application.
 pub fn run() -> Result<()> {
+    i18n::init_locale();
+
     // Perform any necessary platform-specific initialization.
     platform::init();
 

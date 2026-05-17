@@ -35,14 +35,6 @@ const BUTTON_FONT_SIZE: f32 = 14.;
 const BUTTON_BORDER_RADIUS: f32 = 4.;
 const BORDER_WIDTH: f32 = 1.;
 
-const MODAL_SUBHEADER: &str =
-    "Automatically generate a theme based on extracted colors from an image (.png, .jpg).";
-const IMAGE_PICKER_BUTTON_PRE_SELECT_TEXT: &str = "Select an image";
-const IMAGE_PICKER_BUTTON_SELECTING_TEXT: &str = "Selecting image...";
-const IMAGE_PICKER_BUTTON_POST_SELECT_TEXT: &str = "Select a new image";
-const CANCEL_BUTTON_TEXT: &str = "Cancel";
-const CREATE_BUTTON_TEXT: &str = "Create theme";
-
 #[derive(Default)]
 struct MouseStateHandles {
     image_picker_mouse_state: MouseStateHandle,
@@ -84,12 +76,12 @@ pub enum ThemeCreatorImageState {
 impl fmt::Display for ThemeCreatorImageState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ThemeCreatorImageState::Empty => write!(f, "{IMAGE_PICKER_BUTTON_PRE_SELECT_TEXT}"),
+            ThemeCreatorImageState::Empty => write!(f, "{}", t!("themes.select_image")),
             ThemeCreatorImageState::Uploading => {
-                write!(f, "{IMAGE_PICKER_BUTTON_SELECTING_TEXT}")
+                write!(f, "{}", t!("themes.selecting_image"))
             }
             ThemeCreatorImageState::Uploaded => {
-                write!(f, "{IMAGE_PICKER_BUTTON_POST_SELECT_TEXT}")
+                write!(f, "{}", t!("themes.select_new_image"))
             }
         }
     }
@@ -417,7 +409,7 @@ impl View for ThemeCreatorBody {
                 padding: Some(Coords::uniform(BUTTON_PADDING)),
                 ..Default::default()
             })
-            .with_centered_text_label(CANCEL_BUTTON_TEXT.into());
+            .with_centered_text_label(t!("common.cancel").to_string());
 
         let mut create_button = appearance
             .ui_builder()
@@ -429,15 +421,19 @@ impl View for ThemeCreatorBody {
                 Some(create_hovered_styles),
                 Some(disabled_styles),
             )
-            .with_centered_text_label(CREATE_BUTTON_TEXT.into());
+            .with_centered_text_label(t!("themes.create_theme").to_string());
 
         let mut flex: Flex = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_child(
                 Container::new(
-                    Text::new_inline(MODAL_SUBHEADER, appearance.ui_font_family(), 14.)
-                        .with_color(appearance.theme().active_ui_text_color().into())
-                        .finish(),
+                    Text::new_inline(
+                        t!("themes.auto_generate_theme_description").to_string(),
+                        appearance.ui_font_family(),
+                        14.,
+                    )
+                    .with_color(appearance.theme().active_ui_text_color().into())
+                    .finish(),
                 )
                 .finish(),
             );
@@ -445,9 +441,13 @@ impl View for ThemeCreatorBody {
         if let Some(theme_options) = &self.theme_options {
             flex.add_child(
                 Container::new(
-                    Text::new_inline("Theme name", appearance.ui_font_family(), 14.)
-                        .with_color(appearance.theme().active_ui_text_color().into())
-                        .finish(),
+                    Text::new_inline(
+                        t!("themes.theme_name").to_string(),
+                        appearance.ui_font_family(),
+                        14.,
+                    )
+                    .with_color(appearance.theme().active_ui_text_color().into())
+                    .finish(),
                 )
                 .with_margin_top(12.)
                 .finish(),
@@ -474,9 +474,13 @@ impl View for ThemeCreatorBody {
 
             flex.add_child(
                 Container::new(
-                    Text::new_inline("Background color", appearance.ui_font_family(), 14.)
-                        .with_color(appearance.theme().active_ui_text_color().into())
-                        .finish(),
+                    Text::new_inline(
+                        t!("themes.background_color").to_string(),
+                        appearance.ui_font_family(),
+                        14.,
+                    )
+                    .with_color(appearance.theme().active_ui_text_color().into())
+                    .finish(),
                 )
                 .with_margin_top(24.)
                 .finish(),

@@ -31,8 +31,6 @@ use crate::{
 
 use super::model::find::{FindConfig, RegexDFAs};
 
-const FILTER_BLOCK_PLACEHOLDER_TEXT: &str = "Filter block output";
-
 const BLOCK_FILTER_BAR_WIDTH: f32 = 380.;
 const BLOCK_FILTER_BAR_PADDING: f32 = 4.;
 const BLOCK_FILTER_EDITOR_PADDING: f32 = 6.;
@@ -49,10 +47,6 @@ const MAXIMUM_CONTEXT_LINES: u16 = 99;
 const MAXIMUM_CONTEXT_LINE_EDITOR_BUFFER_LENGTH: usize = 2;
 pub type ContextLines = u16;
 pub const DEFAULT_CONTEXT_LINES_VALUE: ContextLines = 0;
-const CONTEXT_LINE_EDITOR_TOOLTIP_LABEL: &str = "Show context lines around matches";
-const REGEX_TOOLTIP_LABEL: &str = "Regex toggle";
-const CASE_SENSITIVITY_TOOLTIP_LABEL: &str = "Case sensitive search";
-const INVERT_FILTER_TOOLTIP_LABEL: &str = "Invert filter";
 
 pub const BLOCK_FILTER_DOTTED_LINE_DASH: Dash = Dash {
     dash_length: 4.,
@@ -188,7 +182,7 @@ impl BlockFilterEditor {
                 },
                 ctx,
             );
-            editor.set_placeholder_text(FILTER_BLOCK_PLACEHOLDER_TEXT, ctx);
+            editor.set_placeholder_text(t!("block_filter.placeholder").to_string(), ctx);
             editor
         });
 
@@ -458,7 +452,7 @@ impl BlockFilterEditor {
         mouse_state_handle: MouseStateHandle,
         on_click_action: BlockFilterEditorAction,
         size: f32,
-        tooltip_text: Option<&str>,
+        tooltip_text: Option<String>,
     ) -> Box<dyn Element> {
         Hoverable::new(mouse_state_handle, |state| {
             let (border, background) = if is_selected {
@@ -495,7 +489,7 @@ impl BlockFilterEditor {
             if let (Some(tooltip_text), true) = (tooltip_text, state.is_hovered()) {
                 let tooltip = appearance
                     .ui_builder()
-                    .tool_tip(tooltip_text.to_string())
+                    .tool_tip(tooltip_text)
                     .build()
                     .finish();
 
@@ -537,7 +531,7 @@ impl View for BlockFilterEditor {
             self.mouse_state_handles.regex_mouse_state_handle.clone(),
             BlockFilterEditorAction::ToggleRegex,
             editor_height,
-            Some(REGEX_TOOLTIP_LABEL),
+            Some(t!("find.regex_toggle").to_string()),
         );
         let case_sensitive_icon = self.render_hoverable_icon(
             appearance,
@@ -548,7 +542,7 @@ impl View for BlockFilterEditor {
                 .clone(),
             BlockFilterEditorAction::ToggleCaseSensitivity,
             editor_height,
-            Some(CASE_SENSITIVITY_TOOLTIP_LABEL),
+            Some(t!("find.case_sensitive_search").to_string()),
         );
         let invert_filter_icon = self.render_hoverable_icon(
             appearance,
@@ -559,7 +553,7 @@ impl View for BlockFilterEditor {
                 .clone(),
             BlockFilterEditorAction::ToggleInvertFilter,
             editor_height,
-            Some(INVERT_FILTER_TOOLTIP_LABEL),
+            Some(t!("block_filter.invert_filter").to_string()),
         );
 
         let query_editor = Shrinkable::new(
@@ -659,7 +653,7 @@ impl View for BlockFilterEditor {
                 if state.is_hovered() {
                     let tool_tip = appearance
                         .ui_builder()
-                        .tool_tip(CONTEXT_LINE_EDITOR_TOOLTIP_LABEL.to_string())
+                        .tool_tip(t!("block_filter.context_lines_tooltip").to_string())
                         .build()
                         .finish();
                     stack.add_positioned_child(

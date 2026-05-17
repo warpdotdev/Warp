@@ -9033,6 +9033,7 @@ dependencies = [
  "ui_components",
  "uuid",
  "warp_core",
+ "warp_i18n",
  "warp_logging",
  "warpui",
 ]
@@ -14525,6 +14526,7 @@ dependencies = [
  "warp_editor",
  "warp_files",
  "warp_graphql",
+ "warp_i18n",
  "warp_isolation_platform",
  "warp_js",
  "warp_logging",
@@ -14830,6 +14832,14 @@ dependencies = [
  "anyhow",
  "cynic",
  "cynic-codegen",
+]
+
+[[package]]
+name = "warp_i18n"
+version = "0.1.0"
+dependencies = [
+ "serde_yaml 0.8.26",
+ "sys-locale",
 ]
 
 [[package]]

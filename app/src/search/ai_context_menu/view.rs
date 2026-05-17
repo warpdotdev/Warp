@@ -121,28 +121,33 @@ pub enum AIContextMenuCategory {
 }
 
 impl AIContextMenuCategory {
-    pub fn name(&self) -> &'static str {
+    pub fn name(&self) -> String {
         match self {
-            AIContextMenuCategory::CurrentFolderFiles => "Files and folders",
-            AIContextMenuCategory::RepoFiles => "Files and folders",
-            AIContextMenuCategory::Commands => "Commands",
-            AIContextMenuCategory::Blocks => "Blocks",
-            AIContextMenuCategory::Workflows => "Workflows",
-            AIContextMenuCategory::Notebooks => "Notebooks",
-            AIContextMenuCategory::Plans => "Plans",
-            AIContextMenuCategory::Diffs => "Diffs",
-            AIContextMenuCategory::Docs => "Docs",
-            AIContextMenuCategory::Tasks => "Past tasks",
-            AIContextMenuCategory::Rules => "Rules",
-            AIContextMenuCategory::Servers => "Servers and integrations",
-            AIContextMenuCategory::Terminal => "Terminal",
-            AIContextMenuCategory::Web => "Web",
-            AIContextMenuCategory::RecentDiff => "Most recent diff",
-            AIContextMenuCategory::RecentBlock => "Most recent block",
-            AIContextMenuCategory::Code => "Code",
-            AIContextMenuCategory::DiffSet => "Diff sets",
-            AIContextMenuCategory::Conversations => "Conversations",
-            AIContextMenuCategory::Skills => "Skills",
+            AIContextMenuCategory::CurrentFolderFiles | AIContextMenuCategory::RepoFiles => {
+                t!("ai_context_menu.files_and_folders").to_string()
+            }
+            AIContextMenuCategory::Commands => t!("ai_context_menu.commands").to_string(),
+            AIContextMenuCategory::Blocks => t!("ai_context_menu.blocks").to_string(),
+            AIContextMenuCategory::Workflows => t!("ai_context_menu.workflows").to_string(),
+            AIContextMenuCategory::Notebooks => t!("ai_context_menu.notebooks").to_string(),
+            AIContextMenuCategory::Plans => t!("ai_context_menu.plans").to_string(),
+            AIContextMenuCategory::Diffs => t!("ai_context_menu.diffs").to_string(),
+            AIContextMenuCategory::Docs => t!("ai_context_menu.docs").to_string(),
+            AIContextMenuCategory::Tasks => t!("ai_context_menu.past_tasks").to_string(),
+            AIContextMenuCategory::Rules => t!("ai_context_menu.rules").to_string(),
+            AIContextMenuCategory::Servers => {
+                t!("ai_context_menu.servers_and_integrations").to_string()
+            }
+            AIContextMenuCategory::Terminal => t!("ai_context_menu.terminal").to_string(),
+            AIContextMenuCategory::Web => t!("ai_context_menu.web").to_string(),
+            AIContextMenuCategory::RecentDiff => t!("ai_context_menu.most_recent_diff").to_string(),
+            AIContextMenuCategory::RecentBlock => {
+                t!("ai_context_menu.most_recent_block").to_string()
+            }
+            AIContextMenuCategory::Code => t!("ai_context_menu.code").to_string(),
+            AIContextMenuCategory::DiffSet => t!("ai_context_menu.diff_sets").to_string(),
+            AIContextMenuCategory::Conversations => t!("ai_context_menu.conversations").to_string(),
+            AIContextMenuCategory::Skills => t!("ai_context_menu.skills").to_string(),
         }
     }
 

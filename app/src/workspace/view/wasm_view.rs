@@ -46,7 +46,11 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<ActionButton> {
         ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Open in Warp", PrimaryTheme).on_click(move |ctx| {
+            ActionButton::new(
+                t!("terminal_context_menu.open_in_warp").to_string(),
+                PrimaryTheme,
+            )
+            .on_click(move |ctx| {
                 // Get the current URL and dispatch action to open it on desktop
                 if let Some(url) = parse_current_url() {
                     ctx.dispatch_typed_action(WorkspaceAction::OpenLinkOnDesktop(url));
@@ -62,7 +66,11 @@ impl Workspace {
     ) -> ViewHandle<ActionButton> {
         let url = build_oz_runs_url();
         ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("View all cloud runs", SecondaryTheme).on_click(move |ctx| {
+            ActionButton::new(
+                t!("workspace.view_all_cloud_runs").to_string(),
+                SecondaryTheme,
+            )
+            .on_click(move |ctx| {
                 ctx.dispatch_typed_action(WorkspaceAction::OpenLink(url.clone()));
             })
         })

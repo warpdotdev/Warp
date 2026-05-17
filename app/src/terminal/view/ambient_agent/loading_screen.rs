@@ -50,7 +50,10 @@ pub fn render_cloud_mode_loading_screen(
         // Add link at the end if it exists
         if let Some(link_target) = tip.link() {
             fragments.push(FormattedTextFragment::plain_text(" "));
-            fragments.push(FormattedTextFragment::hyperlink("Learn more", link_target));
+            fragments.push(FormattedTextFragment::hyperlink(
+                t!("ambient_agent.learn_more"),
+                link_target,
+            ));
         }
 
         let formatted_text = FormattedText::new(vec![FormattedTextLine::Line(fragments)]);
@@ -154,8 +157,8 @@ fn render_tier_limits_footer(
         return None;
     }
 
-    let mut fragments = vec![FormattedTextFragment::plain_text(format!(
-        "Your agent is currently running on a {} machine. ",
+    let mut fragments = vec![FormattedTextFragment::plain_text(t!(
+        "ambient_agent.running_on_machine",
         specs
     ))];
 
@@ -164,10 +167,13 @@ fn render_tier_limits_footer(
         .current_team()
         .map(|team| UserWorkspaces::upgrade_link_for_team(team.uid))?;
 
-    fragments.push(FormattedTextFragment::hyperlink("Upgrade", upgrade_url));
-    fragments.push(FormattedTextFragment::plain_text(
-        " for more powerful cloud agents.",
+    fragments.push(FormattedTextFragment::hyperlink(
+        t!("ambient_agent.upgrade"),
+        upgrade_url,
     ));
+    fragments.push(FormattedTextFragment::plain_text(t!(
+        "ambient_agent.powerful_cloud_agents_suffix"
+    )));
 
     let formatted_text = FormattedText::new(vec![FormattedTextLine::Line(fragments)]);
 
@@ -346,7 +352,7 @@ pub fn render_cloud_mode_github_auth_required_screen(
     let auth_button = appearance
         .ui_builder()
         .button(ButtonVariant::Accent, auth_button_mouse_state.clone())
-        .with_centered_text_label("Authenticate with GitHub".to_string())
+        .with_centered_text_label(t!("ambient_agent.authenticate_with_github").to_string())
         .build()
         .on_click(move |_, app, _| {
             app.open_url(&auth_url_clone);

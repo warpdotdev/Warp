@@ -80,20 +80,12 @@ const SECTION_SPACING: f32 = 16.;
 
 // Variable rows
 pub(super) const ROW_SPACING: f32 = 8.;
-pub const EDUCATION_TEXT: &str = "Add secret or command. Warp never stores external secrets";
 const VARIABLE_FONT_SIZE: f32 = 13.;
 const DESCRIPTION_EDITOR_CUTOFF: f32 = 30.;
 const DESCRIPTION_BOTTOM_MARGIN: f32 = 12.;
 const DIVIDER_BOTTOM_MARGIN: f32 = 4.;
 const PLACEHOLDER_FONT_SIZE: f32 = 14.;
-const VARIABLE_VALUE_PLACEHOLDER_TEXT: &str = "Value";
-const VARIABLE_DESCRIPTION_PLACEHOLDER_TEXT: &str = "Description";
-const VARIABLE_NAME_PLACEHOLDER_TEXT: &str = "Variable";
-
 // Text input fields
-const TITLE_PLACEHOLDER_TEXT: &str = "Add a title";
-const DESCRIPTION_PLACEHOLDER_TEXT: &str = "Add a description";
-
 // Button spacing
 const BUTTON_CONTAINER_HORIZONTAL_MARGIN: f32 = 36.;
 const BUTTON_CONTAINER_BOTTOM_MARGIN: f32 = 10.;
@@ -514,18 +506,20 @@ impl EnvVarCollectionView {
             Self::handle_network_status_event,
         );
 
+        let title_placeholder = t!("drive.add_title").to_string();
         let title_editor = Self::create_editor_handle(
             ctx,
             Some(PLACEHOLDER_FONT_SIZE),
             Some(ui_font_family),
-            Some(TITLE_PLACEHOLDER_TEXT),
+            Some(&title_placeholder),
             true,
         );
+        let description_placeholder = t!("drive.add_description").to_string();
         let description_editor = Self::create_editor_handle(
             ctx,
             Some(PLACEHOLDER_FONT_SIZE),
             Some(ui_font_family),
-            Some(DESCRIPTION_PLACEHOLDER_TEXT),
+            Some(&description_placeholder),
             false,
         );
         ctx.subscribe_to_view(&title_editor, |me, _, event, ctx| {
@@ -751,9 +745,7 @@ impl EnvVarCollectionView {
                     let window_id = ctx.window_id();
                     crate::workspace::ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                         toast_stack.add_ephemeral_toast(
-                            DismissibleToast::error(
-                                "An error occurred while trying to invoke the env var".to_owned(),
-                            ),
+                            DismissibleToast::error(t!("env_vars.invoke_error").to_string()),
                             window_id,
                             ctx,
                         );
@@ -880,11 +872,12 @@ impl EnvVarCollectionView {
         let appearance = Appearance::as_ref(ctx);
         let ui_font_family = appearance.ui_font_family();
 
+        let variable_name_placeholder = t!("env_vars.variable").to_string();
         let variable_name_editor = Self::create_editor_handle(
             ctx,
             Some(VARIABLE_FONT_SIZE),
             Some(ui_font_family),
-            Some(VARIABLE_NAME_PLACEHOLDER_TEXT),
+            Some(&variable_name_placeholder),
             true,
         );
 
@@ -892,11 +885,12 @@ impl EnvVarCollectionView {
             me.handle_variable_event(emitter, event, ctx);
         });
 
+        let variable_value_placeholder = t!("env_vars.value").to_string();
         let variable_value_editor = Self::create_editor_handle(
             ctx,
             Some(VARIABLE_FONT_SIZE),
             Some(ui_font_family),
-            Some(VARIABLE_VALUE_PLACEHOLDER_TEXT),
+            Some(&variable_value_placeholder),
             true,
         );
 
@@ -904,11 +898,12 @@ impl EnvVarCollectionView {
             me.handle_variable_event(emitter, event, ctx);
         });
 
+        let variable_description_placeholder = t!("env_vars.description").to_string();
         let variable_description_editor = Self::create_editor_handle(
             ctx,
             Some(VARIABLE_FONT_SIZE),
             Some(ui_font_family),
-            Some(VARIABLE_DESCRIPTION_PLACEHOLDER_TEXT),
+            Some(&variable_description_placeholder),
             true,
         );
 
@@ -1141,7 +1136,7 @@ impl EnvVarCollectionView {
                     .finish()
                 } else {
                     appearance.ui_builder().tool_tip_on_element(
-                        EDUCATION_TEXT.to_string(),
+                        t!("env_vars.education_text").to_string(),
                         self.button_mouse_states.secret_tooltip_state.clone(),
                         icon_button_with_context_menu(
                             Icon::Key,

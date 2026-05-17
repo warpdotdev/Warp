@@ -7,6 +7,8 @@
 //!   `Workspace::render_settings_error_banner`) when the settings file has an
 //!   error *and* the user has dismissed the workspace banner.
 //! * Otherwise, a plain bordered "Open settings file" button.
+use std::borrow::Cow;
+
 use crate::appearance::Appearance;
 use crate::settings::SettingsFileError;
 use crate::ui_components::icons::Icon;
@@ -112,13 +114,17 @@ pub fn render_open_settings_file_button(
             .with_height(FOOTER_ICON_SIZE)
             .finish();
 
-        let label = Text::new_inline("Open settings file", ui_font_family, FOOTER_FONT_SIZE)
-            .with_color(text_color)
-            .with_style(Properties {
-                weight: Weight::Semibold,
-                ..Default::default()
-            })
-            .finish();
+        let label = Text::new_inline(
+            t!("settings.open_settings_file").to_string(),
+            ui_font_family,
+            FOOTER_FONT_SIZE,
+        )
+        .with_color(text_color)
+        .with_style(Properties {
+            weight: Weight::Semibold,
+            ..Default::default()
+        })
+        .finish();
 
         // Use `MainAxisSize::Max` so the row (and its surrounding bordered
         // container) expands to fill the full sidebar width. The icon + text
@@ -227,7 +233,7 @@ pub fn render_settings_error_alert(
         ui_font_family,
         text_color,
         mouse_states.alert_open_file_button.clone(),
-        "Open file",
+        t!("settings.open_file").to_string(),
         /*icon=*/ None,
         /*bordered=*/ true,
         WorkspaceAction::OpenSettingsFile,
@@ -249,7 +255,7 @@ pub fn render_settings_error_alert(
             ui_font_family,
             text_color,
             mouse_states.alert_fix_with_oz_button.clone(),
-            "Fix with Oz",
+            t!("settings.fix_with_oz").to_string(),
             Some(Icon::Oz),
             /*bordered=*/ false,
             WorkspaceAction::FixSettingsWithOz { error_description },
@@ -319,11 +325,12 @@ fn render_alert_action_button(
     ui_font_family: FamilyId,
     text_color: ColorU,
     mouse_state: MouseStateHandle,
-    text: &'static str,
+    text: impl Into<Cow<'static, str>>,
     icon: Option<Icon>,
     bordered: bool,
     action: WorkspaceAction,
 ) -> Box<dyn Element> {
+    let text = text.into();
     Hoverable::new(mouse_state, move |state| {
         let mut row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -342,7 +349,7 @@ fn render_alert_action_button(
             );
         }
         row.add_child(
-            Text::new_inline(text.to_owned(), ui_font_family, FOOTER_FONT_SIZE)
+            Text::new_inline(text.clone(), ui_font_family, FOOTER_FONT_SIZE)
                 .with_color(text_color)
                 .with_style(Properties {
                     weight: Weight::Semibold,

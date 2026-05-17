@@ -267,20 +267,31 @@ use std::fmt::{self, Display};
 impl Display for SettingsSection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SettingsSection::BillingAndUsage => write!(f, "Billing and usage"),
-            SettingsSection::Keybindings => write!(f, "Keyboard shortcuts"),
-            SettingsSection::SharedBlocks => write!(f, "Shared blocks"),
-            SettingsSection::MCPServers => write!(f, "MCP Servers"),
-            SettingsSection::WarpDrive => write!(f, "Warp Drive"),
-            SettingsSection::WarpAgent => write!(f, "Warp Agent"),
-            SettingsSection::AgentProfiles => write!(f, "Profiles"),
-            SettingsSection::AgentMCPServers => write!(f, "MCP servers"),
-            SettingsSection::Knowledge => write!(f, "Knowledge"),
-            SettingsSection::ThirdPartyCLIAgents => write!(f, "Third party CLI agents"),
-            SettingsSection::CodeIndexing => write!(f, "Indexing and projects"),
-            SettingsSection::EditorAndCodeReview => write!(f, "Editor and Code Review"),
-            SettingsSection::CloudEnvironments => write!(f, "Environments"),
-            SettingsSection::OzCloudAPIKeys => write!(f, "Oz Cloud API Keys"),
+            SettingsSection::About => write!(f, "{}", t!("settings.about")),
+            SettingsSection::Account => write!(f, "{}", t!("settings.account")),
+            SettingsSection::Appearance => write!(f, "{}", t!("settings.appearance")),
+            SettingsSection::BillingAndUsage => write!(f, "{}", t!("settings.billing_and_usage")),
+            SettingsSection::Features => write!(f, "{}", t!("settings.features")),
+            SettingsSection::Keybindings => write!(f, "{}", t!("settings.keyboard_shortcuts")),
+            SettingsSection::Privacy => write!(f, "{}", t!("settings.privacy")),
+            SettingsSection::Referrals => write!(f, "{}", t!("settings.referrals")),
+            SettingsSection::SharedBlocks => write!(f, "{}", t!("settings.shared_blocks")),
+            SettingsSection::Teams => write!(f, "{}", t!("settings.teams")),
+            SettingsSection::MCPServers => write!(f, "{}", t!("settings.mcp_servers")),
+            SettingsSection::WarpDrive => write!(f, "{}", t!("settings.warp_drive")),
+            SettingsSection::WarpAgent => write!(f, "{}", t!("settings.warp_agent")),
+            SettingsSection::AgentProfiles => write!(f, "{}", t!("settings.profiles")),
+            SettingsSection::AgentMCPServers => write!(f, "{}", t!("settings.mcp_servers")),
+            SettingsSection::Knowledge => write!(f, "{}", t!("settings.knowledge")),
+            SettingsSection::ThirdPartyCLIAgents => {
+                write!(f, "{}", t!("settings.third_party_cli_agents"))
+            }
+            SettingsSection::CodeIndexing => write!(f, "{}", t!("settings.indexing_and_projects")),
+            SettingsSection::EditorAndCodeReview => {
+                write!(f, "{}", t!("settings.editor_and_code_review"))
+            }
+            SettingsSection::CloudEnvironments => write!(f, "{}", t!("settings.environments")),
+            SettingsSection::OzCloudAPIKeys => write!(f, "{}", t!("settings.oz_cloud_api_keys")),
             _ => write!(f, "{self:?}"),
         }
     }
@@ -702,8 +713,8 @@ impl<T: Action + Clone> ToggleSettingActionPair<T> {
 
         ToggleSettingActionPair {
             descriptions: SettingActionPairDescriptions {
-                enable: format!("Enable {description_suffix}"),
-                disable: format!("Disable {description_suffix}"),
+                enable: t!("settings.enable_setting", setting = description_suffix).to_string(),
+                disable: t!("settings.disable_setting", setting = description_suffix).to_string(),
             },
             contexts: SettingActionPairContexts {
                 enable_predicate: context_prefix.to_owned() & !id!(context_boolean_flag),
@@ -1193,7 +1204,7 @@ impl SettingsView {
                 ..Default::default()
             };
             let mut editor = EditorView::single_line(options, ctx);
-            editor.set_placeholder_text("Search", ctx);
+            editor.set_placeholder_text(t!("common.search"), ctx);
             editor
         });
 
@@ -1236,19 +1247,19 @@ impl SettingsView {
         let mut nav_items = vec![
             SettingsNavItem::Page(SettingsSection::Account),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
-                "Agents",
+                t!("settings.agents").to_string(),
                 SettingsSection::ai_subpages().to_vec(),
             )),
             SettingsNavItem::Page(SettingsSection::BillingAndUsage),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
-                "Code",
+                t!("settings.code").to_string(),
                 vec![
                     SettingsSection::CodeIndexing,
                     SettingsSection::EditorAndCodeReview,
                 ],
             )),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
-                "Cloud platform",
+                t!("settings.cloud_platform").to_string(),
                 vec![
                     SettingsSection::CloudEnvironments,
                     SettingsSection::OzCloudAPIKeys,
@@ -1552,28 +1563,28 @@ impl SettingsView {
 
         if ContextFlag::CreateNewSession.is_enabled() {
             items.extend(vec![
-                MenuItemFields::new("Split pane right")
+                MenuItemFields::new(t!("common.split_pane_right").to_string())
                     .with_on_select_action(SettingsAction::Split(Direction::Right))
                     .with_key_shortcut_label(keybinding_name_to_display_string(
                         "pane_group:add_right",
                         ctx,
                     ))
                     .into_item(),
-                MenuItemFields::new("Split pane left")
+                MenuItemFields::new(t!("common.split_pane_left").to_string())
                     .with_on_select_action(SettingsAction::Split(Direction::Left))
                     .with_key_shortcut_label(keybinding_name_to_display_string(
                         "pane_group:add_left",
                         ctx,
                     ))
                     .into_item(),
-                MenuItemFields::new("Split pane down")
+                MenuItemFields::new(t!("common.split_pane_down").to_string())
                     .with_on_select_action(SettingsAction::Split(Direction::Down))
                     .with_key_shortcut_label(keybinding_name_to_display_string(
                         "pane_group:add_down",
                         ctx,
                     ))
                     .into_item(),
-                MenuItemFields::new("Split pane up")
+                MenuItemFields::new(t!("common.split_pane_up").to_string())
                     .with_on_select_action(SettingsAction::Split(Direction::Up))
                     .with_key_shortcut_label(keybinding_name_to_display_string(
                         "pane_group:add_up",
@@ -1602,7 +1613,7 @@ impl SettingsView {
             );
 
             items.push(
-                MenuItemFields::new("Close pane")
+                MenuItemFields::new(t!("common.close_pane").to_string())
                     .with_on_select_action(SettingsAction::Close)
                     .with_key_shortcut_label(
                         custom_tag_to_keystroke(CustomAction::CloseCurrentSession.into())
@@ -2286,10 +2297,10 @@ impl SettingsView {
         Container::new(
             Align::new(
                 Flex::column()
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_children([
                         Text::new(
-                            "No settings match your search.",
+                            t!("settings.no_settings_match").to_string(),
                             appearance.ui_font_family(),
                             appearance.ui_font_size(),
                         )
@@ -2297,7 +2308,7 @@ impl SettingsView {
                         .with_color(theme.sub_text_color(theme.background()).into_solid())
                         .finish(),
                         Text::new(
-                            "You may want to try using different keywords or checking for any possible typos.",
+                            t!("settings.no_settings_match_hint").to_string(),
                             appearance.ui_font_family(),
                             appearance.ui_font_size(),
                         )
@@ -2308,7 +2319,7 @@ impl SettingsView {
             )
             .finish(),
         )
-            .with_uniform_margin(16.)
+        .with_uniform_margin(16.)
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
         .with_background(internal_colors::fg_overlay_1(appearance.theme()))
         .finish()
@@ -2716,7 +2727,7 @@ impl BackingView for SettingsView {
         _ctx: &view::HeaderRenderContext<'_>,
         _app: &AppContext,
     ) -> view::HeaderContent {
-        view::HeaderContent::simple("Settings")
+        view::HeaderContent::simple(t!("workspace.settings").to_string())
     }
 
     fn set_focus_handle(&mut self, focus_handle: PaneFocusHandle, _ctx: &mut ViewContext<Self>) {

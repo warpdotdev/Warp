@@ -1,26 +1,26 @@
 use itertools::{Either, Itertools};
 use warp_editor::editor::NavigationKey;
-use warpui::elements::ConstrainedBox;
 use warpui::FocusContext;
+use warpui::elements::ConstrainedBox;
 
 use std::collections::HashSet;
 
 use warpui::fonts::FamilyId;
 use warpui::{
+    Action, AppContext, Element, Entity, ModelContext, ModelHandle, SingletonEntity,
+    TypedActionView, View, ViewContext, ViewHandle,
     accessibility::{AccessibilityContent, WarpA11yRole},
     elements::{Clipped, Container, CrossAxisAlignment, Flex, ParentElement, Shrinkable, Text},
     fonts::{Properties, Style, Weight},
     presenter::ChildView,
-    Action, AppContext, Element, Entity, ModelContext, ModelHandle, SingletonEntity,
-    TypedActionView, View, ViewContext, ViewHandle,
 };
 
 use crate::editor::AutosuggestionType;
+use crate::search::QueryFilter;
 use crate::search::data_source::{Query, QueryResult};
 use crate::search::mixer::SearchMixer;
 use crate::search::result_renderer::QueryResultIndex;
 use crate::search::result_renderer::QueryResultRenderer;
-use crate::search::QueryFilter;
 
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon;
@@ -122,7 +122,7 @@ pub struct SearchBar<T: Action + Clone> {
     mixer: ModelHandle<SearchMixer<T>>,
     /// The placeholder text that is rendered in the search bar when no query has been run or
     /// filters have been applied.
-    placeholder_text: &'static str,
+    placeholder_text: String,
     create_query_result_renderer_fn: CreateQueryResultRendererFn<T>,
     /// Font family to use when rendering the editor and query filters. If `None` the monospace font
     /// family is used.
@@ -347,7 +347,7 @@ impl<T: Action + Clone> SearchBar<T> {
     pub fn new(
         mixer: ModelHandle<SearchMixer<T>>,
         state: ModelHandle<SearchBarState<T>>,
-        placeholder_text: &'static str,
+        placeholder_text: impl Into<String>,
         create_query_result_renderer_fn: CreateQueryResultRendererFn<T>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
@@ -374,7 +374,7 @@ impl<T: Action + Clone> SearchBar<T> {
         let me = Self {
             editor_handle,
             mixer,
-            placeholder_text,
+            placeholder_text: placeholder_text.into(),
             state,
             create_query_result_renderer_fn,
             font_family_override: None,
@@ -698,7 +698,11 @@ impl<T: Action + Clone> SearchBar<T> {
         if let Some(loading_filters) = self.mixer.as_ref(ctx).loading_query_filters() {
             for loading_filter in loading_filters.into_iter() {
                 ctx.emit_a11y_content(AccessibilityContent::new_without_help(
-                    format!("Loading {} suggestions", loading_filter.display_name()),
+                    t!(
+                        "search_bar.loading_suggestions",
+                        filter = loading_filter.display_name()
+                    )
+                    .to_string(),
                     WarpA11yRole::MenuItemRole,
                 ));
             }
@@ -708,7 +712,7 @@ impl<T: Action + Clone> SearchBar<T> {
 
         if let Some((.., data_source_err)) = self.mixer.as_ref(ctx).first_data_source_error() {
             ctx.emit_a11y_content(AccessibilityContent::new(
-                "Error finding results",
+                t!("search_bar.error_finding_results").to_string(),
                 data_source_err.user_facing_error(),
                 WarpA11yRole::MenuItemRole,
             ));
@@ -785,7 +789,7 @@ impl<T: Action + Clone> SearchBar<T> {
                         editor.set_placeholder_text(filter.placeholder_text(), ctx);
                     }
                     None => {
-                        editor.set_placeholder_text(self.placeholder_text, ctx);
+                        editor.set_placeholder_text(self.placeholder_text.clone(), ctx);
                     }
                 }
             }

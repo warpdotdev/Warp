@@ -76,7 +76,8 @@ pub struct AIFactView {
 
 impl AIFactView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
-        let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new(HEADER_TEXT));
+        let pane_configuration =
+            ctx.add_model(|_ctx| PaneConfiguration::new(t!("rules.header").to_string()));
 
         let rule_view = ctx.add_typed_action_view(RuleView::new);
         ctx.subscribe_to_view(&rule_view, |me, _, event, ctx| {
@@ -325,7 +326,7 @@ impl BackingView for AIFactView {
         _ctx: &view::HeaderRenderContext<'_>,
         _app: &AppContext,
     ) -> view::HeaderContent {
-        view::HeaderContent::simple(HEADER_TEXT)
+        view::HeaderContent::simple(t!("rules.header").to_string())
     }
 
     fn set_focus_handle(&mut self, focus_handle: PaneFocusHandle, _ctx: &mut ViewContext<Self>) {

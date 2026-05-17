@@ -316,9 +316,9 @@ impl CodeFooterView {
             button.set_disabled(!is_ai_enabled, ctx);
             button.set_tooltip(
                 Some(if is_ai_enabled {
-                    "Open agent input with the /update-tab-config skill"
+                    t!("code.open_tab_config_skill")
                 } else {
-                    "Enable AI to use the /update-tab-config skill"
+                    t!("code.enable_ai_for_tab_config_skill")
                 }),
                 ctx,
             );
@@ -370,7 +370,7 @@ impl CodeFooterView {
         // Create a button that dispatches EnableLSP action
         // The action handler will check lsp_repo_status to decide whether to install first
         let enable_lsp_button = server_type.map(|st| {
-            let label = format!("Enable {}", st.binary_name());
+            let label = t!("code.enable_server", server = st.binary_name()).to_string();
             ctx.add_typed_action_view(|_ctx| {
                 ActionButton::new(label, NakedTheme)
                     .with_size(ButtonSize::Small)
@@ -657,10 +657,10 @@ impl CodeFooterView {
     fn button_label_for_status(status: &LspRepoStatus) -> Option<String> {
         match status {
             LspRepoStatus::DisabledAndNotInstalled { server_type } => {
-                Some(format!("Install {}", server_type.binary_name()))
+                Some(t!("code.install_server", server = server_type.binary_name()).to_string())
             }
             LspRepoStatus::DisabledAndInstalled { server_type } => {
-                Some(format!("Enable {}", server_type.binary_name()))
+                Some(t!("code.enable_server", server = server_type.binary_name()).to_string())
             }
             _ => None,
         }
@@ -679,9 +679,9 @@ impl CodeFooterView {
                     .iter()
                     .any(|s| matches!(s, LspRepoStatus::DisabledAndNotInstalled { .. }));
                 if any_needs_install {
-                    Some("Install servers".to_string())
+                    Some(t!("code.install_servers").to_string())
                 } else {
-                    Some("Enable servers".to_string())
+                    Some(t!("code.enable_servers").to_string())
                 }
             }
         }
@@ -1101,7 +1101,7 @@ impl CodeFooterView {
         appearance: &Appearance,
         mouse_state: MouseStateHandle,
         icon_creator: F,
-        label: &'static str,
+        label: String,
         action: CodeFooterViewAction,
     ) -> Box<dyn Element> {
         let theme = appearance.theme().clone();
@@ -1119,7 +1119,7 @@ impl CodeFooterView {
                 .finish();
 
             let label_element = ui_builder
-                .span(label)
+                .span(label.clone())
                 .with_style(UiComponentStyles {
                     font_color: Some(text_color),
                     ..Default::default()
@@ -1176,7 +1176,7 @@ impl CodeFooterView {
                     .to_warpui_icon(ThemeFill::Solid(text_color))
                     .finish()
             },
-            "Open logs",
+            t!("code.open_logs").to_string(),
             CodeFooterViewAction::OpenLogs,
         )
     }
@@ -1198,7 +1198,7 @@ impl CodeFooterView {
                     .to_warpui_icon(ThemeFill::Solid(text_color))
                     .finish()
             },
-            "Restart server",
+            t!("code.restart_server").to_string(),
             CodeFooterViewAction::RestartServer,
         )
     }
@@ -1221,7 +1221,7 @@ impl CodeFooterView {
                     .with_uniform_padding(2.)
                     .finish()
             },
-            "Stop server",
+            t!("code.stop_server").to_string(),
             CodeFooterViewAction::StopServer,
         )
     }
@@ -1243,7 +1243,7 @@ impl CodeFooterView {
                     .to_warpui_icon(ThemeFill::Solid(text_color))
                     .finish()
             },
-            "Start server",
+            t!("code.start_server").to_string(),
             CodeFooterViewAction::StartServer,
         )
     }
@@ -1265,7 +1265,7 @@ impl CodeFooterView {
                     .to_warpui_icon(ThemeFill::Solid(text_color))
                     .finish()
             },
-            "Remove server",
+            t!("code.remove_server").to_string(),
             CodeFooterViewAction::RemoveServer,
         )
     }
@@ -1289,9 +1289,9 @@ impl CodeFooterView {
                     .finish()
             },
             if is_plural {
-                "Restart all servers"
+                t!("code.restart_all_servers").to_string()
             } else {
-                "Restart server"
+                t!("code.restart_server").to_string()
             },
             CodeFooterViewAction::RestartAllServers,
         )
@@ -1317,9 +1317,9 @@ impl CodeFooterView {
                     .finish()
             },
             if is_plural {
-                "Stop all servers"
+                t!("code.stop_all_servers").to_string()
             } else {
-                "Stop server"
+                t!("code.stop_server").to_string()
             },
             CodeFooterViewAction::StopAllServers,
         )
@@ -1345,11 +1345,11 @@ impl CodeFooterView {
                     .finish()
             },
             if !is_plural {
-                "Start server"
+                t!("code.start_server").to_string()
             } else if has_running {
-                "Start all stopped servers"
+                t!("code.start_all_stopped_servers").to_string()
             } else {
-                "Start all servers"
+                t!("code.start_all_servers").to_string()
             },
             CodeFooterViewAction::StartAllServers,
         )
@@ -1372,7 +1372,7 @@ impl CodeFooterView {
                     .to_warpui_icon(ThemeFill::Solid(text_color))
                     .finish()
             },
-            "Manage servers",
+            t!("code.manage_servers").to_string(),
             CodeFooterViewAction::ManageServers,
         )
     }
@@ -1484,9 +1484,11 @@ impl CodeFooterView {
                 .filter(|msg| !msg.trim().is_empty())
                 .map(|msg| format!("{}: {msg}", server.server_name())),
             LspModelState::Stopped { .. } | LspModelState::Stopping { .. } => {
-                Some(format!("{}: stopped", server.server_name()))
+                Some(t!("code.server_stopped", server = server.server_name()).to_string())
             }
-            LspModelState::Failed { .. } => Some(format!("{}: error", server.server_name())),
+            LspModelState::Failed { .. } => {
+                Some(t!("code.server_error", server = server.server_name()).to_string())
+            }
         }
     }
 
@@ -1521,9 +1523,7 @@ impl CodeFooterView {
                 .and_then(|s| s.to_str())
                 .unwrap_or("this workspace");
             Some((
-                Some(format!(
-                    "Language support is not currently enabled for {root_name}"
-                )),
+                Some(t!("code.language_support_not_enabled", root = root_name).to_string()),
                 true,
             ))
         } else {
@@ -1591,31 +1591,42 @@ impl CodeFooterView {
                 ..
             } => match PersistedWorkspace::as_ref(app).has_enabled_lsp_server_for_file_path(path) {
                 LSPEnablementResultForFile::UnsupportedLanguage => (
-                    Some("Language support is unavailable for this file type".to_string()),
+                    Some(t!("code.language_support_unavailable_file_type").to_string()),
                     false,
                 ),
                 LSPEnablementResultForFile::LSPNotEnabled { root_name } => match lsp_repo_status {
                     LspRepoStatus::CheckingForInstallation => (
-                        Some(format!(
-                            "Language support is not currently enabled for {}",
-                            root_name.unwrap_or("this codebase".to_string())
-                        )),
+                        Some(
+                            t!(
+                                "code.language_support_not_enabled",
+                                root = root_name
+                                    .unwrap_or_else(|| t!("code.this_codebase").to_string())
+                            )
+                            .to_string(),
+                        ),
                         false,
                     ),
                     LspRepoStatus::Ready | LspRepoStatus::Enabled => (
-                        Some("Language server is unavailable for this codebase".to_string()),
+                        Some(t!("code.language_server_unavailable_codebase").to_string()),
                         false,
                     ),
                     LspRepoStatus::DisabledAndNotInstalled { .. }
                     | LspRepoStatus::DisabledAndInstalled { .. } => (
-                        Some(format!(
-                            "Language support is not currently enabled for {}",
-                            root_name.unwrap_or("this codebase".to_string())
-                        )),
+                        Some(
+                            t!(
+                                "code.language_support_not_enabled",
+                                root = root_name
+                                    .unwrap_or_else(|| t!("code.this_codebase").to_string())
+                            )
+                            .to_string(),
+                        ),
                         true,
                     ),
                     LspRepoStatus::Installing { server_type } => (
-                        Some(format!("Installing {}...", server_type.binary_name())),
+                        Some(
+                            t!("code.installing_server", server = server_type.binary_name())
+                                .to_string(),
+                        ),
                         false,
                     ),
                 },
@@ -1645,7 +1656,10 @@ impl CodeFooterView {
                 for status in lsp_repo_statuses.values() {
                     if let LspRepoStatus::Installing { server_type } = status {
                         return (
-                            Some(format!("Installing {}...", server_type.binary_name())),
+                            Some(
+                                t!("code.installing_server", server = server_type.binary_name())
+                                    .to_string(),
+                            ),
                             false,
                         );
                     }
@@ -1661,7 +1675,7 @@ impl CodeFooterView {
 
                 // All servers are enabled/ready but no live servers — unavailable
                 (
-                    Some(format!("Language support is unavailable for {root_name}")),
+                    Some(t!("code.language_support_unavailable", root = root_name).to_string()),
                     false,
                 )
             }

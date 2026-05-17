@@ -48,12 +48,6 @@ const FIND_EDITOR_BORDER_WIDTH: f32 = 1.;
 const FIND_EDITOR_FONT_SIZE: f32 = 12.;
 const FIND_EDITOR_ROW_SPACING: f32 = 4.;
 
-pub const REGEX_TOGGLE_TOOLTIP: &str = "Regex toggle";
-pub const CASE_SENSITIVE_TOOLTIP: &str = "Case sensitive search";
-pub const PRESERVE_CASE_TOOLTIP: &str = "Preserve case";
-pub const FIND_PLACEHOLDER_TEXT: &str = "Find";
-pub const REPLACE_PLACEHOLDER_TEXT: &str = "Replace";
-
 #[derive(Default)]
 struct ButtonMouseStates {
     match_up: MouseStateHandle,
@@ -142,7 +136,7 @@ impl CodeEditorFind {
                 },
                 ctx,
             );
-            editor.set_placeholder_text(FIND_PLACEHOLDER_TEXT, ctx);
+            editor.set_placeholder_text(t!("find.placeholder").to_string(), ctx);
             editor
         });
 
@@ -159,7 +153,7 @@ impl CodeEditorFind {
                 },
                 ctx,
             );
-            replace_editor.set_placeholder_text(REPLACE_PLACEHOLDER_TEXT, ctx);
+            replace_editor.set_placeholder_text(t!("find.replace_placeholder").to_string(), ctx);
             replace_editor
         });
 
@@ -174,7 +168,7 @@ impl CodeEditorFind {
         let editor_height = line_height + (2. * FIND_EDITOR_PADDING) + 5.;
 
         let select_all_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Select all", SecondaryTheme)
+            ActionButton::new(t!("find.select_all").to_string(), SecondaryTheme)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(FindAction::SelectAll);
                 })
@@ -184,7 +178,7 @@ impl CodeEditorFind {
         });
 
         let replace_all_button = ctx.add_typed_action_view(|ctx| {
-            let mut button = ActionButton::new("Replace all", SecondaryTheme)
+            let mut button = ActionButton::new(t!("find.replace_all").to_string(), SecondaryTheme)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(FindAction::ReplaceAll);
                 })
@@ -737,6 +731,8 @@ impl CodeEditorFind {
         app: &AppContext,
     ) -> Box<dyn Element> {
         // Create the query editor row with find editor and icons
+        let regex_toggle_tooltip = t!("find.regex_toggle").to_string();
+        let case_sensitive_tooltip = t!("find.case_sensitive_search").to_string();
         let regex_icon = self.render_hoverable_icon_in_editor(
             appearance,
             Icon::Regex,
@@ -744,7 +740,7 @@ impl CodeEditorFind {
             self.button_mouse_states.toggle_regex_search.clone(),
             FindAction::ToggleRegexSearch,
             editor_height,
-            Some(REGEX_TOGGLE_TOOLTIP),
+            Some(regex_toggle_tooltip.as_str()),
             ICON_PADDING,
         );
         let case_sensitive_icon = Container::new(
@@ -756,7 +752,7 @@ impl CodeEditorFind {
                     self.button_mouse_states.toggle_case_sensitivity.clone(),
                     FindAction::ToggleCaseSensitivity,
                     editor_height,
-                    Some(CASE_SENSITIVE_TOOLTIP),
+                    Some(case_sensitive_tooltip.as_str()),
                     ICON_PADDING,
                 ),
                 "case_sensitive_button",
@@ -837,6 +833,7 @@ impl CodeEditorFind {
 
     fn render_replace_row(&self, appearance: &Appearance, editor_height: f32) -> Box<dyn Element> {
         // Create the replace editor row with preserve case toggle
+        let preserve_case_tooltip = t!("find.preserve_case").to_string();
         let mut replace_editor_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_child(
@@ -857,7 +854,7 @@ impl CodeEditorFind {
             self.button_mouse_states.toggle_preserve_case.clone(),
             FindAction::TogglePreserveCase,
             editor_height,
-            Some(PRESERVE_CASE_TOOLTIP),
+            Some(preserve_case_tooltip.as_str()),
             ICON_PADDING,
         );
         replace_editor_row.add_child(preserve_case_icon);

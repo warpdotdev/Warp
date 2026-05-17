@@ -13,7 +13,7 @@ use itertools::Itertools;
 use uuid::Uuid;
 use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity, WindowId};
 
-use crate::ai::ai_document_view::DEFAULT_PLANNING_DOCUMENT_TITLE;
+use crate::ai::ai_document_view::default_planning_document_title;
 use crate::auth::auth_state::AuthStateProvider;
 use crate::cloud_object::CloudObject;
 use crate::global_resource_handles::GlobalResourceHandlesProvider;
@@ -751,7 +751,9 @@ impl AIDocumentModel {
             log::info!(
                 "Creating document {id} from persisted SQLite content (conversation not restored)"
             );
-            let title = persisted_title.unwrap_or(DEFAULT_PLANNING_DOCUMENT_TITLE);
+            let title = persisted_title
+                .map(ToOwned::to_owned)
+                .unwrap_or_else(default_planning_document_title);
             self.create_document_internal(
                 id,
                 title,

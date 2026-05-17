@@ -14,9 +14,6 @@ use crate::ui_components::dialog::{dialog_styles, Dialog};
 
 use super::env_var_collection::{EnvVarCollectionAction, EnvVarCollectionView};
 
-const UNSAVED_CHANGES_TEXT: &str = "You have unsaved changes.";
-const KEEP_EDITING_TEXT: &str = "Keep editing";
-const DISCARD_CHANGES_TEXT: &str = "Discard changes";
 const BUTTON_FONT_SIZE: f32 = 14.;
 const BUTTON_PADDING: f32 = 12.;
 const MODAL_HORIZONTAL_MARGIN: f32 = 28.;
@@ -47,23 +44,25 @@ impl EnvVarCollectionView {
     }
 
     pub fn render_unsaved_changes_dialog(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let keep_editing_text = t!("drive.keep_editing").to_string();
         let keep_editing_button = self.render_unsaved_changes_dialog_button(
             appearance,
             self.button_mouse_states.keep_editing_state.clone(),
             EnvVarCollectionAction::CloseUnsavedChangesDialog,
-            KEEP_EDITING_TEXT,
+            &keep_editing_text,
         );
 
+        let discard_changes_text = t!("drive.discard_changes").to_string();
         let discard_changes_button = self.render_unsaved_changes_dialog_button(
             appearance,
             self.button_mouse_states.discard_changes_state.clone(),
             EnvVarCollectionAction::ForceClose,
-            DISCARD_CHANGES_TEXT,
+            &discard_changes_text,
         );
 
         Container::new(
             Dialog::new(
-                UNSAVED_CHANGES_TEXT.to_string(),
+                t!("drive.unsaved_changes").to_string(),
                 None,
                 dialog_styles(appearance),
             )

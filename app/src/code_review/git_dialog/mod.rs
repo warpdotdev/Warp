@@ -9,6 +9,7 @@
 //! + confirm async, extend `GitDialogMode`, add the per-mode action and
 //! outcome variant, and wire up dispatch.
 
+use std::borrow::Cow;
 use std::path::PathBuf;
 
 use pathfinder_geometry::vector::vec2f;
@@ -581,7 +582,7 @@ impl GitDialog {
             button.on_click(|ctx| ctx.dispatch_typed_action(GitDialogAction::Confirm))
         });
         let cancel_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Cancel", NakedTheme)
+            ActionButton::new(t!("common.cancel"), NakedTheme)
                 .with_size(ButtonSize::Small)
                 .with_height(32.)
                 .on_click(|ctx| ctx.dispatch_typed_action(GitDialogAction::Cancel))
@@ -618,7 +619,8 @@ impl GitDialog {
 
     /// Disables cancel/confirm/close and swaps the confirm label while the
     /// async op is running.
-    fn set_loading(&mut self, loading_label: &'static str, ctx: &mut ViewContext<Self>) {
+    fn set_loading(&mut self, loading_label: impl Into<String>, ctx: &mut ViewContext<Self>) {
+        let loading_label = loading_label.into();
         self.loading = true;
         self.confirm_button.update(ctx, |b, ctx| {
             b.set_label(loading_label, ctx);
@@ -654,17 +656,17 @@ impl GitDialog {
         });
     }
 
-    fn title(&self) -> &'static str {
+    fn title(&self) -> Cow<'static, str> {
         match &self.mode {
-            GitDialogMode::Commit(_) => "Commit your changes",
+            GitDialogMode::Commit(_) => t!("code_review_ext.commit_your_changes"),
             GitDialogMode::Push(state) => {
                 if state.publish {
-                    "Publish branch"
+                    t!("code_review_ext.publish_branch")
                 } else {
-                    "Push changes"
+                    t!("code_review_ext.push_changes")
                 }
             }
-            GitDialogMode::CreatePr(_) => "Create pull request",
+            GitDialogMode::CreatePr(_) => t!("code_review_ext.create_pull_request"),
         }
     }
 

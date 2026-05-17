@@ -16,11 +16,6 @@ use super::{
     InlineBannerTextButtonVariant,
 };
 
-const SPEEDBUMP_HEADER: &str = "Optimize Warp for this codebase?";
-const SPEEDBUMP_TEXT: &str = "Unlock smarter, more consistent responses by letting the Agent understand your codebase and generate rules for it. You can also do this at any point by running /init";
-/// Text for the button that allows execution
-const ALLOW_BUTTON_TEXT: &str = "Optimize";
-
 #[derive(Clone, Copy, Debug)]
 pub enum AgentModeSetupSpeedbumpBannerAction {
     SetupAgentMode,
@@ -55,7 +50,7 @@ pub fn render_agent_mode_setup_banner(
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let open_button = InlineBannerTextButton {
-        text: ALLOW_BUTTON_TEXT.to_string(),
+        text: t!("terminal.optimize").to_string(),
         text_color: appearance.theme().active_ui_text_color().into_solid(),
         button_state: InlineBannerButtonState {
             on_click_event: TerminalAction::AgentModeSetupSpeedbumpBanner(
@@ -79,7 +74,7 @@ pub fn render_agent_mode_setup_banner(
         InlineBannerStyle::Recommendation,
         appearance,
         InlineBannerContent {
-            title: SPEEDBUMP_HEADER.to_string(),
+            title: t!("terminal.optimize_warp_for_codebase").to_string(),
             buttons: vec![open_button],
             close_button: Some(close_button),
             header_icon: Some(InlineBannerIcon {
@@ -88,7 +83,7 @@ pub fn render_agent_mode_setup_banner(
                 color_override: Some(appearance.theme().active_ui_text_color().into_solid()),
             }),
             content: Some(vec![Text::new(
-                SPEEDBUMP_TEXT,
+                t!("terminal.optimize_warp_for_codebase_description"),
                 appearance.ui_font_family(),
                 appearance.monospace_font_size() - 2.,
             )

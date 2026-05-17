@@ -75,10 +75,14 @@ impl crate::search::item::SearchItem for SearchItem {
     }
 
     fn accessibility_label(&self) -> String {
-        format!("Selected {}.", self.option.description())
+        t!(
+            "command_palette.selected_item",
+            item = self.option.description()
+        )
+        .to_string()
     }
 
     fn accessibility_help_message(&self) -> Option<String> {
-        Some("Press enter to launch this session.".into())
+        Some(t!("command_palette.launch_session_help").to_string())
     }
 }

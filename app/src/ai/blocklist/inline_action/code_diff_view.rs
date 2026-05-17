@@ -122,16 +122,6 @@ use ai::diff_validation::{
     SearchAndReplace, V4AHunk,
 };
 
-const REQUESTED_EDIT_CANCEL_LABEL: &str = "Cancel";
-const REQUESTED_EDIT_REFINE_LABEL: &str = "Refine";
-const REQUESTED_EDIT_ACCEPT_LABEL: &str = "Accept";
-const REQUESTED_EDIT_ACCEPT_AND_AUTOEXECUTE_LABEL: &str = "Auto-approve";
-const REQUESTED_EDIT_EDIT_LABEL: &str = "Edit";
-const REQUESTED_EDIT_MINIMIZE_LABEL: &str = "Done";
-const SUGGESTED_EDIT_ACCEPT_LABEL: &str = "Accept";
-const SUGGESTED_EDIT_ACCEPT_AND_CONTINUE_LABEL: &str = "Accept and continue with agent";
-const SUGGESTED_EDIT_ITERATE_WITH_AGENT_LABEL: &str = "Iterate with agent";
-const SUGGESTED_EDIT_DISMISS_LABEL: &str = "Dismiss";
 const MAX_EDITOR_HEIGHT: f32 = 500.;
 const INLINE_EDITOR_HEIGHT: f32 = 94.;
 const INLINE_EDITOR_HEIGHT_EXPANDED: f32 = 400.;
@@ -530,7 +520,7 @@ impl CodeDiffView {
             self.accept_split_button_menu.update(ctx, |menu, ctx| {
                 menu.set_items(
                     vec![MenuItemFields::new_multiline(
-                        SUGGESTED_EDIT_ACCEPT_AND_CONTINUE_LABEL,
+                        t!("code_diff.accept_and_continue_with_agent").to_string(),
                         2,
                     )
                     .with_on_select_action(
@@ -551,16 +541,14 @@ impl CodeDiffView {
             .map(|k| k.displayed())
             .unwrap_or_default();
 
-            let accept_item = MenuItemFields::new_with_label(
-                REQUESTED_EDIT_ACCEPT_LABEL,
-                accept_keystroke.as_str(),
-            )
-            .with_on_select_action(CodeDiffViewAction::TryAccept)
-            .into_item();
+            let accept_item =
+                MenuItemFields::new_with_label(t!("common.accept").to_string(), accept_keystroke)
+                    .with_on_select_action(CodeDiffViewAction::TryAccept)
+                    .into_item();
 
             let auto_item = MenuItemFields::new_with_label(
-                REQUESTED_EDIT_ACCEPT_AND_AUTOEXECUTE_LABEL,
-                auto_keystroke.as_str(),
+                t!("ai_output.auto_approve").to_string(),
+                auto_keystroke,
             )
             .with_on_select_action(CodeDiffViewAction::AcceptAndAutoExecute)
             .into_item();
@@ -805,12 +793,12 @@ impl CodeDiffView {
             .collect();
 
         let cancel_button_label = if is_passive {
-            SUGGESTED_EDIT_DISMISS_LABEL
+            t!("common.dismiss").to_string()
         } else {
-            REQUESTED_EDIT_REFINE_LABEL
+            t!("code_diff.refine").to_string()
         };
         let cancel_button = CompactibleActionButton::new(
-            cancel_button_label.to_string(),
+            cancel_button_label,
             Some(KeystrokeSource::Fixed(
                 CANCEL_REQUESTED_EDIT_KEYSTROKE.clone(),
             )),
@@ -822,7 +810,7 @@ impl CodeDiffView {
         );
 
         let edit_button = CompactibleActionButton::new(
-            REQUESTED_EDIT_EDIT_LABEL.to_string(),
+            t!("common.edit").to_string(),
             Some(KeystrokeSource::Binding(EDIT_REQUESTED_EDIT_NAME)),
             ButtonSize::Small,
             CodeDiffViewAction::Edit,
@@ -832,7 +820,7 @@ impl CodeDiffView {
         );
 
         let minimize_button = CompactibleActionButton::new(
-            REQUESTED_EDIT_MINIMIZE_LABEL.to_string(),
+            t!("requested_command.done").to_string(),
             Some(KeystrokeSource::Fixed(
                 MINIMIZE_REQUESTED_EDIT_KEYSTROKE.clone(),
             )),
@@ -844,7 +832,7 @@ impl CodeDiffView {
         );
 
         let iterate_with_agent_button = CompactibleActionButton::new(
-            SUGGESTED_EDIT_ITERATE_WITH_AGENT_LABEL.to_string(),
+            t!("code_diff.iterate_with_agent").to_string(),
             Some(KeystrokeSource::Binding(SET_INPUT_MODE_AGENT_ACTION_NAME)),
             ButtonSize::Small,
             CodeDiffViewAction::IterateOnPassiveDiffWithAgent,
@@ -855,9 +843,9 @@ impl CodeDiffView {
 
         let accept_and_autoexecute_split_button = CompactibleSplitActionButton::new(
             if is_passive {
-                SUGGESTED_EDIT_ACCEPT_LABEL.to_string()
+                t!("common.accept").to_string()
             } else {
-                REQUESTED_EDIT_ACCEPT_LABEL.to_string()
+                t!("common.accept").to_string()
             },
             Some(accept_keystroke_source(is_passive)),
             ButtonSize::Small,
@@ -889,7 +877,7 @@ impl CodeDiffView {
         let code_review_button = ctx.add_typed_action_view(|ctx| {
             ActionButton::new("", NakedTheme)
                 .with_icon(Icon::Diff)
-                .with_tooltip("Review changes")
+                .with_tooltip(t!("ai_ext.review_changes"))
                 .with_width(icon_size(ctx))
                 .with_height(icon_size(ctx))
                 .on_click(|ctx| {
@@ -901,7 +889,7 @@ impl CodeDiffView {
         let expansion_button_collapsed = ctx.add_typed_action_view(|ctx| {
             ActionButton::new("", NakedTheme)
                 .with_icon(Icon::ChevronRight)
-                .with_tooltip("Expand")
+                .with_tooltip(t!("common.expand"))
                 .with_width(icon_size(ctx))
                 .with_height(icon_size(ctx))
                 .on_click(|ctx| {
@@ -912,7 +900,7 @@ impl CodeDiffView {
         let expansion_button_expanded = ctx.add_typed_action_view(|ctx| {
             ActionButton::new("", NakedTheme)
                 .with_icon(Icon::ChevronDown)
-                .with_tooltip("Collapse")
+                .with_tooltip(t!("common.collapse"))
                 .with_width(icon_size(ctx))
                 .with_height(icon_size(ctx))
                 .on_click(|ctx| {
@@ -2182,9 +2170,9 @@ impl CodeDiffView {
 
         if self.display_mode.is_embedded() {
             let label = if self.is_passive {
-                SUGGESTED_EDIT_DISMISS_LABEL
+                t!("common.dismiss")
             } else {
-                REQUESTED_EDIT_CANCEL_LABEL
+                t!("common.cancel")
             };
             self.cancel_button.set_label(label.to_string(), ctx);
         }
@@ -2541,7 +2529,7 @@ impl CodeDiffView {
 
         let checkbox_text = appearance
             .ui_builder()
-            .span("Don't show me suggested code banners again")
+            .span(t!("ai.dont_show_suggested_code_banners_again").to_string())
             .with_style(UiComponentStyles {
                 font_color: Some(font_color),
                 font_size: Some(font_size),

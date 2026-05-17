@@ -286,7 +286,7 @@ impl View {
             SearchBar::new(
                 mixer.clone(),
                 search_bar_state.clone(),
-                "Search for a command",
+                t!("command_palette.search_placeholder").to_string(),
                 Self::create_query_result_renderer,
                 ctx,
             )
@@ -298,7 +298,7 @@ impl View {
         });
 
         let placeholder_element = QueryResultRenderer::new(
-            MatchedBinding::placeholder("No results found".into()).into(),
+            MatchedBinding::placeholder(t!("command_palette.no_results").to_string()).into(),
             "command_palette:no_results".into(),
             |_, _, _| {},
             *styles::QUERY_RESULT_RENDERER_STYLES,
@@ -843,7 +843,7 @@ impl View {
                         ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                             toast_stack.add_ephemeral_toast(
                                 DismissibleToast::error(
-                                    "Cannot switch conversations while agent is monitoring a command."
+                                    t!("command_palette.cannot_switch_conversations_monitoring")
                                         .to_string(),
                                 ),
                                 window_id,
@@ -984,7 +984,8 @@ impl View {
                     ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                         toast_stack.add_ephemeral_toast(
                             DismissibleToast::error(
-                                "Cannot start a new conversation while agent is monitoring a command.".to_string(),
+                                t!("command_palette.cannot_start_conversation_monitoring")
+                                    .to_string(),
                             ),
                             window_id,
                             ctx,

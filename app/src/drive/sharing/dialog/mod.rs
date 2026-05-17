@@ -77,8 +77,6 @@ const EMAIL_EDITOR_WIDTH: f32 = 100.;
 
 const SHARING_DIALOG_WIDTH: f32 = 425.;
 
-const NO_ACCESS_LABEL: &str = "No access";
-
 #[derive(Default)]
 struct UiStateHandles {
     invite_button: MouseStateHandle,
@@ -248,7 +246,7 @@ impl SharingDialog {
             email_editor: ctx.add_typed_action_view(|ctx| {
                 let mut view = WordBlockEditorView::new(
                     ctx,
-                    "Emails",
+                    t!("drive.emails").as_ref(),
                     13.,
                     vec![' ', ','],
                     EMAIL_CHIP_WIDTH,
@@ -985,7 +983,7 @@ impl SharingDialog {
                 if !is_team_guest || !is_session {
                     items.push(MenuItem::Separator);
                     items.push(
-                        MenuItemFields::new("Remove")
+                        MenuItemFields::new(t!("drive.remove"))
                             .with_on_select_action(SharingDialogAction::RemoveGuest)
                             .with_disabled(inherited_access)
                             .into_item(),
@@ -1422,7 +1420,7 @@ impl SharingDialog {
                 ButtonVariant::Accent,
                 self.ui_state_handles.invite_button.clone(),
             )
-            .with_centered_text_label("Invite".into())
+            .with_centered_text_label(t!("teams.invite").into())
             .with_style(UiComponentStyles {
                 // Adjust the height to match the email editor's padding.
                 height: Some(style::ACL_ITEM_HEIGHT + 6.),
@@ -1760,7 +1758,7 @@ impl SharingDialog {
     fn render_access_header(&self, appearance: &Appearance) -> Box<dyn Element> {
         appearance
             .ui_builder()
-            .span("Who has access")
+            .span(t!("drive.who_has_access").to_string())
             .with_style(UiComponentStyles {
                 font_color: Some(style::label_text(appearance)),
                 font_size: Some(style::PRIMARY_TEXT_SIZE),
@@ -1824,14 +1822,14 @@ impl SharingDialog {
             return None;
         }
 
-        const PREFIX: &str = "You must have full access to manage permissions. You have ";
-        const SUFFIX: &str = " access.";
-        let access_level_start = PREFIX.chars().count();
+        let prefix = t!("drive.full_access_required_prefix").to_string();
+        let suffix = t!("drive.full_access_required_suffix").to_string();
+        let access_level_start = prefix.chars().count();
         let access_level_end = access_level_start + access_level.name().chars().count();
 
         let text = appearance
             .ui_builder()
-            .wrappable_text(format!("{PREFIX}{}{SUFFIX}", access_level.name()), true)
+            .wrappable_text(format!("{prefix}{}{suffix}", access_level.name()), true)
             .with_style(UiComponentStyles {
                 font_color: Some(style::label_text(appearance)),
                 ..Default::default()
@@ -1855,8 +1853,8 @@ impl SharingDialog {
         let owner = self.owner(app)?;
 
         let tooltip_text = match owner {
-            Subject::Team(_) => "Team objects automatically grant full permissions to team members",
-            _ => "Owners always have full permissions on their objects",
+            Subject::Team(_) => t!("drive.team_full_permissions_tooltip").to_string(),
+            _ => t!("drive.owner_full_permissions_tooltip").to_string(),
         };
         let owner_access_label = render_with_detail_tooltip(
             tooltip_text,
@@ -1941,8 +1939,8 @@ impl SharingDialog {
         );
 
         let menu_button_label = match self.link_sharing_state.access_level {
-            Some(access_level) => access_level.label(),
-            None => NO_ACCESS_LABEL,
+            Some(access_level) => access_level.label().to_string(),
+            None => t!("drive.no_access").to_string(),
         };
         let mut menu_button = appearance
             .ui_builder()
@@ -1950,7 +1948,7 @@ impl SharingDialog {
                 ButtonVariant::Text,
                 self.ui_state_handles.link_sharing_menu_button.clone(),
             )
-            .with_centered_text_label(menu_button_label.to_string())
+            .with_centered_text_label(menu_button_label)
             .with_style(UiComponentStyles {
                 padding: Some(Coords::default()),
                 ..Default::default()
@@ -1998,13 +1996,13 @@ impl SharingDialog {
         let is_ai_conversation = matches!(self.target, Some(ShareableObject::AIConversation(_)));
 
         let mut items = vec![
-            MenuItemFields::new("Only people invited")
+            MenuItemFields::new(t!("drive.only_people_invited").to_string())
                 .with_on_select_action(SharingDialogAction::SetLinkPermissions(None))
                 .with_icon(Icon::Lock)
                 .with_disabled(inherited_access)
                 .into_item(),
             MenuItem::Separator,
-            MenuItemFields::new("Anyone with the link")
+            MenuItemFields::new(t!("drive.anyone_with_link").to_string())
                 .with_no_interaction_on_hover()
                 .with_icon(Icon::Globe)
                 .into_item(),
@@ -2120,8 +2118,8 @@ impl SharingDialog {
 
         let menu_button = {
             let label = match self.team_sharing_state.access_level {
-                Some(access_level) => access_level.label(),
-                None => NO_ACCESS_LABEL,
+                Some(access_level) => access_level.label().to_string(),
+                None => t!("drive.no_access").to_string(),
             };
             let button = appearance
                 .ui_builder()
@@ -2129,7 +2127,7 @@ impl SharingDialog {
                     ButtonVariant::Text,
                     self.ui_state_handles.team_sharing_menu_button.clone(),
                 )
-                .with_centered_text_label(label.to_string())
+                .with_centered_text_label(label)
                 .with_style(UiComponentStyles {
                     padding: Some(Coords::default()),
                     ..Default::default()
@@ -2179,13 +2177,13 @@ impl SharingDialog {
         let inherited_access = self.team_sharing_state.inheritance.is_some();
         let current_access_level = self.team_sharing_state.access_level;
         let items = [
-            MenuItemFields::new("Only invited teammates")
+            MenuItemFields::new(t!("drive.only_invited_teammates").to_string())
                 .with_on_select_action(SharingDialogAction::SetTeamPermissions(None))
                 .with_icon(Icon::Lock)
                 .with_disabled(inherited_access)
                 .into_item(),
             MenuItem::Separator,
-            MenuItemFields::new("Teammates with the link")
+            MenuItemFields::new(t!("drive.teammates_with_link").to_string())
                 .with_no_interaction_on_hover()
                 .with_icon(Icon::Users)
                 .into_item(),
@@ -2352,7 +2350,9 @@ impl SharingDialog {
             .with_padding_right(10.)
             .finish();
 
-        let name_text = subject.name(app).unwrap_or(Cow::Borrowed("Unknown"));
+        let name_text = subject
+            .name(app)
+            .unwrap_or_else(|| Cow::Owned(t!("common.unknown").to_string()));
         let name_label = appearance
             .ui_builder()
             .span(name_text)
@@ -2424,7 +2424,7 @@ impl SharingDialog {
             .with_text_and_icon_label(
                 TextAndIcon::new(
                     TextAndIconAlignment::IconFirst,
-                    "Copy link",
+                    t!("drive.copy_link").to_string(),
                     Icon::Link.to_warpui_icon(copy_button_foreground),
                     MainAxisSize::Min,
                     MainAxisAlignment::SpaceBetween,

@@ -400,7 +400,7 @@ impl TipsView {
                         Align::new(
                             appearance
                                 .ui_builder()
-                                .paragraph("Skip Welcome Tips".to_string())
+                                .paragraph(t!("tips.skip_welcome_tips").to_string())
                                 .build()
                                 .finish(),
                         )
@@ -453,7 +453,7 @@ impl TipsView {
             .finish();
 
         let title = ui_builder
-            .span("Complete!")
+            .span(t!("tips.complete").to_string())
             .with_style(UiComponentStyles {
                 font_weight: Some(Weight::Bold),
                 // Set to white here as the background has 85% black overlay.
@@ -465,7 +465,7 @@ impl TipsView {
             .finish();
 
         let sub_text = ui_builder
-            .paragraph("Nice work on finishing the welcome tips!")
+            .paragraph(t!("tips.welcome_tips_complete_description").to_string())
             .with_style(UiComponentStyles {
                 font_size: Some(12.),
                 font_color: Some(Fill::white().into()),
@@ -485,7 +485,7 @@ impl TipsView {
                     .set_width(152.)
                     .set_height(34.),
             )
-            .with_centered_text_label("Close Welcome Tips".to_string())
+            .with_centered_text_label(t!("tips.close_welcome_tips").to_string())
             .build()
             .on_click(|ctx, _, _| ctx.dispatch_typed_action(TipsAction::DismissTips))
             .finish();

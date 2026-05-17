@@ -1092,13 +1092,13 @@ impl UseAgentToolbar {
 
         let button = ctx.add_typed_action_view(|ctx| {
             ActionButton::new(
-                "Use agent",
+                t!("warpify.use_agent").to_string(),
                 AgentFooterButtonTheme::new(Some(terminal_model.clone())),
             )
             .with_icon(Icon::Oz)
             .with_keybinding(KeystrokeSource::Fixed(USE_AGENT_KEYSTROKE.clone()), ctx)
             .with_size(button_size)
-            .with_tooltip("Ask the Warp agent to assist")
+            .with_tooltip(t!("warpify.ask_agent_to_assist").to_string())
             .with_tooltip_alignment(TooltipAlignment::Left)
             .on_click(|ctx| {
                 ctx.dispatch_typed_action(TerminalAction::SetInputModeAgent);
@@ -1106,13 +1106,13 @@ impl UseAgentToolbar {
         });
         let give_control_back_button = ctx.add_typed_action_view(|ctx| {
             ActionButton::new(
-                "Give control back to agent",
+                t!("warpify.give_control_back_to_agent").to_string(),
                 AgentFooterButtonTheme::new(Some(terminal_model.clone())),
             )
             .with_icon(Icon::Oz)
             .with_keybinding(KeystrokeSource::Fixed(USE_AGENT_KEYSTROKE.clone()), ctx)
             .with_size(button_size)
-            .with_tooltip("Ask the Warp agent to resume")
+            .with_tooltip(t!("warpify.ask_agent_to_resume").to_string())
             .with_tooltip_alignment(TooltipAlignment::Left)
             .on_click(|ctx| {
                 ctx.dispatch_typed_action(TerminalAction::SetInputModeAgent);
@@ -1120,7 +1120,7 @@ impl UseAgentToolbar {
         });
         let dismiss_button = ctx.add_typed_action_view(|_| {
             ActionButton::new(
-                "Dismiss",
+                t!("common.dismiss").to_string(),
                 AgentFooterButtonTheme::new(Some(terminal_model.clone())),
             )
             .on_click(|ctx| {
@@ -1130,7 +1130,7 @@ impl UseAgentToolbar {
         });
         let dont_show_again_button = ctx.add_typed_action_view(|_| {
             ActionButton::new(
-                "Don't show again",
+                t!("common.dont_show_again").to_string(),
                 AgentFooterButtonTheme::new(Some(terminal_model.clone())),
             )
             .on_click(|ctx| {

@@ -182,8 +182,6 @@ impl AtContextMenuDisabledReason {
     }
 }
 
-const AT_CONTEXT_TOOLTIP: &str = "Attach context";
-
 const BLURRED_OPACITY: Opacity = 50;
 
 // Threshold calculation that estimates the width needed for the profile/model selector
@@ -339,7 +337,7 @@ impl UniversalDeveloperInputButtonBar {
             #[cfg_attr(not(feature = "voice_input"), allow(unused_mut))]
             let mut button = ActionButton::new("", PromptIconButtonTheme::new(false))
                 .with_icon(Icon::Microphone)
-                .with_tooltip("Voice input")
+                .with_tooltip(t!("ai_ext.voice_input"))
                 .with_size(button_size)
                 .with_tooltip_alignment(TooltipAlignment::Left);
             #[cfg(feature = "voice_input")]
@@ -356,7 +354,7 @@ impl UniversalDeveloperInputButtonBar {
         let at_button_view = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new("", PromptIconButtonTheme::new(false))
                 .with_icon(Icon::AtSign)
-                .with_tooltip(AT_CONTEXT_TOOLTIP)
+                .with_tooltip(t!("ai_ext.attach_context"))
                 .with_size(button_size)
                 .with_disabled_theme(UDIDisabledButtonTheme)
                 .with_tooltip_alignment(TooltipAlignment::Left)
@@ -370,7 +368,7 @@ impl UniversalDeveloperInputButtonBar {
         let file_button_view = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new("", PromptIconButtonTheme::new(false))
                 .with_icon(Icon::Plus)
-                .with_tooltip("Attach file")
+                .with_tooltip(t!("ai_ext.attach_file"))
                 .with_size(button_size)
                 .with_disabled_theme(UDIDisabledButtonTheme)
                 .with_tooltip_alignment(TooltipAlignment::Left)
@@ -382,7 +380,7 @@ impl UniversalDeveloperInputButtonBar {
         let slash_command_menu_view = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new("", PromptIconButtonTheme::new(false))
                 .with_icon(Icon::SlashCommands)
-                .with_tooltip("Slash commands")
+                .with_tooltip(t!("ai_ext.slash_commands"))
                 .with_size(button_size)
                 .with_disabled_theme(UDIDisabledButtonTheme)
                 .with_tooltip_alignment(TooltipAlignment::Left)
@@ -697,7 +695,7 @@ impl UniversalDeveloperInputButtonBar {
             button.set_tooltip(
                 disable_reason
                     .map(|reason| reason.tooltip_text())
-                    .or(Some(AT_CONTEXT_TOOLTIP.to_string())),
+                    .or_else(|| Some(t!("ai_ext.attach_context").to_string())),
                 ctx,
             );
             ctx.notify();

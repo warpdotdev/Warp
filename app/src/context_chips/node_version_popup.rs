@@ -77,14 +77,14 @@ impl NodeVersionPopupView {
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let install_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Install nvm", SecondaryTheme)
+            ActionButton::new(t!("node.install_nvm").to_string(), SecondaryTheme)
                 .with_icon(icons::Icon::Terminal)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(NodeVersionPopupAction::InstallNvm);
                 })
         });
         let install_latest_node_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("nvm install node", SecondaryTheme)
+            ActionButton::new(t!("node.nvm_install_node").to_string(), SecondaryTheme)
                 .with_icon(icons::Icon::Terminal)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(NodeVersionPopupAction::InstallLatestNodeVersion);
@@ -181,7 +181,7 @@ impl NodeVersionPopupView {
 
         col.add_child(
             Text::new(
-                "Install nvm to enable version switching",
+                t!("node.install_nvm_title").to_string(),
                 styles.ui_font_family,
                 styles.detail_font_size + 2.,
             )
@@ -193,7 +193,7 @@ impl NodeVersionPopupView {
         col.add_child(
             Container::new(
                 Text::new(
-                    "This menu helps you switch between Node.js versions — but it requires nvm to be installed.",
+                    t!("node.install_nvm_description").to_string(),
                     styles.ui_font_family,
                     styles.detail_font_size,
                 )
@@ -242,7 +242,7 @@ impl NodeVersionPopupView {
         // Heading
         col.add_child(
             Text::new(
-                "No node versions installed",
+                t!("node.no_versions_installed").to_string(),
                 styles.ui_font_family,
                 styles.detail_font_size + 2.,
             )
@@ -255,7 +255,7 @@ impl NodeVersionPopupView {
         col.add_child(
             Container::new(
                 Text::new(
-                    "Try installing versions with nvm",
+                    t!("node.try_installing_with_nvm").to_string(),
                     styles.ui_font_family,
                     styles.detail_font_size,
                 )
@@ -286,10 +286,14 @@ impl NodeVersionPopupView {
 
         col.add_child(
             Container::new(
-                Text::new("Installed", styles.ui_font_family, styles.detail_font_size)
-                    .with_style(Properties::default())
-                    .with_color(styles.secondary_text_color)
-                    .finish(),
+                Text::new(
+                    t!("node.installed"),
+                    styles.ui_font_family,
+                    styles.detail_font_size,
+                )
+                .with_style(Properties::default())
+                .with_color(styles.secondary_text_color)
+                .finish(),
             )
             .with_horizontal_padding(12.)
             .finish(),

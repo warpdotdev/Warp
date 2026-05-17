@@ -2,10 +2,10 @@ use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent_management::telemetry::{AgentManagementTelemetryEvent, ArtifactType};
 use crate::ai::ambient_agents::AmbientAgentTask;
 use crate::ai::ambient_agents::{
-    conversation_output_status_from_conversation, AmbientAgentTaskId, AmbientConversationStatus,
+    AmbientAgentTaskId, AmbientConversationStatus, conversation_output_status_from_conversation,
 };
 use crate::ai::artifacts::{Artifact, ArtifactButtonsRow, ArtifactButtonsRowEvent};
-use crate::ai::blocklist::{format_credits, BlocklistAIHistoryModel};
+use crate::ai::blocklist::{BlocklistAIHistoryModel, format_credits};
 use crate::appearance::Appearance;
 use crate::server::ids::SyncId;
 use crate::settings::ai::{AISettings, AISettingsChangedEvent};
@@ -200,8 +200,8 @@ impl ConversationEndedTombstoneView {
         let continue_in_cloud_button = match tombstone_cta {
             Some(TombstoneCta::ContinueInCloud { task_id }) => {
                 Some(ctx.add_typed_action_view(move |_| {
-                    ActionButton::new("Continue", PrimaryTheme)
-                        .with_tooltip("Continue this cloud conversation")
+                    ActionButton::new(t!("common.continue").to_string(), PrimaryTheme)
+                        .with_tooltip(t!("shared_session.continue_in_cloud_tooltip").to_string())
                         .on_click(move |ctx| {
                             ctx.dispatch_typed_action(
                                 ConversationEndedTombstoneAction::ContinueInCloud { task_id },
@@ -216,8 +216,8 @@ impl ConversationEndedTombstoneView {
         let continue_locally_button = match tombstone_cta {
             Some(TombstoneCta::ContinueLocally { conversation_id }) => {
                 Some(ctx.add_typed_action_view(move |_| {
-                    ActionButton::new("Continue locally", PrimaryTheme)
-                        .with_tooltip("Fork this conversation locally")
+                    ActionButton::new(t!("ai_ext.continue_locally").to_string(), PrimaryTheme)
+                        .with_tooltip(t!("shared_session.fork_conversation_locally").to_string())
                         .on_click(move |ctx| {
                             ctx.dispatch_typed_action(
                                 ConversationEndedTombstoneAction::ContinueLocally(conversation_id),
@@ -233,13 +233,16 @@ impl ConversationEndedTombstoneView {
         #[cfg(target_family = "wasm")]
         let open_in_warp_button = conversation_id.map(|conv_id| {
             ctx.add_typed_action_view(move |_| {
-                ActionButton::new("Open in Warp", PrimaryTheme)
-                    .with_tooltip("Open this conversation in the Warp desktop app")
-                    .on_click(move |ctx| {
-                        ctx.dispatch_typed_action(ConversationEndedTombstoneAction::OpenInWarp(
-                            conv_id,
-                        ));
-                    })
+                ActionButton::new(
+                    t!("terminal_context_menu.open_in_warp").to_string(),
+                    PrimaryTheme,
+                )
+                .with_tooltip(t!("shared_session.open_conversation_in_desktop").to_string())
+                .on_click(move |ctx| {
+                    ctx.dispatch_typed_action(ConversationEndedTombstoneAction::OpenInWarp(
+                        conv_id,
+                    ));
+                })
             })
         });
 
@@ -341,7 +344,7 @@ impl ConversationEndedTombstoneView {
 
         if is_transcript {
             return Text::new(
-                "You're viewing a snapshot",
+                t!("shared_session.viewing_snapshot").to_string(),
                 appearance.overline_font_family(),
                 appearance.monospace_font_size(),
             )
@@ -373,7 +376,7 @@ impl ConversationEndedTombstoneView {
             .display_data
             .title
             .clone()
-            .unwrap_or_else(|| "Agent task".to_string());
+            .unwrap_or_else(|| t!("shared_session.agent_task").to_string());
         Flex::row()
             .with_main_axis_size(MainAxisSize::Min)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -400,8 +403,7 @@ impl ConversationEndedTombstoneView {
         let theme = appearance.theme();
         Container::new(
             Text::new(
-                "This shared conversation shows the state when you opened it. \
-                 If the agent is still running, refresh to see the latest progress.",
+                t!("shared_session.snapshot_subtitle").to_string(),
                 appearance.overline_font_family(),
                 appearance.monospace_font_size(),
             )
@@ -419,23 +421,23 @@ impl ConversationEndedTombstoneView {
 
         if let Some(dir) = &self.display_data.working_directory {
             let display_dir = home_relative_path(Path::new(dir));
-            parts.push(format!("Directory: {display_dir}"));
+            parts.push(t!("shared_session.metadata_directory", value = display_dir).to_string());
         }
 
         if let Some(source) = &self.display_data.source {
-            parts.push(format!("Source: {source}"));
+            parts.push(t!("shared_session.metadata_source", value = source).to_string());
         }
 
         if let Some(skill) = &self.display_data.skill_name {
-            parts.push(format!("Skill: {skill}"));
+            parts.push(t!("shared_session.metadata_skill", value = skill).to_string());
         }
 
         if let Some(run_time) = &self.display_data.run_time {
-            parts.push(format!("Run time: {run_time}"));
+            parts.push(t!("shared_session.metadata_run_time", value = run_time).to_string());
         }
 
         if let Some(credits) = &self.display_data.credits {
-            parts.push(format!("Credits used: {credits}"));
+            parts.push(t!("shared_session.metadata_credits_used", value = credits).to_string());
         }
 
         if parts.is_empty() {

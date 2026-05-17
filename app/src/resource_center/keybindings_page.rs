@@ -15,7 +15,6 @@ use warpui::{
     AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
-use crate::settings_view;
 use crate::workspace::tab_settings::TabSettings;
 use crate::{
     appearance::Appearance,
@@ -100,7 +99,7 @@ impl KeybindingsView {
 
         search_editor.update(ctx, |editor, ctx| {
             editor.clear_buffer_and_reset_undo_stack(ctx);
-            editor.set_placeholder_text(settings_view::keybindings::SEARCH_PLACEHOLDER, ctx);
+            editor.set_placeholder_text(t!("keybindings.search_placeholder").to_string(), ctx);
         });
 
         let search_bar = {
@@ -422,15 +421,15 @@ impl KeybindingsView {
             Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
 
         let title = match section {
-            KeybindingSection::Essentials => "Essentials",
-            KeybindingSection::Blocks => "Blocks",
-            KeybindingSection::InputEditor => "Input Editor",
-            KeybindingSection::Terminal => "Terminal",
-            KeybindingSection::Fundamentals => "Fundamentals",
+            KeybindingSection::Essentials => t!("resource_center.keybindings_essentials"),
+            KeybindingSection::Blocks => t!("resource_center.keybindings_blocks"),
+            KeybindingSection::InputEditor => t!("resource_center.keybindings_input_editor"),
+            KeybindingSection::Terminal => t!("resource_center.keybindings_terminal"),
+            KeybindingSection::Fundamentals => t!("resource_center.keybindings_fundamentals"),
         };
 
         let mut section_header = self.render_text(
-            title.into(),
+            title.to_string(),
             Some(UiComponentStyles {
                 font_color: Some(appearance.theme().active_ui_text_color().into()),
                 font_size: Some(SECTION_HEADER_FONT_SIZE),

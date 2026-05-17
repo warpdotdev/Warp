@@ -16,17 +16,16 @@ use warp_core::ui::{
 use warpui::{
     elements::{
         AnchorPair, Border, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container,
-        CornerRadius, CrossAxisAlignment, Dismiss, Empty, Flex, FormattedTextElement, Hoverable,
-        Icon as WarpUiIcon, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning,
-        OffsetType, ParentElement, ParentOffsetBounds, PositioningAxis, Radius, SavePosition,
-        ScrollTarget, ScrollToPositionMode, ScrollbarWidth, Stack, Text, XAxisAnchor, YAxisAnchor,
+        CornerRadius, CrossAxisAlignment, Dismiss, Empty, Flex, Hoverable, Icon as WarpUiIcon,
+        MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, OffsetType,
+        ParentElement, ParentOffsetBounds, PositioningAxis, Radius, SavePosition, ScrollTarget,
+        ScrollToPositionMode, ScrollbarWidth, Stack, Text, XAxisAnchor, YAxisAnchor,
     },
     fonts::Properties,
     fonts::Weight,
     keymap::Keystroke,
     platform::Cursor,
     scene::DropShadow,
-    text_layout::TextAlignment,
     ui_components::components::{UiComponent as _, UiComponentStyles},
     AppContext, Element, Entity, Gradient, SingletonEntity as _, TypedActionView, View,
     ViewContext,
@@ -323,7 +322,7 @@ impl AgentSlide {
     fn render_header(&self, appearance: &Appearance) -> Box<dyn Element> {
         let title = appearance
             .ui_builder()
-            .paragraph("Customize your Warp Agent")
+            .paragraph(crate::t!("onboarding.agent.title").to_string())
             .with_style(UiComponentStyles {
                 font_size: Some(36.),
                 font_weight: Some(Weight::Medium),
@@ -332,19 +331,20 @@ impl AgentSlide {
             .build()
             .finish();
 
-        let subtitle = FormattedTextElement::from_str(
-            "Select your in-app agent's defaults.",
-            appearance.ui_font_family(),
-            16.,
-        )
-        .with_color(internal_colors::text_sub(
-            appearance.theme(),
-            appearance.theme().background().into_solid(),
-        ))
-        .with_weight(Weight::Normal)
-        .with_alignment(TextAlignment::Left)
-        .with_line_height_ratio(1.0)
-        .finish();
+        let subtitle = appearance
+            .ui_builder()
+            .paragraph(crate::t!("onboarding.agent.subtitle").to_string())
+            .with_style(UiComponentStyles {
+                font_size: Some(16.),
+                font_weight: Some(Weight::Normal),
+                font_color: Some(internal_colors::text_sub(
+                    appearance.theme(),
+                    appearance.theme().background().into_solid(),
+                )),
+                ..Default::default()
+            })
+            .build()
+            .finish();
 
         Flex::column()
             .with_main_axis_size(MainAxisSize::Min)
@@ -405,11 +405,7 @@ impl AgentSlide {
         Container::new(col.finish()).with_margin_top(40.).finish()
     }
 
-    fn render_section_header(
-        &self,
-        title: &'static str,
-        appearance: &Appearance,
-    ) -> Box<dyn Element> {
+    fn render_section_header(&self, title: String, appearance: &Appearance) -> Box<dyn Element> {
         appearance
             .ui_builder()
             .paragraph(title)
@@ -428,7 +424,10 @@ impl AgentSlide {
         settings: &AgentDevelopmentSettings,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        let header = self.render_section_header("Default model", appearance);
+        let header = self.render_section_header(
+            crate::t!("onboarding.agent.default_model").to_string(),
+            appearance,
+        );
 
         let expanded = self.is_model_list_expanded;
         let chip = self.render_collapsed_model_chip(appearance, settings, app, expanded);
@@ -734,7 +733,7 @@ impl AgentSlide {
             // model, "Premium" on paywalled rows. In practice a single row is
             // at most one of these, but both can be shown side-by-side if the
             // default is also premium for any reason.
-            let make_pill = |label: &'static str| -> Box<dyn Element> {
+            let make_pill = |label: String| -> Box<dyn Element> {
                 let badge = Text::new(label.to_string(), ui_font_family, 11.0)
                     .with_color(internal_colors::text_sub(theme, background_for_text))
                     .with_style(Properties {
@@ -754,9 +753,9 @@ impl AgentSlide {
             };
 
             let trailing: Box<dyn Element> = if is_default {
-                make_pill("Recommended")
+                make_pill(crate::t!("onboarding.agent.recommended").to_string())
             } else if requires_upgrade {
-                make_pill("Premium")
+                make_pill(crate::t!("onboarding.agent.premium").to_string())
             } else {
                 Empty::new().finish()
             };
@@ -810,7 +809,10 @@ impl AgentSlide {
     }
 
     fn render_autonomy_workspace_enforced(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let header = self.render_section_header("Autonomy", appearance);
+        let header = self.render_section_header(
+            crate::t!("onboarding.agent.autonomy").to_string(),
+            appearance,
+        );
 
         let theme = appearance.theme();
         let background_for_text = theme.background().into_solid();
@@ -819,7 +821,7 @@ impl AgentSlide {
         let title_color = internal_colors::text_main(theme, background_for_text);
         let subtitle_color = internal_colors::text_sub(theme, background_for_text);
 
-        let title_el = Text::new("Set by Team Workspace", ui_font_family, 14.0)
+        let title_el = Text::new(t!("onboarding.set_by_team_workspace"), ui_font_family, 14.0)
             .with_color(title_color)
             .with_style(Properties {
                 weight: Weight::Normal,
@@ -829,7 +831,7 @@ impl AgentSlide {
             .finish();
 
         let subtitle_el = Text::new(
-            "Autonomy settings are configured as part of your team workspace.",
+            crate::t!("onboarding.agent.autonomy_team_workspace_description"),
             ui_font_family,
             12.0,
         )
@@ -865,7 +867,10 @@ impl AgentSlide {
         appearance: &Appearance,
         settings: &AgentDevelopmentSettings,
     ) -> Box<dyn Element> {
-        let header = self.render_section_header("Autonomy", appearance);
+        let header = self.render_section_header(
+            crate::t!("onboarding.agent.autonomy").to_string(),
+            appearance,
+        );
 
         // The rows now take the full column width (vs. the previous three-across layout),
         // so they no longer need the extra height that came from cramped subtitle wrapping.
@@ -877,23 +882,23 @@ impl AgentSlide {
         let text_main = internal_colors::text_main(theme, background_for_text);
         let text_sub = internal_colors::text_sub(theme, background_for_text);
 
-        let autonomy_options: [(AgentAutonomy, &str, &str, MouseStateHandle); 3] = [
+        let autonomy_options: [(AgentAutonomy, String, String, MouseStateHandle); 3] = [
             (
                 AgentAutonomy::Full,
-                "Full",
-                "Runs commands, writes code, and reads files without asking.",
+                crate::t!("onboarding.agent.autonomy_full").to_string(),
+                crate::t!("onboarding.agent.autonomy_full_description").to_string(),
                 self.autonomy_full_mouse_state.clone(),
             ),
             (
                 AgentAutonomy::Partial,
-                "Partial",
-                "Can plan, read files, and execute low-risk commands. Asks before making any changes or executing sensitive commands.",
+                crate::t!("onboarding.agent.autonomy_partial").to_string(),
+                crate::t!("onboarding.agent.autonomy_partial_description").to_string(),
                 self.autonomy_partial_mouse_state.clone(),
             ),
             (
                 AgentAutonomy::None,
-                "None",
-                "Takes no actions without your approval.",
+                crate::t!("onboarding.agent.autonomy_none").to_string(),
+                crate::t!("onboarding.agent.autonomy_none_description").to_string(),
                 self.autonomy_none_mouse_state.clone(),
             ),
         ];
@@ -914,8 +919,8 @@ impl AgentSlide {
                 appearance,
                 TwoLineButtonSpec {
                     is_selected,
-                    title: title.to_string(),
-                    subtitle: subtitle.to_string(),
+                    title,
+                    subtitle,
                     height: OPTION_HEIGHT,
                     mouse_state,
                     click_action: AgentSlideAction::SelectAutonomy(autonomy),
@@ -955,14 +960,18 @@ impl AgentSlide {
             .on_click(|ctx, _, _| ctx.dispatch_typed_action(AgentSlideAction::ToggleDisableOz))
             .finish();
 
-        let label = Text::new("Disable Warp Agent", appearance.ui_font_family(), 14.0)
-            .with_color(internal_colors::text_sub(theme, background_for_text))
-            .with_style(Properties {
-                weight: Weight::Normal,
-                ..Default::default()
-            })
-            .with_line_height_ratio(1.0)
-            .finish();
+        let label = Text::new(
+            t!("onboarding.disable_warp_agent"),
+            appearance.ui_font_family(),
+            14.0,
+        )
+        .with_color(internal_colors::text_sub(theme, background_for_text))
+        .with_style(Properties {
+            weight: Weight::Normal,
+            ..Default::default()
+        })
+        .with_line_height_ratio(1.0)
+        .finish();
 
         Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -975,7 +984,7 @@ impl AgentSlide {
         let back_button = self.back_button.render(
             appearance,
             button::Params {
-                content: button::Content::Label("Back".into()),
+                content: button::Content::Label(crate::t!("onboarding.back")),
                 theme: &button::themes::Naked,
                 options: button::Options {
                     on_click: Some(Box::new(|ctx, _app, _pos| {
@@ -990,7 +999,7 @@ impl AgentSlide {
         let next_button = self.next_button.render(
             appearance,
             button::Params {
-                content: button::Content::Label("Next".into()),
+                content: button::Content::Label(crate::t!("onboarding.next")),
                 theme: &button::themes::Primary,
                 options: button::Options {
                     keystroke: Some(enter),
@@ -1040,7 +1049,7 @@ impl AgentSlide {
 
         // Primary "heading" line: bolder, full-contrast.
         let title = Text::new(
-            "Upgrade for access to premium models.",
+            crate::t!("onboarding.agent.upgrade_premium_models"),
             ui_font_family,
             13.0,
         )
@@ -1054,7 +1063,7 @@ impl AgentSlide {
 
         // Secondary subtext: muted, normal weight.
         let subtitle = Text::new(
-            "State-of-the-art models require paid plans.",
+            crate::t!("onboarding.agent.paid_models_required"),
             ui_font_family,
             12.0,
         )
@@ -1076,7 +1085,7 @@ impl AgentSlide {
         let upgrade_button = self.upgrade_button.render(
             appearance,
             button::Params {
-                content: button::Content::Label("Upgrade".into()),
+                content: button::Content::Label(crate::t!("common.upgrade")),
                 theme: &UpgradeButtonTheme,
                 options: button::Options {
                     size: button::Size::Small,
@@ -1173,7 +1182,7 @@ impl AgentSlide {
 
         let copy_url_link = ui_builder
             .link(
-                "copy the URL".into(),
+                crate::t!("auth.copy_the_url").to_string(),
                 None,
                 Some(Box::new(|ctx| {
                     ctx.dispatch_typed_action(AgentSlideAction::CopyUpgradeUrlClicked);
@@ -1187,7 +1196,7 @@ impl AgentSlide {
 
         let paste_token_link = ui_builder
             .link(
-                "Click here".into(),
+                crate::t!("onboarding.agent.click_here").to_string(),
                 None,
                 Some(Box::new(|ctx| {
                     ctx.dispatch_typed_action(AgentSlideAction::PasteAuthTokenFromClipboardClicked);
@@ -1205,7 +1214,7 @@ impl AgentSlide {
             .with_child(
                 Container::new(
                     ui_builder
-                        .span("If your browser hasn't launched, ")
+                        .span(crate::t!("auth.browser_not_launched_prefix").to_string())
                         .with_style(text_styles)
                         .build()
                         .finish(),
@@ -1216,7 +1225,7 @@ impl AgentSlide {
             .with_child(copy_url_link)
             .with_child(
                 ui_builder
-                    .span(" and open the page manually. ")
+                    .span(crate::t!("onboarding.agent.open_page_manually_suffix").to_string())
                     .with_style(text_styles)
                     .build()
                     .finish(),
@@ -1224,7 +1233,7 @@ impl AgentSlide {
             .with_child(paste_token_link)
             .with_child(
                 ui_builder
-                    .span(" to paste your token from the browser.")
+                    .span(crate::t!("onboarding.agent.paste_token_suffix").to_string())
                     .with_style(text_styles)
                     .build()
                     .finish(),
@@ -1270,7 +1279,7 @@ impl AgentSlide {
         .finish();
 
         let text = ui_builder
-            .span("Plan successfully activated. All premium models are available.")
+            .span(crate::t!("onboarding.agent.plan_activated").to_string())
             .with_style(UiComponentStyles {
                 font_color: Some(text_color),
                 font_size: Some(FONT_SIZE),

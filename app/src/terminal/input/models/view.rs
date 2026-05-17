@@ -142,15 +142,18 @@ impl InlineModelSelectorView {
 
         let menu_view = if FeatureFlag::InlineMenuHeaders.is_enabled() {
             let manage_defaults_button = ctx.add_view(|_| {
-                ActionButton::new("Manage defaults", ManageDefaultsTheme)
-                    .with_icon(Icon::Settings)
-                    .with_size(ButtonSize::Small)
-                    .on_click(|ctx| {
-                        ctx.dispatch_typed_action(WorkspaceAction::ShowSettingsPageWithSearch {
-                            search_query: String::new(),
-                            section: Some(SettingsSection::WarpAgent),
-                        });
-                    })
+                ActionButton::new(
+                    t!("execution_profile.manage_defaults").to_string(),
+                    ManageDefaultsTheme,
+                )
+                .with_icon(Icon::Settings)
+                .with_size(ButtonSize::Small)
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(WorkspaceAction::ShowSettingsPageWithSearch {
+                        search_query: String::new(),
+                        section: Some(SettingsSection::WarpAgent),
+                    });
+                })
             });
             let header_config = InlineMenuHeaderConfig {
                 label: "/model".to_string(),
