@@ -574,7 +574,6 @@ impl BillingCycleUsageSectionView {
 
         Container::new(col.finish())
             .with_background_color(theme.surface_1().into_solid())
-            .with_border(Border::all(1.).with_border_color(theme.outline().into()))
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
             .with_vertical_padding(40.)
             .with_uniform_padding(16.)
