@@ -1116,22 +1116,31 @@ pub fn apply_auth_secret_change<A: OrchestrationControlAction, V: View>(
 }
 
 /// Reacts to the user clicking "+ New API key…" in the auth secret
-/// picker. Resets the selection to `Unset` and clears any persisted
-/// name so that — if the user cancels the subsequent create-key modal
-/// — the picker stays on "+ New API key…" and the Accept gate keeps
-/// firing. The actual modal is opened by the card view via
-/// `WorkspaceAction::OpenCreateAuthSecretModal`; this helper only
-/// updates state.
+/// picker. Resets the in-memory selection to `Unset` so the picker
+/// trigger label switches to "+ New API key…" while the create-key
+/// modal is open (or if the user cancels it). The actual modal is
+/// opened by the card view via `WorkspaceAction::OpenCreateAuthSecretModal`;
+/// this helper only updates state.
+///
+/// Intentionally does NOT clear `CloudAgentSettings.last_selected_auth_secret`.
+/// Clicking "+ New API key…" and then cancelling the modal must not
+/// destroy the user's prior cross-session selection — they may have
+/// just wanted to add another key, not replace the active one. On the
+/// next session restart the picker will re-seed from the persisted
+/// name via `resolve_default_auth_secret_for_harness`. If the user
+/// successfully creates a new key, the workspace modal writes the new
+/// name to settings (overwriting the prior value) and the
+/// `HarnessAvailabilityEvent::AuthSecretCreated` subscription adopts it
+/// as the active selection on the card.
 ///
 /// Does NOT call `populate_auth_secret_picker_for_harness` or
 /// `sync_picker_selections` — the auth secret picker dispatched this
 /// action and must not be re-entered.
 pub fn apply_create_new_auth_secret_requested<V: View>(
     state: &mut OrchestrationEditState,
-    ctx: &mut ViewContext<V>,
+    _ctx: &mut ViewContext<V>,
 ) {
     state.auth_secret_selection = AuthSecretSelection::Unset;
-    persist_auth_secret_selection(&state.harness_type, None, ctx);
 }
 
 /// Reacts to a `HarnessAvailabilityEvent::AuthSecretCreated` event on a
