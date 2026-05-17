@@ -91,11 +91,13 @@ impl SettingsPageMeta for BillingAndUsageDispatchView {
 
     fn on_page_selected(&mut self, allow_steal_focus: bool, ctx: &mut ViewContext<Self>) {
         if self.use_v2(ctx) {
-            self.v2
-                .update(ctx, |view, ctx| view.on_page_selected(allow_steal_focus, ctx));
+            self.v2.update(ctx, |view, ctx| {
+                view.on_page_selected(allow_steal_focus, ctx)
+            });
         } else {
-            self.v1
-                .update(ctx, |view, ctx| view.on_page_selected(allow_steal_focus, ctx));
+            self.v1.update(ctx, |view, ctx| {
+                view.on_page_selected(allow_steal_focus, ctx)
+            });
         }
     }
 
