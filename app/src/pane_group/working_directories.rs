@@ -313,6 +313,13 @@ impl WorkingDirectoriesModel {
                         model.stop_active_watcher(ctx);
                     });
                 }
+                // Remove the cached CodeReviewView so the panel re-creates
+                // one with the correct terminal_view when the user navigates
+                // back. The DiffStateModel is still alive (for remote) so
+                // `get_or_create_diff_state_model` will reuse it.
+                for views in self.code_review_views.values_mut() {
+                    views.remove(&repo_key);
+                }
             }
         }
     }
