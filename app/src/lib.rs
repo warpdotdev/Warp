@@ -2942,8 +2942,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::ConversationsAsContext,
         #[cfg(feature = "incremental_auto_reload")]
         FeatureFlag::IncrementalAutoReload,
-        #[cfg(feature = "orchestration")]
-        FeatureFlag::Orchestration,
         #[cfg(feature = "orchestration_v2")]
         FeatureFlag::OrchestrationV2,
         #[cfg(feature = "orchestration_pill_bar")]

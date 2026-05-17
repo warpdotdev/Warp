@@ -792,7 +792,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                 },
                             id,
                             ..
-                        }) if FeatureFlag::Orchestration.is_enabled() => {
+                        }) if FeatureFlag::OrchestrationV2.is_enabled() => {
                             should_render_footer = false;
                             should_render_suggestions = false;
                             output_items.add_child(orchestration::render_start_agent(
@@ -830,7 +830,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                 },
                             id,
                             ..
-                        }) if FeatureFlag::Orchestration.is_enabled() => {
+                        }) if FeatureFlag::OrchestrationV2.is_enabled() => {
                             should_render_footer = false;
                             should_render_suggestions = false;
                             output_items.add_child(orchestration::render_send_message(
@@ -918,7 +918,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                             }
                         }
                         AIAgentOutputMessageType::MessagesReceivedFromAgents { messages }
-                            if FeatureFlag::Orchestration.is_enabled() =>
+                            if FeatureFlag::OrchestrationV2.is_enabled() =>
                         {
                             output_items.add_child(
                                 orchestration::render_messages_received_from_agents(

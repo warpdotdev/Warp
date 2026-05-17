@@ -1384,20 +1384,6 @@ define_settings_group!(AISettings, settings: [
         description: "Whether computer use is enabled for cloud agent conversations.",
     }
 
-    // Whether multi-agent orchestration is enabled. When enabled, the agent can
-    // spawn and coordinate parallel sub-agents via StartAgent / SendMessageToAgent
-    // tools. This setting is only effective when FeatureFlag::Orchestration is also
-    // enabled.
-    orchestration_enabled: OrchestrationEnabled {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::DESKTOP,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        private: false,
-        toml_path: "agents.warp_agent.other.orchestration_enabled",
-        description: "Whether multi-agent orchestration is enabled.",
-        feature_flag: FeatureFlag::Orchestration,
-    }
 
     // Whether file-based MCP servers from third-party AI tools (e.g. Claude, Codex) should
     // be automatically detected and spawned. Warp-native config files (.warp/.mcp.json) are
@@ -1684,9 +1670,7 @@ impl AISettings {
     }
 
     pub fn is_orchestration_enabled(&self, app: &warpui::AppContext) -> bool {
-        FeatureFlag::Orchestration.is_enabled()
-            && self.is_any_ai_enabled(app)
-            && *self.orchestration_enabled
+        FeatureFlag::OrchestrationV2.is_enabled() && self.is_any_ai_enabled(app)
     }
 
     /// Returns true when local-to-cloud handoff is effectively enabled.
