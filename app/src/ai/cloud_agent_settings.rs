@@ -10,6 +10,22 @@ use warp_cli::agent::Harness;
 
 use crate::server::ids::SyncId;
 
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+    settings_value::SettingsValue,
+)]
+#[schemars(description = "Selected third-party harness model.")]
+pub struct HarnessModelSelection {
+    pub model_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_level: Option<String>,
+}
+
 define_settings_group!(CloudAgentSettings, settings: [
     last_selected_environment_id: LastSelectedEnvironmentId {
         type: Option<SyncId>,
@@ -40,7 +56,7 @@ define_settings_group!(CloudAgentSettings, settings: [
         private: true,
     },
     last_selected_harness_model: LastSelectedHarnessModel {
-        type: HashMap<String, String>,
+        type: HashMap<String, HarnessModelSelection>,
         default: HashMap::new(),
         supported_platforms: SupportedPlatforms::ALL,
         sync_to_cloud: SyncToCloud::Never,

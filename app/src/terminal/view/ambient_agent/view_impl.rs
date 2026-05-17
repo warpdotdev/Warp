@@ -398,7 +398,8 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility
-            | AmbientAgentViewModelEvent::AuthSecretSelected => (),
+            | AmbientAgentViewModelEvent::AuthSecretSelected
+            | AmbientAgentViewModelEvent::RunLifecycleChanged => (),
         }
     }
 

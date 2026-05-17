@@ -226,6 +226,8 @@ pub struct AmbientAgentViewModel {
     worker_host: Option<String>,
     /// Selected model id for a third-party harness (e.g. `"opus"` for Claude).
     harness_model_id: Option<String>,
+    /// Optional reasoning level for the selected harness model.
+    harness_reasoning_level: Option<String>,
     /// Name of the selected auth secret for the current non-Oz harness.
     harness_auth_secret_name: Option<String>,
     /// Whether the harness CLI
@@ -302,6 +304,7 @@ impl AmbientAgentViewModel {
             harness,
             worker_host: None,
             harness_model_id: None,
+            harness_reasoning_level: None,
             harness_auth_secret_name: None,
             harness_command_started: false,
             active_execution_session_id: None,
@@ -448,6 +451,7 @@ impl AmbientAgentViewModel {
         }
         self.harness = harness;
         self.harness_model_id = None;
+        self.harness_reasoning_level = None;
         self.harness_auth_secret_name = None;
         ctx.emit(AmbientAgentViewModelEvent::HarnessSelected);
     }
@@ -460,15 +464,23 @@ impl AmbientAgentViewModel {
         self.harness_model_id.as_deref()
     }
 
-    pub fn set_harness_model_id(
+    pub fn selected_harness_reasoning_level(&self) -> Option<&str> {
+        self.harness_reasoning_level.as_deref()
+    }
+
+    pub fn set_harness_model_selection(
         &mut self,
         harness_model_id: Option<String>,
+        reasoning_level: Option<String>,
         ctx: &mut ModelContext<Self>,
     ) {
-        if self.harness_model_id == harness_model_id {
+        if self.harness_model_id == harness_model_id
+            && self.harness_reasoning_level == reasoning_level
+        {
             return;
         }
         self.harness_model_id = harness_model_id;
+        self.harness_reasoning_level = reasoning_level;
         ctx.emit(AmbientAgentViewModelEvent::HarnessModelSelected);
     }
 
@@ -851,26 +863,31 @@ impl AmbientAgentViewModel {
         self.task_id = Some(task_id);
 
         self.status = Status::AgentRunning;
+        ctx.emit(AmbientAgentViewModelEvent::RunLifecycleChanged);
 
         // Fetch the task so we can set the correct environment (instead of defaulting to the most
-        // recently-used one) and the correct harness (so non-oz viewers know to use the
+        // recently-used one), harness, and harness model (so non-oz viewers know to use the
         // queued-prompt / harness-command-started flow).
         ctx.spawn(
             async move { ai_client.get_ambient_agent_task(&task_id).await },
             |me, result, ctx| match result {
                 Ok(task) => {
                     let snapshot = task.agent_config_snapshot.as_ref();
+                    let harness_config = snapshot.and_then(|s| s.harness.as_ref());
                     let environment_id = snapshot
                         .and_then(|s| s.environment_id.as_deref())
                         .and_then(|id| ServerId::try_from(id).ok())
                         .map(SyncId::ServerId);
-                    let harness = snapshot
-                        .and_then(|s| s.harness.as_ref())
+                    let harness = harness_config
                         .map(|h| h.harness_type)
                         .unwrap_or(Harness::Oz);
+                    let harness_model_id = harness_config.and_then(|h| h.model_id.clone());
+                    let harness_reasoning_level =
+                        harness_config.and_then(|h| h.reasoning_level.clone());
 
                     me.set_environment_id(environment_id, ctx);
                     me.set_harness(harness, ctx);
+                    me.set_harness_model_selection(harness_model_id, harness_reasoning_level, ctx);
                     ctx.emit(AmbientAgentViewModelEvent::ViewerHarnessResolved);
                 }
                 Err(err) => {
@@ -881,9 +898,14 @@ impl AmbientAgentViewModel {
         );
     }
 
-    pub fn record_ambient_execution_ended(&mut self, session_id: SessionId) {
+    pub fn record_ambient_execution_ended(
+        &mut self,
+        session_id: SessionId,
+        ctx: &mut ModelContext<Self>,
+    ) {
         if self.active_execution_session_id.as_ref() == Some(&session_id) {
             self.active_execution_session_id = None;
+            ctx.emit(AmbientAgentViewModelEvent::RunLifecycleChanged);
         }
         self.last_ended_execution_session_id = Some(session_id);
     }
@@ -969,6 +991,7 @@ impl AmbientAgentViewModel {
         self.task_id = None;
         self.conversation_id = None;
         self.harness_model_id = None;
+        self.harness_reasoning_level = None;
         self.harness_command_started = false;
         self.active_execution_session_id = None;
         self.last_ended_execution_session_id = None;
@@ -1010,6 +1033,7 @@ impl AmbientAgentViewModel {
         let third_party_harness = (selected_harness != Harness::Oz).then(|| HarnessConfig {
             harness_type: selected_harness,
             model_id: self.harness_model_id.clone(),
+            reasoning_level: self.harness_reasoning_level.clone(),
         });
 
         let harness_auth_secrets =
@@ -1091,6 +1115,11 @@ impl AmbientAgentViewModel {
                         ctx,
                     )
                 });
+            }
+            if let Some(harness) = config.harness.as_ref() {
+                self.harness = harness.harness_type;
+                self.harness_model_id = harness.model_id.clone();
+                self.harness_reasoning_level = harness.reasoning_level.clone();
             }
         }
 
@@ -1628,6 +1657,11 @@ pub enum AmbientAgentViewModelEvent {
     UpdatedSetupCommandVisibility,
     /// The selected harness auth secret changed.
     AuthSecretSelected,
+    /// The run's task association or execution liveness changed in a way that
+    /// may affect lock-dependent UI (e.g. the model selector). Fired when
+    /// a task is attached to the view (transcript restore) or when an
+    /// execution ends.
+    RunLifecycleChanged,
 }
 
 pub(crate) fn should_disable_snapshot(ctx: &AppContext) -> bool {

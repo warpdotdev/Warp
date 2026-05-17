@@ -66,8 +66,8 @@ use crate::{
             CancellationReason, RenderableAIError, RequestFileEditsResult,
         },
         ambient_agents::{
-            conversation_output_status_from_conversation, AmbientAgentTaskId,
-            AmbientConversationStatus,
+            conversation_output_status_from_conversation, task::HarnessModelConfig,
+            AmbientAgentTaskId, AmbientConversationStatus,
         },
         blocklist::{
             agent_view::AgentViewEntryOrigin,
@@ -245,8 +245,8 @@ pub struct AgentDriverOptions {
     pub environment: Option<AmbientAgentEnvironment>,
     /// Selected execution harness for this run.
     pub selected_harness: Harness,
-    /// Model ID for the selected harness. Only used for non-Oz harnesses.
-    pub third_party_harness_model_id: Option<String>,
+    /// Model config for the selected harness. Only used for non-Oz harnesses.
+    pub third_party_harness_model_config: Option<HarnessModelConfig>,
     /// Whether to skip end-of-run snapshot upload.
     pub snapshot_disabled: Option<bool>,
     /// End-of-run snapshot upload timeout override.
@@ -316,7 +316,7 @@ pub struct AgentDriver {
     /// conversation's `parent_agent_id` field at register time so the
     /// streamer recognizes the child role in driver-hosted processes.
     parent_run_id: Option<String>,
-    third_party_harness_model_id: Option<String>,
+    third_party_harness_model_config: Option<HarnessModelConfig>,
 
     /// Async writer that records `file` declarations for paths the agent creates or edits
     /// via `RequestFileEdits`. `Some` only when `FeatureFlag::OzHandoff` is enabled, the run
@@ -518,7 +518,7 @@ impl AgentDriver {
             cloud_providers,
             environment,
             selected_harness,
-            third_party_harness_model_id,
+            third_party_harness_model_config,
             snapshot_disabled,
             snapshot_upload_timeout,
             snapshot_script_timeout,
@@ -573,7 +573,7 @@ impl AgentDriver {
         ));
         env_vars.extend(harness_model_env_vars(
             selected_harness,
-            third_party_harness_model_id.as_deref(),
+            third_party_harness_model_config.as_ref(),
         ));
 
         // Signal to third-party harnesses (e.g. Claude Code) that we're in a sandbox
@@ -646,7 +646,7 @@ impl AgentDriver {
                 .unwrap_or(snapshot::DEFAULT_DECLARATIONS_SCRIPT_TIMEOUT),
             run_conversation_id,
             parent_run_id: parent_run_id_for_self,
-            third_party_harness_model_id,
+            third_party_harness_model_config,
             snapshot_file_writer,
         })
     }
@@ -685,7 +685,7 @@ impl AgentDriver {
             snapshot_script_timeout: snapshot::DEFAULT_DECLARATIONS_SCRIPT_TIMEOUT,
             run_conversation_id: None,
             parent_run_id: None,
-            third_party_harness_model_id: None,
+            third_party_harness_model_config: None,
             snapshot_file_writer: None,
         }
     }
@@ -1960,11 +1960,11 @@ impl AgentDriver {
             }
         };
 
-        let (secrets, third_party_harness_model_id) = foreground
+        let (secrets, third_party_harness_model_config) = foreground
             .spawn(|me, _| {
                 (
                     Arc::clone(&me.secrets),
-                    me.third_party_harness_model_id.clone(),
+                    me.third_party_harness_model_config.clone(),
                 )
             })
             .await
@@ -2011,7 +2011,7 @@ impl AgentDriver {
                 &resolved_env_vars,
                 &secrets_for_harness,
                 &resolved_mcp_servers,
-                third_party_harness_model_id.as_deref(),
+                third_party_harness_model_config.as_ref(),
             )?
             .into();
 
