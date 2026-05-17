@@ -8,7 +8,10 @@ use std::path::PathBuf;
 
 use indexmap::IndexMap;
 
-use crate::ai::request_usage_model::RequestLimitInfo;
+use crate::ai::{
+    agent::conversation::AIConversation, blocklist::BlocklistAIHistoryModel,
+    request_usage_model::RequestLimitInfo,
+};
 use crate::auth::AuthStateProvider;
 use crate::report_if_error;
 use crate::settings::PrivacySettings;
@@ -20,7 +23,8 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use warpui::platform::OperatingSystem;
 use warpui::{
-    platform::keyboard::KeyCode, AppContext, Entity, ModelContext, SingletonEntity, UpdateModel,
+    platform::keyboard::KeyCode, AppContext, Entity, EntityId, ModelContext, SingletonEntity,
+    UpdateModel,
 };
 
 use settings::{
@@ -1695,9 +1699,45 @@ impl AISettings {
             crate::workspaces::workspace::AdminEnablementSetting::Disable
         )
     }
+    pub fn is_cloud_handoff_enabled_for_conversation(
+        &self,
+        conversation: Option<&AIConversation>,
+        app: &warpui::AppContext,
+    ) -> bool {
+        self.is_cloud_handoff_enabled(app)
+            && !conversation
+                .is_some_and(|conversation| is_orchestration_conversation(conversation, app))
+    }
+
+    pub fn is_cloud_handoff_enabled_for_terminal_view(
+        &self,
+        terminal_view_id: EntityId,
+        app: &warpui::AppContext,
+    ) -> bool {
+        let active_conversation =
+            BlocklistAIHistoryModel::as_ref(app).active_conversation(terminal_view_id);
+        self.is_cloud_handoff_enabled_for_conversation(active_conversation, app)
+    }
 
     pub fn is_ampersand_handoff_enabled(&self, app: &warpui::AppContext) -> bool {
         self.is_cloud_handoff_enabled(app) && !*self.should_force_disable_ampersand_handoff
+    }
+    pub fn is_ampersand_handoff_enabled_for_conversation(
+        &self,
+        conversation: Option<&AIConversation>,
+        app: &warpui::AppContext,
+    ) -> bool {
+        self.is_cloud_handoff_enabled_for_conversation(conversation, app)
+            && !*self.should_force_disable_ampersand_handoff
+    }
+
+    pub fn is_ampersand_handoff_enabled_for_terminal_view(
+        &self,
+        terminal_view_id: EntityId,
+        app: &warpui::AppContext,
+    ) -> bool {
+        self.is_cloud_handoff_enabled_for_terminal_view(terminal_view_id, app)
+            && !*self.should_force_disable_ampersand_handoff
     }
 
     /// Determines whether a quota reset banner should be displayed to the user.
@@ -1982,6 +2022,12 @@ impl AISettings {
     }
 }
 
+fn is_orchestration_conversation(conversation: &AIConversation, app: &AppContext) -> bool {
+    conversation.has_parent_agent()
+        || !BlocklistAIHistoryModel::as_ref(app)
+            .child_conversation_ids_of(&conversation.id())
+            .is_empty()
+}
 /// Singleton model that caches compiled regexes for the `cli_agent_footer_enabled_commands`
 /// setting. Each entry pairs a compiled regex with the CLI agent it maps to.
 pub struct CompiledCommandsForCodingAgentToolbar {

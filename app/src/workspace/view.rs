@@ -13601,6 +13601,23 @@ impl Workspace {
             .as_ref(ctx)
             .active_conversation(terminal_view_id)
             .cloned();
+        if !AISettings::as_ref(ctx)
+            .is_cloud_handoff_enabled_for_conversation(source_conversation.as_ref(), ctx)
+        {
+            Self::restore_source_handoff_draft(&source_view, launch, environment_id, ctx);
+            let window_id = ctx.window_id();
+            WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                toast_stack.add_ephemeral_toast(
+                    DismissibleToast::error(
+                        "Cloud handoff isn't available for orchestrated agent conversations."
+                            .to_owned(),
+                    ),
+                    window_id,
+                    ctx,
+                );
+            });
+            return;
+        }
 
         let has_existing_conversation = source_conversation.as_ref().is_some_and(|c| !c.is_empty());
 
