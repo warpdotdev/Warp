@@ -247,28 +247,21 @@ pub(crate) fn harness_kind(harness: Harness) -> Result<HarnessKind, AgentDriverE
     }
 }
 
-/// Returns the exact shell commands that `AgentDriver::run_preflight_checks`
-/// will issue for `harness`, in driver execution order.
+/// Returns the harness's auth-check preflight command, if any.
 ///
-/// The viewer uses this list to recognize preflight blocks via exact string
-/// equality so the [`ThirdPartyHarness`] implementations remain the single
-/// source of truth for what a preflight command looks like.
+/// The viewer uses this to recognize preflight blocks via exact string
+/// equality (so they stay grouped under "Set up environment commands"
+/// rather than being mistaken for the main harness invocation, which
+/// shares the same CLI prefix).
 ///
-/// Returns an empty `Vec` for [`Harness::Oz`], for unsupported harnesses, and
+/// Returns `None` for [`Harness::Oz`], for unsupported harnesses, and
 /// for any third-party harness whose `auth_check_command` returns `None`
 /// (e.g. Gemini today).
-pub(crate) fn preflight_commands_for(harness: Harness) -> Vec<String> {
-    let Ok(kind) = harness_kind(harness) else {
-        return Vec::new();
+pub(crate) fn auth_check_command_for(harness: Harness) -> Option<String> {
+    let HarnessKind::ThirdParty(third_party) = harness_kind(harness).ok()? else {
+        return None;
     };
-    let HarnessKind::ThirdParty(third_party) = kind else {
-        return Vec::new();
-    };
-    let mut commands = Vec::with_capacity(1);
-    if let Some(cmd) = third_party.auth_check_command() {
-        commands.push(cmd);
-    }
-    commands
+    third_party.auth_check_command()
 }
 
 /// Check that `cli` is installed and on PATH, returning a `HarnessSetupFailed`

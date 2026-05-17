@@ -18,8 +18,8 @@ use warp_core::command::ExitCode;
 use warp_core::features::FeatureFlag;
 use warp_util::{path::ShellFamily, sync::Condition};
 use warpui::{
-    AppContext, Entity, ModelContext, ModelHandle, SingletonEntity as _, ViewHandle,
-    r#async::FutureExt,
+    r#async::FutureExt, AppContext, Entity, ModelContext, ModelHandle, SingletonEntity as _,
+    ViewHandle,
 };
 
 use crate::terminal::model::session::ExecuteCommandOptions;
@@ -28,19 +28,19 @@ use warp_terminal::model::grid::Dimensions;
 use crate::{
     ai::ambient_agents::AmbientAgentTaskId,
     pane_group::NewTerminalOptions,
-    root_view::{NewWorkspaceSource, open_new_with_workspace_source},
+    root_view::{open_new_with_workspace_source, NewWorkspaceSource},
     terminal::{
-        TerminalView,
         model::{
-            RespectObfuscatedSecrets,
             block::{BlockId, SerializedBlock},
             find::RegexDFAs,
             grid::RespectDisplayedOutput,
             index::Point,
+            RespectObfuscatedSecrets,
         },
         shared_session::{self, IsSharedSessionCreator},
         shell::ShellType,
         view::ConversationRestorationInNewPaneType,
+        TerminalView,
     },
     workspaces::user_workspaces::UserWorkspaces,
 };
@@ -388,17 +388,6 @@ impl TerminalDriver {
         ))
     }
 
-    /// First DFA match in the visible output of `block_id`, if any.
-    ///
-    /// Runs the same `BlockGrid::find` machinery used by the find feature
-    /// directly against the cell storage — no string materialization happens
-    /// unless a match is found, in which case we extract the matched
-    /// substring and the row(s) containing it as plaintext.
-    ///
-    /// Used by the harness output monitor to detect runtime API failures
-    /// (invalid key, out-of-credits, quota exhausted, etc.) by scanning the
-    /// active harness block for known failure substrings supplied by each
-    /// `ThirdPartyHarness` impl.
     pub fn find_first_match_in_block_output(
         &self,
         block_id: &BlockId,
@@ -411,8 +400,6 @@ impl TerminalDriver {
         let grid = block.output_grid();
         let m = grid.find(dfas).next()?;
         let handler = grid.grid_handler();
-        // Pull the matched cells as plaintext — used by the scanner to map
-        // back to the originating needle.
         let matched_text = handler.bounds_to_string(
             *m.start(),
             *m.end(),
@@ -421,8 +408,6 @@ impl TerminalDriver {
             false, // force_secrets_obfuscated
             RespectDisplayedOutput::Yes,
         );
-        // Expand to the full row(s) the match touches for the user-visible
-        // excerpt.
         let cols = handler.columns();
         let row_start = Point::new(m.start().row, 0);
         let row_end = Point::new(m.end().row, cols.saturating_sub(1));

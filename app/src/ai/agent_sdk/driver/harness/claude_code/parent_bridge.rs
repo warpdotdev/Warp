@@ -13,25 +13,25 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use tokio::sync::Mutex as AsyncMutex;
 use uuid::Uuid;
-use warpui::ModelSpawner;
 use warpui::r#async::SpawnedFutureHandle;
+use warpui::ModelSpawner;
 
 use crate::ai::agent_events::{
-    AgentEventConsumer, AgentEventConsumerControlFlow, AgentEventDriverConfig, MessageHydrator,
-    ServerApiAgentEventSource, run_agent_event_driver,
+    run_agent_event_driver, AgentEventConsumer, AgentEventConsumerControlFlow,
+    AgentEventDriverConfig, MessageHydrator, ServerApiAgentEventSource,
 };
 use crate::ai::agent_sdk::driver::{AgentDriver, OZ_MESSAGE_LISTENER_STATE_ROOT_ENV};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::server::server_api::ServerApi;
 use crate::server::server_api::ai::AIClient;
 use crate::server::server_api::ai::AgentRunEvent;
+use crate::server::server_api::ServerApi;
 
 const LEGACY_MESSAGE_LISTENER_STATE_ROOT_ENV: &str = "OZ_PARENT_STATE_ROOT";
 const PARENT_BRIDGE_DEFAULT_STATE_ROOT: &str = ".claude-code/oz-parent-bridge";

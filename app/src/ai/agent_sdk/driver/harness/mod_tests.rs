@@ -1,4 +1,4 @@
-use super::{preflight_commands_for, validate_cli_installed};
+use super::{auth_check_command_for, validate_cli_installed};
 use crate::ai::agent_sdk::driver::AgentDriverError;
 use warp_cli::agent::Harness;
 
@@ -54,7 +54,7 @@ fn codex_returns_auth_check_command() {
 }
 
 #[test]
-fn gemini_returns_no_preflight_commands() {
+fn gemini_returns_no_auth_check_command() {
     use super::ThirdPartyHarness;
     use super::gemini::GeminiHarness;
     let harness = GeminiHarness;
@@ -62,27 +62,25 @@ fn gemini_returns_no_preflight_commands() {
 }
 
 #[test]
-fn preflight_commands_for_claude_returns_auth_only() {
+fn auth_check_command_for_claude_matches_trait_impl() {
     use super::ThirdPartyHarness;
     use super::claude_code::ClaudeHarness;
-    let commands = preflight_commands_for(Harness::Claude);
-    // The helper's output is the single source of truth for the viewer's
-    // preflight detection, so pin the strings to the trait impls directly.
-    assert_eq!(commands.len(), 1);
+    // The helper is the single source of truth for the viewer's
+    // preflight detection, so pin the string to the trait impl directly.
+    let resolved = auth_check_command_for(Harness::Claude).expect("some");
     assert_eq!(
-        commands[0],
+        resolved,
         ClaudeHarness.auth_check_command().expect("auth check")
     );
 }
 
 #[test]
-fn preflight_commands_for_codex_returns_auth_only() {
+fn auth_check_command_for_codex_matches_trait_impl() {
     use super::ThirdPartyHarness;
     use super::codex::CodexHarness;
-    let commands = preflight_commands_for(Harness::Codex);
-    assert_eq!(commands.len(), 1);
+    let resolved = auth_check_command_for(Harness::Codex).expect("some");
     assert_eq!(
-        commands[0],
+        resolved,
         CodexHarness.auth_check_command().expect("auth check")
     );
 }
@@ -113,25 +111,25 @@ fn gemini_runtime_error_patterns_is_empty_by_default() {
 }
 
 #[test]
-fn preflight_commands_for_gemini_is_empty() {
-    assert!(preflight_commands_for(Harness::Gemini).is_empty());
+fn auth_check_command_for_gemini_is_none() {
+    assert!(auth_check_command_for(Harness::Gemini).is_none());
 }
 
 #[test]
-fn preflight_commands_for_oz_is_empty() {
-    assert!(preflight_commands_for(Harness::Oz).is_empty());
+fn auth_check_command_for_oz_is_none() {
+    assert!(auth_check_command_for(Harness::Oz).is_none());
 }
 
 #[test]
-fn preflight_commands_for_unsupported_is_empty() {
+fn auth_check_command_for_unsupported_is_none() {
     // OpenCode is mapped to HarnessKind::Unsupported and therefore has no
-    // preflight commands of its own.
-    assert!(preflight_commands_for(Harness::OpenCode).is_empty());
+    // auth check command of its own.
+    assert!(auth_check_command_for(Harness::OpenCode).is_none());
 }
 
 #[test]
-fn preflight_commands_for_unknown_is_empty() {
+fn auth_check_command_for_unknown_is_none() {
     // Harness::Unknown causes harness_kind to return Err; the helper still
-    // returns an empty Vec instead of panicking.
-    assert!(preflight_commands_for(Harness::Unknown).is_empty());
+    // returns None instead of panicking.
+    assert!(auth_check_command_for(Harness::Unknown).is_none());
 }

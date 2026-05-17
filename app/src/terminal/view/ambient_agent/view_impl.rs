@@ -608,17 +608,19 @@ impl TerminalView {
             return false;
         };
         let selected_harness = ambient_agent_view_model.as_ref(ctx).selected_harness();
-        // Preflight commands (e.g. `claude auth status --json`, `codex login
-        // status`) share the harness CLI prefix but are NOT the harness
-        // session start. Treat them as setup commands instead so they stay in
-        // the existing setup-commands group. The driver's harness impls are
-        // the single source of truth for what a preflight command looks like.
+        // The auth-check preflight command (e.g. `claude auth status
+        // --json`, `codex login status`) shares the harness CLI prefix
+        // but is NOT the harness session start. Treat it as a setup
+        // command instead so it stays in the existing setup-commands
+        // group. The driver's harness impls are the single source of
+        // truth for what an auth check command looks like.
         let command_trimmed = command.trim();
-        if crate::ai::agent_sdk::driver::harness::preflight_commands_for(selected_harness)
-            .iter()
-            .any(|preflight| preflight.trim() == command_trimmed)
+        if let Some(auth_cmd) =
+            crate::ai::agent_sdk::driver::harness::auth_check_command_for(selected_harness)
         {
-            return false;
+            if auth_cmd.trim() == command_trimmed {
+                return false;
+            }
         }
         match selected_harness {
             Harness::Oz => false,

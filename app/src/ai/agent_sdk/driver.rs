@@ -1859,10 +1859,6 @@ impl AgentDriver {
                 )
                 .await?;
 
-                // Run the auth preflight check before starting the main
-                // harness command. The billing preflight check has been
-                // replaced by an in-run background scanner (see
-                // `harness_output_monitor`).
                 Self::run_preflight_checks(harness.as_ref(), &foreground).await?;
 
                 let harness_name = harness.cli_agent().command_prefix().to_owned();
@@ -1908,11 +1904,7 @@ impl AgentDriver {
     ///
     /// Uses `execute_command` so the check appears as a collapsible block in
     /// the shared session UI, mirroring how environment setup commands
-    /// surface. This makes it easy for the user to see exactly what went
-    /// wrong when the check fails. The billing portion of the original
-    /// preflight has been replaced by `harness_output_monitor`, which
-    /// observes the real harness block at runtime instead of burning a
-    /// dedicated test API request.
+    /// surface.
     async fn run_preflight_checks(
         harness: &dyn ThirdPartyHarness,
         foreground: &ModelSpawner<Self>,
@@ -1928,13 +1920,6 @@ impl AgentDriver {
     }
 
     /// Run a single preflight check command and return an error if it fails.
-    ///
-    /// The command is executed via `TerminalDriver::execute_command` so it shows
-    /// up as a normal block in the shared session UI (just like environment
-    /// setup commands), letting the viewer inspect the CLI's output when the
-    /// check fails. After the command finishes, we also fetch the block
-    /// snapshot and stash its rendered output in the error `detail` so the
-    /// captured stdout/stderr makes it into logs and the server status message.
     async fn run_single_preflight(
         command: &str,
         harness_name: &str,
@@ -1980,26 +1965,20 @@ impl AgentDriver {
         Ok(())
     }
 
-    /// Pull the rendered output text out of the block produced by a preflight
-    /// command. The block's `stylized_output` is the truncated terminal grid
-    /// contents (with ANSI escapes); we lossily decode it for inclusion in the
-    /// failure detail. Returns an empty string when the block is missing.
     async fn fetch_preflight_block_output(
         block_id: &BlockId,
         foreground: &ModelSpawner<Self>,
     ) -> String {
         let block_id = block_id.clone();
-        let snapshot = foreground
+        let plaintext = foreground
             .spawn(move |me, ctx| {
                 me.terminal_driver
                     .as_ref(ctx)
-                    .block_snapshot(&block_id, ctx)
+                    .block_output_plaintext(&block_id, ctx)
             })
             .await;
-        match snapshot {
-            Ok(Some(block)) => String::from_utf8_lossy(&block.stylized_output)
-                .trim()
-                .to_owned(),
+        match plaintext {
+            Ok(Some(text)) => text.trim().to_owned(),
             Ok(None) | Err(_) => String::new(),
         }
     }
@@ -2187,9 +2166,6 @@ impl AgentDriver {
         let mut command_handle = command_handle.fuse();
         let mut harness_exit_rx = harness_exit_rx.fuse();
 
-        // Background scanner future. Resolves on the first detected runtime
-        // failure, or stays `Pending` forever once the schedule completes
-        // without a hit (so it never spuriously wakes the select loop).
         let scanner_fut = harness_output_monitor::watch_block_for_errors(
             block_id,
             runtime_error_patterns,
@@ -2224,7 +2200,7 @@ impl AgentDriver {
                 }
                 detected = scanner_fut => {
                     if let Some(error) = detected {
-                        log::error!(
+                        log::warn!(
                             "Runtime failure detected for {harness_name}: pattern={}, excerpt={}",
                             error.pattern,
                             error.excerpt,

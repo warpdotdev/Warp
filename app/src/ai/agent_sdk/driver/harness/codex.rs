@@ -64,12 +64,6 @@ impl ThirdPartyHarness for CodexHarness {
     }
 
     fn runtime_error_patterns(&self) -> &'static [&'static str] {
-        // Substrings emitted by the Codex CLI (or the upstream OpenAI API
-        // through Codex) when the harness cannot make a successful request.
-        // All patterns are matched case-insensitively against the harness
-        // block's plaintext output via the same DFA infrastructure used by
-        // the find feature. See `harness_output_monitor` for the scan
-        // cadence and reporting flow.
         &[
             // Quota / billing.
             "Quota exceeded. Check your plan and billing details.",

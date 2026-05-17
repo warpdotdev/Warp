@@ -15,25 +15,25 @@ use warp_cli::agent::Harness;
 use warpui::{ModelHandle, ModelSpawner};
 
 use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::ambient_agents::{AmbientAgentTaskId, task::HarnessModelConfig};
+use crate::ai::ambient_agents::{task::HarnessModelConfig, AmbientAgentTaskId};
 use crate::ai::mcp::JSONTransportType;
+use crate::server::server_api::harness_support::{upload_to_target, HarnessSupportClient};
 use crate::server::server_api::ServerApi;
-use crate::server::server_api::harness_support::{HarnessSupportClient, upload_to_target};
-use crate::terminal::CLIAgent;
 use crate::terminal::model::block::BlockId;
 use crate::terminal::model::session::ExecuteCommandOptions;
+use crate::terminal::CLIAgent;
 use warp_managed_secrets::ManagedSecretValue;
 
 use super::super::terminal::{CommandHandle, TerminalDriver};
 use super::super::{AgentDriver, AgentDriverError};
 use super::claude_transcript::{
-    ClaudeResumeInfo, ClaudeTranscriptEnvelope, claude_config_dir, home_dir_for_claude_config,
-    read_envelope, write_envelope, write_session_index_entry,
+    claude_config_dir, home_dir_for_claude_config, read_envelope, write_envelope,
+    write_session_index_entry, ClaudeResumeInfo, ClaudeTranscriptEnvelope,
 };
 use super::json_utils::{read_json_file_or_default, write_json_file};
 use super::{
-    HarnessCleanupDisposition, HarnessRunner, JSONMCPServer, ResumePayload, SavePoint,
-    ThirdPartyHarness, cli_agent_session_status, write_temp_file,
+    cli_agent_session_status, write_temp_file, HarnessCleanupDisposition, HarnessRunner,
+    JSONMCPServer, ResumePayload, SavePoint, ThirdPartyHarness,
 };
 mod parent_bridge;
 mod wake_driver;
@@ -42,19 +42,19 @@ mod wake_driver;
 use super::super::OZ_MESSAGE_LISTENER_STATE_ROOT_ENV;
 #[cfg(test)]
 use parent_bridge::{
-    MESSAGE_BRIDGE_CONTEXT_PREAMBLE, MessageBridgeHookOutput, MessageBridgeMessageRecord,
     acknowledge_parent_bridge_hook_output, ensure_parent_bridge_state_dir,
     parent_bridge_char_count, parent_bridge_event_cursor_file, parent_bridge_hook_output_ack_file,
     parent_bridge_hook_output_file, parent_bridge_root, parent_bridge_staged_message_path,
     parent_bridge_surfaced_message_path, prepare_parent_bridge_hook_output,
     read_parent_bridge_event_cursor, render_parent_bridge_message_block,
-    stage_parent_bridge_message, write_parent_bridge_event_cursor,
+    stage_parent_bridge_message, write_parent_bridge_event_cursor, MessageBridgeHookOutput,
+    MessageBridgeMessageRecord, MESSAGE_BRIDGE_CONTEXT_PREAMBLE,
 };
 use parent_bridge::{MessageBridge, MessageBridgeCleanupDisposition};
 #[cfg(test)]
 use shell_words::quote as shell_quote;
 #[cfg(test)]
-use wake_driver::{CLAUDE_WAKE_PROMPT_FILE_NAME, ClaudeWakeRemoteContext};
+use wake_driver::{ClaudeWakeRemoteContext, CLAUDE_WAKE_PROMPT_FILE_NAME};
 
 pub(crate) struct ClaudeHarness;
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
@@ -78,12 +78,6 @@ impl ThirdPartyHarness for ClaudeHarness {
     }
 
     fn runtime_error_patterns(&self) -> &'static [&'static str] {
-        // Substrings emitted by Claude Code (or the upstream Anthropic API
-        // through Claude Code) when the harness cannot make a successful
-        // request. All patterns are matched case-insensitively against the
-        // harness block's plaintext output via the same DFA infrastructure
-        // used by the find feature. See `harness_output_monitor` for the
-        // scan cadence and reporting flow.
         &[
             // Out-of-credits / billing.
             "Credit balance too low",
