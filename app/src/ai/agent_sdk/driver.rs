@@ -2396,7 +2396,8 @@ impl AgentDriver {
                 | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
                 | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. }
                 | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
-                | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => (),
+                | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. }
+                | BlocklistAIHistoryEvent::ConversationUsageMetadataUpdated { .. } => (),
             }
         });
 

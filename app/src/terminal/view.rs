@@ -90,7 +90,7 @@ use crate::ai::blocklist::block::cli_controller::{
 };
 use crate::ai::blocklist::block::status_bar::BlocklistAIStatusBarEvent;
 use crate::ai::blocklist::usage::conversation_usage_view::{
-    ConversationUsageInfo, ConversationUsageView, DisplayMode, TimingInfo,
+    ConversationUsageInfo, ConversationUsageView, TimingInfo,
 };
 use crate::ai::blocklist::{block_context_from_terminal_model, SlashCommandRequest};
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentModel, AIDocumentVersion};
@@ -2403,6 +2403,13 @@ pub enum TerminalViewState {
     Normal,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(in crate::terminal::view) enum ConversationDetailsPanelAutoOpenPolicy {
+    #[default]
+    DefaultOpen,
+    DefaultClosed,
+}
+
 /// A struct containing information about a state change event for a particular
 /// terminal view.
 #[derive(Copy, Clone)]
@@ -2842,6 +2849,9 @@ pub struct TerminalView {
     /// by the cloud-mode auto-open path; local conversations require the user to
     /// click the pane-header toggle button to open the panel.
     has_auto_opened_conversation_details_panel: bool,
+    /// Determines whether the one-shot auto-open should open the panel or be
+    /// consumed without opening.
+    conversation_details_panel_auto_open_policy: ConversationDetailsPanelAutoOpenPolicy,
     /// Mouse state handle for the conversation details panel toggle button in the pane header.
     /// Only available on non-WASM platforms (WASM uses a per-window button instead).
     #[cfg(not(target_arch = "wasm32"))]
@@ -4312,6 +4322,7 @@ impl TerminalView {
             conversation_details_panel,
             is_conversation_details_panel_open: false,
             has_auto_opened_conversation_details_panel: false,
+            conversation_details_panel_auto_open_policy: Default::default(),
             pending_cloud_followup_task_id: None,
             #[cfg(not(target_arch = "wasm32"))]
             conversation_details_panel_toggle_mouse_state: Default::default(),
@@ -5347,19 +5358,14 @@ impl TerminalView {
         if self.pending_user_query_kind != Some(PendingUserQueryKind::CloudMode) {
             return;
         }
-        let Some(pending_prompt) = self.pending_user_query_prompt(ctx) else {
-            return;
-        };
 
         let initial_conversation_query = ai_block_model
             .conversation(ctx)
             .and_then(|conversation| conversation.initial_user_query());
         let has_renderable_user_query = ai_block_model.inputs_to_render(ctx).iter().any(|input| {
-            input.user_query().as_deref() == Some(pending_prompt)
-                || input
-                    .display_user_query(initial_conversation_query.as_ref())
-                    .as_deref()
-                    == Some(pending_prompt)
+            input
+                .display_user_query(initial_conversation_query.as_ref())
+                .is_some()
         });
         if has_renderable_user_query {
             self.remove_pending_user_query_block(ctx);
@@ -5406,7 +5412,8 @@ impl TerminalView {
             | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
             | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. }
             | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
-            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => None,
+            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. }
+            | BlocklistAIHistoryEvent::ConversationUsageMetadataUpdated { .. } => None,
         }
     }
 
@@ -5884,7 +5891,8 @@ impl TerminalView {
             | BlocklistAIHistoryEvent::DeletedConversation { .. }
             | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
             | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
-            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => {}
+            | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. }
+            | BlocklistAIHistoryEvent::ConversationUsageMetadataUpdated { .. } => {}
         }
         ctx.notify();
     }
@@ -6182,13 +6190,26 @@ impl TerminalView {
             wall_to_wall_response_time_ms,
         };
 
-        // View to hold the usage footer.
-        let usage_view = ctx.add_view(|_| {
-            ConversationUsageView::new(
+        // View to hold the usage footer. Always route through the
+        // rollup-aware constructor so the view subscribes to history
+        // events and re-renders when any contributing agent's usage
+        // updates. The rollup itself is computed at render time and is
+        // self-gating: conversations without descendants short-circuit
+        // to today's UI inside `ConversationUsageView::render`, so no
+        // feature flag check is needed at the call site.
+        //
+        // Use `add_typed_action_view` (not `add_view`) so the framework
+        // registers `ConversationUsageView::handle_action`. Without this,
+        // typed actions like `ToggleDetailsExpanded` / `ShowAllAgentRows`
+        // dispatched from the view's own click handlers would be logged
+        // as `Dispatched action has no handlers` and silently ignored.
+        let usage_view = ctx.add_typed_action_view(|ctx| {
+            ConversationUsageView::new_footer_with_rollup(
                 conversation_usage_info,
-                DisplayMode::Footer,
                 Some(timing_info),
                 MouseStateHandle::default(),
+                conversation_id,
+                ctx,
             )
         });
         self.usage_footer_view_ids
@@ -7160,6 +7181,26 @@ impl TerminalView {
     fn can_show_conversation_details_ui(&self, app: &AppContext) -> bool {
         let model = self.model.lock();
         self.can_show_conversation_details_ui_from_model(&model, app)
+    }
+
+    /// Consume the one-shot conversation details panel auto-open for this
+    /// view. Call this before the first `maybe_auto_open_conversation_details_panel`
+    /// fires (e.g. on a parent-orchestrated child agent pane) so the panel does
+    /// not default open. Manual toggle via `TerminalAction::ToggleConversationDetailsPanel`
+    /// continues to work normally.
+    pub(crate) fn suppress_initial_conversation_details_panel_auto_open(&mut self) {
+        self.conversation_details_panel_auto_open_policy =
+            ConversationDetailsPanelAutoOpenPolicy::DefaultClosed;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_initial_conversation_details_panel_auto_open_suppressed_for_test(
+        &self,
+    ) -> bool {
+        matches!(
+            self.conversation_details_panel_auto_open_policy,
+            ConversationDetailsPanelAutoOpenPolicy::DefaultClosed
+        )
     }
 
     fn maybe_insert_tombstone_for_non_running_shared_ambient_task(
@@ -10844,6 +10885,12 @@ impl TerminalView {
                 let block_completed_event_clone = block_completed_event.clone();
                 self.input.update(ctx, |input, ctx| {
                     input.handle_block_completed_event(block_completed_event_clone, ctx);
+                });
+
+                // Notify find model that this block completed so it gets scanned with final output.
+                let completed_block_index = block_completed_event.block_index;
+                self.find_model.update(ctx, |find_model, ctx| {
+                    find_model.notify_block_completed(completed_block_index, ctx);
                 });
 
                 if !matches!(block_completed_event.block_type, BlockType::BootstrapHidden) {
@@ -21526,21 +21573,17 @@ impl TerminalView {
         ctx.notify();
     }
 
-    /// Scrolls to the focused match
+    /// Scrolls to the focused match.
     fn scroll_to_match(&mut self, ctx: &mut ViewContext<Self>) {
         // Scrolling to matches is not done for the alt screen.
         if self.model.lock().is_alt_screen_active() {
             return;
         }
 
-        let Some(focused_match) = self
-            .find_model
-            .as_ref(ctx)
-            .block_list_find_run()
-            .and_then(|run| run.focused_match())
-        else {
+        let Some(focused_match) = self.find_model.as_ref(ctx).focused_block_list_match() else {
             return;
         };
+        let focused_match = &focused_match;
 
         let find_match_location = match focused_match {
             BlockListMatch::RichContent { index, .. } => {

@@ -7,7 +7,7 @@ use session_sharing_protocol::sharer::SessionSourceType;
 use std::collections::HashMap;
 use warp_multi_agent_api::{self as api, client_action as api_client_action};
 
-use crate::ai::agent::conversation::ConversationStatus;
+use crate::ai::agent::conversation::{AIConversation, ConversationStatus};
 use crate::ai::agent::AIAgentInput;
 use crate::ai::agent_conversations_model::{AgentConversationsModel, AgentRunDisplayStatus};
 use crate::ai::ambient_agents::task::{TaskPrincipalInfo, TaskStatusErrorCode, TaskStatusMessage};
@@ -19,7 +19,7 @@ use crate::auth::user::TEST_USER_UID;
 use crate::cloud_object::{Owner, Revision, ServerMetadata, ServerPermissions};
 use crate::server::ids::ServerId;
 use warpui::platform::WindowStyle;
-use warpui::{App, EntityId, ViewHandle};
+use warpui::{App, EntityId, TypedActionView, ViewHandle};
 
 use crate::context_chips::prompt_type::PromptType;
 use crate::editor::InteractionState;
@@ -30,6 +30,7 @@ use crate::terminal::view::ambient_agent::{
     HandoffSubmissionState, PendingHandoff, SnapshotUploadStatus,
 };
 use crate::terminal::view::shared_session::test_utils::terminal_view_for_viewer;
+use crate::terminal::view::TerminalAction;
 use crate::terminal::TerminalView;
 use crate::test_util::add_window_with_terminal;
 use crate::test_util::terminal::initialize_app_for_terminal_view;
@@ -611,6 +612,135 @@ fn server_permissions(space: Owner) -> ServerPermissions {
         permissions_last_updated_ts: Utc::now().into(),
     }
 }
+
+fn configure_ambient_details_panel_test(
+    app: &mut App,
+    terminal: &ViewHandle<TerminalView>,
+    task: AmbientAgentTask,
+) -> AmbientAgentTaskId {
+    let task_id = task.task_id;
+    AgentConversationsModel::handle(app).update(app, |model, _| {
+        model.insert_task_for_test(task);
+    });
+    terminal.update(app, |view, _| {
+        view.model
+            .lock()
+            .set_shared_session_source_type(SessionSourceType::AmbientAgent {
+                task_id: Some(task_id.to_string()),
+            });
+    });
+    task_id
+}
+
+#[test]
+fn test_conversation_details_auto_open_policy_defaults_to_open_for_ambient_shared_session() {
+    App::test((), |mut app| async move {
+        let terminal = terminal_view_for_viewer(&mut app);
+        let task_id = configure_ambient_details_panel_test(
+            &mut app,
+            &terminal,
+            create_cloud_mode_task_for_user(TEST_USER_UID),
+        );
+
+        terminal.update(&mut app, |view, ctx| {
+            assert_eq!(
+                view.ambient_agent_task_id_for_details_panel(ctx),
+                Some(task_id)
+            );
+            assert!(!view.is_conversation_details_panel_open);
+            assert!(!view.has_auto_opened_conversation_details_panel);
+
+            view.maybe_auto_open_conversation_details_panel(ctx);
+
+            assert!(view.is_conversation_details_panel_open);
+            assert!(view.has_auto_opened_conversation_details_panel);
+            assert!(
+                view.conversation_details_panel
+                    .as_ref(ctx)
+                    .task_display_status_for_test()
+                    .is_some(),
+                "auto-open should fetch details when details are available"
+            );
+        });
+    });
+}
+
+#[test]
+fn test_suppressed_conversation_details_auto_open_consumes_initial_open_but_manual_toggle_works() {
+    App::test((), |mut app| async move {
+        let terminal = terminal_view_for_viewer(&mut app);
+        configure_ambient_details_panel_test(
+            &mut app,
+            &terminal,
+            create_cloud_mode_task_for_user(TEST_USER_UID),
+        );
+
+        terminal.update(&mut app, |view, ctx| {
+            view.suppress_initial_conversation_details_panel_auto_open();
+
+            view.maybe_auto_open_conversation_details_panel(ctx);
+
+            assert!(!view.is_conversation_details_panel_open);
+            assert!(view.has_auto_opened_conversation_details_panel);
+            assert!(
+                view.conversation_details_panel
+                    .as_ref(ctx)
+                    .task_display_status_for_test()
+                    .is_none(),
+                "suppressed auto-open should not fetch details"
+            );
+
+            view.handle_action(&TerminalAction::ToggleConversationDetailsPanel, ctx);
+
+            assert!(view.is_conversation_details_panel_open);
+            assert!(
+                view.conversation_details_panel
+                    .as_ref(ctx)
+                    .task_display_status_for_test()
+                    .is_some(),
+                "manual toggle should fetch details after suppressed auto-open"
+            );
+        });
+    });
+}
+
+#[test]
+fn test_child_shared_session_link_keeps_default_conversation_details_auto_open() {
+    App::test((), |mut app| async move {
+        let terminal = terminal_view_for_viewer(&mut app);
+        let task_id = configure_ambient_details_panel_test(
+            &mut app,
+            &terminal,
+            create_cloud_mode_task_for_user(TEST_USER_UID),
+        );
+
+        terminal.update(&mut app, |view, ctx| {
+            let parent_conversation_id =
+                BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
+                    history_model.start_new_conversation(view.id(), false, false, false, ctx)
+                });
+            let mut child_conversation = AIConversation::new(true, false);
+            child_conversation.set_parent_conversation_id(parent_conversation_id);
+            child_conversation.set_task_id(task_id);
+            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
+                history_model.restore_conversations(view.id(), vec![child_conversation], ctx);
+            });
+
+            view.maybe_auto_open_conversation_details_panel(ctx);
+
+            assert!(view.is_conversation_details_panel_open);
+            assert!(view.has_auto_opened_conversation_details_panel);
+            assert!(
+                view.conversation_details_panel
+                    .as_ref(ctx)
+                    .task_display_status_for_test()
+                    .is_some(),
+                "child task metadata alone should not suppress direct-link auto-open"
+            );
+        });
+    });
+}
+
 fn cloud_mode_terminal_for_test(app: &mut App) -> ViewHandle<TerminalView> {
     initialize_app_for_terminal_view(app);
     let tips_model = app.add_model(|_| Default::default());
@@ -1491,7 +1621,7 @@ fn test_non_owned_tombstone_is_removed_for_followup_and_reinserted_after_complet
             );
 
             view.handle_ambient_agent_event(
-                &crate::terminal::view::ambient_agent::AmbientAgentViewModelEvent::FollowupSessionReady {
+                &crate::terminal::view::ambient_agent::AmbientAgentViewModelEvent::ExecutionSessionReady {
                     session_id: SessionId::new(),
                 },
                 ctx,

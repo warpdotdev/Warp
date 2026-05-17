@@ -4854,13 +4854,13 @@ impl Workspace {
         self.tabs.get(index).and_then(|tab| tab.color())
     }
 
-    /// Finds the tab index containing a terminal viewing the given ambient agent conversation,
+    /// Finds the pane containing a terminal viewing the given ambient agent conversation,
     /// returning None if the ambient conversation is not open in any tab.
-    fn find_tab_with_ambient_agent_conversation(
+    fn find_pane_with_ambient_agent_conversation(
         &self,
         task_id: AmbientAgentTaskId,
         ctx: &AppContext,
-    ) -> Option<usize> {
+    ) -> Option<(usize, PaneViewLocator)> {
         // First, check ActiveAgentViewsModel for the terminal view that has this task registered.
         // This is the authoritative source since it's updated when the session is joined.
         let active_terminal_view_id =
@@ -4868,9 +4868,9 @@ impl Workspace {
 
         self.tabs.iter().enumerate().find_map(|(index, tab)| {
             let pane_group = tab.pane_group.as_ref(ctx);
-            let has_task = pane_group.visible_pane_ids().into_iter().any(|pane_id| {
+            let pane_id = pane_group.visible_pane_ids().into_iter().find(|pane_id| {
                 pane_group
-                    .terminal_view_from_pane_id(pane_id, ctx)
+                    .terminal_view_from_pane_id(*pane_id, ctx)
                     .is_some_and(|tv| {
                         // Check if this is the terminal view registered in ActiveAgentViewsModel
                         if active_terminal_view_id == Some(tv.id()) {
@@ -4880,7 +4880,15 @@ impl Workspace {
                         tv.as_ref(ctx).ambient_agent_task_id_for_details_panel(ctx) == Some(task_id)
                     })
             });
-            has_task.then_some(index)
+            pane_id.map(|pane_id| {
+                (
+                    index,
+                    PaneViewLocator {
+                        pane_group_id: tab.pane_group.id(),
+                        pane_id,
+                    },
+                )
+            })
         })
     }
 
@@ -22344,15 +22352,25 @@ impl TypedActionView for Workspace {
                     ctx,
                 );
             }
-            OpenAmbientAgentSession {
+            OpenOrAttachAmbientAgentConversation {
                 session_id,
                 task_id,
             } => {
-                // Check if there's already a terminal viewing this task.
-                if let Some(tab_index) =
-                    self.find_tab_with_ambient_agent_conversation(*task_id, ctx)
+                if let Some((_, locator)) =
+                    self.find_pane_with_ambient_agent_conversation(*task_id, ctx)
                 {
-                    self.activate_tab(tab_index, ctx);
+                    self.focus_pane(locator, ctx);
+                    if let Some(pane_group) =
+                        self.get_pane_group_view_with_id(locator.pane_group_id)
+                    {
+                        pane_group.update(ctx, |pane_group, ctx| {
+                            pane_group.attach_execution_session_to_ambient_pane(
+                                locator.pane_id,
+                                *session_id,
+                                ctx,
+                            );
+                        });
+                    }
                 } else {
                     self.add_tab_for_joining_shared_session(*session_id, ctx);
                 }
@@ -22363,10 +22381,10 @@ impl TypedActionView for Workspace {
             } => {
                 // Check if there's already a terminal viewing this conversation's task.
                 if let Some(task_id) = ambient_agent_task_id {
-                    if let Some(tab_index) =
-                        self.find_tab_with_ambient_agent_conversation(*task_id, ctx)
+                    if let Some((_, locator)) =
+                        self.find_pane_with_ambient_agent_conversation(*task_id, ctx)
                     {
-                        self.activate_tab(tab_index, ctx);
+                        self.focus_pane(locator, ctx);
                         return;
                     }
                 }

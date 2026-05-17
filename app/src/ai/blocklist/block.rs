@@ -1270,7 +1270,7 @@ impl AIBlock {
                 AmbientAgentViewModelEvent::DispatchedAgent
                 | AmbientAgentViewModelEvent::FollowupDispatched
                 | AmbientAgentViewModelEvent::SessionReady { .. }
-                | AmbientAgentViewModelEvent::FollowupSessionReady { .. }
+                | AmbientAgentViewModelEvent::ExecutionSessionReady { .. }
                 | AmbientAgentViewModelEvent::Failed { .. }
                 | AmbientAgentViewModelEvent::NeedsGithubAuth
                 | AmbientAgentViewModelEvent::Cancelled

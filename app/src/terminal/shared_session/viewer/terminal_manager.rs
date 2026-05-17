@@ -381,7 +381,11 @@ impl TerminalManager {
         }
     }
 
-    pub fn attach_followup_session(&mut self, session_id: SessionId, ctx: &mut AppContext) -> bool {
+    pub fn attach_execution_session(
+        &mut self,
+        session_id: SessionId,
+        ctx: &mut AppContext,
+    ) -> bool {
         match std::mem::replace(&mut self.network_state, NetworkState::Connecting) {
             NetworkState::Active(network) => {
                 network.update(ctx, |network, _| {
@@ -399,7 +403,7 @@ impl TerminalManager {
             NetworkState::Connecting => {
                 self.network_state = NetworkState::Connecting;
                 log::warn!(
-                    "attach_followup_session called while already connecting to shared session"
+                    "attach_execution_session called while already connecting to shared session"
                 );
                 return false;
             }
@@ -860,7 +864,7 @@ impl TerminalManager {
                     }
                     // Non-owner viewers (read-only) won't get a follow-up
                     // session; owners may handoff via
-                    // `attach_followup_session` (same `TerminalManager`,
+                    // `attach_execution_session` (same `TerminalManager`,
                     // same orchestrator `task_id`), so keep their model.
                     let is_owner = view.read(ctx, |terminal_view, app| {
                         terminal_view.owned_ambient_agent_task_id(app).is_some()
@@ -1694,8 +1698,8 @@ impl TerminalManager {
                 if let Some(ambient_agent_view_model) =
                     terminal_view.ambient_agent_view_model().cloned()
                 {
-                    ambient_agent_view_model.update(ctx, |model, _| {
-                        model.record_ambient_execution_ended(ended_session_id);
+                    ambient_agent_view_model.update(ctx, |model, ctx| {
+                        model.record_ambient_execution_ended(ended_session_id, ctx);
                     });
                 }
                 terminal_view.on_ambient_agent_execution_ended(ctx);

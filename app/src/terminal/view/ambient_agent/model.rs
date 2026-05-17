@@ -70,6 +70,16 @@ impl AgentProgress {
             stopped_at: None,
         }
     }
+
+    pub fn setup_status_text(&self) -> &'static str {
+        if self.harness_started_at.is_some() {
+            "Starting Environment (Step 3/3)"
+        } else if self.claimed_at.is_some() {
+            "Creating Environment (Step 2/3)"
+        } else {
+            "Connecting to Host (Step 1/3)"
+        }
+    }
 }
 
 /// Identifies what kind of session startup the model is currently waiting on.
@@ -841,6 +851,7 @@ impl AmbientAgentViewModel {
         self.task_id = Some(task_id);
 
         self.status = Status::AgentRunning;
+        ctx.emit(AmbientAgentViewModelEvent::RunLifecycleChanged);
 
         // Fetch the task so we can set the correct environment (instead of defaulting to the most
         // recently-used one) and the correct harness (so non-oz viewers know to use the
@@ -861,6 +872,7 @@ impl AmbientAgentViewModel {
 
                     me.set_environment_id(environment_id, ctx);
                     me.set_harness(harness, ctx);
+                    ctx.emit(AmbientAgentViewModelEvent::ViewerHarnessResolved);
                 }
                 Err(err) => {
                     log::warn!("Failed to fetch ambient agent task for shared session: {err}");
@@ -870,22 +882,33 @@ impl AmbientAgentViewModel {
         );
     }
 
-    /// Attach the view model to the shared session created for a follow-up prompt and notify the
-    /// terminal manager to append that session's scrollback to the existing transcript.
-    pub fn attach_followup_session(&mut self, session_id: SessionId, ctx: &mut ModelContext<Self>) {
-        self.stop_progress_timer();
-        self.pending_followup_prompt = None;
-        self.active_execution_session_id = Some(session_id);
-        self.last_ended_execution_session_id = None;
-        self.status = Status::AgentRunning;
-        ctx.emit(AmbientAgentViewModelEvent::FollowupSessionReady { session_id });
-    }
-
-    pub fn record_ambient_execution_ended(&mut self, session_id: SessionId) {
+    pub fn record_ambient_execution_ended(
+        &mut self,
+        session_id: SessionId,
+        ctx: &mut ModelContext<Self>,
+    ) {
         if self.active_execution_session_id.as_ref() == Some(&session_id) {
             self.active_execution_session_id = None;
+            ctx.emit(AmbientAgentViewModelEvent::RunLifecycleChanged);
         }
         self.last_ended_execution_session_id = Some(session_id);
+    }
+
+    /// Attach a new execution session to an existing ambient agent pane (e.g. when the
+    /// owner reopens a cloud conversation whose orchestrator has spun up a follow-up
+    /// session). The emitted `ExecutionSessionReady` event drives the view-side
+    /// `TerminalManager::attach_execution_session` swap to the new shared session.
+    pub fn attach_execution_session(
+        &mut self,
+        session_id: SessionId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.stop_progress_timer();
+        self.active_execution_session_id = Some(session_id);
+        self.last_ended_execution_session_id = None;
+        self.pending_followup_prompt = None;
+        self.status = Status::AgentRunning;
+        ctx.emit(AmbientAgentViewModelEvent::ExecutionSessionReady { session_id });
     }
 
     pub fn submit_cloud_followup(&mut self, prompt: String, ctx: &mut ModelContext<Self>) {
@@ -1236,7 +1259,7 @@ impl AmbientAgentViewModel {
                             ..
                         }
                         | Status::AgentRunning => {
-                            AmbientAgentViewModelEvent::FollowupSessionReady {
+                            AmbientAgentViewModelEvent::ExecutionSessionReady {
                                 session_id: event_session_id,
                             }
                         }
@@ -1568,8 +1591,8 @@ pub enum AmbientAgentViewModelEvent {
     SessionReady {
         session_id: SessionId,
     },
-    /// A follow-up execution has started sharing a fresh session.
-    FollowupSessionReady {
+    /// An execution has started sharing a session for an already-canonical ambient pane.
+    ExecutionSessionReady {
         session_id: SessionId,
     },
     /// An environment was selected.
@@ -1588,6 +1611,8 @@ pub enum AmbientAgentViewModelEvent {
     Cancelled,
     /// The selected execution harness (Oz / Claude Code) changed.
     HarnessSelected,
+    /// A shared-session viewer resolved the run harness from the server task.
+    ViewerHarnessResolved,
     /// The selected worker host changed via the HostSelector.
     HostSelected,
     /// The selected third-party harness model id changed (e.g. user picked `"opus"` for Claude).
@@ -1609,6 +1634,11 @@ pub enum AmbientAgentViewModelEvent {
     UpdatedSetupCommandVisibility,
     /// The selected harness auth secret changed.
     AuthSecretSelected,
+    /// The run's task association or execution liveness changed in a way that
+    /// may affect lock-dependent UI (e.g. the model selector). Fired when
+    /// a task is attached to the view (transcript restore) or when an
+    /// execution ends.
+    RunLifecycleChanged,
 }
 
 pub(crate) fn should_disable_snapshot(ctx: &AppContext) -> bool {

@@ -214,6 +214,11 @@ impl ModelSelector {
                     me.refresh_button(ctx);
                     me.refresh_menu(ctx);
                 }
+                AmbientAgentViewModelEvent::SessionReady { .. }
+                | AmbientAgentViewModelEvent::FollowupDispatched
+                | AmbientAgentViewModelEvent::RunLifecycleChanged => {
+                    me.refresh_button(ctx);
+                }
                 _ => {}
             });
         }

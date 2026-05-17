@@ -264,7 +264,8 @@ impl StartAgentExecutor {
             | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
             | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
             | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. } => {}
-            BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => {}
+            BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. }
+            | BlocklistAIHistoryEvent::ConversationUsageMetadataUpdated { .. } => {}
         }
     }
 

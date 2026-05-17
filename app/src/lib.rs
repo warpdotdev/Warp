@@ -2910,6 +2910,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::SummarizationViaMessageReplacement,
         #[cfg(feature = "pluggable_notifications")]
         FeatureFlag::PluggableNotifications,
+        #[cfg(feature = "async_find")]
+        FeatureFlag::AsyncFind,
         #[cfg(feature = "list_skills")]
         FeatureFlag::ListSkills,
         #[cfg(feature = "ask_user_question")]
@@ -2946,6 +2948,10 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::OrchestrationV2,
         #[cfg(feature = "orchestration_pill_bar")]
         FeatureFlag::OrchestrationPillBar,
+        #[cfg(feature = "orchestration_viewer_pill_bar")]
+        FeatureFlag::OrchestrationViewerPillBar,
+        #[cfg(feature = "run_agents_tool")]
+        FeatureFlag::RunAgentsTool,
         #[cfg(feature = "pending_user_query_indicator")]
         FeatureFlag::PendingUserQueryIndicator,
         #[cfg(feature = "queue_slash_command")]

@@ -17,8 +17,9 @@ use crate::ai::ambient_agents::telemetry::{CloudAgentTelemetryEvent, CloudModeEn
 use crate::ai::blocklist::{agent_view::AgentViewEntryOrigin, BlocklistAIHistoryModel};
 use crate::ai::conversation_details_panel::ConversationDetailsData;
 use crate::pane_group::TerminalViewResources;
+use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::view::rich_content::{RichContentInsertionPosition, RichContentMetadata};
-use crate::terminal::view::TerminalView;
+use crate::terminal::view::{ConversationDetailsPanelAutoOpenPolicy, TerminalView};
 use crate::terminal::CLIAgent;
 use crate::workspace::view::cloud_agent_capacity_modal::CloudAgentCapacityModalVariant;
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -194,12 +195,13 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::SessionReady { .. }
-            | AmbientAgentViewModelEvent::FollowupSessionReady { .. } => {
+            | AmbientAgentViewModelEvent::ExecutionSessionReady { .. } => {
                 if matches!(
                     event,
-                    AmbientAgentViewModelEvent::FollowupSessionReady { .. }
+                    AmbientAgentViewModelEvent::ExecutionSessionReady { .. }
                 ) {
                     self.pending_cloud_followup_task_id = None;
+                    self.remove_conversation_ended_tombstone(ctx);
                 }
                 if FeatureFlag::HandoffCloudCloud.is_enabled() {
                     self.refresh_conversation_details_panel_if_open(ctx);
@@ -300,7 +302,14 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::HarnessSelected => {
-                self.maybe_enter_agent_view_for_shared_third_party_viewer(ctx);
+                self.update_pane_configuration(ctx);
+                ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
+                ctx.notify();
+            }
+            AmbientAgentViewModelEvent::ViewerHarnessResolved => {
+                // Once we know which harness we're using from the server, try and enter the agent
+                // view if we haven't already.
+                self.sync_agent_view_for_shared_third_party_viewer(ctx);
                 self.update_pane_configuration(ctx);
                 ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
@@ -389,7 +398,8 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility
-            | AmbientAgentViewModelEvent::AuthSecretSelected => (),
+            | AmbientAgentViewModelEvent::AuthSecretSelected
+            | AmbientAgentViewModelEvent::RunLifecycleChanged => (),
         }
     }
 
@@ -493,57 +503,61 @@ impl TerminalView {
         );
     }
 
-    /// Enters agent view for a live shared-session viewer of a non-oz cloud run, so every
+    /// Returns whether this view is a live shared-session viewer for a non-Oz cloud run.
+    fn is_third_party_cloud_agent_viewer(&self, ctx: &AppContext) -> bool {
+        // The ambient model's harness resolves asynchronously after join, when we fetch the task.
+        // Until then, use the synced CLI-agent session (which we get on shared session join, if the
+        // CLI agent is currently active) as the live third-party harness signal.
+        let has_ambient_third_party_harness = self
+            .ambient_agent_view_model
+            .as_ref()
+            .is_some_and(|model| model.as_ref(ctx).is_third_party_harness());
+        let has_cli_agent_session = FeatureFlag::AgentHarness.is_enabled() && {
+            CLIAgentSessionsModel::as_ref(ctx)
+                .session(self.view_id)
+                .is_some()
+        };
+        let is_shared_ambient_agent_session = self.is_shared_ambient_agent_session();
+
+        (has_ambient_third_party_harness || has_cli_agent_session)
+            && is_shared_ambient_agent_session
+    }
+
+    /// Syncs agent view for a live shared-session viewer of a non-oz cloud run, so every
     /// viewer lands in the same agent-view chrome regardless of which entry point opened the
-    /// conversation. Called from the `HarnessSelected` handler once the viewer has resolved
-    /// the run's harness asynchronously.
+    /// conversation. Called from two independent signals that race:
+    /// - `ViewerHarnessUpdated`: ambient model resolved the harness from the task fetch
+    /// - `apply_cli_agent_state_update`: CLI session synced on viewer join/reconnect
     ///
     /// Transcript viewer entry is handled directly in `load_data_into_transcript_viewer` so
     /// the snapshot block exists before we retag — we intentionally do not trigger that path
     /// here.
-    ///
-    /// The viewer-context guard is load-bearing: `HarnessSelected` also fires when the local
-    /// spawner picks a harness from the dropdown, and in that case the cloud-mode setup flow
-    /// handles agent view entry instead.
-    fn maybe_enter_agent_view_for_shared_third_party_viewer(
+    pub(crate) fn sync_agent_view_for_shared_third_party_viewer(
         &mut self,
         ctx: &mut ViewContext<Self>,
-    ) {
-        if self
+    ) -> Option<AIConversationId> {
+        if !self.is_third_party_cloud_agent_viewer(ctx) {
+            return None;
+        }
+        if let Some(conversation_id) = self
             .agent_view_controller
             .as_ref(ctx)
             .agent_view_state()
-            .is_active()
+            .active_conversation_id()
         {
-            return;
+            return Some(conversation_id);
         }
-        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.as_ref() else {
-            return;
-        };
-        if !ambient_agent_view_model
-            .as_ref(ctx)
-            .is_third_party_harness()
-        {
-            return;
-        }
-        if !self.is_shared_ambient_agent_session() {
-            return;
-        }
-
         self.enter_agent_view_for_new_conversation(
             None,
             AgentViewEntryOrigin::ThirdPartyCloudAgent,
             ctx,
         );
 
-        let Some(vehicle_conversation_id) = self
+        let vehicle_conversation_id = self
             .agent_view_controller
             .as_ref(ctx)
             .agent_view_state()
-            .active_conversation_id()
-        else {
-            return;
-        };
+            .active_conversation_id()?;
 
         // Retag existing non-setup blocks so the harness content passes the agent view filter.
         self.model
@@ -564,6 +578,8 @@ impl TerminalView {
         for view_id in ids_to_retag {
             self.set_rich_content_agent_view_conversation_id(view_id, vehicle_conversation_id);
         }
+
+        Some(vehicle_conversation_id)
     }
 
     /// Returns `true` when the block's command is the CLI for the run's configured
@@ -849,13 +865,7 @@ impl TerminalView {
             )
         } else {
             // Show loading screen - determine the message based on progress state
-            let message = if progress.harness_started_at.is_some() {
-                "Starting Environment (Step 3/3)"
-            } else if progress.claimed_at.is_some() {
-                "Creating Environment (Step 2/3)"
-            } else {
-                "Connecting to Host (Step 1/3)"
-            };
+            let message = progress.setup_status_text();
 
             render_cloud_mode_loading_screen(
                 message,
@@ -965,9 +975,15 @@ impl TerminalView {
         if self.has_auto_opened_conversation_details_panel {
             return;
         }
-        self.is_conversation_details_panel_open = true;
         self.has_auto_opened_conversation_details_panel = true;
-        self.fetch_and_update_conversation_details_panel(ctx);
-        ctx.notify();
+
+        match self.conversation_details_panel_auto_open_policy {
+            ConversationDetailsPanelAutoOpenPolicy::DefaultOpen => {
+                self.is_conversation_details_panel_open = true;
+                self.fetch_and_update_conversation_details_panel(ctx);
+                ctx.notify();
+            }
+            ConversationDetailsPanelAutoOpenPolicy::DefaultClosed => {}
+        }
     }
 }

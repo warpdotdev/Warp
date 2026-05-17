@@ -2843,7 +2843,7 @@ impl BlocklistAIController {
         ctx: &mut ModelContext<Self>,
     ) {
         let history_model = BlocklistAIHistoryModel::handle(ctx);
-        history_model.update(ctx, |history_model, _| {
+        history_model.update(ctx, |history_model, ctx| {
             // Update conversation cost and usage information before updating and
             // persisting the conversation.
             history_model.update_conversation_cost_and_usage_for_request(
@@ -2855,6 +2855,7 @@ impl BlocklistAIController {
                 finished_event.token_usage,
                 finished_event.conversation_usage_metadata.take(),
                 did_request_contain_user_query,
+                ctx,
             );
         });
 
