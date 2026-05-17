@@ -4,8 +4,8 @@ use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::appearance::Appearance;
 use warpui::{
     elements::{
-        Border, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius,
-        CrossAxisAlignment, Empty, Flex, Hoverable, MainAxisAlignment, MainAxisSize,
+        ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
+        Empty, Flex, Hoverable, MainAxisAlignment, MainAxisSize,
         MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds,
         Radius, Stack, Text,
     },
@@ -331,9 +331,14 @@ impl BillingCycleUsageSectionView {
                     .finish(),
             );
             inner.add_child(
-                Container::new(Icon::ChevronDown.to_warpui_icon(main_text).finish())
-                    .with_margin_left(4.)
-                    .finish(),
+                Container::new(
+                    ConstrainedBox::new(Icon::ChevronDown.to_warpui_icon(main_text).finish())
+                        .with_width(12.)
+                        .with_height(12.)
+                        .finish(),
+                )
+                .with_margin_left(4.)
+                .finish(),
             );
             inner.finish()
         })
