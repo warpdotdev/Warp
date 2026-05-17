@@ -947,7 +947,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::SoloUserByok,
     FeatureFlag::CustomInferenceEndpoints,
     FeatureFlag::RemoteCodebaseIndexing,
-    FeatureFlag::BillingAndUsagePageV2,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
