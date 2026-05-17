@@ -106,8 +106,7 @@ fn make_task(
 }
 
 /// Builds an [`AmbientAgentTask`] whose `agent_config_snapshot.name` is
-/// populated when `snapshot_name` is `Some`. Used by QUALITY-731 tests that
-/// exercise the `display_name()` precedence.
+/// populated when `snapshot_name` is `Some`.
 fn make_task_with_name(
     id: &str,
     state: AmbientAgentTaskState,
@@ -457,7 +456,7 @@ fn materialization_gate_flips_on_session_id_transition() {
     });
 }
 
-// ---- QUALITY-731 display_name precedence -----------------------------------
+// ---- display_name precedence -----------------------------------------------
 
 #[test]
 fn registers_child_agent_name_from_snapshot_name() {
@@ -544,10 +543,9 @@ fn registers_child_agent_name_does_not_set_fallback_for_whitespace_only_title() 
         let (_, parent_conv_id, model) = setup_model(&mut app, parent);
         let model_handle = app.add_model(|_| model);
 
-        // QUALITY-731 finding 3: `display_name()` trims, so the pill label
-        // collapses to `"Agent"` for a whitespace-only title. The conversation
-        // fallback must trim too, or `title()` would return `"  "` while
-        // `agent_name()` returns `"Agent"`.
+        // Whitespace-only title: `display_name()` trims to `"Agent"`, so the
+        // fallback gate must trim too — otherwise `title()` would return the
+        // raw whitespace while `agent_name()` returns `"Agent"`.
         model_handle.update(&mut app, |model, ctx| {
             model.apply_children_fetch(
                 vec![make_task_with_name(

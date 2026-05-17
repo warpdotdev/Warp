@@ -365,13 +365,8 @@ impl AmbientAgentTask {
         self.task_id
     }
 
-    /// Returns the short orchestrator-supplied label for this task, if any,
-    /// falling back to the descriptive `title` and then the literal `"Agent"`.
-    ///
-    /// QUALITY-731: the label is sourced from the existing
-    /// `agent_config_snapshot.name` field rather than a parallel top-level
-    /// `name` field on the task. Each layer is trimmed; whitespace-only values
-    /// are treated as absent so we fall through to the next fallback.
+    /// Returns the short label for this task: trimmed `agent_config_snapshot.name`,
+    /// trimmed `title`, or `"Agent"`.
     pub fn display_name(&self) -> &str {
         if let Some(name) = self
             .agent_config_snapshot

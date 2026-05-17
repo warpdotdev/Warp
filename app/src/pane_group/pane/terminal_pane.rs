@@ -1701,13 +1701,6 @@ fn launch_local_no_harness_child(
 ) {
     let ai_client = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
     let request_id = request.id;
-    // QUALITY-731: normalize the orchestrator-supplied short name once and
-    // use the same trimmed value at every site (the hidden child
-    // conversation's `agent_name`, the task snapshot's
-    // `agent_config_snapshot.name`, and any error-fallback conversation).
-    // Without this, a `request.name` of `"  frontend-tests  "` would set
-    // the conversation's `agent_name` to the untrimmed value while the
-    // snapshot dropped the whitespace, producing inconsistent labels.
     let agent_name = normalize_orchestrator_agent_name(&request.name);
     let request_name = agent_name.clone().unwrap_or_default();
     let parent_conversation_id = request.parent_conversation_id;
@@ -1861,7 +1854,6 @@ fn launch_local_harness_child(
     let startup_directory = group.startup_path_for_new_session(Some(terminal_pane_id), ctx);
     let ai_client = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
     let request_id = request.id;
-    // QUALITY-731: same normalize-once treatment as launch_local_no_harness_child.
     let agent_name = normalize_orchestrator_agent_name(&request.name);
     let request_name = agent_name.clone().unwrap_or_default();
     let parent_conversation_id = request.parent_conversation_id;
@@ -2058,11 +2050,6 @@ fn launch_remote_child(
         return None;
     };
 
-    // QUALITY-731: normalize the orchestrator-supplied short name once and
-    // use the same trimmed value for both the hidden child conversation's
-    // `agent_name` (via `start_new_child_conversation`) and the task
-    // snapshot's `agent_config_snapshot.name` on the outbound
-    // `SpawnAgentRequest`.
     let agent_name = normalize_orchestrator_agent_name(&request.name);
     let request_name = agent_name.clone().unwrap_or_default();
 
