@@ -302,7 +302,7 @@ impl AIDocumentView {
                             // wasn't available at construction time (the
                             // plan sidebar can open before the server
                             // sends the orchestration config).
-                            if me.orchestration_config_block.is_none() {
+                            let was_freshly_created = if me.orchestration_config_block.is_none() {
                                 let conv_id = *cid;
                                 // TODO: introduce DocumentId / PlanId newtypes to make this
                                 // conversion type-safe.
@@ -311,6 +311,27 @@ impl AIDocumentView {
                                     Some(ctx.add_typed_action_view(move |ctx| {
                                         OrchestrationConfigBlockView::new(conv_id, plan_id, ctx)
                                     }));
+                                true
+                            } else {
+                                false
+                            };
+                            // When the block was freshly created in
+                            // response to this `OrchestrationConfigUpdated`
+                            // event, the agent just dispatched a config
+                            // (the event is only fired for incoming
+                            // `OrchestrationConfigSnapshot` messages, not
+                            // session restoration). Arm the auto-open of
+                            // the create-key modal so the block prompts
+                            // the user when the harness has no keys yet.
+                            // Restoration goes through the eager
+                            // construction path in `Self::new` and never
+                            // hits this branch.
+                            if was_freshly_created {
+                                if let Some(block) = &me.orchestration_config_block {
+                                    block.update(ctx, |block, ctx| {
+                                        block.arm_for_fresh_dispatch(ctx);
+                                    });
+                                }
                             }
                             ctx.notify();
                         }
