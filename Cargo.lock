@@ -562,7 +562,6 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
- "warp_cli",
  "win32job",
 ]
 
@@ -5918,9 +5917,6 @@ dependencies = [
 [[package]]
 name = "handlebars"
 version = "0.0.0"
-dependencies = [
- "warpui",
-]
 
 [[package]]
 name = "hash32"
