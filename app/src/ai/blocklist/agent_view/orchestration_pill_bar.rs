@@ -5,7 +5,6 @@
 use std::cell::RefCell;
 use std::collections::{hash_map::DefaultHasher, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use std::time::Duration;
 
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
@@ -225,10 +224,6 @@ fn pill_label_width(
 
 /// Width of the per-pill hover details card.
 const HOVER_CARD_WIDTH: f32 = 280.;
-/// Delay before the hover card appears after the cursor lands on a pill.
-const HOVER_CARD_IN_DELAY: Duration = Duration::from_millis(300);
-/// Delay before the card disappears after the cursor leaves the pill.
-const HOVER_CARD_OUT_DELAY: Duration = Duration::from_millis(80);
 
 /// Typed actions dispatched by the pill bar's widgets. Each action carries
 /// the targeted child pill's conversation id so a single shared `Menu`
@@ -1024,8 +1019,7 @@ enum MenuOrCard {
 
 /// Builds the hover details card overlay for the given conversation, or
 /// returns `None` if there's no conversation to summarise (e.g. the id
-/// has just been removed from history). Hidden by `View::render` until the
-/// hover-in delay elapses.
+/// has just been removed from history).
 ///
 /// V1 scope keeps the card pragmatic: title + description + a compact
 /// chips row showing the agent's harness (placeholder for now), branch
@@ -1690,8 +1684,6 @@ fn render_pill(
     // skips the outer click whenever a child already handled it so the
     // 3-dot click only opens the menu.
     .with_defer_events_to_children()
-    .with_hover_in_delay(HOVER_CARD_IN_DELAY)
-    .with_hover_out_delay(HOVER_CARD_OUT_DELAY)
     .on_hover(move |is_hovered, ctx, _app, _pos| {
         // Drive the hover-details-card overlay via a typed action so the
         // pill bar's `handle_action` can update its `hovered_pill` field
