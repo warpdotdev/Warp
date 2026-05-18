@@ -7,6 +7,7 @@ use ai::agent::orchestration_config::OrchestrationConfigStatus;
 use pathfinder_color::ColorU;
 use std::collections::HashMap;
 use warp_cli::agent::Harness;
+use warp_core::send_telemetry_from_ctx;
 use warpui::elements::{
     ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Flex, Hoverable,
     MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Text,
@@ -23,6 +24,10 @@ use crate::ai::blocklist::inline_action::orchestration_controls::{
     self as oc, AuthSecretSelection, OrchestrationControlAction, OrchestrationEditState,
     OrchestrationPickerHandles,
 };
+use crate::ai::blocklist::telemetry::{
+    AgentProposedConfigEvent, BlocklistOrchestrationTelemetryEvent, OrchestrationApprovalStatus,
+    OrchestrationExecutionModeKind, OrchestrationHarnessKind, PlanConfigApprovalToggledEvent,
+};
 use crate::ai::blocklist::BlocklistAIHistoryEvent;
 use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::ai::harness_availability::{
@@ -33,6 +38,22 @@ use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
 use crate::BlocklistAIHistoryModel;
 use warp_core::ui::theme::WarpTheme;
+
+/// True when the mode is remote and `environment_id` is non-empty.
+fn env_presence(execution_mode: &RunAgentsExecutionMode) -> bool {
+    matches!(
+        execution_mode,
+        RunAgentsExecutionMode::Remote { environment_id, .. } if !environment_id.is_empty()
+    )
+}
+
+/// True when the mode is remote and `worker_host` is non-empty.
+fn host_presence(execution_mode: &RunAgentsExecutionMode) -> bool {
+    matches!(
+        execution_mode,
+        RunAgentsExecutionMode::Remote { worker_host, .. } if !worker_host.is_empty()
+    )
+}
 
 /// Renders a pill-shaped toggle switch (36×18) matching the Figma mock.
 fn render_pill_toggle(is_on: bool, theme: &WarpTheme) -> Box<dyn Element> {
@@ -165,6 +186,10 @@ impl OrchestrationConfigBlockView {
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let history = BlocklistAIHistoryModel::as_ref(ctx);
+        let snapshot_loaded = history
+            .conversation(&conversation_id)
+            .and_then(|conv| conv.orchestration_config_for_plan(&plan_id))
+            .is_some();
         let (edit_state, is_approved) = history
             .conversation(&conversation_id)
             .and_then(|conv| {
@@ -273,6 +298,12 @@ impl OrchestrationConfigBlockView {
             // Skip auto-open here: construction is also the restore code
             // path. The first user interaction (or `arm_for_fresh_dispatch`
             // from a live config update) arms the auto-open instead.
+        }
+        // Capture the agent's config proposal once per view instance.
+        // Gated on `snapshot_loaded` so we don't fire when the view is
+        // constructed with placeholder defaults (no real snapshot yet).
+        if snapshot_loaded {
+            view.emit_agent_proposed_config(ctx);
         }
         view
     }
@@ -671,6 +702,12 @@ impl TypedActionView for OrchestrationConfigBlockView {
                 if self.is_approved && !self.pickers_initialized {
                     self.ensure_pickers(ctx);
                 }
+                let status = if self.is_approved {
+                    OrchestrationApprovalStatus::Approved
+                } else {
+                    OrchestrationApprovalStatus::Disapproved
+                };
+                self.emit_plan_config_approval_toggled(status, ctx);
                 self.apply_field_change(ctx);
                 // First moment the picker exists — arm and evaluate.
                 if self.is_approved {
@@ -769,5 +806,49 @@ impl TypedActionView for OrchestrationConfigBlockView {
                 ctx.notify();
             }
         }
+    }
+}
+
+impl OrchestrationConfigBlockView {
+    fn emit_plan_config_approval_toggled(
+        &self,
+        status: OrchestrationApprovalStatus,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        send_telemetry_from_ctx!(
+            BlocklistOrchestrationTelemetryEvent::PlanConfigApprovalToggled(
+                PlanConfigApprovalToggledEvent {
+                    conversation_id: self.conversation_id,
+                    plan_id: (!self.plan_id.is_empty()).then(|| self.plan_id.clone()),
+                    status,
+                    execution_mode: OrchestrationExecutionModeKind::from_run_agents(
+                        &self.edit_state.execution_mode,
+                    ),
+                    harness: OrchestrationHarnessKind::from_str(&self.edit_state.harness_type),
+                    has_model: !self.edit_state.model_id.trim().is_empty(),
+                    has_environment: env_presence(&self.edit_state.execution_mode),
+                    has_worker_host: host_presence(&self.edit_state.execution_mode),
+                    has_auth_secret: self.edit_state.auth_secret_name().is_some(),
+                }
+            ),
+            ctx
+        );
+    }
+
+    fn emit_agent_proposed_config(&self, ctx: &mut ViewContext<Self>) {
+        send_telemetry_from_ctx!(
+            BlocklistOrchestrationTelemetryEvent::AgentProposedConfig(AgentProposedConfigEvent {
+                conversation_id: self.conversation_id,
+                plan_id: (!self.plan_id.is_empty()).then(|| self.plan_id.clone()),
+                harness: OrchestrationHarnessKind::from_str(&self.edit_state.harness_type),
+                execution_mode: OrchestrationExecutionModeKind::from_run_agents(
+                    &self.edit_state.execution_mode,
+                ),
+                has_model: !self.edit_state.model_id.trim().is_empty(),
+                has_environment: env_presence(&self.edit_state.execution_mode),
+                has_worker_host: host_presence(&self.edit_state.execution_mode),
+            }),
+            ctx
+        );
     }
 }

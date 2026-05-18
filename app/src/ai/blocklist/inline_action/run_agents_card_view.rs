@@ -10,10 +10,17 @@ use ai::agent::action_result::{RunAgentsAgentOutcomeKind, RunAgentsResult};
 use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationConfigStatus};
 
 use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::blocklist::telemetry::{
+    orchestration_modified_field, BlocklistOrchestrationTelemetryEvent,
+    OrchestrationApprovalStatus, OrchestrationEnteredEvent, OrchestrationEntrySource,
+    OrchestrationExecutionModeKind, OrchestrationHarnessKind, RunAgentsCardDecision,
+    RunAgentsCardDecisionEvent,
+};
 use crate::BlocklistAIHistoryModel;
 use ai::skills::SkillReference;
 use pathfinder_geometry::vector::vec2f;
 use std::rc::Rc;
+use warp_core::send_telemetry_from_ctx;
 use warpui::elements::{
     Border, ChildView, Container, CornerRadius, CrossAxisAlignment, Empty, Flex, MainAxisSize,
     OffsetPositioning, ParentElement, Radius, Stack, Text,
@@ -225,6 +232,14 @@ pub struct RunAgentsCardView {
     /// UI-only per-harness model memory so switching harnesses preserves
     /// the user's previous model selection for each harness.
     saved_model_per_harness: HashMap<String, String>,
+    /// Snapshot of the latest raw `RunAgentsRequest` from the LLM
+    /// stream. Used at decision time to diff the run-wide config
+    /// fields the user changed before accepting.
+    original_tool_call_request: RunAgentsRequest,
+    /// Guards `OrchestrationEntered` against double-fires on re-renders.
+    entered_event_emitted: bool,
+    /// Guards the terminal decision event against double-fires.
+    decision_event_emitted: bool,
     /// One-shot guard: cancelling the auto-popped modal must not re-pop.
     /// Reset on harness / execution-mode change.
     has_auto_opened_create_modal: bool,
@@ -322,6 +337,9 @@ impl RunAgentsCardView {
         // (called after streaming finishes and agent_run_configs is populated).
         let state = RunAgentsEditState::from_request(request);
         let auto_launched = false;
+        // Snapshot the raw incoming request so we can diff against the
+        // edited state at Accept time.
+        let original_tool_call_request = request.clone();
 
         let reject_keystroke = CTRL_C_KEYSTROKE.clone();
         let accept_keystroke = ENTER_KEYSTROKE.clone();
@@ -494,6 +512,9 @@ impl RunAgentsCardView {
             action_model,
             block_model,
             saved_model_per_harness: HashMap::new(),
+            original_tool_call_request,
+            entered_event_emitted: false,
+            decision_event_emitted: false,
             has_auto_opened_create_modal: false,
         };
 
@@ -511,6 +532,9 @@ impl RunAgentsCardView {
         if self.spawning.is_some() || self.auto_launched || self.is_denied {
             return;
         }
+        // Keep the raw-tool-call snapshot in sync with the latest
+        // streamed chunk.
+        self.original_tool_call_request = request.clone();
         let mut new_state = RunAgentsEditState::from_request(request);
         // Resolve empty fields from the active config (same as in new()).
         if let Some((config, status)) = &self.active_config {
@@ -619,6 +643,10 @@ impl RunAgentsCardView {
         // First-chance fallback; don't reset the one-shot or we'd re-pop
         // after the user cancelled.
         self.maybe_auto_open_create_modal(ctx);
+
+        // The card is about to be shown — log it as an orchestration
+        // entry point.
+        self.emit_orchestration_entered_once(conversation_id, ctx);
     }
 
     /// Validates and dispatches the resolved request.
@@ -635,10 +663,83 @@ impl RunAgentsCardView {
             return;
         }
         let request = self.state.to_request();
+        self.emit_decision(RunAgentsCardDecision::Accept, ctx);
         let action_id = self.action_id.clone();
         self.action_model.update(ctx, |action_model, action_ctx| {
             action_model.execute_run_agents(&action_id, request, action_ctx);
         });
+    }
+
+    /// Emits `OrchestrationEntered::RunAgentsCardShown` at most once
+    /// per card instance.
+    fn emit_orchestration_entered_once(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.entered_event_emitted {
+            return;
+        }
+        self.entered_event_emitted = true;
+        send_telemetry_from_ctx!(
+            BlocklistOrchestrationTelemetryEvent::OrchestrationEntered(OrchestrationEnteredEvent {
+                conversation_id,
+                plan_id: (!self.state.plan_id.is_empty()).then(|| self.state.plan_id.clone()),
+                entry_source: OrchestrationEntrySource::RunAgentsCardShown,
+            }),
+            ctx
+        );
+    }
+
+    /// Emits `RunAgentsCardDecision` at most once per card instance.
+    fn emit_decision(&mut self, decision: RunAgentsCardDecision, ctx: &mut ViewContext<Self>) {
+        if self.decision_event_emitted {
+            return;
+        }
+        self.decision_event_emitted = true;
+        let Some(conversation_id) = self.block_model.conversation_id(ctx) else {
+            return;
+        };
+        let modified_fields_from_tool_call =
+            diverged_orch_fields(&self.state.orch, &self.original_tool_call_request);
+        let (had_active_config, active_config_status, modified_fields_from_active_config) =
+            match &self.active_config {
+                Some((cfg, status)) => {
+                    let status_enum = if status.is_approved() {
+                        Some(OrchestrationApprovalStatus::Approved)
+                    } else if status.is_disapproved() {
+                        Some(OrchestrationApprovalStatus::Disapproved)
+                    } else {
+                        None
+                    };
+                    let diff = if status.is_approved() {
+                        diverged_orch_fields_against_config(&self.state.orch, cfg)
+                    } else {
+                        Vec::new()
+                    };
+                    (true, status_enum, diff)
+                }
+                None => (false, None, Vec::new()),
+            };
+        send_telemetry_from_ctx!(
+            BlocklistOrchestrationTelemetryEvent::RunAgentsCardDecision(
+                RunAgentsCardDecisionEvent {
+                    conversation_id,
+                    plan_id: (!self.state.plan_id.is_empty()).then(|| self.state.plan_id.clone()),
+                    decision,
+                    agent_count: self.state.agent_run_configs.len(),
+                    harness: OrchestrationHarnessKind::from_str(&self.state.orch.harness_type),
+                    execution_mode: OrchestrationExecutionModeKind::from_run_agents(
+                        &self.state.orch.execution_mode,
+                    ),
+                    modified_fields_from_tool_call,
+                    modified_fields_from_active_config,
+                    had_active_config,
+                    active_config_status,
+                }
+            ),
+            ctx
+        );
     }
 
     /// Auto-pops the create-key modal once per card per harness/mode
@@ -1000,6 +1101,7 @@ impl TypedActionView for RunAgentsCardView {
                 self.handle_accept(ctx);
             }
             RunAgentsCardViewAction::AcceptWithoutOrchestration => {
+                self.emit_decision(RunAgentsCardDecision::AcceptWithoutOrchestration, ctx);
                 let action_id = self.action_id.clone();
                 self.action_model.update(ctx, |action_model, action_ctx| {
                     action_model.deny_run_agents(&action_id, String::new(), action_ctx);
@@ -1009,6 +1111,7 @@ impl TypedActionView for RunAgentsCardView {
                 self.toggle_accept_menu(ctx);
             }
             RunAgentsCardViewAction::Reject => {
+                self.emit_decision(RunAgentsCardDecision::Reject, ctx);
                 ctx.emit(RunAgentsCardViewEvent::RejectRequested);
             }
             RunAgentsCardViewAction::ExecutionModeToggled { is_remote } => {
@@ -1085,6 +1188,94 @@ impl TypedActionView for RunAgentsCardView {
             }
         }
     }
+}
+
+/// Field names from [`orchestration_modified_field`] that differ
+/// between the user-edited `state` and the LLM's original
+/// `RunAgentsRequest`.
+fn diverged_orch_fields(
+    state: &oc::OrchestrationEditState,
+    original: &RunAgentsRequest,
+) -> Vec<&'static str> {
+    let mut fields = Vec::new();
+    if state.model_id != original.model_id {
+        fields.push(orchestration_modified_field::MODEL_ID);
+    }
+    if state.harness_type != original.harness_type {
+        fields.push(orchestration_modified_field::HARNESS);
+    }
+    let state_remote = state.execution_mode.is_remote();
+    let original_remote = original.execution_mode.is_remote();
+    if state_remote != original_remote {
+        fields.push(orchestration_modified_field::EXECUTION_MODE);
+    } else if let (
+        RunAgentsExecutionMode::Remote {
+            environment_id: state_env,
+            worker_host: state_host,
+            ..
+        },
+        RunAgentsExecutionMode::Remote {
+            environment_id: orig_env,
+            worker_host: orig_host,
+            ..
+        },
+    ) = (&state.execution_mode, &original.execution_mode)
+    {
+        if state_env != orig_env {
+            fields.push(orchestration_modified_field::ENVIRONMENT_ID);
+        }
+        if state_host != orig_host {
+            fields.push(orchestration_modified_field::WORKER_HOST);
+        }
+    }
+    if state.auth_secret_name() != original.harness_auth_secret_name.as_deref() {
+        fields.push(orchestration_modified_field::AUTH_SECRET);
+    }
+    fields
+}
+
+/// Same shape as [`diverged_orch_fields`] but compares against an
+/// approved `OrchestrationConfig`. auth_secret is omitted: managed
+/// secrets are per-user, not stored on the config.
+fn diverged_orch_fields_against_config(
+    state: &oc::OrchestrationEditState,
+    config: &OrchestrationConfig,
+) -> Vec<&'static str> {
+    use ai::agent::orchestration_config::OrchestrationExecutionMode;
+    let mut fields = Vec::new();
+    if state.model_id != config.model_id {
+        fields.push(orchestration_modified_field::MODEL_ID);
+    }
+    if state.harness_type != config.harness_type {
+        fields.push(orchestration_modified_field::HARNESS);
+    }
+    let state_remote = state.execution_mode.is_remote();
+    let config_remote = matches!(
+        config.execution_mode,
+        OrchestrationExecutionMode::Remote { .. }
+    );
+    if state_remote != config_remote {
+        fields.push(orchestration_modified_field::EXECUTION_MODE);
+    } else if let (
+        RunAgentsExecutionMode::Remote {
+            environment_id: state_env,
+            worker_host: state_host,
+            ..
+        },
+        OrchestrationExecutionMode::Remote {
+            environment_id: cfg_env,
+            worker_host: cfg_host,
+        },
+    ) = (&state.execution_mode, &config.execution_mode)
+    {
+        if state_env != cfg_env {
+            fields.push(orchestration_modified_field::ENVIRONMENT_ID);
+        }
+        if state_host != cfg_host {
+            fields.push(orchestration_modified_field::WORKER_HOST);
+        }
+    }
+    fields
 }
 
 fn render_confirmation_card(

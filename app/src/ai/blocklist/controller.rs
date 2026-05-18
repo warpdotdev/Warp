@@ -678,6 +678,21 @@ impl BlocklistAIController {
 
         let (query, user_query_mode) = extract_user_query_mode(query);
 
+        // Attribute /orchestrate queries to the slash-command entry surface.
+        if matches!(user_query_mode, UserQueryMode::Orchestrate) {
+            send_telemetry_from_ctx!(
+                super::telemetry::BlocklistOrchestrationTelemetryEvent::OrchestrationEntered(
+                    super::telemetry::OrchestrationEnteredEvent {
+                        conversation_id,
+                        plan_id: None,
+                        entry_source:
+                            super::telemetry::OrchestrationEntrySource::SlashCommandOrchestrate,
+                    }
+                ),
+                ctx
+            );
+        }
+
         let should_prepend_finished_action_results = matches!(
             input_query.input_query,
             InputQueryType::UserSubmittedQueryFromInput { .. }
