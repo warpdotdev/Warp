@@ -1746,6 +1746,124 @@ fn test_clear_screen_all_alt_screen_clears_in_place() {
     assert_visible_grid_blank(&grid);
 }
 
+/// Regression test for GH #9181 — "Terminal Screen Replicates Throughout
+/// Session".
+///
+/// A primary-screen TUI redraw (CSI [H followed by CSI [2J) issued while the
+/// cursor is at the home position must clear in place rather than pushing
+/// the previous frame into scrollback. Inline-rendering CLI agents such as
+/// Claude Code emit this pattern many times per second; the old behavior
+/// duplicated the visible region into block scrollback on every redraw.
+#[test]
+fn test_clear_screen_all_primary_tui_redraw_at_home_clears_in_place() {
+    let mut grid = GridHandler::new_for_test_with_scroll_limit(3, 5, MAX_SCROLL_LIMIT);
+    write_two_visible_rows(&mut grid);
+
+    // Simulate a TUI redraw: home the cursor, then issue CSI 2J. The
+    // existing alt-screen and full-grid-clear paths are *not* engaged
+    // here — this is the default primary-screen path.
+    //
+    // The in-place path requires an active TUI redraw cadence (at least
+    // one prior at-home CSI 2J in the recent window). In a real session
+    // that condition is met by the previous redraw frame; in this unit
+    // test we seed it directly to keep the assertion focused on the
+    // clear behavior rather than the cadence detection.
+    grid.seed_tui_redraw_cadence_for_test();
+    grid.goto(VisibleRow(0), 0);
+    grid.clear_screen(ansi::ClearMode::All);
+
+    assert_eq!(
+        grid.history_size(),
+        0,
+        "TUI redraw clear must not push prior frame into scrollback"
+    );
+    assert_visible_grid_blank(&grid);
+}
+
+/// Looping the TUI redraw pattern must not accumulate scrollback. Without
+/// the GH #9181 fix, each iteration appended the prior frame, causing the
+/// "screen replicates throughout session" symptom that grew unboundedly.
+///
+/// Real CLI-agent sessions emit these redraws many frames per second, so
+/// after the first frame each subsequent at-home CSI 2J falls inside the
+/// cadence window and takes the in-place path. The very first frame in a
+/// session preserves scrollback (legacy shell-`clear` behavior) — that is
+/// expected and bounded; the unbounded duplication symptom is gated on
+/// subsequent frames staying in place, which this test asserts.
+#[test]
+fn test_clear_screen_all_primary_repeated_tui_redraws_do_not_duplicate() {
+    let mut grid = GridHandler::new_for_test_with_scroll_limit(3, 5, MAX_SCROLL_LIMIT);
+
+    // Seed cadence so the first at-home 2J in this test also takes the
+    // in-place path, isolating the regression assertion from cadence
+    // detection (covered separately by the shell-`clear` test below).
+    grid.seed_tui_redraw_cadence_for_test();
+
+    for _ in 0..10 {
+        grid.goto(VisibleRow(0), 0);
+        write_two_visible_rows(&mut grid);
+        grid.goto(VisibleRow(0), 0);
+        grid.clear_screen(ansi::ClearMode::All);
+    }
+
+    assert_eq!(
+        grid.history_size(),
+        0,
+        "Repeated TUI redraws must not accumulate scrollback"
+    );
+    assert_visible_grid_blank(&grid);
+}
+
+/// The shell `clear` command emits CSI 2J from a non-home cursor position
+/// (the user's prompt line) before homing. That path must continue to
+/// preserve the visible region as scrollback — the legacy behavior is
+/// what users expect when they run `clear` from the shell.
+#[test]
+fn test_clear_screen_all_primary_non_home_cursor_preserves_scrollback() {
+    let mut grid = GridHandler::new_for_test_with_scroll_limit(3, 5, MAX_SCROLL_LIMIT);
+    write_two_visible_rows(&mut grid);
+
+    // Cursor is at row 1 after `write_two_visible_rows` (post "def").
+    grid.clear_screen(ansi::ClearMode::All);
+
+    assert!(
+        grid.history_size() > 0,
+        "non-home CSI 2J must preserve visible region as scrollback"
+    );
+    assert_visible_grid_blank(&grid);
+}
+
+/// Regression test for the bot review concern on GH #9181: xterm-256color
+/// terminfo's `clear` capability is `CSI [H` followed by `CSI [2J`, so the
+/// cursor IS at the home position at the moment CSI 2J fires. Without a
+/// cadence check, the cursor-at-home heuristic alone would route the
+/// single shell `clear` invocation through the in-place path and silently
+/// destroy the prior visible region (no scrollback preserved).
+///
+/// The cadence check fixes this: an at-home CSI 2J with no recent prior
+/// at-home CSI 2J is treated as a one-off `clear` and falls through to
+/// the legacy scrollback-preserving path. Only rapid back-to-back at-home
+/// 2J sequences (the TUI redraw loop pattern) take the in-place path.
+#[test]
+fn test_shell_clear_command_preserves_scrollback_when_not_in_cli_agent_redraw_loop() {
+    let mut grid = GridHandler::new_for_test_with_scroll_limit(3, 5, MAX_SCROLL_LIMIT);
+    write_two_visible_rows(&mut grid);
+
+    // Reproduce the xterm-256color shell `clear` byte sequence: home the
+    // cursor first (CSI [H), then full clear (CSI [2J). Crucially, do NOT
+    // seed the cadence — this is a fresh, one-off `clear` invocation, not
+    // a CLI-agent redraw loop.
+    grid.goto(VisibleRow(0), 0);
+    grid.clear_screen(ansi::ClearMode::All);
+
+    assert!(
+        grid.history_size() > 0,
+        "one-off shell `clear` (CSI [H then CSI [2J) must preserve the \
+         visible region as scrollback when no TUI redraw cadence is active"
+    );
+    assert_visible_grid_blank(&grid);
+}
+
 #[test]
 fn test_resize_primary_preserves_visible_rows_in_history_by_default() {
     let mut grid = GridHandler::new_for_test_with_scroll_limit(1, 5, MAX_SCROLL_LIMIT);

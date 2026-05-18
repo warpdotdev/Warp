@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::io;
 use std::ops::Range;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use bounded_vec_deque::BoundedVecDeque;
@@ -106,7 +107,25 @@ pub(super) struct State {
     /// `push` appends the new mode; `pop` truncates and restores
     /// the previous entry as the active mode.
     pub keyboard_mode_stack: BoundedVecDeque<KeyboardModes>,
+
+    /// Timestamp of the most recent at-home CSI 2J on the primary screen
+    /// (GH #9181). Used to disambiguate TUI redraw loops (rapid back-to-back
+    /// at-home full clears emitted by inline-rendering CLI agents such as
+    /// Claude Code) from one-off shell `clear` invocations. The shell
+    /// `clear` command also emits CSI [H followed by CSI [2J — meaning the
+    /// cursor is at home when 2J fires — so cursor-at-home alone is not
+    /// sufficient to tell them apart. The TUI redraw cadence (many frames
+    /// per second) is, however, easy to distinguish from a one-off clear.
+    pub last_full_clear_at_home: Option<Instant>,
 }
+
+/// Maximum gap between two at-home CSI 2J events on the primary screen
+/// that still qualifies as a "TUI redraw loop" rather than a one-off shell
+/// `clear`. Claude Code and similar inline CLI agents redraw multiple
+/// frames per second, so a few hundred milliseconds is a generous upper
+/// bound; an interactive user running `clear` repeatedly by hand will
+/// almost always exceed it.
+pub(super) const TUI_REDRAW_CADENCE_WINDOW: Duration = Duration::from_millis(500);
 
 impl State {
     pub fn new(
@@ -143,6 +162,7 @@ impl State {
             pane_size: size_info.pane_size_px(),
             keyboard_mode: KeyboardModes::NO_MODE,
             keyboard_mode_stack: BoundedVecDeque::new(super::KEYBOARD_MODE_STACK_MAX_DEPTH),
+            last_full_clear_at_home: None,
         }
     }
 }
@@ -850,9 +870,33 @@ impl ansi::Handler for GridHandler {
                     self.grid.region_mut(..).each(|cell| *cell = bg.into());
                 } else if self.full_grid_clear_behavior == FullGridClearBehavior::Clear {
                     self.clear_visible_rows_in_place(bg);
+                } else if self.is_tui_redraw_clear() {
+                    // TUI redraw heuristic (GH #9181): when CSI 2J is emitted
+                    // with the cursor already at the home position (0, 0)
+                    // AND a prior at-home CSI 2J fired within the recent
+                    // cadence window, treat it as a primary-screen full-frame
+                    // redraw (the pattern used by Claude Code and similar
+                    // inline TUIs that do not opt into the alt screen).
+                    // Without this guard each redraw pushes the previous
+                    // frame into block-level scrollback, producing the
+                    // "screen replicates throughout session" symptom.
+                    //
+                    // The cadence check is what distinguishes a TUI redraw
+                    // loop from a one-off shell `clear`. The shell `clear`
+                    // command (per xterm-256color terminfo) also emits
+                    // CSI [H followed by CSI [2J — meaning the cursor IS at
+                    // home when 2J fires — so cursor-at-home alone is not
+                    // enough. A redraw loop fires many times per second; a
+                    // user-initiated `clear` happens at human speed. The
+                    // first at-home 2J in a long while is therefore treated
+                    // as a shell `clear` and preserves the visible region
+                    // as scrollback; subsequent rapid ones are treated as
+                    // TUI redraws and clear in place.
+                    self.clear_visible_rows_in_place(bg);
                 } else {
                     self.clear_viewport();
                 }
+                self.note_full_clear_cursor_position();
             }
             ansi::ClearMode::Saved if self.history_size() > 0 => {
                 self.flat_storage.clear();
@@ -1673,6 +1717,51 @@ impl GridHandler {
         self.grid.region_mut(..).each(|cell| *cell = bg.into());
     }
 
+    /// Detect a primary-screen full-frame redraw triggered by CSI 2J.
+    ///
+    /// TUIs that do not opt into the alt screen (notably Claude Code and
+    /// other "inline" agent CLIs) redraw their frame by homing the cursor
+    /// and then issuing CSI 2J before rewriting the visible region. Warp's
+    /// default CSI 2J handling on the primary screen pushes the prior
+    /// visible rows into block-level scrollback via `clear_viewport`, which
+    /// causes the previous frame to accumulate as duplicate content for
+    /// every redraw cycle (GH #9181).
+    ///
+    /// When the cursor is already at the home position at the moment CSI 2J
+    /// fires AND a prior at-home CSI 2J fired within the recent cadence
+    /// window, the sequence is overwhelmingly a frame redraw rather than a
+    /// user-initiated screen clear. In that case we use the in-place clear
+    /// path to match xterm/ghostty/iTerm2 semantics.
+    ///
+    /// The cadence check is required because xterm-256color terminfo emits
+    /// CSI [H followed by CSI [2J for the shell `clear` command, which
+    /// means the cursor IS at home when 2J fires — cursor-at-home alone is
+    /// not enough to disambiguate. Inline-rendering CLI agents redraw many
+    /// frames per second; a user running `clear` does so at human speed.
+    /// The first at-home 2J in a long while is therefore treated as a
+    /// one-off `clear` (legacy scrollback-preserving behavior); subsequent
+    /// rapid ones fall into the in-place TUI redraw path.
+    fn is_tui_redraw_clear(&self) -> bool {
+        let cursor = self.grid.cursor().point;
+        if !(cursor.row == VisibleRow(0) && cursor.col == 0) {
+            return false;
+        }
+        match self.ansi_handler_state.last_full_clear_at_home {
+            Some(prev) => Instant::now().duration_since(prev) <= TUI_REDRAW_CADENCE_WINDOW,
+            None => false,
+        }
+    }
+
+    /// Records the timestamp of the current full-grid clear if the cursor
+    /// is at the home position. This drives the cadence check in
+    /// [`Self::is_tui_redraw_clear`] (GH #9181).
+    fn note_full_clear_cursor_position(&mut self) {
+        let cursor = self.grid.cursor().point;
+        if cursor.row == VisibleRow(0) && cursor.col == 0 {
+            self.ansi_handler_state.last_full_clear_at_home = Some(Instant::now());
+        }
+    }
+
     fn clear_viewport(&mut self) {
         // Determine how many lines to scroll up by.
         let end = Point {
@@ -1701,6 +1790,16 @@ impl GridHandler {
         for i in positions..self.visible_rows() {
             self.grid[i].reset(&template);
         }
+    }
+
+    /// Test-only helper: seed the at-home CSI 2J cadence timestamp to
+    /// `Instant::now()`, so the next at-home CSI 2J is treated as part of
+    /// an active TUI redraw loop. Without this seed, the first at-home
+    /// CSI 2J in a session is treated as a one-off shell `clear` and
+    /// preserves the visible region as scrollback (GH #9181).
+    #[cfg(test)]
+    pub(in crate::terminal::model) fn seed_tui_redraw_cadence_for_test(&mut self) {
+        self.ansi_handler_state.last_full_clear_at_home = Some(Instant::now());
     }
 
     fn clear_visible_rows_in_place(&mut self, bg: Color) {
