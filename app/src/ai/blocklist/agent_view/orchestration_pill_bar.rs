@@ -5,7 +5,6 @@
 use std::cell::RefCell;
 use std::collections::{hash_map::DefaultHasher, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use std::time::Duration;
 
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
@@ -15,7 +14,7 @@ use warp_core::ui::theme::Fill;
 use warp_core::ui::{appearance::Appearance, theme::WarpTheme};
 use warpui::elements::new_scrollable::{NewScrollable, ScrollableAppearance, SingleAxisConfig};
 use warpui::elements::{
-    AnchorPair, ChildAnchor, ChildView, ClippedScrollStateHandle, ConstrainedBox, Container,
+    Align, AnchorPair, ChildAnchor, ChildView, ClippedScrollStateHandle, ConstrainedBox, Container,
     CornerRadius, CrossAxisAlignment, Element, Empty, Fill as ElementFill, Flex, Hoverable,
     MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, OffsetType, ParentAnchor,
     ParentElement, ParentOffsetBounds, PositionedElementOffsetBounds, PositioningAxis, Radius,
@@ -239,10 +238,6 @@ fn pill_label_width(
 
 /// Width of the per-pill hover details card.
 const HOVER_CARD_WIDTH: f32 = 280.;
-/// Delay before the hover card appears after the cursor lands on a pill.
-const HOVER_CARD_IN_DELAY: Duration = Duration::from_millis(300);
-/// Delay before the card disappears after the cursor leaves the pill.
-const HOVER_CARD_OUT_DELAY: Duration = Duration::from_millis(80);
 
 /// Typed actions dispatched by the pill bar's widgets. Each action carries
 /// the targeted child pill's conversation id so a single shared `Menu`
@@ -450,9 +445,19 @@ impl OrchestrationPillBar {
                 ),
             ]
         };
-        let is_in_progress = BlocklistAIHistoryModel::as_ref(ctx)
+        // Stop is shown only while the agent is in progress; Kill becomes
+        // Delete once the agent's run has finished (Success / Error /
+        // Cancelled). Blocked is treated as not-yet-finished (the agent
+        // is still mid-flight, waiting on user input).
+        let conversation_status = BlocklistAIHistoryModel::as_ref(ctx)
             .conversation(&conversation_id)
-            .is_some_and(|conversation| conversation.status().is_in_progress());
+            .map(|conversation| conversation.status().clone());
+        let is_in_progress = conversation_status
+            .as_ref()
+            .is_some_and(|status| status.is_in_progress());
+        let is_in_finished_state = conversation_status
+            .as_ref()
+            .is_some_and(|status| status.is_done());
         items.push(MenuItem::Separator);
         if is_in_progress {
             items.push(destructive_item(
@@ -461,9 +466,14 @@ impl OrchestrationPillBar {
                 OrchestrationPillBarAction::Stop(conversation_id),
             ));
         }
+        let (kill_label, kill_icon) = if is_in_finished_state {
+            ("Delete agent", Icon::Trash)
+        } else {
+            ("Kill agent", Icon::X)
+        };
         items.push(destructive_item(
-            "Kill agent",
-            Icon::X,
+            kill_label,
+            kill_icon,
             OrchestrationPillBarAction::Kill(conversation_id),
         ));
 
@@ -1219,8 +1229,7 @@ enum MenuOrCard {
 
 /// Builds the hover details card overlay for the given conversation, or
 /// returns `None` if there's no conversation to summarise (e.g. the id
-/// has just been removed from history). Hidden by `View::render` until the
-/// hover-in delay elapses.
+/// has just been removed from history).
 ///
 /// V1 scope keeps the card pragmatic: title + description + a compact
 /// chips row showing the agent's harness (placeholder for now), branch
@@ -1885,8 +1894,6 @@ fn render_pill(
     // skips the outer click whenever a child already handled it so the
     // 3-dot click only opens the menu.
     .with_defer_events_to_children()
-    .with_hover_in_delay(HOVER_CARD_IN_DELAY)
-    .with_hover_out_delay(HOVER_CARD_OUT_DELAY)
     .on_hover(move |is_hovered, ctx, _app, _pos| {
         // Drive the hover-details-card overlay via a typed action so the
         // pill bar's `handle_action` can update its `hovered_pill` field
@@ -1993,14 +2000,17 @@ fn render_avatar_with_status_overlay(
     theme: &WarpTheme,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
-    // Disc sized to match the helper's brand-circle slot.
-    let avatar = render_avatar_disc(
+    // `Align` centers the disc in the helper's `total_size` box; without it
+    // the disc anchors top-left and sits ~2.5px higher than the orchestrator
+    // pill's plain avatar.
+    let avatar = Align::new(render_avatar_disc(
         avatar_color,
         glyph,
         icon_with_status::circle_size(AVATAR_WITH_STATUS_TOTAL_SIZE),
         theme,
         appearance,
-    );
+    ))
+    .finish();
     render_icon_with_status(
         IconWithStatusVariant::CustomAvatar {
             avatar,

@@ -138,6 +138,21 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
         validate_cli_installed(self.cli_agent().command_prefix(), self.install_docs_url())
     }
 
+    /// Shell command to verify authentication credentials are valid.
+    /// Exit code 0 = pass; non-zero = fail.
+    fn auth_check_command(&self) -> Option<String> {
+        None
+    }
+
+    /// Substrings to scan for in the running harness block's output. A hit
+    /// indicates the harness can't make a successful API request (e.g.
+    /// invalid key, no billing, quota exhausted). The driver matches
+    /// case-insensitively against the block's plaintext via the same DFA
+    /// machinery used by the find feature.
+    fn runtime_error_patterns(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     /// Fetch the harness-specific resume payload for an existing conversation.
     ///
     /// The driver calls this when the user passes `--conversation <id>` and the harness
@@ -230,6 +245,23 @@ pub(crate) fn harness_kind(harness: Harness) -> Result<HarnessKind, AgentDriverE
         Harness::Gemini => Ok(HarnessKind::ThirdParty(Box::new(GeminiHarness))),
         Harness::Unknown => Err(AgentDriverError::InvalidRuntimeState),
     }
+}
+
+/// Returns the harness's auth-check preflight command, if any.
+///
+/// The viewer uses this to recognize preflight blocks via exact string
+/// equality (so they stay grouped under "Set up environment commands"
+/// rather than being mistaken for the main harness invocation, which
+/// shares the same CLI prefix).
+///
+/// Returns `None` for [`Harness::Oz`], for unsupported harnesses, and
+/// for any third-party harness whose `auth_check_command` returns `None`
+/// (e.g. Gemini today).
+pub(crate) fn auth_check_command_for(harness: Harness) -> Option<String> {
+    let HarnessKind::ThirdParty(third_party) = harness_kind(harness).ok()? else {
+        return None;
+    };
+    third_party.auth_check_command()
 }
 
 /// Check that `cli` is installed and on PATH, returning a `HarnessSetupFailed`
@@ -434,6 +466,8 @@ pub(crate) enum HarnessCleanupDisposition {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 pub(crate) trait HarnessRunner: Send + Sync {
+    fn harness_name(&self) -> &str;
+
     /// Create the external conversation on the server and start the harness
     /// command in the terminal.
     ///

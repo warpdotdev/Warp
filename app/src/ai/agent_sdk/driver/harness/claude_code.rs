@@ -46,9 +46,10 @@ use parent_bridge::{
     parent_bridge_char_count, parent_bridge_event_cursor_file, parent_bridge_hook_output_ack_file,
     parent_bridge_hook_output_file, parent_bridge_root, parent_bridge_staged_message_path,
     parent_bridge_surfaced_message_path, prepare_parent_bridge_hook_output,
-    read_parent_bridge_event_cursor, render_parent_bridge_message_block,
-    stage_parent_bridge_message, write_parent_bridge_event_cursor, MessageBridgeHookOutput,
-    MessageBridgeMessageRecord, MESSAGE_BRIDGE_CONTEXT_PREAMBLE,
+    prime_parent_bridge_for_wake, read_parent_bridge_event_cursor,
+    render_parent_bridge_message_block, stage_parent_bridge_message,
+    write_parent_bridge_event_cursor, MessageBridgeHookOutput, MessageBridgeMessageRecord,
+    MESSAGE_BRIDGE_CONTEXT_PREAMBLE,
 };
 use parent_bridge::{MessageBridge, MessageBridgeCleanupDisposition};
 #[cfg(test)]
@@ -70,6 +71,35 @@ impl ThirdPartyHarness for ClaudeHarness {
 
     fn install_docs_url(&self) -> Option<&'static str> {
         Some("https://code.claude.com/docs/en/quickstart")
+    }
+
+    fn auth_check_command(&self) -> Option<String> {
+        let cli = self.cli_agent().command_prefix();
+        Some(format!("{cli} auth status --json"))
+    }
+
+    fn runtime_error_patterns(&self) -> &'static [&'static str] {
+        &[
+            // Out-of-credits / billing.
+            "Credit balance too low",
+            // Plan/usage limits emitted as `You've hit your <kind> limit`.
+            // We match on the common prefix so the variants (session,
+            // weekly, Opus, etc.) all hit.
+            "You've hit your",
+            // Invalid or malformed API key.
+            "Invalid API key",
+            "This organization has been disabled",
+            "belongs to a disabled organization",
+            // OAuth / login state.
+            "Not logged in",
+            "OAuth token revoked",
+            "OAuth token has expired",
+            // Routines disabled by org policy.
+            "Routines are disabled by your organization's policy",
+            // Generic upstream API failures Claude Code surfaces verbatim.
+            "API Error: Request rejected (429)",
+            "authentication_error",
+        ]
     }
 
     /// Fetch the Claude Code transcript for the current task's conversation and wrap it
@@ -414,6 +444,10 @@ impl ClaudeHarnessRunner {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 impl HarnessRunner for ClaudeHarnessRunner {
+    fn harness_name(&self) -> &str {
+        &self.cli_name
+    }
+
     async fn start(
         &self,
         foreground: &ModelSpawner<AgentDriver>,

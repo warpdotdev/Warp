@@ -18,7 +18,7 @@ use warp_core::ui::theme::Fill;
 use settings::Setting as _;
 
 use crate::ai::blocklist::agent_view::agent_input_footer::AgentInputButtonTheme;
-use crate::ai::cloud_agent_settings::{CloudAgentSettings, HarnessModelSelection};
+use crate::ai::cloud_agent_settings::CloudAgentSettings;
 use crate::ai::execution_profiles::model_menu_items::is_auto;
 use crate::ai::harness_availability::{HarnessAvailabilityEvent, HarnessAvailabilityModel};
 use crate::ai::harness_display::icon_for as harness_icon_for;
@@ -28,7 +28,6 @@ use crate::editor::{
     SingleLineEditorOptions, TextOptions,
 };
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields, MenuVariant};
-use crate::report_if_error;
 use crate::terminal::input::{MenuPositioning, MenuPositioningProvider};
 use crate::terminal::view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent};
 use crate::ui_components::icons::Icon;
@@ -667,19 +666,12 @@ impl TypedActionView for ModelSelector {
                 }
                 // Persist the selection per-harness to settings for next time.
                 CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    let mut map = settings.last_selected_harness_model.value().clone();
-                    if is_default {
-                        map.remove(harness.config_name());
-                    } else {
-                        map.insert(
-                            harness.config_name().to_string(),
-                            HarnessModelSelection {
-                                model_id: model_id.clone(),
-                                reasoning_level: reasoning_level.clone(),
-                            },
-                        );
-                    }
-                    report_if_error!(settings.last_selected_harness_model.set_value(map, ctx));
+                    settings.persist_harness_model_selection(
+                        *harness,
+                        model_id,
+                        reasoning_level.clone(),
+                        ctx,
+                    );
                 });
                 self.set_menu_visibility(false, ctx);
                 self.refresh_button(ctx);
