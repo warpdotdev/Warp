@@ -477,14 +477,10 @@ impl BillingCycleUsageSectionView {
         })
         .finish();
 
-        let icon = ConstrainedBox::new(
-            Icon::ArrowCircleBrokenUp
-                .to_warpui_icon(sub_text)
-                .finish(),
-        )
-        .with_width(14.)
-        .with_height(14.)
-        .finish();
+        let icon = ConstrainedBox::new(Icon::ArrowCircleBrokenUp.to_warpui_icon(sub_text).finish())
+            .with_width(14.)
+            .with_height(14.)
+            .finish();
 
         let row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
