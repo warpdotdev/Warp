@@ -810,13 +810,6 @@ impl LocalToCloudHandoffIntent {
             } => Some(conversation_id),
         }
     }
-
-    fn automatic_trigger(self) -> Option<AutoCloudHandoffTrigger> {
-        match self {
-            Self::UserInitiated(_) => None,
-            Self::Automatic { trigger, .. } => Some(trigger),
-        }
-    }
 }
 
 /// Categorization of how the tab bar should be rendered.
@@ -13780,23 +13773,11 @@ impl Workspace {
                     let Some(active_conversation) =
                         history_model.active_conversation(terminal_view_id)
                     else {
-                        if let Some(trigger) = intent.automatic_trigger() {
-                            log::debug!(
-                                "Skipping automatic local-to-cloud handoff via {trigger:?}: terminal view {terminal_view_id:?} has no active conversation"
-                            );
-                        }
                         Self::record_automatic_handoff_failed(intent, ctx);
                         return;
                     };
 
                     if active_conversation.id() != expected_conversation_id {
-                        if let Some(trigger) = intent.automatic_trigger() {
-                            log::debug!(
-                                "Skipping automatic local-to-cloud handoff via {trigger:?}: terminal view {terminal_view_id:?} active conversation changed from {:?} to {:?}",
-                                expected_conversation_id,
-                                active_conversation.id(),
-                            );
-                        }
                         Self::record_automatic_handoff_failed(intent, ctx);
                         return;
                     }
@@ -13823,11 +13804,7 @@ impl Workspace {
                         ctx,
                     );
                 });
-            } else if let Some(trigger) = intent.automatic_trigger() {
-                log::debug!(
-                    "Skipping automatic local-to-cloud handoff via {trigger:?}: cloud handoff is not available for conversation {:?}",
-                    source_conversation.as_ref().map(|conversation| conversation.id()),
-                );
+            } else {
                 Self::record_automatic_handoff_failed(intent, ctx);
             }
             return;
@@ -13851,10 +13828,7 @@ impl Workspace {
                     "start_local_to_cloud_handoff: no non-empty source conversation found; starting a fresh cloud launch"
                 );
                 self.start_fresh_cloud_launch(source_view, launch, environment_id, ctx);
-            } else if let Some(trigger) = intent.automatic_trigger() {
-                log::debug!(
-                    "Skipping automatic local-to-cloud handoff via {trigger:?}: source conversation is empty"
-                );
+            } else {
                 Self::record_automatic_handoff_failed(intent, ctx);
             }
             return;
@@ -13863,10 +13837,6 @@ impl Workspace {
         if intent.expected_conversation_id().is_some()
             && !source_conversation.status().is_in_progress()
         {
-            log::debug!(
-                "Skipping automatic local-to-cloud handoff for conversation {:?}: not in progress",
-                source_conversation.id()
-            );
             Self::record_automatic_handoff_failed(intent, ctx);
             return;
         }
@@ -13891,10 +13861,7 @@ impl Workspace {
                             ctx,
                         );
                     });
-                } else if let Some(trigger) = intent.automatic_trigger() {
-                    log::debug!(
-                        "Skipping automatic local-to-cloud handoff via {trigger:?}: terminal has a long-running command"
-                    );
+                } else {
                     Self::record_automatic_handoff_failed(intent, ctx);
                 }
                 return;
@@ -13931,11 +13898,7 @@ impl Workspace {
                         ctx,
                     );
                 });
-            } else if let Some(trigger) = intent.automatic_trigger() {
-                log::debug!(
-                    "Skipping automatic local-to-cloud handoff via {trigger:?} for conversation {:?}: missing server token",
-                    source_conversation.id(),
-                );
+            } else {
                 Self::record_automatic_handoff_failed(intent, ctx);
             }
             return;
@@ -13988,10 +13951,6 @@ impl Workspace {
                                 ctx,
                             );
                         });
-                    } else if let Some(trigger) = intent.automatic_trigger() {
-                        log::debug!(
-                            "Automatic local-to-cloud handoff via {trigger:?} failed while forking conversation"
-                        );
                     }
                     Self::record_automatic_handoff_failed(intent, ctx);
                 }
@@ -14048,10 +14007,6 @@ impl Workspace {
                             ctx,
                         );
                     });
-                } else if let Some(trigger) = intent.automatic_trigger() {
-                    log::debug!(
-                        "Automatic local-to-cloud handoff via {trigger:?} failed while materializing local fork"
-                    );
                 }
                 Self::record_automatic_handoff_failed(intent, ctx);
                 return;
@@ -14078,10 +14033,6 @@ impl Workspace {
                         ctx,
                     );
                 });
-            } else if let Some(trigger) = intent.automatic_trigger() {
-                log::debug!(
-                    "Automatic local-to-cloud handoff via {trigger:?} failed while opening cloud pane"
-                );
             }
             Self::record_automatic_handoff_failed(intent, ctx);
             return;
