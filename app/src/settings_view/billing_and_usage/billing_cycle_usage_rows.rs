@@ -42,6 +42,18 @@ const ROW_ICON_SIZE: f32 = 12.;
 const BAR_CORNER_RADIUS: f32 = ROW_BORDER_RADIUS - ROW_BORDER_WIDTH;
 const ROW_PADDING: f32 = 12.;
 const TOOLTIP_GAP: f32 = 6.;
+/// Padding inside each team-totals card. Larger than ROW_PADDING since the
+/// card has more vertical breathing room (title + big number + bar).
+const CARD_PADDING: f32 = 16.;
+/// Horizontal gap between team-totals cards.
+const CARD_GAP: f32 = 12.;
+/// Pill-shaped bar at the bottom of each team-totals card.
+const CARD_BAR_HEIGHT: f32 = 8.;
+const CARD_BAR_RADIUS: f32 = CARD_BAR_HEIGHT / 2.;
+
+const CARD_OVERALL_KEY: &str = "__card_overall__";
+const CARD_LOCAL_KEY: &str = "__card_local__";
+const CARD_CLOUD_KEY: &str = "__card_cloud__";
 const COST_TYPE_ORDER: &[AiCreditsUsageAndCostType] = &[
     AiCreditsUsageAndCostType::BaseLimit,
     AiCreditsUsageAndCostType::BonusGrant,
@@ -87,7 +99,6 @@ pub struct RowMouseStates {
     tooltip_by_subject: RefCell<HashMap<String, MouseStateHandle>>,
 }
 
-const TEAM_AGGREGATE_KEY: &str = "__team_aggregate__";
 const SELF_OWN_KEY: &str = "__self_own__";
 
 impl Default for RowMouseStates {
@@ -273,28 +284,63 @@ pub fn build_own_usage_row(
     }
 }
 
-/// Synthetic team-aggregate row for `TeamAggregate` viewers. Re-aggregates
-/// client-side in case the server hasn't collapsed yet.
-pub fn build_team_aggregate_row(
+/// Summary backing a single team-totals card (Overall / Local / Cloud).
+/// Mirrors the admin panel's `AgentSpendingLimitItem` shape so we can swap in
+/// per-source spend limits later without restructuring the renderer.
+#[derive(Debug)]
+pub struct TeamTotalCardSummary {
+    pub title: &'static str,
+    pub card_key: &'static str,
+    pub segments: Vec<BarSegment>,
+    pub total_credits: i64,
+    pub total_cost_cents: i64,
+    /// Monthly spend limit driving the bar fill and threshold border colors.
+    /// `None` for the rendering scaffold — bars fill 100% and the border stays
+    /// at the default outline. Plumbed through once the per-source limits land
+    /// on the client `Workspace`.
+    pub limit_cents: Option<i64>,
+}
+
+/// Builds the three team-totals card summaries (Overall + Local + Cloud).
+/// Cards always reflect every renderable entry for their slice and ignore the
+/// source filter toggle, which only scopes the per-member rows below.
+pub fn build_team_total_card_summaries(
     entries: &[BillingCycleUsageEntry],
-    source_filter: SourceFilter,
-) -> MemberUsageRow {
-    let filtered = entries
-        .iter()
-        .filter(|e| entry_is_renderable(e))
-        .filter(|e| source_filter.matches(&e.usage_source));
+) -> Vec<TeamTotalCardSummary> {
+    let renderable = || entries.iter().filter(|e| entry_is_renderable(e));
 
-    let (segments, total_credits, total_cost_cents) = aggregate_segments(filtered);
+    let (overall_segments, overall_credits, overall_cost) = aggregate_segments(renderable());
+    let (local_segments, local_credits, local_cost) =
+        aggregate_segments(renderable().filter(|e| e.usage_source == AiCreditsUsageSource::Local));
+    let (cloud_segments, cloud_credits, cloud_cost) =
+        aggregate_segments(renderable().filter(|e| e.usage_source == AiCreditsUsageSource::Cloud));
 
-    MemberUsageRow {
-        subject_type: AiCreditsUsageAndCostSubjectType::Team,
-        subject_key: TEAM_AGGREGATE_KEY.to_string(),
-        display_name: "Team total".to_string(),
-        total_credits,
-        total_cost_cents,
-        base_limit: None,
-        segments,
-    }
+    vec![
+        TeamTotalCardSummary {
+            title: "Overall usage",
+            card_key: CARD_OVERALL_KEY,
+            segments: overall_segments,
+            total_credits: overall_credits,
+            total_cost_cents: overall_cost,
+            limit_cents: None,
+        },
+        TeamTotalCardSummary {
+            title: "Local agent usage",
+            card_key: CARD_LOCAL_KEY,
+            segments: local_segments,
+            total_credits: local_credits,
+            total_cost_cents: local_cost,
+            limit_cents: None,
+        },
+        TeamTotalCardSummary {
+            title: "Cloud agent usage",
+            card_key: CARD_CLOUD_KEY,
+            segments: cloud_segments,
+            total_credits: cloud_credits,
+            total_cost_cents: cloud_cost,
+            limit_cents: None,
+        },
+    ]
 }
 
 /// Per-member rows for `PerUserTotals` viewers. Iterates the workspace member
@@ -497,6 +543,23 @@ fn render_stacked_bar(
 
 /// Per-cost-type tooltip breakdown with a "Total usage" footer.
 fn render_usage_tooltip_content(row: &MemberUsageRow, appearance: &Appearance) -> Box<dyn Element> {
+    render_breakdown_tooltip(
+        &row.segments,
+        row.total_credits,
+        row.total_cost_cents,
+        appearance,
+    )
+}
+
+/// Same per-cost-type breakdown card, but parameterized by raw segments and
+/// totals so it can back team-totals card hovers as well as per-member row
+/// hovers.
+fn render_breakdown_tooltip(
+    segments: &[BarSegment],
+    total_credits: i64,
+    total_cost_cents: i64,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
     let theme = appearance.theme();
     let font_family = appearance.ui_font_family();
     let bg = theme.background().into_solid();
@@ -507,7 +570,7 @@ fn render_usage_tooltip_content(row: &MemberUsageRow, appearance: &Appearance) -
         .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
         .with_spacing(6.);
 
-    for line in &row.segments {
+    for line in segments {
         let label = if matches!(line.usage_bucket, AiCreditsUsageBucket::Aggregate) {
             cost_type_label(&line.cost_type).to_string()
         } else {
@@ -541,8 +604,8 @@ fn render_usage_tooltip_content(row: &MemberUsageRow, appearance: &Appearance) -
     column.add_child(render_tooltip_row(
         /* no swatch on the total row */ None,
         "Total usage".to_string(),
-        row.total_credits,
-        row.total_cost_cents,
+        total_credits,
+        total_cost_cents,
         main,
         main,
         font_family,
@@ -804,6 +867,239 @@ fn render_member_row(
     .finish()
 }
 
+/// Pill-shaped stacked progress bar for team-totals cards. Mirrors the admin
+/// panel's `StackedProgressBar`: fills to `total_cost_cents / limit_cents`
+/// when a limit is set (capped at 100%), otherwise fills 100% when there is
+/// any usage. Empty slots render as a muted track.
+fn render_card_pill_bar(
+    segments: &[BarSegment],
+    total_credits: i64,
+    total_cost_cents: i64,
+    limit_cents: Option<i64>,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let track_bg = theme.surface_overlay_1();
+    let corner = Radius::Pixels(CARD_BAR_RADIUS);
+
+    if total_credits == 0 || segments.is_empty() {
+        return ConstrainedBox::new(
+            Container::new(Empty::new().finish())
+                .with_background(track_bg)
+                .with_corner_radius(CornerRadius::with_all(corner))
+                .finish(),
+        )
+        .with_height(CARD_BAR_HEIGHT)
+        .finish();
+    }
+
+    let fill_ratio = match limit_cents {
+        Some(limit) if limit > 0 => (total_cost_cents as f32 / limit as f32).clamp(0.0, 1.0),
+        _ => 1.0,
+    };
+    let unfill_ratio = 1.0 - fill_ratio;
+    let has_unfill = unfill_ratio > 0.0;
+    let last_segment_idx = segments.len() - 1;
+
+    let mut filled = Flex::row();
+    for (idx, seg) in segments.iter().enumerate() {
+        let weight = seg.credits as f32 / total_credits as f32;
+        if weight <= 0.0 {
+            continue;
+        }
+        let is_first = idx == 0;
+        let is_last_visible = idx == last_segment_idx && !has_unfill;
+        let segment_corner = match (is_first, is_last_visible) {
+            (true, true) => CornerRadius::with_all(corner),
+            (true, false) => CornerRadius::with_left(corner),
+            (false, true) => CornerRadius::with_right(corner),
+            (false, false) => CornerRadius::default(),
+        };
+        filled.add_child(
+            Expanded::new(
+                weight,
+                Container::new(Empty::new().finish())
+                    .with_background_color(cost_type_color(&seg.cost_type))
+                    .with_corner_radius(segment_corner)
+                    .finish(),
+            )
+            .finish(),
+        );
+    }
+
+    let mut bar = Flex::row();
+    bar.add_child(Expanded::new(fill_ratio, filled.finish()).finish());
+    if has_unfill {
+        bar.add_child(
+            Expanded::new(
+                unfill_ratio,
+                Container::new(Empty::new().finish())
+                    .with_background(track_bg)
+                    .with_corner_radius(CornerRadius::with_right(corner))
+                    .finish(),
+            )
+            .finish(),
+        );
+    }
+
+    ConstrainedBox::new(bar.finish())
+        .with_height(CARD_BAR_HEIGHT)
+        .finish()
+}
+
+/// Card body for one team-totals slice. Layout (top to bottom):
+///   [title]
+///   [$X.XX]                    [Limit: $Y.YY]   (limit optional)
+///   [(N credits)]
+///   [pill stacked bar]
+fn build_team_total_card(
+    summary: &TeamTotalCardSummary,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let card_bg = theme.background().into_solid();
+    let main = blended_colors::text_main(theme, card_bg);
+    let sub = blended_colors::text_sub(theme, card_bg);
+
+    let title_text = Text::new_inline(summary.title.to_string(), appearance.ui_font_family(), 13.)
+        .with_color(sub)
+        .with_style(Properties::default().weight(Weight::Medium))
+        .finish();
+
+    let cost_text = Text::new_inline(
+        format_cost_cents(summary.total_cost_cents),
+        appearance.ui_font_family(),
+        24.,
+    )
+    .with_color(main)
+    .with_style(Properties::default().weight(Weight::Semibold))
+    .finish();
+
+    let credits_text = Text::new_inline(
+        format!("({} credits)", format_credits(summary.total_credits)),
+        appearance.ui_font_family(),
+        13.,
+    )
+    .with_color(sub)
+    .finish();
+
+    let totals_col = Flex::column()
+        .with_cross_axis_alignment(CrossAxisAlignment::Start)
+        .with_child(cost_text)
+        .with_child(Container::new(credits_text).with_margin_top(2.).finish())
+        .finish();
+
+    let totals_row: Box<dyn Element> = match summary.limit_cents {
+        Some(limit) => {
+            let limit_text = Text::new_inline(
+                format!("Limit: {}", format_cost_cents(limit)),
+                appearance.ui_font_family(),
+                12.,
+            )
+            .with_color(sub)
+            .finish();
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_child(Shrinkable::new(1., totals_col).finish())
+                .with_child(Container::new(limit_text).with_margin_left(16.).finish())
+                .finish()
+        }
+        None => totals_col,
+    };
+
+    let bar = render_card_pill_bar(
+        &summary.segments,
+        summary.total_credits,
+        summary.total_cost_cents,
+        summary.limit_cents,
+        appearance,
+    );
+
+    let body = Flex::column()
+        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+        .with_spacing(12.)
+        .with_child(
+            Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                .with_spacing(6.)
+                .with_child(title_text)
+                .with_child(totals_row)
+                .finish(),
+        )
+        .with_child(bar)
+        .finish();
+
+    Container::new(body)
+        .with_background_color(card_bg)
+        .with_border(Border::all(ROW_BORDER_WIDTH).with_border_color(theme.outline().into_solid()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(ROW_BORDER_RADIUS)))
+        .with_uniform_padding(CARD_PADDING)
+        .finish()
+}
+
+/// Card wrapped in a Hoverable that opens the breakdown tooltip when the card
+/// has any segments.
+fn render_team_total_card(
+    summary: &TeamTotalCardSummary,
+    tooltip_mouse_state: MouseStateHandle,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    if summary.segments.is_empty() {
+        return build_team_total_card(summary, appearance);
+    }
+
+    Hoverable::new(tooltip_mouse_state, move |state| {
+        let mut stack = Stack::new();
+        stack.add_child(build_team_total_card(summary, appearance));
+
+        if state.is_hovered() {
+            stack.add_positioned_overlay_child(
+                render_breakdown_tooltip(
+                    &summary.segments,
+                    summary.total_credits,
+                    summary.total_cost_cents,
+                    appearance,
+                ),
+                OffsetPositioning::offset_from_parent(
+                    vec2f(0., -TOOLTIP_GAP),
+                    ParentOffsetBounds::WindowByPosition,
+                    ParentAnchor::TopMiddle,
+                    ChildAnchor::BottomMiddle,
+                ),
+            );
+        }
+
+        stack.finish()
+    })
+    .finish()
+}
+
+/// Horizontal row of team-totals cards (Overall + Local + Cloud).
+fn render_team_totals_section(
+    entries: &[BillingCycleUsageEntry],
+    mouse_states: &RowMouseStates,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let summaries = build_team_total_card_summaries(entries);
+    let mut row = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+        .with_main_axis_size(MainAxisSize::Max)
+        .with_spacing(CARD_GAP);
+    for summary in &summaries {
+        let tooltip_state = mouse_states.tooltip_mouse_state(summary.card_key);
+        row.add_child(
+            Expanded::new(
+                1.,
+                render_team_total_card(summary, tooltip_state, appearance),
+            )
+            .finish(),
+        );
+    }
+    row.finish()
+}
+
 pub type FilterChangeFn = std::sync::Arc<dyn Fn(SourceFilter, &mut EventContext) + 'static>;
 
 /// All / Local / Cloud pill toggle.
@@ -909,18 +1205,23 @@ pub fn render_rows(
             ));
         }
         UsageVisibilityGranularity::TeamAggregate => {
-            let row = build_team_aggregate_row(entries, source_filter);
-            let tooltip_state = mouse_states.tooltip_mouse_state(&row.subject_key);
-            let max_credits = row.total_credits.max(1);
-            column.add_child(render_member_row(
-                &row,
-                max_credits,
-                tooltip_state,
+            // TeamAggregate viewers can't see per-member breakdowns, so the
+            // page is just the team-totals cards.
+            column.add_child(render_team_totals_section(
+                entries,
+                mouse_states,
                 appearance,
             ));
         }
         UsageVisibilityGranularity::PerUserTotals => {
-            let team_row = build_team_aggregate_row(entries, source_filter);
+            // Team-level totals always show every entry regardless of the
+            // member-row source filter toggle below.
+            column.add_child(render_team_totals_section(
+                entries,
+                mouse_states,
+                appearance,
+            ));
+
             let member_rows = build_member_usage_rows(entries, &workspace.members, source_filter);
 
             // Only show the toggle if there's cloud usage to filter against.
@@ -939,25 +1240,18 @@ pub fn render_rows(
                             ))
                             .finish(),
                     )
+                    .with_margin_top(8.)
                     .with_margin_bottom(4.)
                     .finish(),
                 );
             }
 
-            if team_row.total_credits == 0 && member_rows.iter().all(|r| r.total_credits == 0) {
+            if member_rows.iter().all(|r| r.total_credits == 0) {
                 column.add_child(render_empty_filter_state(source_filter, appearance));
             } else {
-                // Team row always fills the bar 100%; member rows are scaled
-                // against the top individual member so the heaviest user
-                // fills the bar and everyone else reads as a fraction of
-                // that user, not of the team total.
-                let team_tooltip_state = mouse_states.tooltip_mouse_state(&team_row.subject_key);
-                column.add_child(render_member_row(
-                    &team_row,
-                    team_row.total_credits.max(1),
-                    team_tooltip_state,
-                    appearance,
-                ));
+                // Member rows are scaled against the top individual member so
+                // the heaviest user fills the bar and everyone else reads as a
+                // fraction of that user. Team totals live in the cards above.
                 let top_member_max = member_rows
                     .iter()
                     .map(|r| r.total_credits)
