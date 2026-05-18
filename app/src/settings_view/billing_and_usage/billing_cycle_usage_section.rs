@@ -5,10 +5,10 @@ use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::appearance::Appearance;
 use warpui::{
     elements::{
-        ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
-        Flex, FormattedTextElement, HighlightedHyperlink, Hoverable, HyperlinkLens,
-        MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, ParentAnchor,
-        ParentElement, ParentOffsetBounds, Radius, Stack, Text,
+        Border, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius,
+        CrossAxisAlignment, DropShadow, Empty, Flex, FormattedTextElement, HighlightedHyperlink,
+        Hoverable, HyperlinkLens, MainAxisAlignment, MainAxisSize, MouseStateHandle,
+        OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Stack, Text,
     },
     fonts::{Properties, Weight},
     platform::Cursor,
@@ -21,9 +21,10 @@ use crate::{
     menu::{self, Menu, MenuItem, MenuItemFields},
     settings_view::{
         admin_actions::AdminActions,
+        billing_and_usage::billing_cycle_usage_rows::{render_rows, RowMouseStates, SourceFilter},
         billing_and_usage_page_v2::{
-            AMBIENT_CREDITS_DOT_COLOR, BASE_CREDITS_DOT_COLOR, BONUS_CREDITS_DOT_COLOR,
-            PAYG_CREDITS_DOT_COLOR,
+            AGGREGATE_CREDITS_DOT_COLOR, AMBIENT_CREDITS_DOT_COLOR, BASE_CREDITS_DOT_COLOR,
+            BONUS_CREDITS_DOT_COLOR, PAYG_CREDITS_DOT_COLOR,
         },
     },
     ui_components::icons::Icon,
@@ -43,14 +44,18 @@ const LEGEND_DOT_SIZE: f32 = 8.;
 pub struct BillingCycleUsageSectionView {
     selected_period_end: Option<DateTime<Utc>>,
     period_selector_mouse_state: MouseStateHandle,
+    aggregate_legend_mouse_state: MouseStateHandle,
     period_menu: ViewHandle<Menu<BillingCycleUsageAction>>,
     period_menu_open: bool,
+    source_filter: SourceFilter,
+    row_mouse_states: RowMouseStates,
 }
 
 #[derive(Clone, Debug)]
 pub enum BillingCycleUsageAction {
     SelectPeriod(Option<DateTime<Utc>>),
     TogglePeriodMenu,
+    ChangeSourceFilter(SourceFilter),
     OpenUpgrade,
     ContactSales,
 }
@@ -63,6 +68,14 @@ impl BillingCycleUsageSectionView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, _, _, ctx| {
             me.reconcile_selected_period(ctx);
+            // If the period menu is open while the workspace or usage data
+            // changes, the menu's items become stale and clicking one could
+            // select a period_end that no longer exists in the new data
+            // (which `current_summary` would then fail to resolve). Rebuild
+            // the items in-place so the menu always reflects the live data.
+            if me.period_menu_open {
+                me.refresh_period_menu_items(ctx);
+            }
             ctx.notify();
         });
         ctx.subscribe_to_model(&AIRequestUsageModel::handle(ctx), |_, _, _, ctx| {
@@ -71,7 +84,15 @@ impl BillingCycleUsageSectionView {
         ctx.subscribe_to_model(&AuthManager::handle(ctx), |_, _, _, ctx| ctx.notify());
         ctx.subscribe_to_model(&TeamUpdateManager::handle(ctx), |_, _, _, ctx| ctx.notify());
 
-        let period_menu = ctx.add_typed_action_view(|_| Menu::new().with_drop_shadow());
+        // `prevent_interaction_with_other_elements` so a click on the
+        // trigger button while the menu is open is consumed by the menu's
+        // outside-click dismiss handler — without it, the trigger also
+        // received the click and immediately re-toggled the menu open.
+        let period_menu = ctx.add_typed_action_view(|_| {
+            Menu::new()
+                .with_drop_shadow()
+                .prevent_interaction_with_other_elements()
+        });
         ctx.subscribe_to_view(&period_menu, |me, _, event, ctx| {
             if let menu::Event::Close { .. } = event {
                 me.period_menu_open = false;
@@ -82,13 +103,31 @@ impl BillingCycleUsageSectionView {
         Self {
             selected_period_end: None,
             period_selector_mouse_state: MouseStateHandle::default(),
+            aggregate_legend_mouse_state: MouseStateHandle::default(),
             period_menu,
             period_menu_open: false,
+            source_filter: SourceFilter::default(),
+            row_mouse_states: RowMouseStates::default(),
         }
     }
 
     fn resolved_viewer_email(app: &AppContext) -> Option<String> {
         AuthStateProvider::as_ref(app).get().user_email()
+    }
+
+    fn resolved_viewer_uid(app: &AppContext) -> Option<String> {
+        AuthStateProvider::as_ref(app)
+            .get()
+            .user_id()
+            .map(|uid| uid.as_string())
+    }
+
+    fn resolved_viewer_display_name(app: &AppContext) -> Option<String> {
+        let state = AuthStateProvider::as_ref(app).get();
+        state
+            .display_name()
+            .or_else(|| state.username_for_display())
+            .or_else(|| state.user_email())
     }
 
     fn current_summary<'a>(
@@ -132,6 +171,10 @@ impl TypedActionView for BillingCycleUsageSectionView {
                 if self.period_menu_open {
                     self.refresh_period_menu_items(ctx);
                 }
+                ctx.notify();
+            }
+            BillingCycleUsageAction::ChangeSourceFilter(filter) => {
+                self.source_filter = *filter;
                 ctx.notify();
             }
             BillingCycleUsageAction::OpenUpgrade => {
@@ -192,21 +235,44 @@ impl View for BillingCycleUsageSectionView {
 
         column.add_child(self.render_header(&workspace, &visibility, appearance));
 
-        if let Some(legend) = self.render_legend(&workspace, appearance) {
-            column.add_child(Container::new(legend).with_margin_top(8.).finish());
+        // Secondary row below the title: "Resets ..." on the left (current
+        // cycle only) + cost-type legend on the right. Mirrors the admin
+        // panel's `Resets May 27, 11:24 PM EDT` ⟷ legend layout.
+        let resets_text = self.render_resets_label(appearance, app);
+        let legend = self.render_legend(&workspace, appearance);
+        if resets_text.is_some() || legend.is_some() {
+            let mut secondary_row = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+                .with_main_axis_size(MainAxisSize::Max);
+            secondary_row.add_child(resets_text.unwrap_or_else(|| Empty::new().finish()));
+            secondary_row.add_child(legend.unwrap_or_else(|| Empty::new().finish()));
+            column.add_child(
+                Container::new(secondary_row.finish())
+                    .with_margin_top(4.)
+                    .finish(),
+            );
         }
 
+        // Upgrade banner is rendered inline within the body so that on
+        // PerUserTotals (admin) views it sits between the team-totals cards
+        // and the per-member breakdown rather than dangling at the bottom.
+        let upgrade_banner = if is_admin {
+            self.render_upgrade_visibility_banner(&workspace, appearance)
+        } else {
+            None
+        };
         column.add_child(
-            Container::new(self.render_body(&workspace, &visibility, appearance))
-                .with_margin_top(16.)
-                .finish(),
+            Container::new(self.render_body(
+                &workspace,
+                &visibility,
+                upgrade_banner,
+                appearance,
+                app,
+            ))
+            .with_margin_top(16.)
+            .finish(),
         );
-
-        if is_admin {
-            if let Some(banner) = self.render_upgrade_visibility_banner(&workspace, appearance) {
-                column.add_child(Container::new(banner).with_margin_top(16.).finish());
-            }
-        }
 
         column.finish()
     }
@@ -219,6 +285,7 @@ impl BillingCycleUsageSectionView {
         visibility: &UsageVisibility,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
+        let theme = appearance.theme();
         let mut row = Flex::row()
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -227,7 +294,7 @@ impl BillingCycleUsageSectionView {
         row.add_child(
             Text::new_inline("Usage", appearance.ui_font_family(), HEADER_FONT_SIZE)
                 .with_style(Properties::default().weight(Weight::Bold))
-                .with_color(appearance.theme().active_ui_text_color().into())
+                .with_color(theme.active_ui_text_color().into())
                 .finish(),
         );
 
@@ -244,9 +311,34 @@ impl BillingCycleUsageSectionView {
 
         row.add_child(right_side.finish());
 
-        Container::new(row.finish())
-            .with_margin_bottom(12.)
-            .finish()
+        Container::new(row.finish()).finish()
+    }
+
+    /// Secondary "Resets May 27, 11:24 PM EDT" label rendered below the
+    /// header. Hidden when a past cycle is selected since its reset is
+    /// already in the past.
+    fn render_resets_label(
+        &self,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Option<Box<dyn Element>> {
+        if self.selected_period_end.is_some() {
+            return None;
+        }
+        let theme = appearance.theme();
+        let reset_str = AIRequestUsageModel::as_ref(app)
+            .next_refresh_time_local()
+            .format("Resets %b %d, %-I:%M %p")
+            .to_string();
+        Some(
+            Text::new_inline(
+                reset_str,
+                appearance.ui_font_family(),
+                appearance.ui_font_size(),
+            )
+            .with_color(theme.sub_text_color(theme.background()).into())
+            .finish(),
+        )
     }
 
     fn render_period_range_static(
@@ -357,6 +449,7 @@ impl BillingCycleUsageSectionView {
             AiCreditsUsageAndCostType::BonusGrant,
             AiCreditsUsageAndCostType::Payg,
             AiCreditsUsageAndCostType::AmbientBonusGrant,
+            AiCreditsUsageAndCostType::Aggregate,
         ] {
             if summary.entries.iter().any(|e| e.cost_type == cost_type) {
                 present_buckets.push(cost_type);
@@ -387,51 +480,100 @@ impl BillingCycleUsageSectionView {
         cost_type: AiCreditsUsageAndCostType,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        let (color, label) = legend_style_for(cost_type);
+        let (color, label) = legend_style_for(cost_type.clone());
         let theme = appearance.theme();
-        let mut row = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_main_axis_size(MainAxisSize::Min);
-        row.add_child(
-            ConstrainedBox::new(
-                Container::new(Empty::new().finish())
-                    .with_background_color(color)
-                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
-                        LEGEND_DOT_SIZE / 2.,
-                    )))
-                    .finish(),
-            )
-            .with_height(LEGEND_DOT_SIZE)
-            .with_width(LEGEND_DOT_SIZE)
-            .finish(),
-        );
-        row.add_child(
-            Container::new(
-                Text::new_inline(
-                    label,
-                    appearance.ui_font_family(),
-                    appearance.ui_font_size(),
+        let entry = {
+            let mut row = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_size(MainAxisSize::Min);
+            row.add_child(
+                ConstrainedBox::new(
+                    Container::new(Empty::new().finish())
+                        .with_background_color(color)
+                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                            LEGEND_DOT_SIZE / 2.,
+                        )))
+                        .finish(),
                 )
-                .with_color(theme.sub_text_color(theme.background()).into())
+                .with_height(LEGEND_DOT_SIZE)
+                .with_width(LEGEND_DOT_SIZE)
                 .finish(),
-            )
-            .with_margin_left(6.)
-            .finish(),
-        );
-        row.finish()
+            );
+            row.add_child(
+                Container::new(
+                    Text::new_inline(
+                        label,
+                        appearance.ui_font_family(),
+                        appearance.ui_font_size(),
+                    )
+                    .with_color(theme.sub_text_color(theme.background()).into())
+                    .finish(),
+                )
+                .with_margin_left(6.)
+                .finish(),
+            );
+            row.finish()
+        };
+
+        // The Aggregate bucket replaces per-cost-type detail with a single
+        // "All sources" row, which isn't self-explanatory; surface a small
+        // hover tooltip clarifying what it includes.
+        if !matches!(cost_type, AiCreditsUsageAndCostType::Aggregate) {
+            return entry;
+        }
+
+        let mouse_state = self.aggregate_legend_mouse_state.clone();
+        Hoverable::new(mouse_state, move |state| {
+            let mut stack = Stack::new();
+            stack.add_child(entry);
+            if state.is_hovered() {
+                stack.add_positioned_overlay_child(
+                    render_aggregate_legend_tooltip(appearance),
+                    OffsetPositioning::offset_from_parent(
+                        vec2f(0., 6.),
+                        ParentOffsetBounds::WindowByPosition,
+                        ParentAnchor::BottomMiddle,
+                        ChildAnchor::TopMiddle,
+                    ),
+                );
+            }
+            stack.finish()
+        })
+        .finish()
     }
 
     fn render_body(
         &self,
-        _workspace: &Workspace,
-        _visibility: &UsageVisibility,
+        workspace: &Workspace,
+        visibility: &UsageVisibility,
+        upgrade_banner: Option<Box<dyn Element>>,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
-        // TODO -- next pr
-        self.render_empty_state(
-            "Usage rows coming soon",
-            "Per-user usage breakdown lands in a follow-up.",
+        let Some(summary) = self.current_summary(workspace) else {
+            return self.render_empty_state(
+                "No usage this period",
+                "Usage will appear here once you start making agent requests.",
+                appearance,
+            );
+        };
+
+        let viewer_uid = Self::resolved_viewer_uid(app);
+        let viewer_display_name = Self::resolved_viewer_display_name(app);
+
+        render_rows(
+            workspace,
+            &summary.entries,
+            viewer_uid.as_deref(),
+            viewer_display_name.as_deref(),
+            visibility,
+            self.source_filter,
+            &self.row_mouse_states,
+            upgrade_banner,
             appearance,
+            std::sync::Arc::new(|filter, ctx| {
+                ctx.dispatch_typed_action(BillingCycleUsageAction::ChangeSourceFilter(filter));
+            }),
         )
     }
 
@@ -477,10 +619,14 @@ impl BillingCycleUsageSectionView {
         })
         .finish();
 
-        let icon = ConstrainedBox::new(Icon::ArrowCircleBrokenUp.to_warpui_icon(sub_text).finish())
-            .with_width(14.)
-            .with_height(14.)
-            .finish();
+        let icon = ConstrainedBox::new(
+            Icon::ArrowCircleBrokenUp
+                .to_warpui_icon(sub_text.into())
+                .finish(),
+        )
+        .with_width(14.)
+        .with_height(14.)
+        .finish();
 
         let row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -565,20 +711,38 @@ fn legend_style_for(cost_type: AiCreditsUsageAndCostType) -> (ColorU, &'static s
         AiCreditsUsageAndCostType::BonusGrant => (BONUS_CREDITS_DOT_COLOR, "Add-ons"),
         AiCreditsUsageAndCostType::Payg => (PAYG_CREDITS_DOT_COLOR, "Pay-as-you-go"),
         AiCreditsUsageAndCostType::AmbientBonusGrant => (AMBIENT_CREDITS_DOT_COLOR, "Ambient-only"),
-        AiCreditsUsageAndCostType::Aggregate | AiCreditsUsageAndCostType::Other(_) => {
-            (BASE_CREDITS_DOT_COLOR, "")
-        }
+        AiCreditsUsageAndCostType::Aggregate => (AGGREGATE_CREDITS_DOT_COLOR, "All sources"),
+        AiCreditsUsageAndCostType::Other(_) => (BASE_CREDITS_DOT_COLOR, ""),
     }
+}
+
+fn render_aggregate_legend_tooltip(appearance: &Appearance) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let text = Text::new_inline(
+        "Aggregates usage from base, add-on, pay-as-you-go, and ambient-only credits.".to_string(),
+        appearance.ui_font_family(),
+        12.,
+    )
+    .with_color(theme.sub_text_color(theme.background()).into())
+    .finish();
+    Container::new(text)
+        .with_background_color(theme.background().into_solid())
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+        .with_border(Border::all(1.).with_border_color(theme.outline().into_solid()))
+        .with_horizontal_padding(12.)
+        .with_vertical_padding(6.)
+        .with_drop_shadow(
+            DropShadow::new_with_standard_offset_and_spread(ColorU::new(0, 0, 0, 48))
+                .with_offset(vec2f(0., 4.)),
+        )
+        .finish()
 }
 
 fn format_period_label(summary: &BillingCycleUsageSummary) -> String {
     format_period_range(summary.period_start, summary.period_end)
 }
 
-fn format_period_range(
-    start: chrono::DateTime<chrono::Utc>,
-    end: chrono::DateTime<chrono::Utc>,
-) -> String {
+fn format_period_range(start: DateTime<Utc>, end: DateTime<Utc>) -> String {
     let start = start.with_timezone(&Local);
     let end = end.with_timezone(&Local);
     format!(
