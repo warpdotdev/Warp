@@ -124,6 +124,7 @@ struct PlanSectionMouseStates {
     manage_billing_link: MouseStateHandle,
     open_admin_panel_link: MouseStateHandle,
     admin_panel_link: MouseStateHandle,
+    refresh_button: MouseStateHandle,
 }
 
 #[derive(Default)]
@@ -571,7 +572,7 @@ impl BillingAndUsagePageV2View {
                         appearance,
                         team.billing_metadata.customer_type.to_display_string(),
                     ))
-                    .with_margin_right(12.)
+                    .with_margin_right(8.)
                     .finish(),
                 );
             }
@@ -621,7 +622,7 @@ impl BillingAndUsagePageV2View {
                                 })
                                 .finish(),
                         )
-                        .with_margin_left(12.)
+                        .with_margin_left(8.)
                         .finish(),
                     );
                 }
@@ -659,7 +660,7 @@ impl BillingAndUsagePageV2View {
                             })
                             .finish(),
                     )
-                    .with_margin_left(12.)
+                    .with_margin_left(8.)
                     .finish(),
                 );
             }
@@ -667,7 +668,7 @@ impl BillingAndUsagePageV2View {
             let current_user_id = self.auth_state.user_id().unwrap_or_default();
             right_side.add_child(
                 Container::new(render_customer_type_badge(appearance, "Free".into()))
-                    .with_margin_right(16.)
+                    .with_margin_right(8.)
                     .finish(),
             );
             right_side.add_child(
@@ -703,16 +704,43 @@ impl BillingAndUsagePageV2View {
                         })
                         .finish(),
                 )
-                .with_margin_left(12.)
+                .with_margin_left(8.)
                 .finish(),
             );
         }
+
+        right_side.add_child(
+            Container::new(self.render_plan_refresh_button(appearance))
+                .with_margin_left(8.)
+                .finish(),
+        );
 
         plan_header.add_child(right_side.finish());
 
         Container::new(plan_header.finish())
             .with_margin_bottom(24.)
             .finish()
+    }
+
+    fn render_plan_refresh_button(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let icon_color = theme.sub_text_color(theme.background());
+        let mouse_state = self.plan_mouse_states.refresh_button.clone();
+        warpui::elements::Hoverable::new(mouse_state, move |_| {
+            Container::new(
+                ConstrainedBox::new(Icon::Refresh.to_warpui_icon(icon_color).finish())
+                    .with_width(16.)
+                    .with_height(16.)
+                    .finish(),
+            )
+            .with_uniform_padding(2.)
+            .finish()
+        })
+        .with_cursor(warpui::platform::Cursor::PointingHand)
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action(BillingAndUsagePageAction::RefreshWorkspaceData);
+        })
+        .finish()
     }
 
     fn render_balance_section(
