@@ -798,6 +798,8 @@ impl EnvironmentsPageView {
                     );
                     return;
                 };
+                let mut environment = environment.clone();
+                environment.secrets = existing_env.model().string_model.secrets.clone();
 
                 // Get the revision from the existing environment
                 let revision = existing_env.metadata.revision.clone();
@@ -808,7 +810,7 @@ impl EnvironmentsPageView {
                 // Update via UpdateManager
                 UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
                     update_manager.update_ambient_agent_environment(
-                        environment.clone(),
+                        environment,
                         *env_id,
                         revision,
                         ctx,

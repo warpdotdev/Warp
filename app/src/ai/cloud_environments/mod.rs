@@ -82,6 +82,17 @@ impl ProvidersConfig {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EnvironmentSecretRef {
+    pub name: String,
+}
+
+impl fmt::Display for EnvironmentSecretRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.name.fmt(f)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 /// An AmbientAgentEnvironment represents an environment that we would run a Warp agent in.
 pub struct AmbientAgentEnvironment {
@@ -103,6 +114,12 @@ pub struct AmbientAgentEnvironment {
     /// Optional cloud provider configurations for automatic auth.
     #[serde(default, skip_serializing_if = "ProvidersConfig::is_empty")]
     pub providers: ProvidersConfig,
+    /// Optional list of default managed secrets for runs using this environment.
+    ///
+    /// `None` represents legacy environments without explicit secret scoping.
+    /// `Some(vec![])` means no secrets by default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secrets: Option<Vec<EnvironmentSecretRef>>,
 }
 
 pub type CloudAmbientAgentEnvironment =
@@ -142,6 +159,7 @@ impl AmbientAgentEnvironment {
             base_image: BaseImage::DockerImage(docker_image),
             setup_commands,
             providers: ProvidersConfig::default(),
+            secrets: Some(Vec::new()),
         }
     }
 }
