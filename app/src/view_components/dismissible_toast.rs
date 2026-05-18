@@ -49,6 +49,9 @@ struct ToastData<A: Action + Clone> {
     /// Unique identifier for the toast. Used for finding the toast to dismiss from the
     /// stack.
     uuid: Uuid,
+
+    /// How many times this toast has been added (for duplicate counting).
+    count: usize,
 }
 /// This View is a stack of toasts, each of which holds some "main text" on the left, and optionally
 /// a hyperlink on the right. They can either be manually dismissed by clicking the X button, or
@@ -94,6 +97,7 @@ impl<A: Action + Clone> DismissibleToastStack<A> {
             dismissible_toast: toast,
             abort_handle: Some(abort_handle),
             uuid,
+            count: 1,
         });
 
         ctx.notify();
@@ -107,13 +111,23 @@ impl<A: Action + Clone> DismissibleToastStack<A> {
         ctx: &mut ViewContext<Self>,
     ) {
         if let Some(object_id) = &toast.object_id {
-            self.dismiss_older_toasts(object_id, ctx);
+            if let Some(existing) = self
+                .toasts
+                .iter_mut()
+                .rev()
+                .find(|t| t.dismissible_toast.object_id.as_ref() == Some(object_id))
+            {
+                existing.count += 1;
+                ctx.notify();
+                return;
+            }
         }
 
         self.toasts.push(ToastData {
             dismissible_toast: toast,
             abort_handle: None,
             uuid: Uuid::new_v4(),
+            count: 1,
         });
 
         ctx.notify();
@@ -178,15 +192,20 @@ impl<A: Action + Clone> View for DismissibleToastStack<A> {
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let mut rendered_toasts =
             Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Center);
-        // For loop over the toasts in reverse order so that the most recent toast is
-        // rendered first. Pass in the toast's UUID to the render method so that it is
-        // piped to the dismiss action when the close button is clicked. The handler will
-        // use this UUID to determine which toast in the stack to close.
         for toast in self.toasts.iter().rev() {
+            let display_text = if toast.count > 1 {
+                format!("{} (x{})", toast.dismissible_toast.main_text, toast.count)
+            } else {
+                toast.dismissible_toast.main_text.clone()
+            };
             rendered_toasts.add_child(
-                Container::new(toast.dismissible_toast.render(app, toast.uuid))
-                    .with_margin_bottom(5.)
-                    .finish(),
+                Container::new(
+                    toast
+                        .dismissible_toast
+                        .render_with_text(app, toast.uuid, display_text),
+                )
+                .with_margin_bottom(5.)
+                .finish(),
             );
         }
 
@@ -312,7 +331,7 @@ pub type OnBodyClickCallback<A> = Rc<dyn Fn(&mut ViewContext<DismissibleToastSta
 #[derive(Clone)]
 pub struct DismissibleToast<A: Action + Clone> {
     flavor: ToastFlavor,
-    main_text: String,
+    pub(crate) main_text: String,
     link: Option<ToastLink<A>>,
     close_button_mouse_state: MouseStateHandle,
     close_button_hover_state: MouseStateHandle,
@@ -390,6 +409,15 @@ impl<A: Action + Clone> DismissibleToast<A> {
     }
 
     fn render(&self, app: &AppContext, uuid: Uuid) -> Box<dyn Element> {
+        self.render_with_text(app, uuid, self.main_text.clone())
+    }
+
+    fn render_with_text(
+        &self,
+        app: &AppContext,
+        uuid: Uuid,
+        display_text: String,
+    ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let ui_builder = appearance.ui_builder();
 
@@ -405,7 +433,7 @@ impl<A: Action + Clone> DismissibleToast<A> {
             Shrinkable::new(
                 1.,
                 ui_builder
-                    .wrappable_text(self.main_text.clone(), true)
+                    .wrappable_text(display_text, true)
                     .with_style(UiComponentStyles {
                         font_size: Some(appearance.ui_font_size() * 1.2),
                         font_color: Some(self.flavor.text_color(appearance)),
