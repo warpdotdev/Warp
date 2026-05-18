@@ -1494,7 +1494,7 @@ fn handle_terminal_view_event(
                 open_code_review,
             } => {
                 ctx.emit(pane_group::Event::InsertCodeReviewComments {
-                    repo_path: repo_path.to_path_buf(),
+                    repo_path: repo_path.clone(),
                     comments: comments.to_owned(),
                     diff_mode: diff_mode.to_owned(),
                     open_code_review: open_code_review.clone(),

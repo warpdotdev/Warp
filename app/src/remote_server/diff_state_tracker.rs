@@ -7,7 +7,6 @@
 //! handle proto conversion and wire delivery.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use itertools::Itertools;
@@ -86,7 +85,8 @@ pub(super) enum DiffStateUpdate {
     FileDelta {
         repo_path: StandardizedPath,
         mode: DiffMode,
-        path: PathBuf,
+        /// Repo-relative path for the changed file.
+        path: String,
         diff: Option<Arc<FileDiffAndContent>>,
         metadata: Option<DiffMetadata>,
         subscribers: Vec<ConnectionId>,
@@ -414,7 +414,7 @@ impl RemoteDiffStateManager {
         ctx: &mut ModelContext<Self>,
     ) {
         let diff_mode = key.mode.clone();
-        let repo_path = PathBuf::from(key.repo_path.as_str());
+        let repo_path = std::path::PathBuf::from(key.repo_path.as_str());
         let resolve_id = request_id.clone();
         let abort_id = request_id.clone();
         let handle = ctx.spawn_abortable(

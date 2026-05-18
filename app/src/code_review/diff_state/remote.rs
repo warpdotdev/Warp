@@ -302,7 +302,7 @@ impl RemoteDiffStateModel {
 
     fn apply_file_delta(
         &mut self,
-        file_path: StandardizedPath,
+        file_path: String,
         diff: Option<FileDiffAndContent>,
         metadata: Option<DiffMetadata>,
         ctx: &mut ModelContext<Self>,
@@ -316,22 +316,20 @@ impl RemoteDiffStateModel {
             return;
         };
 
-        let event_path = file_path.to_local_path_lossy();
-
         if let Some(ref new_diff) = diff {
-            if let Some(pos) = diffs.files.iter().position(|f| f.file_path == event_path) {
+            if let Some(pos) = diffs.files.iter().position(|f| f.file_path == file_path) {
                 diffs.files[pos] = new_diff.file_diff.clone();
             } else {
                 diffs.files.push(new_diff.file_diff.clone());
             }
         } else {
-            diffs.files.retain(|f| f.file_path != event_path);
+            diffs.files.retain(|f| f.file_path != file_path);
         }
         diffs.total_additions = diffs.files.iter().map(|f| f.additions()).sum();
         diffs.total_deletions = diffs.files.iter().map(|f| f.deletions()).sum();
         diffs.files_changed = diffs.files.len();
         ctx.emit(DiffStateModelEvent::SingleFileUpdated {
-            path: event_path,
+            path: file_path,
             diff: diff.map(Arc::new),
         });
     }

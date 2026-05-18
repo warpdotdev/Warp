@@ -1773,7 +1773,7 @@ pub enum Event {
     OpenCodeReviewPane(CodeReviewPanelArg),
     ToggleCodeReviewPane(CodeReviewPanelArg),
     InsertCodeReviewComments {
-        repo_path: PathBuf,
+        repo_path: LocalOrRemotePath,
         comments: Vec<PendingImportedReviewComment>,
         diff_mode: DiffMode,
         open_code_review: Option<CodeReviewPanelArg>,
@@ -6301,7 +6301,7 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         let arg = CodeReviewPanelArg {
-            repo_path: self.current_local_repo_path().map(Path::to_path_buf),
+            repo_path: self.current_repo_path.clone(),
             terminal_view: self.view_handle.clone(),
             entrypoint,
             focus_new_pane,
@@ -6397,7 +6397,6 @@ impl TerminalView {
             &DiffSetScope::All,
             &diff_mode,
             main_branch_name.as_deref(),
-            &repo_path,
         );
 
         // Insert the reference into the terminal input immediately
@@ -6652,7 +6651,7 @@ impl TerminalView {
             None
         } else {
             Some(CodeReviewPanelArg {
-                repo_path: Some(repo_path.to_path_buf()),
+                repo_path: Some(LocalOrRemotePath::Local(repo_path.to_path_buf())),
                 terminal_view: self.view_handle.clone(),
                 entrypoint: CodeReviewPaneEntrypoint::InvokedByAgent,
                 focus_new_pane: false,
@@ -6661,7 +6660,7 @@ impl TerminalView {
         };
 
         ctx.emit(Event::InsertCodeReviewComments {
-            repo_path: repo_path.to_path_buf(),
+            repo_path: LocalOrRemotePath::Local(repo_path.to_path_buf()),
             comments: pending_comments,
             diff_mode,
             open_code_review,
@@ -19676,7 +19675,7 @@ impl TerminalView {
 
     fn imported_comments_panel_arg(&self) -> CodeReviewPanelArg {
         CodeReviewPanelArg {
-            repo_path: self.current_local_repo_path().map(Path::to_path_buf),
+            repo_path: self.current_repo_path.clone(),
             terminal_view: self.view_handle.clone(),
             entrypoint: CodeReviewPaneEntrypoint::AgentModeRunning,
             focus_new_pane: true,
@@ -20814,7 +20813,7 @@ impl TerminalView {
             }
             InputEvent::OpenCodeReviewPane => {
                 ctx.emit(Event::OpenCodeReviewPane(CodeReviewPanelArg {
-                    repo_path: self.current_local_repo_path().map(Path::to_path_buf),
+                    repo_path: self.current_repo_path.clone(),
                     terminal_view: self.view_handle.clone(),
                     entrypoint: CodeReviewPaneEntrypoint::GitDiffChip,
                     focus_new_pane: true,
@@ -21976,7 +21975,7 @@ impl TerminalView {
     /// rich input when open or the PTY when closed.
     pub fn send_diff_hunk_to_cli_agent_or_rich_input(
         &mut self,
-        file_path: &Path,
+        file_path: &str,
         start_line: usize,
         end_line: usize,
         lines_added: u32,
@@ -26060,7 +26059,7 @@ impl TypedActionView for TerminalView {
             }
             ToggleCodeReviewPane { entrypoint } => {
                 ctx.emit(Event::ToggleCodeReviewPane(CodeReviewPanelArg {
-                    repo_path: self.current_local_repo_path().map(Path::to_path_buf),
+                    repo_path: self.current_repo_path.clone(),
                     terminal_view: self.view_handle.clone(),
                     entrypoint: *entrypoint,
                     focus_new_pane: true,

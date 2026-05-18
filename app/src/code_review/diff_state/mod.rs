@@ -108,7 +108,9 @@ pub struct DiffHunk {
 /// This matches Git Desktop's FileDiff structure.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FileDiff {
-    pub file_path: PathBuf,
+    /// Repo-relative path for this diff file. Absolute file identities should use
+    /// `StandardizedPath` or `LocalOrRemotePath` at API boundaries.
+    pub file_path: String,
     pub status: GitFileStatus,
     pub hunks: Arc<Vec<DiffHunk>>,
     pub is_binary: bool,
@@ -307,7 +309,8 @@ pub enum DiffStateModelEvent {
     NewDiffsComputed(Option<Arc<GitDiffWithBaseContent>>),
     /// Event dispatched when a single file's diff is updated incrementally.
     SingleFileUpdated {
-        path: PathBuf,
+        /// Repo-relative path for the updated file.
+        path: String,
         diff: Option<Arc<FileDiffAndContent>>,
     },
     /// Event dispatched when diff metadata (stats, branch info) is refreshed.
