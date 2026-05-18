@@ -8,6 +8,7 @@
 - **云端剥离 Phase 1–2**:增加 `cloud-disabled` channel 谓词;清理 billing/pricing、referral/reward、cloud sharing dialog UI;退订 RTC UpdateManager;退役 notebook/folder sync queue
 - **平台**:修复 Spotlight/Finder/Launchpad 启动 macOS 时的 panic;`run_shell_command` stdout 兜底回退至 command grid
 - **基建**:`.gitattributes` 强制 LF;新增 stale bot 与 Claude Code GitHub workflow
+- **编辑器**:代码/Markdown 查看器新增 15 种语言语法高亮(Dart、Zig、SCSS、R、Julia、OCaml、Erlang、Nix、Groovy、Solidity、GraphQL、Protobuf、Clojure、Elm、CMake)
 
 ## [v2026.05.06.preview] — 2026-05-06
 

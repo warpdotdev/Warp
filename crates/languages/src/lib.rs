@@ -19,7 +19,7 @@ lazy_static! {
     static ref LANGUAGE_REGISTRY: LanguageRegistry = LanguageRegistry::new();
 }
 
-pub const SUPPORTED_LANGUAGES: [&str; 32] = [
+pub const SUPPORTED_LANGUAGES: [&str; 47] = [
     "rust",
     "golang",
     "yaml",
@@ -52,6 +52,21 @@ pub const SUPPORTED_LANGUAGES: [&str; 32] = [
     "xml",
     "vue",
     "dockerfile",
+    "dart",
+    "zig",
+    "scss",
+    "r",
+    "julia",
+    "ocaml",
+    "erlang",
+    "nix",
+    "groovy",
+    "solidity",
+    "graphql",
+    "proto",
+    "clojure",
+    "elm",
+    "cmake",
 ];
 
 /// Registry that holds all of the supported languages.
@@ -102,6 +117,14 @@ fn normalize_language_name(name: &str) -> &str {
         "terraform" | "tf" => "hcl",
         "kt" => "kotlin",
         "docker" | "containerfile" => "dockerfile",
+        "jl" => "julia",
+        "ml" | "objective-caml" => "ocaml",
+        "erl" => "erlang",
+        "gradle" => "groovy",
+        "sol" => "solidity",
+        "gql" => "graphql",
+        "protobuf" => "proto",
+        "clj" | "cljs" | "cljc" => "clojure",
         other => other,
     }
 }
@@ -132,6 +155,10 @@ pub fn language_by_filename(path: &Path) -> Option<Arc<Language>> {
             "Dockerfile" | "Containerfile" | "dockerfile" | "containerfile" => {
                 return language_by_name("dockerfile");
             }
+            // CMake build scripts
+            "CMakeLists.txt" => {
+                return language_by_name("cmake");
+            }
             _ => {
                 // Also match Dockerfile variants like Dockerfile.dev, Dockerfile.prod
                 if filename.starts_with("Dockerfile.") || filename.starts_with("Containerfile.") {
@@ -151,7 +178,8 @@ pub fn language_by_filename(path: &Path) -> Option<Arc<Language>> {
         "jsx" => language_by_name("jsx"),
         "tsx" => language_by_name("tsx"),
         "ts" | "cts" | "mts" => language_by_name("typescript"),
-        "java" | "groovy" | "gvy" | "gy" | "gsh" => language_by_name("java"),
+        "java" => language_by_name("java"),
+        "groovy" | "gvy" | "gy" | "gsh" | "gradle" => language_by_name("groovy"),
         "cpp" | "cxx" | "cc" | "h" | "hh" | "hpp" | "hxx" | "H" | "h++" => language_by_name("cpp"),
         "sh" | "zsh" | "bash" | "command" => language_by_name("shell"),
         "cs" => language_by_name("csharp"),
@@ -175,6 +203,20 @@ pub fn language_by_filename(path: &Path) -> Option<Arc<Language>> {
         "xml" => language_by_name("xml"),
         "vue" => language_by_name("vue"),
         "dockerfile" => language_by_name("dockerfile"),
+        "dart" => language_by_name("dart"),
+        "zig" | "zon" => language_by_name("zig"),
+        "scss" => language_by_name("scss"),
+        "r" | "R" => language_by_name("r"),
+        "jl" => language_by_name("julia"),
+        "ml" | "mli" => language_by_name("ocaml"),
+        "erl" | "hrl" => language_by_name("erlang"),
+        "nix" => language_by_name("nix"),
+        "sol" => language_by_name("solidity"),
+        "graphql" | "gql" => language_by_name("graphql"),
+        "proto" => language_by_name("proto"),
+        "clj" | "cljs" | "cljc" | "edn" => language_by_name("clojure"),
+        "elm" => language_by_name("elm"),
+        "cmake" => language_by_name("cmake"),
         _ => None,
     }
 }
@@ -270,6 +312,21 @@ fn get_arborium_highlight_query(lang: &str) -> Option<&str> {
         "xml" => Some(arborium::lang_xml::HIGHLIGHTS_QUERY),
         "vue" => Some(&arborium::lang_vue::HIGHLIGHTS_QUERY),
         "dockerfile" => Some(arborium::lang_dockerfile::HIGHLIGHTS_QUERY),
+        "dart" => Some(arborium::lang_dart::HIGHLIGHTS_QUERY),
+        "zig" => Some(arborium::lang_zig::HIGHLIGHTS_QUERY),
+        "scss" => Some(&arborium::lang_scss::HIGHLIGHTS_QUERY),
+        "r" => Some(arborium::lang_r::HIGHLIGHTS_QUERY),
+        "julia" => Some(arborium::lang_julia::HIGHLIGHTS_QUERY),
+        "ocaml" => Some(arborium::lang_ocaml::HIGHLIGHTS_QUERY),
+        "erlang" => Some(arborium::lang_erlang::HIGHLIGHTS_QUERY),
+        "nix" => Some(arborium::lang_nix::HIGHLIGHTS_QUERY),
+        "groovy" => Some(arborium::lang_groovy::HIGHLIGHTS_QUERY),
+        "solidity" => Some(arborium::lang_solidity::HIGHLIGHTS_QUERY),
+        "graphql" => Some(arborium::lang_graphql::HIGHLIGHTS_QUERY),
+        "proto" => Some(arborium::lang_proto::HIGHLIGHTS_QUERY),
+        "clojure" => Some(arborium::lang_clojure::HIGHLIGHTS_QUERY),
+        "elm" => Some(arborium::lang_elm::HIGHLIGHTS_QUERY),
+        "cmake" => Some(arborium::lang_cmake::HIGHLIGHTS_QUERY),
         _ => None,
     }
 }

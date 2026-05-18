@@ -306,6 +306,21 @@ arborium = { version = "2", default-features = false, features = [
   "lang-xml",
   "lang-vue",
   "lang-dockerfile",
+  "lang-dart",
+  "lang-zig",
+  "lang-scss",
+  "lang-r",
+  "lang-julia",
+  "lang-ocaml",
+  "lang-erlang",
+  "lang-nix",
+  "lang-groovy",
+  "lang-solidity",
+  "lang-graphql",
+  "lang-proto",
+  "lang-clojure",
+  "lang-elm",
+  "lang-cmake",
 ] }
 unicode-width = "0.1.12"
 uuid = { version = "1.1.2", features = ["v4", "serde", "js"] }

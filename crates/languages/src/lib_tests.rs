@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{language_by_filename, load_language, SUPPORTED_LANGUAGES};
+use crate::{language_by_filename, language_by_name, load_language, SUPPORTED_LANGUAGES};
 
 /// Validate that every supported language can be loaded successfully.
 /// This catches invalid node types, syntax errors, and other issues in .scm query files
@@ -50,4 +50,54 @@ fn command_extension_resolves_to_shell() {
     let language = language_by_filename(Path::new("script.command"))
         .expect("`.command` files should resolve to a language");
     assert_eq!(language.display_name(), "Shell");
+}
+
+/// Newly added languages should resolve from their canonical file extensions so
+/// that opening, e.g., a `.dart` file renders syntax highlighting.
+#[test]
+fn new_language_extensions_resolve() {
+    for (filename, expected) in [
+        ("main.dart", "Dart"),
+        ("build.zig", "Zig"),
+        ("styles.scss", "SCSS"),
+        ("analysis.R", "R"),
+        ("script.jl", "Julia"),
+        ("lib.ml", "OCaml"),
+        ("server.erl", "Erlang"),
+        ("flake.nix", "Nix"),
+        ("build.gradle", "Groovy"),
+        ("Token.sol", "Solidity"),
+        ("schema.graphql", "GraphQL"),
+        ("api.proto", "Protocol Buffers"),
+        ("core.clj", "Clojure"),
+        ("Main.elm", "Elm"),
+        ("config.cmake", "CMake"),
+        ("CMakeLists.txt", "CMake"),
+    ] {
+        let language = language_by_filename(Path::new(filename))
+            .unwrap_or_else(|| panic!("expected {filename} to resolve to a language"));
+        assert_eq!(
+            language.display_name(),
+            expected,
+            "{filename} should resolve to {expected}",
+        );
+    }
+}
+
+/// Common markdown code-fence aliases should normalize to the canonical language
+/// so fenced blocks like ```` ```protobuf ```` are highlighted.
+#[test]
+fn new_language_aliases_normalize() {
+    for (alias, expected) in [
+        ("protobuf", "Protocol Buffers"),
+        ("gradle", "Groovy"),
+        ("erl", "Erlang"),
+        ("jl", "Julia"),
+        ("sol", "Solidity"),
+        ("gql", "GraphQL"),
+    ] {
+        let language = language_by_name(alias)
+            .unwrap_or_else(|| panic!("expected alias `{alias}` to resolve to a language"));
+        assert_eq!(language.display_name(), expected, "`{alias}` should resolve");
+    }
 }
