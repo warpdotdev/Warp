@@ -17,7 +17,7 @@ use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::TelemetryEvent;
 
 use super::manager::{
-    RemoteCodebaseIndexMutationKind, RemoteCodebaseIndexStatusWithPath, RemoteServerManager,
+    RemoteCodebaseIndexStatusWithPath, RemoteCodebaseIndexUpdateOperation, RemoteServerManager,
     RemoteServerManagerEvent,
 };
 
@@ -187,7 +187,9 @@ impl RemoteCodebaseIndexModel {
         RemoteServerManager::handle(ctx).update(ctx, |manager, ctx| {
             manager.ensure_codebase_indexed(
                 remote_path,
-                RemoteCodebaseIndexMutationKind::Request,
+                RemoteCodebaseIndexUpdateOperation::IndexNewRepo {
+                    is_auto_index: false,
+                },
                 ctx,
             );
         });
@@ -217,7 +219,9 @@ impl RemoteCodebaseIndexModel {
         RemoteServerManager::handle(ctx).update(ctx, |manager, ctx| {
             manager.ensure_codebase_indexed(
                 remote_path,
-                RemoteCodebaseIndexMutationKind::Request,
+                RemoteCodebaseIndexUpdateOperation::IndexNewRepo {
+                    is_auto_index: false,
+                },
                 ctx,
             );
         });
@@ -311,7 +315,9 @@ impl RemoteCodebaseIndexModel {
                     RemoteServerManager::handle(ctx).update(ctx, |manager, ctx| {
                         manager.ensure_codebase_indexed(
                             remote_path,
-                            RemoteCodebaseIndexMutationKind::AutoIndex,
+                            RemoteCodebaseIndexUpdateOperation::IndexNewRepo {
+                                is_auto_index: true,
+                            },
                             ctx,
                         );
                     });
@@ -681,7 +687,7 @@ fn remote_codebase_auto_indexing_enabled(
 }
 fn emit_status_changed_telemetry(
     update: RemoteCodebaseIndexStatusTelemetryUpdate,
-    mutation_kind: Option<RemoteCodebaseIndexMutationKind>,
+    mutation_kind: Option<RemoteCodebaseIndexUpdateOperation>,
     source: RemoteCodebaseIndexStatusTelemetrySource,
     ctx: &mut ModelContext<RemoteCodebaseIndexModel>,
 ) {

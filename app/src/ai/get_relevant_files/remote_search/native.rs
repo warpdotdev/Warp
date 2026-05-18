@@ -80,10 +80,9 @@ pub(super) fn send_request(
                         manager.trigger_codebase_incremental_sync(remote_path, ctx)
                     });
                 if !sync_requested {
-                    return RemoteSearchRequest::Ready(SearchCodebaseResult::Failed {
-                        reason: SearchCodebaseFailureReason::ClientError,
-                        message: "Remote codebase search is unavailable because the remote server is not connected.".to_string(),
-                    });
+                    log::warn!(
+                        "Remote codebase search is using a stale index because incremental sync could not be requested"
+                    );
                 }
             }
             let store_client = ServerApiProvider::as_ref(ctx).get();

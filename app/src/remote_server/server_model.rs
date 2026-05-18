@@ -943,7 +943,12 @@ impl ServerModel {
             auth_token,
             mode,
         } = msg;
-        let mode = CodebaseResyncMode::try_from(mode).unwrap_or(CodebaseResyncMode::Unspecified);
+        let mode = match CodebaseResyncMode::try_from(mode) {
+            Ok(mode) => mode,
+            Err(_) => {
+                return invalid_request_response(format!("Invalid ResyncCodebase mode: {mode}"));
+            }
+        };
         let request = match self.prepare_codebase_index_request(
             CodebaseIndexRequestParams {
                 operation_name: "ResyncCodebase",
@@ -964,7 +969,7 @@ impl ServerModel {
                 &repo_path,
                 |manager, indexed_repo_path, ctx| {
                     match mode {
-                        CodebaseResyncMode::Unspecified | CodebaseResyncMode::Full => {
+                        CodebaseResyncMode::Full => {
                             manager.try_manual_resync_codebase(indexed_repo_path, ctx);
                         }
                         CodebaseResyncMode::Incremental => {

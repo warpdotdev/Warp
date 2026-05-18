@@ -346,9 +346,8 @@ message ResyncCodebase {
   CodebaseResyncMode mode = 3;
 }
 enum CodebaseResyncMode {
-  CODEBASE_RESYNC_MODE_UNSPECIFIED = 0;
-  CODEBASE_RESYNC_MODE_FULL = 1;
-  CODEBASE_RESYNC_MODE_INCREMENTAL = 2;
+  CODEBASE_RESYNC_MODE_FULL = 0;
+  CODEBASE_RESYNC_MODE_INCREMENTAL = 1;
 }
 
 message DropCodebaseIndex {

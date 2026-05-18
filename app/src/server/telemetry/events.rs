@@ -2906,7 +2906,7 @@ pub enum TelemetryEvent {
         has_failure_message: bool,
         progress_completed: Option<u64>,
         progress_total: Option<u64>,
-        mutation_kind: Option<remote_server::manager::RemoteCodebaseIndexMutationKind>,
+        mutation_kind: Option<remote_server::manager::RemoteCodebaseIndexUpdateOperation>,
         source: RemoteCodebaseIndexStatusTelemetrySource,
         remote_os: Option<String>,
         remote_arch: Option<String>,

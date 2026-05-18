@@ -819,15 +819,17 @@ impl CodebaseIndexManager {
         if !self.is_indexing_enabled() {
             return false;
         }
-        let directory = dunce::canonicalize(&directory).unwrap_or(directory);
-        if !self.codebase_indices.contains_key(&directory) {
+        if self.root_path_for_codebase(&directory).is_none() {
             if !self.build_and_sync_codebase_index(BuildSource::FromPath(&directory), ctx) {
                 return false;
             }
-            self.record_codebase_index_status(&directory, ctx);
+            let indexed_directory = self
+                .root_path_for_codebase(&directory)
+                .unwrap_or_else(|| directory.clone());
+            self.record_codebase_index_status(&indexed_directory, ctx);
             // Starting a new codebase index should be considered into sync state updates.
             ctx.emit(CodebaseIndexManagerEvent::NewIndexCreated {
-                root_path: directory,
+                root_path: indexed_directory,
             });
         }
         true
