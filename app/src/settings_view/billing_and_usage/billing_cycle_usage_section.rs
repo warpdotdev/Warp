@@ -233,10 +233,21 @@ impl View for BillingCycleUsageSectionView {
 
         let mut column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
 
-        column.add_child(self.render_header(&workspace, &visibility, appearance));
+        column.add_child(self.render_header(&workspace, &visibility, appearance, app));
 
         if let Some(legend) = self.render_legend(&workspace, appearance) {
-            column.add_child(Container::new(legend).with_margin_top(8.).finish());
+            column.add_child(
+                Container::new(
+                    Flex::row()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_main_axis_alignment(MainAxisAlignment::End)
+                        .with_main_axis_size(MainAxisSize::Max)
+                        .with_child(legend)
+                        .finish(),
+                )
+                .with_margin_top(8.)
+                .finish(),
+            );
         }
 
         column.add_child(
@@ -261,18 +272,44 @@ impl BillingCycleUsageSectionView {
         workspace: &Workspace,
         visibility: &UsageVisibility,
         appearance: &Appearance,
+        app: &AppContext,
     ) -> Box<dyn Element> {
+        let theme = appearance.theme();
         let mut row = Flex::row()
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max);
 
-        row.add_child(
+        // Left side: "Usage" title + secondary "Resets ..." subtext when
+        // viewing the current cycle. Past cycles hide the Resets label since
+        // their reset is already in the past.
+        let mut left_side = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
+        left_side.add_child(
             Text::new_inline("Usage", appearance.ui_font_family(), HEADER_FONT_SIZE)
                 .with_style(Properties::default().weight(Weight::Bold))
-                .with_color(appearance.theme().active_ui_text_color().into())
+                .with_color(theme.active_ui_text_color().into())
                 .finish(),
         );
+        if self.selected_period_end.is_none() {
+            let reset_str = AIRequestUsageModel::as_ref(app)
+                .next_refresh_time_local()
+                .format("Resets %b %d at %-I:%M %p")
+                .to_string();
+            left_side.add_child(
+                Container::new(
+                    Text::new_inline(
+                        reset_str,
+                        appearance.ui_font_family(),
+                        appearance.ui_font_size(),
+                    )
+                    .with_color(theme.sub_text_color(theme.background()).into())
+                    .finish(),
+                )
+                .with_margin_left(12.)
+                .finish(),
+            );
+        }
+        row.add_child(left_side.finish());
 
         let mut right_side = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)

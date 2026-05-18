@@ -1076,6 +1076,15 @@ fn render_team_total_card(
     .finish()
 }
 
+/// Section subheader (e.g. "Team totals", "Member usage"). One step below
+/// the v2 page's bold section title.
+fn render_section_subheader(label: &str, appearance: &Appearance) -> Box<dyn Element> {
+    Text::new_inline(label.to_string(), appearance.ui_font_family(), 14.)
+        .with_color(appearance.theme().active_ui_text_color().into())
+        .with_style(Properties::default().weight(Weight::Medium))
+        .finish()
+}
+
 /// Horizontal row of team-totals cards (Overall + Local + Cloud).
 fn render_team_totals_section(
     entries: &[BillingCycleUsageEntry],
@@ -1214,6 +1223,14 @@ pub fn render_rows(
             ));
         }
         UsageVisibilityGranularity::PerUserTotals => {
+            // Admin viewers get two labeled subsections: team totals at the
+            // top, and per-member rows below. Both subheaders match the admin
+            // panel's `text-sm font-medium` styling.
+            column.add_child(
+                Container::new(render_section_subheader("Team totals", appearance))
+                    .with_margin_bottom(8.)
+                    .finish(),
+            );
             // Team-level totals always show every entry regardless of the
             // member-row source filter toggle below.
             column.add_child(render_team_totals_section(
@@ -1224,27 +1241,27 @@ pub fn render_rows(
 
             let member_rows = build_member_usage_rows(entries, &workspace.members, source_filter);
 
-            // Only show the toggle if there's cloud usage to filter against.
+            // Member usage subheader; source filter (if any cloud usage) lives
+            // on the right of the same row.
+            let mut member_header_row = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_child(render_section_subheader("Member usage", appearance));
             if has_cloud_usage(entries) {
-                column.add_child(
-                    Container::new(
-                        Flex::row()
-                            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                            .with_main_axis_alignment(MainAxisAlignment::End)
-                            .with_main_axis_size(MainAxisSize::Max)
-                            .with_child(render_source_filter_toggle(
-                                source_filter,
-                                mouse_states,
-                                appearance,
-                                on_filter_change,
-                            ))
-                            .finish(),
-                    )
-                    .with_margin_top(8.)
-                    .with_margin_bottom(4.)
-                    .finish(),
-                );
+                member_header_row.add_child(render_source_filter_toggle(
+                    source_filter,
+                    mouse_states,
+                    appearance,
+                    on_filter_change,
+                ));
             }
+            column.add_child(
+                Container::new(member_header_row.finish())
+                    .with_margin_top(16.)
+                    .with_margin_bottom(8.)
+                    .finish(),
+            );
 
             if member_rows.iter().all(|r| r.total_credits == 0) {
                 column.add_child(render_empty_filter_state(source_filter, appearance));
