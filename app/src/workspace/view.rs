@@ -8764,6 +8764,7 @@ impl Workspace {
         .with_padding_override(0., 0.)
         .into_item();
         let query = self.worktree_sidecar_search_query.trim().to_lowercase();
+        let home = dirs::home_dir().map(|p| p.display().to_string());
         let mut items = vec![search_item];
         items.extend(
             PersistedWorkspace::as_ref(ctx)
@@ -8782,11 +8783,14 @@ impl Workspace {
                 })
                 .map(|ws| {
                     let path_str = ws.path.to_string_lossy().into_owned();
-                    MenuItemFields::new(path_str.clone())
+                    let display = user_friendly_path(&path_str, home.as_deref()).into_owned();
+                    MenuItemFields::new(display)
                         .with_on_select_action(NewSessionSidecarSelection::OpenWorktreeRepo {
-                            repo_path: path_str,
+                            repo_path: path_str.clone(),
                         })
                         .with_icon(icons::Icon::Folder)
+                        .with_clip_config(ClipConfig::start())
+                        .with_tooltip(path_str)
                         .into_item()
                 })
                 .collect::<Vec<_>>(),
