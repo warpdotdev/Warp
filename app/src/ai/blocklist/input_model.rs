@@ -609,7 +609,7 @@ impl BlocklistAIInputModel {
         completion_context: C,
         session_id: Option<SessionId>,
         ctx: &mut ModelContext<Self>,
-        is_current_input: F,
+        is_current_input_check: F,
     ) where
         C: CompletionContext + Clone + Send + 'static,
         F: FnOnce(&AppContext) -> bool + 'static,
@@ -749,7 +749,7 @@ impl BlocklistAIInputModel {
                     new_input_type
                 },
                 move |me, new_input_type, ctx| {
-                    let is_current_input = is_current_input(ctx);
+                    let is_current_input = is_current_input_check(ctx);
                     log::debug!(
                         "NLD autodetection callback freshness check: is_current_input={is_current_input}"
                     );
@@ -762,13 +762,13 @@ impl BlocklistAIInputModel {
                     if !me.should_run_input_autodetection(ctx) {
                         return;
                     }
-                    // If the autodetect abort handle is none, it means we aborted autodetection.
-                    // It's possible that the future already completed before we aborted, and then we reach this callback after abort.
-                    // In this case, don't set the input type.
-                    if me.autodetect_abort_handle.is_none() {
+                    // Take the handle to mark this completed detection as consumed.
+                    // If the handle is already gone, autodetection was aborted after the
+                    // future completed but before this callback ran. In that case, don't
+                    // apply a stale result.
+                    if me.autodetect_abort_handle.take().is_none() {
                         return;
                     }
-                    me.autodetect_abort_handle = None;
                     me.set_input_config_internal(
                         InputConfig {
                             input_type: new_input_type,
