@@ -271,14 +271,18 @@ fn test_should_add_command_to_history() {
     }
 }
 
-/// Ensures one localized non-UTF-8 PowerShell entry does not drop later ASCII executables.
+/// Ensures UTF-8 PowerShell executable output preserves localized and ASCII entries together.
 #[test]
-fn test_powershell_executables_from_gbk_output() {
-    let expected_lossy = String::from_utf8_lossy(b"\xb2\xe2\xca\xd4.exe").into_owned();
-    let gbk_entry = b"\xb2\xe2\xca\xd4.exe";
+fn test_powershell_executables_from_utf8_output() {
+    let localized_entry = "测试.exe";
     let ascii_entry = b"git.exe";
     let output = CommandOutput {
-        stdout: [gbk_entry.as_slice(), b"\n", ascii_entry.as_slice()].concat(),
+        stdout: [
+            localized_entry.as_bytes(),
+            b"\n".as_slice(),
+            ascii_entry.as_slice(),
+        ]
+        .concat(),
         stderr: Vec::new(),
         status: CommandExitStatus::Success,
         exit_code: Some(0.into()),
@@ -288,10 +292,8 @@ fn test_powershell_executables_from_gbk_output() {
         ShellType::PowerShell.executables_from_shell_command_output(Ok(output), false);
 
     assert!(
-        executables
-            .iter()
-            .any(|name| name == expected_lossy.as_str()),
-        "expected lossy-decoded executable name to be preserved"
+        executables.iter().any(|name| name == localized_entry),
+        "expected localized executable name to be preserved"
     );
 
     assert!(
@@ -300,9 +302,8 @@ fn test_powershell_executables_from_gbk_output() {
     );
 
     if cfg!(windows) {
-        let expected_trimmed = expected_lossy.trim_end_matches(".exe");
         assert!(
-            executables.iter().any(|name| name == expected_trimmed),
+            executables.iter().any(|name| name == "测试"),
             "expected Windows executable suffix trimming to remain intact"
         );
         assert!(
@@ -310,4 +311,19 @@ fn test_powershell_executables_from_gbk_output() {
             "expected Windows suffix trimming to preserve later ASCII executables"
         );
     }
+}
+
+/// Ensures the PowerShell executable discovery script writes UTF-8 bytes to stdout.
+#[test]
+fn test_powershell_shell_command_to_get_executables_writes_utf8() {
+    let command = ShellType::PowerShell.shell_command_to_get_executables();
+
+    assert!(
+        command.contains("System.Text.UTF8Encoding"),
+        "expected PowerShell executable discovery to encode stdout as UTF-8"
+    );
+    assert!(
+        command.contains("OpenStandardOutput().Write"),
+        "expected PowerShell executable discovery to write bytes directly to stdout"
+    );
 }

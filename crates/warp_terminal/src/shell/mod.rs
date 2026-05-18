@@ -621,7 +621,10 @@ impl ShellType {
                 // this will print one item per line. However, when it is converted to a string,
                 // it will join the entries together with a space. So to make sure we get one item
                 // per line, we explicitly join the results with a newline.
-                "Get-Command -CommandType Application | Select-Object -ExpandProperty Name"
+                //
+                // We write the joined text to stdout as explicit UTF-8 bytes so localized
+                // executable names do not depend on the machine's active Windows code page.
+                r#"$names = Get-Command -CommandType Application | Select-Object -ExpandProperty Name; $text = [string]::Join([Environment]::NewLine, $names); $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($text); [Console]::OpenStandardOutput().Write($bytes, 0, $bytes.Length)"#
             }
         }
     }
@@ -636,8 +639,9 @@ impl ShellType {
     ) -> Vec<SmolStr> {
         match output {
             Ok(command_output) if command_output.status == CommandExitStatus::Success => {
-                // Be tolerant of Windows-localized command output that may not be UTF-8.
-                let output_string = String::from_utf8_lossy(&command_output.stdout).into_owned();
+                let Ok(output_string) = command_output.to_string() else {
+                    return Vec::new();
+                };
                 match self {
                     ShellType::Bash | ShellType::Zsh => {
                         // For bash and zsh, we wrote the command such that the output is just
