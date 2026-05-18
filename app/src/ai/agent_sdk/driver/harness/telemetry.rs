@@ -58,7 +58,7 @@ impl TelemetryEventDesc for ThirdPartyHarnessTelemetryEventDiscriminants {
     fn name(&self) -> &'static str {
         match self {
             ThirdPartyHarnessTelemetryEventDiscriminants::RuntimeErrorDetected => {
-                "ThirdPartyHarness.RuntimeError.Detected"
+                "AmbientAgents.ThirdPartyHarness.RuntimeError.Detected"
             }
         }
     }
