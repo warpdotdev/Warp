@@ -1592,7 +1592,6 @@ impl BillingAndUsagePageV2View {
             .update(ctx, |m, ctx| m.refresh_usage_history_async(ctx));
         self.refresh_addon_credits_settings(ctx);
     }
-
 }
 
 impl Entity for BillingAndUsagePageV2View {
@@ -1932,4 +1931,3 @@ fn render_balance_card(
     .with_vertical_padding(12.)
     .finish()
 }
-

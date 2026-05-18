@@ -734,7 +734,6 @@ impl BillingAndUsagePageView {
 
         self.refresh_addon_credits_settings(ctx);
     }
-
 }
 
 #[derive(Debug, Clone)]
@@ -2446,11 +2445,7 @@ impl BillingAndUsagePageView {
 }
 
 impl BillingAndUsagePageView {
-    fn render_page_body(
-        &self,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
+    fn render_page_body(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
         let ai_request_usage_model = AIRequestUsageModel::as_ref(app);
         let formatted_next_refresh_time = ai_request_usage_model
             .next_refresh_time_local()
@@ -3378,10 +3373,7 @@ impl BillingAndUsagePageView {
             Container::new(
                 appearance
                     .ui_builder()
-                    .button(
-                        ButtonVariant::Link,
-                        self.upgrade_link.clone(),
-                    )
+                    .button(ButtonVariant::Link, self.upgrade_link.clone())
                     .with_text_and_icon_label(
                         TextAndIcon::new(
                             TextAndIconAlignment::IconFirst,
@@ -3446,10 +3438,7 @@ impl BillingAndUsagePageView {
         let content = Container::new(
             appearance
                 .ui_builder()
-                .button(
-                    ButtonVariant::Link,
-                    self.enterprise_contact_us_link.clone(),
-                )
+                .button(ButtonVariant::Link, self.enterprise_contact_us_link.clone())
                 .with_text_and_icon_label(
                     TextAndIcon::new(
                         TextAndIconAlignment::IconFirst,
@@ -3507,10 +3496,7 @@ impl BillingAndUsagePageView {
         Container::new(
             appearance
                 .ui_builder()
-                .button(
-                    ButtonVariant::Link,
-                    self.stripe_billing_portal_link.clone(),
-                )
+                .button(ButtonVariant::Link, self.stripe_billing_portal_link.clone())
                 .with_text_and_icon_label(
                     TextAndIcon::new(
                         TextAndIconAlignment::IconFirst,
@@ -3548,10 +3534,7 @@ impl BillingAndUsagePageView {
         let compare_plans_button = Container::new(
             appearance
                 .ui_builder()
-                .button(
-                    ButtonVariant::Link,
-                    self.admin_panel_link.clone(),
-                )
+                .button(ButtonVariant::Link, self.admin_panel_link.clone())
                 .with_text_and_icon_label(
                     TextAndIcon::new(
                         TextAndIconAlignment::IconFirst,
@@ -3629,11 +3612,7 @@ impl BillingAndUsagePageView {
 }
 
 impl BillingAndUsagePageView {
-    fn render_plan_header(
-        &self,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
+    fn render_plan_header(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
         let account_info = if self.auth_state.is_anonymous_or_logged_out() {
             self.render_anonymous_account_info(self.auth_state.as_ref(), appearance)
         } else {
