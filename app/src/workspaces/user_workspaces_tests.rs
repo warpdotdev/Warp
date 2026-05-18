@@ -215,6 +215,26 @@ fn test_codebase_context_enabled_with_no_workspace() {
 }
 
 #[test]
+// Logged-in users should keep BYOK available even before a current workspace is resolved.
+fn test_byo_api_key_enabled_with_no_workspace_for_logged_in_users() {
+    App::test((), |mut app| async move {
+        initialize_app(
+            &mut app,
+            CachedResources { workspaces: vec![] },
+            Arc::new(MockTeamClient::new()),
+            Arc::new(MockWorkspaceClient::new()),
+        );
+
+        app.read(|ctx| {
+            assert!(
+                UserWorkspaces::as_ref(ctx).is_byo_api_key_enabled(ctx),
+                "expected BYO API keys to stay enabled for logged-in users without a current workspace",
+            );
+        });
+    })
+}
+
+#[test]
 fn test_solo_user_byok_overrides_workspace_policy_for_logged_in_users() {
     let _flag = FeatureFlag::SoloUserByok.override_enabled(true);
 
@@ -237,6 +257,7 @@ fn test_solo_user_byok_overrides_workspace_policy_for_logged_in_users() {
         }],
         billing_metadata: Default::default(),
         bonus_grants_purchased_this_month: Default::default(),
+        billing_cycle_usage: None,
         has_billing_history: false,
         settings: Default::default(),
         invite_code: None,

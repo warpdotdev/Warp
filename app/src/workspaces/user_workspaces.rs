@@ -501,7 +501,7 @@ impl UserWorkspaces {
         }
         self.current_workspace()
             .map(|workspace| workspace.is_byo_api_key_enabled())
-            .unwrap_or(false)
+            .unwrap_or(true)
     }
     /// Whether custom inference endpoints are enabled for the current user.
     /// Anonymous or logged-out users are not allowed to use custom inference.
