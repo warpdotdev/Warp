@@ -199,8 +199,8 @@ pub fn init(app: &mut AppContext) {
         ),
         FixedBinding::new("tab", EditorViewAction::Tab, text_entry.clone()),
         FixedBinding::new("shift-tab", EditorViewAction::ShiftTab, text_entry.clone()),
-        // Also create the word movement and word deletion shortcuts with `meta` in place of
-        // `alt`, to accommodate the "Left Option is Meta" and "Right Option is Meta" settings.
+        // Also create the word movement shortcuts with `meta` in place of `alt`, to accommodate
+        // the "Left Option is Meta" and "Right Option is Meta" settings.
         FixedBinding::new(
             "meta-left",
             EditorViewAction::MoveBackwardsByWord,
@@ -211,12 +211,6 @@ pub fn init(app: &mut AppContext) {
             EditorViewAction::MoveForwardsByWord,
             text_entry.clone(),
         ),
-        FixedBinding::new(
-            "meta-backspace",
-            EditorViewAction::DeleteWordLeft,
-            text_entry.clone(),
-        ),
-        FixedBinding::new("meta-d", EditorViewAction::CutWordRight, text_entry.clone()),
         FixedBinding::new_per_platform(
             PerPlatformKeystroke {
                 mac: "shift-alt-left",
@@ -471,7 +465,7 @@ pub fn init(app: &mut AppContext) {
         .with_key_binding("ctrl-f"),
         EditableBinding::new(
             // This doesn't reuse the move_to_line_start naming from the terminal input editor to
-            // distinguish between soft-wrappped line and hard-wrapped line (paragraph) movement.
+            // distinguish between soft-wrapped line and hard-wrapped line (paragraph) movement.
             "editor_view:move_to_paragraph_start",
             "Move to start of paragraph",
             EditorViewAction::MoveToParagraphStart,
@@ -968,7 +962,7 @@ struct MouseStateHandles {
     secondary_link_mouse_handle: MouseStateHandle,
 }
 
-// Represents the states of an ongoing mouse event. Note that these states are mutally exclusive:
+// Represents the states of an ongoing mouse event. Note that these states are mutually exclusive:
 // If one is selecting, they couldn't be initiating task list toggling at the same time.
 enum OngoingMouseEvent {
     Selecting,
