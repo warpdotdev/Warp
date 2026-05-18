@@ -299,29 +299,28 @@ impl WorkingDirectoriesModel {
 
     /// DiffStateModels are shared across tabs. When you delete repos from one tab,
     /// we should check if its still in use in any tab. If not, stop its watcher and delete it.
+    /// Drops diff state models and cached views for repos that are no longer
+    /// active in any pane group. Called from `refresh_working_directories`
+    /// when a repo leaves the computed set.
+    ///
+    /// The model is dropped unconditionally for the repos passed in — the
+    /// caller has already verified they are not in the new repo set. We do
+    /// NOT re-check `repository_roots` here because a racing side-channel
+    /// (e.g. `register_remote_repo`) may have re-added the repo, which
+    /// would prevent the stale model from being cleaned up.
     fn drop_unused_diff_state_models(
         &mut self,
         removed_repos: impl Iterator<Item = LocalOrRemotePath>,
         ctx: &mut ModelContext<Self>,
     ) {
         for repo_key in removed_repos {
-            if self
-                .repository_roots
-                .values()
-                .all(|tab| !tab.contains(&repo_key))
-            {
-                if let Some(model) = self.diff_state_models.remove(&repo_key) {
-                    model.update(ctx, |model, ctx| {
-                        model.stop_active_watcher(ctx);
-                    });
-                }
-                // Remove the cached CodeReviewView so the panel re-creates
-                // one with the correct terminal_view when the user navigates
-                // back. The DiffStateModel is still alive (for remote) so
-                // `get_or_create_diff_state_model` will reuse it.
-                for views in self.code_review_views.values_mut() {
-                    views.remove(&repo_key);
-                }
+            if let Some(model) = self.diff_state_models.remove(&repo_key) {
+                model.update(ctx, |model, ctx| {
+                    model.stop_active_watcher(ctx);
+                });
+            }
+            for views in self.code_review_views.values_mut() {
+                views.remove(&repo_key);
             }
         }
     }
