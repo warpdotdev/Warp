@@ -324,10 +324,12 @@ impl ShellType {
             }
             #[cfg(windows)]
             ShellType::PowerShell => {
-                vec![base_config_dir()
-                    .join("Microsoft/Windows/PowerShell/PSReadLine/ConsoleHost_history.txt")
-                    .display()
-                    .to_string()]
+                vec![
+                    base_config_dir()
+                        .join("Microsoft/Windows/PowerShell/PSReadLine/ConsoleHost_history.txt")
+                        .display()
+                        .to_string(),
+                ]
             }
         }
     }
@@ -633,9 +635,8 @@ impl ShellType {
     ) -> Vec<SmolStr> {
         match output {
             Ok(command_output) if command_output.status == CommandExitStatus::Success => {
-                let Ok(output_string) = command_output.to_string() else {
-                    return Vec::new();
-                };
+                // Be tolerant of Windows-localized command output that may not be UTF-8.
+                let output_string = String::from_utf8_lossy(&command_output.stdout).into_owned();
                 match self {
                     ShellType::Bash | ShellType::Zsh => {
                         // For bash and zsh, we wrote the command such that the output is just
