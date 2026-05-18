@@ -17,7 +17,7 @@ use crate::ai::blocklist::inline_action::orchestration_controls::OrchestrationEd
 use futures::{future::BoxFuture, FutureExt};
 use warp_cli::agent::Harness;
 use warp_core::execution_mode::AppExecutionMode;
-use warpui::{Entity, ModelContext, ModelHandle};
+use warpui::{Entity, EntityId, ModelContext, ModelHandle};
 
 use super::start_agent::{StartAgentExecutor, StartAgentOutcome};
 use super::{ActionExecution, AnyActionExecution, ExecuteActionInput, PreprocessActionInput};
@@ -26,7 +26,8 @@ use crate::ai::agent::{
     AIAgentAction, AIAgentActionId, AIAgentActionResultType, AIAgentActionType,
     StartAgentExecutionMode,
 };
-use crate::ai::blocklist::BlocklistAIHistoryModel;
+use crate::ai::blocklist::{BlocklistAIHistoryModel, BlocklistAIPermissions};
+use crate::ai::execution_profiles::RunAgentsPermission;
 use crate::ai::local_child_harnesses::local_child_harness_disabled_message;
 use warpui::SingletonEntity;
 
@@ -48,6 +49,7 @@ struct PendingRunAgents;
 pub struct RunAgentsExecutor {
     pending: HashMap<AIAgentActionId, PendingRunAgents>,
     start_agent_executor: ModelHandle<StartAgentExecutor>,
+    terminal_view_id: EntityId,
 }
 
 /// Lifecycle events for in-flight dispatches.
@@ -66,10 +68,14 @@ impl Entity for RunAgentsExecutor {
 }
 
 impl RunAgentsExecutor {
-    pub fn new(start_agent_executor: ModelHandle<StartAgentExecutor>) -> Self {
+    pub fn new(
+        start_agent_executor: ModelHandle<StartAgentExecutor>,
+        terminal_view_id: EntityId,
+    ) -> Self {
         Self {
             pending: HashMap::new(),
             start_agent_executor,
+            terminal_view_id,
         }
     }
 
@@ -88,6 +94,16 @@ impl RunAgentsExecutor {
         ctx: &mut ModelContext<Self>,
     ) -> async_channel::Receiver<RunAgentsResult> {
         let (sender, receiver) = async_channel::bounded(1);
+        if BlocklistAIPermissions::as_ref(ctx)
+            .get_run_agents_setting(ctx, Some(self.terminal_view_id))
+            .is_never_allow()
+        {
+            let _ = sender.try_send(RunAgentsResult::Denied {
+                reason: "Running child agents is disabled by the active execution profile."
+                    .to_string(),
+            });
+            return receiver;
+        }
 
         if self.pending.contains_key(&action_id) {
             log::warn!("RunAgentsExecutor: dispatch reentered for {action_id:?}; rejecting");
@@ -264,6 +280,17 @@ impl RunAgentsExecutor {
         let mut request = request.clone();
         let action_id = id.clone();
         let parent_conversation_id = input.conversation_id;
+        let permission = BlocklistAIPermissions::as_ref(ctx)
+            .get_run_agents_setting(ctx, Some(self.terminal_view_id));
+
+        if permission.is_never_allow() {
+            return ActionExecution::Sync(AIAgentActionResultType::RunAgents(
+                RunAgentsResult::Denied {
+                    reason: "Running child agents is disabled by the active execution profile."
+                        .to_string(),
+                },
+            ));
+        }
 
         // When auto-executing (autonomous/CLI-driver mode), the confirmation
         // card is bypassed. Replicate its policy/normalization here:
@@ -303,12 +330,23 @@ impl RunAgentsExecutor {
 
     pub(super) fn should_autoexecute(
         &self,
-        _input: ExecuteActionInput,
+        input: ExecuteActionInput,
         ctx: &mut ModelContext<Self>,
     ) -> bool {
+        let AIAgentActionType::RunAgents(_) = &input.action.action else {
+            return false;
+        };
         // Non-interactive (CLI driver) agents cannot present a
         // confirmation card, so they must auto-execute.
-        AppExecutionMode::as_ref(ctx).is_autonomous()
+        if AppExecutionMode::as_ref(ctx).is_autonomous() {
+            return true;
+        }
+
+        matches!(
+            BlocklistAIPermissions::as_ref(ctx)
+                .get_run_agents_setting(ctx, Some(self.terminal_view_id)),
+            RunAgentsPermission::AlwaysAllow
+        )
     }
 
     pub(super) fn preprocess_action(

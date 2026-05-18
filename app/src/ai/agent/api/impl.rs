@@ -19,6 +19,27 @@ pub async fn generate_multi_agent_output(
         .take()
         .unwrap_or_else(|| get_supported_tools(&params));
     let supported_cli_agent_tools = get_supported_cli_agent_tools(&params);
+    let request = build_request(params, supported_tools, supported_cli_agent_tools)?;
+
+    let response_stream = server_api.generate_multi_agent_output(&request).await;
+    match response_stream {
+        Ok(stream) => {
+            let output_stream = stream.take_until(cancellation_rx);
+            Ok(Box::pin(output_stream))
+        }
+        Err(e) => {
+            let (tx, rx) = async_channel::unbounded();
+            let _ = tx.send(Err(e)).await;
+            Ok(Box::pin(rx))
+        }
+    }
+}
+
+fn build_request(
+    mut params: RequestParams,
+    supported_tools: Vec<api::ToolType>,
+    supported_cli_agent_tools: Vec<api::ToolType>,
+) -> Result<api::Request, ConvertToAPITypeError> {
     let mut logging_metadata = HashMap::new();
     if let Some(metadata) = params.metadata {
         logging_metadata.insert(
@@ -55,8 +76,7 @@ pub async fn generate_multi_agent_output(
         params.api_keys,
         params.allow_use_of_warp_credits,
     );
-
-    let request = api::Request {
+    Ok(api::Request {
         task_context: Some(api::request::TaskContext {
             tasks: params.tasks,
         }),
@@ -104,7 +124,8 @@ pub async fn generate_multi_agent_output(
                 FeatureFlag::SummarizationViaMessageReplacement.is_enabled(),
             supports_bundled_skills: FeatureFlag::BundledSkills.is_enabled(),
             supports_research_agent: params.research_agent_enabled,
-            supports_orchestration_v2: FeatureFlag::OrchestrationV2.is_enabled(),
+            supports_orchestration_v2: params.orchestration_enabled
+                && FeatureFlag::OrchestrationV2.is_enabled(),
             custom_model_providers: params.custom_model_providers,
         }),
         metadata: Some(api::request::Metadata {
@@ -135,20 +156,7 @@ pub async fn generate_multi_agent_output(
             .existing_suggestions
             .map(|suggestions| suggestions.into()),
         mcp_context: params.mcp_context.map(Into::into),
-    };
-
-    let response_stream = server_api.generate_multi_agent_output(&request).await;
-    match response_stream {
-        Ok(stream) => {
-            let output_stream = stream.take_until(cancellation_rx);
-            Ok(Box::pin(output_stream))
-        }
-        Err(e) => {
-            let (tx, rx) = async_channel::unbounded();
-            let _ = tx.send(Err(e)).await;
-            Ok(Box::pin(rx))
-        }
-    }
+    })
 }
 
 fn api_keys_with_warp_credit_fallback_setting(
