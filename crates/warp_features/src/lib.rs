@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
-use enum_iterator::{cardinality, Sequence};
+use enum_iterator::{Sequence, cardinality};
 
 #[cfg(feature = "test-util")]
 pub use overrides::{get_overrides, set_overrides};
@@ -949,6 +949,45 @@ pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::MarkdownTables,
     FeatureFlag::GitOperationsInCodeReview,
     FeatureFlag::GitCredentialRefresh,
+];
+
+/// Features enabled for Warp OSS builds.
+///
+/// This list intentionally excludes features that depend on Warp's first-party
+/// backend capabilities, such as server-side experiments, Warp-managed
+/// credentials, shared-session infrastructure, or request fields that are only
+/// meaningful to the hosted Warp backend.
+pub const OSS_FLAGS: &[FeatureFlag] = &[
+    FeatureFlag::ToggleBootstrapBlock,
+    FeatureFlag::RemoveAutosuggestionDuringTabCompletions,
+    FeatureFlag::ResizeFix,
+    #[cfg(not(windows))]
+    FeatureFlag::SSHTmuxWrapper,
+    FeatureFlag::LazySceneBuilding,
+    FeatureFlag::SshDragAndDrop,
+    FeatureFlag::MultiWorkspace,
+    FeatureFlag::ImeMarkedText,
+    FeatureFlag::MSYS2Shells,
+    FeatureFlag::RetryTruncatedCodeResponses,
+    FeatureFlag::ContextLineReviewComments,
+    FeatureFlag::RunGeneratorsWithCmdExe,
+    FeatureFlag::Projects,
+    FeatureFlag::MarkdownImages,
+    FeatureFlag::FileAndDiffSetComments,
+    FeatureFlag::FileGlobV2Warnings,
+    FeatureFlag::SummarizationViaMessageReplacement,
+    FeatureFlag::LocalComputerUse,
+    FeatureFlag::EditableMarkdownMermaid,
+    FeatureFlag::CodeReviewScrollPreservation,
+    FeatureFlag::RememberFastForwardState,
+    FeatureFlag::LocalDockerSandbox,
+    #[cfg(not(windows))]
+    FeatureFlag::SshRemoteServer,
+    FeatureFlag::DragTabsToWindows,
+    FeatureFlag::SoloUserByok,
+    FeatureFlag::BlocklistMarkdownTableRendering,
+    FeatureFlag::MarkdownTables,
+    FeatureFlag::GitOperationsInCodeReview,
 ];
 
 /// Features enabled for all release builds (i.e.: everything but WarpLocal).

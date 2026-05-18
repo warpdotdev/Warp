@@ -22,7 +22,8 @@ fn main() -> Result<()> {
             autoupdate_config: oss_autoupdate_config(),
             mcp_static_config: None,
         },
-    );
+    )
+    .with_additional_features(warp_core::features::OSS_FLAGS);
     if cfg!(debug_assertions) {
         state = state.with_additional_features(warp_core::features::DEBUG_FLAGS);
     }
