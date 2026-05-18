@@ -64,12 +64,7 @@ impl StderrTail {
     /// Drains the buffer and returns the joined lines, or `None` if empty.
     /// Truncates to 2048 chars to keep telemetry payloads reasonable.
     pub fn drain(&self) -> Option<String> {
-        let lines: Vec<String> = self
-            .0
-            .lock()
-            .ok()?
-            .drain(..)
-            .collect();
+        let lines: Vec<String> = self.0.lock().ok()?.drain(..).collect();
         if lines.is_empty() {
             return None;
         }
