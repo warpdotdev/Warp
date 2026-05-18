@@ -1,3 +1,4 @@
+#![allow(ambiguous_glob_reexports)]
 pub mod ai_execution_profile;
 pub mod ai_fact;
 pub mod cloud_agent_config;
