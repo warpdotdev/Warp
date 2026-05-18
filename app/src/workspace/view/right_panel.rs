@@ -266,6 +266,9 @@ impl CodeReviewState {
         update_dropdown: bool,
         ctx: &mut ViewContext<RightPanelView>,
     ) {
+        if repo_path.is_remote() && !FeatureFlag::RemoteCodeReview.is_enabled() {
+            return;
+        }
         if self.selected_repo_path.as_ref() == Some(&repo_path) {
             return;
         }
@@ -658,6 +661,9 @@ impl RightPanelView {
         else {
             return;
         };
+        if repo_path.is_remote() && !FeatureFlag::RemoteCodeReview.is_enabled() {
+            return;
+        }
         let pane_group_id = active_pane_group.id();
 
         if repo_dropdown_state.selected_repo_path.is_none() {
@@ -819,10 +825,13 @@ impl RightPanelView {
                 .finish();
         };
 
-        let selected_repo_path = state
-            .selected_repo_path
-            .as_ref()
-            .filter(|repo_path| repo_path.is_remote() || state.available_repos.contains(repo_path));
+        let selected_repo_path = state.selected_repo_path.as_ref().filter(|repo_path| {
+            if repo_path.is_remote() {
+                FeatureFlag::RemoteCodeReview.is_enabled()
+            } else {
+                state.available_repos.contains(repo_path)
+            }
+        });
 
         let Some(selected_repo_path) = selected_repo_path else {
             let simple_header = self.render_simple_header(close_button);
@@ -1154,13 +1163,17 @@ impl RightPanelView {
         terminal_view: WeakViewHandle<TerminalView>,
         ctx: &mut ViewContext<Self>,
     ) -> Option<ViewHandle<CodeReviewView>> {
-        // Early check: if pane group has no active repositories, don't create a view
-        let has_active_repos = self
-            .working_directories_model
-            .as_ref(ctx)
-            .most_recent_repositories_for_pane_group(pane_group_id)
-            .is_some_and(|mut repos| repos.any(|r| &r == repo_path))
-            || repo_path.is_remote();
+        // Early check: if pane group has no active repositories, don't create a view.
+        // Remote repos require the RemoteCodeReview feature flag; local repos go
+        // through the active-repos check.
+        let has_active_repos = if repo_path.is_remote() {
+            FeatureFlag::RemoteCodeReview.is_enabled()
+        } else {
+            self.working_directories_model
+                .as_ref(ctx)
+                .most_recent_repositories_for_pane_group(pane_group_id)
+                .is_some_and(|mut repos| repos.any(|r| &r == repo_path))
+        };
 
         if !has_active_repos {
             return None;
@@ -1641,6 +1654,9 @@ impl RightPanelView {
         repo_path: &LocalOrRemotePath,
         ctx: &mut ViewContext<Self>,
     ) {
+        if repo_path.is_remote() && !FeatureFlag::RemoteCodeReview.is_enabled() {
+            return;
+        }
         let Some(pane_group) = &self.active_pane_group else {
             return;
         };
