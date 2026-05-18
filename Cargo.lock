@@ -7242,6 +7242,7 @@ dependencies = [
  "serde",
  "serde_yaml 0.8.26",
  "warp_editor",
+ "warp_util",
 ]
 
 [[package]]

@@ -1773,7 +1773,7 @@ pub enum Event {
     OpenCodeReviewPane(CodeReviewPanelArg),
     ToggleCodeReviewPane(CodeReviewPanelArg),
     InsertCodeReviewComments {
-        repo_path: PathBuf,
+        repo_path: LocalOrRemotePath,
         comments: Vec<PendingImportedReviewComment>,
         diff_mode: DiffMode,
         open_code_review: Option<CodeReviewPanelArg>,
@@ -6301,7 +6301,7 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         let arg = CodeReviewPanelArg {
-            repo_path: self.current_local_repo_path().map(Path::to_path_buf),
+            repo_path: self.current_repo_path.clone(),
             terminal_view: self.view_handle.clone(),
             entrypoint,
             focus_new_pane,
@@ -6313,23 +6313,35 @@ impl TerminalView {
                 ctx.emit(event_constructor(arg));
             }
             GitDeltaPreference::OnlyDirty => {
-                // Check if repo has uncommitted changes via the per-repo sub-model.
-                #[cfg(feature = "local_fs")]
+                // For remote repos, skip the dirty check — there's no local
+                // GitRepoStatusModel, so the deferred open would never resolve.
+                // The diff chip only appears when the remote shell reports changes,
+                // so the user intent is clear.
+                if self
+                    .current_repo_path
+                    .as_ref()
+                    .is_some_and(|p| p.is_remote())
                 {
-                    let is_dirty = self
-                        .git_status_metadata(ctx)
-                        .map(|m| !m.stats_against_head.has_no_changes());
-                    match is_dirty {
-                        Some(true) => ctx.emit(event_constructor(arg)),
-                        // Metadata not loaded yet — defer until the next
-                        // git repo status update delivers it.
-                        None => {
-                            self.deferred_code_review_open = Some(DeferredCodeReviewOpen {
-                                git_delta_preference: delta_pref,
-                                focus_new_pane,
-                            });
+                    ctx.emit(event_constructor(arg));
+                } else {
+                    // Check if repo has uncommitted changes via the per-repo sub-model.
+                    #[cfg(feature = "local_fs")]
+                    {
+                        let is_dirty = self
+                            .git_status_metadata(ctx)
+                            .map(|m| !m.stats_against_head.has_no_changes());
+                        match is_dirty {
+                            Some(true) => ctx.emit(event_constructor(arg)),
+                            // Metadata not loaded yet — defer until the next
+                            // git repo status update delivers it.
+                            None => {
+                                self.deferred_code_review_open = Some(DeferredCodeReviewOpen {
+                                    git_delta_preference: delta_pref,
+                                    focus_new_pane,
+                                });
+                            }
+                            Some(false) => {}
                         }
-                        Some(false) => {}
                     }
                 }
             }
@@ -6397,7 +6409,6 @@ impl TerminalView {
             &DiffSetScope::All,
             &diff_mode,
             main_branch_name.as_deref(),
-            &repo_path,
         );
 
         // Insert the reference into the terminal input immediately
@@ -6652,7 +6663,7 @@ impl TerminalView {
             None
         } else {
             Some(CodeReviewPanelArg {
-                repo_path: Some(repo_path.to_path_buf()),
+                repo_path: Some(LocalOrRemotePath::Local(repo_path.to_path_buf())),
                 terminal_view: self.view_handle.clone(),
                 entrypoint: CodeReviewPaneEntrypoint::InvokedByAgent,
                 focus_new_pane: false,
@@ -6661,7 +6672,7 @@ impl TerminalView {
         };
 
         ctx.emit(Event::InsertCodeReviewComments {
-            repo_path: repo_path.to_path_buf(),
+            repo_path: LocalOrRemotePath::Local(repo_path.to_path_buf()),
             comments: pending_comments,
             diff_mode,
             open_code_review,
@@ -19676,7 +19687,7 @@ impl TerminalView {
 
     fn imported_comments_panel_arg(&self) -> CodeReviewPanelArg {
         CodeReviewPanelArg {
-            repo_path: self.current_local_repo_path().map(Path::to_path_buf),
+            repo_path: self.current_repo_path.clone(),
             terminal_view: self.view_handle.clone(),
             entrypoint: CodeReviewPaneEntrypoint::AgentModeRunning,
             focus_new_pane: true,
@@ -20814,7 +20825,7 @@ impl TerminalView {
             }
             InputEvent::OpenCodeReviewPane => {
                 ctx.emit(Event::OpenCodeReviewPane(CodeReviewPanelArg {
-                    repo_path: self.current_local_repo_path().map(Path::to_path_buf),
+                    repo_path: self.current_repo_path.clone(),
                     terminal_view: self.view_handle.clone(),
                     entrypoint: CodeReviewPaneEntrypoint::GitDiffChip,
                     focus_new_pane: true,
@@ -21976,7 +21987,7 @@ impl TerminalView {
     /// rich input when open or the PTY when closed.
     pub fn send_diff_hunk_to_cli_agent_or_rich_input(
         &mut self,
-        file_path: &Path,
+        file_path: &str,
         start_line: usize,
         end_line: usize,
         lines_added: u32,
@@ -22161,6 +22172,42 @@ impl TerminalView {
     pub fn pwd_if_local(&self, ctx: &AppContext) -> Option<String> {
         self.active_session_path_if_local(ctx)
             .map(|path| path.to_string_lossy().into_owned())
+    }
+
+    /// Returns the active session's CWD as a `LocalOrRemotePath`.
+    ///
+    /// For local sessions the CWD is canonicalized via `dunce::canonicalize`
+    /// and wrapped as `Local`. For remote sessions the CWD is read from
+    /// `active_block_metadata` and paired with the session's `host_id` to
+    /// form a `Remote` path. Returns `None` when no CWD is available or
+    /// (for remote sessions) the `host_id` has not been established yet.
+    pub fn pwd_as_local_or_remote(&self, ctx: &AppContext) -> Option<LocalOrRemotePath> {
+        let session_id = self.active_block_session_id()?;
+        let session = self.sessions.as_ref(ctx).get(session_id)?;
+        let cwd_str = self
+            .active_block_metadata
+            .as_ref()
+            .and_then(BlockMetadata::current_working_directory)?;
+
+        if self.session_is_local(session_id, ctx) {
+            // Local session: canonicalize to resolve symlinks / normalize.
+            let path = session
+                .launch_data()
+                .and_then(|data| data.maybe_convert_absolute_path(cwd_str))
+                .unwrap_or_else(|| PathBuf::from(cwd_str));
+            let canonical = dunce::canonicalize(&path).ok()?;
+            Some(LocalOrRemotePath::Local(canonical))
+        } else {
+            // Remote session: pair CWD with the session's host_id.
+            let host_id = match session.session_type() {
+                SessionType::WarpifiedRemote { host_id } => host_id,
+                SessionType::Local => return None,
+            }?;
+            let std_path = warp_util::standardized_path::StandardizedPath::try_new(cwd_str).ok()?;
+            Some(LocalOrRemotePath::Remote(
+                warp_util::remote_path::RemotePath::new(host_id, std_path),
+            ))
+        }
     }
 
     pub fn shell_launch_data_if_local(&self, ctx: &AppContext) -> Option<ShellLaunchData> {
@@ -26060,7 +26107,7 @@ impl TypedActionView for TerminalView {
             }
             ToggleCodeReviewPane { entrypoint } => {
                 ctx.emit(Event::ToggleCodeReviewPane(CodeReviewPanelArg {
-                    repo_path: self.current_local_repo_path().map(Path::to_path_buf),
+                    repo_path: self.current_repo_path.clone(),
                     terminal_view: self.view_handle.clone(),
                     entrypoint: *entrypoint,
                     focus_new_pane: true,

@@ -21,6 +21,7 @@ use crate::auth::auth_manager::AuthManager;
 use crate::auth::auth_view_modal::AuthViewVariant;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::Space;
+use crate::code::buffer_location::LocalOrRemotePath;
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
 use crate::code::view::CodeViewAction;
@@ -729,7 +730,7 @@ pub enum Event {
         path: PathBuf,
     },
     InsertCodeReviewComments {
-        repo_path: PathBuf,
+        repo_path: LocalOrRemotePath,
         comments: Vec<PendingImportedReviewComment>,
         diff_mode: DiffMode,
         open_code_review: Option<CodeReviewPanelArg>,
@@ -7879,10 +7880,10 @@ impl PaneGroup {
     pub fn terminal_view_working_directories<'a>(
         &'a self,
         ctx: &'a AppContext,
-    ) -> impl Iterator<Item = (EntityId, Option<String>)> + 'a {
+    ) -> impl Iterator<Item = (EntityId, Option<LocalOrRemotePath>)> + 'a {
         self.terminal_views(ctx).into_iter().map(|terminal_view| {
             let terminal_id = terminal_view.id();
-            let cwd = terminal_view.as_ref(ctx).pwd_if_local(ctx);
+            let cwd = terminal_view.as_ref(ctx).pwd_as_local_or_remote(ctx);
             (terminal_id, cwd)
         })
     }
