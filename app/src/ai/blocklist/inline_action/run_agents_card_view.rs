@@ -527,14 +527,14 @@ impl RunAgentsCardView {
                 }
             }
         }
-        // Re-seed an Unset selection from persisted per-harness settings.
+        // Re-seed an Unset selection from persisted per-harness settings,
+        // honoring an explicit `Inherit` choice for this harness.
         if matches!(
             new_state.orch.auth_secret_selection,
             AuthSecretSelection::Unset
         ) {
-            new_state.orch.auth_secret_selection = AuthSecretSelection::from_optional_name(
-                oc::resolve_default_auth_secret_for_harness(&new_state.orch.harness_type, ctx),
-            );
+            new_state.orch.auth_secret_selection =
+                oc::resolve_auth_secret_selection_for_harness(&new_state.orch.harness_type, ctx);
         }
         if self.state != new_state {
             let harness_or_model_changed = self.state.orch.harness_type
@@ -589,9 +589,14 @@ impl RunAgentsCardView {
                 // Re-resolve auth from settings keyed by the approved
                 // harness. Unconditional: a streaming-time selection may
                 // belong to a different harness and must not carry over.
-                self.state.orch.auth_secret_selection = AuthSecretSelection::from_optional_name(
-                    oc::resolve_default_auth_secret_for_harness(&self.state.orch.harness_type, ctx),
-                );
+                // Honors an explicit `Inherit` choice persisted for this
+                // harness so auto-launch doesn't override it with a stale
+                // named fallback.
+                self.state.orch.auth_secret_selection =
+                    oc::resolve_auth_secret_selection_for_harness(
+                        &self.state.orch.harness_type,
+                        ctx,
+                    );
                 if oc::accept_disabled_reason_with_auth(&self.state.orch, ctx).is_none() {
                     self.auto_launched = true;
                     ctx.notify();
@@ -796,14 +801,17 @@ impl RunAgentsCardView {
         if self.handles.pickers.auth_secret_picker.is_none() {
             // Seed from the request's secret name first; otherwise fall
             // back to the persisted per-harness selection so the picker
-            // matches what cloud-mode would show.
+            // matches what cloud-mode would show. Honors an explicit
+            // `Inherit` choice for this harness.
             if matches!(
                 self.state.orch.auth_secret_selection,
                 AuthSecretSelection::Unset
             ) {
-                self.state.orch.auth_secret_selection = AuthSecretSelection::from_optional_name(
-                    oc::resolve_default_auth_secret_for_harness(&self.state.orch.harness_type, ctx),
-                );
+                self.state.orch.auth_secret_selection =
+                    oc::resolve_auth_secret_selection_for_harness(
+                        &self.state.orch.harness_type,
+                        ctx,
+                    );
             }
             let selection = self.state.orch.auth_secret_selection.clone();
             let harness_type = self.state.orch.harness_type.clone();

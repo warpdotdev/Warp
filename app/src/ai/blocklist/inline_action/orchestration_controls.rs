@@ -127,8 +127,16 @@ pub struct OrchestrationEditState {
 }
 
 impl OrchestrationEditState {
-    /// Returns the on-wire secret name; `None` for `Inherit` and `Unset`.
+    /// Returns the on-wire secret name; `None` for `Inherit`, `Unset`, or
+    /// when the current mode/harness doesn't support managed auth secrets
+    /// (Local, Oz, or harnesses without managed-secret types). Gating on
+    /// visibility here prevents a stale `Named(_)` left over from a prior
+    /// Cloud/non-Oz config from leaking into the on-wire payload after the
+    /// user toggles to Local or switches to a harness without auth.
     pub fn auth_secret_name(&self) -> Option<&str> {
+        if !should_show_auth_secret_picker(self) {
+            return None;
+        }
         match &self.auth_secret_selection {
             AuthSecretSelection::Named(name) => Some(name.as_str()),
             AuthSecretSelection::Inherit | AuthSecretSelection::Unset => None,
@@ -901,6 +909,36 @@ pub fn resolve_default_auth_secret_for_harness(
     }
 }
 
+/// Returns the full persisted selection (Named / Inherit / Unset) for
+/// this harness. Prefers an explicit `Inherit` choice over a `Named`
+/// fallback so the plan card's "Inherit" survives across the RunAgents
+/// handoff (the `OrchestrationConfig` proto doesn't carry auth state).
+pub fn resolve_auth_secret_selection_for_harness(
+    harness_type: &str,
+    ctx: &AppContext,
+) -> AuthSecretSelection {
+    let Some(harness) = Harness::parse_orchestration_harness(harness_type) else {
+        return AuthSecretSelection::Unset;
+    };
+    if harness == Harness::Oz {
+        return AuthSecretSelection::Unset;
+    }
+    // Explicit Inherit wins over a stale Named fallback.
+    let inherit_chosen = CloudAgentSettings::as_ref(ctx)
+        .inherit_auth_secret_harnesses
+        .value()
+        .get(harness.config_name())
+        .copied()
+        .unwrap_or(false);
+    if inherit_chosen {
+        return AuthSecretSelection::Inherit;
+    }
+    match resolve_default_auth_secret_for_harness(harness_type, ctx) {
+        Some(name) => AuthSecretSelection::Named(name),
+        None => AuthSecretSelection::Unset,
+    }
+}
+
 /// `true` when the user must pick an API key (or Inherit) before Accept is
 /// allowed. Fires on `Unset` for any non-Oz cloud harness with managed-secret
 /// types, regardless of fetch state — dispatching with an unintended
@@ -1031,7 +1069,7 @@ pub fn populate_auth_secret_picker_for_harness<A: OrchestrationControlAction, V:
 }
 
 /// Records a picker selection and persists it to
-/// `CloudAgentSettings.last_selected_auth_secret`. `None` means Inherit.
+/// `CloudAgentSettings`. `None` means Inherit.
 ///
 /// Does NOT repopulate the picker — doing so from inside the action the
 /// picker just dispatched would re-enter the dropdown's view and trip
@@ -1044,25 +1082,25 @@ pub fn apply_auth_secret_change<A: OrchestrationControlAction, V: View>(
     ctx: &mut ViewContext<V>,
 ) {
     let normalized = new_name.filter(|s| !s.trim().is_empty());
-    state.auth_secret_selection = match normalized.clone() {
+    state.auth_secret_selection = match normalized {
         Some(name) => AuthSecretSelection::Named(name),
         None => AuthSecretSelection::Inherit,
     };
-    persist_auth_secret_selection(&state.harness_type, normalized, ctx);
+    persist_auth_secret_selection(&state.harness_type, &state.auth_secret_selection, ctx);
 }
 
-/// Resets the in-memory selection to `Unset` so the picker shows "+ New
-/// API key…" while the create-key modal is open (and after cancel).
+/// No-op on `state` — the prior selection is preserved so cancelling the
+/// modal restores the user to a working configuration. Successful creation
+/// updates the selection via the `AuthSecretCreated` subscription's call
+/// to [`apply_created_auth_secret_if_matches`].
 ///
-/// Deliberately does NOT clear the persisted setting — cancel must not
-/// destroy the user's prior cross-session selection. Successful creation
-/// goes through the workspace modal's own persist + the
-/// `AuthSecretCreated` subscription.
+/// Kept as a named function so both card views call through the same
+/// path; a future revision can hook snapshot-and-restore behavior here
+/// without touching call sites.
 pub fn apply_create_new_auth_secret_requested<V: View>(
-    state: &mut OrchestrationEditState,
+    _state: &mut OrchestrationEditState,
     _ctx: &mut ViewContext<V>,
 ) {
-    state.auth_secret_selection = AuthSecretSelection::Unset;
 }
 
 /// Adopts a freshly-created secret as the active selection when its
@@ -1079,20 +1117,21 @@ pub fn apply_created_auth_secret_if_matches<V: View>(
     if card_harness != created_harness {
         return false;
     }
-    if state.auth_secret_name() == Some(created_name) {
+    if matches!(&state.auth_secret_selection, AuthSecretSelection::Named(n) if n == created_name) {
         return false;
     }
     state.auth_secret_selection = AuthSecretSelection::Named(created_name.to_string());
-    persist_auth_secret_selection(&state.harness_type, Some(created_name.to_string()), ctx);
+    persist_auth_secret_selection(&state.harness_type, &state.auth_secret_selection, ctx);
     true
 }
 
-/// Writes the selected secret name into `last_selected_auth_secret`
-/// for the active harness. `None` clears the entry. No-op when the
-/// harness is unknown or Oz.
+/// Persists the user's auth-secret choice for the active harness.
+/// `Named` writes to `last_selected_auth_secret` and clears any prior
+/// `Inherit` flag. `Inherit` clears the named entry and sets the inherit
+/// flag. `Unset` clears both (no recorded choice). No-op for Oz / unknown.
 fn persist_auth_secret_selection<V: View>(
     harness_type: &str,
-    name: Option<String>,
+    selection: &AuthSecretSelection,
     ctx: &mut ViewContext<V>,
 ) {
     let Some(harness) = Harness::parse_orchestration_harness(harness_type) else {
@@ -1103,16 +1142,26 @@ fn persist_auth_secret_selection<V: View>(
     }
     let key = harness.config_name().to_string();
     CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
-        let mut map = settings.last_selected_auth_secret.value().clone();
-        match name {
-            Some(name) => {
-                map.insert(key, name);
+        let mut named_map = settings.last_selected_auth_secret.value().clone();
+        let mut inherit_map = settings.inherit_auth_secret_harnesses.value().clone();
+        match selection {
+            AuthSecretSelection::Named(name) => {
+                named_map.insert(key.clone(), name.clone());
+                inherit_map.remove(&key);
             }
-            None => {
-                map.remove(&key);
+            AuthSecretSelection::Inherit => {
+                named_map.remove(&key);
+                inherit_map.insert(key, true);
+            }
+            AuthSecretSelection::Unset => {
+                named_map.remove(&key);
+                inherit_map.remove(&key);
             }
         }
-        report_if_error!(settings.last_selected_auth_secret.set_value(map, ctx));
+        report_if_error!(settings.last_selected_auth_secret.set_value(named_map, ctx));
+        report_if_error!(settings
+            .inherit_auth_secret_harnesses
+            .set_value(inherit_map, ctx));
     });
 }
 
@@ -1172,10 +1221,9 @@ pub fn apply_harness_change<A: OrchestrationControlAction, V: View>(
         );
     }
 
-    // Auth selection is per-harness; a prior `Inherit` does NOT carry over.
-    state.auth_secret_selection = AuthSecretSelection::from_optional_name(
-        resolve_default_auth_secret_for_harness(new_harness_type, ctx),
-    );
+    // Re-resolve auth selection from per-harness persisted state.
+    // Honors an explicit `Inherit` choice for the new harness.
+    state.auth_secret_selection = resolve_auth_secret_selection_for_harness(new_harness_type, ctx);
     if let Some(handle) = &handles.auth_secret_picker {
         populate_auth_secret_picker_for_harness(
             handle,
@@ -1278,10 +1326,12 @@ pub fn repopulate_all_pickers<A: OrchestrationControlAction, V: View>(
         }
     }
     // Re-seed `Unset` from persisted settings. Leaves `Inherit` alone.
+    // Uses the full selection resolver so a prior explicit Inherit is
+    // restored (rather than being downgraded to Unset).
     if matches!(state.auth_secret_selection, AuthSecretSelection::Unset) {
-        if let Some(name) = resolve_default_auth_secret_for_harness(&state.harness_type, ctx) {
-            state.auth_secret_selection = AuthSecretSelection::Named(name.clone());
-            persist_auth_secret_selection(&state.harness_type, Some(name), ctx);
+        let resolved = resolve_auth_secret_selection_for_harness(&state.harness_type, ctx);
+        if !matches!(resolved, AuthSecretSelection::Unset) {
+            state.auth_secret_selection = resolved;
         }
     }
     if let Some(handle) = &handles.auth_secret_picker {

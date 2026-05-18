@@ -452,13 +452,14 @@ impl OrchestrationConfigBlockView {
 
         // Seed the auth secret from persisted per-harness settings before
         // building the picker so the dropdown shows the last selection.
+        // The full selection resolver honors an explicit `Inherit` choice
+        // (which isn't carried on the OrchestrationConfig wire payload).
         if matches!(
             self.edit_state.auth_secret_selection,
             AuthSecretSelection::Unset
         ) {
-            self.edit_state.auth_secret_selection = AuthSecretSelection::from_optional_name(
-                oc::resolve_default_auth_secret_for_harness(&self.edit_state.harness_type, ctx),
-            );
+            self.edit_state.auth_secret_selection =
+                oc::resolve_auth_secret_selection_for_harness(&self.edit_state.harness_type, ctx);
         }
         let auth_secret_handle = oc::new_standard_picker_dropdown(&colors, ctx);
         auth_secret_handle.update(ctx, |d, c| d.set_use_overlay_layer(true, c));
