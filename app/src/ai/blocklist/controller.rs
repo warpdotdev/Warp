@@ -674,6 +674,24 @@ impl BlocklistAIController {
 
         let (query, user_query_mode) = extract_user_query_mode(query);
 
+        // Fire `AgentMode.Orchestration.Entered` once per /orchestrate
+        // user query so we can attribute conversations to the slash
+        // command entry point alongside plan-card and run_agents-card
+        // entries (which emit their own variants of this event).
+        if matches!(user_query_mode, UserQueryMode::Orchestrate) {
+            send_telemetry_from_ctx!(
+                super::telemetry::BlocklistOrchestrationTelemetryEvent::OrchestrationEntered(
+                    super::telemetry::OrchestrationEnteredEvent {
+                        conversation_id,
+                        plan_id: None,
+                        entry_source:
+                            super::telemetry::OrchestrationEntrySource::SlashCommandOrchestrate,
+                    }
+                ),
+                ctx
+            );
+        }
+
         let should_prepend_finished_action_results = matches!(
             input_query.input_query,
             InputQueryType::UserSubmittedQueryFromInput { .. }

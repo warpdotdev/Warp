@@ -6,6 +6,7 @@ use ai::agent::action::RunAgentsExecutionMode;
 use ai::agent::orchestration_config::OrchestrationConfigStatus;
 use pathfinder_color::ColorU;
 use std::collections::HashMap;
+use warp_core::send_telemetry_from_ctx;
 use warpui::elements::{
     ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Flex, Hoverable,
     MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Text,
@@ -19,6 +20,11 @@ use crate::ai::blocklist::inline_action::host_picker::{HostPicker, HostPickerEve
 use crate::ai::blocklist::inline_action::orchestration_controls::{
     self as oc, OrchestrationControlAction, OrchestrationEditState, OrchestrationPickerHandles,
 };
+use crate::ai::blocklist::telemetry::{
+    BlocklistOrchestrationTelemetryEvent, OrchestrationApprovalStatus, OrchestrationEnteredEvent,
+    OrchestrationEntrySource, OrchestrationExecutionModeKind, OrchestrationHarnessKind,
+    PlanConfigApprovalToggledEvent,
+};
 use crate::ai::blocklist::BlocklistAIHistoryEvent;
 use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::ai::harness_availability::{HarnessAvailabilityEvent, HarnessAvailabilityModel};
@@ -27,6 +33,22 @@ use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
 use crate::BlocklistAIHistoryModel;
 use warp_core::ui::theme::WarpTheme;
+
+/// Returns `(had_previous, now_set)` for a remote-mode environment id
+/// before/after an edit.
+fn env_presence(execution_mode: &RunAgentsExecutionMode) -> bool {
+    matches!(
+        execution_mode,
+        RunAgentsExecutionMode::Remote { environment_id, .. } if !environment_id.is_empty()
+    )
+}
+
+fn host_presence(execution_mode: &RunAgentsExecutionMode) -> bool {
+    matches!(
+        execution_mode,
+        RunAgentsExecutionMode::Remote { worker_host, .. } if !worker_host.is_empty()
+    )
+}
 
 /// Renders a pill-shaped toggle switch (36×18) matching the Figma mock.
 fn render_pill_toggle(is_on: bool, theme: &WarpTheme) -> Box<dyn Element> {
@@ -560,9 +582,27 @@ impl TypedActionView for OrchestrationConfigBlockView {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             OrchestrationConfigBlockAction::ToggleApproval => {
+                let previous_status = if self.is_approved {
+                    OrchestrationApprovalStatus::Approved
+                } else {
+                    OrchestrationApprovalStatus::Disapproved
+                };
                 self.is_approved = !self.is_approved;
                 if self.is_approved && !self.pickers_initialized {
                     self.ensure_pickers(ctx);
+                }
+                let new_status = if self.is_approved {
+                    OrchestrationApprovalStatus::Approved
+                } else {
+                    OrchestrationApprovalStatus::Disapproved
+                };
+                self.emit_plan_config_approval_toggled(previous_status, new_status, ctx);
+                // Treat the off→on transition as the moment the user
+                // committed to using orchestration via the plan card.
+                if matches!(previous_status, OrchestrationApprovalStatus::Disapproved)
+                    && matches!(new_status, OrchestrationApprovalStatus::Approved)
+                {
+                    self.emit_orchestration_entered(ctx);
                 }
                 self.apply_field_change(ctx);
                 ctx.notify();
@@ -643,5 +683,45 @@ impl TypedActionView for OrchestrationConfigBlockView {
                 ctx.notify();
             }
         }
+    }
+}
+
+impl OrchestrationConfigBlockView {
+    fn emit_plan_config_approval_toggled(
+        &self,
+        previous_status: OrchestrationApprovalStatus,
+        new_status: OrchestrationApprovalStatus,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        send_telemetry_from_ctx!(
+            BlocklistOrchestrationTelemetryEvent::PlanConfigApprovalToggled(
+                PlanConfigApprovalToggledEvent {
+                    conversation_id: self.conversation_id,
+                    plan_id: (!self.plan_id.is_empty()).then(|| self.plan_id.clone()),
+                    previous_status,
+                    new_status,
+                    execution_mode: OrchestrationExecutionModeKind::from_run_agents(
+                        &self.edit_state.execution_mode,
+                    ),
+                    harness: OrchestrationHarnessKind::from_str(&self.edit_state.harness_type),
+                    has_model: !self.edit_state.model_id.trim().is_empty(),
+                    has_environment: env_presence(&self.edit_state.execution_mode),
+                    has_worker_host: host_presence(&self.edit_state.execution_mode),
+                    has_auth_secret: self.edit_state.auth_secret_name.is_some(),
+                }
+            ),
+            ctx
+        );
+    }
+
+    fn emit_orchestration_entered(&self, ctx: &mut ViewContext<Self>) {
+        send_telemetry_from_ctx!(
+            BlocklistOrchestrationTelemetryEvent::OrchestrationEntered(OrchestrationEnteredEvent {
+                conversation_id: self.conversation_id,
+                plan_id: (!self.plan_id.is_empty()).then(|| self.plan_id.clone()),
+                entry_source: OrchestrationEntrySource::PlanCardApproved,
+            }),
+            ctx
+        );
     }
 }
