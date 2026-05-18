@@ -2,16 +2,20 @@
 
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
-use warpui::{AppContext, Entity, ModelHandle};
+use warpui::{AppContext, Entity, ModelHandle, SingletonEntity};
 
+use crate::ai::agent_conversations_model::AgentConversationEntry;
+use crate::ai::agent_conversations_model::AgentConversationEntryId;
+use crate::ai::agent_conversations_model::AgentManagementFilters;
 use crate::ai::blocklist::agent_view::AgentViewController;
-use crate::ai::conversation_navigation::ConversationNavigationData;
 use crate::search::data_source::{Query, QueryFilter, QueryResult};
 use crate::search::mixer::DataSourceRunErrorWrapper;
 use crate::search::SyncDataSource;
 use crate::terminal::input::conversations::search_item::ConversationSearchItem;
 use crate::terminal::input::conversations::AcceptConversation;
 use crate::terminal::model::session::active_session::ActiveSession;
+use crate::workspace::RestoreConversationLayout;
+use crate::AgentConversationsModel;
 
 pub struct ConversationMenuDataSource {
     agent_view_controller: ModelHandle<AgentViewController>,
@@ -33,7 +37,9 @@ impl ConversationMenuDataSource {
         AgentConversationsModel::as_ref(app)
             .get_entries(&AgentManagementFilters::default(), app)
             .into_iter()
-            .filter(|entry| entry.has_open_action(Some(RestoreConversationLayout::ActivePane), app))
+            .filter(|entry: &AgentConversationEntry| {
+                entry.has_open_action(Some(RestoreConversationLayout::ActivePane), app)
+            })
             .collect()
     }
 }
