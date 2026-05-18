@@ -32,6 +32,7 @@ Figma: none provided. The feature reuses the existing code editor gutter and set
    - If the cursor is on line 10, line 10 displays `10`, line 9 displays `1`, line 11 displays `1`, line 5 displays `5`, and line 22 displays `12`.
    - Moving the cursor, clicking another line, selecting text, or using keyboard navigation recomputes the displayed distances immediately.
    - Non-active relative distances are always positive integers; lines above and below the cursor both show positive distances.
+   - In normal code editor surfaces, Relative mode uses the editor’s current primary selection head even when the editor has just opened or focus temporarily moves elsewhere; losing focus does not force normal code editor gutters back to Absolute mode.
 7. For multiple cursors or multiple selections, the active cursor line is the primary selection head used by the editor for cursor-position reporting. The gutter uses that single active line as the relative origin until a future design intentionally supports multiple relative origins.
 8. For visual selections, the active line remains the selection head, not the selection anchor or the full selected range. The displayed numbers update as the selection head moves.
 9. The line number mode is independent of Vim mode:

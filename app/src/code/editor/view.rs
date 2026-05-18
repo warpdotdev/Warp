@@ -1218,6 +1218,7 @@ impl CodeEditorView {
                 starting_line_number: self.display_options.starting_line_number,
                 mode: *editor_settings.code_editor_line_number_mode.value(),
                 active_line_number: self.active_cursor_line_for_line_numbers(ctx),
+                active_cursor_is_focused: self.is_focused(ctx),
             })
         } else {
             None
@@ -1225,14 +1226,12 @@ impl CodeEditorView {
     }
 
     fn active_cursor_line_for_line_numbers(&self, ctx: &AppContext) -> Option<LineCount> {
-        if !self.is_focused(ctx) {
-            return None;
-        }
-
         let model = self.model.as_ref(ctx);
         let selection = *model.selections(ctx).first();
         let buffer = model.content().as_ref(ctx);
         let point = selection.head.to_buffer_point(buffer);
+        // `LineCount`s used by render blocks are zero-based, while buffer points report rows using
+        // the editor's one-based convention.
         Some(LineCount::from(point.row.saturating_sub(1) as usize))
     }
 

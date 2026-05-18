@@ -393,6 +393,7 @@ pub struct LineNumberConfig {
     pub starting_line_number: Option<usize>,
     pub mode: CodeEditorLineNumberMode,
     pub active_line_number: Option<LineCount>,
+    pub active_cursor_is_focused: bool,
 }
 
 struct CommentBox {
@@ -611,6 +612,9 @@ impl<V: EditorView> EditorWrapper<V> {
         let Some(active_line_number) = line_number_config.active_line_number else {
             return false;
         };
+        if !line_number_config.active_cursor_is_focused {
+            return false;
+        }
         self.focused_diff_line_range
             .as_ref()
             .is_some_and(|range| range.contains(&active_line_number) && range.contains(&line_count))

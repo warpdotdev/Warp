@@ -52,12 +52,13 @@ Extend `LineNumberConfig` in `app/src/code/editor/element.rs`:
 In `CodeEditorView::line_number_config` (`app/src/code/editor/view.rs (1041-1239)`):
 1. Read `let editor_settings = AppEditorSettings::as_ref(ctx)`.
 2. Set `mode: *editor_settings.code_editor_line_number_mode.value()`.
-3. Compute the active cursor line from the primary selection head only when the editor, or the relevant diff/review section, has active cursor focus:
+3. Compute the active cursor line from the primary selection head so normal code editors can keep using Relative mode immediately after opening and after temporary focus changes:
    - Use `self.model.as_ref(ctx).selections(ctx).first().head`.
    - Convert the head to a buffer point with the code editor buffer.
    - Convert that row to the same `LineCount` convention used by `model.start_line_index(&**block)`.
    - Prefer keeping this conversion in a helper on `CodeEditorView` or `CodeEditorModel`, such as `active_cursor_line_for_line_numbers(&self, ctx) -> Option<LineCount>`, to avoid duplicating offset/index assumptions in the wrapper.
-4. Keep returning `None` when `show_line_numbers` is false.
+4. Also pass whether the editor is currently focused into `LineNumberConfig`. Normal code editors should not require focus to display Relative mode, but diff/review editors should still require focus inside the relevant diff section before applying relative line numbers.
+5. Keep returning `None` when `show_line_numbers` is false.
 ### 4. Compute the displayed gutter value per line
 In `EditorWrapper::gutter_elements` (`app/src/code/editor/element.rs (500-790)`), replace the current absolute-only `current_line` computation with a helper:
 ```
@@ -78,7 +79,7 @@ Do not display relative numbers for:
 - temporary removed diff blocks, which currently pass `None` to `render_gutter_element`
 - hidden-section controls, which use `construct_expand_hidden_section_gutter_element`
 - surfaces where `line_number_config` is `None`
-For diff and review editors, preserve absolute numbering unless the cursor is active inside a specific diff section and Relative is selected. Only numbered current-buffer lines in that active section should apply the selected Relative display; inactive sections should continue to display absolute line numbers so review context does not shift while the user is elsewhere. Diff hunk and comment interactions should continue to use `EditorLineLocation` and `line_range` exactly as they do today; only the text shown inside eligible numbered gutter elements changes.
+For diff and review editors, preserve absolute numbering unless the cursor is focused inside a specific diff section and Relative is selected. Only numbered current-buffer lines in that active section should apply the selected Relative display; inactive sections should continue to display absolute line numbers so review context does not shift while the user is elsewhere. Normal code editor surfaces without diff status should use the retained primary selection head as the relative origin even if the editor is not currently focused. Diff hunk and comment interactions should continue to use `EditorLineLocation` and `line_range` exactly as they do today; only the text shown inside eligible numbered gutter elements changes.
 ### 6. Width and alignment
 The existing `GUTTER_WIDTH` is fixed and currently supports absolute numbers plus gutter controls. Do not change it unless testing shows three-digit or larger relative values clip in common cases. Relative mode still shows the active line’s absolute number, so any width calculation must account for both absolute active-line values and relative non-active-line distances. If adjustment is needed, prefer the smallest safe change within `app/src/code/editor/element.rs`, and verify diff/comment buttons still fit.
 ### 7. Do not wire terminal input or notebook editors
