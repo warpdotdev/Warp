@@ -11,6 +11,7 @@ use aws_credential_types::provider::error::CredentialsError;
 use aws_credential_types::provider::ProvideCredentials;
 use futures::channel::oneshot::channel;
 use futures::future::BoxFuture;
+use tokio::sync::Mutex;
 use vec1::vec1;
 use warp_managed_secrets::{client::IdentityTokenOptions, ManagedSecretManager};
 use warpui::{ModelContext, ModelHandle, SingletonEntity};
@@ -88,18 +89,35 @@ pub(crate) fn aws_role_session_name(run_id: &str) -> String {
     format!("Oz_Run_{run_id}")
 }
 
-/// Builds an STS client targeting `region`. `AssumeRoleWithWebIdentity` is
+/// Last-region STS client cache. A single device almost always uses one
+/// Bedrock region (the org's configured region), so a one-entry cache keyed
+/// by region is enough to preserve the HTTPS connection pool across credential
+/// refreshes. We use a `Mutex` (rather than `tokio::sync::OnceCell`) because
+/// the cache must be able to replace its contents if the region ever changes.
+static STS_CLIENT_CACHE: Mutex<Option<(String, aws_sdk_sts::Client)>> = Mutex::const_new(None);
+
+/// Returns an STS client targeting `region`, reusing a cached client when the
+/// region matches the previous call. `AssumeRoleWithWebIdentity` is
 /// unauthenticated (the web identity token is the credential), so we skip the
 /// default credentials chain via `no_credentials()`. The region is supplied by
 /// the caller (typically driven by the run's `--bedrock-role-region` flag) so
 /// that the STS endpoint matches the Bedrock region the org has configured.
 async fn sts_client(region: &str) -> aws_sdk_sts::Client {
+    let mut cache = STS_CLIENT_CACHE.lock().await;
+    if let Some((cached_region, client)) = cache.as_ref() {
+        if cached_region == region {
+            return client.clone();
+        }
+    }
+
     let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
         .no_credentials()
         .region(aws_config::Region::new(region.to_string()))
         .load()
         .await;
-    aws_sdk_sts::Client::new(&config)
+    let client = aws_sdk_sts::Client::new(&config);
+    *cache = Some((region.to_string(), client.clone()));
+    client
 }
 
 fn aws_credentials_state_for_error(err: LoadAwsCredentialsError) -> AwsCredentialsState {
