@@ -96,6 +96,10 @@ pub enum Error {
     /// A remote script ran but exited with a non-zero code.
     #[error("script failed (exit {exit_code}): {stderr}")]
     ScriptFailed { exit_code: i32, stderr: String },
+    /// The client-side SCP fallback could not download a valid tarball before
+    /// uploading it to the remote host.
+    #[error("client download failed: {source}")]
+    ClientDownloadFailed { source: anyhow::Error },
     /// Any other transport-level or unexpected failure.
     #[error(transparent)]
     Other(anyhow::Error),
@@ -131,6 +135,9 @@ impl Error {
                 };
                 Some(format!("Script exited with code {exit_code}: {truncated}"))
             }
+            Self::ClientDownloadFailed { source } => Some(format!(
+                "Failed to download SSH extension on this computer: {source}"
+            )),
             Self::Other(_) => None,
         };
         UserFacingError { body, detail }
