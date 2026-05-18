@@ -225,15 +225,33 @@ pub(crate) enum PillBarPillKind {
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum PillBarActionKind {
+    /// User clicked the pill body. See `switch_outcome` for what
+    /// happened next.
     Switch,
     OpenInNewPane,
     OpenInNewTab,
+    /// User picked "Focus pane" from a pill's 3-dot menu. Distinct
+    /// from a pill-body click that resolves to the same outcome
+    /// (those are `Switch` with `switch_outcome = focused_existing_pane`).
     FocusOpenedConversation,
     Stop,
     Kill,
     TogglePinOn,
     TogglePinOff,
     OpenMenu,
+}
+
+/// Outcome of a pill-body click. Closed enum so future navigation
+/// outcomes can be added without splitting `Switch` into multiple
+/// action variants again.
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PillSwitchOutcome {
+    /// Pill click navigated within the current pane.
+    SwitchedInPlace,
+    /// Target conversation was already owned by another visible
+    /// terminal view; focus moved there instead of switching in place.
+    FocusedExistingPane,
 }
 
 #[derive(Debug, Serialize)]
@@ -246,6 +264,11 @@ pub(crate) struct PillBarInteractionEvent {
     pub source_conversation_id: AIConversationId,
     /// The pill the action targets.
     pub target_conversation_id: AIConversationId,
+    /// Present only when `action == Switch`. Distinguishes whether the
+    /// pill-body click navigated within the current pane or moved
+    /// focus to an existing pane already owning the conversation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub switch_outcome: Option<PillSwitchOutcome>,
 }
 
 impl TelemetryEvent for BlocklistOrchestrationTelemetryEvent {

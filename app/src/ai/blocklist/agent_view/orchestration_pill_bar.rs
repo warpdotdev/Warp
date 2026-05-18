@@ -47,7 +47,7 @@ use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerE
 use crate::ai::blocklist::orchestration_topology::descendant_conversation_ids_in_spawn_order;
 use crate::ai::blocklist::telemetry::{
     BlocklistOrchestrationTelemetryEvent, PillBarActionKind, PillBarInteractionEvent,
-    PillBarPillKind,
+    PillBarPillKind, PillSwitchOutcome,
 };
 use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
 use crate::ai::harness_display;
@@ -700,6 +700,43 @@ impl OrchestrationPillBar {
         target_conversation_id: AIConversationId,
         ctx: &mut ViewContext<Self>,
     ) {
+        self.emit_pill_bar_interaction_with_outcome(
+            action,
+            pill_kind,
+            target_conversation_id,
+            None,
+            ctx,
+        );
+    }
+
+    /// Same as [`Self::emit_pill_bar_interaction`] but stamps a
+    /// `switch_outcome` on the payload. Use for `Switch` actions where
+    /// the analyst needs to know whether the click navigated in place
+    /// or focused an existing pane.
+    fn emit_pill_switch(
+        &self,
+        pill_kind: PillBarPillKind,
+        target_conversation_id: AIConversationId,
+        outcome: PillSwitchOutcome,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.emit_pill_bar_interaction_with_outcome(
+            PillBarActionKind::Switch,
+            pill_kind,
+            target_conversation_id,
+            Some(outcome),
+            ctx,
+        );
+    }
+
+    fn emit_pill_bar_interaction_with_outcome(
+        &self,
+        action: PillBarActionKind,
+        pill_kind: PillBarPillKind,
+        target_conversation_id: AIConversationId,
+        switch_outcome: Option<PillSwitchOutcome>,
+        ctx: &mut ViewContext<Self>,
+    ) {
         let Some((source_conversation_id, total_pills, total_pinned)) =
             self.pill_bar_telemetry_context(ctx)
         else {
@@ -713,9 +750,77 @@ impl OrchestrationPillBar {
                 total_pinned,
                 source_conversation_id,
                 target_conversation_id,
+                switch_outcome,
             }),
             ctx
         );
+    }
+
+    /// Dispatches the focus-existing-pane navigation. Pulled out of
+    /// the `FocusOpenedConversation` handler so the `PillClicked`
+    /// handler can reuse the same nav logic without emitting the
+    /// menu-driven `FocusOpenedConversation` telemetry event.
+    fn navigate_to_owner_pane(&self, id: AIConversationId, ctx: &mut ViewContext<Self>) {
+        // "Focus pane" is purely a focus operation: the conversation
+        // already lives in some other visible terminal view (verified
+        // by `is_conversation_open_in_other_visible_view` at the call
+        // site) and we just want to move the user's cursor there. We
+        // deliberately do *not* go through
+        // `RestoreOrNavigateToConversation`: that path calls
+        // `set_active_conversation_id` with whichever
+        // `terminal_view_id` it receives, which would either
+        // re-transfer ownership to a stale id pulled from
+        // `AgentConversationsModel::nav_data` or, worse, blank out
+        // the real owner pane while the conversation pops back into
+        // the orchestrator.
+        //
+        // Resolve the canonical owner directly from
+        // `BlocklistAIHistoryModel` (the single source of truth) and
+        // pick the appropriate focus action based on whether the
+        // owner pane lives in the same pane group as us:
+        //   * Same pane group (sibling pane in this tab) —
+        //     dispatch `TerminalAction::RevealChildAgent`. The pane
+        //     group's handler walks visible terminal panes and calls
+        //     `group.focus_pane(.., true, ctx)` from its own
+        //     `ViewContext<PaneGroup>`, which actually shifts focus
+        //     to the sibling pane. Going through the workspace's
+        //     `focus_pane` from a different `ViewContext` doesn't
+        //     reliably move focus when the destination is in the
+        //     same pane group.
+        //   * Different pane group (other tab / window) —
+        //     dispatch `WorkspaceAction::FocusTerminalViewInWorkspace`,
+        //     which walks all tabs/windows and activates the
+        //     containing tab as needed.
+        let owner_view_id =
+            BlocklistAIHistoryModel::as_ref(ctx).terminal_view_id_for_conversation(&id);
+        let Some(owner_view_id) = owner_view_id else {
+            log::warn!(
+                "navigate_to_owner_pane: no canonical owner for {id:?}; falling back to switch-in-place"
+            );
+            ctx.dispatch_typed_action(
+                &PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(
+                    TerminalAction::SwitchAgentViewToConversation {
+                        conversation_id: id,
+                    },
+                ),
+            );
+            return;
+        };
+        let self_pane_group_id = self.agent_view_controller.as_ref(ctx).pane_group_id();
+        let owner_pane_group_id = pane_group_id_containing_terminal_view(owner_view_id, ctx);
+        if owner_pane_group_id.is_some() && owner_pane_group_id == self_pane_group_id {
+            ctx.dispatch_typed_action(
+                &PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(
+                    TerminalAction::RevealChildAgent {
+                        conversation_id: id,
+                    },
+                ),
+            );
+        } else {
+            ctx.dispatch_typed_action(&WorkspaceAction::FocusTerminalViewInWorkspace {
+                terminal_view_id: owner_view_id,
+            });
+        }
     }
 }
 
@@ -833,20 +938,21 @@ impl TypedActionView for OrchestrationPillBar {
                     self.agent_view_controller.as_ref(ctx).terminal_view_id();
                 let is_open_elsewhere =
                     is_conversation_open_in_other_visible_view(id, self_terminal_view_id, ctx);
-                if is_open_elsewhere {
-                    // FocusOpenedConversation's handler emits its own
-                    // telemetry; skip the Switch event so one click =
-                    // one event.
-                    ctx.dispatch_typed_action(
-                        &OrchestrationPillBarAction::FocusOpenedConversation(id),
-                    );
+                // Pill-body clicks always emit a single `Switch` event,
+                // with `switch_outcome` capturing what navigation
+                // actually happened. Analysts can count all pill clicks
+                // with `action = switch` and slice by outcome — no need
+                // to UNION with `FocusOpenedConversation` (which is
+                // reserved for the menu-driven "Focus pane" gesture).
+                let outcome = if is_open_elsewhere {
+                    PillSwitchOutcome::FocusedExistingPane
                 } else {
-                    self.emit_pill_bar_interaction(
-                        PillBarActionKind::Switch,
-                        pill_kind.telemetry_kind(),
-                        id,
-                        ctx,
-                    );
+                    PillSwitchOutcome::SwitchedInPlace
+                };
+                self.emit_pill_switch(pill_kind.telemetry_kind(), id, outcome, ctx);
+                if is_open_elsewhere {
+                    self.navigate_to_owner_pane(id, ctx);
+                } else {
                     ctx.dispatch_typed_action(
                         &PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(
                             navigation_action_for_pill(*pill_kind, id),
@@ -862,68 +968,7 @@ impl TypedActionView for OrchestrationPillBar {
                     ctx,
                 );
                 self.close_menu(ctx);
-                // "Focus pane" is purely a focus operation: the
-                // conversation already lives in some other visible
-                // terminal view (verified by
-                // `is_conversation_open_in_other_visible_view` before we
-                // surface this menu item) and we just want to move the
-                // user's cursor there. We deliberately do *not* go
-                // through `RestoreOrNavigateToConversation`: that path
-                // calls `set_active_conversation_id` with whichever
-                // `terminal_view_id` it receives, which would either
-                // re-transfer ownership to a stale id pulled from
-                // `AgentConversationsModel::nav_data` or, worse, blank
-                // out the real owner pane while the conversation pops
-                // back into the orchestrator.
-                //
-                // Resolve the canonical owner directly from
-                // `BlocklistAIHistoryModel` (the single source of truth)
-                // and pick the appropriate focus action based on whether
-                // the owner pane lives in the same pane group as us:
-                //   * Same pane group (sibling pane in this tab) —
-                //     dispatch `TerminalAction::RevealChildAgent`. The
-                //     pane group's handler walks visible terminal panes
-                //     and calls `group.focus_pane(.., true, ctx)` from
-                //     its own `ViewContext<PaneGroup>`, which actually
-                //     shifts focus to the sibling pane. Going through
-                //     the workspace's `focus_pane` from a different
-                //     `ViewContext` doesn't reliably move focus when the
-                //     destination is in the same pane group.
-                //   * Different pane group (other tab / window) —
-                //     dispatch `WorkspaceAction::FocusTerminalViewInWorkspace`,
-                //     which walks all tabs/windows and activates the
-                //     containing tab as needed.
-                let owner_view_id =
-                    BlocklistAIHistoryModel::as_ref(ctx).terminal_view_id_for_conversation(id);
-                let Some(owner_view_id) = owner_view_id else {
-                    log::warn!(
-                        "FocusOpenedConversation: no canonical owner for {id:?}; falling back to switch-in-place"
-                    );
-                    ctx.dispatch_typed_action(
-                        &PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(
-                            TerminalAction::SwitchAgentViewToConversation {
-                                conversation_id: *id,
-                            },
-                        ),
-                    );
-                    return;
-                };
-                let self_pane_group_id = self.agent_view_controller.as_ref(ctx).pane_group_id();
-                let owner_pane_group_id =
-                    pane_group_id_containing_terminal_view(owner_view_id, ctx);
-                if owner_pane_group_id.is_some() && owner_pane_group_id == self_pane_group_id {
-                    ctx.dispatch_typed_action(
-                        &PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(
-                            TerminalAction::RevealChildAgent {
-                                conversation_id: *id,
-                            },
-                        ),
-                    );
-                } else {
-                    ctx.dispatch_typed_action(&WorkspaceAction::FocusTerminalViewInWorkspace {
-                        terminal_view_id: owner_view_id,
-                    });
-                }
+                self.navigate_to_owner_pane(*id, ctx);
             }
         }
     }
