@@ -15,7 +15,10 @@ use crate::ai::ambient_agents::github_auth_notifier::{GitHubAuthEvent, GitHubAut
 use crate::ai::ambient_agents::github_auth_url;
 use crate::ai::ambient_agents::spawn::{spawn_task, submit_run_followup, AmbientAgentEvent};
 use crate::ai::ambient_agents::task::{HarnessAuthSecretsConfig, HarnessConfig};
-use crate::ai::ambient_agents::telemetry::CloudAgentTelemetryEvent;
+use crate::ai::ambient_agents::telemetry::{
+    CloudAgentTelemetryEvent, HandoffCloudCloudStage, HandoffFunnelOutcome, HandoffLocalCloudStage,
+    HandoffSnapshotOutcome,
+};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::ambient_agents::{
     OUT_OF_CREDITS_TASK_FAILURE_MESSAGE, SERVER_OVERLOADED_TASK_FAILURE_MESSAGE,
@@ -527,6 +530,56 @@ impl AmbientAgentViewModel {
         }
     }
 
+    fn record_local_handoff_funnel(
+        &self,
+        stage: HandoffLocalCloudStage,
+        outcome: HandoffFunnelOutcome,
+        reason: Option<&str>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if !self.is_local_to_cloud_handoff() {
+            return;
+        }
+        send_telemetry_from_ctx!(
+            CloudAgentTelemetryEvent::HandoffLocalCloudFunnel {
+                stage,
+                outcome,
+                reason: reason.map(ToOwned::to_owned),
+                forked_existing_conversation: self.local_handoff_forked_existing_conversation(),
+            },
+            ctx
+        );
+    }
+
+    fn record_cloud_followup_funnel(
+        stage: HandoffCloudCloudStage,
+        outcome: HandoffFunnelOutcome,
+        reason: Option<&str>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        send_telemetry_from_ctx!(
+            CloudAgentTelemetryEvent::HandoffCloudCloudFunnel {
+                stage,
+                outcome,
+                reason: reason.map(ToOwned::to_owned),
+            },
+            ctx
+        );
+    }
+
+    fn local_handoff_forked_existing_conversation(&self) -> Option<bool> {
+        #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+        {
+            self.pending_handoff
+                .as_ref()
+                .map(|handoff| handoff.forked_conversation_id.is_some())
+        }
+        #[cfg(not(all(feature = "local_fs", not(target_family = "wasm"))))]
+        {
+            None
+        }
+    }
+
     /// True when this pane is a handoff pane and the touched-workspace derivation +
     /// snapshot upload have both settled and no submission is in flight. Used by the
     /// input layer to gate clearing the editor buffer on submit.
@@ -667,6 +720,12 @@ impl AmbientAgentViewModel {
             progress: AgentProgress::new(),
             kind: SessionStartupKind::InitialRun,
         };
+        self.record_local_handoff_funnel(
+            HandoffLocalCloudStage::AutoSubmitQueued,
+            HandoffFunnelOutcome::Queued,
+            None,
+            ctx,
+        );
         self.start_progress_timer(ctx);
         ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
         ctx.emit(AmbientAgentViewModelEvent::DispatchedAgent);
@@ -689,6 +748,12 @@ impl AmbientAgentViewModel {
             return None;
         }
         let launch = handoff.auto_submit.take()?;
+        self.record_local_handoff_funnel(
+            HandoffLocalCloudStage::AutoSubmitStarted,
+            HandoffFunnelOutcome::Started,
+            None,
+            ctx,
+        );
         ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
         Some(launch)
     }
@@ -948,6 +1013,12 @@ impl AmbientAgentViewModel {
             previous_session_id,
             ai_client,
             None,
+        );
+        Self::record_cloud_followup_funnel(
+            HandoffCloudCloudStage::FollowupSubmitted,
+            HandoffFunnelOutcome::Started,
+            None,
+            ctx,
         );
 
         self.pending_followup_prompt = Some(prompt);
@@ -1215,6 +1286,18 @@ impl AmbientAgentViewModel {
                 ActiveAgentViewsModel::handle(ctx).update(ctx, |model, ctx| {
                     model.register_ambient_session(self.terminal_view_id, task_id, ctx);
                 });
+                self.record_local_handoff_funnel(
+                    HandoffLocalCloudStage::CloudRunDispatched,
+                    HandoffFunnelOutcome::Succeeded,
+                    None,
+                    ctx,
+                );
+                self.record_local_handoff_funnel(
+                    HandoffLocalCloudStage::ApiAccepted,
+                    HandoffFunnelOutcome::Succeeded,
+                    None,
+                    ctx,
+                );
 
                 ctx.emit(AmbientAgentViewModelEvent::ProgressUpdated);
             }
@@ -1225,8 +1308,10 @@ impl AmbientAgentViewModel {
                 if ignore_events {
                     return;
                 }
-
-                if let Status::WaitingForSession { progress, .. } = &mut self.status {
+                let is_local_handoff = self.is_local_to_cloud_handoff();
+                let local_handoff_forked_existing_conversation =
+                    self.local_handoff_forked_existing_conversation();
+                if let Status::WaitingForSession { progress, kind } = &mut self.status {
                     match state {
                         AmbientAgentTaskState::Cancelled => {
                             self.handle_cancellation(ctx);
@@ -1257,6 +1342,27 @@ impl AmbientAgentViewModel {
                             let error = status_message
                                 .map(|msg| msg.message)
                                 .unwrap_or_else(|| "Cloud agent failed".to_string());
+                            match kind {
+                                SessionStartupKind::InitialRun if is_local_handoff => {
+                                    send_telemetry_from_ctx!(
+                                        CloudAgentTelemetryEvent::HandoffLocalCloudFunnel {
+                                            stage: HandoffLocalCloudStage::ApiFailed,
+                                            outcome: HandoffFunnelOutcome::Failed,
+                                            reason: Some("task_failed".to_string()),
+                                            forked_existing_conversation:
+                                                local_handoff_forked_existing_conversation,
+                                        },
+                                        ctx
+                                    );
+                                }
+                                SessionStartupKind::InitialRun => {}
+                                SessionStartupKind::Followup => Self::record_cloud_followup_funnel(
+                                    HandoffCloudCloudStage::ApiFailed,
+                                    HandoffFunnelOutcome::Failed,
+                                    Some("task_failed"),
+                                    ctx,
+                                ),
+                            }
                             self.handle_spawn_error(error, ctx);
                         }
                     }
@@ -1274,14 +1380,28 @@ impl AmbientAgentViewModel {
                         Status::WaitingForSession {
                             kind: SessionStartupKind::InitialRun,
                             ..
-                        } => AmbientAgentViewModelEvent::SessionReady {
-                            session_id: event_session_id,
-                        },
+                        } => {
+                            self.record_local_handoff_funnel(
+                                HandoffLocalCloudStage::SessionReady,
+                                HandoffFunnelOutcome::Succeeded,
+                                None,
+                                ctx,
+                            );
+                            AmbientAgentViewModelEvent::SessionReady {
+                                session_id: event_session_id,
+                            }
+                        }
                         Status::WaitingForSession {
                             kind: SessionStartupKind::Followup,
                             ..
                         }
                         | Status::AgentRunning => {
+                            Self::record_cloud_followup_funnel(
+                                HandoffCloudCloudStage::SessionReady,
+                                HandoffFunnelOutcome::Succeeded,
+                                None,
+                                ctx,
+                            );
                             AmbientAgentViewModelEvent::ExecutionSessionReady {
                                 session_id: event_session_id,
                             }
@@ -1308,7 +1428,38 @@ impl AmbientAgentViewModel {
                     ctx.emit(AmbientAgentViewModelEvent::ShowCloudAgentCapacityModal);
                 }
             }
-            AmbientAgentEvent::TimedOut => {}
+            AmbientAgentEvent::FollowupAccepted => {
+                if ignore_events {
+                    return;
+                }
+                Self::record_cloud_followup_funnel(
+                    HandoffCloudCloudStage::ApiAccepted,
+                    HandoffFunnelOutcome::Succeeded,
+                    None,
+                    ctx,
+                );
+            }
+            AmbientAgentEvent::TimedOut => match &self.status {
+                Status::WaitingForSession {
+                    kind: SessionStartupKind::InitialRun,
+                    ..
+                } => self.record_local_handoff_funnel(
+                    HandoffLocalCloudStage::SessionReady,
+                    HandoffFunnelOutcome::Failed,
+                    Some("poll_timeout"),
+                    ctx,
+                ),
+                Status::WaitingForSession {
+                    kind: SessionStartupKind::Followup,
+                    ..
+                } => Self::record_cloud_followup_funnel(
+                    HandoffCloudCloudStage::PollTimeout,
+                    HandoffFunnelOutcome::Failed,
+                    Some("poll_timeout"),
+                    ctx,
+                ),
+                _ => {}
+            },
         }
     }
 
@@ -1318,6 +1469,27 @@ impl AmbientAgentViewModel {
         ctx: &mut ModelContext<Self>,
     ) {
         let error_message = err.to_string();
+        match &self.status {
+            Status::WaitingForSession {
+                kind: SessionStartupKind::InitialRun,
+                ..
+            } => self.record_local_handoff_funnel(
+                HandoffLocalCloudStage::ApiFailed,
+                HandoffFunnelOutcome::Failed,
+                Some("stream_error"),
+                ctx,
+            ),
+            Status::WaitingForSession {
+                kind: SessionStartupKind::Followup,
+                ..
+            } => Self::record_cloud_followup_funnel(
+                HandoffCloudCloudStage::ApiFailed,
+                HandoffFunnelOutcome::Failed,
+                Some("stream_error"),
+                ctx,
+            ),
+            _ => {}
+        }
         send_telemetry_from_ctx!(
             CloudAgentTelemetryEvent::DispatchFailed {
                 error: error_message.clone()
@@ -1541,15 +1713,39 @@ impl AmbientAgentViewModel {
             return;
         }
         let initial_snapshot_token = handoff.snapshot_upload.initial_snapshot_token();
+        let no_snapshot_reason =
+            initial_snapshot_token
+                .is_none()
+                .then(|| match &handoff.snapshot_upload {
+                    SnapshotUploadStatus::SkippedEmptyWorkspace => "empty_workspace",
+                    SnapshotUploadStatus::Failed(_) => "snapshot_upload_failed",
+                    SnapshotUploadStatus::Pending => "snapshot_pending",
+                    SnapshotUploadStatus::Uploaded(_) => "uploaded",
+                });
         let forked_conversation_id = handoff.forked_conversation_id.clone();
         handoff.submission_state = HandoffSubmissionState::Starting;
         ctx.emit(AmbientAgentViewModelEvent::PendingHandoffChanged);
+        if let Some(reason) = no_snapshot_reason {
+            send_telemetry_from_ctx!(
+                CloudAgentTelemetryEvent::HandoffSnapshot {
+                    outcome: HandoffSnapshotOutcome::SpawnedWithoutSnapshot,
+                    reason: Some(reason.to_string()),
+                },
+                ctx
+            );
+        }
 
         let request = self.build_handoff_spawn_request(
             prompt,
             attachments,
             forked_conversation_id,
             initial_snapshot_token,
+            ctx,
+        );
+        self.record_local_handoff_funnel(
+            HandoffLocalCloudStage::CloudRunDispatched,
+            HandoffFunnelOutcome::Started,
+            None,
             ctx,
         );
         self.spawn_agent_with_request(request, ctx);

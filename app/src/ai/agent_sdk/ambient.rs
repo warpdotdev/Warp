@@ -520,6 +520,7 @@ impl AmbientAgentRunner {
                                     println!("To increase your concurrent agent limit, upgrade your plan: {}", url);
                                 }
                             }
+                            AmbientAgentEvent::FollowupAccepted => {}
                             AmbientAgentEvent::StateChanged {
                                 state,
                                 status_message,

@@ -75,6 +75,8 @@ pub enum AmbientAgentEvent {
     },
     /// Session started and join information became available.
     SessionStarted { session_join_info: SessionJoinInfo },
+    /// Follow-up request was accepted by the API and polling has started.
+    FollowupAccepted,
     /// Timed out waiting for the agent session to be ready.
     TimedOut,
     /// Cloud agent capacity limit has been reached. This does not block
@@ -147,6 +149,7 @@ pub fn submit_run_followup(
             yield Err(err);
             return;
         }
+        yield Ok(AmbientAgentEvent::FollowupAccepted);
 
         let mut stream = Box::pin(poll_run_until_joinable_session(
             run_id,

@@ -39,7 +39,11 @@ pub use progress::{render_progress, ProgressProps, ProgressStep, ProgressStepSta
 pub use progress_ui_state::AmbientAgentProgressUIState;
 pub use tips::{get_cloud_mode_tips, CloudModeTip};
 
+use crate::ai::ambient_agents::telemetry::{
+    CloudAgentTelemetryEvent, HandoffCloudCloudStage, HandoffFunnelOutcome,
+};
 use warp_core::features::FeatureFlag;
+use warp_core::send_telemetry_from_ctx;
 use warpui::geometry::vector::Vector2F;
 use warpui::{AppContext, ModelHandle, ViewHandle, WindowId};
 
@@ -111,6 +115,14 @@ pub fn create_cloud_mode_view(
                 }
                 AmbientAgentViewModelEvent::ExecutionSessionReady { session_id } => {
                     manager.attach_execution_session(*session_id, ctx);
+                    send_telemetry_from_ctx!(
+                        CloudAgentTelemetryEvent::HandoffCloudCloudFunnel {
+                            stage: HandoffCloudCloudStage::HotswapAttached,
+                            outcome: HandoffFunnelOutcome::Succeeded,
+                            reason: None,
+                        },
+                        ctx
+                    );
                 }
                 AmbientAgentViewModelEvent::EnteredSetupState
                 | AmbientAgentViewModelEvent::EnteredComposingState

@@ -46,6 +46,20 @@ fn task_with(
     }
 }
 
+async fn expect_followup_accepted<S>(stream: &mut S)
+where
+    S: futures::Stream<Item = Result<AmbientAgentEvent, anyhow::Error>> + Unpin,
+{
+    use futures::StreamExt;
+
+    let event = stream
+        .next()
+        .await
+        .expect("expected follow-up accepted")
+        .expect("expected ok");
+    assert!(matches!(event, AmbientAgentEvent::FollowupAccepted));
+}
+
 #[tokio::test]
 async fn followup_submits_before_polling_and_ignores_previous_session_id() {
     use futures::StreamExt;
@@ -101,6 +115,8 @@ async fn followup_submits_before_polling_and_ignores_previous_session_id() {
         ai_client,
         None,
     ));
+
+    expect_followup_accepted(&mut stream).await;
 
     let event = stream
         .next()
@@ -194,6 +210,8 @@ async fn followup_terminal_failure_surfaces_status_message() {
         None,
     ));
 
+    expect_followup_accepted(&mut stream).await;
+
     let event = stream
         .next()
         .await
@@ -259,6 +277,8 @@ async fn followup_without_previous_session_id_accepts_joinable_session() {
         None,
     ));
 
+    expect_followup_accepted(&mut stream).await;
+
     let event = stream
         .next()
         .await
@@ -321,6 +341,8 @@ async fn followup_without_previous_session_id_errors_if_run_finishes_before_sess
         ai_client,
         None,
     ));
+
+    expect_followup_accepted(&mut stream).await;
 
     let event = stream
         .next()
@@ -407,6 +429,8 @@ async fn followup_skips_prior_terminal_state_until_working_then_attaches() {
         ai_client,
         None,
     ));
+
+    expect_followup_accepted(&mut stream).await;
 
     // First emitted event must be `Pending` — the prior `Blocked` was suppressed.
     let event = stream
@@ -497,6 +521,8 @@ async fn followup_skips_prior_terminal_then_surfaces_real_failure() {
         None,
     ));
 
+    expect_followup_accepted(&mut stream).await;
+
     let event = stream
         .next()
         .await
@@ -563,6 +589,8 @@ async fn followup_cancelled_state_breaks_skip_loop() {
         None,
     ));
 
+    expect_followup_accepted(&mut stream).await;
+
     let event = stream
         .next()
         .await
@@ -615,6 +643,8 @@ async fn followup_bounded_skip_for_server_stall() {
         ai_client,
         None,
     ));
+
+    expect_followup_accepted(&mut stream).await;
 
     // After exhausting the bounded skips, the next poll falls through to the terminal
     // branch, emitting a StateChanged for the stale state and a synthetic timeout error.

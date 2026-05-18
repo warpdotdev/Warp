@@ -32,6 +32,56 @@ pub enum HandoffEntryPoint {
     FooterChip,
 }
 
+/// Funnel stages for local-to-cloud handoff.
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HandoffLocalCloudStage {
+    ForkConversation,
+    PaneOpened,
+    AutoSubmitQueued,
+    AutoSubmitStarted,
+    CloudRunDispatched,
+    ApiAccepted,
+    ApiFailed,
+    SessionReady,
+}
+
+/// Funnel stages for cloud-to-cloud follow-up handoff.
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HandoffCloudCloudStage {
+    FollowupSubmitted,
+    ApiAccepted,
+    ApiFailed,
+    PollTimeout,
+    SessionReady,
+    HotswapAttached,
+}
+
+/// Low-cardinality outcome values for handoff funnel events.
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HandoffFunnelOutcome {
+    Started,
+    Succeeded,
+    Failed,
+    Queued,
+}
+
+/// Snapshot outcomes for local-to-cloud handoff.
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HandoffSnapshotOutcome {
+    Started,
+    SkippedEmptyWorkspace,
+    TokenAllocationFailed,
+    Uploaded,
+    UploadedWithPartialBlobs,
+    ManifestUploadFailed,
+    Failed,
+    SpawnedWithoutSnapshot,
+}
+
 /// Telemetry events for client interactions with cloud agents.
 #[derive(Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(EnumIter))]
@@ -90,6 +140,27 @@ pub enum CloudAgentTelemetryEvent {
         /// Whether the handoff forked an existing conversation.
         forked_existing_conversation: bool,
     },
+    /// Local-to-cloud handoff funnel stage outcome.
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    HandoffLocalCloudFunnel {
+        stage: HandoffLocalCloudStage,
+        outcome: HandoffFunnelOutcome,
+        reason: Option<String>,
+        forked_existing_conversation: Option<bool>,
+    },
+    /// Local-to-cloud handoff snapshot pipeline outcome.
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    HandoffSnapshot {
+        outcome: HandoffSnapshotOutcome,
+        reason: Option<String>,
+    },
+    /// Cloud-to-cloud handoff follow-up funnel stage outcome.
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    HandoffCloudCloudFunnel {
+        stage: HandoffCloudCloudStage,
+        outcome: HandoffFunnelOutcome,
+        reason: Option<String>,
+    },
 }
 
 impl TelemetryEvent for CloudAgentTelemetryEvent {
@@ -136,6 +207,30 @@ impl TelemetryEvent for CloudAgentTelemetryEvent {
                 "entry_point": entry_point,
                 "forked_existing_conversation": forked_existing_conversation,
             })),
+            CloudAgentTelemetryEvent::HandoffLocalCloudFunnel {
+                stage,
+                outcome,
+                reason,
+                forked_existing_conversation,
+            } => Some(json!({
+                "stage": stage,
+                "outcome": outcome,
+                "reason": reason,
+                "forked_existing_conversation": forked_existing_conversation,
+            })),
+            CloudAgentTelemetryEvent::HandoffSnapshot { outcome, reason } => Some(json!({
+                "outcome": outcome,
+                "reason": reason,
+            })),
+            CloudAgentTelemetryEvent::HandoffCloudCloudFunnel {
+                stage,
+                outcome,
+                reason,
+            } => Some(json!({
+                "stage": stage,
+                "outcome": outcome,
+                "reason": reason,
+            })),
         }
     }
 
@@ -178,6 +273,9 @@ impl TelemetryEventDesc for CloudAgentTelemetryEventDiscriminants {
             }
             Self::DispatchFailed => "AmbientAgent.DispatchFailed",
             Self::HandoffInitiated => "AmbientAgent.Handoff.Initiated",
+            Self::HandoffLocalCloudFunnel => "AmbientAgent.Handoff.LocalCloud.Funnel",
+            Self::HandoffSnapshot => "AmbientAgent.Handoff.Snapshot",
+            Self::HandoffCloudCloudFunnel => "AmbientAgent.Handoff.CloudCloud.Funnel",
         }
     }
 
@@ -200,6 +298,9 @@ impl TelemetryEventDesc for CloudAgentTelemetryEventDiscriminants {
             }
             Self::DispatchFailed => "Ambient agent failed to dispatch or encountered an error",
             Self::HandoffInitiated => "User initiated a local-to-cloud handoff",
+            Self::HandoffLocalCloudFunnel => "Local-to-cloud handoff funnel stage outcome",
+            Self::HandoffSnapshot => "Local-to-cloud handoff snapshot outcome",
+            Self::HandoffCloudCloudFunnel => "Cloud-to-cloud handoff funnel stage outcome",
         }
     }
 
@@ -209,3 +310,66 @@ impl TelemetryEventDesc for CloudAgentTelemetryEventDiscriminants {
 }
 
 warp_core::register_telemetry_event!(CloudAgentTelemetryEvent);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use warp_core::telemetry::TelemetryEvent;
+
+    #[test]
+    fn local_cloud_funnel_event_has_expected_name_and_payload() {
+        let event = CloudAgentTelemetryEvent::HandoffLocalCloudFunnel {
+            stage: HandoffLocalCloudStage::PaneOpened,
+            outcome: HandoffFunnelOutcome::Succeeded,
+            reason: None,
+            forked_existing_conversation: Some(true),
+        };
+
+        assert_eq!(event.name(), "AmbientAgent.Handoff.LocalCloud.Funnel");
+        assert_eq!(
+            event.payload(),
+            Some(json!({
+                "stage": "pane_opened",
+                "outcome": "succeeded",
+                "reason": null,
+                "forked_existing_conversation": true,
+            }))
+        );
+    }
+
+    #[test]
+    fn snapshot_event_serializes_manifest_failure_reason() {
+        let event = CloudAgentTelemetryEvent::HandoffSnapshot {
+            outcome: HandoffSnapshotOutcome::ManifestUploadFailed,
+            reason: Some("manifest_upload_failed".to_string()),
+        };
+
+        assert_eq!(event.name(), "AmbientAgent.Handoff.Snapshot");
+        assert_eq!(
+            event.payload(),
+            Some(json!({
+                "outcome": "manifest_upload_failed",
+                "reason": "manifest_upload_failed",
+            }))
+        );
+    }
+
+    #[test]
+    fn cloud_cloud_funnel_event_serializes_hotswap_stage() {
+        let event = CloudAgentTelemetryEvent::HandoffCloudCloudFunnel {
+            stage: HandoffCloudCloudStage::HotswapAttached,
+            outcome: HandoffFunnelOutcome::Succeeded,
+            reason: None,
+        };
+
+        assert_eq!(event.name(), "AmbientAgent.Handoff.CloudCloud.Funnel");
+        assert_eq!(
+            event.payload(),
+            Some(json!({
+                "stage": "hotswap_attached",
+                "outcome": "succeeded",
+                "reason": null,
+            }))
+        );
+    }
+}

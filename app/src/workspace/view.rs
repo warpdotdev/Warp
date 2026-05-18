@@ -46,10 +46,12 @@ use crate::ai::agent_management::telemetry::AgentManagementTelemetryEvent;
 use crate::ai::agent_management::view::{AgentManagementView, AgentManagementViewEvent};
 use crate::ai::agent_management::AgentManagementEvent;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-use crate::ai::agent_sdk::driver::upload_snapshot_for_handoff;
-#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
-use crate::ai::ambient_agents::telemetry::HandoffEntryPoint;
+use crate::ai::agent_sdk::driver::{upload_snapshot_for_handoff, HandoffSnapshotUploadOutcome};
 use crate::ai::ambient_agents::telemetry::{CloudAgentTelemetryEvent, CloudModeEntryPoint};
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::ambient_agents::telemetry::{
+    HandoffEntryPoint, HandoffFunnelOutcome, HandoffLocalCloudStage, HandoffSnapshotOutcome,
+};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::blocklist::agent_view::agent_input_footer::editor::AgentToolbarEditorMode;
 use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
@@ -13386,6 +13388,13 @@ impl Workspace {
         model_handle: ModelHandle<AmbientAgentViewModel>,
         ctx: &mut ViewContext<Self>,
     ) {
+        send_telemetry_from_ctx!(
+            CloudAgentTelemetryEvent::HandoffSnapshot {
+                outcome: HandoffSnapshotOutcome::Started,
+                reason: None,
+            },
+            ctx
+        );
         let server_api_provider = ServerApiProvider::as_ref(ctx);
         let ai_client = server_api_provider.get_ai_client();
         let http = server_api_provider.get_http_client();
@@ -13410,20 +13419,75 @@ impl Workspace {
                     }
                     model.set_pending_handoff_workspace(derived_workspace, model_ctx);
                     match upload_result {
-                        Ok(Some(initial_snapshot_token)) => {
+                        Ok(HandoffSnapshotUploadOutcome::Uploaded {
+                            initial_snapshot_token,
+                            partial_blob_upload,
+                        }) => {
+                            send_telemetry_from_ctx!(
+                                CloudAgentTelemetryEvent::HandoffSnapshot {
+                                    outcome: if partial_blob_upload {
+                                        HandoffSnapshotOutcome::UploadedWithPartialBlobs
+                                    } else {
+                                        HandoffSnapshotOutcome::Uploaded
+                                    },
+                                    reason: partial_blob_upload
+                                        .then(|| "partial_blob_upload".to_string()),
+                                },
+                                model_ctx
+                            );
                             model.set_pending_handoff_snapshot_upload(
                                 SnapshotUploadStatus::Uploaded(initial_snapshot_token),
                                 model_ctx,
                             );
                         }
-                        Ok(None) => {
+                        Ok(HandoffSnapshotUploadOutcome::SkippedEmptyWorkspace) => {
+                            send_telemetry_from_ctx!(
+                                CloudAgentTelemetryEvent::HandoffSnapshot {
+                                    outcome: HandoffSnapshotOutcome::SkippedEmptyWorkspace,
+                                    reason: Some("empty_workspace".to_string()),
+                                },
+                                model_ctx
+                            );
                             model.set_pending_handoff_snapshot_upload(
                                 SnapshotUploadStatus::SkippedEmptyWorkspace,
                                 model_ctx,
                             );
                         }
+                        Ok(HandoffSnapshotUploadOutcome::ManifestUploadFailed) => {
+                            send_telemetry_from_ctx!(
+                                CloudAgentTelemetryEvent::HandoffSnapshot {
+                                    outcome: HandoffSnapshotOutcome::ManifestUploadFailed,
+                                    reason: Some("manifest_upload_failed".to_string()),
+                                },
+                                model_ctx
+                            );
+                            model.record_handoff_snapshot_upload_failed(
+                                "manifest upload failed".to_string(),
+                                model_ctx,
+                            );
+                        }
+                        Ok(HandoffSnapshotUploadOutcome::FailedBeforeManifest) => {
+                            send_telemetry_from_ctx!(
+                                CloudAgentTelemetryEvent::HandoffSnapshot {
+                                    outcome: HandoffSnapshotOutcome::Failed,
+                                    reason: Some("failed_before_manifest".to_string()),
+                                },
+                                model_ctx
+                            );
+                            model.record_handoff_snapshot_upload_failed(
+                                "snapshot preparation failed".to_string(),
+                                model_ctx,
+                            );
+                        }
                         Err(err) => {
                             log::warn!("Handoff snapshot upload failed: {err:#}");
+                            send_telemetry_from_ctx!(
+                                CloudAgentTelemetryEvent::HandoffSnapshot {
+                                    outcome: HandoffSnapshotOutcome::TokenAllocationFailed,
+                                    reason: Some("token_allocation_failed".to_string()),
+                                },
+                                model_ctx
+                            );
                             model
                                 .record_handoff_snapshot_upload_failed(format!("{err}"), model_ctx);
                         }
@@ -13518,6 +13582,15 @@ impl Workspace {
             log::warn!(
                 "start_local_to_cloud_handoff: failed to push fresh cloud-mode pane over the active session"
             );
+            send_telemetry_from_ctx!(
+                CloudAgentTelemetryEvent::HandoffLocalCloudFunnel {
+                    stage: HandoffLocalCloudStage::PaneOpened,
+                    outcome: HandoffFunnelOutcome::Failed,
+                    reason: Some("pane_open_failed".to_string()),
+                    forked_existing_conversation: Some(false),
+                },
+                ctx
+            );
             Self::restore_source_handoff_draft(&source_view, launch, environment_id, ctx);
             let window_id = ctx.window_id();
             WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
@@ -13532,6 +13605,15 @@ impl Workspace {
             });
             return;
         };
+        send_telemetry_from_ctx!(
+            CloudAgentTelemetryEvent::HandoffLocalCloudFunnel {
+                stage: HandoffLocalCloudStage::PaneOpened,
+                outcome: HandoffFunnelOutcome::Succeeded,
+                reason: None,
+                forked_existing_conversation: Some(false),
+            },
+            ctx
+        );
 
         if let Some(environment_id) = environment_id {
             model_handle.update(ctx, |model, ctx| {
@@ -13708,6 +13790,15 @@ impl Workspace {
             },
             move |me, result, ctx| match result {
                 Ok(response) => {
+                    send_telemetry_from_ctx!(
+                        CloudAgentTelemetryEvent::HandoffLocalCloudFunnel {
+                            stage: HandoffLocalCloudStage::ForkConversation,
+                            outcome: HandoffFunnelOutcome::Succeeded,
+                            reason: None,
+                            forked_existing_conversation: Some(true),
+                        },
+                        ctx
+                    );
                     me.complete_local_to_cloud_handoff_open(
                         source_view,
                         source_conversation,
@@ -13720,6 +13811,15 @@ impl Workspace {
                 Err(err) => {
                     log::warn!(
                         "start_local_to_cloud_handoff: fork_conversation RPC failed: {err:#}"
+                    );
+                    send_telemetry_from_ctx!(
+                        CloudAgentTelemetryEvent::HandoffLocalCloudFunnel {
+                            stage: HandoffLocalCloudStage::ForkConversation,
+                            outcome: HandoffFunnelOutcome::Failed,
+                            reason: Some("fork_rpc_failed".to_string()),
+                            forked_existing_conversation: Some(true),
+                        },
+                        ctx
                     );
                     Self::restore_source_handoff_draft(&source_view, launch, environment_id, ctx);
                     let window_id = ctx.window_id();
@@ -13793,6 +13893,15 @@ impl Workspace {
             log::warn!(
                 "complete_local_to_cloud_handoff_open: failed to push cloud-mode pane after forking conversation"
             );
+            send_telemetry_from_ctx!(
+                CloudAgentTelemetryEvent::HandoffLocalCloudFunnel {
+                    stage: HandoffLocalCloudStage::PaneOpened,
+                    outcome: HandoffFunnelOutcome::Failed,
+                    reason: Some("pane_open_failed".to_string()),
+                    forked_existing_conversation: Some(true),
+                },
+                ctx
+            );
             let window_id = ctx.window_id();
             WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                 toast_stack.add_ephemeral_toast(
@@ -13806,6 +13915,15 @@ impl Workspace {
             });
             return;
         };
+        send_telemetry_from_ctx!(
+            CloudAgentTelemetryEvent::HandoffLocalCloudFunnel {
+                stage: HandoffLocalCloudStage::PaneOpened,
+                outcome: HandoffFunnelOutcome::Succeeded,
+                reason: None,
+                forked_existing_conversation: Some(true),
+            },
+            ctx
+        );
         // Restore the forked conversation into the newly-created pane.
         new_pane_view.update(ctx, |terminal_view, view_ctx| {
             terminal_view.restore_conversation_after_view_creation(

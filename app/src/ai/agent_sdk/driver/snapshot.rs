@@ -643,6 +643,17 @@ struct SnapshotOutcome {
     manifest_uploaded: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum HandoffSnapshotUploadOutcome {
+    SkippedEmptyWorkspace,
+    Uploaded {
+        initial_snapshot_token: InitialSnapshotToken,
+        partial_blob_upload: bool,
+    },
+    ManifestUploadFailed,
+    FailedBeforeManifest,
+}
+
 // --- Manifest schema ---
 
 #[derive(serde::Serialize)]
@@ -730,26 +741,17 @@ async fn upload_snapshot_from_declarations_file(
 /// contents, allocate an initial snapshot token plus presigned upload URLs via
 /// `AIClient::upload_local_handoff_snapshot`, and upload the artifacts.
 ///
-/// Returns:
-/// - `Ok(Some(initial_snapshot_token))` when a token was minted **and the manifest landed in GCS**.
-///   Individual blob uploads may still have failed; the manifest catalogues their status so the
-///   cloud agent rehydrates against whatever did land, matching the cloud→cloud best-effort
-///   posture.
-/// - `Ok(None)` when the workspace was empty (no repos, no orphan files) **or** when the
-///   manifest itself failed to upload. Without the manifest the snapshot is unusable, so
-///   callers should spawn the cloud agent without an initial snapshot token instead of pointing
-///   it at an incomplete prefix. Manifest-upload failures are also routed through
-///   `report_error!` so on-call alerting catches the silent regression.
-/// - `Err(_)` only for hard failures of `upload_local_handoff_snapshot` itself (auth, etc.).
+/// Returns a structured outcome so the caller can distinguish empty workspaces,
+/// manifest failures, partial blob uploads, and hard token-allocation failures.
 pub(crate) async fn upload_snapshot_for_handoff(
     repo_paths: Vec<PathBuf>,
     orphan_file_paths: Vec<PathBuf>,
     client: Arc<dyn AIClient>,
     http: &http_client::Client,
-) -> Result<Option<InitialSnapshotToken>> {
+) -> Result<HandoffSnapshotUploadOutcome> {
     if repo_paths.is_empty() && orphan_file_paths.is_empty() {
         log::info!("Handoff snapshot has no declarations; skipping upload");
-        return Ok(None);
+        return Ok(HandoffSnapshotUploadOutcome::SkippedEmptyWorkspace);
     }
 
     let declarations: Vec<DeclarationEntry> = repo_paths
@@ -841,7 +843,7 @@ pub(crate) async fn upload_snapshot_for_handoff(
     else {
         // Manifest serialization failed (already reported via `report_error!` inside
         // the helper). Without a manifest the snapshot is unusable, so refuse the token.
-        return Ok(None);
+        return Ok(HandoffSnapshotUploadOutcome::FailedBeforeManifest);
     };
 
     let summary = SnapshotSummary::from_entries(&outcome.entries, outcome.manifest_uploaded);
@@ -855,10 +857,13 @@ pub(crate) async fn upload_snapshot_for_handoff(
             summary.uploaded,
             summary.total,
         ));
-        return Ok(None);
+        return Ok(HandoffSnapshotUploadOutcome::ManifestUploadFailed);
     }
 
-    Ok(Some(initial_snapshot_token))
+    Ok(HandoffSnapshotUploadOutcome::Uploaded {
+        initial_snapshot_token,
+        partial_blob_upload: !summary.all_uploaded(),
+    })
 }
 
 /// Core upload pipeline.
