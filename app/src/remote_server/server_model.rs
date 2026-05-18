@@ -104,37 +104,18 @@ enum HandlerOutcome {
 struct CodebaseIndexRequest {
     repo_path: PathBuf,
 }
-
-#[derive(Clone, Copy)]
-enum CodebaseIndexOperation {
-    Index,
-    Resync,
-    Drop,
+struct CodebaseIndexRequestParams<'a> {
+    operation_name: &'a str,
+    repo_path: String,
+    auth_token: String,
+    auth_operation: &'a str,
+    path_kind: CodebaseIndexRequestPathKind,
 }
 
-impl CodebaseIndexOperation {
-    fn message_name(self) -> &'static str {
-        match self {
-            Self::Index => "IndexCodebase",
-            Self::Resync => "ResyncCodebase",
-            Self::Drop => "DropCodebaseIndex",
-        }
-    }
-
-    fn auth_operation(self) -> &'static str {
-        match self {
-            Self::Index => "remote codebase indexing",
-            Self::Resync => "remote codebase resync",
-            Self::Drop => "remote codebase index removal",
-        }
-    }
-
-    fn normalize_repo_path(self, repo_path: &str) -> Result<PathBuf, String> {
-        match self {
-            Self::Index | Self::Resync => canonicalize_index_repo_path(repo_path),
-            Self::Drop => requested_repo_path(repo_path),
-        }
-    }
+#[derive(Clone, Copy)]
+enum CodebaseIndexRequestPathKind {
+    Canonicalized,
+    Requested,
 }
 
 /// Tracks an in-flight file write or delete so the async completion
@@ -904,9 +885,13 @@ impl ServerModel {
             auth_token,
         } = msg;
         let request = match self.prepare_codebase_index_request(
-            CodebaseIndexOperation::Index,
-            repo_path,
-            auth_token,
+            CodebaseIndexRequestParams {
+                operation_name: "IndexCodebase",
+                repo_path,
+                auth_token,
+                auth_operation: "remote codebase indexing",
+                path_kind: CodebaseIndexRequestPathKind::Canonicalized,
+            },
             request_id,
             conn_id,
         ) {
@@ -947,9 +932,13 @@ impl ServerModel {
             auth_token,
         } = msg;
         let request = match self.prepare_codebase_index_request(
-            CodebaseIndexOperation::Resync,
-            repo_path,
-            auth_token,
+            CodebaseIndexRequestParams {
+                operation_name: "ResyncCodebase",
+                repo_path,
+                auth_token,
+                auth_operation: "remote codebase resync",
+                path_kind: CodebaseIndexRequestPathKind::Canonicalized,
+            },
             request_id,
             conn_id,
         ) {
@@ -1007,9 +996,13 @@ impl ServerModel {
             auth_token,
         } = msg;
         let request = match self.prepare_codebase_index_request(
-            CodebaseIndexOperation::Drop,
-            repo_path,
-            auth_token,
+            CodebaseIndexRequestParams {
+                operation_name: "DropCodebaseIndex",
+                repo_path,
+                auth_token,
+                auth_operation: "remote codebase index removal",
+                path_kind: CodebaseIndexRequestPathKind::Requested,
+            },
             request_id,
             conn_id,
         ) {
@@ -1337,13 +1330,17 @@ impl ServerModel {
 
     fn prepare_codebase_index_request(
         &self,
-        operation: CodebaseIndexOperation,
-        repo_path: String,
-        auth_token: String,
+        params: CodebaseIndexRequestParams<'_>,
         request_id: &RequestId,
         conn_id: ConnectionId,
     ) -> Result<CodebaseIndexRequest, Box<HandlerOutcome>> {
-        let operation_name = operation.message_name();
+        let CodebaseIndexRequestParams {
+            operation_name,
+            repo_path,
+            auth_token,
+            auth_operation,
+            path_kind,
+        } = params;
         let repo_path_for_log = repo_path.clone();
         if !FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
             log::info!(
@@ -1354,13 +1351,13 @@ impl ServerModel {
             )));
         }
 
-        let repo_path = operation
-            .normalize_repo_path(&repo_path)
-            .map_err(|error| Box::new(invalid_request_response(error)))?;
+        let repo_path = match path_kind {
+            CodebaseIndexRequestPathKind::Canonicalized => canonicalize_index_repo_path(&repo_path),
+            CodebaseIndexRequestPathKind::Requested => requested_repo_path(&repo_path),
+        }
+        .map_err(|error| Box::new(invalid_request_response(error)))?;
 
-        if let Err(error) =
-            self.validate_remote_codebase_index_auth(&auth_token, operation.auth_operation())
-        {
+        if let Err(error) = self.validate_remote_codebase_index_auth(&auth_token, auth_operation) {
             return Err(Box::new(invalid_request_response(error)));
         }
 
@@ -1372,7 +1369,8 @@ impl ServerModel {
 
     /// Handles `Abort` by cancelling the in-progress request it targets.
     /// Checks `ServerModel`'s own in-progress map first, then delegates to
-    /// the diff state manager for content reload requests.
+    /// the diff state manager for content reload requests, and finally checks
+    /// queued pending responses.
     /// This is a notification — no response is sent.
     fn handle_abort(&mut self, abort: Abort, request_id: &RequestId, ctx: &mut ModelContext<Self>) {
         let target_id = RequestId::from(abort.request_id_to_abort);
@@ -1387,10 +1385,17 @@ impl ServerModel {
                 .diff_states
                 .update(ctx, |mgr, _| mgr.abort_request(&target_id));
             if !found {
-                log::info!(
-                    "Abort for unknown/completed request (request_id={target_id}, \
-                     abort_request_id={request_id})"
-                );
+                // Check if the target is a queued pending response
+                // (not an in-flight reload).
+                let found_pending = self
+                    .diff_states
+                    .update(ctx, |mgr, _| mgr.abort_pending_response(&target_id));
+                if !found_pending {
+                    log::info!(
+                        "Abort for unknown/completed request (request_id={target_id}, \
+                         abort_request_id={request_id})"
+                    );
+                }
             }
         }
     }

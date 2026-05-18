@@ -21,6 +21,8 @@ use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::notebooks::notebook::NotebookView;
 use crate::pane_group::{Direction, PaneGroupAction, PaneId};
 use crate::pricing::PricingInfoModel;
+#[cfg(not(target_family = "wasm"))]
+use crate::remote_server::codebase_index_model::RemoteCodebaseIndexModel;
 use crate::suggestions::ignored_suggestions_model::IgnoredSuggestionsModel;
 #[cfg(feature = "local_fs")]
 use crate::user_config::tab_configs_dir;
@@ -174,6 +176,8 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| IgnoredSuggestionsModel::new(vec![]));
     app.add_singleton_model(|_| crate::code_review::git_status_update::GitStatusUpdateModel::new());
     app.add_singleton_model(remote_server::manager::RemoteServerManager::new);
+    #[cfg(not(target_family = "wasm"))]
+    app.add_singleton_model(RemoteCodebaseIndexModel::new);
 
     #[cfg(feature = "local_fs")]
     app.add_singleton_model(RepoMetadataModel::new);
@@ -1157,6 +1161,61 @@ fn test_close_tab_confirmation_dialog() {
     });
 }
 
+#[test]
+fn test_close_active_horizontal_tab_activates_tab_to_right() {
+    let _vertical_tabs_guard = FeatureFlag::VerticalTabs.override_enabled(true);
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        app.update(|ctx| {
+            TabSettings::handle(ctx).update(ctx, |settings, ctx| {
+                report_if_error!(settings.use_vertical_tabs.set_value(false, ctx));
+            });
+        });
+
+        let workspace = mock_workspace(&mut app);
+
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_terminal_tab(false, ctx);
+            workspace.add_terminal_tab(false, ctx);
+            let tab_to_right_id = workspace.get_pane_group_view(2).unwrap().id();
+
+            workspace.activate_tab(1, ctx);
+            workspace.close_tab(1, true, true, ctx);
+
+            assert_eq!(workspace.tab_count(), 2);
+            assert_eq!(workspace.active_tab_index(), 1);
+            assert_eq!(workspace.active_tab_pane_group().id(), tab_to_right_id);
+        });
+    });
+}
+
+#[test]
+fn test_close_last_horizontal_tab_activates_tab_to_left() {
+    let _vertical_tabs_guard = FeatureFlag::VerticalTabs.override_enabled(true);
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        app.update(|ctx| {
+            TabSettings::handle(ctx).update(ctx, |settings, ctx| {
+                report_if_error!(settings.use_vertical_tabs.set_value(false, ctx));
+            });
+        });
+
+        let workspace = mock_workspace(&mut app);
+
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_terminal_tab(false, ctx);
+            workspace.add_terminal_tab(false, ctx);
+            let tab_to_left_id = workspace.get_pane_group_view(1).unwrap().id();
+
+            workspace.activate_tab(2, ctx);
+            workspace.close_tab(2, true, true, ctx);
+
+            assert_eq!(workspace.tab_count(), 2);
+            assert_eq!(workspace.active_tab_index(), 1);
+            assert_eq!(workspace.active_tab_pane_group().id(), tab_to_left_id);
+        });
+    });
+}
 #[test]
 fn test_close_pane_confirmation_dialog() {
     let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);

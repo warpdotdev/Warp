@@ -76,7 +76,6 @@ use super::cloud_conversation_continuation::{
 use super::sharer::inactivity_modal::InactivityModalEvent;
 use super::sharer::Sharer;
 use super::viewer::Viewer;
-#[cfg(not(target_family = "wasm"))]
 use super::ConversationEndedTombstoneEvent;
 use super::ConversationEndedTombstoneView;
 
@@ -195,6 +194,23 @@ impl TerminalView {
         });
         self.update_pane_configuration(ctx);
         ctx.notify();
+    }
+
+    fn enable_cloud_followup_input_after_conversation_end(
+        &mut self,
+        task_id: AmbientAgentTaskId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.remove_conversation_ended_tombstone(ctx);
+
+        {
+            let mut model = self.model.lock();
+            if model.shared_session_status().is_finished_viewer() {
+                model.set_shared_session_status(SharedSessionStatus::NotShared);
+            }
+        }
+
+        self.enable_cloud_followup_input(task_id, ctx);
     }
 
     pub(super) fn handle_viewer_role_change_menu_event(
@@ -547,6 +563,7 @@ impl TerminalView {
         self.model
             .lock()
             .set_shared_session_status(SharedSessionStatus::SharePending);
+        log::info!("Emitting request to start sharing current session");
 
         ctx.emit(Event::StartSharingCurrentSession {
             scrollback_type,
@@ -740,9 +757,15 @@ impl TerminalView {
         self.update_pane_configuration(ctx);
 
         self.update_shared_session_pane_header(ctx);
-        // Shared ambient agent sessions should auto-open the details panel once (same behavior as local cloud mode).
+        // Shared ambient agent sessions should auto-open the details panel once, except for
+        // local-to-cloud handoff panes where the user stays in the moved conversation by default.
+        let is_local_to_cloud_handoff = self
+            .ambient_agent_view_model
+            .as_ref()
+            .is_some_and(|model| model.as_ref(ctx).is_local_to_cloud_handoff());
         if FeatureFlag::CloudMode.is_enabled()
             && matches!(source_type, SessionSourceType::AmbientAgent { .. })
+            && !is_local_to_cloud_handoff
         {
             self.maybe_auto_open_conversation_details_panel(ctx);
         }
@@ -879,15 +902,13 @@ impl TerminalView {
                 self.insert_conversation_ended_tombstone_with_cta(cta, ctx);
             }
             CloudConversationContinuationUiState::FollowupInput => {
-                self.remove_conversation_ended_tombstone(ctx);
                 if let Some(task_id) = self.ambient_agent_task_id_for_details_panel(ctx) {
-                    self.enable_cloud_followup_input(task_id, ctx);
+                    self.enable_cloud_followup_input_after_conversation_end(task_id, ctx);
                 }
             }
         }
     }
 
-    #[cfg(not(target_family = "wasm"))]
     fn start_cloud_followup_from_tombstone(
         &mut self,
         task_id: crate::ai::ambient_agents::AmbientAgentTaskId,
@@ -906,8 +927,7 @@ impl TerminalView {
             self.show_error_toast("Couldn't continue this cloud task.".to_string(), ctx);
             return;
         }
-        self.remove_conversation_ended_tombstone(ctx);
-        self.enable_cloud_followup_input(task_id, ctx);
+        self.enable_cloud_followup_input_after_conversation_end(task_id, ctx);
         self.focus_input_box(ctx);
         ctx.notify();
     }
@@ -1724,7 +1744,6 @@ impl TerminalView {
         let tombstone_view_handle = ctx.add_typed_action_view(|ctx| {
             ConversationEndedTombstoneView::new(ctx, terminal_view_id, task_id, tombstone_cta)
         });
-        #[cfg(not(target_family = "wasm"))]
         ctx.subscribe_to_view(&tombstone_view_handle, |me, _, event, ctx| match event {
             ConversationEndedTombstoneEvent::ContinueInCloud { task_id } => {
                 me.start_cloud_followup_from_tombstone(*task_id, ctx);
@@ -1765,9 +1784,8 @@ impl TerminalView {
                 self.insert_conversation_ended_tombstone_with_cta(cta, ctx);
             }
             Some(CloudConversationContinuationUiState::FollowupInput) => {
-                self.remove_conversation_ended_tombstone(ctx);
                 if let Some(task_id) = self.ambient_agent_task_id_for_details_panel(ctx) {
-                    self.enable_cloud_followup_input(task_id, ctx);
+                    self.enable_cloud_followup_input_after_conversation_end(task_id, ctx);
                 } else {
                     self.insert_conversation_ended_tombstone_with_cta(None, ctx);
                 }

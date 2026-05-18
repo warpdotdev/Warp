@@ -994,7 +994,7 @@ fn test_resolve_open_action_opens_active_ambient_session() {
 
             assert!(matches!(
                 action,
-                Some(WorkspaceAction::OpenAmbientAgentSession {
+                Some(WorkspaceAction::OpenOrAttachAmbientAgentConversation {
                     session_id: resolved_session_id,
                     task_id: resolved_task_id,
                 }) if resolved_session_id.to_string() == session_id && resolved_task_id == task_id
@@ -1004,7 +1004,46 @@ fn test_resolve_open_action_opens_active_ambient_session() {
 }
 
 #[test]
-fn test_resolve_open_action_falls_back_to_local_conversation_for_invalid_session() {
+fn test_resolve_open_action_opens_active_ambient_session_from_link() {
+    App::test((), |mut app| async move {
+        add_entry_projection_test_models(&mut app);
+
+        let now = Utc::now();
+        let session_id = make_uuid(8205);
+        let mut task = create_test_task(&make_uuid(8206), "user-a", now);
+        task.state = AmbientAgentTaskState::InProgress;
+        task.session_link = Some(format!("https://example.com/session/{session_id}"));
+        task.is_sandbox_running = true;
+        let task_id = task.task_id;
+
+        app.add_singleton_model(|_| {
+            let mut model = create_test_model();
+            model.tasks.insert(task_id, task);
+            model
+        });
+
+        app.update(|ctx| {
+            let action = AgentConversationsModel::resolve_open_action(
+                AgentConversationNavigationSubject::Entry(AgentConversationEntryId::AmbientRun(
+                    task_id,
+                )),
+                None,
+                ctx,
+            );
+
+            assert!(matches!(
+                action,
+                Some(WorkspaceAction::OpenOrAttachAmbientAgentConversation {
+                    session_id: resolved_session_id,
+                    task_id: resolved_task_id,
+                }) if resolved_session_id.to_string() == session_id && resolved_task_id == task_id
+            ));
+        });
+    });
+}
+
+#[test]
+fn test_resolve_open_action_returns_none_for_active_unattachable_session() {
     App::test((), |mut app| async move {
         let _orchestration_v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
         add_entry_projection_test_models(&mut app);
@@ -1063,13 +1102,7 @@ fn test_resolve_open_action_falls_back_to_local_conversation_for_invalid_session
                 ctx,
             );
 
-            assert!(matches!(
-                action,
-                Some(WorkspaceAction::RestoreOrNavigateToConversation {
-                    conversation_id: resolved_conversation_id,
-                    ..
-                }) if resolved_conversation_id == conversation_id
-            ));
+            assert!(action.is_none());
         });
     });
 }
@@ -1425,8 +1458,10 @@ fn test_resolve_open_action_reopens_ambient_session_after_terminal_unregister() 
 
             assert!(matches!(
                 action,
-                Some(WorkspaceAction::FocusTerminalViewInWorkspace { terminal_view_id: id })
-                    if id == terminal_view_id
+                Some(WorkspaceAction::OpenOrAttachAmbientAgentConversation {
+                    session_id: resolved_session_id,
+                    task_id: resolved_task_id,
+                }) if resolved_session_id.to_string() == session_id && resolved_task_id == task_id
             ));
         });
 
@@ -1445,7 +1480,7 @@ fn test_resolve_open_action_reopens_ambient_session_after_terminal_unregister() 
 
             assert!(matches!(
                 action,
-                Some(WorkspaceAction::OpenAmbientAgentSession {
+                Some(WorkspaceAction::OpenOrAttachAmbientAgentConversation {
                     session_id: resolved_session_id,
                     task_id: resolved_task_id,
                 }) if resolved_session_id.to_string() == session_id && resolved_task_id == task_id

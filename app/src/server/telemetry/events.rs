@@ -2355,6 +2355,10 @@ pub enum TelemetryEvent {
     AutoupdateForcekillFailed {
         exit_code: i32,
     },
+    #[cfg(windows)]
+    AutoupdateMinidumpCleanupFailed {
+        exit_code: i32,
+    },
     ExecutedWarpDrivePrompt {
         id: Option<WorkflowId>,
         selection_source: WorkflowSelectionSource,
@@ -4400,6 +4404,10 @@ impl TelemetryEvent {
             TelemetryEvent::AutoupdateForcekillFailed { exit_code } => Some(json!({
                 "exit_code": exit_code,
             })),
+            #[cfg(windows)]
+            TelemetryEvent::AutoupdateMinidumpCleanupFailed { exit_code } => Some(json!({
+                "exit_code": exit_code,
+            })),
             TelemetryEvent::InputBufferSubmitted {
                 input_type,
                 is_locked,
@@ -5139,7 +5147,8 @@ impl TelemetryEvent {
             | TelemetryEvent::AutoupdateUnableToCloseApplications
             | TelemetryEvent::AutoupdateFileInUse
             | TelemetryEvent::AutoupdateMutexTimeout
-            | TelemetryEvent::AutoupdateForcekillFailed { .. } => false,
+            | TelemetryEvent::AutoupdateForcekillFailed { .. }
+            | TelemetryEvent::AutoupdateMinidumpCleanupFailed { .. } => false,
         }
     }
 
@@ -5584,7 +5593,8 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::AutoupdateUnableToCloseApplications
             | Self::AutoupdateFileInUse
             | Self::AutoupdateMutexTimeout
-            | Self::AutoupdateForcekillFailed { .. } => EnablementState::Always,
+            | Self::AutoupdateForcekillFailed { .. }
+            | Self::AutoupdateMinidumpCleanupFailed { .. } => EnablementState::Always,
             Self::ToggleCodebaseContext => EnablementState::Always,
             Self::ToggleAutoIndexing => EnablementState::Always,
             Self::AgentModeRatedResponse => {
@@ -6122,6 +6132,10 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::AutoupdateMutexTimeout => "Windows Autoupdate: Mutex Timeout",
             #[cfg(windows)]
             Self::AutoupdateForcekillFailed { .. } => "Windows Autoupdate: Forcekill Failed",
+            #[cfg(windows)]
+            Self::AutoupdateMinidumpCleanupFailed { .. } => {
+                "Windows Autoupdate: Minidump Cleanup Failed"
+            }
             Self::ToggleCodebaseContext => "Toggle Agent Mode Codebase Context",
             Self::ToggleAutoIndexing => "Toggle Codebase Context Autoindexing",
             Self::ActiveIndexedReposChanged => "Active Indexed Repos Changed",
@@ -6944,6 +6958,10 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             #[cfg(windows)]
             Self::AutoupdateForcekillFailed { .. } => {
                 "The Windows auto-update installer failed to force-kill Warp after the mutex timeout"
+            }
+            #[cfg(windows)]
+            Self::AutoupdateMinidumpCleanupFailed { .. } => {
+                "The Windows auto-update installer failed to clean up the orphaned minidump server process"
             }
             Self::ToggleCodebaseContext => {
                 "Toggled on/off the enablement of codebase context usage for Agent Mode."

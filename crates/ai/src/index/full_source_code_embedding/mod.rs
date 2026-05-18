@@ -92,6 +92,7 @@ pub enum EmbeddingConfig {
     Voyage3_5_Lite_512,
     #[default]
     Voyage3_5_512,
+    Voyage4_512,
 }
 
 #[derive(Debug, Clone)]
@@ -120,6 +121,9 @@ impl From<EmbeddingConfig> for warp_graphql::full_source_code_embedding::Embeddi
             EmbeddingConfig::Voyage3_5_Lite_512 => {
                 warp_graphql::full_source_code_embedding::EmbeddingConfig::Voyage35Lite512
             }
+            EmbeddingConfig::Voyage4_512 => {
+                warp_graphql::full_source_code_embedding::EmbeddingConfig::Voyage4512
+            }
         }
     }
 }
@@ -142,6 +146,9 @@ impl TryFrom<warp_graphql::full_source_code_embedding::EmbeddingConfig> for Embe
             }
             warp_graphql::full_source_code_embedding::EmbeddingConfig::Voyage35512 => {
                 Ok(Self::Voyage3_5_512)
+            }
+            warp_graphql::full_source_code_embedding::EmbeddingConfig::Voyage4512 => {
+                Ok(Self::Voyage4_512)
             }
         }
     }

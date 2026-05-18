@@ -63,15 +63,13 @@ use crate::{
 
 use super::{
     billing_and_usage::{
+        billing_cycle_usage_section::BillingCycleUsageSectionView,
         overage_limit_modal::{SpendingLimitModal, SpendingLimitModalEvent},
         usage_history_entry::UsageHistoryEntry,
         usage_history_model::UsageHistoryModel,
     },
     billing_and_usage_page::{BillingAndUsagePageAction, BillingUsageTab},
-    settings_page::{
-        render_customer_type_badge, render_info_icon, render_sub_header, AdditionalInfo, MatchData,
-        SettingsPageMeta, SettingsPageViewHandle, PAGE_PADDING,
-    },
+    settings_page::{render_customer_type_badge, render_info_icon, AdditionalInfo},
     SettingsSection,
 };
 
@@ -94,16 +92,28 @@ const CARD_BORDER_COLOR: ColorU = ColorU {
     b: 43,
     a: 255,
 };
-const BASE_CREDITS_DOT_COLOR: ColorU = ColorU {
+pub(super) const BASE_CREDITS_DOT_COLOR: ColorU = ColorU {
     r: 207,
     g: 145,
     b: 216,
     a: 255,
 };
-const BONUS_CREDITS_DOT_COLOR: ColorU = ColorU {
+pub(super) const BONUS_CREDITS_DOT_COLOR: ColorU = ColorU {
     r: 236,
     g: 148,
     b: 85,
+    a: 255,
+};
+pub(super) const PAYG_CREDITS_DOT_COLOR: ColorU = ColorU {
+    r: 94,
+    g: 177,
+    b: 239,
+    a: 255,
+};
+pub(super) const AMBIENT_CREDITS_DOT_COLOR: ColorU = ColorU {
+    r: 99,
+    g: 102,
+    b: 241,
     a: 255,
 };
 const DEFAULT_MAX_MONTHLY_SPEND_CENTS: i32 = 20_000;
@@ -114,6 +124,7 @@ struct PlanSectionMouseStates {
     manage_billing_link: MouseStateHandle,
     open_admin_panel_link: MouseStateHandle,
     admin_panel_link: MouseStateHandle,
+    refresh_button: MouseStateHandle,
 }
 
 #[derive(Default)]
@@ -238,6 +249,7 @@ pub struct BillingAndUsagePageV2View {
     plan_mouse_states: PlanSectionMouseStates,
     buy_credits_mouse_states: BuyCreditsMouseStates,
     ambient_trial_mouse_states: AmbientTrialMouseStates,
+    billing_cycle_usage_section: ViewHandle<BillingCycleUsageSectionView>,
 }
 
 impl BillingAndUsagePageV2View {
@@ -308,6 +320,9 @@ impl BillingAndUsagePageV2View {
             })
         });
 
+        let billing_cycle_usage_section =
+            ctx.add_typed_action_view(BillingCycleUsageSectionView::new);
+
         let mut me = Self {
             auth_state,
             addon_credit_modal_state: ModalViewState::new(addon_credit_modal_view),
@@ -330,6 +345,7 @@ impl BillingAndUsagePageV2View {
             plan_mouse_states: Default::default(),
             buy_credits_mouse_states: Default::default(),
             ambient_trial_mouse_states: Default::default(),
+            billing_cycle_usage_section,
         };
         me.update_addon_credits_options(ctx);
         me.refresh_addon_credits_settings(ctx);
@@ -556,7 +572,7 @@ impl BillingAndUsagePageV2View {
                         appearance,
                         team.billing_metadata.customer_type.to_display_string(),
                     ))
-                    .with_margin_right(12.)
+                    .with_margin_right(8.)
                     .finish(),
                 );
             }
@@ -606,7 +622,7 @@ impl BillingAndUsagePageV2View {
                                 })
                                 .finish(),
                         )
-                        .with_margin_left(12.)
+                        .with_margin_left(8.)
                         .finish(),
                     );
                 }
@@ -644,7 +660,7 @@ impl BillingAndUsagePageV2View {
                             })
                             .finish(),
                     )
-                    .with_margin_left(12.)
+                    .with_margin_left(8.)
                     .finish(),
                 );
             }
@@ -652,7 +668,7 @@ impl BillingAndUsagePageV2View {
             let current_user_id = self.auth_state.user_id().unwrap_or_default();
             right_side.add_child(
                 Container::new(render_customer_type_badge(appearance, "Free".into()))
-                    .with_margin_right(16.)
+                    .with_margin_right(8.)
                     .finish(),
             );
             right_side.add_child(
@@ -688,16 +704,43 @@ impl BillingAndUsagePageV2View {
                         })
                         .finish(),
                 )
-                .with_margin_left(12.)
+                .with_margin_left(8.)
                 .finish(),
             );
         }
+
+        right_side.add_child(
+            Container::new(self.render_plan_refresh_button(appearance))
+                .with_margin_left(8.)
+                .finish(),
+        );
 
         plan_header.add_child(right_side.finish());
 
         Container::new(plan_header.finish())
             .with_margin_bottom(24.)
             .finish()
+    }
+
+    fn render_plan_refresh_button(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let icon_color = theme.sub_text_color(theme.background());
+        let mouse_state = self.plan_mouse_states.refresh_button.clone();
+        warpui::elements::Hoverable::new(mouse_state, move |_| {
+            Container::new(
+                ConstrainedBox::new(Icon::Refresh.to_warpui_icon(icon_color).finish())
+                    .with_width(16.)
+                    .with_height(16.)
+                    .finish(),
+            )
+            .with_uniform_padding(2.)
+            .finish()
+        })
+        .with_cursor(warpui::platform::Cursor::PointingHand)
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action(BillingAndUsagePageAction::RefreshWorkspaceData);
+        })
+        .finish()
     }
 
     fn render_balance_section(
@@ -1418,6 +1461,14 @@ impl BillingAndUsagePageV2View {
             }
         }
 
+        content.add_child(
+            Container::new(ChildView::new(&self.billing_cycle_usage_section).finish())
+                .with_margin_top(16.)
+                .with_padding_top(24.)
+                .with_border(Border::top(1.).with_border_color(appearance.theme().outline().into()))
+                .finish(),
+        );
+
         content.finish()
     }
 
@@ -1578,22 +1629,12 @@ impl BillingAndUsagePageV2View {
     }
 }
 
-impl SettingsPageMeta for BillingAndUsagePageV2View {
-    fn section() -> SettingsSection {
-        SettingsSection::BillingAndUsage
-    }
-
-    fn should_render(&self, ctx: &AppContext) -> bool {
-        let is_logged_in = !AuthStateProvider::as_ref(ctx)
-            .get()
-            .is_anonymous_or_logged_out();
-        let is_build = UserWorkspaces::as_ref(ctx)
-            .current_workspace()
-            .is_some_and(|workspace| workspace.billing_metadata.is_on_build_plan());
-        is_logged_in && is_build
-    }
-
-    fn on_page_selected(&mut self, _allow_steal_focus: bool, ctx: &mut ViewContext<Self>) {
+impl BillingAndUsagePageV2View {
+    pub(super) fn on_page_selected(
+        &mut self,
+        _allow_steal_focus: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
         self.addon_credits.purchase_loading = false;
         std::mem::drop(
             TeamUpdateManager::handle(ctx)
@@ -1605,14 +1646,6 @@ impl SettingsPageMeta for BillingAndUsagePageV2View {
             .update(ctx, |m, ctx| m.refresh_usage_history_async(ctx));
         self.refresh_addon_credits_settings(ctx);
     }
-
-    fn update_filter(&mut self, _query: &str, _ctx: &mut ViewContext<Self>) -> MatchData {
-        MatchData::Uncounted(false)
-    }
-
-    fn scroll_to_widget(&mut self, _widget_id: &'static str) {}
-
-    fn clear_highlighted_widget(&mut self) {}
 }
 
 impl Entity for BillingAndUsagePageV2View {
@@ -1627,7 +1660,6 @@ impl View for BillingAndUsagePageV2View {
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let mut page = Flex::column();
-        page.add_child(render_sub_header(appearance, "Billing and Usage", None));
         page.add_child(self.render_plan_section(appearance, app));
 
         let tabs = vec![
@@ -1658,17 +1690,7 @@ impl View for BillingAndUsagePageV2View {
             page.add_child(self.render_usage_history_tab(appearance, app));
         }
 
-        Container::new(
-            Align::new(
-                ConstrainedBox::new(page.finish())
-                    .with_max_width(800.)
-                    .finish(),
-            )
-            .top_center()
-            .finish(),
-        )
-        .with_uniform_padding(PAGE_PADDING)
-        .finish()
+        page.finish()
     }
 }
 
@@ -1962,10 +1984,4 @@ fn render_balance_card(
     .with_horizontal_padding(16.)
     .with_vertical_padding(12.)
     .finish()
-}
-
-impl From<warpui::ViewHandle<BillingAndUsagePageV2View>> for SettingsPageViewHandle {
-    fn from(view_handle: warpui::ViewHandle<BillingAndUsagePageV2View>) -> Self {
-        SettingsPageViewHandle::BillingAndUsageV2(view_handle)
-    }
 }

@@ -614,6 +614,9 @@ pub struct RemoteServerManager {
     sessions: HashMap<SessionId, RemoteSessionState>,
     /// Reverse index: host → sessions for O(1) lookup by `HostId`.
     host_to_sessions: HashMap<HostId, HashSet<SessionId>>,
+    /// User-facing connection labels by session, applied after the initialize
+    /// handshake returns a host ID.
+    session_labels: HashMap<SessionId, String>,
     /// Spawner for running closures back on the main thread.
     spawner: ModelSpawner<Self>,
     /// Per-session navigation cache for dedup. Avoids redundant
@@ -645,6 +648,7 @@ impl RemoteServerManager {
         Self {
             sessions: HashMap::new(),
             host_to_sessions: HashMap::new(),
+            session_labels: HashMap::new(),
             spawner: ctx.spawner(),
             last_navigation: HashMap::new(),
             session_bootstrap_info: HashMap::new(),
@@ -680,6 +684,15 @@ impl RemoteServerManager {
             .iter()
             .copied()
             .find_map(|sid| self.client_for_session(sid).map(|client| (sid, client)))
+    }
+
+    /// Returns the user-facing connection label for a connected host, if one
+    /// has been recorded on any active session for that host.
+    pub fn host_label(&self, host_id: &HostId) -> Option<&str> {
+        self.host_to_sessions
+            .get(host_id)?
+            .iter()
+            .find_map(|session_id| self.session_labels.get(session_id).map(String::as_str))
     }
 
     /// Checks if the remote server binary is installed and executable.
@@ -940,6 +953,7 @@ impl RemoteServerManager {
         session_id: SessionId,
         transport: T,
         auth_context: Arc<RemoteServerAuthContext>,
+        connection_label: Option<String>,
         ctx: &mut ModelContext<Self>,
     ) where
         T: RemoteTransport + 'static,
@@ -961,6 +975,9 @@ impl RemoteServerManager {
 
             self.sessions
                 .insert(session_id, RemoteSessionState::Connecting);
+            if let Some(connection_label) = connection_label {
+                self.session_labels.insert(session_id, connection_label);
+            }
             self.auth_context = Some(Arc::clone(&auth_context));
             ctx.emit(RemoteServerManagerEvent::SessionConnecting { session_id });
 
@@ -1257,6 +1274,7 @@ impl RemoteServerManager {
         self.last_navigation.remove(&session_id);
         self.session_bootstrap_info.remove(&session_id);
         self.session_platforms.remove(&session_id);
+        self.session_labels.remove(&session_id);
 
         // Remove the session entry. Dropping the `RemoteSessionState`
         // here drops the transport's owned `Child` (if any), which
