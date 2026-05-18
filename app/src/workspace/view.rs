@@ -14335,10 +14335,6 @@ impl Workspace {
                     .as_ref(ctx)
                     .active_session_view(ctx)
                 {
-                    #[cfg(feature = "local_fs")]
-                    if self.active_tab_pane_group().as_ref(ctx).right_panel_open {
-                        self.setup_code_review_panel(None, ctx);
-                    }
                     // Get the ID of the workflow that's active in the pane, if there is one.
                     let active_workflow_id = terminal_view
                         .read(ctx, |terminal_view, _| terminal_view.input().clone())
@@ -14452,10 +14448,11 @@ impl Workspace {
             }
             pane_group::Event::RepoChanged => {
                 self.refresh_working_directories_for_pane_group(&pane_group, ctx);
-                #[cfg(feature = "local_fs")]
-                if self.active_tab_pane_group().as_ref(ctx).right_panel_open {
-                    self.setup_code_review_panel(None, ctx);
-                }
+                // Code review panel setup is handled by the RepositoriesChanged
+                // event emitted from refresh_working_directories, which triggers
+                // ensure_code_review_view_exists on the right panel. Calling
+                // setup_code_review_panel here would race with refresh and
+                // re-create models that were just dropped.
 
                 if FeatureFlag::DirectoryTabColors.is_enabled() {
                     if let Some(tab) = self
@@ -14484,19 +14481,11 @@ impl Workspace {
                     });
                 }
 
-                // Register the remote repo in WorkingDirectoriesModel so it
-                // appears in the code review dropdown via RepositoriesChanged.
-                // Also map the repo to the terminal that navigated there so
-                // `find_review_terminal` can resolve the preferred terminal.
-                let repo_key = LocalOrRemotePath::Remote(remote_path.clone());
-                let terminal_view_id =
-                    pane_group.read(ctx, |pg, ctx| pg.active_session_view(ctx).map(|tv| tv.id()));
-                self.working_directories_model.update(ctx, |model, ctx| {
-                    model.register_remote_repo(pane_group_id, repo_key.clone(), ctx);
-                    if let Some(terminal_id) = terminal_view_id {
-                        model.register_terminal_for_repo(pane_group_id, repo_key, terminal_id);
-                    }
-                });
+                // Remote repos now enter repository_roots through
+                // refresh_working_directories_for_pane_group (via
+                // pwd_as_local_or_remote). No need to register here —
+                // doing so would race with refresh and prevent stale
+                // DiffStateModels from being dropped.
             }
             #[cfg(not(feature = "local_fs"))]
             pane_group::Event::RemoteRepoNavigated { .. } => {}
@@ -15446,9 +15435,10 @@ impl Workspace {
                     right_panel.update_session_env(is_remote, is_wsl_session, ctx);
                 });
 
-                if self.active_tab_pane_group().as_ref(ctx).right_panel_open {
-                    self.setup_code_review_panel(None, ctx);
-                }
+                // Code review panel setup is handled by the RepositoriesChanged
+                // event emitted from refresh_working_directories earlier in this
+                // function. Calling setup_code_review_panel here would race
+                // with that path and re-create models that were just dropped.
             }
         } else {
             let enablement = CodingPanelEnablementState::from_session_env(
