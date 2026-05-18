@@ -165,7 +165,8 @@ impl Sessions {
                     sessions.set_remote_server_setup_state(*session_id, state.clone());
                     ctx.notify();
                 }
-                RemoteServerManagerEvent::BufferUpdated { .. } => {
+                RemoteServerManagerEvent::BufferUpdated { .. }
+                | RemoteServerManagerEvent::BufferConflictDetected { .. } => {
                     // Handled directly by GlobalBufferModel's subscription.
                 }
                 RemoteServerManagerEvent::SessionConnecting { .. }
@@ -182,7 +183,11 @@ impl Sessions {
                 | RemoteServerManagerEvent::BinaryCheckComplete { .. }
                 | RemoteServerManagerEvent::BinaryInstallComplete { .. }
                 | RemoteServerManagerEvent::ClientRequestFailed { .. }
-                | RemoteServerManagerEvent::ServerMessageDecodingError { .. } => {}
+                | RemoteServerManagerEvent::ServerMessageDecodingError { .. }
+                | RemoteServerManagerEvent::DiffStateSnapshotReceived { .. }
+                | RemoteServerManagerEvent::DiffStateMetadataUpdateReceived { .. }
+                | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. }
+                | RemoteServerManagerEvent::GetBranchesResponse { .. } => {}
                 RemoteServerManagerEvent::SessionReconnected {
                     session_id: sid,
                     client,
@@ -580,6 +585,7 @@ pub struct SessionInfo {
     pub keywords: Vec<SmolStr>,
     pub is_legacy_ssh_session: IsLegacySSHSession,
     pub home_dir: Option<String>,
+    pub cdpath: Option<String>,
     pub editor: Option<String>,
     pub session_type: BootstrapSessionType,
     pub host_info: HostInfo,
@@ -644,6 +650,7 @@ impl SessionInfo {
             environment_variable_names: Default::default(),
             path: None,
             home_dir: None,
+            cdpath: None,
             editor: None,
             histfile: None,
             aliases: Default::default(),
@@ -780,6 +787,7 @@ impl SessionInfo {
             builtins: builtins.unwrap_or_default(),
             keywords: keywords.unwrap_or_default(),
             home_dir,
+            cdpath: bootstrapped_value.cdpath,
             editor: bootstrapped_value.editor,
             is_legacy_ssh_session: self.is_legacy_ssh_session,
             subshell_info: self.subshell_info.take(),
@@ -967,6 +975,10 @@ impl Session {
 
     pub fn editor(&self) -> Option<&str> {
         self.info.editor.as_deref()
+    }
+
+    pub fn cdpath(&self) -> Option<&str> {
+        self.info.cdpath.as_deref()
     }
 
     pub fn host_info(&self) -> HostInfo {
@@ -1603,6 +1615,7 @@ pub mod testing {
                 keywords: Vec::new(),
                 is_legacy_ssh_session: IsLegacySSHSession::No,
                 home_dir: None,
+                cdpath: None,
                 host_info: Default::default(),
                 tmux_control_mode: false,
                 wsl_name: None,
@@ -1652,6 +1665,11 @@ pub mod testing {
 
         pub fn with_home_dir(mut self, home_dir: String) -> Self {
             self.home_dir = Some(home_dir);
+            self
+        }
+
+        pub fn with_cdpath(mut self, cdpath: String) -> Self {
+            self.cdpath = Some(cdpath);
             self
         }
 
