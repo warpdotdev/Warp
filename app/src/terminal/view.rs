@@ -6323,26 +6323,25 @@ impl TerminalView {
                     .is_some_and(|p| p.is_remote())
                 {
                     ctx.emit(event_constructor(arg));
-                    return;
-                }
-
-                // Check if repo has uncommitted changes via the per-repo sub-model.
-                #[cfg(feature = "local_fs")]
-                {
-                    let is_dirty = self
-                        .git_status_metadata(ctx)
-                        .map(|m| !m.stats_against_head.has_no_changes());
-                    match is_dirty {
-                        Some(true) => ctx.emit(event_constructor(arg)),
-                        // Metadata not loaded yet — defer until the next
-                        // git repo status update delivers it.
-                        None => {
-                            self.deferred_code_review_open = Some(DeferredCodeReviewOpen {
-                                git_delta_preference: delta_pref,
-                                focus_new_pane,
-                            });
+                } else {
+                    // Check if repo has uncommitted changes via the per-repo sub-model.
+                    #[cfg(feature = "local_fs")]
+                    {
+                        let is_dirty = self
+                            .git_status_metadata(ctx)
+                            .map(|m| !m.stats_against_head.has_no_changes());
+                        match is_dirty {
+                            Some(true) => ctx.emit(event_constructor(arg)),
+                            // Metadata not loaded yet — defer until the next
+                            // git repo status update delivers it.
+                            None => {
+                                self.deferred_code_review_open = Some(DeferredCodeReviewOpen {
+                                    git_delta_preference: delta_pref,
+                                    focus_new_pane,
+                                });
+                            }
+                            Some(false) => {}
                         }
-                        Some(false) => {}
                     }
                 }
             }

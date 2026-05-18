@@ -7,7 +7,9 @@ use repo_metadata::repositories::DetectedRepositories;
 use std::collections::HashMap;
 #[cfg(feature = "local_fs")]
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+#[cfg(feature = "local_fs")]
+use std::path::Path;
+use std::path::PathBuf;
 #[cfg(feature = "local_fs")]
 use warp_util::remote_path::RemotePath;
 #[cfg(feature = "local_fs")]
