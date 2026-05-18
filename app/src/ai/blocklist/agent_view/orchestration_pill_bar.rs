@@ -137,10 +137,6 @@ pub(crate) fn render_agent_avatar_disc(
 }
 
 /// What kind of pill we are rendering, which determines click behavior.
-///
-/// `pub(crate)` so it can appear as a field on the public
-/// `OrchestrationPillBarAction::PillClicked` variant without leaking a
-/// private type through the action enum.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PillKind {
     Orchestrator,
@@ -272,12 +268,9 @@ pub enum OrchestrationPillBarAction {
     FocusOpenedConversation(AIConversationId),
     /// Toggle the pin state for the given child conversation.
     TogglePin(AIConversationId),
-    /// Pill body was clicked. Routes through `handle_action` (rather
-    /// than dispatching the navigation `TerminalAction` directly from
-    /// the click closure) so telemetry can be emitted before the
-    /// navigation runs. The handler resolves whether the conversation
-    /// is already open elsewhere and dispatches the appropriate
-    /// downstream action.
+    /// Pill body was clicked. Dispatched in lieu of the navigation
+    /// `TerminalAction` so telemetry can be emitted before the
+    /// downstream navigation runs.
     PillClicked {
         conversation_id: AIConversationId,
         pill_kind: PillKind,
@@ -670,10 +663,10 @@ fn orchestrator_label(orchestrator: &AIConversation) -> String {
 }
 
 impl OrchestrationPillBar {
-    /// Resolves the `(source_conversation_id, total_pills, total_pinned)`
+    /// Resolves the source-conversation / total-pills / total-pinned
     /// triple used to enrich every `PillBarInteraction` event. Returns
     /// `None` when there is no active orchestration tree to attribute
-    /// the interaction to (in which case we skip the telemetry).
+    /// the interaction to.
     fn pill_bar_telemetry_context(
         &self,
         app: &AppContext,
@@ -687,10 +680,8 @@ impl OrchestrationPillBar {
         Some((orchestrator_id, total_pills, total_pinned))
     }
 
-    /// Looks up the pill kind for `target_id` in the current pill
-    /// specs. Used by `handle_action` to attribute menu actions (which
-    /// don't carry the pill kind on the action variant) to either the
-    /// orchestrator or a child.
+    /// Pill kind for `target_id` in the current pill specs. Defaults
+    /// to `Child` if the id is no longer in the bar.
     fn pill_kind_for(&self, target_id: AIConversationId, app: &AppContext) -> PillBarPillKind {
         self.pill_specs(app)
             .and_then(|(_, specs)| {
@@ -844,9 +835,8 @@ impl TypedActionView for OrchestrationPillBar {
                     id,
                     ctx,
                 );
-                // Mirror the dispatch logic from the old in-place click
-                // closure: prefer focusing an existing pane that already
-                // owns this conversation; otherwise switch in place.
+                // Prefer focusing an existing pane that already owns
+                // this conversation; otherwise switch in place.
                 let self_terminal_view_id =
                     self.agent_view_controller.as_ref(ctx).terminal_view_id();
                 let is_open_elsewhere =
@@ -1870,15 +1860,10 @@ fn render_pill(
         if is_selected {
             return;
         }
-        // Route the click through `PillClicked` so the pill bar's
-        // `handle_action` can emit telemetry before forwarding the
-        // navigation. The handler resolves whether the conversation is
-        // already owned by a different visible terminal view (and, if
-        // so, dispatches `FocusOpenedConversation`) or whether to swap
-        // the current pane in place via `navigation_action_for_pill`.
-        // The `self_terminal_view_id` captured into this closure is no
-        // longer needed because the handler reads it from the pill
-        // bar's own controller.
+        // Route the click through `PillClicked` so the pill bar can
+        // emit telemetry before forwarding the navigation. The
+        // handler reads `self_terminal_view_id` from its own
+        // controller, so we no longer need the value captured here.
         let _ = self_terminal_view_id;
         ctx.dispatch_typed_action(OrchestrationPillBarAction::PillClicked {
             conversation_id,

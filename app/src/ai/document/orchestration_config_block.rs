@@ -34,8 +34,7 @@ use crate::ui_components::blended_colors;
 use crate::BlocklistAIHistoryModel;
 use warp_core::ui::theme::WarpTheme;
 
-/// Returns `(had_previous, now_set)` for a remote-mode environment id
-/// before/after an edit.
+/// True when the mode is remote and `environment_id` is non-empty.
 fn env_presence(execution_mode: &RunAgentsExecutionMode) -> bool {
     matches!(
         execution_mode,
@@ -43,6 +42,7 @@ fn env_presence(execution_mode: &RunAgentsExecutionMode) -> bool {
     )
 }
 
+/// True when the mode is remote and `worker_host` is non-empty.
 fn host_presence(execution_mode: &RunAgentsExecutionMode) -> bool {
     matches!(
         execution_mode,
@@ -597,8 +597,8 @@ impl TypedActionView for OrchestrationConfigBlockView {
                     OrchestrationApprovalStatus::Disapproved
                 };
                 self.emit_plan_config_approval_toggled(previous_status, new_status, ctx);
-                // Treat the off→on transition as the moment the user
-                // committed to using orchestration via the plan card.
+                // off→on transition is the orchestration entry point
+                // for the plan-card surface.
                 if matches!(previous_status, OrchestrationApprovalStatus::Disapproved)
                     && matches!(new_status, OrchestrationApprovalStatus::Approved)
                 {

@@ -71,9 +71,9 @@ pub(crate) enum OrchestrationApprovalStatus {
     Disapproved,
 }
 
-/// Run-wide execution mode reported on telemetry payloads. Mirrors
-/// `RunAgentsExecutionMode` but is a flat enum so the payload stays
-/// metadata-only and never carries an environment id or worker host.
+/// Run-wide execution mode reported on telemetry payloads. A flat
+/// enum so the payload stays metadata-only and never carries an
+/// environment id or worker host.
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum OrchestrationExecutionModeKind {
@@ -91,10 +91,9 @@ impl OrchestrationExecutionModeKind {
     }
 }
 
-/// Stable bucket for the run-wide harness selection. Maps a raw harness
-/// string (which is server-/catalog-controlled but may include strings
-/// we don't yet recognize on the client) onto a closed set so the
-/// analytics column stays low-cardinality.
+/// Closed-set bucket for the run-wide harness selection. Anything
+/// unrecognized collapses to `Unknown` to keep the analytics column
+/// low-cardinality.
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum OrchestrationHarnessKind {
@@ -108,10 +107,6 @@ pub(crate) enum OrchestrationHarnessKind {
 
 impl OrchestrationHarnessKind {
     pub(crate) fn from_str(harness_type: &str) -> Self {
-        // Match the canonical strings used in `OrchestrationEditState`
-        // and the orchestration config proto. Anything else collapses
-        // to `Unknown` so the analytics column stays bounded even if
-        // the server adds a new harness before the client catalogs it.
         match harness_type {
             "oz" | "" => Self::Oz,
             "claude" | "claude-code" | "claude_code" => Self::ClaudeCode,
@@ -123,11 +118,10 @@ impl OrchestrationHarnessKind {
     }
 }
 
-/// Stable names for the run-wide config fields that can diverge between
+/// Stable names for run-wide config fields that can diverge between
 /// the dispatched orchestration request and either the original tool
-/// call payload or an active approved orchestration config. Mirrors the
-/// server's `RunAgentsModifiedField*` constants so the two telemetry
-/// streams can be joined on field name.
+/// call or an active approved config. Match the server's equivalent
+/// field-name constants so the two telemetry streams can be joined.
 pub(crate) mod orchestration_modified_field {
     pub const MODEL_ID: &str = "model_id";
     pub const HARNESS: &str = "harness";
@@ -170,16 +164,13 @@ pub(crate) struct RunAgentsCardDecisionEvent {
     pub agent_count: usize,
     pub harness: OrchestrationHarnessKind,
     pub execution_mode: OrchestrationExecutionModeKind,
-    /// Names of run-wide config fields where the dispatched request
-    /// diverged from the original `RunAgentsRequest` emitted by the LLM.
-    /// Values are drawn from `orchestration_modified_field` so this can
-    /// be joined against the server-side `RunAgentsOutcome.modified_fields`.
-    /// Empty when the user accepted the tool call without edits.
+    /// Field names from [`orchestration_modified_field`] that diverged
+    /// between the dispatched request and the LLM's original
+    /// `RunAgentsRequest`. Empty when the user accepted without edits.
     pub modified_fields_from_tool_call: Vec<&'static str>,
-    /// Same shape as `modified_fields_from_tool_call`, but compared
-    /// against the approved orchestration config snapshot (when one
-    /// exists). Empty when no active approved config exists or when
-    /// the dispatched request matches it exactly.
+    /// Same shape, but compared against the approved orchestration
+    /// config snapshot. Empty when no approved config exists or the
+    /// dispatched request matches it.
     pub modified_fields_from_active_config: Vec<&'static str>,
     pub had_active_config: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -190,13 +181,11 @@ pub(crate) struct RunAgentsCardDecisionEvent {
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum OrchestrationEntrySource {
-    /// User typed `/orchestrate` as the active query mode.
+    /// `/orchestrate` slash-command mode on a user query.
     SlashCommandOrchestrate,
-    /// User toggled the `Use orchestration` switch on the plan card to
-    /// the approved state.
+    /// Plan-card `Use orchestration` switch toggled to approved.
     PlanCardApproved,
-    /// The LLM emitted a `run_agents` tool call that surfaced the
-    /// confirmation card (i.e. did not auto-launch).
+    /// `run_agents` confirmation card was shown (not auto-launched).
     RunAgentsCardShown,
 }
 
@@ -236,10 +225,9 @@ pub(crate) struct PillBarInteractionEvent {
     pub pill_kind: PillBarPillKind,
     pub total_pills: usize,
     pub total_pinned: usize,
-    /// The conversation that hosts the pill bar (the orchestrator's
-    /// conversation in the active pane).
+    /// The orchestrator that hosts the pill bar.
     pub source_conversation_id: AIConversationId,
-    /// The conversation that the action targets (the pill the user clicked).
+    /// The pill the action targets.
     pub target_conversation_id: AIConversationId,
 }
 

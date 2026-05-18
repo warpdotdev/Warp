@@ -212,15 +212,13 @@ pub struct RunAgentsCardView {
     /// UI-only per-harness model memory so switching harnesses preserves
     /// the user's previous model selection for each harness.
     saved_model_per_harness: HashMap<String, String>,
-    /// Snapshot of the most recently received raw `RunAgentsRequest`
-    /// from the LLM stream. Used at decision time to compute which
-    /// run-wide config fields the user modified before accepting.
+    /// Snapshot of the latest raw `RunAgentsRequest` from the LLM
+    /// stream. Used at decision time to diff the run-wide config
+    /// fields the user changed before accepting.
     original_tool_call_request: RunAgentsRequest,
-    /// Set to `true` once `OrchestrationEntered` has been emitted for
-    /// this card so we don't double-fire across re-renders.
+    /// Guards `OrchestrationEntered` against double-fires on re-renders.
     entered_event_emitted: bool,
-    /// Set to `true` once a terminal decision event has been emitted so
-    /// we don't double-fire if the user retries.
+    /// Guards the terminal decision event against double-fires.
     decision_event_emitted: bool,
 }
 /// Computes the `is_denied` flag at construction time.
@@ -316,9 +314,8 @@ impl RunAgentsCardView {
         // (called after streaming finishes and agent_run_configs is populated).
         let state = RunAgentsEditState::from_request(request);
         let auto_launched = false;
-        // Snapshot the raw incoming request so we can compute
-        // user-applied diffs at Accept time, even if `update_request`
-        // later replaces `self.state` from a follow-up stream chunk.
+        // Snapshot the raw incoming request so we can diff against the
+        // edited state at Accept time.
         let original_tool_call_request = request.clone();
 
         let reject_keystroke = CTRL_C_KEYSTROKE.clone();
@@ -501,9 +498,8 @@ impl RunAgentsCardView {
         if self.spawning.is_some() || self.auto_launched || self.is_denied {
             return;
         }
-        // Keep our "raw tool call" snapshot in sync with the latest
-        // streamed chunk so the diff at Accept time reflects what the
-        // LLM ultimately emitted.
+        // Keep the raw-tool-call snapshot in sync with the latest
+        // streamed chunk.
         self.original_tool_call_request = request.clone();
         let mut new_state = RunAgentsEditState::from_request(request);
         // Resolve empty fields from the active config (same as in new()).
@@ -610,9 +606,8 @@ impl RunAgentsCardView {
         resolve_interactive_defaults(&mut self.state, &*self.block_model, ctx);
         oc::repopulate_all_pickers(&mut self.state.orch, &self.handles.pickers, ctx);
 
-        // Reaching this branch means the card is about to be shown to
-        // the user — log it as an orchestration entry point once per
-        // card instance.
+        // The card is about to be shown — log it as an orchestration
+        // entry point.
         self.emit_orchestration_entered_once(conversation_id, ctx);
     }
 
@@ -637,9 +632,8 @@ impl RunAgentsCardView {
         });
     }
 
-    /// Emits `OrchestrationEntered::RunAgentsCardShown` once per card
-    /// instance. Idempotent across re-runs of
-    /// `try_auto_launch_on_stream_complete`.
+    /// Emits `OrchestrationEntered::RunAgentsCardShown` at most once
+    /// per card instance.
     fn emit_orchestration_entered_once(
         &mut self,
         conversation_id: AIConversationId,
@@ -659,9 +653,7 @@ impl RunAgentsCardView {
         );
     }
 
-    /// Emits `RunAgentsCardDecision` once per card instance, capturing
-    /// the dispatched run-wide config and the set of fields that
-    /// diverged from the original tool call / active approved config.
+    /// Emits `RunAgentsCardDecision` at most once per card instance.
     fn emit_decision(&mut self, decision: RunAgentsCardDecision, ctx: &mut ViewContext<Self>) {
         if self.decision_event_emitted {
             return;
@@ -1066,11 +1058,9 @@ impl TypedActionView for RunAgentsCardView {
     }
 }
 
-/// Returns the names of run-wide config fields that differ between the
-/// user-edited `state` and the original `RunAgentsRequest` (raw tool
-/// call as emitted by the LLM). Field names are stable identifiers from
-/// [`orchestration_modified_field`] so they can be joined with the
-/// server-side `RunAgentsOutcome.modified_fields` payload.
+/// Field names from [`orchestration_modified_field`] that differ
+/// between the user-edited `state` and the LLM's original
+/// `RunAgentsRequest`.
 fn diverged_orch_fields(
     state: &oc::OrchestrationEditState,
     original: &RunAgentsRequest,
@@ -1113,8 +1103,8 @@ fn diverged_orch_fields(
 }
 
 /// Same shape as [`diverged_orch_fields`] but compares against an
-/// approved `OrchestrationConfig`. The auth_secret slot is omitted
-/// because managed secrets are stored per-user, not on the config.
+/// approved `OrchestrationConfig`. auth_secret is omitted: managed
+/// secrets are per-user, not stored on the config.
 fn diverged_orch_fields_against_config(
     state: &oc::OrchestrationEditState,
     config: &OrchestrationConfig,
