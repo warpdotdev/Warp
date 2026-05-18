@@ -298,6 +298,13 @@ impl LLMInfo {
         self.reasoning_level.clone()
     }
 
+    /// Returns true if this is a custom inference endpoint model.
+    pub fn is_custom_endpoint(&self) -> bool {
+        self.description
+            .as_ref()
+            .is_some_and(|d| d.starts_with("Custom · "))
+    }
+
     #[cfg(feature = "integration_tests")]
     fn new_for_test(llm_name: &str) -> Self {
         Self {

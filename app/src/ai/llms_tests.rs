@@ -303,3 +303,64 @@ fn removing_endpoint_purges_all_its_models_from_custom_llms() {
     assert_eq!(infos.len(), 1);
     assert_eq!(infos[0].id.as_str(), "uuid-k1");
 }
+
+#[test]
+fn is_custom_endpoint_true_for_custom_models() {
+    let keys = ai::api_keys::ApiKeys {
+        custom_endpoints: vec![endpoint(
+            "My Endpoint",
+            "https://x.io",
+            "k",
+            vec![model("gpt-4", None, "uuid-1")],
+        )],
+        ..Default::default()
+    };
+    let infos = build_custom_llm_infos(&keys);
+    assert!(infos[0].is_custom_endpoint());
+}
+
+#[test]
+fn is_custom_endpoint_false_for_regular_models() {
+    let info = LLMInfo {
+        display_name: "claude-4".into(),
+        base_model_name: "claude-4".into(),
+        id: "claude-4".into(),
+        reasoning_level: None,
+        usage_metadata: LLMUsageMetadata {
+            request_multiplier: 1,
+            credit_multiplier: None,
+        },
+        description: Some("Anthropic model".into()),
+        disable_reason: None,
+        vision_supported: true,
+        spec: None,
+        provider: LLMProvider::Anthropic,
+        host_configs: HashMap::new(),
+        discount_percentage: None,
+        context_window: LLMContextWindow::default(),
+    };
+    assert!(!info.is_custom_endpoint());
+}
+
+#[test]
+fn is_custom_endpoint_false_for_no_description() {
+    let info = LLMInfo {
+        display_name: "claude-4".into(),
+        base_model_name: "claude-4".into(),
+        id: "claude-4".into(),
+        reasoning_level: None,
+        usage_metadata: LLMUsageMetadata {
+            request_multiplier: 1,
+            credit_multiplier: None,
+        },
+        description: None,
+        disable_reason: None,
+        vision_supported: true,
+        spec: None,
+        provider: LLMProvider::Unknown,
+        host_configs: HashMap::new(),
+        discount_percentage: None,
+        context_window: LLMContextWindow::default(),
+    };
+    assert!(!info.is_custom_endpoint());
+}
