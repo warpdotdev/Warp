@@ -7207,20 +7207,33 @@ impl TerminalView {
         &mut self,
         ctx: &mut ViewContext<Self>,
     ) {
-        if !FeatureFlag::CloudModeSetupV2.is_enabled()
-            || self.conversation_ended_tombstone_view_id.is_some()
-        {
+        if !FeatureFlag::CloudModeSetupV2.is_enabled() {
             return;
         }
 
-        let task_id = {
+        let (task_id, is_active_shared_session, is_finished_viewer) = {
             let model = self.model.lock();
-            if !model.is_shared_ambient_agent_session()
-                || model.is_receiving_agent_conversation_replay()
-            {
+            if model.is_receiving_agent_conversation_replay() {
                 return;
             }
-            model.ambient_agent_task_id()
+
+            let status = model.shared_session_status();
+            // This method also handles restored cloud-mode panes that rendered
+            // a conservative tombstone before task data arrived. When the task
+            // cache updates, either the existing tombstone or FinishedViewer
+            // status tells us to re-resolve the CTA/input state.
+            let should_update = model.is_shared_ambient_agent_session()
+                || self.conversation_ended_tombstone_view_id.is_some()
+                || status.is_finished_viewer();
+            if !should_update {
+                return;
+            }
+
+            (
+                self.ambient_agent_task_id_for_details_panel_from_model(&model, ctx),
+                status.is_active_viewer() || status.is_active_sharer(),
+                status.is_finished_viewer(),
+            )
         };
 
         let Some(task_id) = task_id else {
@@ -7230,16 +7243,12 @@ impl TerminalView {
             return;
         };
 
-        if !task.is_no_longer_running() || self.pending_cloud_followup_task_id == Some(task_id) {
+        if !task.is_no_longer_running() || self.pending_cloud_followup_task_id.is_some() {
             return;
         }
 
         if FeatureFlag::HandoffCloudCloud.is_enabled() {
-            let has_live_shared_session = {
-                let status = self.model.lock().shared_session_status().clone();
-                status.is_active_viewer() || status.is_active_sharer()
-            };
-            if has_live_shared_session {
+            if is_active_shared_session {
                 return;
             }
             let Some(state) = self.cloud_conversation_continuation_ui_state(ctx) else {
@@ -7250,7 +7259,11 @@ impl TerminalView {
                     self.insert_conversation_ended_tombstone_with_cta(cta, ctx);
                 }
                 CloudConversationContinuationUiState::FollowupInput => {
-                    self.enable_cloud_followup_input(task_id, ctx);
+                    if self.conversation_ended_tombstone_view_id.is_some() || is_finished_viewer {
+                        self.insert_conversation_ended_tombstone_with_resolved_cta(ctx);
+                    } else {
+                        self.enable_cloud_followup_input(task_id, ctx);
+                    }
                 }
             }
         } else {
@@ -12746,6 +12759,7 @@ impl TerminalView {
             _ => None,
         };
         if let Some(source_type) = source_type_opt {
+            log::info!("Terminal bootstrapped with pending shared session; attempting to share");
             self.attempt_to_share_session(
                 SharedSessionScrollbackType::All,
                 None,
@@ -13921,10 +13935,15 @@ fn build_onboarding_keybindings(ctx: &AppContext) -> OnboardingKeybindings {
     .map(|k| k.displayed())
     .unwrap_or_else(|_| "⌘-⌥-⏎".to_string());
 
+    let return_to_terminal_mode = Keystroke::parse("escape")
+        .map(|k| k.displayed())
+        .unwrap_or_else(|_| "ESC".to_string());
+
     OnboardingKeybindings {
         toggle_input_mode,
         submit_to_local_agent,
         submit_to_cloud_agent,
+        return_to_terminal_mode,
     }
 }
 
@@ -13956,7 +13975,7 @@ impl TerminalView {
             return;
         }
 
-        // The MeetTerminalInput step expects terminal mode. If the default
+        // The first Agent Modality callout expects terminal mode. If the default
         // session mode is Agent (e.g. from cloud-synced settings), the tab
         // may already be in agent view — exit it first.
         self.exit_agent_view(ctx);
@@ -25653,7 +25672,7 @@ impl TypedActionView for TerminalView {
                         self.add_agentic_suggestions_block(ctx);
                     }
                     OnboardingVersion::Agent(agent_version) => {
-                        // The MeetTerminalInput step expects terminal mode. If the
+                        // The first Agent Modality callout expects terminal mode. If the
                         // default session mode is Agent (e.g. cloud-synced settings),
                         // the tab may already be in agent view — exit it first.
                         // This also removes any zero-state welcome blocks.
@@ -26343,7 +26362,7 @@ impl View for TerminalView {
         let viewport = self.viewport_state(model.block_list(), input_mode, app);
         let is_alt_screen_active = { model.is_alt_screen_active() };
         // Compute callout positioning early while we have the model lock.
-        // For UpdatedAgentInput state, always position relative to the input box,
+        // For the final Agent Modality callout, always position relative to the input box,
         // even when the zero state is visible.
         let should_position_callout_above_zero_state = self
             .onboarding_callout_view

@@ -66,7 +66,8 @@ use crate::{
         keys::TerminalKeybindings,
         local_tty::{spawner::PtySpawner, TerminalManager},
         shared_session::{
-            SharedSessionActionSource, SharedSessionScrollbackType, SharedSessionStatus,
+            IsSharedSessionCreator, SharedSessionActionSource, SharedSessionScrollbackType,
+            SharedSessionStatus,
         },
     },
     test_util::settings::initialize_settings_for_tests,
@@ -428,8 +429,14 @@ fn create_already_fullscreen_parent_pane_data(
     panes: &PaneGroup,
     ctx: &mut ViewContext<PaneGroup>,
 ) -> (TerminalPane, PaneId, AIConversationId) {
-    let (pane_data, terminal_view) =
-        panes.create_terminal_pane_data(None, HashMap::new(), None, None, ctx);
+    let (pane_data, terminal_view) = panes.create_terminal_pane_data(
+        None,
+        HashMap::new(),
+        IsSharedSessionCreator::No,
+        None,
+        None,
+        ctx,
+    );
     let pane_id = pane_data.terminal_pane_id().into();
     let parent_conversation_id =
         start_parent_conversation_for_terminal_view(terminal_view.id(), ctx);
@@ -635,6 +642,7 @@ fn test_insert_hidden_child_agent_pane_keeps_focus_and_active_session() {
             let child_pane_id = panes.insert_terminal_pane_hidden_for_child_agent(
                 parent_pane_id,
                 HashMap::new(),
+                IsSharedSessionCreator::No,
                 ctx,
             );
 
@@ -704,6 +712,7 @@ fn test_hidden_child_creation_applies_ambient_task_id_to_controller() {
                         task_id,
                         working_dir: None,
                     }),
+                    is_shared_session_creator: IsSharedSessionCreator::No,
                 },
                 ctx,
             )

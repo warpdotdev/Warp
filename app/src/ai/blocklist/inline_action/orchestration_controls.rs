@@ -67,7 +67,10 @@ pub const ORCHESTRATION_PICKER_MAX_WIDTH: f32 = 205.;
 
 const DEFAULT_MODEL_LABEL: &str = "Default model";
 
-const AUTH_SECRET_INHERIT_LABEL: &str = "Inherit key from environment";
+/// Label shown in the auth secret picker when no secret is selected
+/// (the child agent will inherit credentials from its environment).
+const AUTH_SECRET_INHERIT_LABEL: &str = "Skip (advanced)";
+/// Label for the auth secret column.
 pub const AUTH_SECRET_COLUMN_LABEL: &str = "API key";
 const AUTH_SECRET_CREATE_NEW_LABEL: &str = "New API key…";
 

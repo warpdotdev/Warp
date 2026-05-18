@@ -692,9 +692,6 @@ pub enum FeatureFlag {
     /// content changes via auto-reload.
     CodeReviewScrollPreservation,
 
-    /// Enables orchestration mode (multi-agent parallel execution).
-    Orchestration,
-
     /// Enables server-side durable messaging for orchestration (v2).
     /// When enabled, messages and events are stored in Postgres and the client
     /// opens a persistent SSE connection to the server to receive events in
@@ -943,9 +940,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::CloudModeSetupV2,
     #[cfg(not(windows))]
     FeatureFlag::SshRemoteServer,
-    FeatureFlag::CloudModeInputV2,
     FeatureFlag::DragTabsToWindows,
-    FeatureFlag::OrchestrationLaunchModal,
     FeatureFlag::HandoffCloudCloud,
     FeatureFlag::SoloUserByok,
     FeatureFlag::CustomInferenceEndpoints,

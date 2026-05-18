@@ -212,6 +212,7 @@ impl TerminalDriver {
                 let _ = tx.send(Err(ShareSessionError::Disabled));
                 (None, Some(rx))
             } else {
+                log::info!("Waiting for requested session sharing to start");
                 let (tx, rx) = oneshot::channel();
                 (Some(tx), Some(rx))
             }

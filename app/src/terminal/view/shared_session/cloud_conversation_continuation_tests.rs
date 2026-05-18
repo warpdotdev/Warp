@@ -222,6 +222,7 @@ impl AmbientAgentTaskTestExt for AmbientAgentTask {
             harness: (harness != Harness::Oz).then_some(HarnessConfig {
                 harness_type: harness,
                 model_id: None,
+                reasoning_level: None,
             }),
             ..Default::default()
         });

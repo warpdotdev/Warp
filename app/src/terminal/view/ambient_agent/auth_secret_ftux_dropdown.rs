@@ -404,8 +404,8 @@ impl AuthSecretFtuxDropdown {
 
         items.push(MenuItem::Item(
             MenuItemFields::new_with_label(
-                "Skip setting an API key",
-                "Choose this if authentication is set up in the environment",
+                "Skip (advanced)",
+                "Only if your key is already set in the environment (e.g. baked into the Docker image)",
             )
             .with_font_size_override(FONT_SIZE)
             .with_padding_override(MENU_ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)

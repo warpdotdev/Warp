@@ -2101,12 +2101,6 @@ impl Workspace {
         }
     }
 
-    /// Stores an onboarding intention so the guided tutorial starts after the
-    /// session config modal is closed.
-    pub(crate) fn set_pending_onboarding_intention(&mut self, intention: OnboardingIntention) {
-        self.pending_onboarding_intention = Some(intention);
-    }
-
     #[cfg(feature = "local_fs")]
     fn handle_session_config_completed(
         &mut self,
@@ -13668,6 +13662,23 @@ impl Workspace {
             .as_ref(ctx)
             .active_conversation(terminal_view_id)
             .cloned();
+        if !AISettings::as_ref(ctx)
+            .is_cloud_handoff_enabled_for_conversation(source_conversation.as_ref(), ctx)
+        {
+            Self::restore_source_handoff_draft(&source_view, launch, environment_id, ctx);
+            let window_id = ctx.window_id();
+            WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                toast_stack.add_ephemeral_toast(
+                    DismissibleToast::error(
+                        "Cloud handoff isn't available for orchestrated agent conversations."
+                            .to_owned(),
+                    ),
+                    window_id,
+                    ctx,
+                );
+            });
+            return;
+        }
 
         let has_existing_conversation = source_conversation.as_ref().is_some_and(|c| !c.is_empty());
 

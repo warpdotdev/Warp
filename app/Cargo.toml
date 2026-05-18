@@ -590,6 +590,7 @@ default = [
     "inline_model_selector",
     "oz_launch_modal",
     "open_warp_launch_modal",
+    "orchestration_launch_modal",
     "new_tab_styling",
     "richtext_multiselect",
     "inline_profile_selector",
@@ -641,6 +642,7 @@ default = [
     "orchestration_viewer_pill_bar",
     "run_agents_tool",
     "pending_user_query_indicator",
+    "cloud_mode_input_v2",
 ]
 # Enable this feature to automatically perform heap profiling.  NOTE: This will
 # substantially slow down program execution.
@@ -915,13 +917,13 @@ oz_platform_skills = []
 oz_identity_federation = []
 oz_launch_modal = []
 open_warp_launch_modal = []
+orchestration_launch_modal = []
 new_tab_styling = []
 file_based_mcp = []
 skill_arguments = []
 active_conversation_requires_interaction = []
 incremental_auto_reload = []
-orchestration = []
-orchestration_v2 = ["orchestration"]
+orchestration_v2 = []
 orchestration_pill_bar = []
 orchestration_viewer_pill_bar = []
 run_agents_tool = []

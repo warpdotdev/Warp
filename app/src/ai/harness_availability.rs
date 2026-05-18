@@ -21,6 +21,8 @@ const CACHE_KEY: &str = "AvailableHarnesses";
 pub struct HarnessModelInfo {
     pub id: String,
     pub display_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_level: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -218,13 +220,11 @@ impl HarnessAvailabilityModel {
         harness: Harness,
         name: String,
         value: ManagedSecretValue,
+        owner: SecretOwner,
         ctx: &mut ModelContext<Self>,
     ) {
         let manager = ManagedSecretManager::handle(ctx);
-        let create_future =
-            manager
-                .as_ref(ctx)
-                .create_secret(SecretOwner::CurrentUser, name, value, None);
+        let create_future = manager.as_ref(ctx).create_secret(owner, name, value, None);
         ctx.spawn(create_future, move |me, result, ctx| match result {
             Ok(secret) => {
                 let entry = AuthSecretEntry {
