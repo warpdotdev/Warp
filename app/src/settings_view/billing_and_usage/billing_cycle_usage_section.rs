@@ -233,20 +233,24 @@ impl View for BillingCycleUsageSectionView {
 
         let mut column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
 
-        column.add_child(self.render_header(&workspace, &visibility, appearance, app));
+        column.add_child(self.render_header(&workspace, &visibility, appearance));
 
-        if let Some(legend) = self.render_legend(&workspace, appearance) {
+        // Secondary row below the title: "Resets ..." on the left (current
+        // cycle only) + cost-type legend on the right. Mirrors the admin
+        // panel's `Resets May 27, 11:24 PM EDT` ⟷ legend layout.
+        let resets_text = self.render_resets_label(appearance, app);
+        let legend = self.render_legend(&workspace, appearance);
+        if resets_text.is_some() || legend.is_some() {
+            let mut secondary_row = Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+                .with_main_axis_size(MainAxisSize::Max);
+            secondary_row.add_child(resets_text.unwrap_or_else(|| Empty::new().finish()));
+            secondary_row.add_child(legend.unwrap_or_else(|| Empty::new().finish()));
             column.add_child(
-                Container::new(
-                    Flex::row()
-                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                        .with_main_axis_alignment(MainAxisAlignment::End)
-                        .with_main_axis_size(MainAxisSize::Max)
-                        .with_child(legend)
-                        .finish(),
-                )
-                .with_margin_top(8.)
-                .finish(),
+                Container::new(secondary_row.finish())
+                    .with_margin_top(4.)
+                    .finish(),
             );
         }
 
@@ -272,7 +276,6 @@ impl BillingCycleUsageSectionView {
         workspace: &Workspace,
         visibility: &UsageVisibility,
         appearance: &Appearance,
-        app: &AppContext,
     ) -> Box<dyn Element> {
         let theme = appearance.theme();
         let mut row = Flex::row()
@@ -280,36 +283,12 @@ impl BillingCycleUsageSectionView {
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max);
 
-        // Left side: "Usage" title + secondary "Resets ..." subtext when
-        // viewing the current cycle. Past cycles hide the Resets label since
-        // their reset is already in the past.
-        let mut left_side = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
-        left_side.add_child(
+        row.add_child(
             Text::new_inline("Usage", appearance.ui_font_family(), HEADER_FONT_SIZE)
                 .with_style(Properties::default().weight(Weight::Bold))
                 .with_color(theme.active_ui_text_color().into())
                 .finish(),
         );
-        if self.selected_period_end.is_none() {
-            let reset_str = AIRequestUsageModel::as_ref(app)
-                .next_refresh_time_local()
-                .format("Resets %b %d at %-I:%M %p")
-                .to_string();
-            left_side.add_child(
-                Container::new(
-                    Text::new_inline(
-                        reset_str,
-                        appearance.ui_font_family(),
-                        appearance.ui_font_size(),
-                    )
-                    .with_color(theme.sub_text_color(theme.background()).into())
-                    .finish(),
-                )
-                .with_margin_left(12.)
-                .finish(),
-            );
-        }
-        row.add_child(left_side.finish());
 
         let mut right_side = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -324,9 +303,34 @@ impl BillingCycleUsageSectionView {
 
         row.add_child(right_side.finish());
 
-        Container::new(row.finish())
-            .with_margin_bottom(12.)
-            .finish()
+        Container::new(row.finish()).finish()
+    }
+
+    /// Secondary "Resets May 27, 11:24 PM EDT" label rendered below the
+    /// header. Hidden when a past cycle is selected since its reset is
+    /// already in the past.
+    fn render_resets_label(
+        &self,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Option<Box<dyn Element>> {
+        if self.selected_period_end.is_some() {
+            return None;
+        }
+        let theme = appearance.theme();
+        let reset_str = AIRequestUsageModel::as_ref(app)
+            .next_refresh_time_local()
+            .format("Resets %b %d, %-I:%M %p")
+            .to_string();
+        Some(
+            Text::new_inline(
+                reset_str,
+                appearance.ui_font_family(),
+                appearance.ui_font_size(),
+            )
+            .with_color(theme.sub_text_color(theme.background()).into())
+            .finish(),
+        )
     }
 
     fn render_period_range_static(
