@@ -53,6 +53,7 @@ use strum::IntoEnumIterator;
 use warp_core::channel::ChannelState;
 use warp_core::context_flag::ContextFlag;
 use warp_core::features::FeatureFlag;
+use warp_core::ui::color::blend::Blend;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
     Border, ChildAnchor, ChildView, ConstrainedBox, CornerRadius, CrossAxisAlignment, Dismiss,
@@ -7106,7 +7107,13 @@ impl ApiKeysWidget {
                                 appearance.theme().background().into_solid(),
                                 self.custom_inference_terms_index.clone(),
                             )
-                            .with_hyperlink_font_color(appearance.theme().accent().into_solid())
+                            .with_hyperlink_font_color(
+                                appearance
+                                    .theme()
+                                    .accent()
+                                    .blend(&warp_core::ui::theme::Fill::black().with_opacity(50))
+                                    .into_solid(),
+                            )
                             .register_default_click_handlers(|url, ctx, _| {
                                 ctx.dispatch_typed_action(AISettingsPageAction::HyperlinkClick(
                                     url,
