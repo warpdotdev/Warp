@@ -837,14 +837,7 @@ impl ServerModel {
         }
         let snapshot = self.codebase_index_statuses_snapshot(ctx);
         let status_count = snapshot.statuses.len();
-<<<<<<< HEAD
         log::debug!(
-=======
-        for status in &snapshot.statuses {
-            self.record_codebase_index_status_push(status);
-        }
-        log::info!(
->>>>>>> 78ef5f37e9 (pass repo limits)
             "[Remote codebase indexing] Daemon pushing bootstrap codebase index statuses snapshot: conn_id={conn_id} bootstrap_status_count={status_count}"
         );
         self.send_server_message(
