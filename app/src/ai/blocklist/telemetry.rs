@@ -137,8 +137,9 @@ pub(crate) struct PlanConfigApprovalToggledEvent {
     pub conversation_id: AIConversationId,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plan_id: Option<String>,
-    pub previous_status: OrchestrationApprovalStatus,
-    pub new_status: OrchestrationApprovalStatus,
+    /// State after the toggle. The pre-toggle state is the opposite
+    /// since this event only fires on a binary flip.
+    pub status: OrchestrationApprovalStatus,
     pub execution_mode: OrchestrationExecutionModeKind,
     pub harness: OrchestrationHarnessKind,
     pub has_model: bool,

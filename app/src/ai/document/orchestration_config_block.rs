@@ -596,27 +596,20 @@ impl TypedActionView for OrchestrationConfigBlockView {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             OrchestrationConfigBlockAction::ToggleApproval => {
-                let previous_status = if self.is_approved {
-                    OrchestrationApprovalStatus::Approved
-                } else {
-                    OrchestrationApprovalStatus::Disapproved
-                };
+                let was_approved = self.is_approved;
                 self.is_approved = !self.is_approved;
                 if self.is_approved && !self.pickers_initialized {
                     self.ensure_pickers(ctx);
                 }
-                let new_status = if self.is_approved {
+                let status = if self.is_approved {
                     OrchestrationApprovalStatus::Approved
                 } else {
                     OrchestrationApprovalStatus::Disapproved
                 };
-                self.emit_plan_config_approval_toggled(previous_status, new_status, ctx);
+                self.emit_plan_config_approval_toggled(status, ctx);
                 // First off→on is the plan-card entry point; later
                 // re-toggles don't re-fire (matches RunAgentsCardView).
-                if matches!(previous_status, OrchestrationApprovalStatus::Disapproved)
-                    && matches!(new_status, OrchestrationApprovalStatus::Approved)
-                    && !self.entered_event_emitted
-                {
+                if !was_approved && self.is_approved && !self.entered_event_emitted {
                     self.entered_event_emitted = true;
                     self.emit_orchestration_entered(ctx);
                 }
@@ -705,8 +698,7 @@ impl TypedActionView for OrchestrationConfigBlockView {
 impl OrchestrationConfigBlockView {
     fn emit_plan_config_approval_toggled(
         &self,
-        previous_status: OrchestrationApprovalStatus,
-        new_status: OrchestrationApprovalStatus,
+        status: OrchestrationApprovalStatus,
         ctx: &mut ViewContext<Self>,
     ) {
         send_telemetry_from_ctx!(
@@ -714,8 +706,7 @@ impl OrchestrationConfigBlockView {
                 PlanConfigApprovalToggledEvent {
                     conversation_id: self.conversation_id,
                     plan_id: (!self.plan_id.is_empty()).then(|| self.plan_id.clone()),
-                    previous_status,
-                    new_status,
+                    status,
                     execution_mode: OrchestrationExecutionModeKind::from_run_agents(
                         &self.edit_state.execution_mode,
                     ),
