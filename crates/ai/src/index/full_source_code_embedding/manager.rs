@@ -180,6 +180,34 @@ pub enum BuildSource<'a> {
     FromPath(&'a Path),
     FromPersistedMetadata(WorkspaceMetadata),
 }
+pub struct CodebaseIndexManagerConfig {
+    persisted_index_metadata: Vec<WorkspaceMetadata>,
+    max_index_count: Option<usize>,
+    max_files_repo_limit: usize,
+    embedding_generation_batch_size: usize,
+    store_client: Arc<dyn StoreClient>,
+    indexing_enabled: bool,
+}
+
+impl CodebaseIndexManagerConfig {
+    pub fn new(
+        persisted_index_metadata: Vec<WorkspaceMetadata>,
+        max_index_count: Option<usize>,
+        max_files_repo_limit: usize,
+        embedding_generation_batch_size: usize,
+        store_client: Arc<dyn StoreClient>,
+        indexing_enabled: bool,
+    ) -> Self {
+        Self {
+            persisted_index_metadata,
+            max_index_count,
+            max_files_repo_limit,
+            embedding_generation_batch_size,
+            store_client,
+            indexing_enabled,
+        }
+    }
+}
 
 /// Manager for the codebase index states across the app.
 pub struct CodebaseIndexManager {
@@ -199,6 +227,9 @@ pub struct CodebaseIndexManager {
     embedding_generation_batch_size: usize,
 
     indexing_enabled: bool,
+
+    #[cfg(feature = "local_fs")]
+    snapshot_storage: Option<SnapshotStorage>,
 }
 
 impl CodebaseIndexManager {
@@ -212,6 +243,57 @@ impl CodebaseIndexManager {
         indexing_enabled: bool,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
+        let config = CodebaseIndexManagerConfig::new(
+            persisted_index_metadata,
+            max_index_count,
+            max_files_repo_limit,
+            embedding_generation_batch_size,
+            store_client,
+            indexing_enabled,
+        );
+        Self::new_with_config(config, ctx)
+    }
+
+    #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]
+    pub fn new_with_config(
+        config: CodebaseIndexManagerConfig,
+        ctx: &mut ModelContext<Self>,
+    ) -> Self {
+        #[cfg(feature = "local_fs")]
+        {
+            report_if_error!(migrate_snapshots_to_secure_dir_if_needed());
+            Self::new_with_snapshot_storage(config, SnapshotStorage::app_default(), ctx)
+        }
+
+        #[cfg(not(feature = "local_fs"))]
+        {
+            Self::new_internal(config, ctx)
+        }
+    }
+
+    #[cfg(feature = "local_fs")]
+    pub fn new_with_snapshot_storage(
+        config: CodebaseIndexManagerConfig,
+        snapshot_storage: Option<SnapshotStorage>,
+        ctx: &mut ModelContext<Self>,
+    ) -> Self {
+        Self::new_internal(config, snapshot_storage, ctx)
+    }
+
+    #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]
+    fn new_internal(
+        config: CodebaseIndexManagerConfig,
+        #[cfg(feature = "local_fs")] snapshot_storage: Option<SnapshotStorage>,
+        ctx: &mut ModelContext<Self>,
+    ) -> Self {
+        let CodebaseIndexManagerConfig {
+            persisted_index_metadata,
+            max_index_count,
+            max_files_repo_limit,
+            embedding_generation_batch_size,
+            store_client,
+            indexing_enabled,
+        } = config;
         cfg_if::cfg_if! {
             if #[cfg(feature = "local_fs")] {
                 let file_watcher = ctx.add_model(|ctx| BulkFilesystemWatcher::new(REPO_WATCHER_DEBOUNCE_DURATION, ctx));
@@ -234,6 +316,8 @@ impl CodebaseIndexManager {
                 max_files_repo_limit,
                 embedding_generation_batch_size,
                 indexing_enabled,
+                #[cfg(feature = "local_fs")]
+                snapshot_storage,
             };
         }
 
@@ -241,12 +325,13 @@ impl CodebaseIndexManager {
             "Received {:?} persisted codebase indices",
             persisted_index_metadata.len()
         );
-
         #[cfg(feature = "local_fs")]
-        report_if_error!(migrate_snapshots_to_secure_dir_if_needed());
-
-        let (invalid_metadata, valid_metadata) =
-            split_snapshot_metadata_by_validity(persisted_index_metadata);
+        let (invalid_metadata, valid_metadata) = split_snapshot_metadata_by_validity(
+            persisted_index_metadata,
+            snapshot_storage.as_ref(),
+        );
+        #[cfg(not(feature = "local_fs"))]
+        let (invalid_metadata, valid_metadata) = (persisted_index_metadata, Vec::new());
 
         ctx.emit(CodebaseIndexManagerEvent::RemoveExpiredIndexMetadata {
             expired_metadata: Arc::new(
@@ -256,9 +341,9 @@ impl CodebaseIndexManager {
                     .collect(),
             ),
         });
-
-        if let Some(snapshot_file_dir) = snapshot_dir() {
-            clean_up_snapshot_files(&snapshot_file_dir, &valid_metadata);
+        #[cfg(feature = "local_fs")]
+        if let Some(snapshot_storage) = snapshot_storage.as_ref() {
+            clean_up_snapshot_files(snapshot_storage.path(), &valid_metadata);
         }
 
         // For the moment, we've decided to load all snapshots regardless of the index count.
@@ -274,6 +359,8 @@ impl CodebaseIndexManager {
             max_files_repo_limit,
             embedding_generation_batch_size,
             indexing_enabled,
+            #[cfg(feature = "local_fs")]
+            snapshot_storage,
         };
 
         // Start building the first index in the queue.
@@ -298,6 +385,8 @@ impl CodebaseIndexManager {
             max_files_repo_limit: 0,
             embedding_generation_batch_size: 100,
             indexing_enabled: true,
+            #[cfg(feature = "local_fs")]
+            snapshot_storage: SnapshotStorage::app_default(),
         }
     }
 
@@ -347,8 +436,15 @@ impl CodebaseIndexManager {
 
         // Remove snapshots from disk.
         let to_drop_clone = to_drop.clone();
+        #[cfg(feature = "local_fs")]
+        let snapshot_storage = self.snapshot_storage.clone();
         ctx.spawn(
-            async move { Self::drop_index_snapshots(to_drop_clone).await },
+            async move {
+                #[cfg(feature = "local_fs")]
+                Self::drop_index_snapshots(snapshot_storage, to_drop_clone).await;
+                #[cfg(not(feature = "local_fs"))]
+                let _ = to_drop_clone;
+            },
             |_, _, _| {},
         );
 
@@ -359,10 +455,14 @@ impl CodebaseIndexManager {
     }
 
     /// Remove the given index snapshots from disk.
-    async fn drop_index_snapshots(to_drop: Vec<PathBuf>) {
-        if let Some(snapshot_dir) = snapshot_dir() {
+    #[cfg(feature = "local_fs")]
+    async fn drop_index_snapshots(
+        snapshot_storage: Option<SnapshotStorage>,
+        to_drop: Vec<PathBuf>,
+    ) {
+        if let Some(snapshot_storage) = snapshot_storage {
             for codebase_root in &to_drop {
-                Self::drop_index_snapshot(&snapshot_dir, codebase_root).await;
+                Self::drop_index_snapshot(snapshot_storage.path(), codebase_root).await;
             }
         }
     }
@@ -400,11 +500,16 @@ impl CodebaseIndexManager {
 
         // Remove snapshot from disk.
         let root_path_clone = root_path.clone();
+        #[cfg(feature = "local_fs")]
+        let snapshot_storage = self.snapshot_storage.clone();
         ctx.spawn(
             async move {
-                if let Some(snapshot_dir) = snapshot_dir() {
-                    Self::drop_index_snapshot(&snapshot_dir, &root_path_clone).await;
+                #[cfg(feature = "local_fs")]
+                if let Some(snapshot_storage) = snapshot_storage {
+                    Self::drop_index_snapshot(snapshot_storage.path(), &root_path_clone).await;
                 }
+                #[cfg(not(feature = "local_fs"))]
+                let _ = root_path_clone;
             },
             |_, _, _| {},
         );
@@ -722,11 +827,15 @@ impl CodebaseIndexManager {
             .codebase_indices
             .entry(canonical_key)
             .or_insert_with(|| {
+                #[cfg(feature = "local_fs")]
+                let snapshot_storage = self.snapshot_storage.clone();
                 let index = Self::build_and_sync_codebase_index_internal(
                     self.store_client.clone(),
                     handle,
                     self.max_files_repo_limit,
                     self.embedding_generation_batch_size,
+                    #[cfg(feature = "local_fs")]
+                    snapshot_storage,
                     ctx,
                 );
 
@@ -751,6 +860,7 @@ impl CodebaseIndexManager {
         repository: ModelHandle<Repository>,
         max_files_repo_limit: usize,
         embedding_generation_batch_size: usize,
+        #[cfg(feature = "local_fs")] snapshot_storage: Option<SnapshotStorage>,
         ctx: &mut ModelContext<Self>,
     ) -> ModelHandle<CodebaseIndex> {
         let codebase_index = ctx.add_model(|ctx| {
@@ -760,13 +870,17 @@ impl CodebaseIndexManager {
                     .as_ref(ctx)
                     .root_dir()
                     .to_local_path()
-                    .is_some_and(|p| has_snapshot(&p))
+                    .is_some_and(|p| {
+                        snapshot_storage
+                            .as_ref()
+                            .is_some_and(|storage| storage.has_snapshot(&p))
+                    })
             {
-                if let Some(snapshot_dir) = snapshot_dir() {
+                if let Some(snapshot_storage) = snapshot_storage.as_ref() {
                     let read_snapshot_start_time = Instant::now();
                     match read_snapshot(
                         store_client.clone(),
-                        snapshot_dir.as_path(),
+                        snapshot_storage.path(),
                         repository.clone(),
                         max_files_repo_limit,
                         embedding_generation_batch_size,
@@ -885,6 +999,19 @@ impl CodebaseIndexManager {
             .map(|(_, path)| path)
             .ok()
     }
+    pub fn with_indexed_codebase<T>(
+        &mut self,
+        path: &Path,
+        on_found: impl FnOnce(&mut Self, &Path, &mut ModelContext<Self>) -> T,
+        on_missing: impl FnOnce(&mut Self, &Path, &mut ModelContext<Self>) -> T,
+        ctx: &mut ModelContext<Self>,
+    ) -> T {
+        let Some(indexed_repo_path) = self.root_path_for_codebase(path) else {
+            return on_missing(self, path, ctx);
+        };
+
+        on_found(self, indexed_repo_path.as_path(), ctx)
+    }
 
     fn get_codebase_index_internal(
         &self,
@@ -985,15 +1112,15 @@ impl CodebaseIndexManager {
             }
         };
 
-        let snapshot_dir = match snapshot_dir() {
-            Some(dir) => dir,
+        let snapshot_storage = match self.snapshot_storage.as_ref() {
+            Some(storage) => storage,
             None => {
                 log::warn!("No snapshot directory to write to");
                 Self::schedule_next_snapshot_write(repo_path, ctx);
                 return;
             }
         };
-        let snapshot_path = snapshot_path(&snapshot_dir, repo_path.as_path());
+        let snapshot_path = snapshot_storage.snapshot_path(repo_path.as_path());
 
         // Update timestamp eagerly so concurrent calls to has_unsnapshotted_changes()
         // won't trigger a duplicate snapshot while the background write is in progress.

@@ -18,7 +18,7 @@ use crate::ai::agent::{
 use crate::ai::blocklist::agent_view::shortcuts::AgentShortcutViewModel;
 use crate::ai::blocklist::agent_view::zero_state_block::render_ambient_credits_banner;
 use crate::ai::blocklist::agent_view::{
-    agent_view_bg_fill, AgentViewController, AgentViewControllerEvent,
+    agent_view_bg_fill, is_in_cloud_context, AgentViewController, AgentViewControllerEvent,
 };
 use crate::ai::blocklist::{
     ai_brand_color, BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIHistoryEvent,
@@ -578,13 +578,15 @@ impl MessageProvider<AgentMessageArgs<'_>> for ZeroStateMessageProducer {
             .with_is_disabled(!is_buffer_empty),
         );
 
-        let is_cloud_agent = matches!(
-            agent_view_controller.agent_view_state(),
-            AgentViewState::Active { origin, .. } if origin.is_cloud_agent()
-        );
+        let is_cloud_agent =
+            is_in_cloud_context(agent_view_controller.agent_view_state(), terminal_model);
+        let ai_settings = AISettings::as_ref(app);
 
         // Handoff to cloud only available for local agents.
-        if !is_cloud_agent && AISettings::as_ref(app).is_ampersand_handoff_enabled(app) {
+        if !is_cloud_agent
+            && ai_settings
+                .is_ampersand_handoff_enabled_for_conversation(Some(active_conversation), app)
+        {
             items.push(
                 MessageItem::clickable(
                     vec![
@@ -637,7 +639,8 @@ impl MessageProvider<AgentMessageArgs<'_>> for ZeroStateMessageProducer {
         // Code review only works locally.
         #[cfg(not(target_family = "wasm"))]
         if !is_cloud_agent
-            && !AISettings::as_ref(app).is_cloud_handoff_enabled(app)
+            && !ai_settings
+                .is_cloud_handoff_enabled_for_conversation(Some(active_conversation), app)
             && *TabSettings::as_ref(app).show_code_review_button
         {
             let code_review_keystroke = if OperatingSystem::get().is_mac() {
@@ -754,7 +757,7 @@ fn should_fork_from_last_known_good_state(
     };
 
     match error {
-        RenderableAIError::QuotaLimit
+        RenderableAIError::QuotaLimit { .. }
         | RenderableAIError::ServerOverloaded
         | RenderableAIError::ContextWindowExceeded(_)
         | RenderableAIError::InvalidApiKey { .. }

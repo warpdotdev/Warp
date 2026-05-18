@@ -86,6 +86,10 @@ impl PendingUserQueryBlock {
         self.selected_text.read().clone()
     }
 
+    pub fn prompt(&self) -> &str {
+        &self.prompt
+    }
+
     /// Clears the text selection state and visual selection highlight.
     pub fn clear_selection(&mut self, ctx: &mut ViewContext<Self>) {
         self.selection_handle.clear();

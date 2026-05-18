@@ -450,6 +450,9 @@ pub enum FeatureFlag {
     /// Enables find/search in code review pane
     CodeReviewFind,
 
+    /// Enables asynchronous find in terminal, running search on a background thread.
+    AsyncFind,
+
     /// Enables using Agent Mode in shared sessions.
     AgentSharedSessions,
 
@@ -689,9 +692,6 @@ pub enum FeatureFlag {
     /// content changes via auto-reload.
     CodeReviewScrollPreservation,
 
-    /// Enables orchestration mode (multi-agent parallel execution).
-    Orchestration,
-
     /// Enables server-side durable messaging for orchestration (v2).
     /// When enabled, messages and events are stored in Postgres and the client
     /// opens a persistent SSE connection to the server to receive events in
@@ -715,6 +715,13 @@ pub enum FeatureFlag {
     /// orchestrator agent and all of its child agents, with click-to-switch
     /// behavior between siblings.
     OrchestrationPillBar,
+
+    /// Enables the orchestration pill bar in shared session viewers (web and
+    /// native). When enabled, viewing a shared session that used orchestration
+    /// shows a pill bar above the agent view header with the orchestrator and
+    /// each child agent. Clicking a child pill joins the child's shared session
+    /// and switches the view to its transcript.
+    OrchestrationViewerPillBar,
 
     /// Shows a pending user query indicator during summarization when a follow-up
     /// prompt is queued via `/fork-and-compact` or `/compact-and`.
@@ -867,6 +874,9 @@ pub enum FeatureFlag {
 
     /// Replaces the raw harness CLI command with a styled header showing CLI name + status icon.
     HarnessSessionHeader,
+
+    /// Enables the code review view for remote sessions.
+    RemoteCodeReview,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -908,16 +918,12 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::RunGeneratorsWithCmdExe,
     FeatureFlag::Projects,
     FeatureFlag::ProviderCommand,
-    FeatureFlag::ArtifactCommand,
     FeatureFlag::MarkdownImages,
     FeatureFlag::FileAndDiffSetComments,
     FeatureFlag::FileGlobV2Warnings,
     FeatureFlag::SummarizationViaMessageReplacement,
     FeatureFlag::LocalComputerUse,
-    FeatureFlag::OzPlatformSkills,
-    FeatureFlag::AgentViewBlockContext,
     FeatureFlag::OzLaunchModal,
-    FeatureFlag::OzChangelogUpdates,
     FeatureFlag::QueueSlashCommand,
     // These are enabled via 100% experiment on prod warp-server,
     // but we need to enable here for dogfood builds.
@@ -928,32 +934,21 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     // End manually enabled Code features.
     FeatureFlag::EditableMarkdownMermaid,
     FeatureFlag::CodeReviewScrollPreservation,
-    FeatureFlag::AgentHarness,
-    FeatureFlag::ConversationApi,
     FeatureFlag::RememberFastForwardState,
-    FeatureFlag::HOANotifications,
     FeatureFlag::GeminiNotifications,
     FeatureFlag::LocalDockerSandbox,
-    FeatureFlag::CloudModeSetupV2,
     #[cfg(not(windows))]
     FeatureFlag::SshRemoteServer,
-    FeatureFlag::CloudModeInputV2,
     FeatureFlag::DragTabsToWindows,
-    FeatureFlag::OrchestrationLaunchModal,
-    FeatureFlag::NamedAgents,
-    FeatureFlag::HandoffCloudCloud,
     FeatureFlag::SoloUserByok,
     FeatureFlag::CustomInferenceEndpoints,
     FeatureFlag::RemoteCodebaseIndexing,
+    FeatureFlag::RemoteCodeReview,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
 /// All PREVIEW_FLAGS are also automatically added to dogfood builds (WarpDev).
 pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
-    FeatureFlag::Orchestration,
-    FeatureFlag::OrchestrationV2,
-    FeatureFlag::OrchestrationPillBar,
-    FeatureFlag::RunAgentsTool,
     FeatureFlag::BlocklistMarkdownTableRendering,
     FeatureFlag::MarkdownTables,
     FeatureFlag::GitOperationsInCodeReview,

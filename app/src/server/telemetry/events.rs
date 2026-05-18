@@ -464,7 +464,6 @@ pub enum PaletteSource {
     ConversationManager,
     ContextChip,
     PaneHeader,
-    RecentsViewAll,
     AgentTip,
     TitleBarSearchBar,
 }
@@ -2356,6 +2355,10 @@ pub enum TelemetryEvent {
     AutoupdateForcekillFailed {
         exit_code: i32,
     },
+    #[cfg(windows)]
+    AutoupdateMinidumpCleanupFailed {
+        exit_code: i32,
+    },
     ExecutedWarpDrivePrompt {
         id: Option<WorkflowId>,
         selection_source: WorkflowSelectionSource,
@@ -2867,12 +2870,12 @@ pub enum TelemetryEvent {
     RemoteServerHostUnsupported {
         remote_os: Option<String>,
         remote_arch: Option<String>,
+        /// Typed unsupported reason. Converted into stable telemetry
+        /// fields in `payload()`.
+        unsupported_reason: remote_server::setup::UnsupportedReason,
         /// Detected libc on the remote host, e.g. `"glibc 2.28"`,
         /// `"musl"`, `"unknown"`.
         detected_libc: String,
-        /// Required minimum glibc reported by the script. Empty when
-        /// the unsupported classification was not glibc-related.
-        required_glibc: String,
     },
     /// Emitted when a reconnection attempt succeeds after a spontaneous disconnect.
     RemoteServerReconnection {
@@ -4225,6 +4228,28 @@ impl TelemetryEvent {
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
             })),
+            TelemetryEvent::RemoteServerReconnection {
+                attempt,
+                remote_os,
+                remote_arch,
+            } => Some(json!({
+                "attempt": attempt,
+                "remote_os": remote_os,
+                "remote_arch": remote_arch,
+            })),
+            TelemetryEvent::RemoteServerReconnectExhausted {
+                attempts,
+                remote_os,
+                remote_arch,
+                exit_code,
+                signal_killed,
+            } => Some(json!({
+                "attempts": attempts,
+                "remote_os": remote_os,
+                "remote_arch": remote_arch,
+                "exit_code": exit_code,
+                "signal_killed": signal_killed,
+            })),
             TelemetryEvent::RemoteServerClientRequestError {
                 operation,
                 error_type,
@@ -4259,36 +4284,34 @@ impl TelemetryEvent {
             TelemetryEvent::RemoteServerHostUnsupported {
                 remote_os,
                 remote_arch,
+                unsupported_reason,
                 detected_libc,
-                required_glibc,
-            } => Some(json!({
-                "remote_os": remote_os,
-                "remote_arch": remote_arch,
-                "detected_libc": detected_libc,
-                "required_glibc": required_glibc,
-            })),
-            TelemetryEvent::RemoteServerReconnection {
-                attempt,
-                remote_os,
-                remote_arch,
-            } => Some(json!({
-                "attempt": attempt,
-                "remote_os": remote_os,
-                "remote_arch": remote_arch,
-            })),
-            TelemetryEvent::RemoteServerReconnectExhausted {
-                attempts,
-                remote_os,
-                remote_arch,
-                exit_code,
-                signal_killed,
-            } => Some(json!({
-                "attempts": attempts,
-                "remote_os": remote_os,
-                "remote_arch": remote_arch,
-                "exit_code": exit_code,
-                "signal_killed": signal_killed,
-            })),
+            } => {
+                let unsupported_os = match unsupported_reason {
+                    remote_server::setup::UnsupportedReason::UnsupportedOs { os } => {
+                        Some(os.clone())
+                    }
+                    remote_server::setup::UnsupportedReason::GlibcTooOld { .. }
+                    | remote_server::setup::UnsupportedReason::NonGlibc { .. }
+                    | remote_server::setup::UnsupportedReason::UnsupportedArch { .. } => None,
+                };
+                let unsupported_arch = match unsupported_reason {
+                    remote_server::setup::UnsupportedReason::UnsupportedArch { arch } => {
+                        Some(arch.clone())
+                    }
+                    remote_server::setup::UnsupportedReason::GlibcTooOld { .. }
+                    | remote_server::setup::UnsupportedReason::NonGlibc { .. }
+                    | remote_server::setup::UnsupportedReason::UnsupportedOs { .. } => None,
+                };
+                Some(json!({
+                    "remote_os": remote_os,
+                    "remote_arch": remote_arch,
+                    "reason": unsupported_reason.as_telemetry_reason(),
+                    "detected_libc": detected_libc,
+                    "unsupported_os": unsupported_os,
+                    "unsupported_arch": unsupported_arch,
+                }))
+            }
             TelemetryEvent::ConversationListItemOpened { is_ambient_agent } => Some(json!({
                 "is_ambient_agent": is_ambient_agent,
             })),
@@ -4379,6 +4402,10 @@ impl TelemetryEvent {
             | TelemetryEvent::AutoupdateMutexTimeout => None,
             #[cfg(windows)]
             TelemetryEvent::AutoupdateForcekillFailed { exit_code } => Some(json!({
+                "exit_code": exit_code,
+            })),
+            #[cfg(windows)]
+            TelemetryEvent::AutoupdateMinidumpCleanupFailed { exit_code } => Some(json!({
                 "exit_code": exit_code,
             })),
             TelemetryEvent::InputBufferSubmitted {
@@ -5120,7 +5147,8 @@ impl TelemetryEvent {
             | TelemetryEvent::AutoupdateUnableToCloseApplications
             | TelemetryEvent::AutoupdateFileInUse
             | TelemetryEvent::AutoupdateMutexTimeout
-            | TelemetryEvent::AutoupdateForcekillFailed { .. } => false,
+            | TelemetryEvent::AutoupdateForcekillFailed { .. }
+            | TelemetryEvent::AutoupdateMinidumpCleanupFailed { .. } => false,
         }
     }
 
@@ -5565,7 +5593,8 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::AutoupdateUnableToCloseApplications
             | Self::AutoupdateFileInUse
             | Self::AutoupdateMutexTimeout
-            | Self::AutoupdateForcekillFailed { .. } => EnablementState::Always,
+            | Self::AutoupdateForcekillFailed { .. }
+            | Self::AutoupdateMinidumpCleanupFailed { .. } => EnablementState::Always,
             Self::ToggleCodebaseContext => EnablementState::Always,
             Self::ToggleAutoIndexing => EnablementState::Always,
             Self::AgentModeRatedResponse => {
@@ -6103,6 +6132,10 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::AutoupdateMutexTimeout => "Windows Autoupdate: Mutex Timeout",
             #[cfg(windows)]
             Self::AutoupdateForcekillFailed { .. } => "Windows Autoupdate: Forcekill Failed",
+            #[cfg(windows)]
+            Self::AutoupdateMinidumpCleanupFailed { .. } => {
+                "Windows Autoupdate: Minidump Cleanup Failed"
+            }
             Self::ToggleCodebaseContext => "Toggle Agent Mode Codebase Context",
             Self::ToggleAutoIndexing => "Toggle Codebase Context Autoindexing",
             Self::ActiveIndexedReposChanged => "Active Indexed Repos Changed",
@@ -6925,6 +6958,10 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             #[cfg(windows)]
             Self::AutoupdateForcekillFailed { .. } => {
                 "The Windows auto-update installer failed to force-kill Warp after the mutex timeout"
+            }
+            #[cfg(windows)]
+            Self::AutoupdateMinidumpCleanupFailed { .. } => {
+                "The Windows auto-update installer failed to clean up the orphaned minidump server process"
             }
             Self::ToggleCodebaseContext => {
                 "Toggled on/off the enablement of codebase context usage for Agent Mode."

@@ -31,12 +31,17 @@ pub(super) enum RemoteSearchRequest {
 
 pub(super) fn root_directory_for_search(
     session_context: &SessionContext,
-    explicit_repo_path: Option<&str>,
+    requested_codebase_path: Option<&str>,
     app: &AppContext,
 ) -> Option<PathBuf> {
     RemoteCodebaseIndexModel::as_ref(app)
-        .active_repo_path(session_context, explicit_repo_path)
-        .or_else(|| session_context.current_working_directory().clone())
+        .active_repo_path(session_context, requested_codebase_path)
+        .or_else(|| {
+            requested_codebase_path
+                .is_none()
+                .then(|| session_context.current_working_directory().clone())
+                .flatten()
+        })
         .map(PathBuf::from)
 }
 
@@ -44,7 +49,7 @@ pub(super) fn send_request(
     query: String,
     partial_paths: Option<Vec<String>>,
     session_context: SessionContext,
-    explicit_repo_path: Option<String>,
+    requested_codebase_path: Option<String>,
     action_id: crate::ai::agent::AIAgentActionId,
     ctx: &mut ModelContext<GetRelevantFilesController>,
 ) -> RemoteSearchRequest {
@@ -56,7 +61,7 @@ pub(super) fn send_request(
     }
 
     let availability = RemoteCodebaseIndexModel::as_ref(ctx)
-        .active_repo_availability(&session_context, explicit_repo_path.as_deref());
+        .active_repo_availability(&session_context, requested_codebase_path.as_deref());
     match availability {
         RemoteCodebaseSearchAvailability::Ready(search_context) => {
             let Some(client) = remote_server::manager::RemoteServerManager::as_ref(ctx)
@@ -92,7 +97,7 @@ pub(super) fn send_request(
             RemoteCodebaseIndexModel::handle(ctx).update(ctx, |model, ctx| {
                 model.request_active_repo_index(
                     &session_context,
-                    explicit_repo_path.as_deref(),
+                    requested_codebase_path.as_deref(),
                     ctx,
                 );
             });
@@ -365,8 +370,9 @@ fn remote_availability_failure(
     match availability {
         RemoteCodebaseSearchAvailability::NoConnectedHost => SearchCodebaseResult::Failed {
             reason: SearchCodebaseFailureReason::ClientError,
-            message: "Remote codebase search is unavailable because the remote host is not connected."
-                .to_string(),
+            message:
+                "Remote codebase search is unavailable because the remote host is not connected."
+                    .to_string(),
         },
         RemoteCodebaseSearchAvailability::NoActiveRepo => SearchCodebaseResult::Failed {
             reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
@@ -390,15 +396,16 @@ fn remote_availability_failure(
                 ),
             }
         }
-        RemoteCodebaseSearchAvailability::Unavailable { remote_path, message } => {
-            SearchCodebaseResult::Failed {
-                reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
-                message: format!(
-                    "Remote codebase search is unavailable for {}: {message}",
-                    remote_path.path.as_str()
-                ),
-            }
-        }
+        RemoteCodebaseSearchAvailability::Unavailable {
+            remote_path,
+            message,
+        } => SearchCodebaseResult::Failed {
+            reason: SearchCodebaseFailureReason::CodebaseNotIndexed,
+            message: format!(
+                "Remote codebase search is unavailable for {}: {message}",
+                remote_path.path.as_str()
+            ),
+        },
         RemoteCodebaseSearchAvailability::Ready(_) => SearchCodebaseResult::Failed {
             reason: SearchCodebaseFailureReason::ClientError,
             message: "Remote codebase search was unexpectedly unavailable.".to_string(),

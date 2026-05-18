@@ -3,11 +3,9 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Utc};
 
 use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent_conversations_model::AgentConversationEntryId;
+use crate::ai::agent_conversations_model::{AgentConversationEntry, AgentConversationEntryId};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::blocklist::agent_view::{
-    AgentViewController, AgentViewControllerEvent, AgentViewEntryOrigin,
-};
+use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
 use crate::ai::blocklist::orchestration_event_streamer::{
     register_agent_event_consumer, unregister_agent_event_consumer,
 };
@@ -296,6 +294,12 @@ impl ActiveAgentViewsModel {
             .and_then(|state| state.active_conversation_id)
     }
 
+    pub fn get_focused_terminal_view_id(&self, window_id: WindowId) -> Option<EntityId> {
+        self.focused_terminal_states
+            .get(&window_id)
+            .map(|state| state.focused_terminal_id)
+    }
+
     /// Get the last focused terminal view id (persisted across non-terminal focus changes).
     pub fn get_last_focused_terminal_id(&self) -> Option<EntityId> {
         self.last_focused_terminal_state
@@ -491,20 +495,23 @@ impl ActiveAgentViewsModel {
         None
     }
 
-    /// Returns the active agent-view entry origin for a terminal view.
-    pub fn agent_view_origin_for_terminal_view(
+    pub fn get_terminal_view_id_for_entry(
         &self,
-        terminal_view_id: EntityId,
+        entry: &AgentConversationEntry,
         ctx: &AppContext,
-    ) -> Option<AgentViewEntryOrigin> {
-        let controller = self
-            .agent_view_handles
-            .get(&terminal_view_id)?
-            .controller
-            .upgrade(ctx)?;
-        controller.as_ref(ctx).agent_view_state().origin()
-    }
+    ) -> Option<EntityId> {
+        if let Some(task_id) = entry.identity.ambient_agent_task_id {
+            if let Some(terminal_view_id) = self.get_terminal_view_id_for_ambient_task(task_id) {
+                return Some(terminal_view_id);
+            }
+        }
 
+        if let Some(conversation_id) = entry.identity.local_conversation_id {
+            return self.get_terminal_view_id_for_conversation(conversation_id, ctx);
+        }
+
+        None
+    }
     /// Get all currently active conversation IDs.
     /// A conversation is active if it is open and a query has been sent since it was last opened.
     /// New (empty) conversations and ambient sessions are always considered active when open.

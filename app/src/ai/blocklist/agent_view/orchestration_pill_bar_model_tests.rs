@@ -78,7 +78,7 @@ fn toggle_pin_persists_pinned_state_to_sqlite_event() {
         // Pin model must be registered after the history model because it
         // subscribes to history events on construction.
         let pin_model =
-            app.add_singleton_model(|ctx| OrchestrationPinModel::new(HashSet::new(), ctx));
+            app.add_singleton_model(|ctx| OrchestrationPillBarModel::new(HashSet::new(), ctx));
 
         pin_model.update(&mut app, |model, ctx| {
             model.toggle_pin(conversation_id, ctx);

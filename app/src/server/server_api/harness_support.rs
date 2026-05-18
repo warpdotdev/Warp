@@ -21,6 +21,7 @@ pub use super::presigned_upload::FileUploadBody;
 pub use super::presigned_upload::UploadBody;
 
 /// A presigned upload target returned by the server.
+#[serde_with::serde_as]
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct UploadTarget {
     pub url: String,
@@ -28,6 +29,7 @@ pub struct UploadTarget {
     pub headers: HashMap<String, String>,
     /// Ordered multipart form fields for POST uploads.
     #[serde(default)]
+    #[serde_as(deserialize_as = "serde_with::DefaultOnNull")]
     pub fields: Vec<UploadField>,
 }
 
