@@ -146,6 +146,9 @@ pub struct OrchestrationConfigBlockView {
     /// saves the config and the resulting event re-enters
     /// `refresh_from_model`.
     suppress_refresh: bool,
+    /// Guards `OrchestrationEntered` against re-emission on subsequent
+    /// off→on toggles within the same view instance.
+    entered_event_emitted: bool,
 }
 
 impl OrchestrationConfigBlockView {
@@ -244,6 +247,7 @@ impl OrchestrationConfigBlockView {
             details_mouse_state: MouseStateHandle::default(),
             saved_model_per_harness: HashMap::new(),
             suppress_refresh: false,
+            entered_event_emitted: false,
         };
         if view.is_approved {
             view.ensure_pickers(ctx);
@@ -597,11 +601,13 @@ impl TypedActionView for OrchestrationConfigBlockView {
                     OrchestrationApprovalStatus::Disapproved
                 };
                 self.emit_plan_config_approval_toggled(previous_status, new_status, ctx);
-                // off→on transition is the orchestration entry point
-                // for the plan-card surface.
+                // First off→on is the plan-card entry point; later
+                // re-toggles don't re-fire (matches RunAgentsCardView).
                 if matches!(previous_status, OrchestrationApprovalStatus::Disapproved)
                     && matches!(new_status, OrchestrationApprovalStatus::Approved)
+                    && !self.entered_event_emitted
                 {
+                    self.entered_event_emitted = true;
                     self.emit_orchestration_entered(ctx);
                 }
                 self.apply_field_change(ctx);

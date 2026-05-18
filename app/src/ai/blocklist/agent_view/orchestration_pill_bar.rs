@@ -829,23 +829,24 @@ impl TypedActionView for OrchestrationPillBar {
                 pill_kind,
             } => {
                 let id = *conversation_id;
-                self.emit_pill_bar_interaction(
-                    PillBarActionKind::Switch,
-                    pill_kind.telemetry_kind(),
-                    id,
-                    ctx,
-                );
-                // Prefer focusing an existing pane that already owns
-                // this conversation; otherwise switch in place.
                 let self_terminal_view_id =
                     self.agent_view_controller.as_ref(ctx).terminal_view_id();
                 let is_open_elsewhere =
                     is_conversation_open_in_other_visible_view(id, self_terminal_view_id, ctx);
                 if is_open_elsewhere {
+                    // FocusOpenedConversation's handler emits its own
+                    // telemetry; skip the Switch event so one click =
+                    // one event.
                     ctx.dispatch_typed_action(
                         &OrchestrationPillBarAction::FocusOpenedConversation(id),
                     );
                 } else {
+                    self.emit_pill_bar_interaction(
+                        PillBarActionKind::Switch,
+                        pill_kind.telemetry_kind(),
+                        id,
+                        ctx,
+                    );
                     ctx.dispatch_typed_action(
                         &PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(
                             navigation_action_for_pill(*pill_kind, id),
