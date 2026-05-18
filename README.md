@@ -2,7 +2,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="public/warper_banner_dark.jpg">
     <source media="(prefers-color-scheme: light)" srcset="public/warper_banner_light.jpg">
-    <img src="public/warper_banner_light.jpg" alt="Warper" width="60%" />
+    <img src="public/warper_banner_light.jpg" alt="Warper" width="90%" />
   </picture>
 </p>
 
