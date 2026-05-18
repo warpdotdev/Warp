@@ -603,13 +603,19 @@ impl BlocklistAIInputModel {
     /// When `session_id` is `Some`, history matching is performed. The `completion_context`
     /// is always used for alias expansion (callers without a live session should pass an
     /// `EmptyCompletionContext`).
-    pub fn detect_and_set_input_type<C: CompletionContext + Clone + Send + 'static>(
+    ///
+    /// `read_current_buffer` is invoked to check input buffer's current text when the async classification completes.
+    pub fn detect_and_set_input_type<C, F>(
         &mut self,
         input: ParsedTokensSnapshot,
         completion_context: C,
         session_id: Option<SessionId>,
         ctx: &mut ModelContext<Self>,
-    ) {
+        read_current_buffer: F,
+    ) where
+        C: CompletionContext + Clone + Send + 'static,
+        F: FnOnce(&AppContext) -> String + 'static,
+    {
         // Abort the last autodetect handle if exists.
         self.abort_in_progress_detection();
 
@@ -677,6 +683,7 @@ impl BlocklistAIInputModel {
 
         let buffer_cloned = input.buffer_text.clone();
         let other_buffer_cloned = buffer_cloned.clone();
+        let expected_buffer_text = buffer_cloned.clone();
         let current_input_type = self.input_type();
 
         let is_udi_enabled = InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
@@ -745,16 +752,24 @@ impl BlocklistAIInputModel {
                     new_input_type
                 },
                 move |me, new_input_type, ctx| {
+                    let current_buffer_text = read_current_buffer(ctx);
+                    let is_current_input = current_buffer_text == expected_buffer_text;
+                    log::debug!(
+                        "NLD autodetection callback freshness check: is_current_input={is_current_input}, current_buffer_text={current_buffer_text:?}, expected_buffer_text={expected_buffer_text:?}"
+                    );
+                    if !is_current_input {
+                        return;
+                    }
                     // In theory, we shouldn't need to check this, as we only run autodetection if the input
                     // is not locked, and we should abort the autodetect future if the input is locked, but
                     // we do it anyway out of an abundance of caution.
                     if !me.should_run_input_autodetection(ctx) {
                         return;
                     }
-                    // If the autodetect abort handle is none, it means we aborted autodetection.
-                    // It's possible that the future already completed before we aborted, and then we reach this callback after abort.
-                    // In this case, don't set the input type.
-                    if me.autodetect_abort_handle.is_none() {
+                    // If the handle is already gone, autodetection was aborted after the
+                    // future completed but before this callback ran
+                    // In this case, don't set the input type or apply stale result
+                    if me.autodetect_abort_handle.take().is_none() {
                         return;
                     }
                     me.set_input_config_internal(

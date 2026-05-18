@@ -13703,6 +13703,7 @@ impl Input {
         // classification doesn't match the previous locked mode.
         if !buffer_text.is_empty() {
             if let Some(completion_context) = self.completion_session_context(ctx) {
+                let editor = self.editor.clone();
                 let ai_input_model = self.ai_input_model.clone();
 
                 ctx.spawn(
@@ -13721,6 +13722,7 @@ impl Input {
                                 completion_context,
                                 Some(session_id),
                                 ctx,
+                                move |ctx| editor.as_ref(ctx).buffer_text(ctx),
                             );
                         });
                     },
