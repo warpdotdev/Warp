@@ -8,13 +8,14 @@ use crate::{
         cell::Flags,
         header_grid::PromptEndPoint,
         session::SessionInfo,
-        test_utils::{create_test_block_with_grids, TestBlockBuilder},
+        test_utils::{create_test_block_with_grids, test_iterm_image, TestBlockBuilder},
     },
     test_util::mock_blockgrid,
 };
 use chrono::TimeZone;
 use float_cmp::assert_approx_eq;
 use futures_lite::stream::StreamExt;
+use warp_core::features::FeatureFlag;
 
 impl float_cmp::ApproxEq for BlockSection {
     type Margin = float_cmp::F64Margin;
@@ -306,6 +307,60 @@ pub fn test_precmd_no_preexec() {
     block.finish(0);
 
     assert_eq!("command\nerror", block.contents_to_string());
+}
+
+#[test]
+pub fn test_image_completion_before_execution_routes_to_output_grid() {
+    let _iterm_images = FeatureFlag::ITermImages.override_enabled(true);
+    let mut block = TestBlockBuilder::new()
+        .with_bootstrap_stage(BootstrapStage::ScriptExecution)
+        .build();
+    block.start();
+
+    let header_cursor_before = block
+        .prompt_and_command_grid()
+        .grid_handler()
+        .cursor_point();
+    assert_eq!(block.state(), BlockState::BeforeExecution);
+    assert_eq!(block.output_grid().len(), 0);
+
+    block.handle_completed_iterm_image(test_iterm_image(1));
+
+    assert_eq!(
+        block
+            .prompt_and_command_grid()
+            .grid_handler()
+            .cursor_point(),
+        header_cursor_before
+    );
+    assert!(block.output_grid().started());
+    assert!(!block.output_grid().is_empty());
+    assert!(block.output_grid().grid_handler().cursor_point().col > 0);
+}
+
+#[test]
+pub fn test_image_completion_drops_in_warp_input_stage() {
+    let _iterm_images = FeatureFlag::ITermImages.override_enabled(true);
+    let mut block = TestBlockBuilder::new()
+        .with_bootstrap_stage(BootstrapStage::WarpInput)
+        .build();
+    block.start();
+
+    let header_cursor_before = block
+        .prompt_and_command_grid()
+        .grid_handler()
+        .cursor_point();
+
+    block.handle_completed_iterm_image(test_iterm_image(2));
+
+    assert_eq!(
+        block
+            .prompt_and_command_grid()
+            .grid_handler()
+            .cursor_point(),
+        header_cursor_before
+    );
+    assert_eq!(block.output_grid().len(), 0);
 }
 
 // Tests that the command grid text is all bolded.
