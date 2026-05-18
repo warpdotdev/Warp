@@ -486,8 +486,9 @@ impl UserWorkspaces {
 
     /// Whether BYO API key is enabled for the current user.
     /// Note that the value may be incorrect if called before the team's billing metadata has been fetched.
-    /// For solo users (no workspace), this is controlled by the `SoloUserByok` feature flag.
-    /// Anonymous or logged-out users are not allowed to use BYO API keys.
+    /// When the `SoloUserByok` feature flag is enabled, logged-in users are allowed to use
+    /// BYO API keys regardless of workspace billing metadata. Anonymous or logged-out users
+    /// are still not allowed to use BYO API keys.
     pub fn is_byo_api_key_enabled(&self, app: &AppContext) -> bool {
         if AuthStateProvider::as_ref(app)
             .get()
@@ -495,9 +496,12 @@ impl UserWorkspaces {
         {
             return false;
         }
+        if FeatureFlag::SoloUserByok.is_enabled() {
+            return true;
+        }
         self.current_workspace()
             .map(|workspace| workspace.is_byo_api_key_enabled())
-            .unwrap_or(FeatureFlag::SoloUserByok.is_enabled())
+            .unwrap_or(false)
     }
     /// Whether custom inference endpoints are enabled for the current user.
     /// Anonymous or logged-out users are not allowed to use custom inference.

@@ -14,7 +14,7 @@ Param (
 
     [Alias('release-tag')]
     [String]$RELEASE_TAG = '',
-    [String]$FEATURES = 'release_bundle,crash_reporting,gui',
+    [String]$FEATURES = 'release_bundle,crash_reporting,gui,solo_user_byok',
 
     # Builds only the Warp binary, skips the installer.
     [Switch]$SKIP_BUILD_INSTALLER = $False,
@@ -32,6 +32,30 @@ Param (
     [Alias('sign-tool-cmd')]
     [String]$SIGN_TOOL_CMD = ''
 )
+
+function Normalize-FeatureList {
+    param(
+        [string]$FeatureString
+    )
+
+    if ([string]::IsNullOrWhiteSpace($FeatureString)) {
+        return @()
+    }
+
+    return @(
+        $FeatureString -split ',' |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ }
+    )
+}
+
+function Join-FeatureList {
+    param(
+        [string[]]$Features
+    )
+
+    return [string]::Join(',', @($Features | Select-Object -Unique))
+}
 
 if ($RELEASE_TAG) {
     $env:GIT_RELEASE_TAG = $RELEASE_TAG
@@ -116,8 +140,15 @@ if ("$CHANNEL" -eq 'local') {
     $APP_NAME = 'WarpOss'
     $APP_DISPLAY_NAME = 'Warp Refined'
     # The OSS channel does not ship Sentry, so drop the crash_reporting feature
-    # (which would otherwise pull in the Sentry SDK as a dependency).
-    $FEATURES = 'release_bundle,autoupdate,gui'
+    # (which would otherwise pull in the Sentry SDK as a dependency), but keep
+    # any extra user-provided features such as solo_user_byok.
+    $featureList = Normalize-FeatureList $FEATURES | Where-Object { $_ -ne 'crash_reporting' }
+    foreach ($requiredFeature in @('release_bundle', 'autoupdate', 'gui')) {
+        if ($requiredFeature -notin $featureList) {
+            $featureList += $requiredFeature
+        }
+    }
+    $FEATURES = Join-FeatureList $featureList
 }
 
 if (("$CHANNEL" -eq 'local') -or ("$CHANNEL" -eq 'dev')) {

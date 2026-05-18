@@ -18,8 +18,8 @@ use crate::workspaces::team_tester::TeamTesterStatus;
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::workspaces::workspace::{
-    AdminEnablementSetting, CodebaseContextSettings, HostEnablementSetting, LlmHostSettings,
-    Workspace,
+    AdminEnablementSetting, ByoApiKeyPolicy, CodebaseContextSettings, HostEnablementSetting,
+    LlmHostSettings, Workspace,
 };
 
 use mockall::Sequence;
@@ -209,6 +209,59 @@ fn test_codebase_context_enabled_with_no_workspace() {
             assert!(
                 codebase_context_enabled,
                 "codebase context should be on by default"
+            );
+        });
+    })
+}
+
+#[test]
+fn test_solo_user_byok_overrides_workspace_policy_for_logged_in_users() {
+    let _flag = FeatureFlag::SoloUserByok.override_enabled(true);
+
+    let mut workspace = Workspace {
+        uid: "workspace_uid123456789".to_string().into(),
+        name: "test".to_string(),
+        stripe_customer_id: None,
+        teams: vec![Team {
+            uid: 123.into(),
+            name: "test".to_string(),
+            invite_code: None,
+            members: vec![],
+            pending_email_invites: vec![],
+            invite_link_domain_restrictions: vec![],
+            billing_metadata: Default::default(),
+            stripe_customer_id: None,
+            organization_settings: Default::default(),
+            is_eligible_for_discovery: false,
+            has_billing_history: false,
+        }],
+        billing_metadata: Default::default(),
+        bonus_grants_purchased_this_month: Default::default(),
+        has_billing_history: false,
+        settings: Default::default(),
+        invite_code: None,
+        invite_link_domain_restrictions: vec![],
+        pending_email_invites: vec![],
+        is_eligible_for_discovery: false,
+        members: vec![],
+        total_requests_used_since_last_refresh: 0,
+    };
+    workspace.billing_metadata.tier.byo_api_key_policy = Some(ByoApiKeyPolicy { enabled: false });
+
+    App::test((), |mut app| async move {
+        initialize_app(
+            &mut app,
+            CachedResources {
+                workspaces: vec![workspace],
+            },
+            Arc::new(MockTeamClient::new()),
+            Arc::new(MockWorkspaceClient::new()),
+        );
+
+        app.read(|ctx| {
+            assert!(
+                UserWorkspaces::as_ref(ctx).is_byo_api_key_enabled(ctx),
+                "expected SoloUserByok to allow BYO API keys for logged-in users even when workspace billing metadata disables it",
             );
         });
     })
