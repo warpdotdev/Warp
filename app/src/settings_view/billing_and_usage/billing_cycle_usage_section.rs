@@ -479,7 +479,7 @@ impl BillingCycleUsageSectionView {
 
         let icon = ConstrainedBox::new(
             Icon::ArrowCircleBrokenUp
-                .to_warpui_icon(sub_text.into())
+                .to_warpui_icon(sub_text)
                 .finish(),
         )
         .with_width(14.)
