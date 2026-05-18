@@ -116,8 +116,14 @@ impl RotatingFileWriter {
 
 impl Write for RotatingFileWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        // Rotate only when the *current* active file already holds content;
+        // otherwise an oversized first write would promote an empty file to
+        // `.in_session.0` and burn a retention slot before any useful log
+        // data exists. The oversized payload still lands in the active file,
+        // and is preserved on the next real rotation.
         if !buf.is_empty()
             && self.max_bytes > 0
+            && self.bytes_written > 0
             && self.bytes_written.saturating_add(buf.len() as u64) > self.max_bytes
         {
             self.rotate()?;
@@ -250,15 +256,46 @@ mod tests {
     }
 
     #[test]
+    fn oversized_first_write_does_not_promote_empty_file_to_in_session_zero() {
+        // Regression for the Oz nit on #11000: when the very first write
+        // exceeds `max_bytes`, the rotator must NOT rename an empty active
+        // file into `.in_session.0` — that would burn a retention slot
+        // before any useful data exists. The oversized payload stays in the
+        // active file and is promoted on the next real rotation.
+        let tmp = tempfile::tempdir().unwrap();
+        let mut w = RotatingFileWriter::open(tmp.path(), "warp.log", 8, 3).unwrap();
+        w.write_all(b"oversized first payload\n").unwrap(); // 24 bytes, > 8
+        w.flush().unwrap();
+        assert!(!tmp.path().join("warp.log.in_session.0").exists());
+        assert_eq!(
+            read(&tmp.path().join("warp.log")),
+            "oversized first payload\n"
+        );
+
+        // On the next write the (now-populated) active file rotates
+        // normally and the oversized payload becomes `.in_session.0`.
+        w.write_all(b"next\n").unwrap();
+        w.flush().unwrap();
+        assert_eq!(
+            read(&tmp.path().join("warp.log.in_session.0")),
+            "oversized first payload\n"
+        );
+        assert_eq!(read(&tmp.path().join("warp.log")), "next\n");
+    }
+
+    #[test]
     fn zero_max_rotation_truncates_in_place_without_sidecar() {
         let tmp = tempfile::tempdir().unwrap();
         let mut w = RotatingFileWriter::open(tmp.path(), "warp.log", 8, 0).unwrap();
-        w.write_all(b"first batch\n").unwrap(); // > 8 bytes, but on first write no prior content -> rotation runs but skips slot mgmt
+        // First write skips rotation since the active file is still empty;
+        // both batches land sequentially, and the second crosses the
+        // threshold so the truncate-in-place branch fires.
+        w.write_all(b"first batch\n").unwrap();
         w.write_all(b"second batch\n").unwrap();
         w.flush().unwrap();
         // With max_rotation=0, no .in_session.N file should ever exist.
         assert!(!tmp.path().join("warp.log.in_session.0").exists());
-        // The active file holds the most recent batch (older content
+        // The active file holds only the most recent batch (older content
         // truncated since slot 0 is not retained).
         assert_eq!(read(&tmp.path().join("warp.log")), "second batch\n");
     }
