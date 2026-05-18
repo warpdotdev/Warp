@@ -1,6 +1,7 @@
 # GH7342: Tech Spec — Customizable Warping Message
 ## 1. Context
 This spec implements the behavior in `product.md`: personalize only the generic `Warping...` agent loading label while preserving more specific progress messages.
+App-launch/startup splash screens and application boot loading surfaces are explicitly out of scope for this implementation, even if they also use `Warping...` copy.
 Relevant current code:
 - `app/src/ai/blocklist/block/view_impl/common.rs:133` defines `LOAD_OUTPUT_MESSAGE: &str = "Warping..."` plus the other task-specific loading-message constants.
 - `app/src/ai/blocklist/block/view_impl/common.rs (278-387)` chooses the loading text in `render_warping_indicator`. Most branches return action-specific messages; the final fallback uses `props.default_warping_text`.
@@ -86,7 +87,7 @@ Update `app/src/settings_view/ai_page.rs`, primarily the `OtherAIWidget` area:
 - When a preset is selected, set `show_warping_message = true` and write the preset string to `custom_warping_message`.
 - When default is selected, set `show_warping_message = true` and clear `custom_warping_message`.
 - When hidden is selected, set `show_warping_message = false` without clearing `custom_warping_message`, so users can unhide and recover their previous custom text.
-- Include search terms such as `warping loading startup message custom hide agent oz`.
+- Include search terms such as `warping loading message custom hide agent oz`.
 Telemetry may record mode-level changes such as `Default`, `Preset`, `Custom`, or `Hidden`, but must not include the custom text.
 ### 2.5 Settings file behavior
 The TOML-facing behavior should be:
@@ -129,4 +130,4 @@ Suggested commands once implemented:
 Parallelization is not recommended for the initial implementation. The change is modest but crosses tightly coupled settings definitions, Settings UI state, and the loading renderer; splitting these across agents would create merge conflicts in `ai_page.rs` and require frequent coordination. A single implementation branch should make the settings contract, renderer changes, and validation together.
 ## 6. Follow-ups
 - Add a CLI launch/session override only if users ask for a non-persistent per-run message after the Settings UI ships.
-- Revisit whether a separate app-launch splash screen should share this setting if Product confirms that surface also contains the generic `Warping...` copy.
+- Consider a separate follow-up for app-launch/startup splash copy if Product wants that surface to become configurable later.

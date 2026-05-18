@@ -14,11 +14,12 @@ The generic `Warping...` message is currently hardcoded. Users who customize War
 - No per-workspace, per-session, or per-conversation message overrides.
 - No randomized, rotating, animated, markdown, or rich-text custom messages.
 - No customization of status-specific messages such as `Searching codebase...`, `Creating diff...`, `Setting up environment`, or fallback-model messages like `Warping with Claude...`.
+- No customization of any app-launch/startup splash screen or application boot loading message, even if that surface also uses `Warping...`; this feature applies only to agent loading/status surfaces inside Warp.
 - No change to the app icon, shimmer animation, colors, fonts, or loading indicator placement.
 ## 5. Figma / Design References
 Figma: none provided. This is a small Settings UI and loading-status behavior change; if design provides final copy or layout before implementation, update this spec to reference it.
 ## 6. Behavior
-1. Default behavior is unchanged. A user who never changes the setting continues to see `Warping...` anywhere Warp currently shows the generic warping/loading message.
+1. Default behavior is unchanged. A user who never changes the setting continues to see `Warping...` on the generic agent loading/status surfaces covered by this feature.
 2. Warp exposes a user-facing setting in Settings for the generic warping message. The control is discoverable from the same area that contains other Warp Agent/Oz settings.
 3. The Settings UI offers these choices:
    - `Default` — shows `Warping...`.
@@ -79,4 +80,3 @@ Figma: none provided. This is a small Settings UI and loading-status behavior ch
 - Manual or unit: verify custom message text is not included in AI request payloads and is not emitted in telemetry.
 ## 9. Open Questions
 - Should the preset copy be finalized by Product/Design before implementation, or is the initial list in Behavior 3 acceptable?
-- If a separate app-launch splash screen also uses `Warping...` in a code path not covered by the agent loading surfaces, should the same setting apply there too?
