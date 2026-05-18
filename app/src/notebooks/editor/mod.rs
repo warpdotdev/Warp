@@ -10,14 +10,13 @@ use warp_editor::{
         BlockHeaderSize, BlockType as ContentBlockType, BufferBlockStyle, CodeBlockType,
     },
     render::model::{
-        BlockSpacing, BlockSpacings, BrokenLinkStyle, CheckBoxStyle, EmbeddedItem,
-        HorizontalRuleStyle, IndentableBlockSpacing, InlineCodeStyle, ParagraphStyles,
-        RichTextStyles, TableStyle,
+        BlockSpacings, BrokenLinkStyle, CheckBoxStyle, EmbeddedItem, HorizontalRuleStyle,
+        InlineCodeStyle, ParagraphStyles, RichTextStyles, TableStyle,
     },
 };
 use warp_util::user_input::UserInput;
 use warpui::{
-    elements::{Border, ListIndentLevel, Margin, Padding},
+    elements::{Border, ListIndentLevel},
     fonts::FamilyId,
     text_layout::DEFAULT_TOP_BOTTOM_RATIO,
     ui_components::checkbox::HOVER_BACKGROUND_COLOR,
@@ -52,20 +51,6 @@ pub use block_insertion_menu::BlockInsertionSource;
 // are handled separately by block spacing.
 const RICH_TEXT_LINE_HEIGHT_RATIO_ADJUSTMENT: f32 = 0.15;
 
-// Paragraph margins create the visible gap between separate Markdown paragraphs.
-// This keeps paragraph breaks distinct without adding padding inside text frames.
-const RICH_TEXT_PARAGRAPH_VERTICAL_MARGIN: f32 = 8.;
-
-// Headers need more space above them so they read as section boundaries.
-const RICH_TEXT_HEADER_TOP_MARGIN: f32 = 12.;
-
-// Headers need some bottom separation from following content, but less than the
-// top margin so the heading remains visually attached to its section.
-const RICH_TEXT_HEADER_BOTTOM_MARGIN: f32 = 6.;
-
-// Lists keep their existing content indentation while using compact vertical spacing.
-const RICH_TEXT_LIST_INDENT_PADDING: f32 = 20.;
-
 #[derive(Clone, Copy)]
 pub(crate) struct MarkdownTableAppearance {
     pub border_color: ColorU,
@@ -86,33 +71,6 @@ fn rich_text_line_height_ratio(appearance: &Appearance) -> f32 {
     // This adjusts the vertical advance of lines within a paragraph. Paragraph
     // and header separation comes from block spacings instead.
     appearance.line_height_ratio() + RICH_TEXT_LINE_HEIGHT_RATIO_ADJUSTMENT
-}
-
-fn rich_text_block_spacings() -> BlockSpacings {
-    let default_block_spacings = BlockSpacings::default();
-    let text_spacing = BlockSpacing {
-        margin: Margin::uniform(0.)
-            .with_top(RICH_TEXT_PARAGRAPH_VERTICAL_MARGIN)
-            .with_bottom(RICH_TEXT_PARAGRAPH_VERTICAL_MARGIN),
-        padding: Padding::uniform(0.),
-    };
-    let header_spacing = BlockSpacing {
-        margin: Margin::uniform(0.)
-            .with_top(RICH_TEXT_HEADER_TOP_MARGIN)
-            .with_bottom(RICH_TEXT_HEADER_BOTTOM_MARGIN),
-        padding: Padding::uniform(0.),
-    };
-    let compact_indentable =
-        IndentableBlockSpacing::new(Margin::uniform(0.), RICH_TEXT_LIST_INDENT_PADDING);
-
-    BlockSpacings {
-        text: text_spacing,
-        header: header_spacing,
-        code_block: default_block_spacings.code_block,
-        task_list: compact_indentable.clone(),
-        ordered_list: compact_indentable.clone(),
-        unordered_list: compact_indentable,
-    }
 }
 
 /// A kind of block that can be added to a notebook.
@@ -325,7 +283,7 @@ pub fn rich_text_styles(appearance: &Appearance, font_settings: &FontSettings) -
             icon_path: "bundled/svg/link-broken-02.svg",
             icon_color: theme.terminal_colors().normal.red.into(),
         },
-        block_spacings: rich_text_block_spacings(),
+        block_spacings: BlockSpacings::default(),
         show_placeholder_text_on_empty_block: true,
         minimum_paragraph_height: Some(base_text.line_height()),
         cursor_width: 3.,
