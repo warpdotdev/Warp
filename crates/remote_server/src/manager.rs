@@ -293,7 +293,7 @@ pub enum RemoteSessionState {
         control_path: Option<PathBuf>,
         /// Tail buffer of the last N stderr lines from the proxy subprocess.
         #[cfg(not(target_family = "wasm"))]
-        stderr_tail: crate::client::StderrTail,
+        stderr_tail: crate::client::RemoteServerLog,
     },
     /// Initialize handshake succeeded. Client is ready for requests.
     Connected {

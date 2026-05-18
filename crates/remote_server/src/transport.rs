@@ -18,7 +18,9 @@ use std::pin::Pin;
 use async_channel::Receiver;
 use warpui::r#async::executor;
 
-use crate::client::{ClientEvent, RemoteServerClient, StderrTail};
+use crate::client::{ClientEvent, RemoteServerClient};
+#[cfg(not(target_family = "wasm"))]
+use crate::client::RemoteServerLog;
 use crate::manager::RemoteServerExitStatus;
 use crate::setup::{PreinstallCheckResult, RemotePlatform};
 use serde::Serialize;
@@ -178,7 +180,7 @@ pub struct Connection {
     /// Tail buffer of the last N stderr lines from the SSH subprocess.
     /// Drained on connection failure and attached to telemetry.
     #[cfg(not(target_family = "wasm"))]
-    pub stderr_tail: StderrTail,
+    pub stderr_tail: RemoteServerLog,
 }
 
 /// Transport abstraction for remote server connections.

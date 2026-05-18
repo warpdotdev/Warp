@@ -1,8 +1,7 @@
 use std::collections::HashMap;
-use std::collections::VecDeque;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::codebase_index_proto::{
@@ -28,6 +27,11 @@ use crate::proto::{
 };
 use crate::repo_metadata_proto::{proto_snapshot_to_update, proto_to_repo_metadata_update};
 
+#[cfg(not(target_family = "wasm"))]
+mod remote_server_log;
+#[cfg(not(target_family = "wasm"))]
+pub use remote_server_log::RemoteServerLog;
+
 use crate::protocol::{self, ProtocolError, RequestId};
 use warp_core::{safe_error, safe_warn, SessionId};
 use warp_util::standardized_path::StandardizedPath;
@@ -35,55 +39,6 @@ use warpui::r#async::TransportStream;
 
 /// Default request timeout (2 minutes).
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
-
-/// Maximum number of stderr lines to retain in the tail buffer.
-const STDERR_TAIL_MAX_LINES: usize = 5;
-
-/// A shared buffer that retains the last [`STDERR_TAIL_MAX_LINES`] lines
-/// from the remote server proxy's stderr. Used to attach proxy-side
-/// context to telemetry when the connection fails.
-#[derive(Clone, Debug)]
-pub struct StderrTail(Arc<Mutex<VecDeque<String>>>);
-
-impl StderrTail {
-    fn new() -> Self {
-        Self(Arc::new(Mutex::new(VecDeque::with_capacity(
-            STDERR_TAIL_MAX_LINES,
-        ))))
-    }
-
-    fn push(&self, line: String) {
-        if let Ok(mut buf) = self.0.lock() {
-            if buf.len() >= STDERR_TAIL_MAX_LINES {
-                buf.pop_front();
-            }
-            buf.push_back(line);
-        }
-    }
-
-    /// Drains the buffer and returns the joined lines, or `None` if empty.
-    /// Truncates to 2048 chars to keep telemetry payloads reasonable.
-    pub fn drain(&self) -> Option<String> {
-        let lines: Vec<String> = self.0.lock().ok()?.drain(..).collect();
-        if lines.is_empty() {
-            return None;
-        }
-        let joined = lines.join("\n");
-        if joined.len() > 2048 {
-            // Truncate from the start — the tail end of stderr is the
-            // most useful context for diagnosing why the proxy died.
-            let mut start = joined.len() - 2048;
-            // Snap forward to a char boundary to avoid panicking on
-            // multibyte UTF-8.
-            while !joined.is_char_boundary(start) {
-                start += 1;
-            }
-            Some(format!("…{}", &joined[start..]))
-        } else {
-            Some(joined)
-        }
-    }
-}
 
 /// Errors from the `RemoteServerClient`.
 #[derive(thiserror::Error, Debug)]
@@ -266,7 +221,7 @@ impl RemoteServerClient {
         Self,
         async_channel::Receiver<ClientEvent>,
         async_channel::Receiver<RequestFailedEvent>,
-        StderrTail,
+        RemoteServerLog,
     ) {
         let stderr_tail = spawn_stderr_forwarder(stderr, executor);
         let (client, event_rx, failure_rx) = Self::new(stdout, stdin, executor);
@@ -1348,17 +1303,17 @@ impl RemoteServerClient {
 }
 
 /// Spawns a background task that reads lines from the server's stderr,
-/// forwards them to the client's logging, and retains the last
-/// [`STDERR_TAIL_MAX_LINES`] lines in a shared buffer for telemetry.
+/// forwards them to the client's logging, and retains the last few lines
+/// in a shared buffer for telemetry.
 #[cfg(not(target_family = "wasm"))]
 pub fn spawn_stderr_forwarder(
     stderr: impl AsyncRead + TransportStream,
     executor: &executor::Background,
-) -> StderrTail {
+) -> RemoteServerLog {
     use futures::io::AsyncBufReadExt;
     use futures::StreamExt;
 
-    let tail = StderrTail::new();
+    let tail = RemoteServerLog::new();
     let tail_writer = tail.clone();
 
     executor
