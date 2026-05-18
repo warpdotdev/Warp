@@ -8,19 +8,26 @@ use serde::{Deserialize, Serialize};
 
 use crate::{AgentConfigSnapshot, JsonModel, JsonSerializer};
 
-/// A saved agent configuration that can be referenced when running agents.
+/// A cloud agent config represents a saved agent configuration that can be referenced when running agents via `--agent-id`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
 pub struct AgentConfig {
+    /// Configuration name.
     pub name: String,
+    /// Base model ID to use for the agent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_model_id: Option<String>,
+    /// Base prompt to prepend to user prompts.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_prompt: Option<String>,
+    /// MCP servers configuration.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_servers: Option<HashMap<String, serde_json::Value>>,
 }
 
 impl AgentConfig {
+    /// Converts to `AgentConfigSnapshot` for use in agent execution.
+    ///
+    /// `AgentConfig` matches the server's JSON format, such as `base_model_id`, while `AgentConfigSnapshot` is the runtime config format, such as `model_id`.
     pub fn to_ambient_config(&self) -> AgentConfigSnapshot {
         AgentConfigSnapshot {
             name: Some(self.name.clone()),

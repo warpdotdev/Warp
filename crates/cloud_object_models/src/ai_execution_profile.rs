@@ -19,6 +19,7 @@ pub enum ActionPermission {
     AgentDecides,
     AlwaysAllow,
     AlwaysAsk,
+    // This is intended to catch deserialization errors whenever we add new variants to this enum. For example, if we add a "Never" variant, old clients can still deserialize it into an existing option.
     #[serde(other)]
     Unknown,
 }
@@ -49,11 +50,13 @@ impl ActionPermission {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WriteToPtyPermission {
+    // This is for backwards compatibility with the old "Never" value.
     #[serde(alias = "Never")]
     AlwaysAllow,
     #[default]
     AlwaysAsk,
     AskOnFirstWrite,
+    // This is intended to catch deserialization errors whenever we add new variants to this enum.
     #[serde(other)]
     Unknown,
 }
@@ -83,6 +86,7 @@ pub enum ComputerUsePermission {
     Never,
     AlwaysAsk,
     AlwaysAllow,
+    // This is intended to catch deserialization errors whenever we add new variants to this enum.
     #[serde(other)]
     Unknown,
 }
@@ -118,6 +122,7 @@ pub enum AskUserQuestionPermission {
     AskExceptInAutoApprove,
     #[default]
     AlwaysAsk,
+    // This is intended to catch deserialization errors whenever we add new variants to this enum.
     #[serde(other)]
     Unknown,
 }
@@ -278,6 +283,9 @@ cfg_if::cfg_if! {
     }
 }
 
+/// Core data structure representing an AI execution profile, which includes model configuration, behavior settings, and permissions.
+///
+/// NOTE: `planning_model` was removed after planning via subagent was deprecated; serialized legacy profiles may include a `planning_model` field and this field name should remain reserved indefinitely.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AIExecutionProfile {
@@ -289,8 +297,11 @@ pub struct AIExecutionProfile {
     pub write_to_pty: WriteToPtyPermission,
     pub mcp_permissions: ActionPermission,
     pub ask_user_question: AskUserQuestionPermission,
+    /// Always ask for permission for these commands.
     pub command_denylist: Vec<AgentModeCommandExecutionPredicate>,
+    /// When `execute_commands` is set to `AlwaysAsk`, autoexecute these commands.
     pub command_allowlist: Vec<AgentModeCommandExecutionPredicate>,
+    /// When `read_files` is set to `AlwaysAsk`, autoread from these directories.
     pub directory_allowlist: Vec<PathBuf>,
     pub mcp_allowlist: Vec<uuid::Uuid>,
     pub mcp_denylist: Vec<uuid::Uuid>,
@@ -300,7 +311,9 @@ pub struct AIExecutionProfile {
     pub cli_agent_model: Option<LLMId>,
     pub computer_use_model: Option<LLMId>,
     pub context_window_limit: Option<u32>,
+    /// Whether plans created by the agent should be automatically synced to Warp Drive.
     pub autosync_plans_to_warp_drive: bool,
+    /// Whether the agent may use web search when helpful for completing tasks.
     pub web_search_enabled: bool,
 }
 
@@ -360,6 +373,7 @@ impl AIExecutionProfile {
         }
     }
 
+    /// This creates a CLI-specific profile that will never ask the user for permission, since we cannot do so in a non-interactive setting.
     pub fn create_default_cli_profile(
         is_sandboxed: bool,
         computer_use_override: Option<bool>,

@@ -155,18 +155,25 @@ impl AgentConfigSnapshot {
     }
 }
 
+/// A scheduled ambient agent represents configuration for ambient agents that run on a cron schedule.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ScheduledAmbientAgent {
+    /// Agent name.
     #[serde(default)]
     pub name: String,
+    /// Cron schedule expression.
     #[serde(default)]
     pub cron_schedule: String,
+    /// Whether the scheduled agent is enabled.
     #[serde(default)]
     pub enabled: bool,
+    /// The prompt to use for the scheduled agent.
     #[serde(default)]
     pub prompt: String,
+    /// The latest failure to execute this scheduled agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_spawn_error: Option<String>,
+    /// Configuration for how the ambient agent should run.
     #[serde(default, skip_serializing_if = "AgentConfigSnapshot::is_empty")]
     pub agent_config: AgentConfigSnapshot,
 }

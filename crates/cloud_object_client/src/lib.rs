@@ -187,11 +187,13 @@ pub enum ObjectDeleteResult {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 pub trait ObjectClient: 'static + Send + Sync {
+    /// This method saves a workflow for a given owner and returns it on success.
     async fn create_workflow(
         &self,
         request: CreateObjectRequest,
     ) -> Result<CreateCloudObjectResult>;
 
+    /// Updates a workflow with the new data. The update may be rejected if a revision is specified and that revision is not the current revision of the object in storage.
     async fn update_workflow(
         &self,
         workflow_id: WorkflowId,
@@ -199,6 +201,7 @@ pub trait ObjectClient: 'static + Send + Sync {
         revision: Option<Revision>,
     ) -> Result<UpdateCloudObjectResult<ServerWorkflow>>;
 
+    /// Creates multiple generic string objects in a single GraphQL request. Use this rather than calling `create_generic_string_object` multiple times in a loop.
     async fn bulk_create_generic_string_objects(
         &self,
         owner: Owner,
@@ -212,11 +215,13 @@ pub trait ObjectClient: 'static + Send + Sync {
         request: CreateObjectRequest,
     ) -> Result<CreateCloudObjectResult>;
 
+    /// Creates a notebook on the server, returning the ID and revision of the object after creation.
     async fn create_notebook(
         &self,
         request: CreateObjectRequest,
     ) -> Result<CreateCloudObjectResult>;
 
+    /// Updates a notebook with the new title and data. The update may be rejected if a revision is specified and that revision is not the current revision of the object in storage.
     async fn update_notebook(
         &self,
         notebook_id: cloud_object_models::NotebookId,
@@ -240,16 +245,23 @@ pub trait ObjectClient: 'static + Send + Sync {
         revision: Option<Revision>,
     ) -> Result<UpdateCloudObjectResult<Box<dyn ServerObject>>>;
 
+    /// Sets the current editor of the notebook to be the logged-in user.
     async fn grab_notebook_edit_access(
         &self,
         notebook_id: cloud_object_models::NotebookId,
     ) -> Result<ServerMetadata>;
 
+    /// Sets the current editor of the notebook to null.
     async fn give_up_notebook_edit_access(
         &self,
         notebook_id: cloud_object_models::NotebookId,
     ) -> Result<ServerMetadata>;
 
+    /// Gets updates for all Warp Drive actions.
+    ///
+    /// Starts a WebSocket connection against the corresponding GraphQL subscription.
+    /// Messages received over the socket are sent over the `message_sender`.
+    /// Once the WebSocket is live, a one-shot message is sent over `stream_ready_sender` to indicate so, because this method only returns once the WebSocket is closed.
     async fn get_warp_drive_updates(
         &self,
         message_sender: Sender<ObjectUpdateMessage>,
@@ -264,6 +276,7 @@ pub trait ObjectClient: 'static + Send + Sync {
 
     async fn fetch_single_cloud_object(&self, id: ServerId) -> Result<GetCloudObjectResponse>;
 
+    /// Transfers a notebook to the given owner.
     async fn transfer_notebook_owner(
         &self,
         notebook_id: cloud_object_models::NotebookId,
@@ -335,6 +348,11 @@ pub trait ObjectClient: 'static + Send + Sync {
         guest: GuestIdentifier,
     ) -> Result<ServerPermissions>;
 
+    /// Fetches the last-used timestamps for all cloud environments.
+    ///
+    /// This is derived from `CloudEnvironment.lastTaskCreated.createdAt`, not `lastTaskRunTimestamp`, so that "Last used" reflects the most recently created task.
+    ///
+    /// Returns a map from environment UID to timestamp.
     async fn fetch_environment_last_task_run_timestamps(
         &self,
     ) -> Result<HashMap<String, DateTime<Utc>>>;

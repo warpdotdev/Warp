@@ -47,6 +47,9 @@ impl Workflow {
         }
     }
 
+    /// The core content of the workflow.
+    ///
+    /// For command workflows, this is the shell command. For agent mode workflows, this is the query.
     pub fn content(&self) -> &str {
         match self {
             Self::AgentMode { query, .. } => query,
@@ -120,6 +123,9 @@ impl Workflow {
         matches!(self, Self::AgentMode { .. })
     }
 
+    /// Returns `true` if the workflow name starts with the given character, case-insensitively.
+    ///
+    /// This is used by prompt search datasources to prefix-match on single-character queries, where fuzzy matching would be unreliable.
     pub fn name_starts_with_char_ignore_case(&self, c: char) -> bool {
         self.name()
             .chars()
@@ -127,6 +133,7 @@ impl Workflow {
             .is_some_and(|first| first.eq_ignore_ascii_case(&c))
     }
 
+    /// Returns a list of every enum ID referenced by this workflow.
     pub fn get_enum_ids(&self) -> Vec<SyncId> {
         self.arguments()
             .iter()
@@ -137,6 +144,7 @@ impl Workflow {
             .collect()
     }
 
+    /// Returns a list of every enum ID that has been synced to the server, used for telemetry.
     pub fn get_server_enum_ids(&self) -> Vec<GenericStringObjectId> {
         self.arguments()
             .iter()
@@ -158,6 +166,8 @@ impl Workflow {
         }
     }
 
+    /// Given two IDs, replace any instance of the old ID referenced by this workflow with the new ID.
+    /// Returns `true` if any instances of the old ID were present.
     pub fn replace_object_id(&mut self, old_id: SyncId, new_id: SyncId) -> bool {
         let mut changed = false;
         let arguments = match self {
@@ -240,6 +250,9 @@ impl Workflow {
     }
 }
 
+/// Creates a workflow model from a public-facing workflow.
+///
+/// See <https://github.com/warpdotdev/workflows/blob/main/workflow-types/src/lib.rs>.
 impl From<warp_workflows::Workflow> for Workflow {
     fn from(workflow: warp_workflows::Workflow) -> Self {
         Workflow::Command {
@@ -261,6 +274,7 @@ impl From<warp_workflows::Workflow> for Workflow {
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq, Hash, Default)]
 pub struct Argument {
     pub name: String,
+    /// The type of the argument to the workflow.
     #[serde(flatten, deserialize_with = "deserialize_arg_type")]
     pub arg_type: ArgumentType,
     pub description: Option<String>,
@@ -328,6 +342,9 @@ pub enum ArgumentType {
     },
 }
 
+/// Custom deserialization for argument types, used to both `flatten` the argument type and allow for the specification of `default` behavior.
+///
+/// This is necessary because serde currently does not support the use of `flatten` with a `default`. See <https://github.com/serde-rs/serde/issues/1626>.
 fn deserialize_arg_type<'de, D>(deserializer: D) -> Result<ArgumentType, D::Error>
 where
     D: Deserializer<'de>,
