@@ -13,7 +13,7 @@
 > **antonym:** *a terminal that asks for your email before it lets you `cd`.*
 
 <p align="center">
-  <img src="app/assets/bundled/png/warper_screenshot.png" alt="Warper terminal" width="100%" />
+  <img src="public/warper_screenshot.png" alt="Warper terminal" width="100%" />
 </p>
 
 <p align="center"><sub>Warper is a hard fork of <a href="https://www.warp.dev">Warp</a>. It keeps the terminal and drops the platform that grew around it.</sub></p>
