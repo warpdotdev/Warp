@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use settings::{macros::define_settings_group, Setting as _, SupportedPlatforms, SyncToCloud};
 use warp_cli::agent::Harness;
+use warp_core::report_if_error;
 
 use crate::server::ids::SyncId;
 
@@ -110,6 +111,6 @@ impl CloudAgentSettings {
                 },
             );
         }
-        let _ = self.last_selected_harness_model.set_value(map, ctx);
+        report_if_error!(self.last_selected_harness_model.set_value(map, ctx));
     }
 }
