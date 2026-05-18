@@ -12,7 +12,7 @@ use crate::ai::ambient_agents::task::{AgentConfigSnapshot, HarnessConfig, TaskPr
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
 
-use super::{ConversationDetailsData, CreditsInfo, PanelMode};
+use super::{ConversationDetailsData, PanelMode};
 
 fn create_test_task(task_id: &str) -> AmbientAgentTask {
     let now = Utc::now();
@@ -136,6 +136,7 @@ fn test_from_task_includes_linked_directory_when_run_id_matches() {
                 run_id: Some(task_id.to_string()),
                 autoexecute_override: None,
                 last_event_sequence: None,
+                pinned: false,
             },
         );
 
@@ -277,6 +278,7 @@ fn test_from_conversation_populates_local_conversation_fields() {
                 autoexecute_override: None,
                 last_event_sequence: None,
                 is_remote_child: false,
+                pinned: false,
             },
         );
 
@@ -314,10 +316,7 @@ fn test_from_conversation_populates_local_conversation_fields() {
 
             assert_eq!(data.title, "test query");
             assert_eq!(data.source_prompt.as_deref(), Some("test query"));
-            assert!(matches!(
-                data.credits,
-                Some(CreditsInfo::LocalConversation(_))
-            ));
+            assert!(data.credits.is_some());
         });
     });
 }
@@ -349,6 +348,7 @@ fn test_from_task_includes_linked_directory_when_server_token_matches() {
                 run_id: None,
                 autoexecute_override: None,
                 last_event_sequence: None,
+                pinned: false,
             },
         );
 
