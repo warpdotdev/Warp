@@ -180,13 +180,16 @@ pub(crate) struct RunAgentsCardDecisionEvent {
 }
 
 /// Surface that first introduced orchestration into a conversation.
+///
+/// Plan-card surfacing is intentionally NOT a variant here — that signal
+/// is covered by [`AgentProposedConfigEvent`] (fires once per plan card
+/// instance when an agent-authored snapshot first becomes visible) plus
+/// [`PlanConfigApprovalToggledEvent`] (the user's approval toggle).
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum OrchestrationEntrySource {
     /// `/orchestrate` slash-command mode on a user query.
     SlashCommandOrchestrate,
-    /// Plan-card `Use orchestration` switch toggled to approved.
-    PlanCardApproved,
     /// `run_agents` confirmation card was shown (not auto-launched).
     RunAgentsCardShown,
 }
@@ -333,7 +336,7 @@ impl TelemetryEventDesc for BlocklistOrchestrationTelemetryEventDiscriminants {
                 "User interacted with the orchestration pill bar (switch, pin, open in pane/tab, stop, kill, etc.)"
             }
             Self::OrchestrationEntered => {
-                "Orchestration was activated in a conversation via /orchestrate, a plan-card approval toggle, or a run_agents confirmation card surfacing"
+                "Orchestration was activated in a conversation via /orchestrate or a run_agents confirmation card surfacing. Plan-card entries are tracked separately via AgentProposedConfig + PlanConfigApprovalToggled."
             }
             Self::AgentProposedConfig => {
                 "An agent-authored orchestration config snapshot first became visible to the user on a plan card"

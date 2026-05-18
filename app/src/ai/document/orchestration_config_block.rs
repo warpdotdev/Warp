@@ -22,8 +22,7 @@ use crate::ai::blocklist::inline_action::orchestration_controls::{
 };
 use crate::ai::blocklist::telemetry::{
     AgentProposedConfigEvent, BlocklistOrchestrationTelemetryEvent, OrchestrationApprovalStatus,
-    OrchestrationEnteredEvent, OrchestrationEntrySource, OrchestrationExecutionModeKind,
-    OrchestrationHarnessKind, PlanConfigApprovalToggledEvent,
+    OrchestrationExecutionModeKind, OrchestrationHarnessKind, PlanConfigApprovalToggledEvent,
 };
 use crate::ai::blocklist::BlocklistAIHistoryEvent;
 use crate::ai::document::ai_document_model::AIDocumentModel;
@@ -146,9 +145,6 @@ pub struct OrchestrationConfigBlockView {
     /// saves the config and the resulting event re-enters
     /// `refresh_from_model`.
     suppress_refresh: bool,
-    /// Guards `OrchestrationEntered` against re-emission on subsequent
-    /// off→on toggles within the same view instance.
-    entered_event_emitted: bool,
 }
 
 impl OrchestrationConfigBlockView {
@@ -251,7 +247,6 @@ impl OrchestrationConfigBlockView {
             details_mouse_state: MouseStateHandle::default(),
             saved_model_per_harness: HashMap::new(),
             suppress_refresh: false,
-            entered_event_emitted: false,
         };
         if view.is_approved {
             view.ensure_pickers(ctx);
@@ -596,7 +591,6 @@ impl TypedActionView for OrchestrationConfigBlockView {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             OrchestrationConfigBlockAction::ToggleApproval => {
-                let was_approved = self.is_approved;
                 self.is_approved = !self.is_approved;
                 if self.is_approved && !self.pickers_initialized {
                     self.ensure_pickers(ctx);
@@ -607,12 +601,6 @@ impl TypedActionView for OrchestrationConfigBlockView {
                     OrchestrationApprovalStatus::Disapproved
                 };
                 self.emit_plan_config_approval_toggled(status, ctx);
-                // First off→on is the plan-card entry point; later
-                // re-toggles don't re-fire (matches RunAgentsCardView).
-                if !was_approved && self.is_approved && !self.entered_event_emitted {
-                    self.entered_event_emitted = true;
-                    self.emit_orchestration_entered(ctx);
-                }
                 self.apply_field_change(ctx);
                 ctx.notify();
             }
@@ -717,17 +705,6 @@ impl OrchestrationConfigBlockView {
                     has_auth_secret: self.edit_state.auth_secret_name.is_some(),
                 }
             ),
-            ctx
-        );
-    }
-
-    fn emit_orchestration_entered(&self, ctx: &mut ViewContext<Self>) {
-        send_telemetry_from_ctx!(
-            BlocklistOrchestrationTelemetryEvent::OrchestrationEntered(OrchestrationEnteredEvent {
-                conversation_id: self.conversation_id,
-                plan_id: (!self.plan_id.is_empty()).then(|| self.plan_id.clone()),
-                entry_source: OrchestrationEntrySource::PlanCardApproved,
-            }),
             ctx
         );
     }
