@@ -290,7 +290,9 @@ fn collect_log_paths_in(log_directory: &Path, logfile_name: &str) -> Result<Vec<
     );
 
     if files.is_empty() {
-        return Err(anyhow::anyhow!("No warp logs were found for {logfile_name}"));
+        return Err(anyhow::anyhow!(
+            "No warp logs were found for {logfile_name}"
+        ));
     }
 
     Ok(files)
@@ -571,7 +573,14 @@ mod tests {
 
         assert_eq!(
             paths,
-            vec![active, in_session_0, in_session_1, in_session_2, old_0, old_1]
+            vec![
+                active,
+                in_session_0,
+                in_session_1,
+                in_session_2,
+                old_0,
+                old_1
+            ]
         );
     }
 

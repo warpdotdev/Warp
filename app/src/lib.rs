@@ -803,10 +803,10 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             }
         } else {
             warp_logging::init(warp_logging::LogConfig {
-                    is_cli,
-                    log_destination,
-                    ..Default::default()
-                })?;
+                is_cli,
+                log_destination,
+                ..Default::default()
+            })?;
         }
     }
 
