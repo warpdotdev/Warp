@@ -2910,6 +2910,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::SummarizationViaMessageReplacement,
         #[cfg(feature = "pluggable_notifications")]
         FeatureFlag::PluggableNotifications,
+        #[cfg(feature = "async_find")]
+        FeatureFlag::AsyncFind,
         #[cfg(feature = "list_skills")]
         FeatureFlag::ListSkills,
         #[cfg(feature = "ask_user_question")]
@@ -2930,6 +2932,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::OzLaunchModal,
         #[cfg(feature = "open_warp_launch_modal")]
         FeatureFlag::OpenWarpLaunchModal,
+        #[cfg(feature = "orchestration_launch_modal")]
+        FeatureFlag::OrchestrationLaunchModal,
         #[cfg(feature = "new_tab_styling")]
         FeatureFlag::NewTabStyling,
         #[cfg(feature = "skill_arguments")]
@@ -2940,8 +2944,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::ConversationsAsContext,
         #[cfg(feature = "incremental_auto_reload")]
         FeatureFlag::IncrementalAutoReload,
-        #[cfg(feature = "orchestration")]
-        FeatureFlag::Orchestration,
         #[cfg(feature = "orchestration_v2")]
         FeatureFlag::OrchestrationV2,
         #[cfg(feature = "orchestration_pill_bar")]

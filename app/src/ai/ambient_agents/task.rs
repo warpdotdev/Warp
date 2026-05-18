@@ -79,6 +79,16 @@ pub struct HarnessConfig {
     /// The model to use with this harness. None means use the harness default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,
+    /// Optional reasoning level for harnesses that support it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_level: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HarnessModelConfig {
+    pub model_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_level: Option<String>,
 }
 
 impl HarnessConfig {
@@ -87,7 +97,18 @@ impl HarnessConfig {
         Self {
             harness_type,
             model_id: None,
+            reasoning_level: None,
         }
+    }
+
+    pub fn model_config(&self) -> Option<HarnessModelConfig> {
+        self.model_id
+            .as_ref()
+            .filter(|id| !id.is_empty())
+            .map(|model_id| HarnessModelConfig {
+                model_id: model_id.clone(),
+                reasoning_level: self.reasoning_level.clone(),
+            })
     }
 }
 

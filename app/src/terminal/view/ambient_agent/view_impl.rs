@@ -7,6 +7,8 @@ use warp_terminal::model::BlockId;
 
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
 use crate::ai::agent::display_user_query_with_mode;
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::agent_sdk::driver::harness::auth_check_command_for;
 use crate::ai::AIRequestUsageModel;
 use warp_core::features::FeatureFlag;
 use warp_core::send_telemetry_from_ctx;
@@ -200,6 +202,11 @@ impl TerminalView {
                     event,
                     AmbientAgentViewModelEvent::ExecutionSessionReady { .. }
                 ) {
+                    if self.pending_cloud_followup_task_id.is_some()
+                        && !self.is_conversation_details_panel_open
+                    {
+                        self.suppress_initial_conversation_details_panel_auto_open();
+                    }
                     self.pending_cloud_followup_task_id = None;
                     self.remove_conversation_ended_tombstone(ctx);
                 }
@@ -398,7 +405,8 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility
-            | AmbientAgentViewModelEvent::AuthSecretSelected => (),
+            | AmbientAgentViewModelEvent::AuthSecretSelected
+            | AmbientAgentViewModelEvent::RunLifecycleChanged => (),
         }
     }
 
@@ -601,7 +609,23 @@ impl TerminalView {
         let Some(ambient_agent_view_model) = self.ambient_agent_view_model.as_ref() else {
             return false;
         };
-        match ambient_agent_view_model.as_ref(ctx).selected_harness() {
+        let selected_harness = ambient_agent_view_model.as_ref(ctx).selected_harness();
+        // The auth-check preflight command (e.g. `claude auth status
+        // --json`, `codex login status`) shares the harness CLI prefix
+        // but is NOT the harness session start. Treat it as a setup
+        // command instead so it stays in the existing setup-commands
+        // group. The driver's harness impls are the single source of
+        // truth for what an auth check command looks like.
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let command_trimmed = command.trim();
+            if let Some(auth_cmd) = auth_check_command_for(selected_harness) {
+                if auth_cmd.trim() == command_trimmed {
+                    return false;
+                }
+            }
+        }
+        match selected_harness {
             Harness::Oz => false,
             Harness::Claude => matches!(cli_agent, CLIAgent::Claude),
             Harness::OpenCode => matches!(cli_agent, CLIAgent::OpenCode),

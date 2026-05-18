@@ -3161,7 +3161,9 @@ impl BillingAndUsagePageView {
                         " for security features like SSO and automatically applied zero data retention.",
                     ),
                 ]
-            } else if team.billing_metadata.is_on_build_business_plan() {
+            } else if team.billing_metadata.is_on_build_business_plan()
+                || team.billing_metadata.is_on_legacy_business_plan()
+            {
                 vec![
                     FormattedTextFragment::hyperlink(
                         "Upgrade to Enterprise",

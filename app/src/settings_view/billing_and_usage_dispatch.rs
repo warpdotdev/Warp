@@ -26,11 +26,17 @@ impl BillingAndUsageDispatchView {
         let v1 = ctx.add_typed_action_view(BillingAndUsagePageView::new);
         let v2 = ctx.add_typed_action_view(BillingAndUsagePageV2View::new);
 
-        ctx.subscribe_to_view(&v1, |_, _, event, ctx| {
-            ctx.emit(event.clone());
+        // Both children stay alive; only forward events from the active one
+        // to avoid duplicate toasts.
+        ctx.subscribe_to_view(&v1, |this, _, event, ctx| {
+            if !this.use_v2(ctx) {
+                ctx.emit(event.clone());
+            }
         });
-        ctx.subscribe_to_view(&v2, |_, _, event, ctx| {
-            ctx.emit(event.clone());
+        ctx.subscribe_to_view(&v2, |this, _, event, ctx| {
+            if this.use_v2(ctx) {
+                ctx.emit(event.clone());
+            }
         });
 
         ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |_, _, _, ctx| {

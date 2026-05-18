@@ -13,6 +13,13 @@ use warp_core::features::FeatureFlag;
 use warpui::{App, EntityId};
 
 const FIRST_REQUEST_ID: StartAgentRequestId = StartAgentRequestId::from_raw_for_test(0);
+
+/// Stable placeholder run_id assigned to the parent conversation in tests
+/// that dispatch an Oz local child. The Oz `Local` arm of
+/// `StartAgentExecutor::execute` bails out synchronously if the parent has
+/// no `run_id`, so every `local_with_defaults` test needs to assign one.
+const PARENT_RUN_ID: &str = "00000000-0000-0000-0000-000000000001";
+
 fn build_start_agent_action(
     version: StartAgentVersion,
     execution_mode: StartAgentExecutionMode,
@@ -40,6 +47,15 @@ fn execute_returns_error_when_child_startup_is_blocked_before_initialization() {
         let executor = app.add_model(StartAgentExecutor::new);
         let parent_conversation_id = history_model.update(&mut app, |history_model, ctx| {
             history_model.start_new_conversation(terminal_view_id, false, false, false, ctx)
+        });
+        history_model.update(&mut app, |model, ctx| {
+            model.assign_run_id_for_conversation(
+                parent_conversation_id,
+                PARENT_RUN_ID.to_string(),
+                None,
+                terminal_view_id,
+                ctx,
+            );
         });
         let action = build_start_agent_action(
             StartAgentVersion::V1,
@@ -130,6 +146,15 @@ fn execute_resolves_error_when_request_linkage_happens_after_child_already_faile
         let parent_conversation_id = history_model.update(&mut app, |history_model, ctx| {
             history_model.start_new_conversation(terminal_view_id, false, false, false, ctx)
         });
+        history_model.update(&mut app, |model, ctx| {
+            model.assign_run_id_for_conversation(
+                parent_conversation_id,
+                PARENT_RUN_ID.to_string(),
+                None,
+                terminal_view_id,
+                ctx,
+            );
+        });
         let action = build_start_agent_action(
             StartAgentVersion::V1,
             StartAgentExecutionMode::local_with_defaults(),
@@ -207,6 +232,15 @@ fn execute_resolves_success_when_request_linkage_happens_after_child_already_sta
         let parent_conversation_id = history_model.update(&mut app, |history_model, ctx| {
             history_model.start_new_conversation(terminal_view_id, false, false, false, ctx)
         });
+        history_model.update(&mut app, |model, ctx| {
+            model.assign_run_id_for_conversation(
+                parent_conversation_id,
+                PARENT_RUN_ID.to_string(),
+                None,
+                terminal_view_id,
+                ctx,
+            );
+        });
         let action = build_start_agent_action(
             StartAgentVersion::V1,
             StartAgentExecutionMode::local_with_defaults(),
@@ -283,6 +317,15 @@ fn execute_returns_detailed_error_when_child_startup_fails_before_initialization
         let executor = app.add_model(StartAgentExecutor::new);
         let parent_conversation_id = history_model.update(&mut app, |history_model, ctx| {
             history_model.start_new_conversation(terminal_view_id, false, false, false, ctx)
+        });
+        history_model.update(&mut app, |model, ctx| {
+            model.assign_run_id_for_conversation(
+                parent_conversation_id,
+                PARENT_RUN_ID.to_string(),
+                None,
+                terminal_view_id,
+                ctx,
+            );
         });
         let action = build_start_agent_action(
             StartAgentVersion::V1,
@@ -505,6 +548,15 @@ fn parallel_dispatch_keeps_two_pendings_distinguishable_by_request_id() {
         let parent_conversation_id = history_model.update(&mut app, |history_model, ctx| {
             history_model.start_new_conversation(terminal_view_id, false, false, false, ctx)
         });
+        history_model.update(&mut app, |model, ctx| {
+            model.assign_run_id_for_conversation(
+                parent_conversation_id,
+                PARENT_RUN_ID.to_string(),
+                None,
+                terminal_view_id,
+                ctx,
+            );
+        });
 
         let action_a = build_start_agent_action(
             StartAgentVersion::V1,
@@ -554,6 +606,15 @@ fn parallel_pendings_each_resolve_independently_via_recorded_child_id() {
         let executor = app.add_model(StartAgentExecutor::new);
         let parent_conversation_id = history_model.update(&mut app, |history_model, ctx| {
             history_model.start_new_conversation(terminal_view_id, false, false, false, ctx)
+        });
+        history_model.update(&mut app, |model, ctx| {
+            model.assign_run_id_for_conversation(
+                parent_conversation_id,
+                PARENT_RUN_ID.to_string(),
+                None,
+                terminal_view_id,
+                ctx,
+            );
         });
 
         let action_a = build_start_agent_action(
