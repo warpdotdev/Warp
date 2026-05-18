@@ -975,13 +975,14 @@ fn kill_agent_conversation(
         log::warn!("KillAgentConversation: no child pane found for {conversation_id:?}");
     }
 
-    let Some(terminal_view_id) = owner_terminal_view_id else {
+    if owner_terminal_view_id.is_none() {
         log::warn!(
             "KillAgentConversation: no terminal view found for conversation {conversation_id:?}"
         );
-        return;
-    };
-    conversation_utils::remove_conversation(conversation_id, terminal_view_id, false, ctx);
+    }
+    // Delete (not remove): drop the conversation from sqlite + cloud so a
+    // killed child does not resurrect on restart.
+    conversation_utils::delete_conversation(conversation_id, owner_terminal_view_id, ctx);
 }
 
 /// Attaches a terminal view to the pane group by subscribing to its events
