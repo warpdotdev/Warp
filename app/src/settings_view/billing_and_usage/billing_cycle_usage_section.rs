@@ -68,6 +68,14 @@ impl BillingCycleUsageSectionView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, _, _, ctx| {
             me.reconcile_selected_period(ctx);
+            // If the period menu is open while the workspace or usage data
+            // changes, the menu's items become stale and clicking one could
+            // select a period_end that no longer exists in the new data
+            // (which `current_summary` would then fail to resolve). Rebuild
+            // the items in-place so the menu always reflects the live data.
+            if me.period_menu_open {
+                me.refresh_period_menu_items(ctx);
+            }
             ctx.notify();
         });
         ctx.subscribe_to_model(&AIRequestUsageModel::handle(ctx), |_, _, _, ctx| {
