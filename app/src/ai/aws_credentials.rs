@@ -89,19 +89,14 @@ pub(crate) fn aws_role_session_name(run_id: &str) -> String {
     format!("Oz_Run_{run_id}")
 }
 
-/// Last-region STS client cache. A single device almost always uses one
-/// Bedrock region (the org's configured region), so a one-entry cache keyed
-/// by region is enough to preserve the HTTPS connection pool across credential
-/// refreshes. We use a `Mutex` (rather than `tokio::sync::OnceCell`) because
-/// the cache must be able to replace its contents if the region ever changes.
+/// Cached STS client for OIDC credential refreshes -- cached on the last region used.
+/// (in practice, there should only ever be 1 region used per warp app lifetime)
+///
+/// `AssumeRoleWithWebIdentity` is unauthenticated (the web identity token is the
+/// credential), so we skip the default credentials chain via `no_credentials()`
+/// and reuse a single client across refreshes.
 static STS_CLIENT_CACHE: Mutex<Option<(String, aws_sdk_sts::Client)>> = Mutex::const_new(None);
 
-/// Returns an STS client targeting `region`, reusing a cached client when the
-/// region matches the previous call. `AssumeRoleWithWebIdentity` is
-/// unauthenticated (the web identity token is the credential), so we skip the
-/// default credentials chain via `no_credentials()`. The region is supplied by
-/// the caller (typically driven by the run's `--bedrock-role-region` flag) so
-/// that the STS endpoint matches the Bedrock region the org has configured.
 async fn sts_client(region: &str) -> aws_sdk_sts::Client {
     let mut cache = STS_CLIENT_CACHE.lock().await;
     if let Some((cached_region, client)) = cache.as_ref() {

@@ -84,7 +84,7 @@ pub enum AwsCredentialsRefreshStrategy {
     LocalChain,
     /// Credentials are managed externally via OIDC/STS.
     /// The task ID is used to scope the STS AssumeRoleWithWebIdentity session.
-    /// The role ARN + region are the IAM role info used to assume via STS.
+    /// The role ARN + region are the info used to assume the IAM role via STS.
     OidcManaged {
         task_id: Option<String>,
         role_arn: String,
