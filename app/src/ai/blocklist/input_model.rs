@@ -604,11 +604,7 @@ impl BlocklistAIInputModel {
     /// is always used for alias expansion (callers without a live session should pass an
     /// `EmptyCompletionContext`).
     ///
-    /// `read_current_buffer` is invoked when the async classification completes and must
-    /// return the input buffer's current text. The result is compared against the buffer
-    /// text the classifier ran on (`input.buffer_text`); if they differ, the classification
-    /// result is treated as stale and discarded. The model doesn't have direct access to
-    /// the editor view, so callers supply this small reader closure.
+    /// `read_current_buffer` is invoked to check input buffer's current text when the async classification completes.
     pub fn detect_and_set_input_type<C, F>(
         &mut self,
         input: ParsedTokensSnapshot,
@@ -770,10 +766,9 @@ impl BlocklistAIInputModel {
                     if !me.should_run_input_autodetection(ctx) {
                         return;
                     }
-                    // Take the handle to mark this completed detection as consumed.
                     // If the handle is already gone, autodetection was aborted after the
-                    // future completed but before this callback ran. In that case, don't
-                    // apply a stale result.
+                    // future completed but before this callback ran
+                    // In this case, don't set the input type or apply stale result
                     if me.autodetect_abort_handle.take().is_none() {
                         return;
                     }
