@@ -3255,12 +3255,10 @@ impl RootView {
             && FeatureFlag::TabConfigs.is_enabled()
         {
             let intention = tutorial.intention();
-            // Terminal-intent users skip the session config modal.
             if matches!(intention, OnboardingIntention::AgentDrivenDevelopment) {
                 workspace.update(ctx, |view, ctx| {
-                    view.set_pending_onboarding_intention(intention);
                     view.open_vertical_tabs_panel_if_enabled(ctx);
-                    view.show_session_config_modal(ctx);
+                    view.start_agent_onboarding_tutorial(tutorial, ctx);
                 });
             } else {
                 workspace.update(ctx, |view, ctx| {

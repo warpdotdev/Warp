@@ -2402,10 +2402,12 @@ pub enum BlocklistAIHistoryEvent {
         conversation_id: AIConversationId,
     },
 
-    /// Emitted when a conversation's orchestration config is updated reactively
-    /// from an incoming `OrchestrationConfigSnapshot` message.
+    /// Emitted when a conversation's orchestration config is updated
+    /// (live wire snapshot, user edit, or restore-hydration).
+    /// Consumers that perform UI side effects should gate on `!from_restore`.
     OrchestrationConfigUpdated {
         conversation_id: AIConversationId,
+        from_restore: bool,
     },
 
     /// Emitted when a conversation's `conversation_usage_metadata` is updated

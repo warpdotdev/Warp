@@ -501,6 +501,11 @@ pub enum WorkspaceAction {
     /// environments exist.
     ShowHandoffEnvironmentCreationModal,
     ShowCloudModeV2EnvironmentCreationModal,
+    /// Open the workspace modal for creating a new managed auth secret.
+    /// Dispatched by orchestration card pickers' "New API key…" item.
+    OpenCreateAuthSecretModal {
+        harness: warp_cli::agent::Harness,
+    },
     /// Summarize the active AI conversation in the focused pane.
     SummarizeAIConversation {
         prompt: Option<String>,
@@ -960,6 +965,7 @@ impl WorkspaceAction {
             | OpenLocalToCloudHandoffPane { .. }
             | ShowHandoffEnvironmentCreationModal
             | ShowCloudModeV2EnvironmentCreationModal
+            | OpenCreateAuthSecretModal { .. }
             | OpenNetworkLogPane => false,
             #[cfg(debug_assertions)]
             ShowHoaOnboardingFlow => false,

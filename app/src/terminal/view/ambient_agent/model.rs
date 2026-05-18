@@ -201,6 +201,10 @@ pub struct AmbientAgentViewModel {
 
     /// Selected cloud environment to launch the ambient agent with.
     environment_id: Option<SyncId>,
+    /// True when `environment_id` came from an existing run config rather than from local
+    /// environment selection/defaulting. Existing runs may reference an environment before the
+    /// local CloudModel has loaded it, so initial-load validation should not clear it.
+    environment_id_from_viewed_task: bool,
 
     /// Handle for the periodic timer that updates progress durations.
     progress_timer_handle: Option<SpawnedFutureHandle>,
@@ -226,6 +230,8 @@ pub struct AmbientAgentViewModel {
     worker_host: Option<String>,
     /// Selected model id for a third-party harness (e.g. `"opus"` for Claude).
     harness_model_id: Option<String>,
+    /// Optional reasoning level for the selected harness model.
+    harness_reasoning_level: Option<String>,
     /// Name of the selected auth secret for the current non-Oz harness.
     harness_auth_secret_name: Option<String>,
     /// Whether the harness CLI
@@ -294,6 +300,7 @@ impl AmbientAgentViewModel {
             request: None,
             terminal_view_id,
             environment_id: None,
+            environment_id_from_viewed_task: false,
             progress_timer_handle: None,
             ui_state,
             setup_commands_state: Default::default(),
@@ -302,6 +309,7 @@ impl AmbientAgentViewModel {
             harness,
             worker_host: None,
             harness_model_id: None,
+            harness_reasoning_level: None,
             harness_auth_secret_name: None,
             harness_command_started: false,
             active_execution_session_id: None,
@@ -398,6 +406,9 @@ impl AmbientAgentViewModel {
     /// If the environment no longer exists, clears the selection.
     fn validate_environment_after_initial_load(&mut self, ctx: &mut ModelContext<Self>) {
         if let Some(id) = &self.environment_id {
+            if self.environment_id_from_viewed_task {
+                return;
+            }
             if CloudAmbientAgentEnvironment::get_by_id(id, ctx).is_none() {
                 log::warn!(
                     "Environment {id:?} no longer exists after initial load, clearing selection"
@@ -448,6 +459,7 @@ impl AmbientAgentViewModel {
         }
         self.harness = harness;
         self.harness_model_id = None;
+        self.harness_reasoning_level = None;
         self.harness_auth_secret_name = None;
         ctx.emit(AmbientAgentViewModelEvent::HarnessSelected);
     }
@@ -460,15 +472,23 @@ impl AmbientAgentViewModel {
         self.harness_model_id.as_deref()
     }
 
-    pub fn set_harness_model_id(
+    pub fn selected_harness_reasoning_level(&self) -> Option<&str> {
+        self.harness_reasoning_level.as_deref()
+    }
+
+    pub fn set_harness_model_selection(
         &mut self,
         harness_model_id: Option<String>,
+        reasoning_level: Option<String>,
         ctx: &mut ModelContext<Self>,
     ) {
-        if self.harness_model_id == harness_model_id {
+        if self.harness_model_id == harness_model_id
+            && self.harness_reasoning_level == reasoning_level
+        {
             return;
         }
         self.harness_model_id = harness_model_id;
+        self.harness_reasoning_level = reasoning_level;
         ctx.emit(AmbientAgentViewModelEvent::HarnessModelSelected);
     }
 
@@ -718,6 +738,7 @@ impl AmbientAgentViewModel {
             }
         }
         self.environment_id = environment_id;
+        self.environment_id_from_viewed_task = false;
         ctx.emit(AmbientAgentViewModelEvent::EnvironmentSelected);
     }
 
@@ -851,26 +872,16 @@ impl AmbientAgentViewModel {
         self.task_id = Some(task_id);
 
         self.status = Status::AgentRunning;
+        ctx.emit(AmbientAgentViewModelEvent::RunLifecycleChanged);
 
         // Fetch the task so we can set the correct environment (instead of defaulting to the most
-        // recently-used one) and the correct harness (so non-oz viewers know to use the
+        // recently-used one), harness, and harness model (so non-oz viewers know to use the
         // queued-prompt / harness-command-started flow).
         ctx.spawn(
             async move { ai_client.get_ambient_agent_task(&task_id).await },
             |me, result, ctx| match result {
                 Ok(task) => {
-                    let snapshot = task.agent_config_snapshot.as_ref();
-                    let environment_id = snapshot
-                        .and_then(|s| s.environment_id.as_deref())
-                        .and_then(|id| ServerId::try_from(id).ok())
-                        .map(SyncId::ServerId);
-                    let harness = snapshot
-                        .and_then(|s| s.harness.as_ref())
-                        .map(|h| h.harness_type)
-                        .unwrap_or(Harness::Oz);
-
-                    me.set_environment_id(environment_id, ctx);
-                    me.set_harness(harness, ctx);
+                    me.apply_viewed_task_config_snapshot(task.agent_config_snapshot.as_ref(), ctx);
                     ctx.emit(AmbientAgentViewModelEvent::ViewerHarnessResolved);
                 }
                 Err(err) => {
@@ -881,9 +892,64 @@ impl AmbientAgentViewModel {
         );
     }
 
-    pub fn record_ambient_execution_ended(&mut self, session_id: SessionId) {
+    /// Applies the run configuration for an existing shared ambient session.
+    ///
+    /// Viewed sessions can join before Warp Drive has loaded the referenced environment object,
+    /// especially on web. Preserve the server-provided environment ID anyway so the selector does
+    /// not fall back to an unrelated default while waiting for the environment object to arrive.
+    fn apply_viewed_task_config_snapshot(
+        &mut self,
+        snapshot: Option<&AgentConfigSnapshot>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let environment_id = snapshot
+            .and_then(|s| s.environment_id.as_deref())
+            .and_then(|id| ServerId::try_from(id).ok())
+            .map(SyncId::ServerId);
+        self.set_environment_id_from_viewed_task(environment_id, ctx);
+
+        if let Some(model_id) = snapshot.and_then(|s| s.model_id.as_deref()) {
+            LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
+                prefs.update_preferred_agent_mode_llm(
+                    &LLMId::from(model_id),
+                    self.terminal_view_id,
+                    ctx,
+                )
+            });
+        }
+
+        let harness_config = snapshot.and_then(|s| s.harness.as_ref());
+        let harness = harness_config
+            .map(|h| h.harness_type)
+            .unwrap_or(Harness::Oz);
+        let harness_model_id = harness_config.and_then(|h| h.model_id.clone());
+        let harness_reasoning_level = harness_config.and_then(|h| h.reasoning_level.clone());
+
+        self.set_harness(harness, ctx);
+        self.set_harness_model_selection(harness_model_id, harness_reasoning_level, ctx);
+    }
+
+    fn set_environment_id_from_viewed_task(
+        &mut self,
+        environment_id: Option<SyncId>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if self.environment_id == environment_id {
+            return;
+        }
+        self.environment_id_from_viewed_task = environment_id.is_some();
+        self.environment_id = environment_id;
+        ctx.emit(AmbientAgentViewModelEvent::EnvironmentSelected);
+    }
+
+    pub fn record_ambient_execution_ended(
+        &mut self,
+        session_id: SessionId,
+        ctx: &mut ModelContext<Self>,
+    ) {
         if self.active_execution_session_id.as_ref() == Some(&session_id) {
             self.active_execution_session_id = None;
+            ctx.emit(AmbientAgentViewModelEvent::RunLifecycleChanged);
         }
         self.last_ended_execution_session_id = Some(session_id);
     }
@@ -966,9 +1032,11 @@ impl AmbientAgentViewModel {
     pub fn reset_for_new_cloud_prompt(&mut self, ctx: &mut ModelContext<Self>) {
         self.status = Status::Composing;
         self.environment_id = None;
+        self.environment_id_from_viewed_task = false;
         self.task_id = None;
         self.conversation_id = None;
         self.harness_model_id = None;
+        self.harness_reasoning_level = None;
         self.harness_command_started = false;
         self.active_execution_session_id = None;
         self.last_ended_execution_session_id = None;
@@ -1010,6 +1078,7 @@ impl AmbientAgentViewModel {
         let third_party_harness = (selected_harness != Harness::Oz).then(|| HarnessConfig {
             harness_type: selected_harness,
             model_id: self.harness_model_id.clone(),
+            reasoning_level: self.harness_reasoning_level.clone(),
         });
 
         let harness_auth_secrets =
@@ -1082,6 +1151,7 @@ impl AmbientAgentViewModel {
                 .as_deref()
                 .and_then(|id| ServerId::try_from(id).ok())
                 .map(SyncId::ServerId);
+            self.environment_id_from_viewed_task = false;
 
             if let Some(model_id) = config.model_id.as_deref() {
                 LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
@@ -1091,6 +1161,11 @@ impl AmbientAgentViewModel {
                         ctx,
                     )
                 });
+            }
+            if let Some(harness) = config.harness.as_ref() {
+                self.harness = harness.harness_type;
+                self.harness_model_id = harness.model_id.clone();
+                self.harness_reasoning_level = harness.reasoning_level.clone();
             }
         }
 
@@ -1628,6 +1703,11 @@ pub enum AmbientAgentViewModelEvent {
     UpdatedSetupCommandVisibility,
     /// The selected harness auth secret changed.
     AuthSecretSelected,
+    /// The run's task association or execution liveness changed in a way that
+    /// may affect lock-dependent UI (e.g. the model selector). Fired when
+    /// a task is attached to the view (transcript restore) or when an
+    /// execution ends.
+    RunLifecycleChanged,
 }
 
 pub(crate) fn should_disable_snapshot(ctx: &AppContext) -> bool {

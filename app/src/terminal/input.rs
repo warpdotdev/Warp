@@ -28,9 +28,11 @@ pub mod user_query;
 
 pub use self::handoff_compose::{HandoffComposeState, HandoffComposeStateEvent};
 
-use crate::ai::active_agent_views_model::{ActiveAgentViewsModel, ConversationOrTaskId};
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::{AIAgentExchangeId, CancellationReason};
+use crate::ai::agent_conversations_model::{
+    AgentConversationNavigationSubject, AgentConversationsModel,
+};
 use crate::ai::ambient_agents::telemetry::HandoffEntryPoint;
 use crate::ai::blocklist::agent_view::shortcuts::AgentShortcutViewModel;
 use crate::ai::blocklist::agent_view::{AgentViewEntryOrigin, EphemeralMessageModel};
@@ -124,6 +126,7 @@ use crate::ai::blocklist::handoff::{HandoffLaunchAttachments, PendingCloudLaunch
 use crate::ai::blocklist::AttachmentType;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::PendingAttachment;
+use crate::ai::cloud_agent_settings::CloudAgentSettings;
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::cloud_object::model::generic_string_model::StringModel;
@@ -131,8 +134,8 @@ use crate::server::server_api::ai::AttachmentFileInfo;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::server::server_api::ai::AttachmentInput;
 use crate::terminal::view::ambient_agent::{
-    AuthSecretFtuxView, AuthSecretSelector, AuthSecretSelectorEvent, HarnessSelector,
-    HarnessSelectorEvent, HostSelector, HostSelectorEvent, NakedHeaderButtonTheme,
+    AuthSecretFtuxView, AuthSecretFtuxViewEvent, AuthSecretSelector, AuthSecretSelectorEvent,
+    HarnessSelector, HarnessSelectorEvent, HostSelector, HostSelectorEvent, NakedHeaderButtonTheme,
 };
 use crate::{
     ai::{
@@ -254,6 +257,7 @@ use crate::{
     workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent},
     AgentModeEntrypoint, ServerApiProvider,
 };
+use warp_cli::agent::Harness;
 
 use ai::skills::SkillReference;
 use base64::Engine as _;
@@ -2462,12 +2466,54 @@ impl Input {
                     }
                     AuthSecretSelectorEvent::MenuVisibilityChanged { open: true } => {}
                 });
-                let ftux_view = {
-                    let view_model_for_ftux = state.view_model.clone();
-                    ctx.add_typed_action_view(|ctx| {
-                        AuthSecretFtuxView::new(view_model_for_ftux, ctx)
-                    })
-                };
+                let initial_harness = state.view_model.as_ref(ctx).selected_harness();
+                let ftux_view =
+                    ctx.add_typed_action_view(|ctx| AuthSecretFtuxView::new(initial_harness, ctx));
+
+                // Forward the pane's harness changes into the FTUX view.
+                let ftux_for_harness_sub = ftux_view.clone();
+                ctx.subscribe_to_model(&state.view_model, move |_me, vm, event, ctx| {
+                    if matches!(event, AmbientAgentViewModelEvent::HarnessSelected) {
+                        let harness = vm.as_ref(ctx).selected_harness();
+                        ftux_for_harness_sub.update(ctx, |view, ctx| {
+                            view.set_harness(harness, ctx);
+                        });
+                    }
+                });
+
+                // Cloud-mode side effects on FTUX events: update the pane's
+                // harness auth secret, persist `last_selected_auth_secret`,
+                // mark FTUX completed.
+                let vm_for_events = state.view_model.clone();
+                ctx.subscribe_to_view(&ftux_view, move |_me, _, event, ctx| match event {
+                    AuthSecretFtuxViewEvent::SecretSelected { harness, name }
+                    | AuthSecretFtuxViewEvent::Created { harness, name } => {
+                        let harness = *harness;
+                        let name = name.clone();
+                        vm_for_events.update(ctx, |model, ctx| {
+                            model.set_harness_auth_secret_name(Some(name.clone()), ctx);
+                        });
+                        CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                            settings.mark_harness_auth_ftux_completed(harness, ctx);
+                            let mut map = settings.last_selected_auth_secret.value().clone();
+                            map.insert(harness.config_name().to_string(), name);
+                            let _ = settings.last_selected_auth_secret.set_value(map, ctx);
+                        });
+                    }
+                    AuthSecretFtuxViewEvent::Cancelled => {
+                        vm_for_events.update(ctx, |model, ctx| {
+                            model.set_harness(Harness::Oz, ctx);
+                        });
+                    }
+                    AuthSecretFtuxViewEvent::Skipped { harness } => {
+                        let harness = *harness;
+                        CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                            settings.mark_harness_auth_ftux_completed(harness, ctx);
+                        });
+                    }
+                    AuthSecretFtuxViewEvent::Failed { .. } => {}
+                });
+
                 state.auth_secret_selector = Some(selector);
                 state.auth_secret_ftux_view = Some(ftux_view);
             }
@@ -3898,7 +3944,8 @@ impl Input {
             )
         };
         *edit_origin == EditOrigin::UserTyped
-            && AISettings::as_ref(ctx).is_ampersand_handoff_enabled(ctx)
+            && AISettings::as_ref(ctx)
+                .is_ampersand_handoff_enabled_for_terminal_view(self.terminal_view_id, ctx)
             && !is_powershell_with_nld_enabled
             && FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(ctx).is_fullscreen()
@@ -4366,21 +4413,13 @@ impl Input {
         ctx: &mut ViewContext<Self>,
     ) {
         match event {
-            InlineConversationMenuEvent::NavigateToConversation {
-                conversation_navigation_data,
-            } => {
+            InlineConversationMenuEvent::NavigateToConversation { item_id } => {
                 let is_in_agent_view = FeatureFlag::AgentView.is_enabled()
                     && self.agent_view_controller.as_ref(ctx).is_fullscreen();
                 send_telemetry_from_ctx!(
                     TelemetryEvent::InlineConversationMenuItemSelected { is_in_agent_view },
                     ctx
                 );
-
-                let conversation_id = conversation_navigation_data.id;
-                let active_ids =
-                    ActiveAgentViewsModel::as_ref(ctx).get_all_active_conversation_ids(ctx);
-                let is_active =
-                    active_ids.contains(&ConversationOrTaskId::ConversationId(conversation_id));
 
                 if self
                     .suggestions_mode_model
@@ -4393,37 +4432,16 @@ impl Input {
                     ctx.notify();
                 }
                 self.clear_buffer_and_reset_undo_stack(ctx);
-
-                if is_active {
-                    let (Some(window_id), Some(pane_view_locator), Some(terminal_view_id)) = (
-                        conversation_navigation_data.window_id,
-                        conversation_navigation_data.pane_view_locator,
-                        conversation_navigation_data.terminal_view_id,
-                    ) else {
-                        log::error!(
-                            "Inline conversation menu: active conversation missing navigation data: {conversation_navigation_data:?}"
-                        );
-                        ctx.emit(Event::ShowToast {
-                            message: "Couldn't navigate to conversation.".to_string(),
-                            flavor: ToastFlavor::Error,
-                        });
-                        return;
-                    };
-
-                    ctx.dispatch_typed_action_deferred(
-                        WorkspaceAction::RestoreOrNavigateToConversation {
-                            pane_view_locator: Some(pane_view_locator),
-                            window_id: Some(window_id),
-                            conversation_id,
-                            terminal_view_id: Some(terminal_view_id),
-                            restore_layout: Some(RestoreConversationLayout::ActivePane),
-                        },
-                    );
+                if let Some(action) = AgentConversationsModel::resolve_open_action(
+                    AgentConversationNavigationSubject::Entry(*item_id),
+                    Some(RestoreConversationLayout::ActivePane),
+                    ctx,
+                ) {
+                    ctx.dispatch_typed_action_deferred(action);
                 } else {
-                    ctx.emit(Event::EnterAgentView {
-                        initial_prompt: None,
-                        conversation_id: Some(conversation_id),
-                        origin: AgentViewEntryOrigin::InlineConversationMenu,
+                    ctx.emit(Event::ShowToast {
+                        message: "Couldn't navigate to conversation.".to_string(),
+                        flavor: ToastFlavor::Error,
                     });
                 }
             }

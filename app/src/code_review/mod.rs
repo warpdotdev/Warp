@@ -70,6 +70,14 @@ pub fn init(app: &mut AppContext) {
         .with_context_predicate(id!("CodeReviewView"))
         .with_key_binding("cmdorctrl-f")
         .with_enabled(|| crate::features::FeatureFlag::CodeReviewFind.is_enabled()),
+        EditableBinding::new(
+            "code_review:toggle_file_navigation",
+            "Toggle file navigation in code review",
+            CodeReviewAction::ToggleFileSidebar,
+        )
+        .with_context_predicate(id!("CodeReviewView_NotEditing"))
+        .with_key_binding("f")
+        .with_enabled(|| crate::features::FeatureFlag::GitOperationsInCodeReview.is_enabled()),
     ]);
 
     app.register_fixed_bindings([FixedBinding::custom(

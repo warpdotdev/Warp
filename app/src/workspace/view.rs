@@ -276,6 +276,7 @@ use crate::terminal::keys_settings::KeysSettings;
 use crate::terminal::shared_session::SharedSessionActionSource;
 
 use crate::ai::blocklist::agent_view::editor::{AgentToolbarEditorEvent, AgentToolbarEditorModal};
+use crate::ai::cloud_agent_settings::CloudAgentSettings;
 use crate::prompt::editor_modal::{
     EditorModal as PromptEditorModal, EditorModalEvent as PromptEditorModalEvent,
     OpenSource as PromptEditorOpenSource,
@@ -334,6 +335,7 @@ use crate::terminal::shell::ShellType;
 use crate::terminal::view::ambient_agent::{
     AmbientAgentViewModel, HandoffSubmissionState, PendingHandoff, SnapshotUploadStatus,
 };
+use crate::terminal::view::ambient_agent::{AuthSecretFtuxView, AuthSecretFtuxViewEvent};
 #[cfg(feature = "local_tty")]
 use crate::terminal::view::docker_sandbox::DEFAULT_DOCKER_SANDBOX_BASE_IMAGE;
 use crate::terminal::{self, SizeInfo, TerminalView};
@@ -342,6 +344,7 @@ use crate::workspace::cli_install;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{report_if_error, AgentNotificationsModel};
 use ::settings::{Setting, ToggleableSetting};
+use warp_cli::agent::Harness;
 use warp_core::features::FeatureFlag;
 
 use crate::search::{self, QueryFilter};
@@ -1080,6 +1083,10 @@ pub struct Workspace {
     tab_config_action_sidecar_mouse_states: crate::tab_configs::action_sidecar::SidecarMouseStates,
     remove_tab_config_confirmation_dialog: ViewHandle<RemoveTabConfigConfirmationDialog>,
     handoff_environment_creation_modal: Option<ViewHandle<HandoffEnvironmentCreationModal>>,
+    /// Workspace-level modal hosting `AuthSecretFtuxView` for the
+    /// orchestration cards' "New API key…" flow. Cloud mode renders the
+    /// FTUX view inline and does not use this.
+    create_auth_secret_modal: Option<ViewHandle<Modal<AuthSecretFtuxView>>>,
 }
 
 impl Workspace {
@@ -2092,12 +2099,6 @@ impl Workspace {
                 }
             }
         }
-    }
-
-    /// Stores an onboarding intention so the guided tutorial starts after the
-    /// session config modal is closed.
-    pub(crate) fn set_pending_onboarding_intention(&mut self, intention: OnboardingIntention) {
-        self.pending_onboarding_intention = Some(intention);
     }
 
     #[cfg(feature = "local_fs")]
@@ -3203,6 +3204,7 @@ impl Workspace {
             remove_tab_config_confirmation_dialog:
                 Self::build_remove_tab_config_confirmation_dialog(ctx),
             handoff_environment_creation_modal: None,
+            create_auth_secret_modal: None,
         };
 
         ws.configure_new_workspace(workspace_setting, ctx);
@@ -13273,6 +13275,59 @@ impl Workspace {
         ctx.notify();
     }
 
+    /// Opens the workspace-level blocking modal for creating a new managed
+    /// auth secret. Persists the new secret on success and dismisses the
+    /// modal; cards adopt it via `HarnessAvailabilityEvent::AuthSecretCreated`.
+    fn show_create_auth_secret_modal(&mut self, harness: Harness, ctx: &mut ViewContext<Self>) {
+        let body = ctx.add_typed_action_view(|ctx| {
+            AuthSecretFtuxView::new(harness, ctx)
+                .with_skip_hidden()
+                .with_compact_mode(ctx)
+        });
+        ctx.subscribe_to_view(&body, |me, _, event, ctx| match event {
+            AuthSecretFtuxViewEvent::SecretSelected { harness, name }
+            | AuthSecretFtuxViewEvent::Created { harness, name } => {
+                let harness = *harness;
+                let name = name.clone();
+                CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    settings.mark_harness_auth_ftux_completed(harness, ctx);
+                    let mut map = settings.last_selected_auth_secret.value().clone();
+                    map.insert(harness.config_name().to_string(), name);
+                    let _ = settings.last_selected_auth_secret.set_value(map, ctx);
+                });
+                me.dismiss_create_auth_secret_modal(ctx);
+            }
+            AuthSecretFtuxViewEvent::Cancelled | AuthSecretFtuxViewEvent::Skipped { .. } => {
+                me.dismiss_create_auth_secret_modal(ctx);
+            }
+            // Keep the modal open on Failed; the view already toasts.
+            AuthSecretFtuxViewEvent::Failed { .. } => {}
+        });
+
+        let title = "New API key".to_string();
+        let modal = ctx.add_typed_action_view(|ctx| {
+            Modal::new(Some(title), body, ctx).with_modal_style(UiComponentStyles {
+                width: Some(520.),
+                ..Default::default()
+            })
+        });
+        ctx.subscribe_to_view(&modal, |me, _, event, ctx| {
+            if matches!(event, ModalEvent::Close) {
+                me.dismiss_create_auth_secret_modal(ctx);
+            }
+        });
+        ctx.focus(&modal);
+        self.create_auth_secret_modal = Some(modal);
+        ctx.notify();
+    }
+
+    fn dismiss_create_auth_secret_modal(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.create_auth_secret_modal.take().is_some() {
+            self.focus_active_tab(ctx);
+            ctx.notify();
+        }
+    }
+
     fn show_cloud_mode_v2_environment_creation_modal(&mut self, ctx: &mut ViewContext<Self>) {
         let Some(source_view) = self
             .active_tab_pane_group()
@@ -13607,6 +13662,23 @@ impl Workspace {
             .as_ref(ctx)
             .active_conversation(terminal_view_id)
             .cloned();
+        if !AISettings::as_ref(ctx)
+            .is_cloud_handoff_enabled_for_conversation(source_conversation.as_ref(), ctx)
+        {
+            Self::restore_source_handoff_draft(&source_view, launch, environment_id, ctx);
+            let window_id = ctx.window_id();
+            WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                toast_stack.add_ephemeral_toast(
+                    DismissibleToast::error(
+                        "Cloud handoff isn't available for orchestrated agent conversations."
+                            .to_owned(),
+                    ),
+                    window_id,
+                    ctx,
+                );
+            });
+            return;
+        }
 
         let has_existing_conversation = source_conversation.as_ref().is_some_and(|c| !c.is_empty());
 
@@ -21095,6 +21167,9 @@ impl TypedActionView for Workspace {
             ShowCloudModeV2EnvironmentCreationModal => {
                 self.show_cloud_mode_v2_environment_creation_modal(ctx);
             }
+            OpenCreateAuthSecretModal { harness } => {
+                self.show_create_auth_secret_modal(*harness, ctx);
+            }
             OpenNetworkLogPane => {
                 self.open_network_log_pane(ctx);
             }
@@ -23917,6 +23992,10 @@ impl View for Workspace {
 
         if let Some(handoff_modal) = &self.handoff_environment_creation_modal {
             stack.add_child(ChildView::new(handoff_modal).finish());
+        }
+
+        if let Some(create_auth_secret_modal) = &self.create_auth_secret_modal {
+            stack.add_child(ChildView::new(create_auth_secret_modal).finish());
         }
 
         if FeatureFlag::CreatingSharedSessions.is_enabled()

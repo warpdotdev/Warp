@@ -1870,6 +1870,10 @@ impl BlockList {
         self.blocks().get(index.0)
     }
 
+    pub fn block_at_mut(&mut self, index: BlockIndex) -> Option<&mut Block> {
+        self.blocks.get_mut(index.0)
+    }
+
     /// Returns None if the block ID doesn't exist.
     pub fn block_index_for_id(&self, id: &BlockId) -> Option<BlockIndex> {
         self.block_id_to_block_index.get(id).copied()

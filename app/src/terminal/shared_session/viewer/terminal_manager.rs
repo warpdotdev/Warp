@@ -1102,9 +1102,7 @@ impl TerminalManager {
                     {
                         return;
                     }
-                    view.input().update(ctx, |input, ctx| {
-                        input.process_remote_edits(block_id, operations.clone(), ctx);
-                    })
+                    view.apply_viewer_shared_session_input_update(block_id, operations.clone(), ctx);
                 })
             }
             NetworkEvent::RoleRequestInFlight(role_request_id) => {
@@ -1698,8 +1696,8 @@ impl TerminalManager {
                 if let Some(ambient_agent_view_model) =
                     terminal_view.ambient_agent_view_model().cloned()
                 {
-                    ambient_agent_view_model.update(ctx, |model, _| {
-                        model.record_ambient_execution_ended(ended_session_id);
+                    ambient_agent_view_model.update(ctx, |model, ctx| {
+                        model.record_ambient_execution_ended(ended_session_id, ctx);
                     });
                 }
                 terminal_view.on_ambient_agent_execution_ended(ctx);
