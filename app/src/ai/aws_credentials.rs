@@ -11,7 +11,6 @@ use aws_credential_types::provider::error::CredentialsError;
 use aws_credential_types::provider::ProvideCredentials;
 use futures::channel::oneshot::channel;
 use futures::future::BoxFuture;
-use tokio::sync::OnceCell;
 use vec1::vec1;
 use warp_managed_secrets::{client::IdentityTokenOptions, ManagedSecretManager};
 use warpui::{ModelContext, ModelHandle, SingletonEntity};
@@ -89,23 +88,18 @@ pub(crate) fn aws_role_session_name(run_id: &str) -> String {
     format!("Oz_Run_{run_id}")
 }
 
-/// Cached STS client for OIDC credential refreshes.
-///
-/// `AssumeRoleWithWebIdentity` is unauthenticated (the web identity token is the
-/// credential), so we skip the default credentials chain via `no_credentials()`
-/// and reuse a single client across refreshes.
-static STS_CLIENT: OnceCell<aws_sdk_sts::Client> = OnceCell::const_new();
-
-async fn sts_client() -> &'static aws_sdk_sts::Client {
-    STS_CLIENT
-        .get_or_init(|| async {
-            let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                .no_credentials()
-                .load()
-                .await;
-            aws_sdk_sts::Client::new(&config)
-        })
-        .await
+/// Builds an STS client targeting `region`. `AssumeRoleWithWebIdentity` is
+/// unauthenticated (the web identity token is the credential), so we skip the
+/// default credentials chain via `no_credentials()`. The region is supplied by
+/// the caller (typically driven by the run's `--bedrock-role-region` flag) so
+/// that the STS endpoint matches the Bedrock region the org has configured.
+async fn sts_client(region: &str) -> aws_sdk_sts::Client {
+    let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        .no_credentials()
+        .region(aws_config::Region::new(region.to_string()))
+        .load()
+        .await;
+    aws_sdk_sts::Client::new(&config)
 }
 
 fn aws_credentials_state_for_error(err: LoadAwsCredentialsError) -> AwsCredentialsState {
@@ -237,9 +231,11 @@ pub(crate) fn refresh_aws_credentials(
         AwsCredentialsRefreshStrategy::LocalChain => {
             refresh_aws_credentials_local_chain(manager, ctx)
         }
-        AwsCredentialsRefreshStrategy::OidcManaged { task_id, role_arn } => {
-            refresh_aws_credentials_oidc(task_id, role_arn, manager, ctx)
-        }
+        AwsCredentialsRefreshStrategy::OidcManaged {
+            task_id,
+            role_arn,
+            region,
+        } => refresh_aws_credentials_oidc(task_id, role_arn, region, manager, ctx),
     }
 }
 
@@ -289,9 +285,13 @@ fn refresh_aws_credentials_local_chain(
 }
 
 /// Refreshes credentials via OIDC identity token + STS AssumeRoleWithWebIdentity.
+/// `region` is the STS endpoint region; it is plumbed in alongside the role ARN
+/// so the STS call lands in the same regional endpoint the org has configured
+/// for Bedrock.
 fn refresh_aws_credentials_oidc(
     task_id: Option<String>,
     role_arn: String,
+    region: String,
     manager: &mut ApiKeyManager,
     ctx: &mut ModelContext<ApiKeyManager>,
 ) -> BoxFuture<'static, Result<(), String>> {
@@ -337,7 +337,7 @@ fn refresh_aws_credentials_oidc(
                 .await
                 .context("Failed to mint AWS Bedrock task identity token")?;
 
-            let client = sts_client().await;
+            let client = sts_client(&region).await;
             let session_name = aws_role_session_name(&task_id);
             let credentials = client
                 .assume_role_with_web_identity()

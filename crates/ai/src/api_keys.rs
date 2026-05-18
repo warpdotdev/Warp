@@ -85,9 +85,13 @@ pub enum AwsCredentialsRefreshStrategy {
     /// Credentials are managed externally via OIDC/STS.
     /// The task ID is used to scope the STS AssumeRoleWithWebIdentity session.
     /// The role ARN is the IAM role to assume via STS.
+    /// The region pins the STS endpoint so the AssumeRoleWithWebIdentity call
+    /// targets the same regional endpoint as the downstream Bedrock service
+    /// (typically the org's configured Bedrock region).
     OidcManaged {
         task_id: Option<String>,
         role_arn: String,
+        region: String,
     },
 }
 
