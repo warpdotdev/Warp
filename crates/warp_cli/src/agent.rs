@@ -328,9 +328,6 @@ pub struct RunAgentArgs {
     #[arg(long = "sandboxed", hide = true)]
     pub sandboxed: bool,
     /// IAM role ARN to use for federated AWS Bedrock credentials for this run.
-    ///
-    /// When set, `--bedrock-role-region` must also be provided so the STS
-    /// `AssumeRoleWithWebIdentity` call targets the right regional endpoint.
     #[arg(
         long = "bedrock-inference-role",
         value_name = "ROLE_ARN",

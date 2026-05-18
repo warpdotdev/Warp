@@ -285,9 +285,6 @@ fn refresh_aws_credentials_local_chain(
 }
 
 /// Refreshes credentials via OIDC identity token + STS AssumeRoleWithWebIdentity.
-/// `region` is the STS endpoint region; it is plumbed in alongside the role ARN
-/// so the STS call lands in the same regional endpoint the org has configured
-/// for Bedrock.
 fn refresh_aws_credentials_oidc(
     task_id: Option<String>,
     role_arn: String,
