@@ -21,9 +21,9 @@ use crate::ai::blocklist::inline_action::orchestration_controls::{
     self as oc, OrchestrationControlAction, OrchestrationEditState, OrchestrationPickerHandles,
 };
 use crate::ai::blocklist::telemetry::{
-    BlocklistOrchestrationTelemetryEvent, OrchestrationApprovalStatus, OrchestrationEnteredEvent,
-    OrchestrationEntrySource, OrchestrationExecutionModeKind, OrchestrationHarnessKind,
-    PlanConfigApprovalToggledEvent,
+    AgentProposedConfigEvent, BlocklistOrchestrationTelemetryEvent, OrchestrationApprovalStatus,
+    OrchestrationEnteredEvent, OrchestrationEntrySource, OrchestrationExecutionModeKind,
+    OrchestrationHarnessKind, PlanConfigApprovalToggledEvent,
 };
 use crate::ai::blocklist::BlocklistAIHistoryEvent;
 use crate::ai::document::ai_document_model::AIDocumentModel;
@@ -158,6 +158,10 @@ impl OrchestrationConfigBlockView {
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let history = BlocklistAIHistoryModel::as_ref(ctx);
+        let snapshot_loaded = history
+            .conversation(&conversation_id)
+            .and_then(|conv| conv.orchestration_config_for_plan(&plan_id))
+            .is_some();
         let (edit_state, is_approved) = history
             .conversation(&conversation_id)
             .and_then(|conv| {
@@ -251,6 +255,12 @@ impl OrchestrationConfigBlockView {
         };
         if view.is_approved {
             view.ensure_pickers(ctx);
+        }
+        // Capture the agent's config proposal once per view instance.
+        // Gated on `snapshot_loaded` so we don't fire when the view is
+        // constructed with placeholder defaults (no real snapshot yet).
+        if snapshot_loaded {
+            view.emit_agent_proposed_config(ctx);
         }
         view
     }
@@ -726,6 +736,23 @@ impl OrchestrationConfigBlockView {
                 conversation_id: self.conversation_id,
                 plan_id: (!self.plan_id.is_empty()).then(|| self.plan_id.clone()),
                 entry_source: OrchestrationEntrySource::PlanCardApproved,
+            }),
+            ctx
+        );
+    }
+
+    fn emit_agent_proposed_config(&self, ctx: &mut ViewContext<Self>) {
+        send_telemetry_from_ctx!(
+            BlocklistOrchestrationTelemetryEvent::AgentProposedConfig(AgentProposedConfigEvent {
+                conversation_id: self.conversation_id,
+                plan_id: (!self.plan_id.is_empty()).then(|| self.plan_id.clone()),
+                harness: OrchestrationHarnessKind::from_str(&self.edit_state.harness_type),
+                execution_mode: OrchestrationExecutionModeKind::from_run_agents(
+                    &self.edit_state.execution_mode,
+                ),
+                has_model: !self.edit_state.model_id.trim().is_empty(),
+                has_environment: env_presence(&self.edit_state.execution_mode),
+                has_worker_host: host_presence(&self.edit_state.execution_mode),
             }),
             ctx
         );

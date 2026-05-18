@@ -12,6 +12,7 @@ pub(crate) enum BlocklistOrchestrationTelemetryEvent {
     RunAgentsCardDecision(RunAgentsCardDecisionEvent),
     PillBarInteraction(PillBarInteractionEvent),
     OrchestrationEntered(OrchestrationEnteredEvent),
+    AgentProposedConfig(AgentProposedConfigEvent),
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -197,6 +198,21 @@ pub(crate) struct OrchestrationEnteredEvent {
     pub entry_source: OrchestrationEntrySource,
 }
 
+/// Fires when an agent-authored orchestration config snapshot first
+/// becomes visible to the user on a plan card. One emission per
+/// `OrchestrationConfigBlockView` instance.
+#[derive(Debug, Serialize)]
+pub(crate) struct AgentProposedConfigEvent {
+    pub conversation_id: AIConversationId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_id: Option<String>,
+    pub harness: OrchestrationHarnessKind,
+    pub execution_mode: OrchestrationExecutionModeKind,
+    pub has_model: bool,
+    pub has_environment: bool,
+    pub has_worker_host: bool,
+}
+
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum PillBarPillKind {
@@ -243,6 +259,7 @@ impl TelemetryEvent for BlocklistOrchestrationTelemetryEvent {
             Self::RunAgentsCardDecision(event) => Some(json!(event)),
             Self::PillBarInteraction(event) => Some(json!(event)),
             Self::OrchestrationEntered(event) => Some(json!(event)),
+            Self::AgentProposedConfig(event) => Some(json!(event)),
         }
     }
 
@@ -273,6 +290,7 @@ impl TelemetryEventDesc for BlocklistOrchestrationTelemetryEventDiscriminants {
             Self::RunAgentsCardDecision => "AgentMode.Orchestration.RunAgentsCardDecision",
             Self::PillBarInteraction => "AgentMode.Orchestration.PillBarInteraction",
             Self::OrchestrationEntered => "AgentMode.Orchestration.Entered",
+            Self::AgentProposedConfig => "AgentMode.Orchestration.AgentProposedConfig",
         }
     }
 
@@ -292,6 +310,9 @@ impl TelemetryEventDesc for BlocklistOrchestrationTelemetryEventDiscriminants {
             }
             Self::OrchestrationEntered => {
                 "Orchestration was activated in a conversation via /orchestrate, a plan-card approval toggle, or a run_agents confirmation card surfacing"
+            }
+            Self::AgentProposedConfig => {
+                "An agent-authored orchestration config snapshot first became visible to the user on a plan card"
             }
         }
     }
