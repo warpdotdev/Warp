@@ -603,16 +603,22 @@ impl BlocklistAIInputModel {
     /// When `session_id` is `Some`, history matching is performed. The `completion_context`
     /// is always used for alias expansion (callers without a live session should pass an
     /// `EmptyCompletionContext`).
+    ///
+    /// `read_current_buffer` is invoked when the async classification completes and must
+    /// return the input buffer's current text. The result is compared against the buffer
+    /// text the classifier ran on (`input.buffer_text`); if they differ, the classification
+    /// result is treated as stale and discarded. The model doesn't have direct access to
+    /// the editor view, so callers supply this small reader closure.
     pub fn detect_and_set_input_type<C, F>(
         &mut self,
         input: ParsedTokensSnapshot,
         completion_context: C,
         session_id: Option<SessionId>,
         ctx: &mut ModelContext<Self>,
-        is_current_input_check: F,
+        read_current_buffer: F,
     ) where
         C: CompletionContext + Clone + Send + 'static,
-        F: FnOnce(&AppContext) -> bool + 'static,
+        F: FnOnce(&AppContext) -> String + 'static,
     {
         // Abort the last autodetect handle if exists.
         self.abort_in_progress_detection();
@@ -681,6 +687,7 @@ impl BlocklistAIInputModel {
 
         let buffer_cloned = input.buffer_text.clone();
         let other_buffer_cloned = buffer_cloned.clone();
+        let expected_buffer_text = buffer_cloned.clone();
         let current_input_type = self.input_type();
 
         let is_udi_enabled = InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
@@ -749,9 +756,10 @@ impl BlocklistAIInputModel {
                     new_input_type
                 },
                 move |me, new_input_type, ctx| {
-                    let is_current_input = is_current_input_check(ctx);
+                    let current_buffer_text = read_current_buffer(ctx);
+                    let is_current_input = current_buffer_text == expected_buffer_text;
                     log::debug!(
-                        "NLD autodetection callback freshness check: is_current_input={is_current_input}"
+                        "NLD autodetection callback freshness check: is_current_input={is_current_input}, current_buffer_text={current_buffer_text:?}, expected_buffer_text={expected_buffer_text:?}"
                     );
                     if !is_current_input {
                         return;
