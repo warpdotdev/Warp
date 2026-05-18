@@ -10402,9 +10402,15 @@ impl Workspace {
 
         match index.cmp(&self.active_tab_index) {
             Ordering::Equal => {
-                // If there's a previous tab, activate it. Otherwise, keep the active
-                // tab at index 0.
-                self.activate_tab_internal(index.saturating_sub(1), ctx);
+                // Horizontal tabs should activate the tab that was immediately to the
+                // right of the closed tab. After removal, that tab has the same index.
+                // If the closed tab was the last tab, fall back to the previous tab.
+                let active_index = if uses_vertical_tabs(ctx) {
+                    index.saturating_sub(1)
+                } else {
+                    index.min(self.tabs.len() - 1)
+                };
+                self.activate_tab_internal(active_index, ctx);
             }
             Ordering::Less => {
                 // If we are closing a tab before the active tab we need to adjust
