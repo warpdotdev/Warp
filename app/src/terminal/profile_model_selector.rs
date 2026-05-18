@@ -2205,8 +2205,7 @@ impl View for ProfileModelSelector {
         // Only add profile button to compact layout if there are multiple profiles
         // and the user is not a viewer (we currently don't support profiles in shared sessions).
         let is_ambient_agent = self.ambient_agent_view_model.is_some();
-        let should_show_profile_section =
-            has_multiple_profiles && !is_viewer && !is_ambient_agent;
+        let should_show_profile_section = has_multiple_profiles && !is_viewer && !is_ambient_agent;
         if should_show_profile_section {
             let profile_button_with_save_position = SavePosition::new(
                 ChildView::new(&self.profile_compact_button).finish(),
