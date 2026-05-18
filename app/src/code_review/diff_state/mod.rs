@@ -255,6 +255,7 @@ impl DiffMode {
 
 /// User-visible representation of the diffs we've loaded,
 /// which only includes changes against the specific base the user has selected.
+#[derive(Debug)]
 pub enum DiffState {
     NotInRepository,
     Loading,
@@ -526,18 +527,20 @@ impl DiffStateModel {
         }
     }
 
-    pub(crate) fn load_diffs_for_current_repo(
-        &self,
-        should_fetch_base: bool,
-        ctx: &mut ModelContext<Self>,
-    ) {
+    pub(crate) fn load_diffs_for_current_repo(&self, force: bool, ctx: &mut ModelContext<Self>) {
         match self {
             Self::Local(local) => {
                 local.update(ctx, |local, ctx| {
-                    local.load_diffs_for_current_repo(should_fetch_base, ctx);
+                    local.load_diffs_for_current_repo(force, ctx);
                 });
             }
-            Self::Remote(_) => {}
+            Self::Remote(remote) => {
+                if force {
+                    remote.update(ctx, |remote, ctx| {
+                        remote.replay_latest_diffs(ctx);
+                    });
+                }
+            }
         }
     }
 

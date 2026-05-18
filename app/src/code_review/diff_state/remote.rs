@@ -141,9 +141,7 @@ impl RemoteDiffStateModel {
                 self.handle_file_delta_received(delta, ctx);
             }
             RemoteServerManagerEvent::GetBranchesResponse {
-                repo_path,
-                result,
-                ..
+                repo_path, result, ..
             } if repo_path == &self.remote_path.path => {
                 let branches = match result {
                     Ok(branch_infos) => branch_infos
@@ -154,9 +152,7 @@ impl RemoteDiffStateModel {
                         })
                         .collect(),
                     Err(err) => {
-                        log::warn!(
-                            "RemoteDiffStateModel: GetBranches failed: {err}"
-                        );
+                        log::warn!("RemoteDiffStateModel: GetBranches failed: {err}");
                         vec![]
                     }
                 };
@@ -258,6 +254,28 @@ impl RemoteDiffStateModel {
     }
 
     // ── Apply methods ──────────────────────────────────────────────────────
+
+    /// Re-emits `NewDiffsComputed` with the currently loaded diff data.
+    /// Called when a view subscribes after the initial snapshot was already processed.
+    pub(crate) fn replay_latest_diffs(&self, ctx: &mut ModelContext<Self>) {
+        match &self.state {
+            InternalRemoteDiffState::Loaded(diffs) => {
+                let base_content = GitDiffWithBaseContent::from(diffs);
+                ctx.emit(DiffStateModelEvent::NewDiffsComputed(Some(Arc::new(
+                    base_content,
+                ))));
+            }
+            InternalRemoteDiffState::NotInRepository => {
+                ctx.emit(DiffStateModelEvent::NewDiffsComputed(None));
+            }
+            InternalRemoteDiffState::Error(_) => {
+                ctx.emit(DiffStateModelEvent::NewDiffsComputed(None));
+            }
+            InternalRemoteDiffState::Loading | InternalRemoteDiffState::Disconnected => {
+                // Nothing to replay yet.
+            }
+        }
+    }
 
     fn apply_snapshot(
         &mut self,

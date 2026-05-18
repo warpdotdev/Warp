@@ -8113,24 +8113,6 @@ impl Workspace {
         context: Option<&CodeReviewPaneContext>,
         ctx: &mut ViewContext<Self>,
     ) {
-        // When no explicit context is provided (i.e. we're being called from a
-        // focus-change or session-change handler rather than from an explicit
-        // panel-open action), skip the setup if the right panel already has a
-        // selected code review view. The `RepositoriesChanged` →
-        // `ensure_code_review_view_exists` path manages the view lifecycle
-        // during directory changes. Re-deriving the repo from the terminal's
-        // stale `current_repo_path()` here would race with refresh and
-        // re-create models that were just dropped.
-        if context.is_none()
-            && self
-                .right_panel_view
-                .as_ref(ctx)
-                .selected_repo_path()
-                .is_some()
-        {
-            return;
-        }
-
         // If context is provided, use it directly. Otherwise, derive from active pane group.
         let context_data: Option<(
             Option<LocalOrRemotePath>,
@@ -14353,10 +14335,6 @@ impl Workspace {
                     .as_ref(ctx)
                     .active_session_view(ctx)
                 {
-                    #[cfg(feature = "local_fs")]
-                    if self.active_tab_pane_group().as_ref(ctx).right_panel_open {
-                        self.setup_code_review_panel(None, ctx);
-                    }
                     // Get the ID of the workflow that's active in the pane, if there is one.
                     let active_workflow_id = terminal_view
                         .read(ctx, |terminal_view, _| terminal_view.input().clone())

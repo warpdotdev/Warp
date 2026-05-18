@@ -26,13 +26,13 @@ use warpui::{r#async::SpawnedFutureHandle, ModelContext};
 use crate::code_review::diff_size_limits::DiffSize;
 use crate::features::FeatureFlag;
 #[cfg(feature = "local_fs")]
+use crate::util::git::get_all_branches;
+#[cfg(feature = "local_fs")]
 use crate::util::git::get_pr_for_branch;
 use crate::util::git::{
     detect_current_branch, detect_main_branch, get_unpushed_commits, parse_unified_diff_header,
     Commit, PrInfo,
 };
-#[cfg(feature = "local_fs")]
-use crate::util::git::get_all_branches;
 use warp_util::git::run_git_command;
 
 use crate::code_review::diff_size_limits::compute_diff_size;
