@@ -460,13 +460,14 @@ pub fn populate_model_picker_for_harness<A: OrchestrationControlAction, V: View>
                 let llm_prefs = LLMPreferences::as_ref(ctx_dropdown);
                 let all_choices: Vec<_> = llm_prefs
                     .get_base_llm_choices_for_agent_mode(ctx_dropdown)
-                    .filter(|llm| is_local || !llm.is_custom_endpoint())
+                    .filter(|llm| is_local || llm_prefs.custom_llm_info_for_id(&llm.id).is_none())
                     .collect();
                 let (auto_models, rest): (Vec<_>, Vec<_>) = all_choices
                     .into_iter()
                     .partition(|llm| llm.id.as_str().starts_with("auto"));
-                let (custom_models, other_models): (Vec<_>, Vec<_>) =
-                    rest.into_iter().partition(|llm| llm.is_custom_endpoint());
+                let (custom_models, other_models): (Vec<_>, Vec<_>) = rest
+                    .into_iter()
+                    .partition(|llm| llm_prefs.custom_llm_info_for_id(&llm.id).is_some());
                 let choices: Vec<_> = auto_models
                     .into_iter()
                     .chain(custom_models)
@@ -561,7 +562,7 @@ pub fn is_model_in_filtered_choices<V: View>(
             let llm_prefs = LLMPreferences::as_ref(ctx);
             llm_prefs
                 .get_base_llm_choices_for_agent_mode(ctx)
-                .filter(|llm| is_local || !llm.is_custom_endpoint())
+                .filter(|llm| is_local || llm_prefs.custom_llm_info_for_id(&llm.id).is_none())
                 .any(|llm| llm.id.to_string() == model_id)
         }
         Some(Harness::Codex) if is_local => model_id.is_empty(),
