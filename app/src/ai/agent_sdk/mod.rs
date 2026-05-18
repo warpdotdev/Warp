@@ -611,6 +611,7 @@ impl AgentDriverRunner {
             // Pull relevant variables out of args before moving it into the closure.
             let share_requests = args.share.share.clone();
             let bedrock_inference_role = args.bedrock_inference_role.clone();
+            let bedrock_role_region = args.bedrock_role_region.clone();
             let has_task_id = args.task_id.is_some();
             let args_harness = args.harness;
             // `--conversation` path (user-invoked local resume): validate before any task side
@@ -652,6 +653,16 @@ impl AgentDriverRunner {
 
             #[cfg(not(target_family = "wasm"))]
             if let Some(role_arn) = bedrock_inference_role {
+                // clap's `requires` constraint enforces this at parse time, so a missing
+                // region here means a caller is constructing `RunAgentArgs` directly
+                // without the flag. Fail loudly so callers don't silently fall back to a
+                // hard-coded STS region.
+                let role_region = bedrock_role_region.ok_or_else(|| {
+                    AgentDriverError::AwsBedrockCredentialsFailed(
+                        "--bedrock-role-region is required when --bedrock-inference-role is set"
+                            .to_string(),
+                    )
+                })?;
                 // Set the OIDC strategy on the UI thread and kick off the refresh; the
                 // returned future resolves when credentials are committed to the model.
                 let refresh_future = foreground
@@ -662,6 +673,7 @@ impl AgentDriverRunner {
                                 AwsCredentialsRefreshStrategy::OidcManaged {
                                     task_id: bedrock_task_id,
                                     role_arn,
+                                    region: role_region,
                                 },
                             );
                             refresh_aws_credentials(manager, ctx)
