@@ -1,9 +1,10 @@
 use super::{
     editor_text_colors,
-    settings_page::{render_input_list, InputListItem},
+    settings_page::{InputListItem, render_input_list},
 };
 use crate::server::server_api::ServerApiProvider;
 use crate::{
+    ChannelState,
     ai::ambient_agents::{
         github_auth_url::{self, AuthSource, GithubAuthRedirectTarget},
         telemetry::CloudAgentTelemetryEvent,
@@ -21,12 +22,11 @@ use crate::{
     server::ids::SyncId,
     ui_components::{buttons::icon_button, icons::Icon},
     view_components::{
+        SubmittableTextInput, SubmittableTextInputEvent, WarningBoxButtonConfig, WarningBoxConfig,
         action_button::{ActionButton, DangerSecondaryTheme, PrimaryTheme},
-        render_warning_box, SubmittableTextInput, SubmittableTextInputEvent,
-        WarningBoxButtonConfig, WarningBoxConfig,
+        render_warning_box,
     },
     workspaces::user_workspaces::UserWorkspaces,
-    ChannelState,
 };
 use instant::{Duration, Instant};
 use log::debug;
@@ -37,6 +37,8 @@ use warp_core::send_telemetry_from_ctx;
 use warp_editor::editor::NavigationKey;
 use warp_graphql::queries::user_github_info::UserGithubInfoResult;
 use warpui::{
+    AppContext, Entity, FocusContext, SingletonEntity, TypedActionView, View, ViewContext,
+    ViewHandle,
     elements::{
         Border, ChildAnchor, ChildView, Clipped, ClippedScrollStateHandle, ClippedScrollable,
         ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss, Element, Empty,
@@ -52,8 +54,6 @@ use warpui::{
     platform::Cursor,
     prelude::Coords,
     ui_components::components::{UiComponent, UiComponentStyles},
-    AppContext, Entity, FocusContext, SingletonEntity, TypedActionView, View, ViewContext,
-    ViewHandle,
 };
 
 const SUBMIT_BUTTON_FOCUSED: &str = "SubmitButtonFocused";
@@ -2335,14 +2335,13 @@ impl UpdateEnvironmentForm {
             // "Missing a repo? Configure access on GitHub" text with link
             let install_link = app_install_link.clone();
 
-            // Build as a row with plain text + link
-            let mut text_row = Flex::row()
+            // Build the "Missing a repo? [link]" row
+            let mut missing_repo_row = Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_spacing(4.);
 
-            text_row.add_child(helper);
             // Plain text part
-            text_row.add_child(
+            missing_repo_row.add_child(
                 Text::new(
                     "Missing a repo?",
                     appearance.ui_font_family(),
@@ -2377,9 +2376,15 @@ impl UpdateEnvironmentForm {
             })
             .finish();
 
-            text_row.add_child(link);
+            missing_repo_row.add_child(link);
 
-            text_row.finish()
+            // Stack helper text and the missing-repo row in a column so that the helper text
+            // can softwrap across the full field width instead of overflowing on a single line.
+            Flex::column()
+                .with_spacing(2.)
+                .with_child(helper)
+                .with_child(missing_repo_row.finish())
+                .finish()
         }
 
         #[cfg(target_family = "wasm")]
