@@ -394,13 +394,6 @@ impl UpdateEnvironmentForm {
         Self::new_impl(init_args, true, ctx)
     }
 
-    pub(crate) fn new_with_deferred_github_repos_fetch(
-        init_args: EnvironmentFormInitArgs,
-        ctx: &mut ViewContext<Self>,
-    ) -> Self {
-        Self::new_impl(init_args, false, ctx)
-    }
-
     #[cfg(test)]
     pub(crate) fn new_for_test(
         init_args: EnvironmentFormInitArgs,
