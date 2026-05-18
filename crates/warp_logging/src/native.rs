@@ -233,28 +233,55 @@ pub fn log_file_path() -> Result<PathBuf> {
 /// Collects a list of the paths to both the current warp instance's log file,
 /// and any older log files (we keep up to 6 log files around at any time,
 /// all of which are potentially useful for debugging).
+///
+/// Returned ordering is newest-first: the active `<name>.log`, then any
+/// `<name>.log.in_session.N` files produced by mid-session size rotation
+/// (sorted by index, since `.in_session.0` is the most recent rotation),
+/// then any `<name>.log.old.N` files from prior-startup rotations.
 fn current_and_rotated_log_paths() -> Result<Vec<PathBuf>> {
     let log_directory = log_directory()?;
-    let current_log_path = main_process_log_file_path(&log_directory);
+    let logfile_name = ChannelState::logfile_name();
+    collect_log_paths_in(&log_directory, &logfile_name)
+}
 
-    let mut rotated_logs: Vec<(usize, PathBuf)> = fs::read_dir(&log_directory)?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter_map(|path| {
-            let file_name = path.file_name()?.to_str()?;
-            let suffix =
-                file_name.strip_prefix(&format!("{}.old.", ChannelState::logfile_name()))?;
-            let index = suffix.parse::<usize>().ok()?;
-            Some((index, path))
-        })
-        .collect();
+/// Directory-scanning core of [`current_and_rotated_log_paths`], parameterized
+/// for testability. See the parent docs for ordering semantics.
+fn collect_log_paths_in(log_directory: &Path, logfile_name: &str) -> Result<Vec<PathBuf>> {
+    let current_log_path = log_directory.join(logfile_name);
+    let in_session_prefix = format!("{logfile_name}.in_session.");
+    let old_prefix = format!("{logfile_name}.old.");
+
+    let mut in_session_logs: Vec<(usize, PathBuf)> = Vec::new();
+    let mut rotated_logs: Vec<(usize, PathBuf)> = Vec::new();
+
+    for entry in fs::read_dir(log_directory)?.filter_map(Result::ok) {
+        let path = entry.path();
+        let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if let Some(suffix) = file_name.strip_prefix(&in_session_prefix) {
+            if let Ok(index) = suffix.parse::<usize>() {
+                in_session_logs.push((index, path));
+            }
+        } else if let Some(suffix) = file_name.strip_prefix(&old_prefix) {
+            if let Ok(index) = suffix.parse::<usize>() {
+                rotated_logs.push((index, path));
+            }
+        }
+    }
+    in_session_logs.sort_by_key(|(index, _)| *index);
     rotated_logs.sort_by_key(|(index, _)| *index);
 
     let mut files = Vec::new();
     if current_log_path.is_file() {
         files.push(current_log_path);
     }
-
+    files.extend(
+        in_session_logs
+            .into_iter()
+            .map(|(_, path)| path)
+            .filter(|path| path.is_file()),
+    );
     files.extend(
         rotated_logs
             .into_iter()
@@ -263,10 +290,7 @@ fn current_and_rotated_log_paths() -> Result<Vec<PathBuf>> {
     );
 
     if files.is_empty() {
-        return Err(anyhow::anyhow!(
-            "No warp logs were found for {}",
-            ChannelState::logfile_name()
-        ));
+        return Err(anyhow::anyhow!("No warp logs were found for {logfile_name}"));
     }
 
     Ok(files)
@@ -521,4 +545,80 @@ pub fn init_logging_for_unit_tests() {
         .parse_default_env()
         .format(format_for_terminal_output)
         .init();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn touch(dir: &Path, name: &str) -> PathBuf {
+        let path = dir.join(name);
+        File::create(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn collects_active_in_session_and_old_logs_in_expected_order() {
+        let tmp = tempfile::tempdir().unwrap();
+        let active = touch(tmp.path(), "warp.log");
+        let in_session_0 = touch(tmp.path(), "warp.log.in_session.0");
+        let in_session_1 = touch(tmp.path(), "warp.log.in_session.1");
+        let in_session_2 = touch(tmp.path(), "warp.log.in_session.2");
+        let old_0 = touch(tmp.path(), "warp.log.old.0");
+        let old_1 = touch(tmp.path(), "warp.log.old.1");
+
+        let paths = collect_log_paths_in(tmp.path(), "warp.log").unwrap();
+
+        assert_eq!(
+            paths,
+            vec![active, in_session_0, in_session_1, in_session_2, old_0, old_1]
+        );
+    }
+
+    #[test]
+    fn includes_in_session_logs_even_when_no_active_or_old_logs_exist() {
+        let tmp = tempfile::tempdir().unwrap();
+        let in_session_0 = touch(tmp.path(), "warp.log.in_session.0");
+
+        let paths = collect_log_paths_in(tmp.path(), "warp.log").unwrap();
+
+        assert_eq!(paths, vec![in_session_0]);
+    }
+
+    #[test]
+    fn ignores_unrelated_files_and_malformed_suffixes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let active = touch(tmp.path(), "warp.log");
+        touch(tmp.path(), "warp.log.in_session.abc"); // not a number
+        touch(tmp.path(), "warp.log.in_session."); // empty suffix
+        touch(tmp.path(), "warp.log.old.xyz"); // not a number
+        touch(tmp.path(), "other.log"); // unrelated
+        touch(tmp.path(), "warp.log.old.temp"); // matches old. prefix but non-numeric
+
+        let paths = collect_log_paths_in(tmp.path(), "warp.log").unwrap();
+
+        assert_eq!(paths, vec![active]);
+    }
+
+    #[test]
+    fn errors_when_directory_is_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let err = collect_log_paths_in(tmp.path(), "warp.log").unwrap_err();
+        assert!(err.to_string().contains("No warp logs were found"));
+    }
+
+    #[test]
+    fn respects_channel_specific_logfile_name() {
+        // Beta/preview channels use a different base name; make sure scanning
+        // is gated on that name and doesn't pick up the wrong channel's files.
+        let tmp = tempfile::tempdir().unwrap();
+        let active = touch(tmp.path(), "warp_preview.log");
+        let in_session_0 = touch(tmp.path(), "warp_preview.log.in_session.0");
+        touch(tmp.path(), "warp.log"); // different channel — must be ignored
+        touch(tmp.path(), "warp.log.in_session.0");
+
+        let paths = collect_log_paths_in(tmp.path(), "warp_preview.log").unwrap();
+
+        assert_eq!(paths, vec![active, in_session_0]);
+    }
 }
