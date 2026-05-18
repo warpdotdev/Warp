@@ -103,6 +103,7 @@ pub enum WorkspaceAction {
     ActivateLastTab,
     CyclePrevSession,
     CycleNextSession,
+    CtrlTabPaletteCommit,
     MoveActiveTabLeft,
     MoveActiveTabRight,
     MoveTabLeft(usize),
@@ -958,7 +959,8 @@ impl WorkspaceAction {
             | FixSettingsWithOz { .. }
             | OpenLocalToCloudHandoffPane { .. }
             | ShowHandoffEnvironmentCreationModal
-            | OpenNetworkLogPane => false,
+            | OpenNetworkLogPane
+            | CtrlTabPaletteCommit => false,
             #[cfg(debug_assertions)]
             ShowHoaOnboardingFlow => false,
             #[cfg(target_family = "wasm")]
