@@ -21,6 +21,8 @@ const CACHE_KEY: &str = "AvailableHarnesses";
 pub struct HarnessModelInfo {
     pub id: String,
     pub display_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_level: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -60,8 +62,18 @@ pub struct AuthSecretEntry {
 pub enum HarnessAvailabilityEvent {
     Changed,
     AuthSecretsLoaded,
-    AuthSecretCreated { harness: Harness, name: String },
-    AuthSecretCreationFailed { error: String },
+    /// Emitted when a lazy auth-secrets fetch fails. Subscribers should
+    /// re-render so any "Loading…" placeholders can transition to an
+    /// error state — without this signal the picker would otherwise be
+    /// stuck on the loading placeholder until the next refetch.
+    AuthSecretsFetchFailed,
+    AuthSecretCreated {
+        harness: Harness,
+        name: String,
+    },
+    AuthSecretCreationFailed {
+        error: String,
+    },
 }
 
 pub struct HarnessAvailabilityModel {
@@ -189,6 +201,10 @@ impl HarnessAvailabilityModel {
                         report_error!(e.context("Failed to fetch harness auth secrets"));
                         me.auth_secrets
                             .insert(harness, AuthSecretFetchState::Failed(msg));
+                        // Notify subscribers so they can drop any
+                        // "Loading…" placeholder rendered during the
+                        // in-flight fetch and surface the error state.
+                        ctx.emit(HarnessAvailabilityEvent::AuthSecretsFetchFailed);
                     }
                 }
             },
@@ -204,13 +220,11 @@ impl HarnessAvailabilityModel {
         harness: Harness,
         name: String,
         value: ManagedSecretValue,
+        owner: SecretOwner,
         ctx: &mut ModelContext<Self>,
     ) {
         let manager = ManagedSecretManager::handle(ctx);
-        let create_future =
-            manager
-                .as_ref(ctx)
-                .create_secret(SecretOwner::CurrentUser, name, value, None);
+        let create_future = manager.as_ref(ctx).create_secret(owner, name, value, None);
         ctx.spawn(create_future, move |me, result, ctx| match result {
             Ok(secret) => {
                 let entry = AuthSecretEntry {

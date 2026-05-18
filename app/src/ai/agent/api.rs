@@ -124,7 +124,10 @@ pub struct RequestParams {
 
     /// User-provided API keys for AI providers (BYO API Key).
     pub api_keys: Option<warp_multi_agent_api::request::settings::ApiKeys>,
-    pub allow_use_of_warp_credits_with_byok: bool,
+    /// User-provided custom model providers (BYOK endpoints).
+    pub custom_model_providers:
+        Option<warp_multi_agent_api::request::settings::CustomModelProviders>,
+    pub allow_use_of_warp_credits: bool,
     pub local_openai_responses_backend_enabled: bool,
     pub local_openai_api_key: Option<String>,
     pub local_openai_base_url: Option<String>,
@@ -249,12 +252,19 @@ impl RequestParams {
         let user_workspaces = UserWorkspaces::as_ref(app);
         let api_key_manager = ApiKeyManager::as_ref(app);
         let stored_api_keys = api_key_manager.keys().clone();
+        let is_byo_enabled = user_workspaces.is_byo_api_key_enabled(app);
         let api_keys = api_key_manager.api_keys_for_request(
-            user_workspaces.is_byo_api_key_enabled(app),
+            is_byo_enabled,
             user_workspaces.is_aws_bedrock_credentials_enabled(app),
         );
-        let allow_use_of_warp_credits_with_byok =
-            *AISettings::as_ref(app).can_use_warp_credits_with_byok;
+        let is_custom_inference_enabled = user_workspaces.is_custom_inference_enabled(app);
+        let custom_model_providers = FeatureFlag::CustomInferenceEndpoints
+            .is_enabled()
+            .then(|| {
+                api_key_manager.custom_model_providers_for_request(is_custom_inference_enabled)
+            })
+            .flatten();
+        let allow_use_of_warp_credits = *AISettings::as_ref(app).can_use_warp_credits_for_fallback;
         let local_openai_responses_backend_enabled =
             *AISettings::as_ref(app).local_openai_responses_backend_enabled;
         let model_provider = LLMPreferences::as_ref(app)
@@ -343,7 +353,8 @@ impl RequestParams {
             planning_enabled: true,
             should_redact_secrets,
             api_keys,
-            allow_use_of_warp_credits_with_byok,
+            custom_model_providers,
+            allow_use_of_warp_credits,
             local_openai_responses_backend_enabled,
             local_openai_api_key: stored_api_keys.openai,
             local_openai_base_url: stored_api_keys.openai_base_url,

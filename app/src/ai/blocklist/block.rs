@@ -35,6 +35,8 @@ use crate::ai::blocklist::BlocklistAIContextModel;
 use crate::ai::blocklist::SuggestionDismissButtonTheme;
 #[cfg(not(target_family = "wasm"))]
 use repo_metadata::repositories::DetectedRepositories;
+#[cfg(not(target_family = "wasm"))]
+use warp_util::local_or_remote_path::LocalOrRemotePath;
 
 #[cfg(feature = "local_fs")]
 use crate::ai::skills::SkillOpenOrigin;
@@ -78,6 +80,10 @@ use crate::ai::agent::AIIdentifiers;
 use crate::ai::agent::MessageId;
 use crate::ai::agent::RequestFileEditsResult;
 use crate::ai::agent::SearchCodebaseResult;
+use crate::ai::agent::SubagentCall;
+use crate::ai::agent::SubagentType;
+use crate::ai::agent_conversations_model::{AgentConversationsModel, AgentConversationsModelEvent};
+use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::blocklist::action_model::NewConversationDecision;
 use crate::ai::blocklist::block::keyboard_navigable_buttons::KeyboardNavigableButtonBuilder;
 use crate::ai::blocklist::block::keyboard_navigable_buttons::KeyboardNavigableButtons;
@@ -402,6 +408,9 @@ pub(super) struct AIBlockStateHandles {
     /// A given citation should only appear once per block.
     footer_citation_chip_handles: HashMap<AIAgentCitation, MouseStateHandle>,
     orchestration_navigation_card_handles: HashMap<AIAgentActionId, MouseStateHandle>,
+    /// Persistent mouse-state handles per received-message transcript row,
+    /// used by the clickable sender avatar.
+    pub(super) transcript_avatar_handles: HashMap<MessageId, MouseStateHandle>,
 
     references_section_collapsible_handle: MouseStateHandle,
 
@@ -716,6 +725,12 @@ impl Default for CollapsibleElementState {
 }
 
 impl CollapsibleElementState {
+    fn collapsed() -> Self {
+        Self {
+            expansion_state: CollapsibleExpansionState::Collapsed,
+            ..Default::default()
+        }
+    }
     fn expand(&mut self) {
         self.expansion_state = CollapsibleExpansionState::Expanded {
             is_finished: self.last_known_is_finished,
@@ -802,6 +817,16 @@ pub(crate) fn received_message_collapsible_id(message_id: &str) -> MessageId {
     MessageId::new(format!(
         "{RECEIVED_MESSAGE_COLLAPSIBLE_ID_PREFIX}{message_id}"
     ))
+}
+
+fn default_collapsible_state_for_orchestration_action(
+    action: &AIAgentActionType,
+) -> Option<CollapsibleElementState> {
+    match action {
+        AIAgentActionType::StartAgent { .. } => Some(CollapsibleElementState::default()),
+        AIAgentActionType::SendMessageToAgent { .. } => Some(CollapsibleElementState::collapsed()),
+        _ => None,
+    }
 }
 
 pub struct AIBlock {
@@ -1084,6 +1109,13 @@ impl AIBlock {
             },
         );
 
+        ctx.subscribe_to_model(
+            &AgentConversationsModel::handle(ctx),
+            |me, _, event, ctx| {
+                me.handle_agent_conversations_model_event(event, ctx);
+            },
+        );
+
         let safe_mode_settings = SafeModeSettings::handle(ctx);
         ctx.subscribe_to_model(&safe_mode_settings, |me, _, event, ctx| {
             me.handle_safe_mode_settings_changed_event(event, ctx)
@@ -1252,7 +1284,7 @@ impl AIBlock {
                 AmbientAgentViewModelEvent::DispatchedAgent
                 | AmbientAgentViewModelEvent::FollowupDispatched
                 | AmbientAgentViewModelEvent::SessionReady { .. }
-                | AmbientAgentViewModelEvent::FollowupSessionReady { .. }
+                | AmbientAgentViewModelEvent::ExecutionSessionReady { .. }
                 | AmbientAgentViewModelEvent::Failed { .. }
                 | AmbientAgentViewModelEvent::NeedsGithubAuth
                 | AmbientAgentViewModelEvent::Cancelled
@@ -1855,6 +1887,8 @@ impl AIBlock {
             self.handle_web_fetch_messages(&output.messages, ctx);
         }
 
+        self.fetch_conversation_search_agent_run_titles(output, ctx);
+
         for action in output.actions() {
             let new_action_ids: HashSet<AIAgentActionId> =
                 output.actions().map(|action| action.id.clone()).collect();
@@ -2091,31 +2125,31 @@ impl AIBlock {
             ) {
                 self.collapsible_block_states
                     .entry(message.id.clone())
-                    .or_insert_with(|| CollapsibleElementState {
-                        expansion_state: CollapsibleExpansionState::Collapsed,
-                        ..Default::default()
-                    });
+                    .or_insert_with(CollapsibleElementState::collapsed);
             }
 
             // Register collapsible state for orchestration action messages.
-            if FeatureFlag::Orchestration.is_enabled() {
+            if FeatureFlag::OrchestrationV2.is_enabled() {
                 match &message.message {
-                    AIAgentOutputMessageType::Action(AIAgentAction {
-                        action:
-                            AIAgentActionType::StartAgent { .. }
-                            | AIAgentActionType::SendMessageToAgent { .. },
-                        ..
-                    }) => {
-                        self.collapsible_block_states
-                            .entry(message.id.clone())
-                            .or_default();
+                    AIAgentOutputMessageType::Action(AIAgentAction { action, .. }) => {
+                        if let Some(state) =
+                            default_collapsible_state_for_orchestration_action(action)
+                        {
+                            self.collapsible_block_states
+                                .entry(message.id.clone())
+                                .or_insert(state);
+                        }
                     }
                     AIAgentOutputMessageType::MessagesReceivedFromAgents { messages } => {
                         for received_message in messages {
+                            let collapsible_id =
+                                received_message_collapsible_id(&received_message.message_id);
                             self.collapsible_block_states
-                                .entry(received_message_collapsible_id(
-                                    &received_message.message_id,
-                                ))
+                                .entry(collapsible_id.clone())
+                                .or_insert_with(CollapsibleElementState::collapsed);
+                            self.state_handles
+                                .transcript_avatar_handles
+                                .entry(collapsible_id)
                                 .or_default();
                         }
                     }
@@ -2131,6 +2165,63 @@ impl AIBlock {
                     get_secret_obfuscation_mode(ctx).is_visually_obfuscated(),
                 );
         }
+    }
+
+    fn fetch_conversation_search_agent_run_titles(
+        &self,
+        output: &AIAgentOutput,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        for task_id in Self::conversation_search_agent_run_ids(output) {
+            AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
+                model.get_or_async_fetch_task_data(&task_id, ctx);
+            });
+        }
+    }
+
+    fn handle_agent_conversations_model_event(
+        &mut self,
+        event: &AgentConversationsModelEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        // Conversation-search labels may render with an agent-run fallback before the
+        // async task title fetch completes. `TasksUpdated` is the signal that the real
+        // title may now be cached, so only notify blocks that render those labels.
+        if matches!(event, AgentConversationsModelEvent::TasksUpdated)
+            && self.output_references_agent_run_for_conversation_search(ctx)
+        {
+            ctx.notify();
+        }
+    }
+
+    fn output_references_agent_run_for_conversation_search(&self, app: &AppContext) -> bool {
+        self.model
+            .status(app)
+            .output_to_render()
+            .is_some_and(|output| {
+                !Self::conversation_search_agent_run_ids(&output.get()).is_empty()
+            })
+    }
+
+    fn conversation_search_agent_run_ids(output: &AIAgentOutput) -> Vec<AmbientAgentTaskId> {
+        let mut task_ids = HashSet::new();
+        for message in &output.messages {
+            let AIAgentOutputMessageType::Subagent(SubagentCall {
+                subagent_type:
+                    SubagentType::ConversationSearch {
+                        agent_run_id: Some(agent_run_id),
+                        ..
+                    },
+                ..
+            }) = &message.message
+            else {
+                continue;
+            };
+            if let Ok(task_id) = agent_run_id.parse() {
+                task_ids.insert(task_id);
+            }
+        }
+        task_ids.into_iter().collect()
     }
 
     fn set_keyboard_navigable_buttons(
@@ -5539,10 +5630,11 @@ impl AIBlock {
         ctx: &mut ViewContext<Self>,
     ) {
         #[cfg(not(target_family = "wasm"))]
-        let repo_path = self
-            .current_working_directory
-            .as_ref()
-            .and_then(|cwd| DetectedRepositories::as_ref(ctx).get_root_for_path(Path::new(cwd)));
+        let repo_path = self.current_working_directory.as_ref().and_then(|cwd| {
+            DetectedRepositories::as_ref(ctx)
+                .get_root_for_path(&LocalOrRemotePath::Local(PathBuf::from(cwd.as_str())))
+                .and_then(|r| PathBuf::try_from(r).ok())
+        });
         #[cfg(target_family = "wasm")]
         let repo_path = self.current_working_directory.as_ref().map(PathBuf::from);
 
@@ -5875,8 +5967,6 @@ pub enum AIBlockAction {
     /// Copy all AI output from the previous user query to the next user query.
     /// Note that this contains more than just this block, since from the user perspective everything after the user query appears like one block.
     CopyOutput,
-    /// Copy complete conversation history
-    CopyConversation,
     /// Copy the ai block's command
     CopyCommand,
     /// Store a command that was right-clicked for later copying
@@ -6354,34 +6444,6 @@ impl TypedActionView for AIBlock {
                 let combined_text = format!("{prompt_text}\n\n{output_text}");
                 ctx.clipboard()
                     .write(ClipboardContent::plain_text(combined_text));
-            }
-            AIBlockAction::CopyConversation => {
-                let conversation_text = {
-                    let history = BlocklistAIHistoryModel::handle(ctx);
-                    let Some(conversation) = history
-                        .as_ref(ctx)
-                        .conversation(&self.client_ids.conversation_id)
-                    else {
-                        log::warn!(
-                            "No conversation found for conversation ID {}",
-                            self.client_ids.conversation_id
-                        );
-                        return;
-                    };
-
-                    let mut result = Vec::new();
-                    for exchange in conversation.root_task_exchanges() {
-                        let formatted_exchange =
-                            exchange.format_for_copy(Some(self.action_model.as_ref(ctx)));
-                        if !formatted_exchange.is_empty() {
-                            result.push(formatted_exchange);
-                        }
-                    }
-
-                    result.join("\n\n")
-                };
-                ctx.clipboard()
-                    .write(ClipboardContent::plain_text(conversation_text));
             }
             AIBlockAction::CopyCommand => {
                 let command_text = if let Some(stored_command) = &self.last_right_clicked_command {

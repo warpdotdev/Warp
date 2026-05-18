@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::sync::Arc;
 
 use ai::agent::action_result::{
@@ -64,7 +63,8 @@ fn request_params_for_local_backend_tests() -> RequestParams {
         planning_enabled: true,
         should_redact_secrets: false,
         api_keys: None,
-        allow_use_of_warp_credits_with_byok: false,
+        custom_model_providers: None,
+        allow_use_of_warp_credits: false,
         local_openai_responses_backend_enabled: true,
         local_openai_api_key: None,
         local_openai_base_url: None,
@@ -85,30 +85,29 @@ fn request_params_for_local_backend_tests() -> RequestParams {
 
 /// Builds a minimal MCP tool used for schema passthrough tests.
 fn test_mcp_tool() -> rmcp::model::Tool {
-    rmcp::model::Tool {
-        name: Cow::Owned("lookup_weather".to_string()),
-        title: Some("Lookup Weather".to_string()),
-        description: Some(Cow::Owned("Look up weather by city.".to_string())),
-        input_schema: Arc::new(
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "city": {
-                        "type": "string",
-                        "description": "City name to look up."
-                    }
-                },
-                "required": ["city"]
-            })
-            .as_object()
-            .expect("schema should be object")
-            .clone(),
-        ),
-        output_schema: None,
-        annotations: None,
-        icons: None,
-        meta: None,
-    }
+    let input_schema = Arc::new(
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string",
+                    "description": "City name to look up."
+                }
+            },
+            "required": ["city"]
+        })
+        .as_object()
+        .expect("schema should be object")
+        .clone(),
+    );
+
+    let mut tool = rmcp::model::Tool::new(
+        "lookup_weather",
+        "Look up weather by city.",
+        input_schema,
+    );
+    tool.title = Some("Lookup Weather".to_string());
+    tool
 }
 
 /// Verifies that a base URL without `/v1` is normalized correctly.
@@ -1948,6 +1947,8 @@ fn convert_inputs_to_response_items_serializes_shell_tool_results() {
                         command: "rg TODO .".to_string(),
                         output: "src/main.rs:12: TODO".to_string(),
                         exit_code: ExitCode::from(0),
+                        start_ts: None,
+                        completed_ts: None,
                     },
                 ),
             },

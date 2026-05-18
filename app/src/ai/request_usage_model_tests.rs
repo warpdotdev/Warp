@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use chrono::Duration;
 use warpui::{App, ModelHandle};
+use warp_core::features::FeatureFlag;
 
 use crate::auth::AuthStateProvider;
 use crate::server::server_api::team::MockTeamClient;
