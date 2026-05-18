@@ -157,8 +157,6 @@ pub struct BlocklistAIInputModel {
     terminal_view_id: EntityId,
 
     autodetect_abort_handle: Option<AbortHandle>,
-    // Id (or counter) to track the latest valid async task
-    autodetect_generation: u64,
     model: Arc<FairMutex<TerminalModel>>,
 }
 
@@ -347,7 +345,6 @@ impl BlocklistAIInputModel {
             last_explicit_input_type_set_at: None,
             was_lock_set_with_empty_buffer: false,
             autodetect_abort_handle: None,
-            autodetect_generation: 0,
             model,
         }
     }
@@ -596,8 +593,6 @@ impl BlocklistAIInputModel {
     pub fn abort_in_progress_detection(&mut self) {
         if let Some(handle) = self.autodetect_abort_handle.take() {
             handle.abort();
-            // Increment autodetect_generation to invalidate aborted runs
-            self.autodetect_generation = self.autodetect_generation.wrapping_add(1);
         }
     }
 
@@ -608,13 +603,17 @@ impl BlocklistAIInputModel {
     /// When `session_id` is `Some`, history matching is performed. The `completion_context`
     /// is always used for alias expansion (callers without a live session should pass an
     /// `EmptyCompletionContext`).
-    pub fn detect_and_set_input_type<C: CompletionContext + Clone + Send + 'static>(
+    pub fn detect_and_set_input_type<C, F>(
         &mut self,
         input: ParsedTokensSnapshot,
         completion_context: C,
         session_id: Option<SessionId>,
         ctx: &mut ModelContext<Self>,
-    ) {
+        is_current_input: F,
+    ) where
+        C: CompletionContext + Clone + Send + 'static,
+        F: FnOnce(&AppContext) -> bool + 'static,
+    {
         // Abort the last autodetect handle if exists.
         self.abort_in_progress_detection();
 
@@ -698,9 +697,6 @@ impl BlocklistAIInputModel {
         };
 
         let classifier = InputClassifierModel::as_ref(ctx).classifier();
-        // Increment autodetect_generation to a new run 
-        self.autodetect_generation = self.autodetect_generation.wrapping_add(1);
-        let autodetect_generation = self.autodetect_generation;
         let handle = ctx
             .spawn(
                 async move {
@@ -753,7 +749,11 @@ impl BlocklistAIInputModel {
                     new_input_type
                 },
                 move |me, new_input_type, ctx| {
-                    if me.autodetect_generation != autodetect_generation {
+                    let is_current_input = is_current_input(ctx);
+                    log::debug!(
+                        "NLD autodetection callback freshness check: is_current_input={is_current_input}"
+                    );
+                    if !is_current_input {
                         return;
                     }
                     // In theory, we shouldn't need to check this, as we only run autodetection if the input

@@ -111,6 +111,8 @@ impl Input {
         ctx: &mut ViewContext<Self>,
     ) {
         if let Some(parsed_token) = self.last_parsed_tokens.clone() {
+            let editor = self.editor.clone();
+            let expected_buffer_text = parsed_token.buffer_text.clone();
             let session_id = completion_context.session.id();
             self.ai_input_model.update(ctx, |ai_input_model, ctx| {
                 ai_input_model.detect_and_set_input_type(
@@ -118,6 +120,14 @@ impl Input {
                     completion_context,
                     Some(session_id),
                     ctx,
+                    move |ctx| {
+                        let current_buffer_text = editor.as_ref(ctx).buffer_text(ctx);
+                        let is_current_input = current_buffer_text == expected_buffer_text;
+                        log::debug!(
+                            "NLD autodetection freshness check: is_current_input={is_current_input}, current_buffer_text={current_buffer_text:?}, expected_buffer_text={expected_buffer_text:?}"
+                        );
+                        is_current_input
+                    },
                 )
             })
         }
@@ -240,18 +250,30 @@ impl Input {
                     // No session context available (e.g., shared session viewer).
                     // Use a dedicated detection context that does not expose top-level commands.
                     let buffer_text = self.editor.as_ref(ctx).buffer_text(ctx);
+                    let editor = self.editor.clone();
                     let ai_input_model = self.ai_input_model.clone();
                     ctx.spawn(
                         async move {
                             parse_current_commands_and_tokens(buffer_text, &detection_ctx).await
                         },
                         move |_input, parsed_tokens, ctx| {
+                            let expected_buffer_text = parsed_tokens.buffer_text.clone();
                             ai_input_model.update(ctx, |model, ctx| {
                                 model.detect_and_set_input_type(
                                     parsed_tokens,
                                     EmptyCompletionContext::new(),
                                     None,
                                     ctx,
+                                    move |ctx| {
+                                        let current_buffer_text =
+                                            editor.as_ref(ctx).buffer_text(ctx);
+                                        let is_current_input =
+                                            current_buffer_text == expected_buffer_text;
+                                        log::debug!(
+                                            "NLD autodetection freshness check: is_current_input={is_current_input}, current_buffer_text={current_buffer_text:?}, expected_buffer_text={expected_buffer_text:?}"
+                                        );
+                                        is_current_input
+                                    },
                                 );
                             });
                         },

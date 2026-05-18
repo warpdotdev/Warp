@@ -13703,6 +13703,7 @@ impl Input {
         // classification doesn't match the previous locked mode.
         if !buffer_text.is_empty() {
             if let Some(completion_context) = self.completion_session_context(ctx) {
+                let editor = self.editor.clone();
                 let ai_input_model = self.ai_input_model.clone();
 
                 ctx.spawn(
@@ -13714,6 +13715,7 @@ impl Input {
                         )
                     },
                     move |_input, (parsed_tokens, completion_context), ctx| {
+                        let expected_buffer_text = parsed_tokens.buffer_text.clone();
                         let session_id = completion_context.session.id();
                         ai_input_model.update(ctx, |model, ctx| {
                             model.detect_and_set_input_type(
@@ -13721,6 +13723,15 @@ impl Input {
                                 completion_context,
                                 Some(session_id),
                                 ctx,
+                                move |ctx| {
+                                    let current_buffer_text = editor.as_ref(ctx).buffer_text(ctx);
+                                    let is_current_input =
+                                        current_buffer_text == expected_buffer_text;
+                                    log::debug!(
+                                        "NLD autodetection freshness check: is_current_input={is_current_input}, current_buffer_text={current_buffer_text:?}, expected_buffer_text={expected_buffer_text:?}"
+                                    );
+                                    is_current_input
+                                },
                             );
                         });
                     },
