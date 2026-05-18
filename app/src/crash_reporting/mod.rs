@@ -181,11 +181,6 @@ impl ToSentryTags for CrashRecoveryMetadata {
 /// Initializes the crash reporting subsystem.  Returns whether or not crash
 /// reporting is active.
 pub(crate) fn init(ctx: &mut AppContext) -> bool {
-    if !FeatureFlag::CrashReporting.is_enabled() {
-        log::info!("Crash reporting FeatureFlag is disabled; not initializing sentry.");
-        return false;
-    }
-
     let window_manager = WindowManager::handle(ctx);
     ctx.subscribe_to_model(&window_manager, |_, event, _| match event {
         StateEvent::ValueChanged { current, previous } => {

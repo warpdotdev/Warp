@@ -436,11 +436,9 @@ impl AuthManager {
                 });
 
                 // Now that the user is logged in, do the daily version check.
-                if FeatureFlag::Autoupdate.is_enabled() {
-                    AutoupdateState::handle(ctx).update(ctx, |autoupdate_state, ctx| {
-                        autoupdate_state.maybe_daily_check_for_update(ctx);
-                    });
-                }
+                AutoupdateState::handle(ctx).update(ctx, |autoupdate_state, ctx| {
+                    autoupdate_state.maybe_daily_check_for_update(ctx);
+                });
 
                 let server_api = self.server_api.clone();
                 let user_id = self.auth_state.user_id().unwrap_or_default();

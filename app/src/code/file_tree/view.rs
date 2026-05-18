@@ -1453,10 +1453,6 @@ impl FileTreeView {
     ) {
         use crate::remote_server::manager::RemoteServerManager;
 
-        if !FeatureFlag::SshRemoteServer.is_enabled() {
-            return;
-        }
-
         let Some(root_dir) = self.root_directories.get(root_path) else {
             return;
         };

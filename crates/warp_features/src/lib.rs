@@ -7,11 +7,8 @@ pub use overrides::{get_overrides, set_overrides};
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, Sequence)]
 pub enum FeatureFlag {
-    Changelog,
     CocoaSentry,
-    CrashReporting,
     DebugMode,
-    Autoupdate,
     LogExpensiveFramesInSentry,
     WithSandboxTelemetry,
     RecordAppActiveEvents,
@@ -185,8 +182,6 @@ pub enum FeatureFlag {
 
     /// Maximizes data in flat storage to reduce memory usage.
     MaximizeFlatStorage,
-
-    ImeMarkedText,
 
     /// Enables partial next command suggestions with a prefix.
     PartialNextCommandSuggestions,
@@ -831,11 +826,6 @@ pub enum FeatureFlag {
     /// space is not rendered while the agent is running.
     TrimTrailingBlankLines,
 
-    /// Gates the new SSH remote server flow that installs and connects to a
-    /// persistent binary on the remote machine instead of using ControlMaster
-    /// for command execution.
-    SshRemoteServer,
-
     /// Redux of the setup/initial user query UI for cloud mode.
     CloudModeSetupV2,
 
@@ -908,7 +898,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::LazySceneBuilding,
     FeatureFlag::SshDragAndDrop,
     FeatureFlag::MultiWorkspace,
-    FeatureFlag::ImeMarkedText,
     FeatureFlag::MSYS2Shells,
     FeatureFlag::RetryTruncatedCodeResponses,
     FeatureFlag::ContextLineReviewComments,
@@ -934,8 +923,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::RememberFastForwardState,
     FeatureFlag::GeminiNotifications,
     FeatureFlag::LocalDockerSandbox,
-    #[cfg(not(windows))]
-    FeatureFlag::SshRemoteServer,
     FeatureFlag::DragTabsToWindows,
     FeatureFlag::SoloUserByok,
     FeatureFlag::CustomInferenceEndpoints,
@@ -954,17 +941,7 @@ pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
 /// Features enabled for all release builds (i.e.: everything but WarpLocal).
 /// NOTE: if you are promoting a feature from Preview to launch, you'll likely
 /// want to enable the feature by default in app/Cargo.toml, rather than add it to RELEASE_FLAGS.
-pub const RELEASE_FLAGS: &[FeatureFlag] = &[
-    FeatureFlag::Autoupdate,
-    FeatureFlag::Changelog,
-    FeatureFlag::CrashReporting,
-    // Marked text is currently only supported on MacOS.
-    #[cfg(target_os = "macos")]
-    FeatureFlag::ImeMarkedText,
-    // Remote server binary is not yet supported on Windows.
-    #[cfg(not(windows))]
-    FeatureFlag::SshRemoteServer,
-];
+pub const RELEASE_FLAGS: &[FeatureFlag] = &[];
 
 /// Flags that we want to allow to switch at runtime (assuming RuntimeFeatureFlags is set)
 pub const RUNTIME_FEATURE_FLAGS: &[FeatureFlag] = &[FeatureFlag::LocalClaudeCodexChildHarnesses];

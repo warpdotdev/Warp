@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use settings::Setting as _;
 use warp::{
-    features::FeatureFlag,
     integration_testing::{
         remote_server::{
             assert_command_executor_is_remote_server, assert_remote_server_connected,
@@ -33,12 +32,10 @@ use warpui::integration::TestStep;
 
 use super::{new_builder, Builder};
 
-/// Common builder configuration for remote server tests: enables the
-/// `SshRemoteServer` feature flag for these tests and sets the install mode to
-/// `AlwaysInstall` so the binary check → connect flow runs without user
+/// Common builder configuration for remote server tests: sets the install mode
+/// to `AlwaysInstall` so the binary check → connect flow runs without user
 /// interaction.
 fn remote_server_builder() -> Builder {
-    FeatureFlag::SshRemoteServer.set_enabled(true);
     new_builder()
         .set_should_run_test(|| {
             if !cfg!(target_os = "linux") {

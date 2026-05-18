@@ -6656,7 +6656,7 @@ impl Workspace {
         }
 
         let mut menu_items = vec![];
-        if FeatureFlag::Autoupdate.is_enabled() && ChannelState::show_autoupdate_menu_items() {
+        if ChannelState::show_autoupdate_menu_items() {
             if let Some(version) = ChannelState::app_version() {
                 menu_items.push(
                     MenuItemFields::new(format!("Current version is {version}"))
@@ -8416,8 +8416,7 @@ impl Workspace {
         let appearance = Appearance::as_ref(app);
 
         // Render the subtle autoupdate UI if autoupdate is ready and there is no incoming prominent update version.
-        if FeatureFlag::Autoupdate.is_enabled()
-            && FeatureFlag::AutoupdateUIRevamp.is_enabled()
+        if FeatureFlag::AutoupdateUIRevamp.is_enabled()
             && ChannelState::show_autoupdate_menu_items()
         {
             match autoupdate::get_update_state(app) {
@@ -15402,7 +15401,6 @@ impl Workspace {
             // true for Auto SSH Warpification (mode 1) sessions where
             // `connect_session` was called at `InitShell` time.
             let has_remote_server = is_remote
-                && FeatureFlag::SshRemoteServer.is_enabled()
                 && session_id.is_some_and(|sid| {
                     RemoteServerManager::as_ref(ctx).is_session_potentially_active(sid)
                 });
@@ -19543,109 +19541,102 @@ impl Workspace {
     }
 
     fn render_autoupdate_banner_element(&self, app: &AppContext) -> Option<WorkspaceBannerFields> {
-        if FeatureFlag::Autoupdate.is_enabled() {
-            match autoupdate::get_update_state(app) {
-                AutoupdateStage::UnableToUpdateToNewVersion { new_version }
-                    if !self.autoupdate_unable_to_update_banner_dismissed =>
-                {
-                    let description =
-                        if is_incoming_version_past_current(new_version.soft_cutoff.as_deref()) {
-                            VERSION_DEPRECATION_WITHOUT_PERMISSIONS_BANNER_TEXT.to_owned()
-                        } else {
-                            "A new version is available but Warp is unable to perform the update."
-                                .to_owned()
-                        };
-
-                    Some(WorkspaceBannerFields {
-                        banner_type: WorkspaceBanner::UnableToUpdateToNewVersion,
-                        severity: BannerSeverity::Error,
-                        heading: None,
-                        description,
-                        secondary_button: None,
-                        button: Some(WorkspaceBannerButtonDetails {
-                            text: "Update Warp manually".to_string(),
-                            action: WorkspaceAction::DownloadNewVersion,
-                            variant: BannerButtonVariant::Outlined,
-                            icon: None,
-                            more_info_button_action: Some(WorkspaceAction::AutoupdateFailureLink),
-                        }),
-                    })
-                }
-                AutoupdateStage::UnableToLaunchNewVersion { new_version }
-                    if !self.autoupdate_unable_to_launch_new_version =>
-                {
-                    let description =
-                        if is_incoming_version_past_current(new_version.soft_cutoff.as_deref()) {
-                            VERSION_DEPRECATION_WITHOUT_PERMISSIONS_BANNER_TEXT.to_owned()
-                        } else {
-                            "Warp was unable to launch the new installed version.".to_owned()
-                        };
-
-                    Some(WorkspaceBannerFields {
-                        banner_type: WorkspaceBanner::UnableToLaunchNewVersion,
-                        severity: BannerSeverity::Error,
-                        heading: None,
-                        description,
-                        secondary_button: None,
-                        button: Some(WorkspaceBannerButtonDetails {
-                            text: "Update Warp manually".to_string(),
-                            action: WorkspaceAction::DownloadNewVersion,
-                            variant: BannerButtonVariant::Outlined,
-                            icon: None,
-                            more_info_button_action: Some(WorkspaceAction::AutoupdateFailureLink),
-                        }),
-                    })
-                }
-                AutoupdateStage::UpdateReady { new_version, .. }
-                | AutoupdateStage::UpdatedPendingRestart { new_version } => {
+        match autoupdate::get_update_state(app) {
+            AutoupdateStage::UnableToUpdateToNewVersion { new_version }
+                if !self.autoupdate_unable_to_update_banner_dismissed =>
+            {
+                let description =
                     if is_incoming_version_past_current(new_version.soft_cutoff.as_deref()) {
-                        Some(WorkspaceBannerFields {
+                        VERSION_DEPRECATION_WITHOUT_PERMISSIONS_BANNER_TEXT.to_owned()
+                    } else {
+                        "A new version is available but Warp is unable to perform the update."
+                            .to_owned()
+                    };
+
+                Some(WorkspaceBannerFields {
+                    banner_type: WorkspaceBanner::UnableToUpdateToNewVersion,
+                    severity: BannerSeverity::Error,
+                    heading: None,
+                    description,
+                    secondary_button: None,
+                    button: Some(WorkspaceBannerButtonDetails {
+                        text: "Update Warp manually".to_string(),
+                        action: WorkspaceAction::DownloadNewVersion,
+                        variant: BannerButtonVariant::Outlined,
+                        icon: None,
+                        more_info_button_action: Some(WorkspaceAction::AutoupdateFailureLink),
+                    }),
+                })
+            }
+            AutoupdateStage::UnableToLaunchNewVersion { new_version }
+                if !self.autoupdate_unable_to_launch_new_version =>
+            {
+                let description =
+                    if is_incoming_version_past_current(new_version.soft_cutoff.as_deref()) {
+                        VERSION_DEPRECATION_WITHOUT_PERMISSIONS_BANNER_TEXT.to_owned()
+                    } else {
+                        "Warp was unable to launch the new installed version.".to_owned()
+                    };
+
+                Some(WorkspaceBannerFields {
+                    banner_type: WorkspaceBanner::UnableToLaunchNewVersion,
+                    severity: BannerSeverity::Error,
+                    heading: None,
+                    description,
+                    secondary_button: None,
+                    button: Some(WorkspaceBannerButtonDetails {
+                        text: "Update Warp manually".to_string(),
+                        action: WorkspaceAction::DownloadNewVersion,
+                        variant: BannerButtonVariant::Outlined,
+                        icon: None,
+                        more_info_button_action: Some(WorkspaceAction::AutoupdateFailureLink),
+                    }),
+                })
+            }
+            AutoupdateStage::UpdateReady { new_version, .. }
+            | AutoupdateStage::UpdatedPendingRestart { new_version } => {
+                if is_incoming_version_past_current(new_version.soft_cutoff.as_deref()) {
+                    Some(WorkspaceBannerFields {
+                        banner_type: WorkspaceBanner::VersionDeprecated,
+                        severity: BannerSeverity::Error,
+                        heading: None,
+                        description: VERSION_DEPRECATION_BANNER_TEXT.to_string(),
+                        secondary_button: None,
+                        button: Some(WorkspaceBannerButtonDetails {
+                            text: "Update now".to_string(),
+                            action: WorkspaceAction::ApplyUpdate,
+                            variant: BannerButtonVariant::Outlined,
+                            icon: None,
+                            more_info_button_action: None,
+                        }),
+                    })
+                } else if let Some(update_by) = new_version.update_by {
+                    self.server_time.as_ref().and_then(|server_time| {
+                        (server_time.current_time() > update_by).then(|| WorkspaceBannerFields {
                             banner_type: WorkspaceBanner::VersionDeprecated,
-                            severity: BannerSeverity::Error,
+                            severity: BannerSeverity::Warning,
                             heading: None,
-                            description: VERSION_DEPRECATION_BANNER_TEXT.to_string(),
+                            description: "Your app is out of date and needs to update.".to_string(),
                             secondary_button: None,
                             button: Some(WorkspaceBannerButtonDetails {
-                                text: "Update now".to_string(),
+                                text: "Restart app and update now".to_string(),
                                 action: WorkspaceAction::ApplyUpdate,
                                 variant: BannerButtonVariant::Outlined,
                                 icon: None,
                                 more_info_button_action: None,
                             }),
                         })
-                    } else if let Some(update_by) = new_version.update_by {
-                        self.server_time.as_ref().and_then(|server_time| {
-                            (server_time.current_time() > update_by).then(|| {
-                                WorkspaceBannerFields {
-                                    banner_type: WorkspaceBanner::VersionDeprecated,
-                                    severity: BannerSeverity::Warning,
-                                    heading: None,
-                                    description: "Your app is out of date and needs to update."
-                                        .to_string(),
-                                    secondary_button: None,
-                                    button: Some(WorkspaceBannerButtonDetails {
-                                        text: "Restart app and update now".to_string(),
-                                        action: WorkspaceAction::ApplyUpdate,
-                                        variant: BannerButtonVariant::Outlined,
-                                        icon: None,
-                                        more_info_button_action: None,
-                                    }),
-                                }
-                            })
-                        })
-                    } else {
-                        None
-                    }
+                    })
+                } else {
+                    None
                 }
-                AutoupdateStage::NoUpdateAvailable
-                | AutoupdateStage::CheckingForUpdate
-                | AutoupdateStage::DownloadingUpdate
-                | AutoupdateStage::Updating { .. }
-                | AutoupdateStage::UnableToUpdateToNewVersion { .. }
-                | AutoupdateStage::UnableToLaunchNewVersion { .. } => None,
             }
-        } else {
-            None
+            AutoupdateStage::NoUpdateAvailable
+            | AutoupdateStage::CheckingForUpdate
+            | AutoupdateStage::DownloadingUpdate
+            | AutoupdateStage::Updating { .. }
+            | AutoupdateStage::UnableToUpdateToNewVersion { .. }
+            | AutoupdateStage::UnableToLaunchNewVersion { .. } => None,
         }
     }
 

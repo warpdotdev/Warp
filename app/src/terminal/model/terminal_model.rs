@@ -2373,16 +2373,10 @@ impl TerminalModel {
     }
 
     pub fn set_marked_text(&mut self, marked_text: &str, selected_range: &Range<usize>) {
-        if !FeatureFlag::ImeMarkedText.is_enabled() {
-            return;
-        }
         delegate!(self.set_marked_text(marked_text, selected_range))
     }
 
     pub fn clear_marked_text(&mut self) {
-        if !FeatureFlag::ImeMarkedText.is_enabled() {
-            return;
-        }
         delegate!(self.clear_marked_text())
     }
 }

@@ -5708,9 +5708,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::RemoteServerSetupDuration
             | Self::RemoteServerHostUnsupported
             | Self::RemoteServerReconnection
-            | Self::RemoteServerReconnectExhausted => {
-                EnablementState::Flag(FeatureFlag::SshRemoteServer)
-            }
+            | Self::RemoteServerReconnectExhausted => EnablementState::Always,
         }
     }
 

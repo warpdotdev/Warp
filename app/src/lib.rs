@@ -1357,14 +1357,12 @@ pub(crate) fn initialize_app(
 
     ctx.set_default_binding_validator(is_binding_cross_platform);
 
-    if FeatureFlag::Autoupdate.is_enabled() {
-        // Attempt to clean up any old executable, whether or not we were
-        // explicitly launched as part of the auto-update process.  We may have
-        // failed to remove the executable on a previous launch of the app and
-        // should try again.
-        if let Err(e) = autoupdate::remove_old_executable() {
-            log::error!("Failed to remove old executable: {e:?}");
-        }
+    // Attempt to clean up any old executable, whether or not we were
+    // explicitly launched as part of the auto-update process.  We may have
+    // failed to remove the executable on a previous launch of the app and
+    // should try again.
+    if let Err(e) = autoupdate::remove_old_executable() {
+        log::error!("Failed to remove old executable: {e:?}");
     }
 
     experiments::init(ctx);
@@ -2550,14 +2548,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
     }
 
     flags.extend([
-        #[cfg(feature = "autoupdate")]
-        FeatureFlag::Autoupdate,
-        #[cfg(feature = "changelog")]
-        FeatureFlag::Changelog,
         #[cfg(feature = "cocoa_sentry")]
         FeatureFlag::CocoaSentry,
-        #[cfg(feature = "crash_reporting")]
-        FeatureFlag::CrashReporting,
         #[cfg(feature = "log_expensive_frames_in_sentry")]
         FeatureFlag::LogExpensiveFramesInSentry,
         #[cfg(feature = "record_app_active_events")]
@@ -2632,8 +2624,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::CycleNextCommandSuggestion,
         #[cfg(feature = "multi_workspace")]
         FeatureFlag::MultiWorkspace,
-        #[cfg(feature = "ime_marked_text")]
-        FeatureFlag::ImeMarkedText,
         #[cfg(feature = "partial_next_command_suggestions")]
         FeatureFlag::PartialNextCommandSuggestions,
         #[cfg(feature = "iterm_images")]

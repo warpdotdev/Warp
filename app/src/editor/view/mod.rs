@@ -8101,10 +8101,6 @@ impl EditorView {
         selected_range: &Range<usize>,
         ctx: &mut ViewContext<Self>,
     ) {
-        if !FeatureFlag::ImeMarkedText.is_enabled() {
-            return;
-        }
-
         // If in Normal or Visual mode, we don't want to insert any text.
         if matches!(
             self.vim_mode(ctx),
@@ -8135,10 +8131,6 @@ impl EditorView {
     }
 
     fn clear_marked_text(&mut self, ctx: &mut ViewContext<Self>) {
-        if !FeatureFlag::ImeMarkedText.is_enabled() {
-            return;
-        }
-
         self.editor_model.update(ctx, |editor_model, ctx| {
             editor_model.clear_marked_text(ctx);
         });

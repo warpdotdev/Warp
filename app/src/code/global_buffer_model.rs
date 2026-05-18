@@ -335,8 +335,8 @@ impl GlobalBufferModel {
         );
 
         // Subscribe to remote buffer updates from the RemoteServerManager.
-        #[cfg(feature = "local_tty")]
-        if FeatureFlag::SshRemoteServer.is_enabled() {
+        #[cfg(all(feature = "local_tty", not(windows)))]
+        {
             use remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
             let mgr = RemoteServerManager::handle(_ctx);
             _ctx.subscribe_to_model(&mgr, |me, event, ctx| match event {

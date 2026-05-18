@@ -157,7 +157,6 @@ impl ServerExperiment {
             Self::SshRemoteServerControl => {
                 // Remote server binary is not yet supported on Windows.
                 if cfg!(not(windows)) {
-                    FeatureFlag::SshRemoteServer.set_enabled(true);
                     // Override the default install mode to NeverInstall for users
                     // who haven't explicitly changed it. `load_value` sets the
                     // in-memory value without persisting, so the override is
@@ -180,7 +179,6 @@ impl ServerExperiment {
             Self::SshRemoteServerExperiment => {
                 // Remote server binary is not yet supported on Windows.
                 if cfg!(not(windows)) {
-                    FeatureFlag::SshRemoteServer.set_enabled(true);
                     // Restore the default install mode in case the user was
                     // previously in the control arm (which overrides it to
                     // NeverInstall).

@@ -530,7 +530,7 @@ impl View for ResourceCenterMainView {
             .with_child(Shrinkable::new(20., body).finish())
             .with_child(Shrinkable::new(0.1, Empty::new().finish()).finish()); // placeholder to ensure pane extends to bottom of the window
 
-        if FeatureFlag::Autoupdate.is_enabled() && ChannelState::show_autoupdate_menu_items() {
+        if ChannelState::show_autoupdate_menu_items() {
             let current_version = self.render_current_version(appearance);
             main_page.add_child(current_version);
         }

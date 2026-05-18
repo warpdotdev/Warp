@@ -29,8 +29,6 @@ use warp_completer::completer::{
 use warpui::{platform::OperatingSystem, Entity, ModelContext, SingletonEntity};
 
 #[cfg(feature = "local_tty")]
-use crate::features::FeatureFlag;
-#[cfg(feature = "local_tty")]
 use crate::remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
 use crate::server::telemetry::{BootstrappingInfo, TelemetryEvent};
 use crate::terminal::event::ExecutedExecutorCommandEvent;
@@ -102,8 +100,8 @@ pub struct Sessions {
     /// Select environment variables and their values.
     env_vars: HashMap<SessionId, HashMap<String, String>>,
 
-    /// Tracks the remote server setup state for SSH sessions that have the
-    /// `SshRemoteServer` feature flag enabled. Keyed by the pending session ID.
+    /// Tracks the remote server setup state for SSH sessions, keyed by the
+    /// pending session ID.
     remote_server_setup_states: HashMap<SessionId, RemoteServerSetupState>,
 }
 
@@ -143,7 +141,7 @@ impl Sessions {
         // (see `new_command_executor_for_local_tty_session`) so we no
         // longer need to wire it here on connect/disconnect.
         #[cfg(feature = "local_tty")]
-        if FeatureFlag::SshRemoteServer.is_enabled() {
+        {
             let mgr = RemoteServerManager::handle(ctx);
             ctx.subscribe_to_model(&mgr, |sessions, event, ctx| match event {
                 RemoteServerManagerEvent::SessionConnected {
@@ -362,12 +360,10 @@ impl Sessions {
         // RemoteServerCommandExecutor already has its client baked in, so
         // nothing else needs to be wired here.
         #[cfg(feature = "local_tty")]
-        if FeatureFlag::SshRemoteServer.is_enabled()
-            && matches!(
-                session_info.session_type,
-                BootstrapSessionType::WarpifiedRemote
-            )
-        {
+        if matches!(
+            session_info.session_type,
+            BootstrapSessionType::WarpifiedRemote
+        ) {
             if let Some(host_id) = RemoteServerManager::as_ref(ctx).host_id_for_session(session_id)
             {
                 session.set_remote_host_id(Some(host_id.clone()));

@@ -173,12 +173,10 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
         preferences_menu_items,
     )));
 
-    if FeatureFlag::Changelog.is_enabled() {
-        menu_items.push(updateable_custom_item_without_checkmark(
-            CustomAction::ViewChangelog,
-            ctx,
-        ));
-    }
+    menu_items.push(updateable_custom_item_without_checkmark(
+        CustomAction::ViewChangelog,
+        ctx,
+    ));
 
     #[cfg(target_os = "macos")]
     {

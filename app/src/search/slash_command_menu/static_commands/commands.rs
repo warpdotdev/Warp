@@ -644,9 +644,7 @@ fn all_commands() -> Vec<StaticCommand> {
         commands.push(REMOTE_CONTROL);
     }
 
-    if FeatureFlag::Changelog.is_enabled() {
-        commands.push(CHANGELOG);
-    }
+    commands.push(CHANGELOG);
 
     if FeatureFlag::AgentView.is_enabled() {
         commands.push(PROMPTS.clone());

@@ -1059,27 +1059,25 @@ pub fn init(app: &mut AppContext) {
         .with_custom_action(CustomAction::SearchDrive),
     ]);
 
-    if FeatureFlag::Autoupdate.is_enabled() {
-        app.register_editable_bindings([
-            EditableBinding::new(
-                "workspace:update_and_relaunch",
-                "Install update and relaunch",
-                // TODO(vorporeal): I wonder if we should change wording here?
-                WorkspaceAction::ApplyUpdate,
-            )
-            .with_group(bindings::BindingGroup::AutoUpdate.as_str())
-            .with_context_predicate(id!("Workspace") & id!("AutoupdateState_UpdateReady"))
-            .with_enabled(|| ContextFlag::PromptForVersionUpdates.is_enabled()),
-            EditableBinding::new(
-                "workspace:check_for_updates",
-                "Check for updates",
-                WorkspaceAction::CheckForUpdate,
-            )
-            .with_group(bindings::BindingGroup::AutoUpdate.as_str())
-            .with_context_predicate(id!("Workspace") & !id!("AutoupdateState_UpdateReady"))
-            .with_enabled(|| ContextFlag::PromptForVersionUpdates.is_enabled()),
-        ]);
-    }
+    app.register_editable_bindings([
+        EditableBinding::new(
+            "workspace:update_and_relaunch",
+            "Install update and relaunch",
+            // TODO(vorporeal): I wonder if we should change wording here?
+            WorkspaceAction::ApplyUpdate,
+        )
+        .with_group(bindings::BindingGroup::AutoUpdate.as_str())
+        .with_context_predicate(id!("Workspace") & id!("AutoupdateState_UpdateReady"))
+        .with_enabled(|| ContextFlag::PromptForVersionUpdates.is_enabled()),
+        EditableBinding::new(
+            "workspace:check_for_updates",
+            "Check for updates",
+            WorkspaceAction::CheckForUpdate,
+        )
+        .with_group(bindings::BindingGroup::AutoUpdate.as_str())
+        .with_context_predicate(id!("Workspace") & !id!("AutoupdateState_UpdateReady"))
+        .with_enabled(|| ContextFlag::PromptForVersionUpdates.is_enabled()),
+    ]);
 
     app.register_editable_bindings([EditableBinding::new(
         "workspace:log_out",
@@ -1131,33 +1129,31 @@ pub fn init(app: &mut AppContext) {
         ]);
     }
 
-    if FeatureFlag::Changelog.is_enabled() {
-        app.register_editable_bindings([
-            // Always show the "View latest changelog" action in the command palette,
-            // but without a keybinding when the update toast is not visible.
-            EditableBinding::new(
-                "workspace:view_changelog",
-                "View latest changelog",
-                WorkspaceAction::ViewLatestChangelog,
-            )
-            .with_context_predicate(id!("Workspace") & !id!("UpdateToastVisible"))
-            .with_group(bindings::BindingGroup::Settings.as_str())
-            // Note that while the changelog resides in WarpEssentials, we should gate access to
-            // the changelog based on whether WarpEssentials is an available view.
-            .with_enabled(|| ContextFlag::WarpEssentials.is_enabled()),
-            // When the update toast is visible, register the keybinding as well.
-            EditableBinding::new(
-                "workspace:view_changelog",
-                "View latest changelog",
-                WorkspaceAction::ViewLatestChangelog,
-            )
-            .with_context_predicate(id!("Workspace") & id!("UpdateToastVisible"))
-            .with_group(bindings::BindingGroup::Settings.as_str())
-            .with_custom_action(CustomAction::ViewChangelog)
-            .with_linux_or_windows_key_binding(format!("alt-{}", cmd_or_ctrl_shift("o")))
-            .with_enabled(|| ContextFlag::WarpEssentials.is_enabled()),
-        ]);
-    }
+    app.register_editable_bindings([
+        // Always show the "View latest changelog" action in the command palette,
+        // but without a keybinding when the update toast is not visible.
+        EditableBinding::new(
+            "workspace:view_changelog",
+            "View latest changelog",
+            WorkspaceAction::ViewLatestChangelog,
+        )
+        .with_context_predicate(id!("Workspace") & !id!("UpdateToastVisible"))
+        .with_group(bindings::BindingGroup::Settings.as_str())
+        // Note that while the changelog resides in WarpEssentials, we should gate access to
+        // the changelog based on whether WarpEssentials is an available view.
+        .with_enabled(|| ContextFlag::WarpEssentials.is_enabled()),
+        // When the update toast is visible, register the keybinding as well.
+        EditableBinding::new(
+            "workspace:view_changelog",
+            "View latest changelog",
+            WorkspaceAction::ViewLatestChangelog,
+        )
+        .with_context_predicate(id!("Workspace") & id!("UpdateToastVisible"))
+        .with_group(bindings::BindingGroup::Settings.as_str())
+        .with_custom_action(CustomAction::ViewChangelog)
+        .with_linux_or_windows_key_binding(format!("alt-{}", cmd_or_ctrl_shift("o")))
+        .with_enabled(|| ContextFlag::WarpEssentials.is_enabled()),
+    ]);
 
     // We use the same binding name for the AI Assistant and block list AI to preserve custom
     // keybindings between them.

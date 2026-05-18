@@ -1,5 +1,4 @@
 use vim::vim::VimMode;
-use warp_core::features::FeatureFlag;
 use warpui::{keymap::Keystroke, platform::WindowStyle, App};
 
 use crate::editor::{DisplayPoint, EditorOptions, EditorView};
@@ -10,7 +9,6 @@ use super::initialize_app;
 fn test_set_marked_text() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
-        let _guard = FeatureFlag::ImeMarkedText.override_enabled(true);
 
         app.add_window(WindowStyle::NotStealFocus, |ctx| {
             let mut editor = EditorView::new_with_base_text("", Default::default(), ctx);
@@ -39,7 +37,6 @@ fn test_set_marked_text() {
 fn test_set_marked_text_multiple_empty_selections() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
-        let _guard = FeatureFlag::ImeMarkedText.override_enabled(true);
 
         app.add_window(WindowStyle::NotStealFocus, |ctx| {
             let mut editor = EditorView::new_with_base_text(" is ", Default::default(), ctx);
@@ -73,7 +70,6 @@ fn test_set_marked_text_multiple_empty_selections() {
 fn test_set_marked_text_multiple_nonempty_selections() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
-        let _guard = FeatureFlag::ImeMarkedText.override_enabled(true);
 
         app.add_window(WindowStyle::NotStealFocus, |ctx| {
             let mut editor =
@@ -108,7 +104,6 @@ fn test_set_marked_text_multiple_nonempty_selections() {
 fn test_set_marked_text_vim_normal_mode() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
-        let _guard = FeatureFlag::ImeMarkedText.override_enabled(true);
 
         app.add_window(WindowStyle::NotStealFocus, |ctx| {
             let editor_options = EditorOptions {
@@ -152,7 +147,6 @@ fn test_set_marked_text_vim_normal_mode() {
 fn test_set_marked_text_vim_insert_mode() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
-        let _guard = FeatureFlag::ImeMarkedText.override_enabled(true);
 
         app.add_window(WindowStyle::NotStealFocus, |ctx| {
             let editor_options = EditorOptions {

@@ -4348,30 +4348,66 @@ impl TerminalView {
 
         // Forward RemoteServerManager setup events into the terminal event stream
         // so the ModelEventDispatcher can gate session initialization on them.
-        if FeatureFlag::SshRemoteServer.is_enabled() {
-            let mgr_handle = RemoteServerManager::handle(ctx);
-            ctx.subscribe_to_model(&mgr_handle, |me, _, event, ctx| {
-                // `RemoteServerManager` is a singleton, so every `TerminalView` receives every event.
-                // Filter for session-scoped events that are specifically tracked by this view.
-                // Host-scoped variants return `None` and pass through unfiltered.
-                if let Some(sid) = event.session_id() {
-                    if !me.sessions.as_ref(ctx).tracks_session(sid) {
-                        return;
-                    }
+        let mgr_handle = RemoteServerManager::handle(ctx);
+        ctx.subscribe_to_model(&mgr_handle, |me, _, event, ctx| {
+            // `RemoteServerManager` is a singleton, so every `TerminalView` receives every event.
+            // Filter for session-scoped events that are specifically tracked by this view.
+            // Host-scoped variants return `None` and pass through unfiltered.
+            if let Some(sid) = event.session_id() {
+                if !me.sessions.as_ref(ctx).tracks_session(sid) {
+                    return;
                 }
-                match event {
-                    RemoteServerManagerEvent::SetupStateChanged { .. } => {
-                        // Sessions handles the state update directly via its own
-                        // subscription to the manager. Notify the view so the
-                        // loading footer re-renders with the updated message.
-                        ctx.notify();
-                    }
-                    RemoteServerManagerEvent::SessionConnected { session_id, .. } => {
-                        me.model.lock().event_proxy.send_terminal_event(
-                            crate::terminal::event::Event::RemoteServerReady {
-                                session_id: *session_id,
-                            },
-                        );
+            }
+            match event {
+                RemoteServerManagerEvent::SetupStateChanged { .. } => {
+                    // Sessions handles the state update directly via its own
+                    // subscription to the manager. Notify the view so the
+                    // loading footer re-renders with the updated message.
+                    ctx.notify();
+                }
+                RemoteServerManagerEvent::SessionConnected { session_id, .. } => {
+                    me.model.lock().event_proxy.send_terminal_event(
+                        crate::terminal::event::Event::RemoteServerReady {
+                            session_id: *session_id,
+                        },
+                    );
+                    let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
+                        .as_ref(ctx)
+                        .platform_for_session(*session_id)
+                        .map(|p| {
+                            (
+                                Some(p.os.as_str().to_owned()),
+                                Some(p.arch.as_str().to_owned()),
+                            )
+                        })
+                        .unwrap_or((None, None));
+                    send_telemetry_from_ctx!(
+                        TelemetryEvent::RemoteServerInitialization {
+                            phase: RemoteServerInitPhase::Initialize,
+                            error: None,
+                            remote_os,
+                            remote_arch,
+                            exit_code: None,
+                            signal_killed: None,
+                        },
+                        ctx
+                    );
+                }
+                RemoteServerManagerEvent::SessionConnectionFailed {
+                    session_id,
+                    phase,
+                    error,
+                    exit_status,
+                    is_cancelled,
+                } => {
+                    me.model.lock().event_proxy.send_terminal_event(
+                        crate::terminal::event::Event::RemoteServerFailed {
+                            session_id: *session_id,
+                            error: error.clone(),
+                        },
+                    );
+
+                    if !is_cancelled {
                         let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
                             .as_ref(ctx)
                             .platform_for_session(*session_id)
@@ -4384,290 +4420,252 @@ impl TerminalView {
                             .unwrap_or((None, None));
                         send_telemetry_from_ctx!(
                             TelemetryEvent::RemoteServerInitialization {
-                                phase: RemoteServerInitPhase::Initialize,
-                                error: None,
+                                phase: *phase,
+                                error: Some(error.clone()),
                                 remote_os,
                                 remote_arch,
-                                exit_code: None,
-                                signal_killed: None,
+                                exit_code: exit_status.as_ref().and_then(|s| s.code),
+                                signal_killed: exit_status.as_ref().map(|s| s.signal_killed),
                             },
                             ctx
                         );
-                    }
-                    RemoteServerManagerEvent::SessionConnectionFailed {
-                        session_id,
-                        phase,
-                        error,
-                        exit_status,
-                        is_cancelled,
-                    } => {
-                        me.model.lock().event_proxy.send_terminal_event(
-                            crate::terminal::event::Event::RemoteServerFailed {
-                                session_id: *session_id,
-                                error: error.clone(),
-                            },
-                        );
-
-                        if !is_cancelled {
-                            let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
-                                .as_ref(ctx)
-                                .platform_for_session(*session_id)
-                                .map(|p| {
-                                    (
-                                        Some(p.os.as_str().to_owned()),
-                                        Some(p.arch.as_str().to_owned()),
-                                    )
-                                })
-                                .unwrap_or((None, None));
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::RemoteServerInitialization {
-                                    phase: *phase,
-                                    error: Some(error.clone()),
-                                    remote_os,
-                                    remote_arch,
-                                    exit_code: exit_status.as_ref().and_then(|s| s.code),
-                                    signal_killed: exit_status.as_ref().map(|s| s.signal_killed),
+                        me.show_ssh_remote_server_failed_banner(
+                            *session_id,
+                            remote_server::transport::UserFacingError {
+                                body: "Failed to start SSH extension".into(),
+                                detail: if error.is_empty() {
+                                    None
+                                } else {
+                                    Some(error.clone())
                                 },
-                                ctx
-                            );
-                            me.show_ssh_remote_server_failed_banner(
-                                *session_id,
-                                remote_server::transport::UserFacingError {
-                                    body: "Failed to start SSH extension".into(),
-                                    detail: if error.is_empty() {
-                                        None
-                                    } else {
-                                        Some(error.clone())
-                                    },
-                                },
-                                ctx,
-                            );
-                        }
-                    }
-                    RemoteServerManagerEvent::SessionDisconnected {
-                        session_id,
-                        exit_status,
-                        was_reconnect_attempt,
-                        ..
-                    } => {
-                        let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
-                            .as_ref(ctx)
-                            .platform_for_session(*session_id)
-                            .map(|p| {
-                                (
-                                    Some(p.os.as_str().to_owned()),
-                                    Some(p.arch.as_str().to_owned()),
-                                )
-                            })
-                            .unwrap_or((None, None));
-                        if *was_reconnect_attempt {
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::RemoteServerReconnectExhausted {
-                                    attempts: remote_server::manager::MAX_RECONNECT_ATTEMPTS,
-                                    remote_os,
-                                    remote_arch,
-                                    exit_code: exit_status.as_ref().and_then(|s| s.code),
-                                    signal_killed: exit_status.as_ref().map(|s| s.signal_killed),
-                                },
-                                ctx
-                            );
-                        } else {
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::RemoteServerDisconnection {
-                                    remote_os,
-                                    remote_arch,
-                                },
-                                ctx
-                            );
-                        }
-                    }
-                    RemoteServerManagerEvent::SessionDeregistered { session_id } => {
-                        // Clean up any stale SSH remote-server choice block if the
-                        // session disappears (e.g. network drop, Ctrl-C, `exit`)
-                        // before the user picks an option.
-                        me.remove_ssh_remote_server_choice_block(*session_id, ctx);
-                        me.remove_ssh_remote_server_failed_banner(*session_id, ctx);
-                    }
-                    RemoteServerManagerEvent::BinaryInstallComplete {
-                        session_id,
-                        result,
-                        install_source,
-                    } => {
-                        let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
-                            .as_ref(ctx)
-                            .platform_for_session(*session_id)
-                            .map(|p| {
-                                (
-                                    Some(p.os.as_str().to_owned()),
-                                    Some(p.arch.as_str().to_owned()),
-                                )
-                            })
-                            .unwrap_or((None, None));
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::RemoteServerInstallation {
-                                error: result.as_ref().err().map(|e| e.to_string()),
-                                install_source: *install_source,
-                                remote_os,
-                                remote_arch,
                             },
-                            ctx
-                        );
-                        if let Err(error) = result {
-                            log::warn!("Remote server install failed: {error:#}");
-                            me.show_ssh_remote_server_failed_banner(
-                                *session_id,
-                                error.user_facing_error(
-                                    remote_server::transport::SetupStage::InstallBinary,
-                                ),
-                                ctx,
-                            );
-                        }
-                    }
-                    RemoteServerManagerEvent::BinaryCheckComplete {
-                        session_id,
-                        result,
-                        remote_platform,
-                        ..
-                    } => {
-                        let (remote_os, remote_arch) = remote_platform
-                            .as_ref()
-                            .map(|p| {
-                                (
-                                    Some(p.os.as_str().to_owned()),
-                                    Some(p.arch.as_str().to_owned()),
-                                )
-                            })
-                            .unwrap_or((None, None));
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::RemoteServerBinaryCheck {
-                                found: matches!(result, Ok(true)),
-                                error: result.as_ref().err().map(|e| e.to_string()),
-                                remote_os,
-                                remote_arch,
-                            },
-                            ctx
-                        );
-                        if let Err(error) = result {
-                            log::warn!("Remote server binary check failed: {error:#}");
-                            me.show_ssh_remote_server_failed_banner(
-                                *session_id,
-                                error.user_facing_error(
-                                    remote_server::transport::SetupStage::CheckBinary,
-                                ),
-                                ctx,
-                            );
-                        }
-                    }
-                    RemoteServerManagerEvent::ClientRequestFailed {
-                        session_id,
-                        operation,
-                        error_kind,
-                    } => {
-                        let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
-                            .as_ref(ctx)
-                            .platform_for_session(*session_id)
-                            .map(|p| {
-                                (
-                                    Some(p.os.as_str().to_owned()),
-                                    Some(p.arch.as_str().to_owned()),
-                                )
-                            })
-                            .unwrap_or((None, None));
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::RemoteServerClientRequestError {
-                                operation: *operation,
-                                error_type: *error_kind,
-                                remote_os,
-                                remote_arch,
-                            },
-                            ctx
+                            ctx,
                         );
                     }
-                    RemoteServerManagerEvent::ServerMessageDecodingError { session_id } => {
-                        let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
-                            .as_ref(ctx)
-                            .platform_for_session(*session_id)
-                            .map(|p| {
-                                (
-                                    Some(p.os.as_str().to_owned()),
-                                    Some(p.arch.as_str().to_owned()),
-                                )
-                            })
-                            .unwrap_or((None, None));
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::RemoteServerMessageDecodingError {
-                                remote_os,
-                                remote_arch,
-                            },
-                            ctx
-                        );
-                    }
-                    RemoteServerManagerEvent::NavigatedToDirectory {
-                        session_id: nav_session_id,
-                        remote_path,
-                        is_git: _,
-                    } => {
-                        // Repo registration is now handled by the unified
-                        // detect_possible_git_repo callback in BlockMetadataReceived.
-                        // Check if this navigation belongs to our active session
-                        // using exact session_id match (no CWD heuristics).
-                        let is_relevant = me
-                            .active_block_session_id()
-                            .is_some_and(|sid| sid == *nav_session_id);
-                        if is_relevant {
-                            ctx.emit(Event::Pane(PaneEvent::RemoteRepoNavigated {
-                                remote_path: remote_path.clone(),
-                            }));
-                        }
-                    }
-                    RemoteServerManagerEvent::SessionReconnected {
-                        session_id,
-                        attempt,
-                        ..
-                    } => {
-                        let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
-                            .as_ref(ctx)
-                            .platform_for_session(*session_id)
-                            .map(|p| {
-                                (
-                                    Some(p.os.as_str().to_owned()),
-                                    Some(p.arch.as_str().to_owned()),
-                                )
-                            })
-                            .unwrap_or((None, None));
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::RemoteServerReconnection {
-                                attempt: *attempt,
-                                remote_os,
-                                remote_arch,
-                            },
-                            ctx
-                        );
-                    }
-                    RemoteServerManagerEvent::HostDisconnected { host_id } => {
-                        #[cfg(target_family = "wasm")]
-                        let _ = host_id;
-                        #[cfg(not(target_family = "wasm"))]
-                        DetectedRepositories::handle(ctx).update(ctx, |repos, _| {
-                            repos.remove_roots_for_host(host_id);
-                        });
-                    }
-                    RemoteServerManagerEvent::SessionConnecting { .. }
-                    | RemoteServerManagerEvent::HostConnected { .. }
-                    | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
-                    | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
-                    | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
-                    | RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot { .. }
-                    | RemoteServerManagerEvent::CodebaseIndexStatusUpdated { .. }
-                    | RemoteServerManagerEvent::BufferUpdated { .. }
-                    | RemoteServerManagerEvent::BufferConflictDetected { .. }
-                    | RemoteServerManagerEvent::DiffStateSnapshotReceived { .. }
-                    | RemoteServerManagerEvent::DiffStateMetadataUpdateReceived { .. }
-                    | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. }
-                    | RemoteServerManagerEvent::GetBranchesResponse { .. } => {}
                 }
-            });
-        }
+                RemoteServerManagerEvent::SessionDisconnected {
+                    session_id,
+                    exit_status,
+                    was_reconnect_attempt,
+                    ..
+                } => {
+                    let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
+                        .as_ref(ctx)
+                        .platform_for_session(*session_id)
+                        .map(|p| {
+                            (
+                                Some(p.os.as_str().to_owned()),
+                                Some(p.arch.as_str().to_owned()),
+                            )
+                        })
+                        .unwrap_or((None, None));
+                    if *was_reconnect_attempt {
+                        send_telemetry_from_ctx!(
+                            TelemetryEvent::RemoteServerReconnectExhausted {
+                                attempts: remote_server::manager::MAX_RECONNECT_ATTEMPTS,
+                                remote_os,
+                                remote_arch,
+                                exit_code: exit_status.as_ref().and_then(|s| s.code),
+                                signal_killed: exit_status.as_ref().map(|s| s.signal_killed),
+                            },
+                            ctx
+                        );
+                    } else {
+                        send_telemetry_from_ctx!(
+                            TelemetryEvent::RemoteServerDisconnection {
+                                remote_os,
+                                remote_arch,
+                            },
+                            ctx
+                        );
+                    }
+                }
+                RemoteServerManagerEvent::SessionDeregistered { session_id } => {
+                    // Clean up any stale SSH remote-server choice block if the
+                    // session disappears (e.g. network drop, Ctrl-C, `exit`)
+                    // before the user picks an option.
+                    me.remove_ssh_remote_server_choice_block(*session_id, ctx);
+                    me.remove_ssh_remote_server_failed_banner(*session_id, ctx);
+                }
+                RemoteServerManagerEvent::BinaryInstallComplete {
+                    session_id,
+                    result,
+                    install_source,
+                } => {
+                    let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
+                        .as_ref(ctx)
+                        .platform_for_session(*session_id)
+                        .map(|p| {
+                            (
+                                Some(p.os.as_str().to_owned()),
+                                Some(p.arch.as_str().to_owned()),
+                            )
+                        })
+                        .unwrap_or((None, None));
+                    send_telemetry_from_ctx!(
+                        TelemetryEvent::RemoteServerInstallation {
+                            error: result.as_ref().err().map(|e| e.to_string()),
+                            install_source: *install_source,
+                            remote_os,
+                            remote_arch,
+                        },
+                        ctx
+                    );
+                    if let Err(error) = result {
+                        log::warn!("Remote server install failed: {error:#}");
+                        me.show_ssh_remote_server_failed_banner(
+                            *session_id,
+                            error.user_facing_error(
+                                remote_server::transport::SetupStage::InstallBinary,
+                            ),
+                            ctx,
+                        );
+                    }
+                }
+                RemoteServerManagerEvent::BinaryCheckComplete {
+                    session_id,
+                    result,
+                    remote_platform,
+                    ..
+                } => {
+                    let (remote_os, remote_arch) = remote_platform
+                        .as_ref()
+                        .map(|p| {
+                            (
+                                Some(p.os.as_str().to_owned()),
+                                Some(p.arch.as_str().to_owned()),
+                            )
+                        })
+                        .unwrap_or((None, None));
+                    send_telemetry_from_ctx!(
+                        TelemetryEvent::RemoteServerBinaryCheck {
+                            found: matches!(result, Ok(true)),
+                            error: result.as_ref().err().map(|e| e.to_string()),
+                            remote_os,
+                            remote_arch,
+                        },
+                        ctx
+                    );
+                    if let Err(error) = result {
+                        log::warn!("Remote server binary check failed: {error:#}");
+                        me.show_ssh_remote_server_failed_banner(
+                            *session_id,
+                            error.user_facing_error(
+                                remote_server::transport::SetupStage::CheckBinary,
+                            ),
+                            ctx,
+                        );
+                    }
+                }
+                RemoteServerManagerEvent::ClientRequestFailed {
+                    session_id,
+                    operation,
+                    error_kind,
+                } => {
+                    let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
+                        .as_ref(ctx)
+                        .platform_for_session(*session_id)
+                        .map(|p| {
+                            (
+                                Some(p.os.as_str().to_owned()),
+                                Some(p.arch.as_str().to_owned()),
+                            )
+                        })
+                        .unwrap_or((None, None));
+                    send_telemetry_from_ctx!(
+                        TelemetryEvent::RemoteServerClientRequestError {
+                            operation: *operation,
+                            error_type: *error_kind,
+                            remote_os,
+                            remote_arch,
+                        },
+                        ctx
+                    );
+                }
+                RemoteServerManagerEvent::ServerMessageDecodingError { session_id } => {
+                    let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
+                        .as_ref(ctx)
+                        .platform_for_session(*session_id)
+                        .map(|p| {
+                            (
+                                Some(p.os.as_str().to_owned()),
+                                Some(p.arch.as_str().to_owned()),
+                            )
+                        })
+                        .unwrap_or((None, None));
+                    send_telemetry_from_ctx!(
+                        TelemetryEvent::RemoteServerMessageDecodingError {
+                            remote_os,
+                            remote_arch,
+                        },
+                        ctx
+                    );
+                }
+                RemoteServerManagerEvent::NavigatedToDirectory {
+                    session_id: nav_session_id,
+                    remote_path,
+                    is_git: _,
+                } => {
+                    // Repo registration is now handled by the unified
+                    // detect_possible_git_repo callback in BlockMetadataReceived.
+                    // Check if this navigation belongs to our active session
+                    // using exact session_id match (no CWD heuristics).
+                    let is_relevant = me
+                        .active_block_session_id()
+                        .is_some_and(|sid| sid == *nav_session_id);
+                    if is_relevant {
+                        ctx.emit(Event::Pane(PaneEvent::RemoteRepoNavigated {
+                            remote_path: remote_path.clone(),
+                        }));
+                    }
+                }
+                RemoteServerManagerEvent::SessionReconnected {
+                    session_id,
+                    attempt,
+                    ..
+                } => {
+                    let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
+                        .as_ref(ctx)
+                        .platform_for_session(*session_id)
+                        .map(|p| {
+                            (
+                                Some(p.os.as_str().to_owned()),
+                                Some(p.arch.as_str().to_owned()),
+                            )
+                        })
+                        .unwrap_or((None, None));
+                    send_telemetry_from_ctx!(
+                        TelemetryEvent::RemoteServerReconnection {
+                            attempt: *attempt,
+                            remote_os,
+                            remote_arch,
+                        },
+                        ctx
+                    );
+                }
+                RemoteServerManagerEvent::HostDisconnected { host_id } => {
+                    #[cfg(target_family = "wasm")]
+                    let _ = host_id;
+                    #[cfg(not(target_family = "wasm"))]
+                    DetectedRepositories::handle(ctx).update(ctx, |repos, _| {
+                        repos.remove_roots_for_host(host_id);
+                    });
+                }
+                RemoteServerManagerEvent::SessionConnecting { .. }
+                | RemoteServerManagerEvent::HostConnected { .. }
+                | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
+                | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
+                | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
+                | RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot { .. }
+                | RemoteServerManagerEvent::CodebaseIndexStatusUpdated { .. }
+                | RemoteServerManagerEvent::BufferUpdated { .. }
+                | RemoteServerManagerEvent::BufferConflictDetected { .. }
+                | RemoteServerManagerEvent::DiffStateSnapshotReceived { .. }
+                | RemoteServerManagerEvent::DiffStateMetadataUpdateReceived { .. }
+                | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. }
+                | RemoteServerManagerEvent::GetBranchesResponse { .. } => {}
+            }
+        });
         terminal_view.any_session_contains_restored_remote_blocks =
             terminal_view.contains_restored_remote_blocks();
 
@@ -7478,16 +7476,14 @@ impl TerminalView {
 
         // Hide the input box during the entire remote-server setup flow.
         // The loading footer renders instead.
-        if FeatureFlag::SshRemoteServer.is_enabled() {
-            if let Some(pending_sid) = model.pending_session_id() {
-                if self
-                    .sessions
-                    .as_ref(app)
-                    .remote_server_setup_state(pending_sid)
-                    .is_some_and(|state| state.is_in_progress())
-                {
-                    return false;
-                }
+        if let Some(pending_sid) = model.pending_session_id() {
+            if self
+                .sessions
+                .as_ref(app)
+                .remote_server_setup_state(pending_sid)
+                .is_some_and(|state| state.is_in_progress())
+            {
+                return false;
             }
         }
 
@@ -8259,9 +8255,6 @@ impl TerminalView {
         selected_range: &Range<usize>,
         ctx: &mut ViewContext<Self>,
     ) {
-        if !FeatureFlag::ImeMarkedText.is_enabled() {
-            return;
-        }
         self.model
             .lock()
             .set_marked_text(marked_text, selected_range);
@@ -8269,9 +8262,6 @@ impl TerminalView {
     }
 
     fn clear_marked_text_on_terminal(&mut self, ctx: &mut ViewContext<Self>) {
-        if !FeatureFlag::ImeMarkedText.is_enabled() {
-            return;
-        }
         self.model.lock().clear_marked_text();
         ctx.notify();
     }
@@ -12169,7 +12159,7 @@ impl TerminalView {
                 // multiplexed channel on the ControlMaster so the foreground
                 // ssh can exit cleanly instead of hanging.
                 #[cfg(not(target_family = "wasm"))]
-                if FeatureFlag::SshRemoteServer.is_enabled() {
+                {
                     use crate::remote_server::manager::RemoteServerManager;
                     RemoteServerManager::handle(ctx).update(
                         ctx,
@@ -12258,9 +12248,6 @@ impl TerminalView {
     /// Returns `true` when the pending session has a connecting remote-server setup state
     /// and no failure banner is already shown for that session.
     fn show_remote_server_loading_footer(&self, model: &TerminalModel, app: &AppContext) -> bool {
-        if !FeatureFlag::SshRemoteServer.is_enabled() {
-            return false;
-        }
         // Don't show the loading footer while the choice block is visible;
         // the choice block replaces it.
         if self.active_ssh_remote_server_choice_block().is_some() {
