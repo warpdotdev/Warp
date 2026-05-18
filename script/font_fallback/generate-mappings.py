@@ -23,11 +23,10 @@ Usage:
 '''
 
 import os
-import subprocess
-import sys
 from operator import itemgetter
 from fontTools.ttLib import TTFont
 from collections import defaultdict
+from google.cloud import storage
 
 # Represents priority for each font, with a lower value being higher priority.
 # Since a code point can be supported by multiple fonts, the script will map the
@@ -74,10 +73,11 @@ def download_fallback_fonts():
         return
 
     os.mkdir(FONT_DOWNLOAD_DIR)
-    command = f"gcloud storage cp 'gs://warp-static-assets/fallback-fonts/**/*Regular*.ttf' '{FONT_DOWNLOAD_DIR}'"
-    return_code = subprocess.call(command, shell=True)
-    if return_code != 0:
-        sys.exit("Failed to download fonts from GCP")
+    client = storage.Client()
+    for blob in client.list_blobs("warp-static-assets", prefix="fallback-fonts/"):
+        name = os.path.basename(blob.name)
+        if name.endswith(".ttf") and "Regular" in name:
+            blob.download_to_filename(os.path.join(FONT_DOWNLOAD_DIR, name))
 
 
 def get_global_order(font_name):
