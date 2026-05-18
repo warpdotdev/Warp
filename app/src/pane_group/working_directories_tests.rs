@@ -235,3 +235,299 @@ fn clear_selected_review_repo_removes_only_the_targeted_pane_group_entry() {
         });
     });
 }
+
+#[test]
+fn refresh_working_directories_includes_detected_repos_under_non_repo_parent() {
+    App::test((), |mut app| async move {
+        let detected_repos_handle = app.add_singleton_model(|_| DetectedRepositories::default());
+
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        let workspace = temp_dir.path().join("workspace");
+        let repo_1 = workspace.join("repo-1");
+        let repo_2 = workspace.join("repo-2");
+        fs::create_dir_all(&repo_1).expect("create repo-1");
+        fs::create_dir_all(&repo_2).expect("create repo-2");
+
+        let canonical_workspace = dunce::canonicalize(&workspace).expect("canonical workspace");
+        let canonical_repo_1 = dunce::canonicalize(&repo_1).expect("canonical repo-1");
+        let canonical_repo_2 = dunce::canonicalize(&repo_2).expect("canonical repo-2");
+
+        detected_repos_handle.update(&mut app, |repos, _ctx| {
+            for repo_path in [&canonical_repo_1, &canonical_repo_2] {
+                let canonical =
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                        repo_path,
+                    )
+                    .expect("canonicalized repo path");
+                repos.insert_test_repo_root(canonical);
+            }
+        });
+
+        let pane_group_id = EntityId::new();
+        let terminal = EntityId::new();
+        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
+
+        let repos: HashSet<PathBuf> = working_directories_handle.update(&mut app, |model, ctx| {
+            model.refresh_working_directories_for_pane_group(
+                pane_group_id,
+                vec![(terminal, canonical_workspace.to_string_lossy().to_string())],
+                vec![],
+                Some(terminal),
+                ctx,
+            );
+
+            model
+                .most_recent_repositories_for_pane_group(pane_group_id)
+                .expect("pane group repos exist")
+                .collect()
+        });
+
+        assert_eq!(
+            repos,
+            HashSet::from_iter([canonical_repo_1.clone(), canonical_repo_2.clone()])
+        );
+
+        working_directories_handle.read(&app, |model, _ctx| {
+            assert_eq!(
+                model.get_terminal_id_for_root_path(pane_group_id, &canonical_repo_1),
+                Some(terminal)
+            );
+            assert_eq!(
+                model.get_terminal_id_for_root_path(pane_group_id, &canonical_repo_2),
+                Some(terminal)
+            );
+        });
+    });
+}
+
+#[test]
+fn refresh_working_directories_omits_deleted_repos_under_non_repo_parent() {
+    App::test((), |mut app| async move {
+        let detected_repos_handle = app.add_singleton_model(|_| DetectedRepositories::default());
+
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        let workspace = temp_dir.path().join("workspace");
+        let repo_1 = workspace.join("repo-1");
+        let deleted_repo = workspace.join("deleted-repo");
+        fs::create_dir_all(&repo_1).expect("create repo-1");
+        fs::create_dir_all(&deleted_repo).expect("create deleted-repo");
+
+        let canonical_workspace = dunce::canonicalize(&workspace).expect("canonical workspace");
+        let canonical_repo_1 = dunce::canonicalize(&repo_1).expect("canonical repo-1");
+        let canonical_deleted_repo =
+            dunce::canonicalize(&deleted_repo).expect("canonical deleted-repo");
+
+        detected_repos_handle.update(&mut app, |repos, _ctx| {
+            for repo_path in [&canonical_repo_1, &canonical_deleted_repo] {
+                let canonical =
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                        repo_path,
+                    )
+                    .expect("canonicalized repo path");
+                repos.insert_test_repo_root(canonical);
+            }
+        });
+
+        fs::remove_dir_all(&canonical_deleted_repo).expect("remove deleted repo");
+
+        let pane_group_id = EntityId::new();
+        let terminal = EntityId::new();
+        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
+
+        let repos: HashSet<PathBuf> = working_directories_handle.update(&mut app, |model, ctx| {
+            model.refresh_working_directories_for_pane_group(
+                pane_group_id,
+                vec![(terminal, canonical_workspace.to_string_lossy().to_string())],
+                vec![],
+                Some(terminal),
+                ctx,
+            );
+
+            model
+                .most_recent_repositories_for_pane_group(pane_group_id)
+                .expect("pane group repos exist")
+                .collect()
+        });
+
+        assert_eq!(repos, HashSet::from_iter([canonical_repo_1]));
+        working_directories_handle.read(&app, |model, _ctx| {
+            assert_eq!(
+                model.get_terminal_id_for_root_path(pane_group_id, &canonical_deleted_repo),
+                None
+            );
+        });
+    });
+}
+
+#[test]
+fn refresh_working_directories_does_not_focus_child_repos_from_non_repo_parent() {
+    App::test((), |mut app| async move {
+        let detected_repos_handle = app.add_singleton_model(|_| DetectedRepositories::default());
+
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        let workspace = temp_dir.path().join("workspace");
+        let repo_1 = workspace.join("repo-1");
+        let repo_2 = workspace.join("repo-2");
+        fs::create_dir_all(&repo_1).expect("create repo-1");
+        fs::create_dir_all(&repo_2).expect("create repo-2");
+
+        let canonical_workspace = dunce::canonicalize(&workspace).expect("canonical workspace");
+        let canonical_repo_1 = dunce::canonicalize(&repo_1).expect("canonical repo-1");
+        let canonical_repo_2 = dunce::canonicalize(&repo_2).expect("canonical repo-2");
+
+        detected_repos_handle.update(&mut app, |repos, _ctx| {
+            for repo_path in [&canonical_repo_1, &canonical_repo_2] {
+                let canonical =
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                        repo_path,
+                    )
+                    .expect("canonicalized repo path");
+                repos.insert_test_repo_root(canonical);
+            }
+        });
+
+        let pane_group_id = EntityId::new();
+        let terminal = EntityId::new();
+        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
+
+        working_directories_handle.update(&mut app, |model, ctx| {
+            model.refresh_working_directories_for_pane_group(
+                pane_group_id,
+                vec![(terminal, canonical_workspace.to_string_lossy().to_string())],
+                vec![],
+                Some(terminal),
+                ctx,
+            );
+        });
+
+        working_directories_handle.read(&app, |model, _ctx| {
+            assert_eq!(
+                model.focused_repo.get(&pane_group_id).cloned().flatten(),
+                None,
+                "a non-repo parent with multiple detected child repos should not pick an arbitrary focused repo"
+            );
+        });
+    });
+}
+
+#[test]
+fn refresh_working_directories_keeps_repo_terminal_mapping_over_parent_fallback() {
+    App::test((), |mut app| async move {
+        let detected_repos_handle = app.add_singleton_model(|_| DetectedRepositories::default());
+
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        let workspace = temp_dir.path().join("workspace");
+        let repo_1_src = workspace.join("repo-1/src");
+        let repo_2 = workspace.join("repo-2");
+        fs::create_dir_all(&repo_1_src).expect("create repo-1/src");
+        fs::create_dir_all(&repo_2).expect("create repo-2");
+
+        let repo_1 = workspace.join("repo-1");
+        let canonical_workspace = dunce::canonicalize(&workspace).expect("canonical workspace");
+        let canonical_repo_1 = dunce::canonicalize(&repo_1).expect("canonical repo-1");
+        let canonical_repo_1_src = dunce::canonicalize(&repo_1_src).expect("canonical repo-1/src");
+        let canonical_repo_2 = dunce::canonicalize(&repo_2).expect("canonical repo-2");
+
+        detected_repos_handle.update(&mut app, |repos, _ctx| {
+            for repo_path in [&canonical_repo_1, &canonical_repo_2] {
+                let canonical =
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                        repo_path,
+                    )
+                    .expect("canonicalized repo path");
+                repos.insert_test_repo_root(canonical);
+            }
+        });
+
+        let pane_group_id = EntityId::new();
+        let repo_terminal = EntityId::new();
+        let parent_terminal = EntityId::new();
+        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
+
+        working_directories_handle.update(&mut app, |model, ctx| {
+            model.refresh_working_directories_for_pane_group(
+                pane_group_id,
+                vec![
+                    (
+                        repo_terminal,
+                        canonical_repo_1_src.to_string_lossy().to_string(),
+                    ),
+                    (
+                        parent_terminal,
+                        canonical_workspace.to_string_lossy().to_string(),
+                    ),
+                ],
+                vec![],
+                Some(parent_terminal),
+                ctx,
+            );
+        });
+
+        working_directories_handle.read(&app, |model, _ctx| {
+            assert_eq!(
+                model.get_terminal_id_for_root_path(pane_group_id, &canonical_repo_1),
+                Some(repo_terminal),
+                "fallback mappings from a non-repo parent should not overwrite repo-local terminals"
+            );
+            assert_eq!(
+                model.get_terminal_id_for_root_path(pane_group_id, &canonical_repo_2),
+                Some(parent_terminal)
+            );
+        });
+    });
+}
+
+#[test]
+fn refresh_working_directories_focuses_repo_from_focused_terminal_cwd() {
+    App::test((), |mut app| async move {
+        let detected_repos_handle = app.add_singleton_model(|_| DetectedRepositories::default());
+
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        let workspace = temp_dir.path().join("workspace");
+        let repo_1_src = workspace.join("repo-1/src");
+        let repo_2 = workspace.join("repo-2");
+        fs::create_dir_all(&repo_1_src).expect("create repo-1/src");
+        fs::create_dir_all(&repo_2).expect("create repo-2");
+
+        let repo_1 = workspace.join("repo-1");
+        let canonical_repo_1 = dunce::canonicalize(&repo_1).expect("canonical repo-1");
+        let canonical_repo_2 = dunce::canonicalize(&repo_2).expect("canonical repo-2");
+        let canonical_repo_1_src = dunce::canonicalize(&repo_1_src).expect("canonical repo-1/src");
+
+        detected_repos_handle.update(&mut app, |repos, _ctx| {
+            for repo_path in [&canonical_repo_1, &canonical_repo_2] {
+                let canonical =
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                        repo_path,
+                    )
+                    .expect("canonicalized repo path");
+                repos.insert_test_repo_root(canonical);
+            }
+        });
+
+        let pane_group_id = EntityId::new();
+        let focused_terminal = EntityId::new();
+        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
+
+        working_directories_handle.update(&mut app, |model, ctx| {
+            model.refresh_working_directories_for_pane_group(
+                pane_group_id,
+                vec![(
+                    focused_terminal,
+                    canonical_repo_1_src.to_string_lossy().to_string(),
+                )],
+                vec![],
+                Some(focused_terminal),
+                ctx,
+            );
+        });
+
+        working_directories_handle.read(&app, |model, _ctx| {
+            assert_eq!(
+                model.focused_repo.get(&pane_group_id).cloned().flatten(),
+                Some(canonical_repo_1),
+                "focused repo should come from the focused terminal's actual cwd"
+            );
+        });
+    });
+}

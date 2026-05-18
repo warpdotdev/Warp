@@ -8114,6 +8114,7 @@ impl Workspace {
             ))
         } else {
             let active_pane_group = self.active_tab_pane_group().clone();
+            let pane_group_id = active_pane_group.id();
             // Read repo_path and terminal_view from the pane group (immutable context).
             let read_result = active_pane_group.read(ctx, |pane_group, ctx| {
                 pane_group.active_session_view(ctx).map(|terminal_view| {
@@ -8127,6 +8128,20 @@ impl Workspace {
             // Resolve DiffStateModel outside the read closure (needs mutable context).
             read_result.and_then(
                 |(repo_path, terminal_view): (Option<PathBuf>, WeakViewHandle<TerminalView>)| {
+                    let repo_path = repo_path
+                        .or_else(|| {
+                            self.right_panel_view
+                                .as_ref(ctx)
+                                .selected_repo_path()
+                                .cloned()
+                        })
+                        .or_else(|| {
+                            self.working_directories_model.read(ctx, |model, _| {
+                                model
+                                    .most_recent_repositories_for_pane_group(pane_group_id)
+                                    .and_then(|mut repos| repos.next())
+                            })
+                        });
                     let diff_state_model = repo_path.as_ref().and_then(|rp: &PathBuf| {
                         self.working_directories_model.update(ctx, |model, ctx| {
                             model.get_or_create_diff_state_model(
@@ -8292,9 +8307,24 @@ impl Workspace {
                 (repo_path, terminal_view.downgrade())
             })
         });
+        let pane_group_id = pane_group_handle.id();
         // Resolve DiffStateModel outside the read closure (needs mutable context).
         let context = read_result.and_then(
             |(repo_path, terminal_view): (Option<PathBuf>, WeakViewHandle<TerminalView>)| {
+                let repo_path = repo_path
+                    .or_else(|| {
+                        self.right_panel_view
+                            .as_ref(ctx)
+                            .selected_repo_path()
+                            .cloned()
+                    })
+                    .or_else(|| {
+                        self.working_directories_model.read(ctx, |model, _| {
+                            model
+                                .most_recent_repositories_for_pane_group(pane_group_id)
+                                .and_then(|mut repos| repos.next())
+                        })
+                    });
                 let diff_state_model = repo_path.as_ref().and_then(|rp: &PathBuf| {
                     self.working_directories_model.update(ctx, |model, ctx| {
                         model.get_or_create_diff_state_model(

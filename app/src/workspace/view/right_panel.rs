@@ -195,6 +195,16 @@ impl CodeReviewState {
         }
     }
 
+    #[cfg(feature = "local_fs")]
+    fn repo_path_is_available(repo_path: &Path) -> bool {
+        repo_path.exists()
+    }
+
+    #[cfg(not(feature = "local_fs"))]
+    fn repo_path_is_available(_repo_path: &Path) -> bool {
+        false
+    }
+
     #[cfg(not(feature = "local_fs"))]
     fn set_available_repos(
         &mut self,
@@ -205,6 +215,10 @@ impl CodeReviewState {
 
     #[cfg(feature = "local_fs")]
     fn set_available_repos(&mut self, repos: Vec<PathBuf>, ctx: &mut ViewContext<RightPanelView>) {
+        let repos = repos
+            .into_iter()
+            .filter(|repo| Self::repo_path_is_available(repo))
+            .collect::<Vec<_>>();
         let should_clear = self
             .selected_repo_path
             .as_ref()
@@ -496,6 +510,7 @@ impl RightPanelView {
         self.code_review_state
             .as_ref()
             .and_then(|s| s.selected_repo_path.as_ref())
+            .filter(|repo_path| CodeReviewState::repo_path_is_available(repo_path))
     }
 
     #[cfg(feature = "local_fs")]
@@ -1314,9 +1329,41 @@ impl RightPanelView {
             .unwrap_or_else(|| "<none>".to_string())
     }
 
+    fn review_path_unavailable_reasons(
+        active_session_path: Option<&Path>,
+        repo_path: Option<&Path>,
+        allow_mapped_terminal: bool,
+    ) -> Vec<ReviewTerminalUnavailableReason> {
+        let mut unavailable_reasons = Vec::new();
+
+        match repo_path {
+            Some(repo_path) => match active_session_path {
+                // Canonicalize the CWD, note that repo_path has already been canonicalized.
+                Some(cwd)
+                    if canonicalize(cwd)
+                        .as_deref()
+                        .unwrap_or(cwd)
+                        .starts_with(repo_path) => {}
+                Some(_) if allow_mapped_terminal => {}
+                Some(_) => {
+                    unavailable_reasons
+                        .push(ReviewTerminalUnavailableReason::SessionOutsideSelectedRepo);
+                }
+                None => {
+                    unavailable_reasons
+                        .push(ReviewTerminalUnavailableReason::SessionPathUnavailable);
+                }
+            },
+            None => unavailable_reasons.push(ReviewTerminalUnavailableReason::NoSelectedRepo),
+        }
+
+        unavailable_reasons
+    }
+
     fn review_terminal_status(
         tv: &ViewHandle<TerminalView>,
         repo_path: Option<&Path>,
+        allow_mapped_terminal: bool,
         ai_enabled: bool,
         ctx: &AppContext,
     ) -> ReviewTerminalStatus {
@@ -1327,23 +1374,11 @@ impl RightPanelView {
             let model = t.model.lock();
             let is_executing = model.block_list().active_block().is_executing();
             let is_input_box_visible = t.is_input_box_visible(&model, ctx);
-            let mut unavailable_reasons = Vec::new();
-
-            match repo_path {
-                Some(repo_path) => match active_session_path.as_ref() {
-                    // Canonicalize the CWD, note that repo_path has already been canonicalized.
-                    Some(cwd)
-                        if canonicalize(cwd)
-                            .as_deref()
-                            .unwrap_or(cwd)
-                            .starts_with(repo_path) => {}
-                    Some(_) => unavailable_reasons
-                        .push(ReviewTerminalUnavailableReason::SessionOutsideSelectedRepo),
-                    None => unavailable_reasons
-                        .push(ReviewTerminalUnavailableReason::SessionPathUnavailable),
-                },
-                None => unavailable_reasons.push(ReviewTerminalUnavailableReason::NoSelectedRepo),
-            }
+            let mut unavailable_reasons = Self::review_path_unavailable_reasons(
+                active_session_path.as_deref(),
+                repo_path,
+                allow_mapped_terminal,
+            );
 
             if active_cli_agent.is_none() {
                 if !ai_enabled {
@@ -1459,6 +1494,7 @@ impl RightPanelView {
             let terminal_status = Self::review_terminal_status(
                 &terminal_view,
                 selected_repo_path.as_deref(),
+                preferred_terminal_id == Some(terminal_id),
                 ai_enabled,
                 ctx,
             );
@@ -1501,10 +1537,12 @@ impl RightPanelView {
     fn is_terminal_available_for_review(
         tv: &ViewHandle<TerminalView>,
         repo_path: &Path,
+        allow_mapped_terminal: bool,
         ai_enabled: bool,
         ctx: &AppContext,
     ) -> bool {
-        Self::review_terminal_status(tv, Some(repo_path), ai_enabled, ctx).is_available()
+        Self::review_terminal_status(tv, Some(repo_path), allow_mapped_terminal, ai_enabled, ctx)
+            .is_available()
     }
 
     /// Finds the best terminal to send review comments to.
@@ -1519,7 +1557,14 @@ impl RightPanelView {
         ctx: &AppContext,
     ) -> Option<ViewHandle<TerminalView>> {
         let is_available = |tv: &ViewHandle<TerminalView>| {
-            Self::is_terminal_available_for_review(tv, repo_path, ai_enabled, ctx)
+            let allow_mapped_terminal = preferred_terminal_id == Some(tv.id());
+            Self::is_terminal_available_for_review(
+                tv,
+                repo_path,
+                allow_mapped_terminal,
+                ai_enabled,
+                ctx,
+            )
         };
 
         // Try the focused terminal first.
@@ -1678,6 +1723,41 @@ impl RightPanelView {
 
 impl Entity for RightPanelView {
     type Event = RightPanelEvent;
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::{ReviewTerminalUnavailableReason, RightPanelView};
+
+    #[test]
+    fn review_path_allows_mapped_terminal_outside_selected_repo() {
+        let reasons = RightPanelView::review_path_unavailable_reasons(
+            Some(Path::new("/workspace")),
+            Some(Path::new("/workspace/repo")),
+            true,
+        );
+
+        assert!(
+            reasons.is_empty(),
+            "repo-mapped terminals can be rooted at a non-repo parent"
+        );
+    }
+
+    #[test]
+    fn review_path_rejects_unmapped_terminal_outside_selected_repo() {
+        let reasons = RightPanelView::review_path_unavailable_reasons(
+            Some(Path::new("/workspace")),
+            Some(Path::new("/workspace/repo")),
+            false,
+        );
+
+        assert_eq!(
+            reasons,
+            vec![ReviewTerminalUnavailableReason::SessionOutsideSelectedRepo]
+        );
+    }
 }
 
 #[cfg(feature = "local_fs")]
