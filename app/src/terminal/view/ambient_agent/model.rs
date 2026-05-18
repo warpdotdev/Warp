@@ -201,6 +201,10 @@ pub struct AmbientAgentViewModel {
 
     /// Selected cloud environment to launch the ambient agent with.
     environment_id: Option<SyncId>,
+    /// True when `environment_id` came from an existing run config rather than from local
+    /// environment selection/defaulting. Existing runs may reference an environment before the
+    /// local CloudModel has loaded it, so initial-load validation should not clear it.
+    environment_id_from_viewed_task: bool,
 
     /// Handle for the periodic timer that updates progress durations.
     progress_timer_handle: Option<SpawnedFutureHandle>,
@@ -296,6 +300,7 @@ impl AmbientAgentViewModel {
             request: None,
             terminal_view_id,
             environment_id: None,
+            environment_id_from_viewed_task: false,
             progress_timer_handle: None,
             ui_state,
             setup_commands_state: Default::default(),
@@ -401,6 +406,9 @@ impl AmbientAgentViewModel {
     /// If the environment no longer exists, clears the selection.
     fn validate_environment_after_initial_load(&mut self, ctx: &mut ModelContext<Self>) {
         if let Some(id) = &self.environment_id {
+            if self.environment_id_from_viewed_task {
+                return;
+            }
             if CloudAmbientAgentEnvironment::get_by_id(id, ctx).is_none() {
                 log::warn!(
                     "Environment {id:?} no longer exists after initial load, clearing selection"
@@ -730,6 +738,7 @@ impl AmbientAgentViewModel {
             }
         }
         self.environment_id = environment_id;
+        self.environment_id_from_viewed_task = false;
         ctx.emit(AmbientAgentViewModelEvent::EnvironmentSelected);
     }
 
@@ -872,22 +881,7 @@ impl AmbientAgentViewModel {
             async move { ai_client.get_ambient_agent_task(&task_id).await },
             |me, result, ctx| match result {
                 Ok(task) => {
-                    let snapshot = task.agent_config_snapshot.as_ref();
-                    let harness_config = snapshot.and_then(|s| s.harness.as_ref());
-                    let environment_id = snapshot
-                        .and_then(|s| s.environment_id.as_deref())
-                        .and_then(|id| ServerId::try_from(id).ok())
-                        .map(SyncId::ServerId);
-                    let harness = harness_config
-                        .map(|h| h.harness_type)
-                        .unwrap_or(Harness::Oz);
-                    let harness_model_id = harness_config.and_then(|h| h.model_id.clone());
-                    let harness_reasoning_level =
-                        harness_config.and_then(|h| h.reasoning_level.clone());
-
-                    me.set_environment_id(environment_id, ctx);
-                    me.set_harness(harness, ctx);
-                    me.set_harness_model_selection(harness_model_id, harness_reasoning_level, ctx);
+                    me.apply_viewed_task_config_snapshot(task.agent_config_snapshot.as_ref(), ctx);
                     ctx.emit(AmbientAgentViewModelEvent::ViewerHarnessResolved);
                 }
                 Err(err) => {
@@ -896,6 +890,56 @@ impl AmbientAgentViewModel {
                 }
             },
         );
+    }
+
+    /// Applies the run configuration for an existing shared ambient session.
+    ///
+    /// Viewed sessions can join before Warp Drive has loaded the referenced environment object,
+    /// especially on web. Preserve the server-provided environment ID anyway so the selector does
+    /// not fall back to an unrelated default while waiting for the environment object to arrive.
+    fn apply_viewed_task_config_snapshot(
+        &mut self,
+        snapshot: Option<&AgentConfigSnapshot>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let environment_id = snapshot
+            .and_then(|s| s.environment_id.as_deref())
+            .and_then(|id| ServerId::try_from(id).ok())
+            .map(SyncId::ServerId);
+        self.set_environment_id_from_viewed_task(environment_id, ctx);
+
+        if let Some(model_id) = snapshot.and_then(|s| s.model_id.as_deref()) {
+            LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
+                prefs.update_preferred_agent_mode_llm(
+                    &LLMId::from(model_id),
+                    self.terminal_view_id,
+                    ctx,
+                )
+            });
+        }
+
+        let harness_config = snapshot.and_then(|s| s.harness.as_ref());
+        let harness = harness_config
+            .map(|h| h.harness_type)
+            .unwrap_or(Harness::Oz);
+        let harness_model_id = harness_config.and_then(|h| h.model_id.clone());
+        let harness_reasoning_level = harness_config.and_then(|h| h.reasoning_level.clone());
+
+        self.set_harness(harness, ctx);
+        self.set_harness_model_selection(harness_model_id, harness_reasoning_level, ctx);
+    }
+
+    fn set_environment_id_from_viewed_task(
+        &mut self,
+        environment_id: Option<SyncId>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if self.environment_id == environment_id {
+            return;
+        }
+        self.environment_id_from_viewed_task = environment_id.is_some();
+        self.environment_id = environment_id;
+        ctx.emit(AmbientAgentViewModelEvent::EnvironmentSelected);
     }
 
     pub fn record_ambient_execution_ended(
@@ -988,6 +1032,7 @@ impl AmbientAgentViewModel {
     pub fn reset_for_new_cloud_prompt(&mut self, ctx: &mut ModelContext<Self>) {
         self.status = Status::Composing;
         self.environment_id = None;
+        self.environment_id_from_viewed_task = false;
         self.task_id = None;
         self.conversation_id = None;
         self.harness_model_id = None;
@@ -1106,6 +1151,7 @@ impl AmbientAgentViewModel {
                 .as_deref()
                 .and_then(|id| ServerId::try_from(id).ok())
                 .map(SyncId::ServerId);
+            self.environment_id_from_viewed_task = false;
 
             if let Some(model_id) = config.model_id.as_deref() {
                 LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
