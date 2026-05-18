@@ -7027,12 +7027,11 @@ impl View for CodeReviewView {
     fn keymap_context(&self, ctx: &AppContext) -> warpui::keymap::Context {
         let mut context = Self::default_keymap_context();
 
-        // Surface a context flag that is true only when no descendant text editor
-        // is focused. This lets us register single-letter shortcuts on the pane
-        // (e.g. `F` to toggle file navigation) without stealing keystrokes from
-        // file editors or comment composers within the pane. Note that the inline
-        // file diff editors call `ctx.focus_self()` on `CodeEditorView`, so we
-        // check that variant in addition to the lower-level editor view names.
+        // Suppress pane-level shortcuts (e.g. `F`) when a descendant text editor
+        // is focused; otherwise the binding fires before the editor receives
+        // the keystroke as text input. Covers the three text-input surfaces in
+        // this pane: diff editor (`CodeEditorView`), comment composers
+        // (`RichTextEditorView`), and the find bar (`EditorView`).
         let editor_focused = ctx
             .focused_view_id(self.window_id)
             .and_then(|view_id| ctx.view_name(self.window_id, view_id))
