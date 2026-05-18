@@ -1,8 +1,11 @@
 param(
     [string]$Name = "google-pixel-9-pro-fold-x86",
     [string]$IsoPath,
+    [ValidateRange(1, 4096)]
     [int]$DiskSizeGB = 16,
+    [ValidateRange(512, 1048576)]
     [int]$MemoryMB = 4096,
+    [ValidateRange(1, 256)]
     [int]$CpuCount = 4,
     [string]$VmRoot = (Join-Path $PSScriptRoot "vms"),
     [switch]$Install,
@@ -21,6 +24,18 @@ function Require-Command {
     }
 
     return $command.Source
+}
+
+function Resolve-IsoFile {
+    param([string]$Path)
+
+    $resolvedPath = Resolve-Path -LiteralPath $Path -ErrorAction Stop
+    $item = Get-Item -LiteralPath $resolvedPath.Path -ErrorAction Stop
+    if (-not $item.PSIsContainer) {
+        return $item.FullName
+    }
+
+    throw "ISO path must point to a file: $Path"
 }
 
 if ($Install -and $Live) {
@@ -70,7 +85,7 @@ if (-not $Live) {
 }
 
 if ($Install -or $Live) {
-    $resolvedIso = (Resolve-Path $IsoPath).Path
+    $resolvedIso = Resolve-IsoFile $IsoPath
     Write-Host "Booting Android ISO: $resolvedIso"
     $qemuArgs += @("-cdrom", $resolvedIso, "-boot", "d")
 }

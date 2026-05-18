@@ -1,8 +1,11 @@
 param(
     [string]$Name = "basic-vm",
     [string]$IsoPath,
+    [ValidateRange(1, 4096)]
     [int]$DiskSizeGB = 30,
+    [ValidateRange(512, 1048576)]
     [int]$MemoryMB = 4096,
+    [ValidateRange(1, 256)]
     [int]$CpuCount = 2,
     [string]$VmRoot = (Join-Path $PSScriptRoot "vms"),
     [switch]$Install,
@@ -20,6 +23,18 @@ function Require-Command {
     }
 
     return $command.Source
+}
+
+function Resolve-IsoFile {
+    param([string]$Path)
+
+    $resolvedPath = Resolve-Path -LiteralPath $Path -ErrorAction Stop
+    $item = Get-Item -LiteralPath $resolvedPath.Path -ErrorAction Stop
+    if (-not $item.PSIsContainer) {
+        return $item.FullName
+    }
+
+    throw "ISO path must point to a file: $Path"
 }
 
 $qemuImg = Require-Command "qemu-img"
@@ -51,7 +66,7 @@ if (-not $NoAccel) {
 }
 
 if ($IsoPath) {
-    $resolvedIso = (Resolve-Path $IsoPath).Path
+    $resolvedIso = Resolve-IsoFile $IsoPath
     if ($Install) {
         Write-Host "Booting installer ISO: $resolvedIso"
         $qemuArgs += @("-cdrom", $resolvedIso, "-boot", "d")
