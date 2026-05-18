@@ -7,6 +7,8 @@ use warp_terminal::model::BlockId;
 
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
 use crate::ai::agent::display_user_query_with_mode;
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::agent_sdk::driver::harness::auth_check_command_for;
 use crate::ai::AIRequestUsageModel;
 use warp_core::features::FeatureFlag;
 use warp_core::send_telemetry_from_ctx;
@@ -617,9 +619,7 @@ impl TerminalView {
         #[cfg(not(target_family = "wasm"))]
         {
             let command_trimmed = command.trim();
-            if let Some(auth_cmd) =
-                crate::ai::agent_sdk::driver::harness::auth_check_command_for(selected_harness)
-            {
+            if let Some(auth_cmd) = auth_check_command_for(selected_harness) {
                 if auth_cmd.trim() == command_trimmed {
                     return false;
                 }

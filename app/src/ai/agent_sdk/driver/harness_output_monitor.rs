@@ -10,6 +10,7 @@ use warpui::ModelSpawner;
 
 use super::terminal::BlockOutputMatch;
 use super::AgentDriver;
+use crate::terminal::cli_agent_sessions::CLIAgentSessionStatus;
 use crate::terminal::model::block::BlockId;
 use crate::terminal::model::find::RegexDFAs;
 
@@ -193,6 +194,10 @@ pub(crate) async fn watch_block_for_errors(
         });
     }
     None
+}
+
+pub(crate) fn should_suppress_runtime_failure(status: Option<&CLIAgentSessionStatus>) -> bool {
+    matches!(status, Some(CLIAgentSessionStatus::Success))
 }
 
 /// Cap excerpt length so we don't blow up status messages or logs with

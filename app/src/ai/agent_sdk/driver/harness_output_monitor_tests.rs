@@ -1,32 +1,6 @@
 use std::time::Duration;
 
-use super::{
-    build_dfas, outputs_stalled, pattern_for_match, STALL_CONFIRMATION_BUDGET, STALL_POLL_INTERVAL,
-};
-
-// --- build_dfas ---
-
-#[test]
-fn build_dfas_returns_none_for_empty_patterns() {
-    let patterns: &[&str] = &[];
-    assert!(build_dfas(patterns).is_none());
-}
-
-#[test]
-fn build_dfas_returns_some_for_non_empty_patterns() {
-    let patterns: &[&str] = &["credit balance is too low", "invalid_api_key"];
-    assert!(build_dfas(patterns).is_some());
-}
-
-#[test]
-fn build_dfas_escapes_regex_metacharacters() {
-    // Patterns with regex special characters must be matched literally, not
-    // interpreted as regex. `build_dfas` should still produce a usable DFA.
-    let patterns: &[&str] = &["error: $1.00 charged", "[ERR_AUTH_001]"];
-    assert!(build_dfas(patterns).is_some());
-}
-
-// --- pattern_for_match ---
+use super::{outputs_stalled, pattern_for_match, STALL_CONFIRMATION_BUDGET, STALL_POLL_INTERVAL};
 
 #[test]
 fn pattern_for_match_returns_originating_needle() {

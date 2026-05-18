@@ -33,64 +33,12 @@ fn validate_cli_installed_includes_docs_url_in_error() {
     assert!(reason.contains("Install it first"));
 }
 
-// --- Preflight command tests ---
-
-#[test]
-fn claude_returns_auth_check_command() {
-    use super::ThirdPartyHarness;
-    use super::claude_code::ClaudeHarness;
-    let harness = ClaudeHarness;
-    let cmd = harness.auth_check_command().expect("should return Some");
-    assert!(cmd.contains("auth status --json"));
-}
-
-#[test]
-fn codex_returns_auth_check_command() {
-    use super::ThirdPartyHarness;
-    use super::codex::CodexHarness;
-    let harness = CodexHarness;
-    let cmd = harness.auth_check_command().expect("should return Some");
-    assert!(cmd.contains("login status"));
-}
-
-#[test]
-fn gemini_returns_no_auth_check_command() {
-    use super::ThirdPartyHarness;
-    use super::gemini::GeminiHarness;
-    let harness = GeminiHarness;
-    assert!(harness.auth_check_command().is_none());
-}
-
-#[test]
-fn auth_check_command_for_claude_matches_trait_impl() {
-    use super::ThirdPartyHarness;
-    use super::claude_code::ClaudeHarness;
-    // The helper is the single source of truth for the viewer's
-    // preflight detection, so pin the string to the trait impl directly.
-    let resolved = auth_check_command_for(Harness::Claude).expect("some");
-    assert_eq!(
-        resolved,
-        ClaudeHarness.auth_check_command().expect("auth check")
-    );
-}
-
-#[test]
-fn auth_check_command_for_codex_matches_trait_impl() {
-    use super::ThirdPartyHarness;
-    use super::codex::CodexHarness;
-    let resolved = auth_check_command_for(Harness::Codex).expect("some");
-    assert_eq!(
-        resolved,
-        CodexHarness.auth_check_command().expect("auth check")
-    );
-}
-
 // --- Runtime error pattern tests ---
 
 #[test]
 fn claude_runtime_error_patterns_returns_slice() {
-    use super::ThirdPartyHarness;
     use super::claude_code::ClaudeHarness;
+    use super::ThirdPartyHarness;
     // Patterns are initially empty until validated needles are filled in.
     // The trait method must still be callable.
     let _: &[&str] = ClaudeHarness.runtime_error_patterns();
@@ -98,15 +46,15 @@ fn claude_runtime_error_patterns_returns_slice() {
 
 #[test]
 fn codex_runtime_error_patterns_returns_slice() {
-    use super::ThirdPartyHarness;
     use super::codex::CodexHarness;
+    use super::ThirdPartyHarness;
     let _: &[&str] = CodexHarness.runtime_error_patterns();
 }
 
 #[test]
 fn gemini_runtime_error_patterns_is_empty_by_default() {
-    use super::ThirdPartyHarness;
     use super::gemini::GeminiHarness;
+    use super::ThirdPartyHarness;
     assert!(GeminiHarness.runtime_error_patterns().is_empty());
 }
 

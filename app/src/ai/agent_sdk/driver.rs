@@ -30,7 +30,9 @@ use warp_cli::agent::{Harness, OutputFormat};
 use warp_cli::mcp::MCPSpec;
 use warp_cli::share::ShareRequest;
 use warp_cli::skill::SkillSpec;
-use warp_core::{features::FeatureFlag, report_error, report_if_error, safe_debug, safe_info};
+use warp_core::{
+    features::FeatureFlag, report_error, report_if_error, safe_debug, safe_error, safe_info,
+};
 use warp_graphql::ai::AgentTaskState;
 use warp_managed_secrets::ManagedSecretValue;
 use warpui::{
@@ -1861,13 +1863,11 @@ impl AgentDriver {
 
                 Self::run_preflight_checks(harness.as_ref(), &foreground).await?;
 
-                let harness_name = harness.cli_agent().command_prefix().to_owned();
                 let runtime_error_patterns = harness.runtime_error_patterns();
 
                 if let Some(task_id) = task_id_for_refresh {
                     let harness_fut = Self::run_harness(
                         runner,
-                        harness_name,
                         runtime_error_patterns,
                         &foreground,
                         harness_exit_rx,
@@ -1881,14 +1881,8 @@ impl AgentDriver {
                         _ = refresh => unreachable!("git credentials refresh loop resolved unexpectedly"),
                     }
                 } else {
-                    Self::run_harness(
-                        runner,
-                        harness_name,
-                        runtime_error_patterns,
-                        &foreground,
-                        harness_exit_rx,
-                    )
-                    .await
+                    Self::run_harness(runner, runtime_error_patterns, &foreground, harness_exit_rx)
+                        .await
                 }
             }
             HarnessKind::Unsupported(harness) => Err(AgentDriverError::HarnessSetupFailed {
@@ -1954,7 +1948,13 @@ impl AgentDriver {
             } else {
                 format!("exit code {}: {}", exit_code.value(), output_text)
             };
-            log::error!("Preflight auth check failed for {harness_name}. {detail}");
+            safe_error!(
+                safe: (
+                    "Preflight auth check failed for {harness_name} (exit code {})",
+                    exit_code.value()
+                ),
+                full: ("Preflight auth check failed for {harness_name}. {detail}")
+            );
             return Err(AgentDriverError::HarnessAuthCheckFailed {
                 harness: harness_name.to_owned(),
                 detail,
@@ -2155,11 +2155,12 @@ impl AgentDriver {
     /// same `AuthenticationRequired` error code used by the auth preflight.
     async fn run_harness(
         runner: Arc<dyn harness::HarnessRunner>,
-        harness_name: String,
         runtime_error_patterns: &'static [&'static str],
         foreground: &ModelSpawner<Self>,
         harness_exit_rx: oneshot::Receiver<()>,
     ) -> Result<(), AgentDriverError> {
+        let harness_name = runner.harness_name().to_owned();
+
         // Start the third-party harness.
         let command_handle = runner.start(foreground).await?;
         let block_id = command_handle.block_id().clone();
@@ -2205,14 +2206,36 @@ impl AgentDriver {
                             error.pattern,
                             error.excerpt,
                         );
-                        // Ask the harness to exit gracefully so cleanup
-                        // runs, then record the detected failure and let
-                        // the command future complete naturally.
-                        report_if_error!(runner
-                            .exit(foreground)
+                        let session_status = foreground
+                            .spawn(|me, ctx| {
+                                let view_id =
+                                    me.terminal_driver.as_ref(ctx).terminal_view().id();
+                                CLIAgentSessionsModel::handle(ctx)
+                                    .as_ref(ctx)
+                                    .session(view_id)
+                                    .map(|session| session.status.clone())
+                            })
                             .await
-                            .context("Failed to exit harness after runtime failure detection"));
-                        detected_runtime_failure = Some(error);
+                            .ok()
+                            .flatten();
+                        if harness_output_monitor::should_suppress_runtime_failure(
+                            session_status.as_ref(),
+                        ) {
+                            log::info!(
+                                "Ignoring runtime failure for {harness_name}: \
+                                 session already marked Success (pattern={}, excerpt={})",
+                                error.pattern,
+                                error.excerpt,
+                            );
+                        } else {
+                            report_if_error!(runner
+                                .exit(foreground)
+                                .await
+                                .context(
+                                    "Failed to exit harness after runtime failure detection",
+                                ));
+                            detected_runtime_failure = Some(error);
+                        }
                     }
                     // When the schedule exhausts without a hit, the `Fuse`
                     // wrapper makes this branch stay Pending forever, so
