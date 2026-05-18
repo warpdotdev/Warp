@@ -2114,7 +2114,7 @@ impl<A: Action + Clone> SubMenu<A> {
                         ScrollbarWidth::Auto,
                         appearance.theme().nonactive_ui_detail().into(),
                         appearance.theme().active_ui_detail().into(),
-                        warpui::elements::Fill::None,
+                        menu_background_color.into(),
                     )
                     .with_overlayed_scrollbar()
                     .finish(),
