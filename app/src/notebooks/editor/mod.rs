@@ -10,8 +10,9 @@ use warp_editor::{
         BlockHeaderSize, BlockType as ContentBlockType, BufferBlockStyle, CodeBlockType,
     },
     render::model::{
-        BlockSpacing, BrokenLinkStyle, CheckBoxStyle, EmbeddedItem, HorizontalRuleStyle,
-        IndentableBlockSpacing, InlineCodeStyle, ParagraphStyles, RichTextStyles, TableStyle,
+        BlockSpacing, BlockSpacings, BrokenLinkStyle, CheckBoxStyle, EmbeddedItem,
+        HorizontalRuleStyle, IndentableBlockSpacing, InlineCodeStyle, ParagraphStyles,
+        RichTextStyles, TableStyle,
     },
 };
 use warp_util::user_input::UserInput;
@@ -46,6 +47,25 @@ pub mod view;
 
 pub use block_insertion_menu::BlockInsertionSource;
 
+// Rich text uses slightly roomier line metrics than the app-wide editor setting
+// for readability in mixed Markdown content. Gaps between paragraphs and headers
+// are handled separately by block spacing.
+const RICH_TEXT_LINE_HEIGHT_RATIO_ADJUSTMENT: f32 = 0.15;
+
+// Paragraph margins create the visible gap between separate Markdown paragraphs.
+// This keeps paragraph breaks distinct without adding padding inside text frames.
+const RICH_TEXT_PARAGRAPH_VERTICAL_MARGIN: f32 = 8.;
+
+// Headers need more space above them so they read as section boundaries.
+const RICH_TEXT_HEADER_TOP_MARGIN: f32 = 12.;
+
+// Headers need some bottom separation from following content, but less than the
+// top margin so the heading remains visually attached to its section.
+const RICH_TEXT_HEADER_BOTTOM_MARGIN: f32 = 6.;
+
+// Lists keep their existing content indentation while using compact vertical spacing.
+const RICH_TEXT_LIST_INDENT_PADDING: f32 = 20.;
+
 #[derive(Clone, Copy)]
 pub(crate) struct MarkdownTableAppearance {
     pub border_color: ColorU,
@@ -60,6 +80,39 @@ pub(crate) struct MarkdownTableAppearance {
     pub outer_border: bool,
     pub column_dividers: bool,
     pub row_dividers: bool,
+}
+
+fn rich_text_line_height_ratio(appearance: &Appearance) -> f32 {
+    // This adjusts the vertical advance of lines within a paragraph. Paragraph
+    // and header separation comes from block spacings instead.
+    appearance.line_height_ratio() + RICH_TEXT_LINE_HEIGHT_RATIO_ADJUSTMENT
+}
+
+fn rich_text_block_spacings() -> BlockSpacings {
+    let default_block_spacings = BlockSpacings::default();
+    let text_spacing = BlockSpacing {
+        margin: Margin::uniform(0.)
+            .with_top(RICH_TEXT_PARAGRAPH_VERTICAL_MARGIN)
+            .with_bottom(RICH_TEXT_PARAGRAPH_VERTICAL_MARGIN),
+        padding: Padding::uniform(0.),
+    };
+    let header_spacing = BlockSpacing {
+        margin: Margin::uniform(0.)
+            .with_top(RICH_TEXT_HEADER_TOP_MARGIN)
+            .with_bottom(RICH_TEXT_HEADER_BOTTOM_MARGIN),
+        padding: Padding::uniform(0.),
+    };
+    let compact_indentable =
+        IndentableBlockSpacing::new(Margin::uniform(0.), RICH_TEXT_LIST_INDENT_PADDING);
+
+    BlockSpacings {
+        text: text_spacing,
+        header: header_spacing,
+        code_block: default_block_spacings.code_block,
+        task_list: compact_indentable.clone(),
+        ordered_list: compact_indentable.clone(),
+        unordered_list: compact_indentable,
+    }
 }
 
 /// A kind of block that can be added to a notebook.
@@ -203,52 +256,24 @@ pub(crate) fn markdown_table_style(
 
 /// Build [`RichTextStyles`] based on the current [`Appearance`].
 pub fn rich_text_styles(appearance: &Appearance, font_settings: &FontSettings) -> RichTextStyles {
-    // Bump the line height ratio slightly so soft-wrapped and hard-wrapped lines
-    // have consistent, comfortable spacing.
-    let line_height_ratio = appearance.line_height_ratio() + 0.15;
-    let compact_text_spacing = BlockSpacing {
-        margin: Margin::uniform(0.),
-        padding: Padding::uniform(0.),
-    };
-    let compact_indentable = IndentableBlockSpacing::new(Margin::uniform(0.), 20.);
-    let mut styles = rich_text_styles_internal(
-        appearance,
-        font_settings,
-        line_height_ratio,
-        DEFAULT_TOP_BOTTOM_RATIO,
-    );
-    styles.minimum_paragraph_height = None;
-    styles.cursor_width = 3.;
-    styles.show_placeholder_text_on_empty_block = true;
-    // Only compact text block spacings; keep the default code block spacing.
-    styles.block_spacings.text = compact_text_spacing;
-    styles.block_spacings.header = compact_text_spacing;
-    styles.block_spacings.task_list = compact_indentable.clone();
-    styles.block_spacings.ordered_list = compact_indentable.clone();
-    styles.block_spacings.unordered_list = compact_indentable;
-    styles
-}
-
-/// Build [`RichTextStyles`] based on the current [`Appearance`].
-fn rich_text_styles_internal(
-    appearance: &Appearance,
-    font_settings: &FontSettings,
-    line_height_ratio: f32,
-    baseline_ratio: f32,
-) -> RichTextStyles {
+    let line_height_ratio = rich_text_line_height_ratio(appearance);
+    let baseline_ratio = DEFAULT_TOP_BOTTOM_RATIO;
     let theme = appearance.theme();
     let inline_font_color: ColorU = theme.terminal_colors().normal.red.into();
     let font_size = derived_notebook_font_size(font_settings);
+
+    let base_text = ParagraphStyles {
+        font_size,
+        font_weight: Default::default(),
+        line_height_ratio,
+        font_family: appearance.ui_font_family(),
+        text_color: theme.main_text_color(theme.background()).into_solid(),
+        baseline_ratio,
+        fixed_width_tab_size: None,
+    };
+
     RichTextStyles {
-        base_text: ParagraphStyles {
-            font_size,
-            font_weight: Default::default(),
-            line_height_ratio,
-            font_family: appearance.ui_font_family(),
-            text_color: theme.main_text_color(theme.background()).into_solid(),
-            baseline_ratio,
-            fixed_width_tab_size: None,
-        },
+        base_text,
         code_text: ParagraphStyles {
             font_family: appearance.monospace_font_family(),
             font_size,
@@ -300,9 +325,9 @@ fn rich_text_styles_internal(
             icon_path: "bundled/svg/link-broken-02.svg",
             icon_color: theme.terminal_colors().normal.red.into(),
         },
-        block_spacings: Default::default(),
+        block_spacings: rich_text_block_spacings(),
         show_placeholder_text_on_empty_block: true,
-        minimum_paragraph_height: None,
+        minimum_paragraph_height: Some(base_text.line_height()),
         cursor_width: 3.,
         highlight_urls: true,
         table_style: markdown_table_style(appearance, appearance.ui_font_family(), font_size),

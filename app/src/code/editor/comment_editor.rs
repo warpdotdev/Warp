@@ -518,7 +518,6 @@ where
     V: View,
 {
     let rich_text_styles = rich_text_styles(Appearance::as_ref(ctx), FontSettings::as_ref(ctx));
-
     let window_id = ctx.window_id();
     let parent_view_id = ctx.view_id();
 
