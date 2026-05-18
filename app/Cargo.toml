@@ -643,6 +643,8 @@ default = [
     "run_agents_tool",
     "pending_user_query_indicator",
     "cloud_mode_input_v2",
+    "cloud_mode_setup_v2",
+    "handoff_cloud_cloud",
 ]
 # Enable this feature to automatically perform heap profiling.  NOTE: This will
 # substantially slow down program execution.
