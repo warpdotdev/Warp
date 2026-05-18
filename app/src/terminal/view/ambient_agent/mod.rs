@@ -14,7 +14,9 @@ mod progress_ui_state;
 mod tips;
 mod view_impl;
 
-pub use auth_secret_ftux_view::{AuthSecretFtuxAction, AuthSecretFtuxView};
+pub use auth_secret_ftux_view::{
+    AuthSecretFtuxAction, AuthSecretFtuxView, AuthSecretFtuxViewEvent,
+};
 pub use auth_secret_selector::{
     AuthSecretSelector, AuthSecretSelectorAction, AuthSecretSelectorEvent,
 };

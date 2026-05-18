@@ -124,6 +124,7 @@ use crate::ai::blocklist::handoff::{HandoffLaunchAttachments, PendingCloudLaunch
 use crate::ai::blocklist::AttachmentType;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::blocklist::PendingAttachment;
+use crate::ai::cloud_agent_settings::CloudAgentSettings;
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::cloud_object::model::generic_string_model::StringModel;
@@ -131,8 +132,8 @@ use crate::server::server_api::ai::AttachmentFileInfo;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::server::server_api::ai::AttachmentInput;
 use crate::terminal::view::ambient_agent::{
-    AuthSecretFtuxView, AuthSecretSelector, AuthSecretSelectorEvent, HarnessSelector,
-    HarnessSelectorEvent, HostSelector, HostSelectorEvent, NakedHeaderButtonTheme,
+    AuthSecretFtuxView, AuthSecretFtuxViewEvent, AuthSecretSelector, AuthSecretSelectorEvent,
+    HarnessSelector, HarnessSelectorEvent, HostSelector, HostSelectorEvent, NakedHeaderButtonTheme,
 };
 use crate::{
     ai::{
@@ -254,6 +255,7 @@ use crate::{
     workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent},
     AgentModeEntrypoint, ServerApiProvider,
 };
+use warp_cli::agent::Harness;
 
 use ai::skills::SkillReference;
 use base64::Engine as _;
@@ -2435,12 +2437,54 @@ impl Input {
                     }
                     AuthSecretSelectorEvent::MenuVisibilityChanged { open: true } => {}
                 });
-                let ftux_view = {
-                    let view_model_for_ftux = state.view_model.clone();
-                    ctx.add_typed_action_view(|ctx| {
-                        AuthSecretFtuxView::new(view_model_for_ftux, ctx)
-                    })
-                };
+                let initial_harness = state.view_model.as_ref(ctx).selected_harness();
+                let ftux_view =
+                    ctx.add_typed_action_view(|ctx| AuthSecretFtuxView::new(initial_harness, ctx));
+
+                // Forward the pane's harness changes into the FTUX view.
+                let ftux_for_harness_sub = ftux_view.clone();
+                ctx.subscribe_to_model(&state.view_model, move |_me, vm, event, ctx| {
+                    if matches!(event, AmbientAgentViewModelEvent::HarnessSelected) {
+                        let harness = vm.as_ref(ctx).selected_harness();
+                        ftux_for_harness_sub.update(ctx, |view, ctx| {
+                            view.set_harness(harness, ctx);
+                        });
+                    }
+                });
+
+                // Cloud-mode side effects on FTUX events: update the pane's
+                // harness auth secret, persist `last_selected_auth_secret`,
+                // mark FTUX completed.
+                let vm_for_events = state.view_model.clone();
+                ctx.subscribe_to_view(&ftux_view, move |_me, _, event, ctx| match event {
+                    AuthSecretFtuxViewEvent::SecretSelected { harness, name }
+                    | AuthSecretFtuxViewEvent::Created { harness, name } => {
+                        let harness = *harness;
+                        let name = name.clone();
+                        vm_for_events.update(ctx, |model, ctx| {
+                            model.set_harness_auth_secret_name(Some(name.clone()), ctx);
+                        });
+                        CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                            settings.mark_harness_auth_ftux_completed(harness, ctx);
+                            let mut map = settings.last_selected_auth_secret.value().clone();
+                            map.insert(harness.config_name().to_string(), name);
+                            let _ = settings.last_selected_auth_secret.set_value(map, ctx);
+                        });
+                    }
+                    AuthSecretFtuxViewEvent::Cancelled => {
+                        vm_for_events.update(ctx, |model, ctx| {
+                            model.set_harness(Harness::Oz, ctx);
+                        });
+                    }
+                    AuthSecretFtuxViewEvent::Skipped { harness } => {
+                        let harness = *harness;
+                        CloudAgentSettings::handle(ctx).update(ctx, |settings, ctx| {
+                            settings.mark_harness_auth_ftux_completed(harness, ctx);
+                        });
+                    }
+                    AuthSecretFtuxViewEvent::Failed { .. } => {}
+                });
+
                 state.auth_secret_selector = Some(selector);
                 state.auth_secret_ftux_view = Some(ftux_view);
             }

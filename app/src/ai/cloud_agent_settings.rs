@@ -68,6 +68,17 @@ define_settings_group!(CloudAgentSettings, settings: [
         supported_platforms: SupportedPlatforms::ALL,
         sync_to_cloud: SyncToCloud::Never,
         private: true,
+    },
+    // Per-harness record of whether the user explicitly chose "Inherit
+    // key from environment" in the orchestration auth secret picker.
+    // Distinct from "never picked anything" (entry absent) so the plan
+    // card's Inherit choice survives across the RunAgents handoff.
+    inherit_auth_secret_harnesses: InheritAuthSecretHarnesses {
+        type: HashMap<String, bool>,
+        default: HashMap::new(),
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Never,
+        private: true,
     }
 ]);
 
