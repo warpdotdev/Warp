@@ -79,7 +79,9 @@ pub use super::billing_and_usage_page::BillingAndUsagePageEvent;
 
 const ADDON_CREDITS_DESCRIPTION: &str = "Add-on credits are purchased in prepaid packages that roll over each billing cycle and expire after one year. The more you purchase, the better the per-credit rate. Once your base plan credits are used, add-on credits will be consumed.";
 const ADDITIONAL_ADDON_CREDITS_DESCRIPTION_FOR_TEAM: &str =
-    "Purchased add-on credits are added to your personal balance.";
+    "Add-on credits purchased here are user-scoped and added to your personal balance.";
+const ADDITIONAL_ADDON_CREDITS_DESCRIPTION_FOR_BUILD_PLAN: &str =
+    "Service account add-on credits charge your team owner.";
 
 const AUTO_RELOAD_DELINQUENT_WARNING_STRING: &str =
     "Restricted due to billing issue. Update your payment method to purchase add-on credits.";
@@ -1075,11 +1077,17 @@ impl BillingAndUsagePageV2View {
             .current_team()
             .map(|t| t.members.len())
             .unwrap_or(1);
-        let description_text = if team_count > 1 {
-            format!("{ADDON_CREDITS_DESCRIPTION} {ADDITIONAL_ADDON_CREDITS_DESCRIPTION_FOR_TEAM}")
-        } else {
-            ADDON_CREDITS_DESCRIPTION.to_string()
-        };
+        let mut description_parts = vec![ADDON_CREDITS_DESCRIPTION];
+        if team_count > 1 {
+            description_parts.push(ADDITIONAL_ADDON_CREDITS_DESCRIPTION_FOR_TEAM);
+        }
+        if workspace.billing_metadata.is_on_build_plan()
+            || workspace.billing_metadata.is_on_build_max_plan()
+            || workspace.billing_metadata.is_on_build_business_plan()
+        {
+            description_parts.push(ADDITIONAL_ADDON_CREDITS_DESCRIPTION_FOR_BUILD_PLAN);
+        }
+        let description_text = description_parts.join(" ");
         let paragraph = ui_builder
             .paragraph(description_text)
             .with_style(UiComponentStyles {
