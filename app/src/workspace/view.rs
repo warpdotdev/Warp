@@ -8113,6 +8113,24 @@ impl Workspace {
         context: Option<&CodeReviewPaneContext>,
         ctx: &mut ViewContext<Self>,
     ) {
+        // When no explicit context is provided (i.e. we're being called from a
+        // focus-change or session-change handler rather than from an explicit
+        // panel-open action), skip the setup if the right panel already has a
+        // selected code review view. The `RepositoriesChanged` →
+        // `ensure_code_review_view_exists` path manages the view lifecycle
+        // during directory changes. Re-deriving the repo from the terminal's
+        // stale `current_repo_path()` here would race with refresh and
+        // re-create models that were just dropped.
+        if context.is_none()
+            && self
+                .right_panel_view
+                .as_ref(ctx)
+                .selected_repo_path()
+                .is_some()
+        {
+            return;
+        }
+
         // If context is provided, use it directly. Otherwise, derive from active pane group.
         let context_data: Option<(
             Option<LocalOrRemotePath>,
@@ -15439,9 +15457,10 @@ impl Workspace {
                     right_panel.update_session_env(is_remote, is_wsl_session, ctx);
                 });
 
-                if self.active_tab_pane_group().as_ref(ctx).right_panel_open {
-                    self.setup_code_review_panel(None, ctx);
-                }
+                // Code review panel setup is handled by the RepositoriesChanged
+                // event emitted from refresh_working_directories earlier in this
+                // function. Calling setup_code_review_panel here would race
+                // with that path and re-create models that were just dropped.
             }
         } else {
             let enablement = CodingPanelEnablementState::from_session_env(

@@ -773,9 +773,17 @@ impl CodeReviewView {
             }
         }
 
+        // If the view is freshly created (state is None/loading) but the model
+        // already holds computed diffs (DiffState::Loaded), a non-forced load
+        // will no-op because the model thinks it's done. Force a reload so
+        // the model re-emits NewDiffsComputed and the view gets populated.
+        let view_needs_diffs = matches!(self.state(), CodeReviewViewState::None);
+        let model_already_loaded = matches!(self.diff_state(ctx), DiffState::Loaded);
+        let force = view_needs_diffs && model_already_loaded;
+
         self.diff_state_model.update(ctx, |model, ctx| {
             model.set_code_review_metadata_refresh_enabled(true, ctx);
-            model.load_diffs_for_current_repo(false, ctx);
+            model.load_diffs_for_current_repo(force, ctx);
         });
     }
 
