@@ -16,13 +16,13 @@ use warpui::fonts::{Properties, Weight};
 use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::{
-    AppContext, Element, Entity, FocusContext, TypedActionView, View, ViewHandle,
     elements::{
         Align, Border, ChildView, ConstrainedBox, Container, CrossAxisAlignment, Empty, Flex,
         FormattedTextElement, HighlightedHyperlink, Hoverable, MainAxisAlignment, MouseStateHandle,
         ParentElement, Text,
     },
     platform::Cursor,
+    AppContext, Element, Entity, FocusContext, TypedActionView, View, ViewHandle,
 };
 use warpui::{SingletonEntity, ViewContext};
 

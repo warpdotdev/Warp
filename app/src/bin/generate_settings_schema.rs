@@ -13,7 +13,7 @@ use serde_json::{Map, Value};
 
 use settings::schema::SettingSchemaEntry;
 use warp_core::features::{
-    DEBUG_FLAGS, DOGFOOD_FLAGS, FeatureFlag, OSS_FLAGS, PREVIEW_FLAGS, RELEASE_FLAGS,
+    FeatureFlag, DEBUG_FLAGS, DOGFOOD_FLAGS, OSS_FLAGS, PREVIEW_FLAGS, RELEASE_FLAGS,
 };
 
 /// Ensures all `inventory::submit!` registrations from the app crate's

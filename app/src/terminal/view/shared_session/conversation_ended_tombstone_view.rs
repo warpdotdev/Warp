@@ -213,16 +213,19 @@ impl ConversationEndedTombstoneView {
         let continue_locally_button = match tombstone_cta {
             Some(TombstoneCta::ContinueLocally { conversation_id }) => {
                 Some(ctx.add_typed_action_view(move |ctx| {
-                    ActionButton::new(crate::i18n::tr_static(ctx, "Continue locally"), PrimaryTheme)
-                        .with_tooltip(crate::i18n::tr_static(
-                            ctx,
-                            "Fork this conversation locally",
-                        ))
-                        .on_click(move |ctx| {
-                            ctx.dispatch_typed_action(
-                                ConversationEndedTombstoneAction::ContinueLocally(conversation_id),
-                            );
-                        })
+                    ActionButton::new(
+                        crate::i18n::tr_static(ctx, "Continue locally"),
+                        PrimaryTheme,
+                    )
+                    .with_tooltip(crate::i18n::tr_static(
+                        ctx,
+                        "Fork this conversation locally",
+                    ))
+                    .on_click(move |ctx| {
+                        ctx.dispatch_typed_action(
+                            ConversationEndedTombstoneAction::ContinueLocally(conversation_id),
+                        );
+                    })
                 }))
             }
             Some(TombstoneCta::ContinueInCloud { .. }) | None => None,

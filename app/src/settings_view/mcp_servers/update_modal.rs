@@ -12,18 +12,18 @@ use warp_core::ui::color::coloru_with_opacity;
 use warp_core::ui::external_product_icon::ExternalProductIcon;
 use warp_core::ui::icons::Icon;
 use warp_core::ui::theme::color::internal_colors;
-use warpui::SingletonEntity;
 use warpui::elements::{Align, Empty, Padding, Shrinkable};
 use warpui::fonts::{Properties, Weight};
 use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
+use warpui::SingletonEntity;
 use warpui::{
-    AppContext, Element, Entity, TypedActionView, View, ViewContext,
     elements::{
         Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, Hoverable,
         MainAxisAlignment, MouseStateHandle, ParentElement, Radius, Text,
     },
     platform::Cursor,
+    AppContext, Element, Entity, TypedActionView, View, ViewContext,
 };
 
 pub enum UpdateModalBodyEvent {

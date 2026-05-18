@@ -320,9 +320,7 @@ fn app_name_prefix(channel: Channel) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        app_name_prefix, parse_forcekill_exit_code, parse_minidump_cleanup_exit_code,
-    };
+    use super::{app_name_prefix, parse_forcekill_exit_code, parse_minidump_cleanup_exit_code};
     use warp_core::channel::Channel;
 
     fn log(line: &str) -> Vec<u8> {

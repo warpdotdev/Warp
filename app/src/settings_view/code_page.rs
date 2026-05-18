@@ -1698,7 +1698,11 @@ impl CodePageWidget {
             {
                 ("Too large", theme.ui_warning_color(), Icon::AlertTriangle)
             } else if index_state.has_synced_version() {
-                ("Stale", theme.nonactive_ui_detail().into_solid(), Icon::ClockRefresh)
+                (
+                    "Stale",
+                    theme.nonactive_ui_detail().into_solid(),
+                    Icon::ClockRefresh,
+                )
             } else {
                 ("Failed", theme.ui_error_color(), Icon::AlertTriangle)
             };

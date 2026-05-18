@@ -10,7 +10,7 @@ use crate::{
     auth::{AuthStateProvider, UserUid},
     channel::ChannelState,
     cloud_object::{
-        CloudObjectEventEntrypoint, ObjectType, Owner, Space, model::persistence::CloudModel,
+        model::persistence::CloudModel, CloudObjectEventEntrypoint, ObjectType, Owner, Space,
     },
     pricing::PricingInfoModel,
     report_error,

@@ -27,13 +27,13 @@ use super::types::{
     StreamingTextMessageState,
 };
 use super::*;
+use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::agent::task::TaskId;
 use crate::ai::agent::AIAgentActionResult;
 use crate::ai::agent::AIAgentContext;
 use crate::ai::agent::AIAgentInput;
 use crate::ai::agent::MCPContext;
 use crate::ai::agent::MCPServer;
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent::task::TaskId;
 use crate::ai::block_context::BlockContext;
 use crate::ai::blocklist::SessionContext;
 use crate::ai::llms::{LLMId, LLMProvider};
@@ -101,11 +101,8 @@ fn test_mcp_tool() -> rmcp::model::Tool {
         .clone(),
     );
 
-    let mut tool = rmcp::model::Tool::new(
-        "lookup_weather",
-        "Look up weather by city.",
-        input_schema,
-    );
+    let mut tool =
+        rmcp::model::Tool::new("lookup_weather", "Look up weather by city.", input_schema);
     tool.title = Some("Lookup Weather".to_string());
     tool
 }
@@ -648,11 +645,9 @@ fn prepare_local_responses_request_includes_web_search_tool_when_enabled() {
         .as_array()
         .expect("tools should serialize as an array");
 
-    assert!(
-        tools
-            .iter()
-            .any(|tool| tool["type"] == serde_json::json!("web_search"))
-    );
+    assert!(tools
+        .iter()
+        .any(|tool| tool["type"] == serde_json::json!("web_search")));
     assert_eq!(
         request_body["include"],
         serde_json::json!([

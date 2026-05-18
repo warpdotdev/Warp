@@ -15,15 +15,15 @@ use std::time::Duration;
 
 use anyhow::anyhow;
 use async_stream::stream;
-use futures::StreamExt as _;
 use futures::channel::oneshot;
-use futures::future::{Either, select};
+use futures::future::{select, Either};
+use futures::StreamExt as _;
 use parking_lot::FairMutex;
 use reqwest_eventsource::Event as EventSourceEvent;
 use uuid::Uuid;
 use warp_multi_agent_api as api;
-use warpui::r#async::Timer;
 use warpui::duration_with_jitter;
+use warpui::r#async::Timer;
 
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::task::TaskId;
@@ -312,8 +312,8 @@ fn build_local_openai_system_prompt(model_name: &str) -> String {
 }
 
 /// Returns the global in-memory state used to preserve local conversation history.
-fn conversation_state_store()
--> &'static FairMutex<HashMap<AIConversationId, LocalConversationState>> {
+fn conversation_state_store(
+) -> &'static FairMutex<HashMap<AIConversationId, LocalConversationState>> {
     static STORE: OnceLock<FairMutex<HashMap<AIConversationId, LocalConversationState>>> =
         OnceLock::new();
     STORE.get_or_init(|| FairMutex::new(HashMap::new()))

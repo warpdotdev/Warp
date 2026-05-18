@@ -3,8 +3,8 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use anyhow::{Context as _, anyhow};
-use serde_json::{Value, json};
+use anyhow::{anyhow, Context as _};
+use serde_json::{json, Value};
 use uuid::Uuid;
 use warp_multi_agent_api as api;
 
@@ -26,8 +26,8 @@ use super::types::{
     StreamingWebSearchState,
 };
 use super::{
-    Event, RequestParams, add_messages_event, conversation_state_store, finished_reason_for_error,
-    stream_finished_event, user_visible_error_event,
+    add_messages_event, conversation_state_store, finished_reason_for_error, stream_finished_event,
+    user_visible_error_event, Event, RequestParams,
 };
 
 /// Translates a streamed Responses SSE message into Warp client events and updates stream state.
