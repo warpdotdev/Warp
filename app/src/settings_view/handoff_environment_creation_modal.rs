@@ -8,7 +8,7 @@ use crate::settings_view::update_environment_form::{
     EnvironmentFormInitArgs, UpdateEnvironmentForm, UpdateEnvironmentFormEvent,
 };
 use crate::ui_components::buttons::icon_button;
-use crate::ui_components::dialog::{dialog_styles, Dialog};
+use crate::ui_components::dialog::{Dialog, dialog_styles};
 use crate::ui_components::icons::Icon;
 use pathfinder_color::ColorU;
 use warpui::elements::{
@@ -16,7 +16,10 @@ use warpui::elements::{
     Element, Flex, MouseStateHandle, ParentElement, ScrollbarWidth,
 };
 use warpui::ui_components::components::UiComponent;
-use warpui::{AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle};
+use warpui::{
+    AppContext, Entity, FocusContext, SingletonEntity, TypedActionView, View, ViewContext,
+    ViewHandle,
+};
 
 const DIALOG_WIDTH: f32 = 600.;
 
@@ -208,4 +211,14 @@ impl View for HandoffEnvironmentCreationModal {
         let appearance = Appearance::as_ref(app);
         self.render_dialog(appearance, app)
     }
+
+    fn on_focus(&mut self, focus_ctx: &FocusContext, ctx: &mut ViewContext<Self>) {
+        if focus_ctx.is_self_focused() {
+            ctx.focus(&self.environment_form);
+        }
+    }
 }
+
+#[cfg(test)]
+#[path = "handoff_environment_creation_modal_tests.rs"]
+mod tests;
