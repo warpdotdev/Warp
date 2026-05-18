@@ -29,6 +29,9 @@ use crate::ai::blocklist::telemetry::{
     OrchestrationExecutionModeKind, OrchestrationHarnessKind, PlanConfigApprovalToggledEvent,
 };
 use crate::ai::blocklist::BlocklistAIHistoryEvent;
+use crate::ai::connected_self_hosted_workers::{
+    ConnectedSelfHostedWorkersEvent, ConnectedSelfHostedWorkersModel,
+};
 use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::ai::harness_availability::{
     AuthSecretFetchState, HarnessAvailabilityEvent, HarnessAvailabilityModel,
@@ -278,6 +281,17 @@ impl OrchestrationConfigBlockView {
             },
         );
 
+        ctx.subscribe_to_model(
+            &ConnectedSelfHostedWorkersModel::handle(ctx),
+            |me, _, event, ctx| match event {
+                ConnectedSelfHostedWorkersEvent::Changed => {
+                    if me.pickers_initialized {
+                        oc::repopulate_all_pickers(&mut me.edit_state, &me.pickers, ctx);
+                    }
+                    ctx.notify();
+                }
+            },
+        );
         let mut view = Self {
             conversation_id,
             plan_id,
