@@ -1045,7 +1045,7 @@ fn test_environment_form_copy_orchestration_modal_overrides_settings_defaults() 
     );
     assert_eq!(
         orchestration_copy.setup_commands_helper,
-        "Use commas to separate multiple commands."
+        "Press Enter or click the submit button to add each command."
     );
     assert!(!orchestration_copy.show_description_character_count);
 }
@@ -1070,12 +1070,7 @@ fn test_orchestration_modal_form_configuration_renders_footer_actions_without_te
                 let mut form =
                     UpdateEnvironmentForm::new_for_test(EnvironmentFormInitArgs::Create, ctx);
                 form.set_show_header(false, ctx);
-                form.set_copy(EnvironmentFormCopy::orchestration_modal(), ctx);
-                form.set_show_footer_cancel_button(true, ctx);
-                form.set_show_share_with_team_controls(false, ctx);
-                form.set_field_spacing(10., ctx);
-                form.set_description_height(52., ctx);
-                form.set_show_repo_helper_text(false, ctx);
+                form.configure_for_orchestration_modal(ctx);
                 form
             });
 

@@ -23,7 +23,8 @@ pub struct CreateEnvironmentModal {
 
 impl CreateEnvironmentModal {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
-        let handoff_modal = ctx.add_typed_action_view(HandoffEnvironmentCreationModal::new);
+        let handoff_modal =
+            ctx.add_typed_action_view(HandoffEnvironmentCreationModal::new_for_orchestration);
         ctx.subscribe_to_view(&handoff_modal, |me, _, event, ctx| match event {
             HandoffEnvironmentCreationModalEvent::Created { env_id } => {
                 me.visible = false;
@@ -105,3 +106,7 @@ impl View for CreateEnvironmentModal {
         ChildView::new(&self.handoff_modal).finish()
     }
 }
+
+#[cfg(test)]
+#[path = "create_environment_modal_tests.rs"]
+mod tests;
