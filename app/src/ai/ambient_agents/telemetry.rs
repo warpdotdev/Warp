@@ -40,9 +40,6 @@ pub enum HandoffLocalCloudStage {
     PaneOpened,
     AutoSubmitQueued,
     AutoSubmitStarted,
-    CloudRunDispatched,
-    ApiAccepted,
-    ApiFailed,
     SessionReady,
 }
 
@@ -51,8 +48,6 @@ pub enum HandoffLocalCloudStage {
 #[serde(rename_all = "snake_case")]
 pub enum HandoffCloudCloudStage {
     FollowupSubmitted,
-    ApiAccepted,
-    ApiFailed,
     PollTimeout,
     SessionReady,
     HotswapAttached,
