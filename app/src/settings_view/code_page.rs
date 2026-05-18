@@ -164,6 +164,7 @@ enum IndexingRefreshAction {
     /// Remote rows use the same refresh icon for both "create an index for this remote path" and
     /// "refresh an existing index". Missing or disabled remote indexes need a request/create call
     /// because resync only applies once the daemon already has index state for that path.
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
     RequestRemote,
     Resync,
 }
