@@ -134,7 +134,7 @@ fn local_or_remote_path_join_with_absolute_replaces_prefix() {
 #[test]
 fn local_or_remote_path_strip_repo_prefix_local_local() {
     let repo = LocalOrRemotePath::Local(local_repo_path());
-    let inside = LocalOrRemotePath::Local(local_repo_path().join("src/foo.rs"));
+    let inside = LocalOrRemotePath::Local(local_repo_path().join("src").join("foo.rs"));
     let outside = LocalOrRemotePath::Local(local_absolute_file_path());
     let expected_relative = std::path::Path::new("src")
         .join("foo.rs")

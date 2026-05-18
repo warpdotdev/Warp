@@ -1,7 +1,4 @@
-use std::{
-    path::{Path, PathBuf},
-    rc::Rc,
-};
+use std::{path::PathBuf, rc::Rc};
 
 use std::ops::Range;
 
@@ -96,10 +93,6 @@ impl LocalCodeEditorView {
 
     pub fn has_unsaved_changes(&self, _ctx: &AppContext) -> bool {
         false
-    }
-
-    pub fn file_path(&self) -> Option<&Path> {
-        None
     }
 
     /// Returns the unified file location (local or remote).

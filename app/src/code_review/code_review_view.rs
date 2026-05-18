@@ -710,13 +710,15 @@ impl CodeReviewView {
     }
 
     fn to_standardized_path(&self, repo_relative_path: &str) -> Option<StandardizedPath> {
-        debug_assert!(
-            !Path::new(repo_relative_path).is_absolute(),
-            "code review relative paths should be String; absolute paths should use StandardizedPath or LocalOrRemotePath"
-        );
-        let repo_path = self.repo_path()?;
-        let absolute_path = repo_path.join(repo_relative_path);
-        Some(absolute_path.path_component())
+        if Path::new(repo_relative_path).is_absolute() {
+            Some(StandardizedPath::from_local_absolute_unchecked(Path::new(
+                repo_relative_path,
+            )))
+        } else {
+            let repo_path = self.repo_path()?;
+            let absolute_path = repo_path.join(repo_relative_path);
+            Some(absolute_path.path_component())
+        }
     }
 
     pub fn diff_state_model(&self) -> &ModelHandle<DiffStateModel> {
