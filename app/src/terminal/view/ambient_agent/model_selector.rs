@@ -60,7 +60,10 @@ const SEARCH_FOOTER_TOP_MARGIN: f32 = 4.;
 
 const SEARCH_PLACEHOLDER_TEXT: &str = "Search models";
 
-const BUTTON_TOOLTIP: &str = "Choose agent model";
+const MODEL_PICKER_TOOLTIP: &str = "Choose an agent model";
+const MODEL_LOCKED_FOR_FOLLOWUP_TOOLTIP: &str = "Follow-ups use the original run's model";
+const MODEL_LOCKED_FOR_SETUP_TOOLTIP: &str = "Choose a model after setup";
+const MODEL_LOCKED_FOR_HARNESS_TOOLTIP: &str = "Model is set by the harness";
 
 const NO_RESULTS_LABEL: &str = "No results";
 
@@ -120,7 +123,7 @@ impl ModelSelector {
         let button = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new("", AgentInputButtonTheme)
                 .with_size(ButtonSize::AgentInputButton)
-                .with_tooltip(BUTTON_TOOLTIP)
+                .with_tooltip(MODEL_PICKER_TOOLTIP)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(ModelSelectorAction::ToggleMenu);
                 })
@@ -290,10 +293,37 @@ impl ModelSelector {
             .map(|m| m.as_ref(app).selected_harness())
     }
 
-    fn is_configuring(&self, app: &AppContext) -> bool {
+    /// Locked for first-time environment setup. The picker is meaningful only
+    /// once we reach the composing state.
+    fn is_locked_for_setup(&self, app: &AppContext) -> bool {
         self.ambient_agent_model
             .as_ref()
-            .is_none_or(|m| m.as_ref(app).is_configuring_ambient_agent())
+            .is_some_and(|m| m.as_ref(app).is_in_setup())
+    }
+
+    /// Locked because the user is composing a follow-up to a Cloud Mode run.
+    /// The server inherits the original task's model, so local changes have
+    /// no effect.
+    fn is_locked_for_cloud_followup(&self, app: &AppContext) -> bool {
+        self.ambient_agent_model
+            .as_ref()
+            .is_some_and(|m| m.as_ref(app).is_ready_for_cloud_followup_prompt())
+    }
+
+    /// Locked because a non-Oz harness (Claude Code, Codex, etc.) owns model
+    /// selection once a task has been spawned.
+    fn is_locked_for_non_oz_run(&self, app: &AppContext) -> bool {
+        self.ambient_agent_model.as_ref().is_some_and(|m| {
+            let model = m.as_ref(app);
+            model.task_id().is_some()
+                && !matches!(model.selected_harness(), Harness::Oz | Harness::Unknown)
+        })
+    }
+
+    fn is_interaction_locked(&self, app: &AppContext) -> bool {
+        self.is_locked_for_setup(app)
+            || self.is_locked_for_cloud_followup(app)
+            || self.is_locked_for_non_oz_run(app)
     }
 
     pub fn is_menu_open(&self) -> bool {
@@ -378,10 +408,15 @@ impl ModelSelector {
     }
 
     fn refresh_button(&mut self, ctx: &mut ViewContext<Self>) {
-        let is_configuring = self.is_configuring(ctx);
-        self.button.update(ctx, |button, ctx| {
-            button.set_disabled(!is_configuring, ctx);
-        });
+        let tooltip = if self.is_locked_for_cloud_followup(ctx) {
+            MODEL_LOCKED_FOR_FOLLOWUP_TOOLTIP
+        } else if self.is_locked_for_non_oz_run(ctx) {
+            MODEL_LOCKED_FOR_HARNESS_TOOLTIP
+        } else if self.is_locked_for_setup(ctx) {
+            MODEL_LOCKED_FOR_SETUP_TOOLTIP
+        } else {
+            MODEL_PICKER_TOOLTIP
+        };
 
         let active_label = match self.active_harness(ctx) {
             Some(harness) if !matches!(harness, Harness::Oz | Harness::Unknown) => self
@@ -407,6 +442,7 @@ impl ModelSelector {
         };
         self.button.update(ctx, |button, ctx| {
             button.set_label(active_label, ctx);
+            button.set_tooltip(Some(tooltip), ctx);
         });
     }
 
@@ -631,10 +667,11 @@ impl TypedActionView for ModelSelector {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             ModelSelectorAction::ToggleMenu => {
-                if self.is_configuring(ctx) {
-                    let new_state = !self.is_menu_open;
-                    self.set_menu_visibility(new_state, ctx);
+                if self.is_interaction_locked(ctx) {
+                    return;
                 }
+                let new_state = !self.is_menu_open;
+                self.set_menu_visibility(new_state, ctx);
             }
             ModelSelectorAction::SelectModel(llm_id) => {
                 let terminal_view_id = self.terminal_view_id;
