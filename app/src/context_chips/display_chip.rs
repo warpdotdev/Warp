@@ -19,6 +19,7 @@ use crate::settings::{AISettings, AISettingsChangedEvent, InputSettings};
 use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChangedNotifier};
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::input::{MenuPositioning, MenuPositioningProvider};
+use crate::terminal::model::session::SessionType;
 use crate::terminal::model_events::ModelEventDispatcher;
 use crate::terminal::view::ambient_agent::AmbientAgentViewModel;
 use crate::ui_components::blended_colors;
@@ -1213,44 +1214,65 @@ impl DisplayChip {
             appearance,
         );
 
-        // Get the keybinding for the tooltip
-        let code_review_keybinding = self.code_review_keybinding.clone().unwrap_or_default();
+        // Code review is only supported on local sessions and
+        // on remote sessions with a connected host ID.
+        let supports_code_review = self
+            .session_context
+            .as_ref()
+            .map(|ctx| match ctx.session.session_type() {
+                SessionType::Local => true,
+                SessionType::WarpifiedRemote { host_id: Some(_) } => {
+                    FeatureFlag::RemoteCodeReview.is_enabled()
+                }
+                SessionType::WarpifiedRemote { host_id: None } => false,
+            })
+            .unwrap_or(false);
 
-        let diff_stats_display = Hoverable::new(self.diff_stats_mouse_state.clone(), |state| {
-            let base_container = Container::new(git_diff_stats_content)
+        let diff_stats_display = if supports_code_review {
+            // Get the keybinding for the tooltip
+            let code_review_keybinding = self.code_review_keybinding.clone().unwrap_or_default();
+
+            Hoverable::new(self.diff_stats_mouse_state.clone(), |state| {
+                let base_container = Container::new(git_diff_stats_content)
+                    .with_vertical_padding(2.)
+                    .with_horizontal_padding(4.);
+
+                let base_container = if state.is_hovered() {
+                    base_container
+                        .with_background(appearance.theme().surface_2())
+                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                            CHIP_INNER_CORNER_RADIUS,
+                        )))
+                        .finish()
+                } else {
+                    base_container.finish()
+                };
+
+                let mut stack = Stack::new().with_child(base_container);
+                if state.is_hovered() {
+                    let tool_tip = appearance
+                        .ui_builder()
+                        .tool_tip_with_sublabel(
+                            CODE_REVIEW_TOOLTIP_TEXT.to_string(),
+                            code_review_keybinding.clone(),
+                        )
+                        .build()
+                        .finish();
+                    stack.add_positioned_overlay_child(tool_tip, udi_tooltip_positioning());
+                }
+                stack.finish()
+            })
+            .on_click(|ctx, _app, _position| {
+                ctx.dispatch_typed_action(DisplayChipAction::ToggleCodeReview);
+            })
+            .with_cursor(Cursor::PointingHand)
+            .finish()
+        } else {
+            Container::new(git_diff_stats_content)
                 .with_vertical_padding(2.)
-                .with_horizontal_padding(4.);
-
-            let base_container = if state.is_hovered() {
-                base_container
-                    .with_background(appearance.theme().surface_2())
-                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
-                        CHIP_INNER_CORNER_RADIUS,
-                    )))
-                    .finish()
-            } else {
-                base_container.finish()
-            };
-
-            let mut stack = Stack::new().with_child(base_container);
-            if state.is_hovered() {
-                let tool_tip = appearance
-                    .ui_builder()
-                    .tool_tip_with_sublabel(
-                        CODE_REVIEW_TOOLTIP_TEXT.to_string(),
-                        code_review_keybinding.clone(),
-                    )
-                    .build()
-                    .finish();
-                stack.add_positioned_overlay_child(tool_tip, udi_tooltip_positioning());
-            }
-            stack.finish()
-        })
-        .on_click(|ctx, _app, _position| {
-            ctx.dispatch_typed_action(DisplayChipAction::ToggleCodeReview);
-        })
-        .with_cursor(Cursor::PointingHand)
-        .finish();
+                .with_horizontal_padding(4.)
+                .finish()
+        };
 
         let content = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
