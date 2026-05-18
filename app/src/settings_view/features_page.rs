@@ -46,9 +46,10 @@ use crate::settings::{
 use crate::settings::{
     AliasExpansionEnabled, AliasExpansionSettings, AppEditorSettings, AtContextMenuInTerminalMode,
     AutocompleteSymbols, AutosuggestionKeybindingHint, ChangelogSettings, CloudPreferencesSettings,
-    CodeSettings, CommandCorrections, CompletionsOpenWhileTyping, CopyOnSelect, CtrlTabBehavior,
-    DefaultSessionMode, EnableSlashCommandsInTerminal, EnableSshWrapper, ErrorUnderliningEnabled,
-    ExtraMetaKeys, GPUSettings, GlobalHotkeyMode, InputSettings, InputSettingsChangedEvent,
+    CodeEditorLineNumberMode, CodeEditorLineNumberModeSetting, CodeSettings, CommandCorrections,
+    CompletionsOpenWhileTyping, CopyOnSelect, CtrlTabBehavior, DefaultSessionMode,
+    EnableSlashCommandsInTerminal, EnableSshWrapper, ErrorUnderliningEnabled, ExtraMetaKeys,
+    GPUSettings, GlobalHotkeyMode, InputSettings, InputSettingsChangedEvent,
     LinuxSelectionClipboard, MiddleClickPasteEnabled, MouseScrollMultiplier,
     OutlineCodebaseSymbolsForAtContextMenu, PreferLowPowerGPU, PreferredGraphicsBackend,
     QuakeModeSettings, ScrollSettings, SelectionSettings, ShowAutosuggestionIgnoreButton,
@@ -645,6 +646,7 @@ pub enum FeaturesPageAction {
     ToggleShowTerminalInputMessageLine,
     ToggleAgentInAppNotifications,
     MakeWarpDefaultTerminal,
+    SetCodeEditorLineNumberMode(CodeEditorLineNumberMode),
 }
 
 lazy_static! {
@@ -711,6 +713,9 @@ fn to_string(b: bool) -> String {
 }
 
 impl FeaturesPageAction {
+    fn should_send_telemetry(&self) -> bool {
+        !matches!(self, Self::SetCodeEditorLineNumberMode(_))
+    }
     fn telemetry_event(&self, ctx: &AppContext) -> TelemetryEvent {
         let workflow_settings = CommandSearchSettings::as_ref(ctx);
         let reporting_settings = AltScreenReporting::as_ref(ctx);
@@ -1022,6 +1027,10 @@ impl FeaturesPageAction {
                 action: "ToggleVimStatusBar".to_string(),
                 value: to_string(*AppEditorSettings::as_ref(ctx).vim_status_bar.value()),
             },
+            Self::SetCodeEditorLineNumberMode(mode) => TelemetryEvent::FeaturesPageAction {
+                action: "SetCodeEditorLineNumberMode".to_string(),
+                value: format!("{mode:?}"),
+            },
             Self::SetTabBehavior(tab_behavior) => TelemetryEvent::FeaturesPageAction {
                 action: "SetTabBehavior".to_string(),
                 value: format!("{tab_behavior:?}"),
@@ -1196,6 +1205,7 @@ pub struct FeaturesPageView {
 
     button_mouse_states: MouseStateHandles,
     ctrl_tab_behavior_dropdown: ViewHandle<Dropdown<FeaturesPageAction>>,
+    code_editor_line_number_mode_dropdown: ViewHandle<Dropdown<FeaturesPageAction>>,
 
     global_hotkey_dropdown: ViewHandle<Dropdown<FeaturesPageAction>>,
     activation_hotkey_keybinding_editor_state: KeybindingEditorState,
@@ -1910,9 +1920,19 @@ impl TypedActionView for FeaturesPageView {
                     default_terminal.make_warp_default(ctx);
                 });
             }
+            SetCodeEditorLineNumberMode(mode) => {
+                AppEditorSettings::handle(ctx).update(ctx, |editor_settings, ctx| {
+                    report_if_error!(editor_settings
+                        .code_editor_line_number_mode
+                        .set_value(*mode, ctx));
+                    ctx.notify();
+                });
+            }
         }
 
-        send_telemetry_from_ctx!(action.telemetry_event(ctx), ctx);
+        if action.should_send_telemetry() {
+            send_telemetry_from_ctx!(action.telemetry_event(ctx), ctx);
+        }
     }
 }
 
@@ -1937,7 +1957,13 @@ impl FeaturesPageView {
         );
 
         // Listen for model changes on all the settings that are used in this view.
-        ctx.subscribe_to_model(&AppEditorSettings::handle(ctx), |_, _, _, ctx| ctx.notify());
+        ctx.subscribe_to_model(&AppEditorSettings::handle(ctx), |me, _, _, ctx| {
+            Self::update_code_editor_line_number_mode_dropdown(
+                me.code_editor_line_number_mode_dropdown.clone(),
+                ctx,
+            );
+            ctx.notify();
+        });
 
         ctx.subscribe_to_model(&SelectionSettings::handle(ctx), |_, _, _, ctx| ctx.notify());
 
@@ -2170,6 +2196,12 @@ impl FeaturesPageView {
 
         let ctrl_tab_behavior_dropdown = ctx.add_typed_action_view(Dropdown::new);
         Self::update_ctrl_tab_behavior_dropdown(ctrl_tab_behavior_dropdown.clone(), ctx);
+
+        let code_editor_line_number_mode_dropdown = ctx.add_typed_action_view(Dropdown::new);
+        Self::update_code_editor_line_number_mode_dropdown(
+            code_editor_line_number_mode_dropdown.clone(),
+            ctx,
+        );
 
         ctx.subscribe_to_model(&KeysSettings::handle(ctx), |me, _, event, ctx| {
             if matches!(
@@ -2408,6 +2440,7 @@ impl FeaturesPageView {
 
             tab_behavior_dropdown,
             ctrl_tab_behavior_dropdown,
+            code_editor_line_number_mode_dropdown,
             graphics_backend_dropdown,
             new_tab_placement_dropdown,
             default_session_mode_dropdown,
@@ -2591,6 +2624,12 @@ impl FeaturesPageView {
 
         let mut text_editing_widgets: Vec<Box<dyn SettingsWidget<View = Self>>> =
             vec![Box::new(AutocompleteSymbolsWidget::default())];
+        if app_editor_settings
+            .code_editor_line_number_mode
+            .is_supported_on_current_platform()
+        {
+            text_editing_widgets.push(Box::new(CodeEditorLineNumberModeWidget::default()));
+        }
 
         if app_editor_settings
             .vim_mode
@@ -2766,6 +2805,41 @@ impl FeaturesPageView {
         ];
 
         PageType::new_categorized(categories, None)
+    }
+
+    fn update_code_editor_line_number_mode_dropdown(
+        dropdown: ViewHandle<Dropdown<FeaturesPageAction>>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        dropdown.update(ctx, |dropdown, ctx| {
+            let values = [
+                CodeEditorLineNumberMode::Absolute,
+                CodeEditorLineNumberMode::Relative,
+            ];
+
+            let current_value = *AppEditorSettings::as_ref(ctx)
+                .code_editor_line_number_mode
+                .value();
+
+            let selected_index = values
+                .iter()
+                .position(|val| *val == current_value)
+                .unwrap_or(0);
+
+            dropdown.set_items(
+                values
+                    .into_iter()
+                    .map(|val| {
+                        DropdownItem::new(
+                            val.dropdown_item_label(),
+                            FeaturesPageAction::SetCodeEditorLineNumberMode(val),
+                        )
+                    })
+                    .collect(),
+                ctx,
+            );
+            dropdown.set_selected_by_index(selected_index, ctx);
+        });
     }
 
     fn update_ctrl_tab_behavior_dropdown(
@@ -5528,6 +5602,49 @@ impl SettingsWidget for AutocompleteSymbolsWidget {
     }
 }
 
+#[derive(Default)]
+struct CodeEditorLineNumberModeWidget {}
+
+impl SettingsWidget for CodeEditorLineNumberModeWidget {
+    type View = FeaturesPageView;
+
+    fn search_terms(&self) -> &str {
+        "line number relative line vim gutter code editor"
+    }
+
+    fn render(
+        &self,
+        view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let mut column = Flex::column();
+        add_setting(
+            &mut column,
+            &AppEditorSettings::as_ref(app).code_editor_line_number_mode,
+            || {
+                render_dropdown_item(
+                    appearance,
+                    "Code editor line numbers:",
+                    None,
+                    None,
+                    LocalOnlyIconState::for_setting(
+                        CodeEditorLineNumberModeSetting::storage_key(),
+                        CodeEditorLineNumberModeSetting::sync_to_cloud(),
+                        &mut view
+                            .button_mouse_states
+                            .local_only_icon_tooltip_states
+                            .borrow_mut(),
+                        app,
+                    ),
+                    None,
+                    &view.code_editor_line_number_mode_dropdown,
+                )
+            },
+        );
+        column.finish()
+    }
+}
 #[derive(Default)]
 struct ErrorUnderliningWidget {
     switch_state: SwitchStateHandle,

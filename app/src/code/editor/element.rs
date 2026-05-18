@@ -54,6 +54,7 @@ use crate::{
         line::EditorLineLocation,
         view::{CodeEditorViewAction, SavedComment},
     },
+    settings::CodeEditorLineNumberMode,
     view_components::action_button::{ActionButtonTheme, SecondaryTheme},
 };
 use warp_core::features::FeatureFlag;
@@ -68,6 +69,29 @@ fn highlight_element(appearance: &Appearance) -> Box<dyn Element> {
     Container::new(Empty::new().finish())
         .with_border(Border::all(2.).with_border_fill(border_color))
         .finish()
+}
+
+fn absolute_line_number(line_count: LineCount, starting_line_number: Option<usize>) -> usize {
+    line_count.as_usize() + starting_line_number.unwrap_or(1)
+}
+
+fn display_line_number(
+    line_count: LineCount,
+    mode: CodeEditorLineNumberMode,
+    starting_line_number: Option<usize>,
+    active_line_number: Option<LineCount>,
+) -> usize {
+    if mode == CodeEditorLineNumberMode::Relative {
+        if let Some(active_line_number) = active_line_number {
+            if active_line_number != line_count {
+                return active_line_number
+                    .as_usize()
+                    .abs_diff(line_count.as_usize());
+            }
+        }
+    }
+
+    absolute_line_number(line_count, starting_line_number)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -367,6 +391,9 @@ pub struct LineNumberConfig {
     pub text_color: ColorU,
     pub highlight_text_color: ColorU,
     pub starting_line_number: Option<usize>,
+    pub mode: CodeEditorLineNumberMode,
+    pub active_line_number: Option<LineCount>,
+    pub active_cursor_is_focused: bool,
 }
 
 struct CommentBox {
@@ -567,6 +594,32 @@ impl<V: EditorView> EditorWrapper<V> {
             .cloned()
     }
 
+    fn should_display_relative_line_number(&self, line_count: LineCount) -> bool {
+        let Some(line_number_config) = &self.line_number_config else {
+            return false;
+        };
+        if line_number_config.mode != CodeEditorLineNumberMode::Relative
+            || line_number_config.active_line_number.is_none()
+        {
+            return false;
+        }
+
+        let (added_lines, removed_lines) = self.diff_status.get_diff_lines();
+        if added_lines == 0 && removed_lines == 0 {
+            return true;
+        }
+
+        let Some(active_line_number) = line_number_config.active_line_number else {
+            return false;
+        };
+        if !line_number_config.active_cursor_is_focused {
+            return false;
+        }
+        self.focused_diff_line_range
+            .as_ref()
+            .is_some_and(|range| range.contains(&active_line_number) && range.contains(&line_count))
+    }
+
     /// Returning **no** gutter means the gutter shouldn't be rendered at all.
     /// Returning an **empty** gutter means the gutter should be rendered with no contents.
     fn gutter_elements(&self, app: &AppContext) -> Option<Vec<GutterElement>> {
@@ -602,8 +655,16 @@ impl<V: EditorView> EditorWrapper<V> {
             let diff_hunk = self.diff_status.diff_hunk(line_count, appearance);
             let is_removal = matches!(diff_hunk, Some(DiffHunkDisplay::Remove(_)));
 
-            let current_line =
-                line_count.as_usize() + line_number_config.starting_line_number.unwrap_or(1);
+            let current_line = if self.should_display_relative_line_number(line_count) {
+                display_line_number(
+                    line_count,
+                    line_number_config.mode,
+                    line_number_config.starting_line_number,
+                    line_number_config.active_line_number,
+                )
+            } else {
+                absolute_line_number(line_count, line_number_config.starting_line_number)
+            };
 
             // If the block is temporary, don't render line number.
             // Currently, all temporary blocks are removal hunks, either from a deleted section,
@@ -1662,3 +1723,7 @@ impl<V: EditorView> NewScrollableElement for EditorWrapper<V> {
         ScrollableAxis::Both
     }
 }
+
+#[cfg(test)]
+#[path = "element_tests.rs"]
+mod tests;
