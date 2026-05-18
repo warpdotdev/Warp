@@ -77,6 +77,36 @@ fn valid_command_for_error_underline(command: &str) -> bool {
         .all(|x| !INVALID_SYMBOLS_COMMAND_ERROR_UNDERLINING.contains(&x))
 }
 
+/// Pure decision function for whether the first token of a command should
+/// be underlined as an unknown command.
+///
+/// Inputs:
+/// - `has_loaded_external_commands`: whether the session has finished loading
+///   external commands (i.e. executables on `$PATH`). Until this is `true`, we
+///   cannot reliably classify a command as unknown — `git` and other valid
+///   commands would otherwise be incorrectly underlined while the async
+///   command load is still in flight. See issue #9182.
+/// - `has_no_description`: whether the completer returned no description for
+///   the token (meaning it could not match any known command/alias/function).
+/// - `is_first_token`: whether this is the first token of the command (only
+///   the command name itself can be underlined as unknown — not its args).
+/// - `valid_symbols`: whether the token only contains characters we currently
+///   trust for the unknown-command heuristic.
+pub(crate) fn should_underline_unknown_command(
+    has_loaded_external_commands: bool,
+    has_no_description: bool,
+    is_first_token: bool,
+    valid_symbols: bool,
+) -> bool {
+    // If we haven't loaded the set of available external commands yet, we
+    // can't classify anything as unknown without producing false positives,
+    // so suppress the underline entirely until the load completes.
+    if !has_loaded_external_commands {
+        return false;
+    }
+    has_no_description && is_first_token && valid_symbols
+}
+
 impl Input {
     fn completion_session_context_or_empty_context(
         &self,
@@ -315,12 +345,24 @@ impl Input {
             return;
         };
 
+        // The error-underline heuristic relies on the session having a
+        // complete view of available external commands (executables on
+        // `$PATH`). If the async load hasn't completed yet, suppress
+        // underlining entirely to avoid false positives like underlining
+        // `git` before its entry has been loaded. See issue #9182.
+        let has_loaded_external_commands = self
+            .active_session(ctx)
+            .map(|session| session.has_loaded_external_commands())
+            .unwrap_or(false);
+
         let mut ranges = vec![];
         for token_data in &parsed_tokens_snapshot.parsed_tokens {
-            if token_data.token_description.is_none()
-                && token_data.token_index == 0
-                && valid_command_for_error_underline(&token_data.token.item)
-            {
+            if should_underline_unknown_command(
+                has_loaded_external_commands,
+                token_data.token_description.is_none(),
+                token_data.token_index == 0,
+                valid_command_for_error_underline(&token_data.token.item),
+            ) {
                 ranges.push(
                     ByteOffset::from(token_data.token.span.start())
                         ..ByteOffset::from(token_data.token.span.end()),
