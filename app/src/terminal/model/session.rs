@@ -183,6 +183,7 @@ impl Sessions {
                 | RemoteServerManagerEvent::BinaryCheckComplete { .. }
                 | RemoteServerManagerEvent::BinaryInstallComplete { .. }
                 | RemoteServerManagerEvent::ClientRequestFailed { .. }
+                | RemoteServerManagerEvent::CodebaseIndexMutationFailed { .. }
                 | RemoteServerManagerEvent::ServerMessageDecodingError { .. }
                 | RemoteServerManagerEvent::DiffStateSnapshotReceived { .. }
                 | RemoteServerManagerEvent::DiffStateMetadataUpdateReceived { .. }

@@ -437,6 +437,7 @@ impl GetRelevantFilesController {
                 candidate_hash_count: telemetry.candidate_hash_count,
                 returned_file_count: telemetry.returned_file_count,
                 embedding_config: telemetry.embedding_config,
+                failure_stage: telemetry.failure_stage,
             },
             ctx
         );

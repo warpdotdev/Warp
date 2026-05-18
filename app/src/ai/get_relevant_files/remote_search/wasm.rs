@@ -8,7 +8,9 @@ use crate::ai::{
     agent::{AIAgentActionId, SearchCodebaseFailureReason, SearchCodebaseResult},
     blocklist::SessionContext,
 };
-use crate::server::telemetry::RemoteCodebaseSearchTelemetryResult;
+use crate::server::telemetry::{
+    RemoteCodebaseSearchFailureStage, RemoteCodebaseSearchTelemetryResult,
+};
 
 use crate::ai::get_relevant_files::controller::GetRelevantFilesController;
 
@@ -27,6 +29,7 @@ pub(super) struct RemoteSearchTelemetry {
     pub candidate_hash_count: Option<usize>,
     pub returned_file_count: Option<usize>,
     pub embedding_config: Option<EmbeddingConfig>,
+    pub failure_stage: Option<RemoteCodebaseSearchFailureStage>,
 }
 
 pub(super) fn root_directory_for_search(
@@ -57,6 +60,7 @@ pub(super) fn send_request(
             candidate_hash_count: None,
             returned_file_count: None,
             embedding_config: None,
+            failure_stage: None,
         },
     })
 }

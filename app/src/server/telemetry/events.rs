@@ -1013,6 +1013,25 @@ pub enum RemoteCodebaseSearchTelemetryResult {
     Cancelled,
 }
 
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteCodebaseSearchFailureStage {
+    CodebaseContextConfig,
+    GetRelevantFragments,
+    GetFragmentMetadata,
+    ReadFileContext,
+    BuildFragments,
+    RerankFragments,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteCodebaseIndexStatusTelemetrySource {
+    Snapshot,
+    PushUpdate,
+    MutationResponse,
+}
+
 impl From<SearchCodebaseFailureReason> for RemoteCodebaseSearchTelemetryResult {
     fn from(reason: SearchCodebaseFailureReason) -> Self {
         match reason {
@@ -2480,12 +2499,26 @@ pub enum TelemetryEvent {
         candidate_hash_count: Option<usize>,
         returned_file_count: Option<usize>,
         embedding_config: Option<ai::index::full_source_code_embedding::EmbeddingConfig>,
+        failure_stage: Option<RemoteCodebaseSearchFailureStage>,
     },
     RemoteCodebaseIndexMutation {
         mutation_kind: remote_server::manager::RemoteCodebaseIndexMutationKind,
         state: Option<remote_server::codebase_index_proto::RemoteCodebaseIndexState>,
         error_type: Option<remote_server::manager::RemoteServerErrorKind>,
-        embedding_config: Option<remote_server::codebase_index_proto::RemoteCodebaseEmbeddingConfig>,
+        embedding_config:
+            Option<remote_server::codebase_index_proto::RemoteCodebaseEmbeddingConfig>,
+        remote_os: Option<String>,
+        remote_arch: Option<String>,
+    },
+    RemoteCodebaseIndexStatusChanged {
+        state: remote_server::codebase_index_proto::RemoteCodebaseIndexState,
+        previous_state: Option<remote_server::codebase_index_proto::RemoteCodebaseIndexState>,
+        has_root_hash: bool,
+        has_failure_message: bool,
+        progress_completed: Option<u64>,
+        progress_total: Option<u64>,
+        mutation_kind: Option<remote_server::manager::RemoteCodebaseIndexMutationKind>,
+        source: RemoteCodebaseIndexStatusTelemetrySource,
         remote_os: Option<String>,
         remote_arch: Option<String>,
     },
@@ -4066,6 +4099,7 @@ impl TelemetryEvent {
                 candidate_hash_count,
                 returned_file_count,
                 embedding_config,
+                failure_stage,
             } => Some(json!({
                 "action_id": action_id,
                 "result": result,
@@ -4073,6 +4107,7 @@ impl TelemetryEvent {
                 "candidate_hash_count": candidate_hash_count,
                 "returned_file_count": returned_file_count,
                 "embedding_config": embedding_config,
+                "failure_stage": failure_stage,
             })),
             TelemetryEvent::RemoteCodebaseIndexMutation {
                 mutation_kind,
@@ -4086,6 +4121,29 @@ impl TelemetryEvent {
                 "state": state,
                 "error_type": error_type,
                 "embedding_config": embedding_config,
+                "remote_os": remote_os,
+                "remote_arch": remote_arch,
+            })),
+            TelemetryEvent::RemoteCodebaseIndexStatusChanged {
+                state,
+                previous_state,
+                has_root_hash,
+                has_failure_message,
+                progress_completed,
+                progress_total,
+                mutation_kind,
+                source,
+                remote_os,
+                remote_arch,
+            } => Some(json!({
+                "state": state,
+                "previous_state": previous_state,
+                "has_root_hash": has_root_hash,
+                "has_failure_message": has_failure_message,
+                "progress_completed": progress_completed,
+                "progress_total": progress_total,
+                "mutation_kind": mutation_kind,
+                "source": source,
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
             })),
@@ -5123,6 +5181,7 @@ impl TelemetryEvent {
             | TelemetryEvent::SearchCodebaseRepoUnavailable { .. }
             | TelemetryEvent::RemoteCodebaseSearch { .. }
             | TelemetryEvent::RemoteCodebaseIndexMutation { .. }
+            | TelemetryEvent::RemoteCodebaseIndexStatusChanged { .. }
             | TelemetryEvent::InputUXModeChanged { .. }
             | TelemetryEvent::ContextChipInteracted { .. }
             | TelemetryEvent::VoiceInputUsed { .. }
@@ -5279,7 +5338,9 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::FullEmbedCodebaseContextSearchSuccess { .. } => {
                 EnablementState::Flag(FeatureFlag::FullSourceCodeEmbedding)
             }
-            Self::RemoteCodebaseSearch { .. } | Self::RemoteCodebaseIndexMutation { .. } => {
+            Self::RemoteCodebaseSearch { .. }
+            | Self::RemoteCodebaseIndexMutation { .. }
+            | Self::RemoteCodebaseIndexStatusChanged { .. } => {
                 EnablementState::Flag(FeatureFlag::RemoteCodebaseIndexing)
             }
             Self::ObjectLinkCopied => EnablementState::Always,
@@ -6249,6 +6310,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             }
             Self::RemoteCodebaseSearch { .. } => "AgentMode.RemoteCodebaseSearch",
             Self::RemoteCodebaseIndexMutation { .. } => "RemoteCodebaseIndex.Mutation",
+            Self::RemoteCodebaseIndexStatusChanged { .. } => "RemoteCodebaseIndex.StatusChanged",
             Self::InputUXModeChanged { .. } => "Input.InputUXModeChanged",
             Self::ContextChipInteracted { .. } => "Input.ContextChipInteracted",
             Self::VoiceInputUsed { .. } => "Input.VoiceInputUsed",
@@ -7083,6 +7145,9 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             }
             Self::RemoteCodebaseIndexMutation { .. } => {
                 "Remote codebase index mutation completed with status or failure metadata"
+            }
+            Self::RemoteCodebaseIndexStatusChanged { .. } => {
+                "Remote codebase index status changed with state transition metadata"
             }
             Self::InputUXModeChanged { .. } => "Changed the input UX mode",
             Self::ContextChipInteracted { .. } => "Interacted with a context chip",

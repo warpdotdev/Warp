@@ -21,7 +21,7 @@ use crate::{
         RemoteCodebaseIndexModel, RemoteCodebaseSearchAvailability, RemoteCodebaseSearchContext,
     },
     server::server_api::{ServerApi, ServerApiProvider},
-    server::telemetry::RemoteCodebaseSearchTelemetryResult,
+    server::telemetry::{RemoteCodebaseSearchFailureStage, RemoteCodebaseSearchTelemetryResult},
 };
 
 use crate::ai::get_relevant_files::controller::GetRelevantFilesController;
@@ -42,6 +42,7 @@ pub(super) struct RemoteSearchTelemetry {
     pub candidate_hash_count: Option<usize>,
     pub returned_file_count: Option<usize>,
     pub embedding_config: Option<EmbeddingConfig>,
+    pub failure_stage: Option<RemoteCodebaseSearchFailureStage>,
 }
 
 pub(super) fn root_directory_for_search(
@@ -79,6 +80,7 @@ pub(super) fn send_request(
             search_start.elapsed(),
             None,
             None,
+            None,
         ));
     }
 
@@ -97,6 +99,7 @@ pub(super) fn send_request(
                 return RemoteSearchRequest::Ready(remote_search_response_from_result(
                     result,
                     search_start.elapsed(),
+                    None,
                     None,
                     None,
                 ));
@@ -135,6 +138,7 @@ pub(super) fn send_request(
                 search_start.elapsed(),
                 None,
                 None,
+                None,
             ))
         }
         RemoteCodebaseSearchAvailability::NoConnectedHost
@@ -145,6 +149,7 @@ pub(super) fn send_request(
             RemoteSearchRequest::Ready(remote_search_response_from_result(
                 result,
                 search_start.elapsed(),
+                None,
                 None,
                 None,
             ))
@@ -176,10 +181,11 @@ async fn execute_remote_codebase_search(
                 search_start.elapsed(),
                 candidate_hash_count,
                 None,
+                Some(RemoteCodebaseSearchFailureStage::CodebaseContextConfig),
             );
         }
     };
-    let result = execute_remote_codebase_search_inner(
+    let (result, failure_stage) = execute_remote_codebase_search_inner(
         query,
         partial_paths,
         search_context,
@@ -189,9 +195,14 @@ async fn execute_remote_codebase_search(
         &mut candidate_hash_count,
     )
     .await
-    .unwrap_or_else(|e| SearchCodebaseResult::Failed {
-        reason: SearchCodebaseFailureReason::ClientError,
-        message: e.to_string(),
+    .unwrap_or_else(|error| {
+        (
+            SearchCodebaseResult::Failed {
+                reason: SearchCodebaseFailureReason::ClientError,
+                message: error.error.to_string(),
+            },
+            Some(error.stage),
+        )
     });
 
     remote_search_response_from_result(
@@ -199,9 +210,24 @@ async fn execute_remote_codebase_search(
         search_start.elapsed(),
         candidate_hash_count,
         Some(embedding_config),
+        failure_stage,
     )
 }
 
+struct RemoteSearchPipelineError {
+    stage: RemoteCodebaseSearchFailureStage,
+    error: anyhow::Error,
+}
+
+fn remote_search_pipeline_error(
+    stage: RemoteCodebaseSearchFailureStage,
+    error: impl Into<anyhow::Error>,
+) -> RemoteSearchPipelineError {
+    RemoteSearchPipelineError {
+        stage,
+        error: error.into(),
+    }
+}
 async fn execute_remote_codebase_search_inner(
     query: String,
     partial_paths: Option<Vec<String>>,
@@ -210,14 +236,16 @@ async fn execute_remote_codebase_search_inner(
     store_client: Arc<ServerApi>,
     embedding_config: EmbeddingConfig,
     candidate_hash_count: &mut Option<usize>,
-) -> Result<SearchCodebaseResult, anyhow::Error> {
+) -> Result<
+    (
+        SearchCodebaseResult,
+        Option<RemoteCodebaseSearchFailureStage>,
+    ),
+    RemoteSearchPipelineError,
+> {
     let root_hash = search_context.root_hash;
     let root_hash_string = root_hash.to_string();
     let repo_path = search_context.remote_path.path.as_str().to_string();
-    let embedding_config = store_client
-        .codebase_context_config()
-        .await?
-        .embedding_config;
     log::info!(
         "[Remote codebase indexing] Remote codebase search using embedding config: repo_path={repo_path} embedding_config={embedding_config:?}"
     );
@@ -230,10 +258,16 @@ async fn execute_remote_codebase_search_inner(
                 path: Some(repo_path.clone()),
             },
         )
-        .await?;
+        .await
+        .map_err(|error| {
+            remote_search_pipeline_error(
+                RemoteCodebaseSearchFailureStage::GetRelevantFragments,
+                error,
+            )
+        })?;
     *candidate_hash_count = Some(candidate_hashes.len());
     if candidate_hashes.is_empty() {
-        return Ok(SearchCodebaseResult::Success { files: vec![] });
+        return Ok((SearchCodebaseResult::Success { files: vec![] }, None));
     }
 
     let candidate_hash_strings = candidate_hashes
@@ -246,7 +280,13 @@ async fn execute_remote_codebase_search_inner(
             root_hash_string,
             candidate_hash_strings,
         )
-        .await?;
+        .await
+        .map_err(|error| {
+            remote_search_pipeline_error(
+                RemoteCodebaseSearchFailureStage::GetFragmentMetadata,
+                error,
+            )
+        })?;
     if !metadata_response.missing_hashes.is_empty() {
         log::warn!(
             "Remote codebase search metadata lookup missed {} hashes for repo {}",
@@ -263,12 +303,15 @@ async fn execute_remote_codebase_search_inner(
         });
     }
     if metadata.is_empty() {
-        return Ok(SearchCodebaseResult::Success { files: vec![] });
+        return Ok((SearchCodebaseResult::Success { files: vec![] }, None));
     }
 
     let response = client
         .read_file_context(read_fragment_metadata_request(&metadata))
-        .await?;
+        .await
+        .map_err(|error| {
+            remote_search_pipeline_error(RemoteCodebaseSearchFailureStage::ReadFileContext, error)
+        })?;
     if !response.failed_files.is_empty() && response.file_contexts.is_empty() {
         let failed = response
             .failed_files
@@ -282,19 +325,29 @@ async fn execute_remote_codebase_search_inner(
                 format!("{}: {reason}", file.path)
             })
             .join(", ");
-        return Ok(SearchCodebaseResult::Failed {
-            reason: SearchCodebaseFailureReason::InvalidFilePaths,
-            message: format!("Failed to read remote search result files: {failed}"),
-        });
+        return Ok((
+            SearchCodebaseResult::Failed {
+                reason: SearchCodebaseFailureReason::InvalidFilePaths,
+                message: format!("Failed to read remote search result files: {failed}"),
+            },
+            Some(RemoteCodebaseSearchFailureStage::ReadFileContext),
+        ));
     }
 
     let (fragments, mut file_contexts_by_identity) =
-        remote_fragments_and_file_contexts(response, &metadata)?;
+        remote_fragments_and_file_contexts(response, &metadata).map_err(|error| {
+            remote_search_pipeline_error(RemoteCodebaseSearchFailureStage::BuildFragments, error)
+        })?;
     if fragments.is_empty() {
-        return Ok(SearchCodebaseResult::Success { files: vec![] });
+        return Ok((SearchCodebaseResult::Success { files: vec![] }, None));
     }
 
-    let reranked_fragments = store_client.rerank_fragments(query, fragments).await?;
+    let reranked_fragments = store_client
+        .rerank_fragments(query, fragments)
+        .await
+        .map_err(|error| {
+            remote_search_pipeline_error(RemoteCodebaseSearchFailureStage::RerankFragments, error)
+        })?;
     let files = reranked_fragments
         .into_iter()
         .filter_map(|fragment| {
@@ -302,7 +355,7 @@ async fn execute_remote_codebase_search_inner(
         })
         .collect_vec();
 
-    Ok(SearchCodebaseResult::Success { files })
+    Ok((SearchCodebaseResult::Success { files }, None))
 }
 
 fn remote_search_response_from_result(
@@ -310,6 +363,7 @@ fn remote_search_response_from_result(
     total_search_duration: Duration,
     candidate_hash_count: Option<usize>,
     embedding_config: Option<EmbeddingConfig>,
+    failure_stage: Option<RemoteCodebaseSearchFailureStage>,
 ) -> RemoteSearchResponse {
     let returned_file_count = match &result {
         SearchCodebaseResult::Success { files } => Some(files.len()),
@@ -324,6 +378,7 @@ fn remote_search_response_from_result(
             candidate_hash_count,
             returned_file_count,
             embedding_config,
+            failure_stage,
         },
     }
 }

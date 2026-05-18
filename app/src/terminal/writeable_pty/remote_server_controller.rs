@@ -148,6 +148,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             | RemoteServerManagerEvent::CodebaseIndexStatusUpdated { .. }
             | RemoteServerManagerEvent::SetupStateChanged { .. }
             | RemoteServerManagerEvent::ClientRequestFailed { .. }
+            | RemoteServerManagerEvent::CodebaseIndexMutationFailed { .. }
             | RemoteServerManagerEvent::ServerMessageDecodingError { .. }
             | RemoteServerManagerEvent::BufferUpdated { .. }
             | RemoteServerManagerEvent::BufferConflictDetected { .. }

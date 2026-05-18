@@ -44,6 +44,16 @@ fn status_with_path(repo_path: &str) -> RemoteCodebaseIndexStatusWithPath {
     }
 }
 
+fn status_with_path_and_state(
+    repo_path: &str,
+    state: RemoteCodebaseIndexState,
+) -> RemoteCodebaseIndexStatusWithPath {
+    RemoteCodebaseIndexStatusWithPath {
+        remote_path: remote_path(repo_path),
+        status: status_with_state(repo_path, state),
+    }
+}
+
 #[test]
 fn snapshot_replaces_statuses_for_host() {
     let mut model = RemoteCodebaseIndexModel::default();
@@ -67,6 +77,54 @@ fn status_update_reports_only_actual_changes() {
         status_with_state("/repo", RemoteCodebaseIndexState::Stale),
     ));
 }
+#[test]
+fn status_update_returns_telemetry_metadata_for_actual_changes() {
+    let mut model = RemoteCodebaseIndexModel::default();
+    let remote_path = remote_path("/repo");
+    let mut indexing_status = status_with_state("/repo", RemoteCodebaseIndexState::Indexing);
+    indexing_status.root_hash = None;
+    indexing_status.progress_completed = Some(3);
+    indexing_status.progress_total = Some(10);
+
+    let update = model
+        .apply_status_update_with_telemetry(remote_path.clone(), indexing_status.clone())
+        .unwrap();
+
+    assert_eq!(
+        update,
+        RemoteCodebaseIndexStatusTelemetryUpdate {
+            state: RemoteCodebaseIndexState::Indexing,
+            previous_state: None,
+            has_root_hash: false,
+            has_failure_message: false,
+            progress_completed: Some(3),
+            progress_total: Some(10),
+        }
+    );
+    assert!(model
+        .apply_status_update_with_telemetry(remote_path.clone(), indexing_status)
+        .is_none());
+
+    let mut failed_status = status_with_state("/repo", RemoteCodebaseIndexState::Failed);
+    failed_status.root_hash = None;
+    failed_status.failure_message = Some("indexing failed".to_string());
+
+    let update = model
+        .apply_status_update_with_telemetry(remote_path, failed_status)
+        .unwrap();
+
+    assert_eq!(
+        update,
+        RemoteCodebaseIndexStatusTelemetryUpdate {
+            state: RemoteCodebaseIndexState::Failed,
+            previous_state: Some(RemoteCodebaseIndexState::Indexing),
+            has_root_hash: false,
+            has_failure_message: true,
+            progress_completed: None,
+            progress_total: None,
+        }
+    );
+}
 
 #[test]
 fn snapshot_reports_only_actual_changes_for_host() {
@@ -83,6 +141,64 @@ fn snapshot_reports_only_actual_changes_for_host() {
             status: status_with_state("/repo", RemoteCodebaseIndexState::Stale),
         }],
     ));
+}
+#[test]
+fn snapshot_returns_telemetry_only_for_changed_statuses() {
+    let mut model = RemoteCodebaseIndexModel::default();
+    let host = host();
+    let other_host = host_with_name("other-host");
+    model.apply_status_update(remote_path("/unchanged"), ready_status("/unchanged"));
+    model.apply_status_update(
+        remote_path("/changed"),
+        status_with_state("/changed", RemoteCodebaseIndexState::Queued),
+    );
+    model.apply_status_update(
+        remote_path_for_host(&other_host, "/other"),
+        ready_status("/other"),
+    );
+
+    let (changed, updates) = model.apply_statuses_snapshot_with_telemetry(
+        &host,
+        &[
+            status_with_path("/unchanged"),
+            status_with_path_and_state("/changed", RemoteCodebaseIndexState::Failed),
+            status_with_path("/new"),
+        ],
+    );
+
+    assert!(changed);
+    assert_eq!(updates.len(), 2);
+    assert!(updates.contains(&RemoteCodebaseIndexStatusTelemetryUpdate {
+        state: RemoteCodebaseIndexState::Failed,
+        previous_state: Some(RemoteCodebaseIndexState::Queued),
+        has_root_hash: true,
+        has_failure_message: false,
+        progress_completed: None,
+        progress_total: None,
+    }));
+    assert!(updates.contains(&RemoteCodebaseIndexStatusTelemetryUpdate {
+        state: RemoteCodebaseIndexState::Ready,
+        previous_state: None,
+        has_root_hash: true,
+        has_failure_message: false,
+        progress_completed: None,
+        progress_total: None,
+    }));
+    assert!(model
+        .status_for_repo(&remote_path_for_host(&other_host, "/other"))
+        .is_some());
+
+    let (changed, updates) = model.apply_statuses_snapshot_with_telemetry(
+        &host,
+        &[
+            status_with_path("/unchanged"),
+            status_with_path_and_state("/changed", RemoteCodebaseIndexState::Failed),
+            status_with_path("/new"),
+        ],
+    );
+
+    assert!(!changed);
+    assert!(updates.is_empty());
 }
 
 #[test]
