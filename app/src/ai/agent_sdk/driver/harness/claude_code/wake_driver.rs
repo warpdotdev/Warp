@@ -25,8 +25,7 @@ use super::parent_bridge::{
 };
 use super::{claude_command, prepare_claude_environment_config, ClaudeHarness};
 
-const CLAUDE_WAKE_PROMPT: &str =
-    "New lead-agent messages are available. Read the latest lead-agent updates and continue the task accordingly.";
+const CLAUDE_WAKE_PROMPT: &str = "New lead-agent messages are available. Read the latest lead-agent updates and continue the task accordingly.";
 pub(super) const CLAUDE_WAKE_PROMPT_FILE_NAME: &str = "wake-turn-prompt.txt";
 const CLAUDE_WAKE_EXTERNALLY_MANAGED_LISTENER_ENV_VARS: &[&str] = &[
     "OZ_MESSAGE_LISTENER_MANAGED_EXTERNALLY",
