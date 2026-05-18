@@ -10,12 +10,17 @@ use warp_editor::{
         BlockHeaderSize, BlockType as ContentBlockType, BufferBlockStyle, CodeBlockType,
     },
     render::model::{
-        BrokenLinkStyle, CheckBoxStyle, EmbeddedItem, HorizontalRuleStyle, InlineCodeStyle,
-        ParagraphStyles, RichTextStyles, TableStyle, PARAGRAPH_MIN_HEIGHT,
+        BlockSpacing, BrokenLinkStyle, CheckBoxStyle, EmbeddedItem, HorizontalRuleStyle,
+        IndentableBlockSpacing, InlineCodeStyle, ParagraphStyles, RichTextStyles, TableStyle,
     },
 };
 use warp_util::user_input::UserInput;
-use warpui::{elements::Border, fonts::FamilyId, ui_components::checkbox::HOVER_BACKGROUND_COLOR};
+use warpui::{
+    elements::{Border, ListIndentLevel, Margin, Padding},
+    fonts::FamilyId,
+    text_layout::DEFAULT_TOP_BOTTOM_RATIO,
+    ui_components::checkbox::HOVER_BACKGROUND_COLOR,
+};
 
 use crate::{
     appearance::Appearance,
@@ -38,15 +43,8 @@ pub mod model;
 pub mod notebook_command;
 mod omnibar;
 pub mod view;
-mod styles;
 
 pub use block_insertion_menu::BlockInsertionSource;
-use warpui::elements::ListIndentLevel;
-
-pub use styles::RichTextStylesExt;
-
-const NOTEBOOK_LINE_HEIGHT_RATIO: f32 = 1.6;
-const NOTEBOOK_BASELINE_RATIO: f32 = 0.7;
 
 #[derive(Clone, Copy)]
 pub(crate) struct MarkdownTableAppearance {
@@ -205,12 +203,39 @@ pub(crate) fn markdown_table_style(
 
 /// Build [`RichTextStyles`] based on the current [`Appearance`].
 pub fn rich_text_styles(appearance: &Appearance, font_settings: &FontSettings) -> RichTextStyles {
-    rich_text_styles_internal(appearance, font_settings, NOTEBOOK_LINE_HEIGHT_RATIO, NOTEBOOK_BASELINE_RATIO)
+    // Bump the line height ratio slightly so soft-wrapped and hard-wrapped lines
+    // have consistent, comfortable spacing.
+    let line_height_ratio = appearance.line_height_ratio() + 0.15;
+    let compact_text_spacing = BlockSpacing {
+        margin: Margin::uniform(0.),
+        padding: Padding::uniform(0.),
+    };
+    let compact_indentable = IndentableBlockSpacing::new(Margin::uniform(0.), 20.);
+    let mut styles = rich_text_styles_internal(
+        appearance,
+        font_settings,
+        line_height_ratio,
+        DEFAULT_TOP_BOTTOM_RATIO,
+    );
+    styles.minimum_paragraph_height = None;
+    styles.cursor_width = 3.;
+    styles.show_placeholder_text_on_empty_block = true;
+    // Only compact text block spacings; keep the default code block spacing.
+    styles.block_spacings.text = compact_text_spacing;
+    styles.block_spacings.header = compact_text_spacing;
+    styles.block_spacings.task_list = compact_indentable.clone();
+    styles.block_spacings.ordered_list = compact_indentable.clone();
+    styles.block_spacings.unordered_list = compact_indentable;
+    styles
 }
 
 /// Build [`RichTextStyles`] based on the current [`Appearance`].
-fn rich_text_styles_internal(appearance: &Appearance, font_settings: &FontSettings, line_height_ratio: f32, baseline_ratio: f32) -> RichTextStyles {
-
+fn rich_text_styles_internal(
+    appearance: &Appearance,
+    font_settings: &FontSettings,
+    line_height_ratio: f32,
+    baseline_ratio: f32,
+) -> RichTextStyles {
     let theme = appearance.theme();
     let inline_font_color: ColorU = theme.terminal_colors().normal.red.into();
     let font_size = derived_notebook_font_size(font_settings);
@@ -277,14 +302,12 @@ fn rich_text_styles_internal(appearance: &Appearance, font_settings: &FontSettin
         },
         block_spacings: Default::default(),
         show_placeholder_text_on_empty_block: true,
-        minimum_paragraph_height: Some(PARAGRAPH_MIN_HEIGHT),
-        cursor_width: 1.,
+        minimum_paragraph_height: None,
+        cursor_width: 3.,
         highlight_urls: true,
         table_style: markdown_table_style(appearance, appearance.ui_font_family(), font_size),
     }
 }
-
-
 
 impl From<BlockType> for BufferBlockStyle {
     fn from(block_type: BlockType) -> Self {

@@ -2,7 +2,11 @@ use crate::code::editor::comments::{EditorCommentsModel, PendingCommentEvent};
 use crate::code::editor::line::EditorLineLocation;
 use crate::code_review::comments::{CommentId, CommentOrigin};
 use crate::editor::InteractionState;
-use crate::notebooks::editor::{model::NotebooksEditorModel, view::{EditorViewEvent, RichTextEditorConfig, RichTextEditorView}, RichTextStylesExt};
+use crate::notebooks::editor::{
+    model::NotebooksEditorModel,
+    rich_text_styles,
+    view::{EditorViewEvent, RichTextEditorConfig, RichTextEditorView},
+};
 use crate::notebooks::link::{NotebookLinks, SessionSource};
 use crate::settings::FontSettings;
 use crate::ui_components::blended_colors;
@@ -15,7 +19,6 @@ use pathfinder_geometry::vector::Vector2F;
 use std::cell::RefCell;
 use warp_core::ui::{appearance::Appearance, theme::Fill};
 use warp_editor::render::element::VerticalExpansionBehavior;
-use warp_editor::render::model::RichTextStyles;
 use warpui::{
     elements::{
         Border, ChildView, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
@@ -514,10 +517,7 @@ fn create_comment_markdown_editor_inner<V>(
 where
     V: View,
 {
-    // Use the style factory as the single source of truth for initial styles.
-    let style_factory: fn(&Appearance, &FontSettings) -> RichTextStyles =
-        RichTextStyles::new_with_default_line_height;
-    let rich_text_styles = style_factory(Appearance::as_ref(ctx), FontSettings::as_ref(ctx));
+    let rich_text_styles = rich_text_styles(Appearance::as_ref(ctx), FontSettings::as_ref(ctx));
 
     let window_id = ctx.window_id();
     let parent_view_id = ctx.view_id();
@@ -544,7 +544,6 @@ where
                 can_execute_shell_commands: Some(false),
                 disable_block_insertion_menu: true,
                 disable_scrolling,
-                style_factory: Some(style_factory),
             },
             ctx,
         )

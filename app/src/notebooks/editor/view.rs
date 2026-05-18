@@ -21,7 +21,7 @@ use warp_editor::{
             DisplayOptions, DisplayStateHandle, RichTextAction, RichTextElement,
             VerticalExpansionBehavior,
         },
-        model::{BlockItem, HitTestBlockType, Location, RenderState, RichTextStyles},
+        model::{BlockItem, HitTestBlockType, Location, RenderState},
     },
     selection::{TextDirection, TextUnit},
 };
@@ -216,11 +216,7 @@ pub fn init(app: &mut AppContext) {
             EditorViewAction::DeleteWordLeft,
             text_entry.clone(),
         ),
-        FixedBinding::new(
-            "meta-d",
-            EditorViewAction::CutWordRight,
-            text_entry.clone(),
-        ),
+        FixedBinding::new("meta-d", EditorViewAction::CutWordRight, text_entry.clone()),
         FixedBinding::new_per_platform(
             PerPlatformKeystroke {
                 mac: "shift-alt-left",
@@ -1058,9 +1054,6 @@ pub struct RichTextEditorView {
 
     /// When true, the block insertion menu (slash menu) is disabled.
     disable_block_insertion_menu: bool,
-
-    /// Custom factory for rebuilding [`RichTextStyles`] when appearance or font settings change.
-    style_factory: Option<fn(&Appearance, &FontSettings) -> RichTextStyles>,
 }
 
 #[derive(Default)]
@@ -1084,10 +1077,6 @@ pub struct RichTextEditorConfig {
     /// Enable or disable the block insertion menu (slash menu).
     /// When disabled, typing "/" will not open the menu.
     pub disable_block_insertion_menu: bool,
-
-    /// Custom factory for rebuilding [`RichTextStyles`] when appearance or font settings change.
-    /// When `None`, the default notebook styles are used.
-    pub style_factory: Option<fn(&Appearance, &FontSettings) -> RichTextStyles>,
 }
 
 impl RichTextEditorView {
@@ -1172,7 +1161,6 @@ impl RichTextEditorView {
             can_execute_shell_commands: config.can_execute_shell_commands.unwrap_or(true),
             disable_scrolling: config.disable_scrolling,
             disable_block_insertion_menu: config.disable_block_insertion_menu,
-            style_factory: config.style_factory,
         }
     }
 
@@ -1293,10 +1281,7 @@ impl RichTextEditorView {
     fn handle_appearance_or_font_change(&mut self, ctx: &mut ViewContext<Self>) {
         let font_settings = FontSettings::as_ref(ctx);
         let appearance = Appearance::as_ref(ctx);
-        let new_styles = match self.style_factory {
-            Some(factory) => factory(appearance, font_settings),
-            None => rich_text_styles(appearance, font_settings),
-        };
+        let new_styles = rich_text_styles(appearance, font_settings);
         self.model.update(ctx, move |model, ctx| {
             model.update_rich_text_styles(new_styles, ctx);
         });
