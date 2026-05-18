@@ -429,9 +429,18 @@ impl OrchestrationPillBar {
                 ),
             ]
         };
-        let is_in_progress = BlocklistAIHistoryModel::as_ref(ctx)
+        // Stop is shown only while in progress; Kill becomes Delete once
+        // the agent has reached a terminal state. Blocked is treated as
+        // non-terminal (still mid-flight, waiting on user input).
+        let conversation_status = BlocklistAIHistoryModel::as_ref(ctx)
             .conversation(&conversation_id)
-            .is_some_and(|conversation| conversation.status().is_in_progress());
+            .map(|conversation| conversation.status().clone());
+        let is_in_progress = conversation_status
+            .as_ref()
+            .is_some_and(|status| status.is_in_progress());
+        let is_terminal = conversation_status
+            .as_ref()
+            .is_some_and(|status| status.is_done());
         items.push(MenuItem::Separator);
         if is_in_progress {
             items.push(destructive_item(
@@ -440,9 +449,14 @@ impl OrchestrationPillBar {
                 OrchestrationPillBarAction::Stop(conversation_id),
             ));
         }
+        let (kill_label, kill_icon) = if is_terminal {
+            ("Delete agent", Icon::Trash)
+        } else {
+            ("Kill agent", Icon::X)
+        };
         items.push(destructive_item(
-            "Kill agent",
-            Icon::X,
+            kill_label,
+            kill_icon,
             OrchestrationPillBarAction::Kill(conversation_id),
         ));
 
