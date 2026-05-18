@@ -81,7 +81,7 @@ const ADDON_CREDITS_DESCRIPTION: &str = "Add-on credits are purchased in prepaid
 const ADDITIONAL_ADDON_CREDITS_DESCRIPTION_FOR_TEAM: &str =
     "Add-on credits purchased here are user-scoped and added to your personal balance.";
 const ADDITIONAL_ADDON_CREDITS_DESCRIPTION_FOR_BUILD_PLAN: &str =
-    "Service account add-on credits charge your team owner.";
+    "Service account add-on credits charge the team owner.";
 
 const AUTO_RELOAD_DELINQUENT_WARNING_STRING: &str =
     "Restricted due to billing issue. Update your payment method to purchase add-on credits.";
