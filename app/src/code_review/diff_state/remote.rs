@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use crate::remote_server::diff_state_proto::{try_decode_file_delta, try_decode_snapshot};
 use crate::remote_server::proto;
-use crate::util::git::{Commit, PrInfo};
+use crate::util::git::{BranchEntry, Commit, PrInfo};
 use remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
 use warp_core::{HostId, SessionId};
 use warp_util::remote_path::RemotePath;
@@ -139,6 +139,28 @@ impl RemoteDiffStateModel {
                     return;
                 }
                 self.handle_file_delta_received(delta, ctx);
+            }
+            RemoteServerManagerEvent::GetBranchesResponse {
+                repo_path,
+                result,
+                ..
+            } if repo_path == &self.remote_path.path => {
+                let branches = match result {
+                    Ok(branch_infos) => branch_infos
+                        .iter()
+                        .map(|info| BranchEntry {
+                            name: info.name.clone(),
+                            is_main: info.is_main,
+                        })
+                        .collect(),
+                    Err(err) => {
+                        log::warn!(
+                            "RemoteDiffStateModel: GetBranches failed: {err}"
+                        );
+                        vec![]
+                    }
+                };
+                ctx.emit(DiffStateModelEvent::BranchesReceived(branches));
             }
             RemoteServerManagerEvent::HostDisconnected { host_id }
                 if host_id == &self.remote_path.host_id =>
@@ -456,6 +478,17 @@ impl RemoteDiffStateModel {
         self.unsubscribe(ctx);
         self.mode = mode;
         self.resubscribe(ctx);
+    }
+
+    /// Fetches branches for the remote repository via the `GetBranches` RPC.
+    /// The response is handled in `handle_manager_event` which emits
+    /// `DiffStateModelEvent::BranchesReceived`.
+    pub fn fetch_branches(&self, ctx: &mut ModelContext<Self>) {
+        let session_id = self.session_id;
+        let remote_path = self.remote_path.clone();
+        RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
+            mgr.get_branches(session_id, remote_path, None, false, ctx);
+        });
     }
 
     /// Sends a `DiscardFiles` request to the remote server.
