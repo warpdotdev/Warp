@@ -194,7 +194,7 @@ impl Ord for AbsoluteMatch {
 ///
 /// Similar to `BlockGridMatch` but uses `AbsoluteMatch` for the range, allowing
 /// the caller to convert to relative coordinates when needed.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AsyncBlockGridMatch {
     /// The type of grid in which the match was found.
     pub grid_type: GridType,
@@ -208,7 +208,7 @@ pub struct AsyncBlockGridMatch {
 ///
 /// Mirrors the data carried by `BlockListMatch::RichContent` in the sync path,
 /// so callers can synthesize a `BlockListMatch` from either path.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AsyncFocusedAiMatch {
     /// The view id of the rich content block.
     pub view_id: EntityId,
@@ -219,7 +219,7 @@ pub struct AsyncFocusedAiMatch {
 }
 
 /// Resolution of the global focused match index to either a terminal or an AI match.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum FocusedMatchResolution {
     Terminal(AsyncBlockGridMatch),
     Ai(AsyncFocusedAiMatch),
@@ -399,6 +399,18 @@ pub struct AsyncFindController {
     /// change
     cached_focused_match: Option<FocusedMatchResolution>,
 
+    /// Identity of a previously focused match that could not be re-located
+    /// during the most recent mutation of `block_results` (e.g. because the
+    /// match was removed by `remove_block` and the rescan has not yet
+    /// repopulated it).
+    ///
+    /// While this is `Some`, the `BlockGridMatches` auto-select shortcut is
+    /// suppressed so that a freshly arriving result chunk gets a chance to
+    /// re-locate this identity before we silently "settle" on match 0.
+    /// Cleared either when the identity is re-located or when the queue
+    /// drains (`FindTaskMessage::Done`).
+    pending_focus_identity: Option<FocusedMatchResolution>,
+
     /// Monotonically increasing generation counter, bumped each time new streams
     /// are spawned. The result stream callback captures the generation at spawn
     /// time and skips messages that arrive after a newer generation has started,
@@ -423,6 +435,7 @@ impl AsyncFindController {
             focused_match_index: None,
             current_find_options: None,
             cached_focused_match: None,
+            pending_focus_identity: None,
             generation: 0,
         }
     }
@@ -547,8 +560,49 @@ impl AsyncFindController {
     /// `None` if the index is out of range.
     fn compute_focused_match(&self) -> Option<FocusedMatchResolution> {
         let focused_idx = self.focused_match_index?;
-        let mut current_idx = 0;
+        let mut result = None;
+        self.walk_matches(|idx, resolution| {
+            if idx == focused_idx {
+                result = Some(resolution);
+                true
+            } else {
+                false
+            }
+        });
+        result
+    }
 
+    /// Finds the global match index of a previously captured match identity
+    /// in the *current* state of `block_results`.
+    ///
+    /// Uses the same traversal order as `compute_focused_match`, so the
+    /// returned index is directly assignable to `focused_match_index`.
+    /// Returns `None` if no equal `FocusedMatchResolution` exists in the
+    /// current results (e.g. the underlying block was removed or the
+    /// terminal range was deleted by a `DirtyRangeMatches` update).
+    fn relocate_focused_match(&self, captured: &FocusedMatchResolution) -> Option<usize> {
+        let mut found = None;
+        self.walk_matches(|idx, resolution| {
+            if &resolution == captured {
+                found = Some(idx);
+                true
+            } else {
+                false
+            }
+        });
+        found
+    }
+
+    /// Walks every match in current visual order, invoking `f(global_index,
+    /// resolution)` for each. Stops as soon as `f` returns `true`.
+    ///
+    /// This is the shared traversal that both `compute_focused_match` and
+    /// `relocate_focused_match` are built on; keeping a single implementation
+    /// here ensures the two stay in sync.
+    fn walk_matches<F>(&self, mut f: F)
+    where
+        F: FnMut(usize, FocusedMatchResolution) -> bool,
+    {
         // Determine grid iteration order within each terminal block.
         let grid_types: [GridType; 2] = match self.block_sort_direction {
             BlockSortDirection::MostRecentFirst => [GridType::PromptAndCommand, GridType::Output],
@@ -585,6 +639,7 @@ impl AsyncFindController {
             BlockSortDirection::MostRecentLast
         );
 
+        let mut current_idx = 0;
         for (_, block_info) in &ordered_blocks {
             match block_info {
                 BlockInfo::Terminal { block_index, .. } => {
@@ -603,14 +658,14 @@ impl AsyncFindController {
                                     Box::new(matches.iter())
                                 };
                             for match_range in iter {
-                                if current_idx == focused_idx {
-                                    return Some(FocusedMatchResolution::Terminal(
-                                        AsyncBlockGridMatch {
-                                            block_index: *block_index,
-                                            grid_type,
-                                            range: match_range.clone(),
-                                        },
-                                    ));
+                                let resolution =
+                                    FocusedMatchResolution::Terminal(AsyncBlockGridMatch {
+                                        block_index: *block_index,
+                                        grid_type,
+                                        range: match_range.clone(),
+                                    });
+                                if f(current_idx, resolution) {
+                                    return;
                                 }
                                 current_idx += 1;
                             }
@@ -634,12 +689,13 @@ impl AsyncFindController {
                                 Box::new(ai_matches.iter())
                             };
                         for &match_id in iter {
-                            if current_idx == focused_idx {
-                                return Some(FocusedMatchResolution::Ai(AsyncFocusedAiMatch {
-                                    view_id: *view_id,
-                                    match_id,
-                                    total_index: *total_index,
-                                }));
+                            let resolution = FocusedMatchResolution::Ai(AsyncFocusedAiMatch {
+                                view_id: *view_id,
+                                match_id,
+                                total_index: *total_index,
+                            });
+                            if f(current_idx, resolution) {
+                                return;
                             }
                             current_idx += 1;
                         }
@@ -647,8 +703,70 @@ impl AsyncFindController {
                 }
             }
         }
+    }
 
-        None
+    /// Runs `mutation` against `self` while preserving the *identity* of the
+    /// previously focused match across the mutation.
+    ///
+    /// On entry, captures the identity of the current focused match (or, if
+    /// there is no current focus but a prior mutation could not find its
+    /// match, the `pending_focus_identity`). After `mutation` runs:
+    ///
+    /// 1. If we captured an identity, try to relocate it in the new state.
+    ///    On success the focused index is updated to that location and any
+    ///    stale `pending_focus_identity` is cleared.
+    /// 2. If the identity cannot be re-located (e.g. the match was removed),
+    ///    the identity is stashed in `pending_focus_identity` so a
+    ///    subsequent mutation gets another chance to find it, and the
+    ///    current `focused_match_index` is clamped into range.
+    /// 3. If no identity was captured, the focused index is simply clamped.
+    ///
+    /// `cached_focused_match` is recomputed once at the end.
+    fn with_focus_preservation<F>(&mut self, mutation: F)
+    where
+        F: FnOnce(&mut Self),
+    {
+        // Prefer the live cache; fall back to a stashed identity from an
+        // earlier mutation that could not relocate. This handles the
+        // full-block-invalidation + chunked-rescan handoff: `remove_block`
+        // stashes to pending, and the subsequent `BlockGridMatches` arrival
+        // resumes from pending.
+        let captured = self
+            .cached_focused_match
+            .clone()
+            .or_else(|| self.pending_focus_identity.clone());
+
+        mutation(self);
+
+        match captured {
+            Some(identity) => match self.relocate_focused_match(&identity) {
+                Some(new_idx) => {
+                    self.focused_match_index = Some(new_idx);
+                    self.pending_focus_identity = None;
+                }
+                None => {
+                    self.pending_focus_identity = Some(identity);
+                    self.clamp_focused_match_index_no_cache();
+                }
+            },
+            None => {
+                self.clamp_focused_match_index_no_cache();
+            }
+        }
+        self.update_cached_focused_match();
+    }
+
+    /// Clamp variant that does NOT recompute `cached_focused_match`.
+    ///
+    /// Used by `with_focus_preservation`, which recomputes the cache once at
+    /// the end after all of its own bookkeeping has run.
+    fn clamp_focused_match_index_no_cache(&mut self) {
+        let total = self.match_count();
+        if total == 0 {
+            self.focused_match_index = None;
+        } else {
+            self.focused_match_index = self.focused_match_index.map(|i| i.min(total - 1));
+        }
     }
 
     /// Registers a rich content view for AI block searching.
@@ -706,6 +824,7 @@ impl AsyncFindController {
         self.block_results.clear();
         self.focused_match_index = None;
         self.cached_focused_match = None;
+        self.pending_focus_identity = None;
         self.current_find_options = Some(options.clone());
         self.status = AsyncFindStatus::Scanning;
 
@@ -783,34 +902,45 @@ impl AsyncFindController {
                 matches,
             } => {
                 if !matches.is_empty() {
-                    // Store TotalIndex for this block if not already known
-                    // (e.g. the block was added after the initial scan).
-                    if !self
-                        .block_results
-                        .terminal_total_indices
-                        .contains_key(&block_index)
-                    {
-                        let total_index = {
-                            let model = self.terminal_model.lock();
-                            total_index_for_block(block_index, model.block_list())
-                        };
-                        self.block_results
+                    self.with_focus_preservation(|me| {
+                        // Store TotalIndex for this block if not already known
+                        // (e.g. the block was added after the initial scan).
+                        // Done inside the mutation so that any pending identity
+                        // pointing at this block can be relocated by the
+                        // post-mutation walk, which uses these indices.
+                        if !me
+                            .block_results
                             .terminal_total_indices
-                            .insert(block_index, total_index);
-                    }
+                            .contains_key(&block_index)
+                        {
+                            let total_index = {
+                                let model = me.terminal_model.lock();
+                                total_index_for_block(block_index, model.block_list())
+                            };
+                            me.block_results
+                                .terminal_total_indices
+                                .insert(block_index, total_index);
+                        }
 
-                    self.block_results
-                        .terminal_matches
-                        .entry((block_index, grid_type))
-                        .or_default()
-                        .extend(matches);
+                        me.block_results
+                            .terminal_matches
+                            .entry((block_index, grid_type))
+                            .or_default()
+                            .extend(matches);
+                    });
 
-                    // Auto-select the first match when results first arrive.
-                    if self.focused_match_index.is_none() {
+                    // Auto-select the first match when results first arrive,
+                    // but only if (a) we have no prior focus and (b) we are
+                    // not still waiting to relocate a previously focused
+                    // match. The pending check is what keeps focus from
+                    // silently snapping back to match 0 mid-rescan.
+                    if self.focused_match_index.is_none()
+                        && self.pending_focus_identity.is_none()
+                        && self.match_count() > 0
+                    {
                         self.focused_match_index = Some(0);
+                        self.update_cached_focused_match();
                     }
-
-                    self.clamp_focused_match_index();
                 }
             }
             FindTaskMessage::DirtyRangeMatches {
@@ -819,51 +949,45 @@ impl AsyncFindController {
                 dirty_range,
                 matches,
             } => {
-                self.block_results.update_dirty_matches(
-                    block_index,
-                    grid_type,
-                    dirty_range,
-                    matches,
-                );
-                // Prune matches that have been truncated from scrollback.
-                // Dirty range messages arrive when the active block receives
-                // new output, which is exactly when truncation can occur.
-                self.prune_truncated_matches(block_index, grid_type);
-                self.clamp_focused_match_index();
+                self.with_focus_preservation(|me| {
+                    me.block_results.update_dirty_matches(
+                        block_index,
+                        grid_type,
+                        dirty_range,
+                        matches,
+                    );
+                    // Prune matches that have been truncated from scrollback.
+                    // Dirty range messages arrive when the active block
+                    // receives new output, which is exactly when truncation
+                    // can occur.
+                    me.prune_truncated_matches(block_index, grid_type);
+                });
             }
             FindTaskMessage::ScanAIBlock {
                 view_id,
                 total_index,
             } => {
                 // Scan AI block on main thread.
-                if let Some(view) = self.rich_content_views.get(&view_id) {
-                    if let Some(config) = &self.current_config {
-                        let options = FindOptions {
-                            query: Some(config.query.clone()),
-                            is_case_sensitive: config.is_case_sensitive,
-                            is_regex_enabled: config.is_regex_enabled,
-                            blocks_to_include_in_results: None,
-                        };
-                        let start = instant::Instant::now();
-                        let match_ids = view.run_find(&options, ctx);
-                        let elapsed = start.elapsed();
-                        log::trace!(
-                            "[async_find] AI block scan took {}ms for view_id={:?}",
-                            elapsed.as_millis(),
-                            view_id
-                        );
-                        if !match_ids.is_empty() {
-                            self.block_results.ai_matches.insert(view_id, match_ids);
-                            self.block_results
+                let match_ids = self.run_ai_scan(view_id, ctx);
+                if let Some(match_ids) = match_ids {
+                    if !match_ids.is_empty() {
+                        self.with_focus_preservation(|me| {
+                            me.block_results.ai_matches.insert(view_id, match_ids);
+                            me.block_results
                                 .ai_total_indices
                                 .insert(view_id, total_index);
-                            self.clamp_focused_match_index();
-                        }
+                        });
                     }
                 }
             }
             FindTaskMessage::Done => {
                 self.status = AsyncFindStatus::Complete;
+                // The queue has drained; we will not get any more chunks for
+                // this scan, so any unresolved pending identity is gone for
+                // good. Clearing here lets a subsequent `BlockGridMatches`
+                // arrival (e.g. from a future `invalidate_block`) auto-select
+                // normally.
+                self.pending_focus_identity = None;
             }
         }
 
@@ -871,6 +995,33 @@ impl AsyncFindController {
         if let Some(tx) = &self.throttle_tx {
             let _ = tx.try_send(());
         }
+    }
+
+    /// Runs the AI block scan for `view_id` against the currently registered
+    /// rich content view, returning the resulting match ids (or `None` if
+    /// either the view or the current find config is unavailable).
+    fn run_ai_scan(
+        &self,
+        view_id: EntityId,
+        ctx: &mut ModelContext<TerminalFindModel>,
+    ) -> Option<Vec<RichContentMatchId>> {
+        let view = self.rich_content_views.get(&view_id)?;
+        let config = self.current_config.as_ref()?;
+        let options = FindOptions {
+            query: Some(config.query.clone()),
+            is_case_sensitive: config.is_case_sensitive,
+            is_regex_enabled: config.is_regex_enabled,
+            blocks_to_include_in_results: None,
+        };
+        let start = instant::Instant::now();
+        let match_ids = view.run_find(&options, ctx);
+        let elapsed = start.elapsed();
+        log::trace!(
+            "[async_find] AI block scan took {}ms for view_id={:?}",
+            elapsed.as_millis(),
+            view_id
+        );
+        Some(match_ids)
     }
 
     /// Cancels the current find operation, if any.
@@ -902,6 +1053,7 @@ impl AsyncFindController {
         self.block_results.clear();
         self.focused_match_index = None;
         self.cached_focused_match = None;
+        self.pending_focus_identity = None;
         self.status = AsyncFindStatus::Idle;
         self.current_find_options = None;
 
@@ -936,10 +1088,15 @@ impl AsyncFindController {
         };
 
         // For a full block rescan (no dirty range), clear existing results now
-        // so stale matches are not shown while the rescan is pending.
+        // so stale matches are not shown while the rescan is pending. Wrap in
+        // `with_focus_preservation` so the identity of the previously focused
+        // match is captured BEFORE `remove_block` wipes it; the subsequent
+        // chunked `BlockGridMatches` arrivals from the rescan will then be
+        // able to relocate it via `pending_focus_identity`.
         if dirty_info.is_none() {
-            self.block_results.remove_block(block_index);
-            self.clamp_focused_match_index();
+            self.with_focus_preservation(|me| {
+                me.block_results.remove_block(block_index);
+            });
         }
 
         log::trace!(
@@ -1047,6 +1204,7 @@ impl AsyncFindController {
         self.block_results.clear();
         self.focused_match_index = None;
         self.cached_focused_match = None;
+        self.pending_focus_identity = None;
         self.current_find_options = Some(options.clone());
         self.status = AsyncFindStatus::Scanning;
 

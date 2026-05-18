@@ -938,3 +938,313 @@ fn test_focused_match_index_walks_across_terminal_and_ai_blocks() {
     assert_eq!(focused_terminal.block_index, BlockIndex(0));
     assert_eq!(focused_terminal.grid_type, GridType::Output);
 }
+
+/// Seeds a controller with a single terminal block containing `matches` at
+/// the given rows, registers its TotalIndex, and returns the controller.
+fn make_controller_with_block(block_index: BlockIndex, rows: &[u64]) -> AsyncFindController {
+    let mock_terminal_model = TerminalModel::mock(None, None);
+    let terminal_model = Arc::new(FairMutex::new(mock_terminal_model));
+    let mut controller = AsyncFindController::new(terminal_model);
+    {
+        let results = controller.block_results_mut();
+        results.terminal_matches.insert(
+            (block_index, GridType::Output),
+            rows.iter().copied().map(make_match).collect(),
+        );
+        results
+            .terminal_total_indices
+            .insert(block_index, TotalIndex(1));
+    }
+    controller
+}
+
+#[test]
+fn test_with_focus_preservation_preserves_identity_when_inserting_before() {
+    // Block has matches at rows 10, 20, 30; focus on row 20 (global index 1
+    // for MostRecentLast with iter().rev() => 30, 20, 10 ordering).
+    let block_index = BlockIndex(0);
+    let mut controller = make_controller_with_block(block_index, &[10, 20, 30]);
+
+    // Focus index 1 -> row 20 in reverse iteration.
+    controller.focused_match_index = Some(1);
+    controller.update_cached_focused_match();
+    let focused_before = controller
+        .focused_terminal_match()
+        .expect("Initial focus should resolve.");
+    assert_eq!(focused_before.range.start_row(), 20);
+
+    // Simulate streaming a new match in via DirtyRangeMatches that inserts
+    // a row BEFORE the focused row 20 (e.g. row 5 in a non-overlapping dirty
+    // range). After the mutation: rows 5, 10, 20, 30. The identity of the
+    // focused match (row 20) must be preserved; the global index shifts.
+    controller.with_focus_preservation(|me| {
+        me.block_results.update_dirty_matches(
+            block_index,
+            GridType::Output,
+            0..=6,
+            vec![make_match(5)],
+        );
+    });
+
+    let focused_after = controller
+        .focused_terminal_match()
+        .expect("Focus identity should be preserved.");
+    assert_eq!(
+        focused_after.range.start_row(),
+        20,
+        "Focused row identity must be preserved across insertion."
+    );
+    assert!(
+        controller.pending_focus_identity.is_none(),
+        "Successful relocation must clear pending_focus_identity."
+    );
+    // With MostRecentLast and reverse iteration, rows reversed are
+    // [30, 20, 10, 5]. Row 20 is at global index 1 unchanged.
+    assert_eq!(controller.focused_match_index, Some(1));
+}
+
+#[test]
+fn test_with_focus_preservation_stashes_pending_when_match_is_replaced() {
+    // Block has matches at rows 10, 20, 30; focus on row 20.
+    let block_index = BlockIndex(0);
+    let mut controller = make_controller_with_block(block_index, &[10, 20, 30]);
+
+    controller.focused_match_index = Some(1);
+    controller.update_cached_focused_match();
+    assert_eq!(
+        controller
+            .focused_terminal_match()
+            .map(|m| m.range.start_row()),
+        Some(20)
+    );
+
+    // Dirty range 18..=22 replaces the focused row 20. New matches: just row
+    // 19. After mutation: 10, 19, 30. Row 20's identity cannot be relocated.
+    controller.with_focus_preservation(|me| {
+        me.block_results.update_dirty_matches(
+            block_index,
+            GridType::Output,
+            18..=22,
+            vec![make_match(19)],
+        );
+    });
+
+    assert!(
+        controller.pending_focus_identity.is_some(),
+        "Identity must be stashed when the focused match disappears."
+    );
+    // Focused index is clamped into range (3 matches remain, max idx 2).
+    let idx = controller
+        .focused_match_index
+        .expect("Clamp should leave a valid index.");
+    assert!(idx < 3, "Clamped focus index must be in range.");
+}
+
+#[test]
+fn test_with_focus_preservation_resolves_pending_when_match_reappears() {
+    let block_index = BlockIndex(0);
+    let mut controller = make_controller_with_block(block_index, &[10, 20, 30]);
+
+    controller.focused_match_index = Some(1);
+    controller.update_cached_focused_match();
+
+    // First mutation: drop everything in the block (mirrors `remove_block`
+    // during a full invalidate). Pending is stashed.
+    controller.with_focus_preservation(|me| {
+        me.block_results.remove_block(block_index);
+    });
+    assert!(controller.pending_focus_identity.is_some());
+    assert_eq!(controller.match_count(), 0);
+    assert!(controller.focused_match_index.is_none());
+
+    // Second mutation: rescan delivers the same matches back, including
+    // row 20. The pending identity should resolve and clear.
+    controller.with_focus_preservation(|me| {
+        me.block_results
+            .terminal_total_indices
+            .insert(block_index, TotalIndex(1));
+        me.block_results.terminal_matches.insert(
+            (block_index, GridType::Output),
+            vec![make_match(10), make_match(20), make_match(30)],
+        );
+    });
+
+    assert!(
+        controller.pending_focus_identity.is_none(),
+        "Pending identity must clear on successful relocation."
+    );
+    let focused = controller
+        .focused_terminal_match()
+        .expect("Focus must be relocated to the same row.");
+    assert_eq!(focused.range.start_row(), 20);
+    assert_eq!(controller.focused_match_index, Some(1));
+}
+
+#[test]
+fn test_block_grid_matches_auto_select_skipped_when_pending_identity_set() {
+    App::test((), |mut app| async move {
+        let mock_terminal_model = TerminalModel::mock(None, None);
+        let terminal_model = Arc::new(FairMutex::new(mock_terminal_model));
+
+        // Construct a controller pre-seeded with a focused match, then
+        // synthesize a pending identity via a remove_block-style mutation.
+        let test_model = app.add_model(|_| {
+            let mut model = TerminalFindModel::new(terminal_model.clone());
+            let mut controller = AsyncFindController::new(terminal_model.clone());
+            controller.set_test_status(AsyncFindStatus::Scanning);
+
+            // Seed: block 0 with one match, focused.
+            {
+                let results = controller.block_results_mut();
+                results
+                    .terminal_matches
+                    .insert((BlockIndex(0), GridType::Output), vec![make_match(10)]);
+                results
+                    .terminal_total_indices
+                    .insert(BlockIndex(0), TotalIndex(1));
+            }
+            controller.focused_match_index = Some(0);
+            controller.update_cached_focused_match();
+
+            // Wipe the block via with_focus_preservation, which stashes the
+            // identity into pending_focus_identity.
+            controller.with_focus_preservation(|me| {
+                me.block_results.remove_block(BlockIndex(0));
+            });
+            assert!(controller.pending_focus_identity.is_some());
+
+            model.async_find_controller = Some(controller);
+            model
+        });
+
+        // Now deliver BlockGridMatches for an UNRELATED row (e.g. row 99)
+        // that does NOT match the pending identity. Auto-select MUST NOT
+        // fire while pending is set.
+        test_model.update(&mut app, |model, ctx| {
+            model
+                .async_find_controller
+                .as_mut()
+                .unwrap()
+                .process_message(
+                    FindTaskMessage::BlockGridMatches {
+                        block_index: BlockIndex(0),
+                        grid_type: GridType::Output,
+                        matches: vec![make_match(99)],
+                    },
+                    ctx,
+                );
+        });
+
+        let (focused, pending_set, count) = test_model.update(&mut app, |model, _ctx| {
+            let c = model.async_find_controller.as_ref().unwrap();
+            (
+                c.focused_match_index(),
+                c.pending_focus_identity.is_some(),
+                c.match_count(),
+            )
+        });
+        assert_eq!(count, 1, "New match should be stored.");
+        assert!(
+            pending_set,
+            "Pending identity should still be set; row 99 != row 10."
+        );
+        assert!(
+            focused.is_none(),
+            "Auto-select must be suppressed while pending_focus_identity is set."
+        );
+    });
+}
+
+#[test]
+fn test_block_grid_matches_auto_select_fires_without_pending() {
+    App::test((), |mut app| async move {
+        let mock_terminal_model = TerminalModel::mock(None, None);
+        let terminal_model = Arc::new(FairMutex::new(mock_terminal_model));
+
+        let test_model = app.add_model(|_| {
+            let mut model = TerminalFindModel::new(terminal_model.clone());
+            let mut controller = AsyncFindController::new(terminal_model.clone());
+            controller.set_test_status(AsyncFindStatus::Scanning);
+            model.async_find_controller = Some(controller);
+            model
+        });
+
+        // No prior focus, no pending. First BlockGridMatches arrival should
+        // auto-select index 0 (regression check).
+        test_model.update(&mut app, |model, ctx| {
+            model
+                .async_find_controller
+                .as_mut()
+                .unwrap()
+                .process_message(
+                    FindTaskMessage::BlockGridMatches {
+                        block_index: BlockIndex(0),
+                        grid_type: GridType::Output,
+                        matches: vec![make_match(5), make_match(10)],
+                    },
+                    ctx,
+                );
+        });
+
+        let focused = test_model.update(&mut app, |model, _ctx| {
+            model
+                .async_find_controller
+                .as_ref()
+                .unwrap()
+                .focused_match_index()
+        });
+        assert_eq!(focused, Some(0), "Auto-select should fire on first chunk.");
+    });
+}
+
+#[test]
+fn test_ai_focus_preserved_across_terminal_dirty_range_update() {
+    // Two blocks:
+    //  - AI block (TotalIndex 5, newest) with one match.
+    //  - Terminal block at BlockIndex(0) (TotalIndex 1, older) with one
+    //    Output match.
+    // Focus is on the AI match (global index 0). A DirtyRangeMatches that
+    // changes the terminal block must not move focus off the AI match.
+    let mock_terminal_model = TerminalModel::mock(None, None);
+    let terminal_model = Arc::new(FairMutex::new(mock_terminal_model));
+    let mut controller = AsyncFindController::new(terminal_model);
+
+    let ai_view_id = EntityId::from_usize(123);
+    let ai_match = RichContentMatchId::default();
+    {
+        let results = controller.block_results_mut();
+        results.ai_matches.insert(ai_view_id, vec![ai_match]);
+        results.ai_total_indices.insert(ai_view_id, TotalIndex(5));
+        results
+            .terminal_matches
+            .insert((BlockIndex(0), GridType::Output), vec![make_match(10)]);
+        results
+            .terminal_total_indices
+            .insert(BlockIndex(0), TotalIndex(1));
+    }
+    controller.focused_match_index = Some(0);
+    controller.update_cached_focused_match();
+    let focused_ai_before = controller
+        .focused_ai_match()
+        .expect("Initial focus should resolve to AI match.");
+    assert_eq!(focused_ai_before.match_id, ai_match);
+
+    // Add a terminal match BEFORE the existing one. With MostRecentLast +
+    // reverse iter, this shifts the AI match's global index. Identity
+    // preservation must follow.
+    controller.with_focus_preservation(|me| {
+        me.block_results.update_dirty_matches(
+            BlockIndex(0),
+            GridType::Output,
+            0..=6,
+            vec![make_match(5)],
+        );
+    });
+
+    let focused_after = controller
+        .focused_ai_match()
+        .expect("AI match identity must be preserved across terminal updates.");
+    assert_eq!(focused_after.match_id, ai_match);
+    assert_eq!(focused_after.view_id, ai_view_id);
+    assert!(controller.pending_focus_identity.is_none());
+}
