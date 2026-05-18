@@ -386,6 +386,7 @@ enum LocalClaudeWakeTrigger {
 }
 
 impl LocalClaudeWakeTrigger {
+    #[cfg(not(target_family = "wasm"))]
     fn requires_pending_events(&self) -> bool {
         match self {
             Self::PendingEvents => true,

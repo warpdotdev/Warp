@@ -255,6 +255,7 @@ impl OrchestrationEventStreamer {
         }
     }
 
+    #[cfg(not(target_family = "wasm"))]
     pub(crate) fn persist_dormant_claude_wake_cursor(
         &mut self,
         conversation_id: AIConversationId,
