@@ -336,7 +336,3 @@ impl CloudModelType for CloudWorkflowModel {
         true
     }
 }
-
-#[cfg(test)]
-#[path = "mod_tests.rs"]
-mod tests;

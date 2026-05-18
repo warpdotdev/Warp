@@ -116,3 +116,7 @@ pub type CloudAmbientAgentEnvironmentModel =
     GenericStringModel<AmbientAgentEnvironment, JsonSerializer>;
 pub type ServerAmbientAgentEnvironment =
     GenericServerObject<GenericStringObjectId, CloudAmbientAgentEnvironmentModel>;
+
+#[cfg(test)]
+#[path = "cloud_environment_tests.rs"]
+mod tests;

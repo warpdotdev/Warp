@@ -87,7 +87,3 @@ pub fn owner_for_new_personal_environment(ctx: &AppContext) -> Option<Owner> {
     let user_id = AuthStateProvider::as_ref(ctx).get().user_id()?;
     Some(Owner::User { user_uid: user_id })
 }
-
-#[cfg(test)]
-#[path = "mod_tests.rs"]
-mod tests;
