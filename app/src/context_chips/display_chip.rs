@@ -1213,58 +1213,44 @@ impl DisplayChip {
             appearance,
         );
 
-        let is_local_session = self
-            .session_context
-            .as_ref()
-            .map(|ctx| ctx.session.is_local())
-            .unwrap_or(true);
+        // Get the keybinding for the tooltip
+        let code_review_keybinding = self.code_review_keybinding.clone().unwrap_or_default();
 
-        let diff_stats_display = if is_local_session {
-            // Get the keybinding for the tooltip
-            let code_review_keybinding = self.code_review_keybinding.clone().unwrap_or_default();
-
-            Hoverable::new(self.diff_stats_mouse_state.clone(), |state| {
-                let base_container = Container::new(git_diff_stats_content)
-                    .with_vertical_padding(2.)
-                    .with_horizontal_padding(4.);
-
-                let base_container = if state.is_hovered() {
-                    base_container
-                        .with_background(appearance.theme().surface_2())
-                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
-                            CHIP_INNER_CORNER_RADIUS,
-                        )))
-                        .finish()
-                } else {
-                    base_container.finish()
-                };
-
-                let mut stack = Stack::new().with_child(base_container);
-                if state.is_hovered() {
-                    let tool_tip = appearance
-                        .ui_builder()
-                        .tool_tip_with_sublabel(
-                            CODE_REVIEW_TOOLTIP_TEXT.to_string(),
-                            code_review_keybinding.clone(),
-                        )
-                        .build()
-                        .finish();
-                    stack.add_positioned_overlay_child(tool_tip, udi_tooltip_positioning());
-                }
-                stack.finish()
-            })
-            .on_click(|ctx, _app, _position| {
-                ctx.dispatch_typed_action(DisplayChipAction::ToggleCodeReview);
-            })
-            .with_cursor(Cursor::PointingHand)
-            .finish()
-        } else {
-            // Remote session: chip is non-interactive (no tooltip, no click handler)
-            Container::new(git_diff_stats_content)
+        let diff_stats_display = Hoverable::new(self.diff_stats_mouse_state.clone(), |state| {
+            let base_container = Container::new(git_diff_stats_content)
                 .with_vertical_padding(2.)
-                .with_horizontal_padding(4.)
-                .finish()
-        };
+                .with_horizontal_padding(4.);
+
+            let base_container = if state.is_hovered() {
+                base_container
+                    .with_background(appearance.theme().surface_2())
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                        CHIP_INNER_CORNER_RADIUS,
+                    )))
+                    .finish()
+            } else {
+                base_container.finish()
+            };
+
+            let mut stack = Stack::new().with_child(base_container);
+            if state.is_hovered() {
+                let tool_tip = appearance
+                    .ui_builder()
+                    .tool_tip_with_sublabel(
+                        CODE_REVIEW_TOOLTIP_TEXT.to_string(),
+                        code_review_keybinding.clone(),
+                    )
+                    .build()
+                    .finish();
+                stack.add_positioned_overlay_child(tool_tip, udi_tooltip_positioning());
+            }
+            stack.finish()
+        })
+        .on_click(|ctx, _app, _position| {
+            ctx.dispatch_typed_action(DisplayChipAction::ToggleCodeReview);
+        })
+        .with_cursor(Cursor::PointingHand)
+        .finish();
 
         let content = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
