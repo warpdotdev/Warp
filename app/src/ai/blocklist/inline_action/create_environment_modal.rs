@@ -1,5 +1,8 @@
 use crate::{
-    ai::cloud_environments::{owner_for_new_environment, AmbientAgentEnvironment},
+    ai::{
+        ambient_agents::github_auth_url::{AuthSource, GithubAuthRedirectTarget},
+        cloud_environments::{owner_for_new_environment, AmbientAgentEnvironment},
+    },
     appearance::Appearance,
     server::{
         cloud_objects::update_manager::{
@@ -8,8 +11,8 @@ use crate::{
         ids::ClientId,
     },
     settings_view::update_environment_form::{
-        AuthSource, EnvironmentFormCopy, EnvironmentFormInitArgs, GithubAuthRedirectTarget,
-        UpdateEnvironmentForm, UpdateEnvironmentFormEvent,
+        EnvironmentFormCopy, EnvironmentFormInitArgs, UpdateEnvironmentForm,
+        UpdateEnvironmentFormEvent,
     },
     view_components::DismissibleToast,
     workspace::ToastStack,
