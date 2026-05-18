@@ -77,7 +77,12 @@ impl StderrTail {
         if joined.len() > 2048 {
             // Truncate from the start — the tail end of stderr is the
             // most useful context for diagnosing why the proxy died.
-            let start = joined.len() - 2048;
+            let mut start = joined.len() - 2048;
+            // Snap forward to a char boundary to avoid panicking on
+            // multibyte UTF-8.
+            while !joined.is_char_boundary(start) {
+                start += 1;
+            }
             Some(format!("…{}", &joined[start..]))
         } else {
             Some(joined)
