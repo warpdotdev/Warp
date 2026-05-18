@@ -2518,16 +2518,15 @@ impl CodeReviewView {
                 return;
             }
             DiffState::NotInRepository => {
-                // `repo_path` is set at construction time and never reset to
-                // an empty path, so receiving `NotInRepository` while we
-                // have an active repo means the diff data isn't ready yet
-                // (e.g. just (re)opened the panel). Fall back to the
-                // loading state and wait for a real result.
+                // `NotInRepository` is a terminal state from the diff model —
+                // the path has been checked and is definitively not inside a
+                // git repository. Show the "no repo found" UI instead of
+                // the loading spinner.
                 if let Some(repo) = self.active_repo.as_mut() {
                     log::info!(
-                        "Code Review Panel: Setting state to loading after receiving 'not in repository' message."
+                        "Code Review Panel: Setting state to no repo found after receiving 'not in repository' message."
                     );
-                    repo.state = CodeReviewViewState::None;
+                    repo.state = CodeReviewViewState::NoRepoFound;
                 }
                 ctx.notify();
                 return;
@@ -2549,7 +2548,12 @@ impl CodeReviewView {
         };
 
         let Some(diff_data) = diff_data else {
-            log::warn!("Trying to reload diff but there is no git diff base");
+            // Stale event: the model advanced to Loaded via a later snapshot
+            // before this earlier NewDiffsComputed(None) was processed.
+            // Preserve the existing view state rather than clobbering it.
+            log::info!(
+                "Code Review Panel: Ignoring NewDiffsComputed(None) for already-loaded model"
+            );
             return;
         };
 
