@@ -15,7 +15,7 @@ use warp_core::ui::theme::Fill;
 use warp_core::ui::{appearance::Appearance, theme::WarpTheme};
 use warpui::elements::new_scrollable::{NewScrollable, ScrollableAppearance, SingleAxisConfig};
 use warpui::elements::{
-    AnchorPair, ChildAnchor, ChildView, ClippedScrollStateHandle, ConstrainedBox, Container,
+    Align, AnchorPair, ChildAnchor, ChildView, ClippedScrollStateHandle, ConstrainedBox, Container,
     CornerRadius, CrossAxisAlignment, Element, Empty, Fill as ElementFill, Flex, Hoverable,
     MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, OffsetType, ParentAnchor,
     ParentElement, ParentOffsetBounds, PositionedElementOffsetBounds, PositioningAxis, Radius,
@@ -1819,14 +1819,17 @@ fn render_avatar_with_status_overlay(
     theme: &WarpTheme,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
-    // Disc sized to match the helper's brand-circle slot.
-    let avatar = render_avatar_disc(
+    // `Align` centers the disc in the helper's `total_size` box; without it
+    // the disc anchors top-left and sits ~2.5px higher than the orchestrator
+    // pill's plain avatar.
+    let avatar = Align::new(render_avatar_disc(
         avatar_color,
         glyph,
         icon_with_status::circle_size(AVATAR_WITH_STATUS_TOTAL_SIZE),
         theme,
         appearance,
-    );
+    ))
+    .finish();
     render_icon_with_status(
         IconWithStatusVariant::CustomAvatar {
             avatar,
