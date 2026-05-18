@@ -20,7 +20,7 @@ lazy_static! {
     static ref LANGUAGE_REGISTRY: LanguageRegistry = LanguageRegistry::new();
 }
 
-pub const SUPPORTED_LANGUAGES: [&str; 33] = [
+pub const SUPPORTED_LANGUAGES: [&str; 34] = [
     "rust",
     "golang",
     "yaml",
@@ -54,6 +54,7 @@ pub const SUPPORTED_LANGUAGES: [&str; 33] = [
     "xml",
     "vue",
     "dockerfile",
+    "dart",
 ];
 
 /// Registry that holds all of the supported languages.
@@ -193,6 +194,7 @@ fn language_by_filename_parts(
         "xml" => language_by_name("xml"),
         "vue" => language_by_name("vue"),
         "dockerfile" => language_by_name("dockerfile"),
+        "dart" => language_by_name("dart"),
         _ => None,
     }
 }
@@ -289,6 +291,7 @@ fn get_arborium_highlight_query(lang: &str) -> Option<&str> {
         "xml" => Some(arborium::lang_xml::HIGHLIGHTS_QUERY),
         "vue" => Some(&arborium::lang_vue::HIGHLIGHTS_QUERY),
         "dockerfile" => Some(arborium::lang_dockerfile::HIGHLIGHTS_QUERY),
+        "dart" => Some(arborium::lang_dart::HIGHLIGHTS_QUERY),
         _ => None,
     }
 }

@@ -1,0 +1,12 @@
+# source: https://dart.dev/effective-dart/style
+display_name: "Dart"
+indent_unit:
+  space: 2
+comment_prefix: "//"
+brackets:
+  - start: "{"
+    end: "}"
+  - start: "("
+    end: ")"
+  - start: "["
+    end: "]"
