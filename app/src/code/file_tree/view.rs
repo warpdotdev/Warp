@@ -3,19 +3,21 @@ use itertools::Itertools;
 use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::Vector2F;
 use render::RenderState;
+use repo_metadata::FileTreeEntry;
+use repo_metadata::RepoMetadataModel;
 use repo_metadata::file_tree_store::{
     FileTreeDirectoryEntryState, FileTreeEntryState, FileTreeFileMetadata,
 };
 use repo_metadata::local_model::IndexedRepoState;
-use repo_metadata::FileTreeEntry;
-use repo_metadata::RepoMetadataModel;
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 use warp_util::path::LineAndColumnArg;
 use warp_util::standardized_path::StandardizedPath;
 
+use async_channel::Sender;
 use repo_metadata::repositories::DetectedRepositories;
 use warp_core::send_telemetry_from_ctx;
 use warpui::elements::{
@@ -27,8 +29,9 @@ use warpui::fonts::Style;
 use warpui::keymap::FixedBinding;
 use warpui::platform::Cursor;
 use warpui::text_layout::TextAlignment;
-use warpui::{clipboard::ClipboardContent, id, ViewContext, WeakViewHandle};
 use warpui::{
+    AppContext, Element, Entity, EventContext, SingletonEntity as _, TypedActionView, View,
+    ViewHandle,
     elements::{
         ChildAnchor, ChildView, CrossAxisAlignment, Flex, Hoverable, MainAxisSize,
         MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds,
@@ -36,14 +39,14 @@ use warpui::{
         UniformListState,
     },
     fonts::{Properties, Weight},
-    AppContext, Element, Entity, EventContext, SingletonEntity as _, TypedActionView, View,
-    ViewHandle,
 };
 use warpui::{BlurContext, ModelHandle};
+use warpui::{ViewContext, WeakViewHandle, clipboard::ClipboardContent, id};
 
 use crate::code::active_file::{ActiveFileEvent, ActiveFileModel};
 use crate::code::buffer_location::LocalOrRemotePath;
 use crate::coding_panel_enablement_state::CodingPanelEnablementState;
+use crate::debounce::debounce;
 use crate::editor::{
     EditorOptions, EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys,
     PropagateHorizontalNavigationKeys, SingleLineEditorOptions, TextOptions,
@@ -55,7 +58,7 @@ use crate::terminal::view::{TerminalDropTargetData, TerminalView};
 use crate::ui_components::item_highlight::{ImageOrIcon, ItemHighlightState};
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
-use crate::util::openable_file_type::{is_file_content_binary, EditorLayout, FileTarget};
+use crate::util::openable_file_type::{EditorLayout, FileTarget, is_file_content_binary};
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::{
     resolve_file_target_to_open_in_warp, resolve_file_target_with_editor_choice,
@@ -68,9 +71,9 @@ use crate::{
     view_components::DismissibleToast,
     workspace::ToastStack,
 };
-use warp_core::features::FeatureFlag;
-use warp_core::ui::theme::{color::internal_colors, Fill};
 use warp_core::HostId;
+use warp_core::features::FeatureFlag;
+use warp_core::ui::theme::{Fill, color::internal_colors};
 use warp_editor::editor::NavigationKey;
 
 mod editing;
@@ -186,6 +189,8 @@ const ITEM_FONT_SIZE: f32 = 14.;
 const FOLDER_INDENT: f32 = 16.; // Indentation per folder level
 const ITEM_PADDING: f32 = 4.;
 
+const SEARCH_DEBOUNCE_PERIOD: Duration = Duration::from_millis(150);
+
 /// Represents a single item in the flattened file tree list.
 /// This is used to store the necessary information for rendering each item
 /// in the UniformList.
@@ -225,6 +230,41 @@ struct PendingEdit {
     id: FileTreeIdentifier,
 }
 
+/// Pre-normalized search strings for a single file tree path.
+/// Computed once and cached per root so repeated searches skip
+/// redundant `to_lowercase()` work.
+#[derive(Clone)]
+struct CachedSearchStrings {
+    /// Lowercased path relative to the root.
+    normalized_relative: String,
+    /// Lowercased file name component.
+    normalized_name: String,
+    /// Lowercased full absolute path.
+    normalized_full: String,
+}
+
+impl CachedSearchStrings {
+    fn compute(root_path: &StandardizedPath, item_path: &StandardizedPath) -> Self {
+        let relative_path = item_path
+            .strip_prefix(root_path)
+            .unwrap_or_else(|| item_path.as_str());
+        let file_name = item_path.file_name().unwrap_or_default();
+        Self {
+            normalized_relative: relative_path.to_lowercase(),
+            normalized_name: file_name.to_lowercase(),
+            normalized_full: item_path.as_str().to_lowercase(),
+        }
+    }
+
+    fn matches_query(&self, query: &str) -> bool {
+        query.split_whitespace().all(|term| {
+            self.normalized_relative.contains(term)
+                || self.normalized_name.contains(term)
+                || self.normalized_full.contains(term)
+        })
+    }
+}
+
 /// Per-root directory state for the file tree.
 /// Contains all state that varies per root directory.
 struct RootDirectory {
@@ -239,12 +279,22 @@ struct RootDirectory {
     item_states: HashMap<StandardizedPath, (MouseStateHandle, DraggableState)>,
     /// The remote host this root belongs to, if any. `None` for local roots.
     remote_host_id: Option<HostId>,
+    /// Pre-normalized search strings keyed by item path.
+    /// Populated lazily during search; cleared when `entry` is replaced so
+    /// stale paths don't accumulate indefinitely.
+    search_strings_cache: HashMap<StandardizedPath, CachedSearchStrings>,
 }
 
 impl RootDirectory {
     /// Returns whether this root is backed by a remote server.
     fn is_remote(&self) -> bool {
         self.remote_host_id.is_some()
+    }
+
+    /// Replaces the backing entry and invalidates the search cache.
+    fn set_entry(&mut self, entry: FileTreeEntry) {
+        self.entry = entry;
+        self.search_strings_cache.clear();
     }
 }
 
@@ -278,6 +328,10 @@ pub struct FileTreeView {
     editor_view: ViewHandle<EditorView>,
     /// Editor view used to filter items in the tree.
     search_editor: ViewHandle<EditorView>,
+    /// Sender for debounced search query changes.
+    query_change_tx: Sender<()>,
+    /// Non-empty query waiting to be applied after the debounce period.
+    pending_search_query: Option<String>,
     /// Current file tree search query.
     search_query: String,
     /// Handle to track the currently focused file
@@ -473,7 +527,7 @@ impl FileTreeView {
             self.root_directories
                 .entry(repo_path.clone())
                 .and_modify(|root_dir| {
-                    root_dir.entry = state.entry.clone();
+                    root_dir.set_entry(state.entry.clone());
                     root_dir.remote_host_id = Some(host_id.clone());
                 })
                 .or_insert_with(|| RootDirectory {
@@ -482,6 +536,7 @@ impl FileTreeView {
                     items: Vec::new(),
                     item_states: HashMap::new(),
                     remote_host_id: Some(host_id),
+                    search_strings_cache: HashMap::new(),
                 });
 
             if !self.displayed_directories.contains(&repo_path) {
@@ -559,7 +614,7 @@ impl FileTreeView {
                     if let Some(state) = RepoMetadataModel::as_ref(ctx).get_repository(&id, ctx) {
                         for root_path in &root_paths {
                             if let Some(root_dir) = self.root_directories.get_mut(root_path) {
-                                root_dir.entry = state.entry.clone();
+                                root_dir.set_entry(state.entry.clone());
                             }
                         }
 
@@ -608,7 +663,7 @@ impl FileTreeView {
                 let id = RepositoryIdentifier::Remote(remote_id.clone());
                 if let Some(state) = RepoMetadataModel::as_ref(ctx).get_repository(&id, ctx) {
                     if let Some(root_dir) = self.root_directories.get_mut(&repo_path) {
-                        root_dir.entry = state.entry.clone();
+                        root_dir.set_entry(state.entry.clone());
                     }
                     // Only rebuild the affected remote root instead of all roots.
                     // Remote servers stream frequent incremental updates; a full
@@ -712,6 +767,13 @@ impl FileTreeView {
             me.handle_search_editor_event(event, ctx);
         });
 
+        let (query_change_tx, query_change_rx) = async_channel::unbounded();
+        ctx.spawn_stream_local(
+            debounce(SEARCH_DEBOUNCE_PERIOD, query_change_rx),
+            Self::handle_debounced_search_query,
+            |_, _| {},
+        );
+
         #[cfg(feature = "local_fs")]
         let repository_metadata_model = RepoMetadataModel::handle(ctx);
 
@@ -734,6 +796,8 @@ impl FileTreeView {
             pending_edit: None,
             editor_view,
             search_editor,
+            query_change_tx,
+            pending_search_query: None,
             search_query: String::new(),
             active_file_model: None,
             has_terminal_session: false,
@@ -978,6 +1042,7 @@ impl FileTreeView {
                             items: Vec::new(),
                             item_states: HashMap::new(),
                             remote_host_id: Some(host_id),
+                            search_strings_cache: HashMap::new(),
                         },
                     );
                     changed = true;
@@ -1253,6 +1318,7 @@ impl FileTreeView {
                 items: Vec::new(),
                 item_states: HashMap::new(),
                 remote_host_id: None,
+                search_strings_cache: HashMap::new(),
             });
 
         for absorbed_root in absorbed {
@@ -1319,6 +1385,7 @@ impl FileTreeView {
                     items: Vec::new(),
                     item_states: HashMap::new(),
                     remote_host_id: None,
+                    search_strings_cache: HashMap::new(),
                 });
             let root_local = root_path.to_local_path_lossy();
             if let Some(repo_root) = DetectedRepositories::as_ref(ctx)
@@ -1353,7 +1420,7 @@ impl FileTreeView {
                     // registration so the repo-backed entry becomes the single source of truth.
                     self.remove_lazy_loaded_entry(root_path, ctx);
                     if let Some(root_dir) = self.root_directories.get_mut(root_path) {
-                        root_dir.entry = repo_entry;
+                        root_dir.set_entry(repo_entry);
                     }
                 } else {
                     self.register_and_refresh_lazy_loaded_directory(root_path, ctx);
@@ -1466,7 +1533,7 @@ impl FileTreeView {
 
         if let Some(state) = RepoMetadataModel::as_ref(ctx).get_repository(&backing_id, ctx) {
             if let Some(root_dir) = self.root_directories.get_mut(root_path) {
-                root_dir.entry = state.entry.clone();
+                root_dir.set_entry(state.entry.clone());
             }
         }
     }
@@ -1580,16 +1647,8 @@ impl FileTreeView {
         item_path: &StandardizedPath,
         query: &str,
     ) -> bool {
-        let relative_path = item_path
-            .strip_prefix(root_path)
-            .unwrap_or_else(|| item_path.as_str());
-        let file_name = item_path.file_name().unwrap_or_default();
-
-        query.split_whitespace().all(|term| {
-            relative_path.to_lowercase().contains(term)
-                || file_name.to_lowercase().contains(term)
-                || item_path.as_str().to_lowercase().contains(term)
-        })
+        let cached = CachedSearchStrings::compute(root_path, item_path);
+        cached.matches_query(query)
     }
 
     fn first_item_id(&self) -> Option<FileTreeIdentifier> {
@@ -1631,26 +1690,53 @@ impl FileTreeView {
         ctx.notify();
     }
 
+    fn handle_debounced_search_query(&mut self, _event: (), ctx: &mut ViewContext<Self>) {
+        if let Some(query) = self.pending_search_query.take() {
+            self.update_search_query(query, ctx);
+        }
+    }
+
+    /// Force-applies any pending debounced search query so that navigation
+    /// actions (Up/Down/Enter) always operate on up-to-date results.
+    fn force_apply_pending_search_query(&mut self, ctx: &mut ViewContext<Self>) {
+        if let Some(query) = self.pending_search_query.take() {
+            self.update_search_query(query, ctx);
+        }
+    }
+
     fn handle_search_editor_event(&mut self, event: &EditorEvent, ctx: &mut ViewContext<Self>) {
         match event {
             EditorEvent::Edited(_)
             | EditorEvent::BufferReplaced
             | EditorEvent::BufferReinitialized => {
                 let query = self.search_editor.as_ref(ctx).buffer_text(ctx);
-                self.update_search_query(query, ctx);
+                if query.trim().is_empty() {
+                    // Empty queries clear immediately so the tree restores.
+                    self.pending_search_query = None;
+                    self.update_search_query(query, ctx);
+                } else {
+                    // Non-empty queries are debounced to avoid expensive
+                    // tree rebuilds on every keystroke.
+                    self.pending_search_query = Some(query);
+                    let _ = self.query_change_tx.try_send(());
+                }
             }
             EditorEvent::Navigate(NavigationKey::Down) => {
+                self.force_apply_pending_search_query(ctx);
                 self.select_next_item(ctx);
             }
             EditorEvent::Navigate(NavigationKey::Up) => {
+                self.force_apply_pending_search_query(ctx);
                 self.select_previous_item(ctx);
             }
             EditorEvent::Enter => {
+                self.force_apply_pending_search_query(ctx);
                 if let Some(id) = self.selected_item.clone() {
                     self.select_and_execute_item_at_id(&id, ctx);
                 }
             }
             EditorEvent::Escape => {
+                self.pending_search_query = None;
                 self.search_editor.update(ctx, |editor, ctx| {
                     editor.set_buffer_text("", ctx);
                 });
@@ -1716,6 +1802,7 @@ impl FileTreeView {
                 items: Vec::new(),
                 item_states: HashMap::new(),
                 remote_host_id: None,
+                search_strings_cache: HashMap::new(),
             });
         // When the file tree is active, index the lazy-loaded path through the
         // model so that a file watcher is started.
@@ -1746,7 +1833,7 @@ impl FileTreeView {
         if let Some(root_dir) = self.root_directories.get_mut(path) {
             match repo_state {
                 Some(IndexedRepoState::Indexed(state)) => {
-                    root_dir.entry = state.entry.clone();
+                    root_dir.set_entry(state.entry.clone());
                 }
                 Some(IndexedRepoState::Pending(_)) => {
                     // Repo is being (re-)indexed. Keep whatever entry we already
@@ -1754,7 +1841,7 @@ impl FileTreeView {
                     // during the Pending → Indexed transition.
                 }
                 Some(IndexedRepoState::Failed(_)) | None => {
-                    root_dir.entry = Self::create_empty_entry(path);
+                    root_dir.set_entry(Self::create_empty_entry(path));
                 }
             }
         }
