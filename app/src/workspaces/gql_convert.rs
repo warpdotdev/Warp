@@ -4,17 +4,17 @@ use super::{
     user_workspaces::WorkspacesMetadataResponse,
     workspace::{
         AIAutonomyPolicy, AddonCreditsSettings, AdminEnablementSetting, AiAutonomySettings,
-        AiPermissionsSettings, AmbientAgentsPolicy, BillingCycleUsageData,
-        BillingCycleUsageEntry, BillingCycleUsageSummary, BillingMetadata,
-        CloudConversationStorageSettings, CodebaseContextSettings, CustomerType, DelinquencyStatus,
-        EmailInvite, EnterpriseSecretRegex, HostEnablementSetting, InstanceShape,
-        InviteLinkDomainRestriction, LinkSharingSettings, LlmSettings, MaxPriorCycles,
-        SandboxedAgentSettings, SecretRedactionSettings, SessionSharingPolicy,
-        SharedNotebooksPolicy, SharedWorkflowsPolicy, TelemetryDataCollectionPolicy,
-        TelemetrySettings, Tier, UgcCollectionEnablementSetting, UgcCollectionSettings,
-        UgcDataCollectionPolicy, UsageBasedPricingPolicy, UsageVisibilityGranularity,
-        UsageVisibilityPolicy, WarpAiPolicy, Workspace, WorkspaceInviteCode, WorkspaceMember,
-        WorkspaceMemberUsageInfo, WorkspaceSettings, WorkspaceSizePolicy,
+        AiPermissionsSettings, AmbientAgentsPolicy, BillingCycleUsageData, BillingCycleUsageEntry,
+        BillingCycleUsageSummary, BillingMetadata, CloudConversationStorageSettings,
+        CodebaseContextSettings, CustomerType, DelinquencyStatus, EmailInvite,
+        EnterpriseSecretRegex, HostEnablementSetting, InstanceShape, InviteLinkDomainRestriction,
+        LinkSharingSettings, LlmSettings, MaxPriorCycles, SandboxedAgentSettings,
+        SecretRedactionSettings, SessionSharingPolicy, SharedNotebooksPolicy,
+        SharedWorkflowsPolicy, TelemetryDataCollectionPolicy, TelemetrySettings, Tier,
+        UgcCollectionEnablementSetting, UgcCollectionSettings, UgcDataCollectionPolicy,
+        UsageBasedPricingPolicy, UsageVisibilityGranularity, UsageVisibilityPolicy, WarpAiPolicy,
+        Workspace, WorkspaceInviteCode, WorkspaceMember, WorkspaceMemberUsageInfo,
+        WorkspaceSettings, WorkspaceSizePolicy,
     },
 };
 use crate::{
@@ -478,7 +478,7 @@ fn from_gql_max_prior_cycles(value: i32) -> MaxPriorCycles {
             report_error!(anyhow!(
                 "Unexpected maxPriorCycles value '{other}' from server; treating as unlimited"
             ));
-            MaxPriorCycles::Unlimited
+            MaxPriorCycles::None
         }
     }
 }
@@ -997,7 +997,6 @@ impl From<GqlWorkspace> for Workspace {
                 .unwrap_or_default(),
             billing_cycle_usage: gql_workspace
                 .billing_cycle_usage_history
-                .clone()
                 .map(convert_billing_cycle_usage),
             has_billing_history: gql_workspace.has_billing_history,
             settings: gql_workspace.settings.clone().into(),

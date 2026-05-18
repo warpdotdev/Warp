@@ -76,7 +76,6 @@ use super::cloud_conversation_continuation::{
 use super::sharer::inactivity_modal::InactivityModalEvent;
 use super::sharer::Sharer;
 use super::viewer::Viewer;
-#[cfg(not(target_family = "wasm"))]
 use super::ConversationEndedTombstoneEvent;
 use super::ConversationEndedTombstoneView;
 
@@ -564,6 +563,7 @@ impl TerminalView {
         self.model
             .lock()
             .set_shared_session_status(SharedSessionStatus::SharePending);
+        log::info!("Emitting request to start sharing current session");
 
         ctx.emit(Event::StartSharingCurrentSession {
             scrollback_type,
@@ -909,7 +909,6 @@ impl TerminalView {
         }
     }
 
-    #[cfg(not(target_family = "wasm"))]
     fn start_cloud_followup_from_tombstone(
         &mut self,
         task_id: crate::ai::ambient_agents::AmbientAgentTaskId,
@@ -1745,7 +1744,6 @@ impl TerminalView {
         let tombstone_view_handle = ctx.add_typed_action_view(|ctx| {
             ConversationEndedTombstoneView::new(ctx, terminal_view_id, task_id, tombstone_cta)
         });
-        #[cfg(not(target_family = "wasm"))]
         ctx.subscribe_to_view(&tombstone_view_handle, |me, _, event, ctx| match event {
             ConversationEndedTombstoneEvent::ContinueInCloud { task_id } => {
                 me.start_cloud_followup_from_tombstone(*task_id, ctx);

@@ -2491,6 +2491,7 @@ impl AIConversation {
                                         ctx.emit(
                                             BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
                                                 conversation_id: self.id,
+                                                from_restore: false,
                                             },
                                         );
                                     }
@@ -2651,6 +2652,7 @@ impl AIConversation {
                             ) {
                                 ctx.emit(BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
                                     conversation_id: self.id,
+                                    from_restore: false,
                                 });
                             }
                         }
