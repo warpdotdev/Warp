@@ -58,6 +58,30 @@ impl ThirdPartyHarness for CodexHarness {
         Some("https://developers.openai.com/codex/cli")
     }
 
+    fn auth_check_command(&self) -> Option<String> {
+        let cli = self.cli_agent().command_prefix();
+        Some(format!("{cli} login status"))
+    }
+
+    fn runtime_error_patterns(&self) -> &'static [&'static str] {
+        &[
+            // Quota / billing.
+            "Quota exceeded. Check your plan and billing details.",
+            "You've hit your usage limit",
+            // Upstream HTTP failures Codex surfaces verbatim. The 401 form
+            // matches invalid-API-key and wrong-endpoint variants.
+            "unexpected status 401",
+            "Incorrect API key provided",
+            "invalid API key",
+            // Region/endpoint block (Anthropic-style global vs US-only
+            // routing surfaced through Codex's upstream client).
+            "Access blocked by Cloudflare",
+            // OAuth refresh failures — all five Codex variants share this
+            // substring (see upstream session/token messages).
+            "could not be refreshed",
+        ]
+    }
+
     /// Fetch the codex transcript for the current task's conversation and wrap it into a
     /// [`ResumePayload::Codex`].
     async fn fetch_resume_payload(
@@ -168,6 +192,7 @@ enum CodexRunnerState {
 
 struct CodexHarnessRunner {
     command: String,
+    cli_name: String,
     /// Held so the temp file is cleaned up when the runner is dropped.
     _temp_prompt_file: NamedTempFile,
     client: Arc<dyn HarnessSupportClient>,
@@ -232,6 +257,7 @@ impl CodexHarnessRunner {
 
         Ok(Self {
             command,
+            cli_name: cli_command.to_string(),
             _temp_prompt_file: temp_file,
             client,
             terminal_driver,
@@ -264,6 +290,10 @@ impl CodexHarnessRunner {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 impl HarnessRunner for CodexHarnessRunner {
+    fn harness_name(&self) -> &str {
+        &self.cli_name
+    }
+
     async fn start(
         &self,
         foreground: &ModelSpawner<AgentDriver>,
@@ -413,7 +443,9 @@ async fn upload_transcript(
     };
     let Some(transcript_path) = transcript_path else {
         if is_final {
-            log::warn!("No codex rollout file found at final save for session {session_id}; transcript was never uploaded");
+            log::warn!(
+                "No codex rollout file found at final save for session {session_id}; transcript was never uploaded"
+            );
         } else {
             log::debug!("No codex rollout file yet for session {session_id}");
         }

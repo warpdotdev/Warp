@@ -1102,9 +1102,7 @@ impl TerminalManager {
                     {
                         return;
                     }
-                    view.input().update(ctx, |input, ctx| {
-                        input.process_remote_edits(block_id, operations.clone(), ctx);
-                    })
+                    view.apply_viewer_shared_session_input_update(block_id, operations.clone(), ctx);
                 })
             }
             NetworkEvent::RoleRequestInFlight(role_request_id) => {
