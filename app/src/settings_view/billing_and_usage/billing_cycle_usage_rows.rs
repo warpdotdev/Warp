@@ -1169,7 +1169,10 @@ fn render_source_filter_toggle(
 }
 
 /// Top-level row dispatcher. `on_filter_change` is only consumed by the
-/// `PerUserTotals` branch.
+/// `PerUserTotals` branch. `upgrade_banner`, when present, is inserted at
+/// the most relevant spot for the current visibility tier (above the per-
+/// member breakdown on `PerUserTotals`, after the cards on `TeamAggregate`,
+/// or after the own-usage row on `OwnOnly`).
 #[allow(clippy::too_many_arguments)]
 pub fn render_rows(
     workspace: &Workspace,
@@ -1179,6 +1182,7 @@ pub fn render_rows(
     visibility: &crate::workspaces::workspace::UsageVisibility,
     source_filter: SourceFilter,
     mouse_states: &RowMouseStates,
+    upgrade_banner: Option<Box<dyn Element>>,
     appearance: &Appearance,
     on_filter_change: FilterChangeFn,
 ) -> Box<dyn Element> {
@@ -1212,6 +1216,9 @@ pub fn render_rows(
                 tooltip_state,
                 appearance,
             ));
+            if let Some(banner) = upgrade_banner {
+                column.add_child(Container::new(banner).with_margin_top(8.).finish());
+            }
         }
         UsageVisibilityGranularity::TeamAggregate => {
             // TeamAggregate viewers can't see per-member breakdowns, so the
@@ -1221,6 +1228,9 @@ pub fn render_rows(
                 mouse_states,
                 appearance,
             ));
+            if let Some(banner) = upgrade_banner {
+                column.add_child(Container::new(banner).with_margin_top(8.).finish());
+            }
         }
         UsageVisibilityGranularity::PerUserTotals => {
             // Admin viewers get two labeled subsections: team totals at the
@@ -1238,6 +1248,13 @@ pub fn render_rows(
                 mouse_states,
                 appearance,
             ));
+
+            // Upgrade CTA sits between Team totals and Member usage so admins
+            // see the path to fuller visibility right before the per-member
+            // section it gates.
+            if let Some(banner) = upgrade_banner {
+                column.add_child(Container::new(banner).with_margin_top(16.).finish());
+            }
 
             let member_rows = build_member_usage_rows(entries, &workspace.members, source_filter);
 

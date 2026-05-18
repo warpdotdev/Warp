@@ -254,17 +254,25 @@ impl View for BillingCycleUsageSectionView {
             );
         }
 
+        // Upgrade banner is rendered inline within the body so that on
+        // PerUserTotals (admin) views it sits between the team-totals cards
+        // and the per-member breakdown rather than dangling at the bottom.
+        let upgrade_banner = if is_admin {
+            self.render_upgrade_visibility_banner(&workspace, appearance)
+        } else {
+            None
+        };
         column.add_child(
-            Container::new(self.render_body(&workspace, &visibility, appearance, app))
-                .with_margin_top(16.)
-                .finish(),
+            Container::new(self.render_body(
+                &workspace,
+                &visibility,
+                upgrade_banner,
+                appearance,
+                app,
+            ))
+            .with_margin_top(16.)
+            .finish(),
         );
-
-        if is_admin {
-            if let Some(banner) = self.render_upgrade_visibility_banner(&workspace, appearance) {
-                column.add_child(Container::new(banner).with_margin_top(16.).finish());
-            }
-        }
 
         column.finish()
     }
@@ -538,6 +546,7 @@ impl BillingCycleUsageSectionView {
         &self,
         workspace: &Workspace,
         visibility: &UsageVisibility,
+        upgrade_banner: Option<Box<dyn Element>>,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -560,6 +569,7 @@ impl BillingCycleUsageSectionView {
             visibility,
             self.source_filter,
             &self.row_mouse_states,
+            upgrade_banner,
             appearance,
             std::sync::Arc::new(|filter, ctx| {
                 ctx.dispatch_typed_action(BillingCycleUsageAction::ChangeSourceFilter(filter));
