@@ -9,7 +9,7 @@ use crate::scope::ObjectScope;
 pub enum SecretCommand {
     /// Create a new secret.
     ///
-    /// Use `oz secret create anthropic api-key <NAME>` to create a Claude/Anthropic auth secret,
+    /// Use `oz secret create claude api-key <NAME>` to create a Claude/Anthropic auth secret,
     /// or `oz secret create codex api-key <NAME>` to create a Codex/OpenAI auth secret.
     Create(CreateSecretArgs),
     /// Delete a secret.
@@ -52,6 +52,7 @@ pub struct CreateSecretArgs {
 #[derive(Debug, Clone, Subcommand)]
 pub enum CreateProvider {
     /// Create a Claude/Anthropic auth secret.
+    #[command(name = "claude")]
     Anthropic(AnthropicCreateArgs),
     /// Create a Codex/OpenAI auth secret.
     Codex(CodexCreateArgs),
