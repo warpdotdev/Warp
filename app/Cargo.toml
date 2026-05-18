@@ -958,6 +958,244 @@ configurable_context_window = []
 handoff_cloud_cloud = ["cloud_mode_setup_v2"]
 git_credential_refresh = []
 
+# Declarative packaging build profiles consumed by `flake.nix` and the bundle
+# scripts. Feature atoms stay in `build_feature_groups`; profiles combine one
+# primary `base` group with small additive `groups` and optional direct
+# `features`.
+[package.metadata.warp.nix]
+build_profile = "linux.oss.app"
+
+[package.metadata.warp.build_feature_groups]
+linux_app_base = [
+    "release_bundle",
+    "crash_reporting",
+    "gui",
+]
+linux_cli_base = [
+    "release_bundle",
+    "crash_reporting",
+    "standalone",
+]
+linux_oss_app_base = [
+    "release_bundle",
+    "gui",
+]
+linux_oss_cli_base = [
+    "release_bundle",
+    "standalone",
+]
+macos_app_base = [
+    "release_bundle",
+    "cocoa_sentry",
+    "extern_plist",
+    "gui",
+]
+macos_cli_base = [
+    "release_bundle",
+    "cocoa_sentry",
+    "extern_plist",
+    "standalone",
+]
+macos_oss_app_base = [
+    "release_bundle",
+    "extern_plist",
+    "gui",
+]
+macos_oss_cli_base = [
+    "release_bundle",
+    "extern_plist",
+    "standalone",
+]
+windows_app_base = [
+    "release_bundle",
+    "crash_reporting",
+    "gui",
+]
+windows_oss_app_base = [
+    "release_bundle",
+    "gui",
+]
+run_gui = [
+    "gui",
+]
+wasm_base = [
+    "release_bundle",
+    "gui",
+]
+remote_server_deploy_base = [
+    "release_bundle",
+    "crash_reporting",
+    "standalone",
+    "agent_mode_debug",
+    "remote_codebase_indexing",
+]
+remote_server_integration_base = [
+    "crash_reporting",
+    "standalone",
+    "agent_mode_debug",
+    "remote_codebase_indexing",
+]
+agent_debug = [
+    "agent_mode_debug",
+]
+linux_dev_diagnostics = [
+    "agent_mode_debug",
+    "jemalloc_pprof",
+]
+macos_dev_diagnostics = [
+    "agent_mode_debug",
+    "jemalloc_pprof",
+    "heap_usage_tracking",
+]
+macos_heap_diagnostics = [
+    "jemalloc_pprof",
+    "heap_usage_tracking",
+]
+preview_channel = [
+    "preview_channel",
+]
+remote_tty = [
+    "remote_tty",
+]
+nld_v1 = [
+    "nld_classifier_v1",
+    "nld_heuristic_v1",
+]
+nld_v2 = [
+    "nld_classifier_v2",
+    "nld_heuristic_v2",
+]
+
+[package.metadata.warp.build_profiles.linux.local.app]
+base = "linux_app_base"
+groups = ["agent_debug", "nld_v2"]
+
+[package.metadata.warp.build_profiles.linux.dev.app]
+base = "linux_app_base"
+groups = ["linux_dev_diagnostics", "nld_v2"]
+
+[package.metadata.warp.build_profiles.linux.preview.app]
+base = "linux_app_base"
+groups = ["preview_channel", "nld_v1"]
+
+[package.metadata.warp.build_profiles.linux.stable.app]
+base = "linux_app_base"
+groups = ["nld_v1"]
+
+[package.metadata.warp.build_profiles.linux.oss.app]
+base = "linux_oss_app_base"
+groups = ["nld_v1"]
+
+[package.metadata.warp.build_profiles.linux.local.cli]
+base = "linux_cli_base"
+groups = ["agent_debug"]
+
+[package.metadata.warp.build_profiles.linux.dev.cli]
+base = "linux_cli_base"
+groups = ["linux_dev_diagnostics"]
+
+[package.metadata.warp.build_profiles.linux.preview.cli]
+base = "linux_cli_base"
+groups = ["preview_channel"]
+
+[package.metadata.warp.build_profiles.linux.stable.cli]
+base = "linux_cli_base"
+
+[package.metadata.warp.build_profiles.linux.oss.cli]
+base = "linux_oss_cli_base"
+
+[package.metadata.warp.build_profiles.macos.local.app]
+base = "macos_app_base"
+groups = ["agent_debug", "nld_v2"]
+
+[package.metadata.warp.build_profiles.macos.dev.app]
+base = "macos_app_base"
+groups = ["macos_dev_diagnostics", "nld_v2"]
+
+[package.metadata.warp.build_profiles.macos.preview.app]
+base = "macos_app_base"
+groups = ["preview_channel", "nld_v1"]
+
+[package.metadata.warp.build_profiles.macos.stable.app]
+base = "macos_app_base"
+groups = ["macos_heap_diagnostics", "nld_v1"]
+
+[package.metadata.warp.build_profiles.macos.oss.app]
+base = "macos_oss_app_base"
+groups = ["nld_v1"]
+
+[package.metadata.warp.build_profiles.macos.local.cli]
+base = "macos_cli_base"
+groups = ["agent_debug"]
+
+[package.metadata.warp.build_profiles.macos.dev.cli]
+base = "macos_cli_base"
+groups = ["macos_dev_diagnostics"]
+
+[package.metadata.warp.build_profiles.macos.preview.cli]
+base = "macos_cli_base"
+groups = ["preview_channel"]
+
+[package.metadata.warp.build_profiles.macos.stable.cli]
+base = "macos_cli_base"
+groups = ["macos_heap_diagnostics"]
+
+[package.metadata.warp.build_profiles.macos.oss.cli]
+base = "macos_oss_cli_base"
+
+[package.metadata.warp.build_profiles.windows.local.app]
+# Restore the local debug matrix so Windows local builds keep compiling the
+# debug-only AI/blocklist paths gated by `agent_mode_debug`.
+base = "windows_app_base"
+groups = ["agent_debug", "nld_v2"]
+
+[package.metadata.warp.build_profiles.windows.dev.app]
+base = "windows_app_base"
+groups = ["agent_debug", "nld_v2"]
+
+[package.metadata.warp.build_profiles.windows.preview.app]
+base = "windows_app_base"
+groups = ["preview_channel", "nld_v1"]
+
+[package.metadata.warp.build_profiles.windows.stable.app]
+base = "windows_app_base"
+groups = ["nld_v1"]
+
+[package.metadata.warp.build_profiles.windows.oss.app]
+base = "windows_oss_app_base"
+groups = ["nld_v1"]
+
+# Run-entrypoint feature profiles used by `script/run`.
+[package.metadata.warp.build_profiles.run.local]
+base = "run_gui"
+
+[package.metadata.warp.build_profiles.run.oss]
+base = "run_gui"
+
+# Additional build profiles used by web/remote-server packaging paths.
+[package.metadata.warp.build_profiles.wasm.local]
+base = "wasm_base"
+groups = ["remote_tty"]
+
+[package.metadata.warp.build_profiles.wasm.dev]
+base = "wasm_base"
+
+[package.metadata.warp.build_profiles.wasm.preview]
+base = "wasm_base"
+groups = ["preview_channel"]
+
+[package.metadata.warp.build_profiles.wasm.stable]
+base = "wasm_base"
+
+[package.metadata.warp.build_profiles.wasm.oss]
+base = "wasm_base"
+
+[package.metadata.warp.build_profiles.remote_server.deploy]
+base = "remote_server_deploy_base"
+
+[package.metadata.warp.build_profiles.remote_server.integration]
+base = "remote_server_integration_base"
+
 [package.metadata.bundle.bin.warp-oss]
 category = "public.app-category.developer-tools"
 copyright = "© 2025, Denver Technologies, Inc"
