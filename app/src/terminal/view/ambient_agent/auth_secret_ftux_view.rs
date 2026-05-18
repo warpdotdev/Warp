@@ -87,6 +87,11 @@ struct SecretCreationState {
     harness: Harness,
     secret_type_index: usize,
     is_saving: bool,
+    /// The exact name we fired at `create_auth_secret`. Set when
+    /// `handle_continue` dispatches; cleared on success / failure /
+    /// cancel. Used to filter the global `AuthSecretCreated` event so
+    /// another concurrent FTUX view's success can't close us.
+    pending_name: Option<String>,
 }
 
 pub struct AuthSecretFtuxView {
@@ -163,13 +168,29 @@ impl AuthSecretFtuxView {
             &HarnessAvailabilityModel::handle(ctx),
             |me, _, event, ctx| match event {
                 HarnessAvailabilityEvent::AuthSecretCreated { harness, name } => {
-                    if me.creation_state.is_some() {
+                    // Only consume the event when it matches the request
+                    // *this* view actually fired. Without the harness/name
+                    // match a concurrent FTUX view's success would close
+                    // us (or worse, emit a Created event the host then
+                    // routes to the wrong modal).
+                    let is_ours = me.creation_state.as_ref().is_some_and(|state| {
+                        state.is_saving
+                            && state.harness == *harness
+                            && state.pending_name.as_deref() == Some(name.as_str())
+                    });
+                    if is_ours {
                         me.handle_secret_created(*harness, name.clone(), ctx);
                     }
                 }
                 HarnessAvailabilityEvent::AuthSecretCreationFailed { error } => {
+                    // Only react if *we* are mid-save; otherwise this
+                    // failure belongs to another FTUX view's request.
                     if let Some(state) = me.creation_state.as_mut() {
+                        if !state.is_saving {
+                            return;
+                        }
                         state.is_saving = false;
+                        state.pending_name = None;
                         let window_id = ctx.window_id();
                         let message = format!("Failed to save API key: {error}");
                         ToastStack::handle(ctx).update(ctx, |ts, ctx| {
@@ -512,6 +533,7 @@ impl AuthSecretFtuxView {
             harness,
             secret_type_index: type_index,
             is_saving: false,
+            pending_name: None,
         });
         self.ftux_dropdown.update(ctx, |dropdown, ctx| {
             dropdown.set_display_label(Some(info.display_name.to_string()), ctx);
@@ -588,6 +610,7 @@ impl AuthSecretFtuxView {
 
         if let Some(state) = self.creation_state.as_mut() {
             state.is_saving = true;
+            state.pending_name = Some(name.clone());
         }
         ctx.notify();
 
