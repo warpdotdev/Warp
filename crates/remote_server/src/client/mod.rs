@@ -16,14 +16,14 @@ use warpui::r#async::{executor, FutureExt as _};
 use crate::proto::{
     client_message, get_branches_response, get_fragment_metadata_from_hash_response,
     server_message, Abort, Authenticate, BranchInfo, BufferEdit, ClientMessage, CloseBuffer,
-    DeleteFile, DiffMode, DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot,
-    DiscardFilesRequest, DropCodebaseIndex, ErrorCode, FileStatusInfo,
+    CodebaseResyncMode, DeleteFile, DiffMode, DiffStateFileDelta, DiffStateMetadataUpdate,
+    DiffStateSnapshot, DiscardFilesRequest, DropCodebaseIndex, ErrorCode, FileStatusInfo,
     FragmentMetadataLookupErrorCode, GetBranches, GetDiffState, GetDiffStateResponse,
     GetFragmentMetadataFromHash, GetFragmentMetadataFromHashSuccess, IndexCodebase, Initialize,
     InitializeResponse, LoadRepoMetadataDirectoryResponse, NavigatedToDirectoryResponse,
     OpenBuffer, OpenBufferResponse, ReadFileContextRequest, ReadFileContextResponse,
     ResyncCodebase, RunCommandRequest, RunCommandResponse, SaveBuffer, ServerMessage,
-    SessionBootstrapped, TextEdit, TriggerCodebaseIncrementalSync, UnsubscribeDiffState, WriteFile,
+    SessionBootstrapped, TextEdit, UnsubscribeDiffState, WriteFile,
 };
 use crate::repo_metadata_proto::{proto_snapshot_to_update, proto_to_repo_metadata_update};
 
@@ -339,6 +339,26 @@ impl RemoteServerClient {
         repo_path: String,
         auth_token: String,
     ) -> Result<RemoteCodebaseIndexStatus, ClientError> {
+        self.send_resync_codebase(repo_path, auth_token, CodebaseResyncMode::Full)
+            .await
+    }
+
+    /// Sends a `ResyncCodebase` request in incremental mode and awaits the current status update.
+    pub async fn trigger_codebase_incremental_sync(
+        &self,
+        repo_path: String,
+        auth_token: String,
+    ) -> Result<RemoteCodebaseIndexStatus, ClientError> {
+        self.send_resync_codebase(repo_path, auth_token, CodebaseResyncMode::Incremental)
+            .await
+    }
+
+    async fn send_resync_codebase(
+        &self,
+        repo_path: String,
+        auth_token: String,
+        mode: CodebaseResyncMode,
+    ) -> Result<RemoteCodebaseIndexStatus, ClientError> {
         let request_id = RequestId::new();
         let repo_path_for_log = repo_path.clone();
         let msg = ClientMessage {
@@ -346,11 +366,12 @@ impl RemoteServerClient {
             message: Some(client_message::Message::ResyncCodebase(ResyncCodebase {
                 repo_path,
                 auth_token,
+                mode: mode.into(),
             })),
         };
         log::info!(
             "[Remote codebase indexing] Client sending ResyncCodebase: request_id={request_id} \
-             repo_path={repo_path_for_log}"
+             repo_path={repo_path_for_log} mode={mode:?}"
         );
 
         let response = self
@@ -361,38 +382,6 @@ impl RemoteServerClient {
             )
             .await?;
         Self::codebase_index_status_from_response("ResyncCodebase", response)
-    }
-
-    /// Sends a `TriggerCodebaseIncrementalSync` request and awaits the current status update.
-    pub async fn trigger_codebase_incremental_sync(
-        &self,
-        repo_path: String,
-        auth_token: String,
-    ) -> Result<RemoteCodebaseIndexStatus, ClientError> {
-        let request_id = RequestId::new();
-        let repo_path_for_log = repo_path.clone();
-        let msg = ClientMessage {
-            request_id: request_id.to_string(),
-            message: Some(client_message::Message::TriggerCodebaseIncrementalSync(
-                TriggerCodebaseIncrementalSync {
-                    repo_path,
-                    auth_token,
-                },
-            )),
-        };
-        log::debug!(
-            "[Remote codebase indexing] Client sending TriggerCodebaseIncrementalSync: request_id={request_id} \
-             repo_path={repo_path_for_log}"
-        );
-
-        let response = self
-            .send_request(
-                request_id,
-                msg,
-                crate::manager::RemoteServerOperation::TriggerCodebaseIncrementalSync,
-            )
-            .await?;
-        Self::codebase_index_status_from_response("TriggerCodebaseIncrementalSync", response)
     }
 
     fn codebase_index_status_from_response(

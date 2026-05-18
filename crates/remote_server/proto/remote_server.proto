@@ -39,7 +39,6 @@ message ClientMessage {
     GetFragmentMetadataFromHash get_fragment_metadata_from_hash = 23;
     GetBranches get_branches = 24;
     ResyncCodebase resync_codebase = 25;
-    TriggerCodebaseIncrementalSync trigger_codebase_incremental_sync = 26;
   }
 }
 // Top-level envelope for all server → client messages.
@@ -344,10 +343,12 @@ message IndexCodebase {
 message ResyncCodebase {
   string repo_path = 1;
   string auth_token = 2;
+  CodebaseResyncMode mode = 3;
 }
-message TriggerCodebaseIncrementalSync {
-  string repo_path = 1;
-  string auth_token = 2;
+enum CodebaseResyncMode {
+  CODEBASE_RESYNC_MODE_UNSPECIFIED = 0;
+  CODEBASE_RESYNC_MODE_FULL = 1;
+  CODEBASE_RESYNC_MODE_INCREMENTAL = 2;
 }
 
 message DropCodebaseIndex {

@@ -40,10 +40,10 @@ use super::proto::{
     get_fragment_metadata_from_hash_response, resolve_conflict_response, run_command_response,
     save_buffer_response, server_message, write_file_response, Abort, Authenticate, BranchInfo,
     BufferEdit, BufferUpdatedPush, ClientMessage, CloseBuffer, CodebaseIndexStatus,
-    CodebaseIndexStatusUpdated, CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse,
-    DeleteFileSuccess, DiscardFilesError, DiscardFilesResponse, DiscardFilesSuccess,
-    DropCodebaseIndex, ErrorCode, ErrorResponse, FailedFileRead, FileContextProto,
-    FileOperationError, FragmentMetadata as ProtoFragmentMetadata,
+    CodebaseIndexStatusUpdated, CodebaseIndexStatusesSnapshot, CodebaseResyncMode, DeleteFile,
+    DeleteFileResponse, DeleteFileSuccess, DiscardFilesError, DiscardFilesResponse,
+    DiscardFilesSuccess, DropCodebaseIndex, ErrorCode, ErrorResponse, FailedFileRead,
+    FileContextProto, FileOperationError, FragmentMetadata as ProtoFragmentMetadata,
     FragmentMetadataLookupError as ProtoFragmentMetadataLookupError,
     FragmentMetadataLookupErrorCode, GetBranchesError, GetBranchesResponse, GetBranchesSuccess,
     GetDiffStateResponse, GetFragmentMetadataFromHash, GetFragmentMetadataFromHashResponse,
@@ -52,8 +52,8 @@ use super::proto::{
     OpenBufferResponse, ReadFileContextResponse, ResolveConflict, ResolveConflictResponse,
     ResolveConflictSuccess, ResyncCodebase, RunCommandError, RunCommandErrorCode,
     RunCommandRequest, RunCommandResponse, RunCommandSuccess, SaveBuffer, SaveBufferResponse,
-    SaveBufferSuccess, ServerMessage, SessionBootstrapped, TextEdit,
-    TriggerCodebaseIncrementalSync, WriteFile, WriteFileResponse, WriteFileSuccess,
+    SaveBufferSuccess, ServerMessage, SessionBootstrapped, TextEdit, WriteFile, WriteFileResponse,
+    WriteFileSuccess,
 };
 use super::server_buffer_tracker::{PendingBufferRequestKind, ServerBufferTracker};
 
@@ -741,9 +741,6 @@ impl ServerModel {
             Some(client_message::Message::ResyncCodebase(msg)) => {
                 self.handle_resync_codebase(msg, &request_id, conn_id, ctx)
             }
-            Some(client_message::Message::TriggerCodebaseIncrementalSync(msg)) => {
-                self.handle_trigger_codebase_incremental_sync(msg, &request_id, conn_id, ctx)
-            }
             Some(client_message::Message::DropCodebaseIndex(msg)) => {
                 self.handle_drop_codebase_index(msg, &request_id, conn_id, ctx)
             }
@@ -839,14 +836,7 @@ impl ServerModel {
         }
         let snapshot = self.codebase_index_statuses_snapshot(ctx);
         let status_count = snapshot.statuses.len();
-<<<<<<< HEAD
         log::debug!(
-=======
-        for status in &snapshot.statuses {
-            self.record_codebase_index_status_push(status);
-        }
-        log::info!(
->>>>>>> 4a6c64b20e (cleanup)
             "[Remote codebase indexing] Daemon pushing bootstrap codebase index statuses snapshot: conn_id={conn_id} bootstrap_status_count={status_count}"
         );
         self.send_server_message(
@@ -951,7 +941,9 @@ impl ServerModel {
         let ResyncCodebase {
             repo_path,
             auth_token,
+            mode,
         } = msg;
+        let mode = CodebaseResyncMode::try_from(mode).unwrap_or(CodebaseResyncMode::Unspecified);
         let request = match self.prepare_codebase_index_request(
             CodebaseIndexRequestParams {
                 operation_name: "ResyncCodebase",
@@ -971,71 +963,27 @@ impl ServerModel {
             manager.with_indexed_codebase(
                 &repo_path,
                 |manager, indexed_repo_path, ctx| {
-                    manager.try_manual_resync_codebase(indexed_repo_path, ctx);
-                    Self::current_codebase_index_status_or_queued(manager, indexed_repo_path, ctx)
-                },
-                |_, repo_path, _| {
-                    unavailable_codebase_index_status(
-                        repo_path.to_string_lossy().to_string(),
-                        "Cannot resync remote codebase because it has not been indexed."
-                            .to_string(),
-                    )
-                },
-                ctx,
-            )
-        });
-
-        HandlerOutcome::Sync(server_message::Message::CodebaseIndexStatusUpdated(
-            CodebaseIndexStatusUpdated {
-                status: Some(status),
-            },
-        ))
-    }
-
-    fn handle_trigger_codebase_incremental_sync(
-        &mut self,
-        msg: TriggerCodebaseIncrementalSync,
-        request_id: &RequestId,
-        conn_id: ConnectionId,
-        ctx: &mut ModelContext<Self>,
-    ) -> HandlerOutcome {
-        let TriggerCodebaseIncrementalSync {
-            repo_path,
-            auth_token,
-        } = msg;
-        let request = match self.prepare_codebase_index_request(
-            CodebaseIndexRequestParams {
-                operation_name: "TriggerCodebaseIncrementalSync",
-                repo_path,
-                auth_token,
-                auth_operation: "remote codebase incremental sync",
-                path_kind: CodebaseIndexRequestPathKind::Canonicalized,
-            },
-            request_id,
-            conn_id,
-        ) {
-            Ok(request) => request,
-            Err(outcome) => return *outcome,
-        };
-        let repo_path = request.repo_path;
-        let status = CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
-            manager.with_indexed_codebase(
-                &repo_path,
-                |manager, indexed_repo_path, ctx| {
-                    if let Err(error) =
-                        manager.trigger_incremental_sync_for_path(indexed_repo_path, ctx)
-                    {
-                        log::warn!(
-                            "Failed to trigger remote codebase incremental sync: repo_path={} error={error}",
-                            indexed_repo_path.display()
-                        );
+                    match mode {
+                        CodebaseResyncMode::Unspecified | CodebaseResyncMode::Full => {
+                            manager.try_manual_resync_codebase(indexed_repo_path, ctx);
+                        }
+                        CodebaseResyncMode::Incremental => {
+                            if let Err(error) =
+                                manager.trigger_incremental_sync_for_path(indexed_repo_path, ctx)
+                            {
+                                log::warn!(
+                                    "Failed to trigger remote codebase incremental sync: repo_path={} error={error}",
+                                    indexed_repo_path.display()
+                                );
+                            }
+                        }
                     }
                     Self::current_codebase_index_status_or_queued(manager, indexed_repo_path, ctx)
                 },
                 |_, repo_path, _| {
                     unavailable_codebase_index_status(
                         repo_path.to_string_lossy().to_string(),
-                        "Cannot trigger remote codebase incremental sync because it has not been indexed."
+                        "Cannot resync remote codebase because it has not been indexed."
                             .to_string(),
                     )
                 },

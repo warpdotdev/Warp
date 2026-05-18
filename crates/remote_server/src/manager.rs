@@ -114,7 +114,6 @@ pub enum RemoteServerOperation {
     LoadRepoMetadataDirectory,
     IndexCodebase,
     ResyncCodebase,
-    TriggerCodebaseIncrementalSync,
     DropCodebaseIndex,
     OpenBuffer,
     SaveBuffer,
@@ -142,8 +141,7 @@ impl RemoteCodebaseIndexMutationKind {
     fn operation(self) -> RemoteServerOperation {
         match self {
             Self::Request | Self::AutoIndex => RemoteServerOperation::IndexCodebase,
-            Self::IncrementalSync => RemoteServerOperation::TriggerCodebaseIncrementalSync,
-            Self::Resync => RemoteServerOperation::ResyncCodebase,
+            Self::IncrementalSync | Self::Resync => RemoteServerOperation::ResyncCodebase,
             Self::Drop => RemoteServerOperation::DropCodebaseIndex,
         }
     }
@@ -1491,17 +1489,17 @@ impl RemoteServerManager {
         self.mutate_codebase_index(remote_path, RemoteCodebaseIndexMutationKind::Resync, ctx);
     }
 
-    /// Sends a `TriggerCodebaseIncrementalSync` request to a connected daemon for this remote path.
+    /// Sends a `ResyncCodebase` request in incremental mode to a connected daemon for this remote path.
     pub fn trigger_codebase_incremental_sync(
         &mut self,
         remote_path: RemotePath,
         ctx: &mut ModelContext<Self>,
-    ) {
+    ) -> bool {
         self.mutate_codebase_index(
             remote_path,
             RemoteCodebaseIndexMutationKind::IncrementalSync,
             ctx,
-        );
+        )
     }
 
     /// Sends a `DropCodebaseIndex` request to a connected daemon for this remote path.
@@ -1514,7 +1512,7 @@ impl RemoteServerManager {
         remote_path: RemotePath,
         mutation_kind: RemoteCodebaseIndexMutationKind,
         ctx: &mut ModelContext<Self>,
-    ) {
+    ) -> bool {
         let operation = mutation_kind.operation();
         let host_id = remote_path.host_id.clone();
         let repo_path = remote_path.path.as_str().to_string();
@@ -1524,7 +1522,7 @@ impl RemoteServerManager {
                 "Remote server codebase index mutation: no auth context \
                  operation={operation:?} host={host_id} repo_path={repo_path}"
             );
-            return;
+            return false;
         };
         let current_identity_key = auth_context.remote_server_identity_key();
         let Some((session_id, client, remote_identity_key)) =
@@ -1534,7 +1532,7 @@ impl RemoteServerManager {
                 "Remote server codebase index mutation: no connected client for current identity \
                  operation={operation:?} host={host_id} repo_path={repo_path}"
             );
-            return;
+            return false;
         };
         log::info!(
             "[Remote codebase indexing] Manager requesting codebase index mutation: \
@@ -1612,6 +1610,7 @@ impl RemoteServerManager {
                 }
             })
             .detach();
+        true
     }
 
     /// Sends a `NavigatedToDirectory` request to the remote server for

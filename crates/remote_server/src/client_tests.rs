@@ -274,6 +274,7 @@ async fn resync_codebase_round_trip() {
             Some(client_message::Message::ResyncCodebase(request)) => {
                 assert_eq!(request.repo_path, "/repo");
                 assert_eq!(request.auth_token, "auth-token");
+                assert_eq!(request.mode, CodebaseResyncMode::Full as i32);
             }
             other => panic!("Expected ResyncCodebase, got {other:?}"),
         }
@@ -294,11 +295,12 @@ async fn resync_codebase_round_trip() {
 async fn trigger_codebase_incremental_sync_round_trip() {
     let (client, _disconnect_rx, _executor) = setup_mock_client(|msg| {
         match &msg.message {
-            Some(client_message::Message::TriggerCodebaseIncrementalSync(request)) => {
+            Some(client_message::Message::ResyncCodebase(request)) => {
                 assert_eq!(request.repo_path, "/repo");
                 assert_eq!(request.auth_token, "auth-token");
+                assert_eq!(request.mode, CodebaseResyncMode::Incremental as i32);
             }
-            other => panic!("Expected TriggerCodebaseIncrementalSync, got {other:?}"),
+            other => panic!("Expected incremental ResyncCodebase, got {other:?}"),
         }
         server_message::Message::CodebaseIndexStatusUpdated(CodebaseIndexStatusUpdated {
             status: Some(not_enabled_codebase_status("/repo")),
