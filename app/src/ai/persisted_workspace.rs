@@ -676,11 +676,9 @@ impl PersistedWorkspace {
         });
 
         if FeatureFlag::FullSourceCodeEmbedding.is_enabled() {
-            let auto_indexing_enabled = UserWorkspaces::as_ref(ctx)
-                .is_codebase_context_enabled(ctx)
-                && *CodeSettings::as_ref(ctx).auto_indexing_enabled;
-
-            if auto_indexing_enabled {
+            if UserWorkspaces::as_ref(ctx).is_codebase_context_enabled(ctx)
+                && *CodeSettings::as_ref(ctx).auto_indexing_enabled
+            {
                 CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
                     manager.index_directory(directory_path, ctx);
                 });
