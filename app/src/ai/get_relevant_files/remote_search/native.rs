@@ -267,7 +267,7 @@ async fn execute_remote_codebase_search(
         .codebase_context_config()
         .await?
         .embedding_config;
-    log::info!(
+    log::debug!(
         "[Remote codebase indexing] Remote codebase search using embedding config: repo_path={repo_path} embedding_config={embedding_config:?}"
     );
     let candidate_hashes = store_client
