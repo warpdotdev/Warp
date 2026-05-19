@@ -301,6 +301,7 @@ pub fn render_cloud_mode_error_screen(
 /// Renders the cloud mode GitHub authentication required screen.
 pub fn render_cloud_mode_github_auth_required_screen(
     auth_url: &str,
+    error_message: Option<&str>,
     appearance: &Appearance,
     auth_button_mouse_state: &MouseStateHandle,
     _app: &AppContext,
@@ -332,9 +333,11 @@ pub fn render_cloud_mode_github_auth_required_screen(
     .with_color(title_color)
     .finish();
 
-    // Message text - "Please authenticate with GitHub to continue"
+    let error_message = error_message.unwrap_or("Please authenticate with GitHub to continue");
+
+    // Message text
     let message_text = Text::new(
-        "Please authenticate with GitHub to continue",
+        error_message.to_string(),
         appearance.ui_font_family(),
         appearance.monospace_font_size(),
     )
