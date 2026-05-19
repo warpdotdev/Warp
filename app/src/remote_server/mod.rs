@@ -106,7 +106,10 @@ pub fn wire_auth_token_rotation(ctx: &mut warpui::AppContext) {
             manager.update(ctx, |manager, _| {
                 manager.update_codebase_index_limits(Some(codebase_index_limits.clone()));
                 for client in manager.all_connected_clients() {
-                    client.update_preferences(crash_reporting_enabled, Some(codebase_index_limits.clone()));
+                    client.update_preferences(
+                        crash_reporting_enabled,
+                        Some(codebase_index_limits.clone()),
+                    );
                 }
             });
         }
