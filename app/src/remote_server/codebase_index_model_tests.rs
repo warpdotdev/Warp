@@ -149,7 +149,7 @@ fn host_disconnect_marks_settings_entries_unavailable_without_removing_them() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
     model.apply_status_update(remote_path("/repo"), ready_status("/repo"));
-    model.record_navigated_directory(&remote_path("/repo"));
+    model.record_navigated_directory(&remote_path("/repo"), true);
     assert!(model.mark_host_unavailable(&host));
     assert!(!model.mark_host_unavailable(&host));
 
@@ -164,13 +164,14 @@ fn host_disconnect_marks_settings_entries_unavailable_without_removing_them() {
         model.availability_for_remote(&host, Some("/repo"), None),
         RemoteCodebaseSearchAvailability::Unavailable { .. }
     ));
+    assert!(!model.active_directories_by_host.contains_key(&host));
 }
 
 #[test]
 fn availability_uses_active_navigated_repo() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
-    model.record_navigated_directory(&remote_path("/repo"));
+    model.record_navigated_directory(&remote_path("/repo"), true);
     model.apply_status_update(remote_path("/repo"), ready_status("/repo"));
 
     let availability = model.availability_for_remote(&host, Some("/repo/src"), None);
@@ -183,7 +184,7 @@ fn availability_uses_active_navigated_repo() {
 fn availability_uses_active_navigated_non_git_directory() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
-    model.record_navigated_directory(&remote_path("/directory"));
+    model.record_navigated_directory(&remote_path("/directory"), false);
     model.apply_status_update(remote_path("/directory"), ready_status("/directory"));
 
     let availability = model.availability_for_remote(&host, Some("/repo/src"), None);
@@ -209,7 +210,7 @@ fn availability_falls_back_to_longest_status_prefix() {
 fn availability_uses_unmatched_explicit_path_as_not_indexed() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
-    model.record_navigated_directory(&remote_path("/workspaces/warp"));
+    model.record_navigated_directory(&remote_path("/workspaces/warp"), true);
     model.apply_status_update(
         remote_path("/workspaces/warp"),
         ready_status("/workspaces/warp"),
@@ -235,7 +236,7 @@ fn availability_uses_unmatched_explicit_path_as_not_indexed() {
 fn availability_uses_unknown_explicit_remote_path_as_not_indexed() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
-    model.record_navigated_directory(&remote_path("/workspaces/active"));
+    model.record_navigated_directory(&remote_path("/workspaces/active"), true);
     model.apply_status_update(
         remote_path("/workspaces/active"),
         ready_status("/workspaces/active"),
@@ -255,7 +256,7 @@ fn availability_uses_unknown_explicit_remote_path_as_not_indexed() {
 fn availability_uses_explicit_path_when_it_matches_known_remote_repo() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
-    model.record_navigated_directory(&remote_path("/workspaces/other"));
+    model.record_navigated_directory(&remote_path("/workspaces/other"), true);
     model.apply_status_update(
         remote_path("/workspaces/other"),
         ready_status("/workspaces/other"),
@@ -351,19 +352,26 @@ fn codebases_for_agent_context_only_includes_active_host_paths() {
 }
 
 #[test]
-fn clear_remote_codebase_indexing_state_returns_paths_and_removes_client_state() {
+fn clear_remote_codebase_indexing_state_returns_paths_and_preserves_active_repo() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host = host();
     model.apply_status_update(
         remote_path("/workspaces/warp"),
         ready_status("/workspaces/warp"),
     );
-    model.record_navigated_directory(&remote_path("/workspaces/warp"));
+    model.record_navigated_directory(&remote_path("/workspaces/warp"), true);
 
     let remote_paths = model.clear_remote_codebase_indexing_state();
 
     assert_eq!(remote_paths, vec![remote_path("/workspaces/warp")]);
     assert!(model.entries_for_settings().is_empty());
+    assert_eq!(
+        model.active_directories_by_host.get(&host),
+        Some(&ActiveRemoteDirectory {
+            remote_path: remote_path("/workspaces/warp"),
+            is_git: true,
+        })
+    );
     assert!(matches!(
         model.availability_for_remote(&host, Some("/workspaces/warp"), None),
         RemoteCodebaseSearchAvailability::NotIndexed { .. }
@@ -371,24 +379,27 @@ fn clear_remote_codebase_indexing_state_returns_paths_and_removes_client_state()
 }
 
 #[test]
-fn active_repos_needing_auto_index_skips_searchable_and_indexing_repos() {
+fn active_directories_needing_auto_index_skips_non_git_searchable_and_indexing_directories() {
     let mut model = RemoteCodebaseIndexModel::default();
     let host_ready = host_with_name("ready-host");
     let host_new = host_with_name("new-host");
     let host_indexing = host_with_name("indexing-host");
+    let host_non_git = host_with_name("non-git-host");
     let ready_path = remote_path_for_host(&host_ready, "/ready");
     let new_path = remote_path_for_host(&host_new, "/new");
     let indexing_path = remote_path_for_host(&host_indexing, "/indexing");
-    model.record_navigated_directory(&ready_path);
-    model.record_navigated_directory(&new_path);
-    model.record_navigated_directory(&indexing_path);
+    let non_git_path = remote_path_for_host(&host_non_git, "/non-git");
+    model.record_navigated_directory(&ready_path, true);
+    model.record_navigated_directory(&new_path, true);
+    model.record_navigated_directory(&indexing_path, true);
+    model.record_navigated_directory(&non_git_path, false);
     model.apply_status_update(ready_path, ready_status("/ready"));
     model.apply_status_update(
         indexing_path,
         status_with_state("/indexing", RemoteCodebaseIndexState::Indexing),
     );
 
-    let remote_paths = model.active_repos_needing_auto_index();
+    let remote_paths = model.active_directories_needing_auto_index();
 
     assert_eq!(remote_paths, vec![new_path]);
 }
@@ -433,14 +444,14 @@ fn missing_root_hash_is_unavailable() {
 }
 
 #[test]
-fn auto_index_navigated_git_repo_when_status_is_missing() {
+fn auto_index_navigated_repo_when_status_is_missing() {
     let model = RemoteCodebaseIndexModel::default();
 
-    assert!(model.should_request_auto_index_for_navigated_git_repo(&remote_path("/repo")));
+    assert!(model.should_request_auto_index_for_navigated_repo(&remote_path("/repo")));
 }
 
 #[test]
-fn auto_index_navigated_git_repo_skips_existing_searchable_index() {
+fn auto_index_navigated_repo_skips_existing_searchable_index() {
     let mut model = RemoteCodebaseIndexModel::default();
     model.apply_status_update(remote_path("/ready"), ready_status("/ready"));
     model.apply_status_update(
@@ -448,12 +459,12 @@ fn auto_index_navigated_git_repo_skips_existing_searchable_index() {
         status_with_state("/stale", RemoteCodebaseIndexState::Stale),
     );
 
-    assert!(!model.should_request_auto_index_for_navigated_git_repo(&remote_path("/ready")));
-    assert!(!model.should_request_auto_index_for_navigated_git_repo(&remote_path("/stale")));
+    assert!(!model.should_request_auto_index_for_navigated_repo(&remote_path("/ready")));
+    assert!(!model.should_request_auto_index_for_navigated_repo(&remote_path("/stale")));
 }
 
 #[test]
-fn auto_index_navigated_git_repo_skips_index_already_in_progress() {
+fn auto_index_navigated_repo_skips_index_already_in_progress() {
     let mut model = RemoteCodebaseIndexModel::default();
     model.apply_status_update(
         remote_path("/queued"),
@@ -464,12 +475,12 @@ fn auto_index_navigated_git_repo_skips_index_already_in_progress() {
         status_with_state("/indexing", RemoteCodebaseIndexState::Indexing),
     );
 
-    assert!(!model.should_request_auto_index_for_navigated_git_repo(&remote_path("/queued")));
-    assert!(!model.should_request_auto_index_for_navigated_git_repo(&remote_path("/indexing")));
+    assert!(!model.should_request_auto_index_for_navigated_repo(&remote_path("/queued")));
+    assert!(!model.should_request_auto_index_for_navigated_repo(&remote_path("/indexing")));
 }
 
 #[test]
-fn auto_index_navigated_git_repo_when_existing_index_is_unusable() {
+fn auto_index_navigated_repo_when_existing_index_is_unusable() {
     let mut model = RemoteCodebaseIndexModel::default();
     let mut missing_root_hash = ready_status("/missing-root-hash");
     missing_root_hash.root_hash = None;
@@ -479,10 +490,8 @@ fn auto_index_navigated_git_repo_when_existing_index_is_unusable() {
         status_with_state("/failed", RemoteCodebaseIndexState::Failed),
     );
 
-    assert!(
-        model.should_request_auto_index_for_navigated_git_repo(&remote_path("/missing-root-hash"))
-    );
-    assert!(model.should_request_auto_index_for_navigated_git_repo(&remote_path("/failed")));
+    assert!(model.should_request_auto_index_for_navigated_repo(&remote_path("/missing-root-hash")));
+    assert!(model.should_request_auto_index_for_navigated_repo(&remote_path("/failed")));
 }
 
 #[test]

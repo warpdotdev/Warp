@@ -86,8 +86,14 @@ fn remote_codebase_name(repo_path: &str) -> String {
 #[derive(Default)]
 pub struct RemoteCodebaseIndexModel {
     statuses: HashMap<RemotePath, RemoteCodebaseIndexStatus>,
-    active_repos_by_host: HashMap<HostId, RemotePath>,
+    active_directories_by_host: HashMap<HostId, ActiveRemoteDirectory>,
     host_labels: HashMap<HostId, String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ActiveRemoteDirectory {
+    remote_path: RemotePath,
+    is_git: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -328,10 +334,12 @@ impl RemoteCodebaseIndexModel {
                 remote_path,
                 is_git,
             } => {
-                self.record_navigated_directory(remote_path);
-                if *is_git
-                    && should_auto_index_remote_codebase(ctx)
-                    && self.should_request_auto_index_for_navigated_git_repo(remote_path)
+                self.record_navigated_directory(remote_path, *is_git);
+                // Remote manual indexing can target non-git folders, but automatic indexing should
+                // match local behavior and only index directories resolved by repo detection.
+                if should_auto_index_remote_codebase(ctx)
+                    && *is_git
+                    && self.should_request_auto_index_for_navigated_repo(remote_path)
                 {
                     // Mirrors local auto-indexing: remote navigation silently requests indexing
                     // only when the shared auto-index setting allows it.
@@ -404,7 +412,7 @@ impl RemoteCodebaseIndexModel {
         }
 
         if should_auto_index_remote_codebase(ctx) {
-            for remote_path in self.active_repos_needing_auto_index() {
+            for remote_path in self.active_directories_needing_auto_index() {
                 RemoteServerManager::handle(ctx).update(ctx, |manager, ctx| {
                     manager.ensure_codebase_indexed(
                         remote_path,
@@ -421,20 +429,23 @@ impl RemoteCodebaseIndexModel {
     fn clear_remote_codebase_indexing_state(&mut self) -> Vec<RemotePath> {
         let remote_paths = self.statuses.keys().cloned().collect::<Vec<_>>();
         self.statuses.clear();
-        self.active_repos_by_host.clear();
         remote_paths
     }
-
-    fn active_repos_needing_auto_index(&self) -> Vec<RemotePath> {
-        self.active_repos_by_host
+    fn active_directories_needing_auto_index(&self) -> Vec<RemotePath> {
+        self.active_directories_by_host
             .values()
-            .filter(|remote_path| {
-                self.should_request_auto_index_for_navigated_git_repo(remote_path)
+            .filter(|active_directory| {
+                // Mirror local auto-indexing: local only auto-indexes directories that
+                // `DetectedRepositories` resolves to a repo root. Remote manual indexing can still
+                // target non-git folders, so keep this git check scoped to automatic requests.
+                active_directory.is_git
+                    && self
+                        .should_request_auto_index_for_navigated_repo(&active_directory.remote_path)
             })
-            .cloned()
+            .map(|active_directory| active_directory.remote_path.clone())
             .collect()
     }
-    fn should_request_auto_index_for_navigated_git_repo(&self, remote_path: &RemotePath) -> bool {
+    fn should_request_auto_index_for_navigated_repo(&self, remote_path: &RemotePath) -> bool {
         let Some(status) = self.status_for_repo(remote_path) else {
             return true;
         };
@@ -570,9 +581,14 @@ impl RemoteCodebaseIndexModel {
         );
     }
 
-    fn record_navigated_directory(&mut self, remote_path: &RemotePath) {
-        self.active_repos_by_host
-            .insert(remote_path.host_id.clone(), remote_path.clone());
+    fn record_navigated_directory(&mut self, remote_path: &RemotePath, is_git: bool) {
+        self.active_directories_by_host.insert(
+            remote_path.host_id.clone(),
+            ActiveRemoteDirectory {
+                remote_path: remote_path.clone(),
+                is_git,
+            },
+        );
     }
 
     fn record_host_label(&mut self, host_id: &HostId, ctx: &mut ModelContext<Self>) -> bool {
@@ -603,7 +619,7 @@ impl RemoteCodebaseIndexModel {
                 }
             }
         }
-        self.active_repos_by_host.remove(host_id);
+        self.active_directories_by_host.remove(host_id);
         updated
     }
 
@@ -656,10 +672,10 @@ impl RemoteCodebaseIndexModel {
             return explicit_remote_path;
         }
 
-        if let Some(remote_path) = self.active_repos_by_host.get(host_id) {
+        if let Some(active_directory) = self.active_directories_by_host.get(host_id) {
             // Remote branch: only implicit searches (no `codebase_path`) fall back to the active
-            // repo recorded by daemon navigation events.
-            return Some(remote_path.clone());
+            // directory recorded by daemon navigation events.
+            return Some(active_directory.remote_path.clone());
         }
 
         if let Some((remote_path, _)) =
