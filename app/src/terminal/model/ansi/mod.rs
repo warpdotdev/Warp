@@ -1,3 +1,6 @@
+// This module integrates with the vte crate (an Alacritty project) under the
+// Apache license; see: crates/warp_terminal/src/model/LICENSE-ALACRITTY.
+
 //! This module implements processing logic for pty output.
 //!
 //! The top-level export is [`Processor`], which is a lightweight wrapper
