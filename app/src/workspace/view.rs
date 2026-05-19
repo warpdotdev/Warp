@@ -8177,6 +8177,11 @@ impl Workspace {
                     self.right_panel_view.as_ref(ctx).selected_repo_path() == Some(target_repo_path)
                 });
         if panel_already_showing_repo {
+            if panel_context.focus_new_pane {
+                self.right_panel_view.update(ctx, |view, ctx| {
+                    view.focus_active_code_review_view(ctx);
+                });
+            }
             return;
         }
 
