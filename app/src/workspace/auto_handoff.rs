@@ -79,6 +79,28 @@ impl AutoCloudHandoffEligibility {
         None
     }
 }
+
+pub(crate) struct AutoCloudHandoffRequest {
+    workspace: ViewHandle<Workspace>,
+    terminal_view_id: EntityId,
+    conversation_id: AIConversationId,
+    trigger: AutoCloudHandoffTrigger,
+}
+
+impl AutoCloudHandoffRequest {
+    fn dispatch(&self, ctx: &mut AppContext) {
+        self.workspace.update(ctx, |workspace, ctx| {
+            workspace.handle_action(
+                &WorkspaceAction::AutoHandoffActiveAgentToCloud {
+                    terminal_view_id: self.terminal_view_id,
+                    conversation_id: self.conversation_id,
+                    trigger: self.trigger,
+                },
+                ctx,
+            );
+        });
+    }
+}
 pub(crate) struct AutoCloudHandoffController {
     attempted_conversation_ids: HashMap<AIConversationId, AutoCloudHandoffAttemptState>,
 }
@@ -118,38 +140,40 @@ impl AutoCloudHandoffController {
     }
 
     fn trigger(&mut self, trigger: AutoCloudHandoffTrigger, ctx: &mut ModelContext<Self>) {
+        if let Some(request) = self.prepare_handoff_request(trigger, ctx) {
+            ctx.emit(request);
+        }
+    }
+
+    fn prepare_handoff_request(
+        &mut self,
+        trigger: AutoCloudHandoffTrigger,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<AutoCloudHandoffRequest> {
         if !Self::is_trigger_enabled(trigger, ctx) {
-            return;
+            return None;
         }
 
-        let Some((terminal_view_id, conversation_id)) = Self::last_focused_local_conversation(ctx)
-        else {
-            return;
-        };
+        let (terminal_view_id, conversation_id) = Self::last_focused_local_conversation(ctx)?;
 
-        let Some((window_id, workspace, terminal_view)) =
-            Self::find_workspace_and_terminal(terminal_view_id, ctx)
-        else {
-            return;
-        };
+        let (window_id, workspace, terminal_view) =
+            Self::find_workspace_and_terminal(terminal_view_id, ctx)?;
 
         if terminal_view
             .as_ref(ctx)
             .ambient_agent_view_model()
             .is_some()
         {
-            return;
+            return None;
         }
 
         if terminal_view.as_ref(ctx).has_active_long_running_command() {
-            return;
+            return None;
         }
 
         let skip_reason = {
             let history = BlocklistAIHistoryModel::as_ref(ctx);
-            let Some(conversation) = history.conversation(&conversation_id) else {
-                return;
-            };
+            let conversation = history.conversation(&conversation_id)?;
             let can_handoff_to_cloud = AISettings::as_ref(ctx)
                 .is_cloud_handoff_enabled_for_conversation(Some(conversation), ctx);
             AutoCloudHandoffEligibility::from_conversation(
@@ -162,7 +186,7 @@ impl AutoCloudHandoffController {
         };
 
         if skip_reason.is_some() {
-            return;
+            return None;
         }
 
         self.attempted_conversation_ids
@@ -171,16 +195,12 @@ impl AutoCloudHandoffController {
         log::info!(
             "Triggering auto handoff to cloud for conversation {conversation_id:?} in window {window_id:?} via {trigger:?}"
         );
-        workspace.update(ctx, |workspace, ctx| {
-            workspace.handle_action(
-                &WorkspaceAction::AutoHandoffActiveAgentToCloud {
-                    terminal_view_id,
-                    conversation_id,
-                    trigger,
-                },
-                ctx,
-            );
-        });
+        Some(AutoCloudHandoffRequest {
+            workspace,
+            terminal_view_id,
+            conversation_id,
+            trigger,
+        })
     }
 
     fn last_focused_local_conversation(
@@ -217,13 +237,16 @@ impl AutoCloudHandoffController {
 }
 
 impl Entity for AutoCloudHandoffController {
-    type Event = ();
+    type Event = AutoCloudHandoffRequest;
 }
 
 impl SingletonEntity for AutoCloudHandoffController {}
 
 pub(crate) fn init(app: &mut AppContext) {
-    app.add_singleton_model(AutoCloudHandoffController::new);
+    let controller = app.add_singleton_model(AutoCloudHandoffController::new);
+    app.subscribe_to_model(&controller, |_, request, ctx| {
+        request.dispatch(ctx);
+    });
 }
 
 pub(crate) fn trigger_auto_handoff_to_cloud(
