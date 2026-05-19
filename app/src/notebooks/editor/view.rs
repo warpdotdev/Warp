@@ -2991,6 +2991,7 @@ impl TypedActionView for RichTextEditorView {
             ShowFindBar => {
                 if self.find_bar.is_focused(ctx) {
                     self.find_bar.hide(ctx);
+                    self.update_decorations(ctx);
                 } else {
                     self.find_bar.show(ctx);
                 }
