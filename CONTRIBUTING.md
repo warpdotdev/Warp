@@ -112,7 +112,7 @@ You **do not need to manually request reviewers**. Oz is auto-assigned to PRs th
 
 After you push changes that address Oz's feedback, comment `/oz-review` on the PR to request a re-review — you can do this up to **three times** per PR. If something looks stuck or you need more reviews than that, mention **@oss-maintainers** on the PR to escalate to the team.
 
-**You must include proof of manual testing**. For small, isolated, and visual changes, you should include **before and after screenshots**. For larger, broad, or interactive changes, you should also include a **narrated screen recording**.
+**You must include proof of [manual testing](#manual-testing)**. For small, isolated, and visual changes, you should include **before and after screenshots**. For larger, broad, or interactive changes, you should also include a **narrated screen recording**.
 
 ## Using a Coding Agent
 
@@ -146,7 +146,7 @@ cargo run            # build and run Warp
 Tests are required for most code changes:
 
 ### Manual Testing
-Manual testing is required for changes that can be manually tested, and almost all changes can be manually tested. If your change can be manually tested, please include screenshots or a screen recording that show it working end to end in the PR description.
+Manual testing is required for changes that can be manually tested, and almost all changes can be manually tested. For small, isolated, and visual changes, you should include **before and after screenshots**. For larger, broad, or interactive changes, you should also include a **narrated screen recording**.
 
 You can run the app locally using `./script/run` - see [WARP.md](WARP.md) for more details on how to get set up.
 
