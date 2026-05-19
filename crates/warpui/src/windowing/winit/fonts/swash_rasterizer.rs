@@ -94,7 +94,7 @@ impl FontDB {
                 .0,
             )
             .clone()
-            .unwrap();
+            .ok_or_else(|| anyhow!("Failed to get raster image"))?;
 
         let (original_format, is_color) = match image.content {
             cosmic_text::SwashContent::Mask => (RasterFormat::A8, false),
