@@ -8,6 +8,7 @@ use crate::codebase_index_proto::{
     proto_to_codebase_index_status_updated, proto_to_codebase_index_statuses_snapshot,
     RemoteCodebaseIndexStatus,
 };
+use crate::proto::CodebaseIndexLimits;
 use dashmap::DashMap;
 use futures::channel::oneshot;
 use futures::io::{AsyncRead, AsyncWrite};
@@ -137,6 +138,7 @@ pub struct InitializeParams {
     pub user_id: String,
     pub user_email: String,
     pub crash_reporting_enabled: bool,
+    pub codebase_index_limits: Option<CodebaseIndexLimits>,
 }
 
 /// A request-failure notification emitted by [`RemoteServerClient::send_request`].
@@ -294,6 +296,7 @@ impl RemoteServerClient {
                 user_id: params.user_id,
                 user_email: params.user_email,
                 crash_reporting_enabled: params.crash_reporting_enabled,
+                codebase_index_limits: params.codebase_index_limits,
             })),
         };
 
@@ -402,10 +405,11 @@ impl RemoteServerClient {
                         .ok_or(ClientError::UnexpectedResponse)?;
                 log::info!(
                     "[Remote codebase indexing] Client received {operation} response: \
-                     repo_path={} state={:?} root_hash_present={}",
+                     repo_path={} state={:?} root_hash_present={} failure_message={:?}",
                     status.repo_path,
                     status.state,
                     status.root_hash.is_some(),
+                    status.failure_message,
                 );
                 Ok(status)
             }
@@ -516,12 +520,17 @@ impl RemoteServerClient {
 
     /// Sends an `UpdatePreferences` notification when the user's privacy
     /// settings change (e.g. toggling crash reporting).
-    pub fn update_preferences(&self, crash_reporting_enabled: bool) {
+    pub fn update_preferences(
+        &self,
+        crash_reporting_enabled: bool,
+        codebase_index_limits: Option<CodebaseIndexLimits>,
+    ) {
         let msg = ClientMessage {
             request_id: String::new(),
             message: Some(client_message::Message::UpdatePreferences(
                 crate::proto::UpdatePreferences {
                     crash_reporting_enabled,
+                    codebase_index_limits,
                 },
             )),
         };
@@ -847,10 +856,11 @@ impl RemoteServerClient {
                 let status = proto_to_codebase_index_status_updated(&update)?;
                 log::info!(
                     "[Remote codebase indexing] Client received codebase index status push: \
-                     repo_path={} state={:?} root_hash_present={}",
+                     repo_path={} state={:?} root_hash_present={} failure_message={:?}",
                     status.repo_path,
                     status.state,
                     status.root_hash.is_some(),
+                    status.failure_message,
                 );
                 Some(ClientEvent::CodebaseIndexStatusUpdated { status })
             }

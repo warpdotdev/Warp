@@ -14,9 +14,9 @@ use crate::client::InitializeParams;
 use crate::client::RemoteServerClient;
 use crate::codebase_index_proto::RemoteCodebaseIndexStatus;
 use crate::proto::{
-    diff_state, get_diff_state_response, DiffMode, DiffState, DiffStateErrorValue,
-    DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot, FileStatusInfo,
-    GetDiffStateResponse, TextEdit,
+    diff_state, get_diff_state_response, CodebaseIndexLimits, DiffMode, DiffState,
+    DiffStateErrorValue, DiffStateFileDelta, DiffStateMetadataUpdate, DiffStateSnapshot,
+    FileStatusInfo, GetDiffStateResponse, TextEdit,
 };
 use crate::repo_metadata_proto::proto_load_repo_metadata_directory_response_to_update;
 use crate::setup::PreinstallCheckResult;
@@ -62,6 +62,7 @@ struct ReconnectParams {
     exit_status: Option<RemoteServerExitStatus>,
     transport: Arc<dyn RemoteTransport>,
     auth_context: Arc<RemoteServerAuthContext>,
+    codebase_index_limits: Option<CodebaseIndexLimits>,
     control_path: Option<PathBuf>,
     identity_key: String,
 }
@@ -680,6 +681,8 @@ pub struct RemoteServerManager {
     /// Detected remote platform per session, populated during the binary check
     /// phase via `detect_platform()`. Used for telemetry.
     session_platforms: HashMap<SessionId, RemotePlatform>,
+    /// Last client-resolved codebase index limits sent to remote daemons.
+    codebase_index_limits: Option<CodebaseIndexLimits>,
 }
 
 impl Entity for RemoteServerManager {
@@ -699,7 +702,15 @@ impl RemoteServerManager {
             session_bootstrap_info: HashMap::new(),
             auth_context: None,
             session_platforms: HashMap::new(),
+            codebase_index_limits: None,
         }
+    }
+
+    pub fn update_codebase_index_limits(
+        &mut self,
+        codebase_index_limits: Option<CodebaseIndexLimits>,
+    ) {
+        self.codebase_index_limits = codebase_index_limits;
     }
 
     /// Returns a connected client for the given host by picking an arbitrary
@@ -1032,6 +1043,7 @@ impl RemoteServerManager {
             // for reconnection after a spontaneous disconnect.
             let transport: Arc<dyn RemoteTransport> = Arc::new(transport);
             let auth_context_for_task = Arc::clone(&auth_context);
+            let codebase_index_limits = self.codebase_index_limits;
             // Capture the identity key synchronously so it travels with the
             // session and can be used to filter token-rotation notifications.
             let identity_key = auth_context.remote_server_identity_key();
@@ -1042,6 +1054,7 @@ impl RemoteServerManager {
                         session_id,
                         &*transport,
                         &auth_context_for_task,
+                        codebase_index_limits,
                         &spawner,
                         &executor,
                     )
@@ -1174,6 +1187,7 @@ impl RemoteServerManager {
         session_id: SessionId,
         transport: &dyn RemoteTransport,
         auth_context: &RemoteServerAuthContext,
+        codebase_index_limits: Option<CodebaseIndexLimits>,
         spawner: &ModelSpawner<Self>,
         executor: &Arc<warpui::r#async::executor::Background>,
     ) -> Result<InitializeHandshake, ConnectAndHandshakeError> {
@@ -1230,6 +1244,7 @@ impl RemoteServerManager {
                     user_id: auth_context.user_id().to_owned(),
                     user_email: auth_context.user_email().to_owned(),
                     crash_reporting_enabled: auth_context.crash_reporting_enabled(),
+                    codebase_index_limits,
                 },
             )
             .await
@@ -1607,9 +1622,11 @@ impl RemoteServerManager {
                         log::info!(
                             "[Remote codebase indexing] Manager received codebase index mutation response: \
                              operation={operation:?} host={host_id} session={session_id:?} \
-                             remote_identity_key={remote_identity_key} repo_path={} state={:?}",
+                             remote_identity_key={remote_identity_key} repo_path={} state={:?} \
+                             failure_message={:?}",
                             status.repo_path,
-                            status.state
+                            status.state,
+                            status.failure_message
                         );
                         let remote_path = remote_path_for_status(&host_id, &status).unwrap_or(remote_path);
                         let _ = spawner
@@ -2416,6 +2433,7 @@ impl RemoteServerManager {
                     exit_status,
                     transport,
                     auth_context,
+                    codebase_index_limits: self.codebase_index_limits,
                     control_path,
                     identity_key,
                 },
@@ -2444,6 +2462,7 @@ impl RemoteServerManager {
             exit_status,
             transport,
             auth_context,
+            codebase_index_limits,
             control_path,
             identity_key,
         } = params;
@@ -2465,6 +2484,7 @@ impl RemoteServerManager {
         let executor = ctx.background_executor().clone();
         let transport_clone = Arc::clone(&transport);
         let auth_context_for_task = Arc::clone(&auth_context);
+        let codebase_index_limits_for_task = codebase_index_limits;
 
         ctx.background_executor()
             .spawn(async move {
@@ -2485,6 +2505,7 @@ impl RemoteServerManager {
                     session_id,
                     &*transport_clone,
                     &auth_context_for_task,
+                    codebase_index_limits_for_task,
                     &spawner,
                     &executor,
                 )
@@ -2542,6 +2563,7 @@ impl RemoteServerManager {
                                         exit_status,
                                         transport,
                                         auth_context,
+                                        codebase_index_limits,
                                         control_path,
                                         identity_key,
                                     },

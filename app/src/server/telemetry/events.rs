@@ -1245,6 +1245,13 @@ pub enum RemoteCodebaseIndexStatusTelemetrySource {
     MutationResponse,
 }
 
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteCodebaseAutoIndexTrigger {
+    NavigatedToGitRepo,
+    CodebaseContextEnablementChanged,
+}
+
 #[derive(Clone, EnumDiscriminants)]
 #[strum_discriminants(derive(EnumIter))]
 pub enum TelemetryEvent {
@@ -2914,6 +2921,13 @@ pub enum TelemetryEvent {
         remote_os: Option<String>,
         remote_arch: Option<String>,
     },
+    /// Emitted when auto-indexing requests one or more remote codebases.
+    RemoteCodebaseAutoIndexRequested {
+        trigger: RemoteCodebaseAutoIndexTrigger,
+        requested_count: usize,
+        remote_os: Option<String>,
+        remote_arch: Option<String>,
+    },
 }
 
 impl TelemetryEventTrait for TelemetryEvent {
@@ -4316,6 +4330,17 @@ impl TelemetryEvent {
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
             })),
+            TelemetryEvent::RemoteCodebaseAutoIndexRequested {
+                trigger,
+                requested_count,
+                remote_os,
+                remote_arch,
+            } => Some(json!({
+                "trigger": trigger,
+                "requested_count": requested_count,
+                "remote_os": remote_os,
+                "remote_arch": remote_arch,
+            })),
             TelemetryEvent::RemoteServerSetupDuration {
                 duration_ms,
                 installed_binary,
@@ -5186,7 +5211,8 @@ impl TelemetryEvent {
             | TelemetryEvent::RemoteServerHostUnsupported { .. }
             | TelemetryEvent::RemoteServerReconnection { .. }
             | TelemetryEvent::RemoteServerReconnectExhausted { .. }
-            | TelemetryEvent::RemoteCodebaseIndexStatusChanged { .. } => false,
+            | TelemetryEvent::RemoteCodebaseIndexStatusChanged { .. }
+            | TelemetryEvent::RemoteCodebaseAutoIndexRequested { .. } => false,
             #[cfg(feature = "local_fs")]
             TelemetryEvent::CodePaneOpened { .. }
             | TelemetryEvent::CodePanelsFileOpened { .. }
@@ -5758,7 +5784,8 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::RemoteServerHostUnsupported
             | Self::RemoteServerReconnection
             | Self::RemoteServerReconnectExhausted
-            | Self::RemoteCodebaseIndexStatusChanged => {
+            | Self::RemoteCodebaseIndexStatusChanged
+            | Self::RemoteCodebaseAutoIndexRequested => {
                 EnablementState::Flag(FeatureFlag::SshRemoteServer)
             }
         }
@@ -6171,6 +6198,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::RemoteServerReconnection => "RemoteServer.Reconnection",
             Self::RemoteServerReconnectExhausted => "RemoteServer.ReconnectExhausted",
             Self::RemoteCodebaseIndexStatusChanged => "RemoteCodebaseIndex.StatusChanged",
+            Self::RemoteCodebaseAutoIndexRequested => "RemoteCodebaseIndex.AutoIndexRequested",
             #[cfg(windows)]
             Self::WSLRegistryError => "WSL Distribution Registry Error",
             #[cfg(windows)]
@@ -7230,6 +7258,9 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 "All reconnection attempts were exhausted after a spontaneous disconnect"
             }
             Self::RemoteCodebaseIndexStatusChanged => "The remote codebase index status changed",
+            Self::RemoteCodebaseAutoIndexRequested => {
+                "Remote codebase auto-indexing requested one or more repositories"
+            }
         }
     }
 }
