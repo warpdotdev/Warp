@@ -67,7 +67,7 @@ use warpui::{
     clipboard::ClipboardContent,
     elements::{
         Align, Border, ChildAnchor, ClippedScrollStateHandle, ConstrainedBox, Container,
-        CornerRadius, CrossAxisAlignment, Element, Empty, Flex, Hoverable, MainAxisAlignment,
+        CornerRadius, CrossAxisAlignment, Element, Flex, Hoverable, MainAxisAlignment,
         MainAxisSize, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement,
         ParentOffsetBounds, Radius, SavePosition, ScrollTarget, ScrollToPositionMode, Shrinkable,
         Stack, Text,
@@ -107,7 +107,8 @@ const SCROLLABLE_LIST_ITEM_PADDING: f32 = 10.;
 const CLOSE_BUTTON_ICON_SIZE: f32 = 20.;
 const CONTENT_SEPARATION_PADDING: f32 = 24.;
 const TEXT_FIELD_TOP_PADDING: f32 = 12.;
-const SUBSECTION_HEADER_FONT_SIZE: f32 = 14.;
+const HORIZONTAL_BAR_TO_SUB_HEADER_PADDING: f32 = 9.;
+const SUBSECTION_HEADER_FONT_SIZE: f32 = 18.;
 const SUBSUBSECTION_HEADER_FONT_SIZE: f32 = 14.;
 
 const INVITE_LINK_PREFIX: &str = "/team/";
@@ -2175,12 +2176,11 @@ impl TeamsWidget {
             )
         }
 
-        // 2) Horizontal separator: 16px below the team name, 16px above
-        // the invitation flows section.
+        // 2) Horizontal separator
         main_content.add_child(
             Container::new(render_separator(appearance))
-                .with_padding_top(16.)
-                .with_margin_bottom(16.)
+                .with_padding_top(CONTENT_SEPARATION_PADDING)
+                .with_margin_bottom(HORIZONTAL_BAR_TO_SUB_HEADER_PADDING)
                 .finish(),
         );
 
@@ -2194,18 +2194,16 @@ impl TeamsWidget {
             app,
         ));
 
-        // 3.5) Divider between invitation flows and team members.
-        // 32px of breathing room above and below the divider.
-        // The 32px above comes from the invitation section's bottom padding
-        // (overridden below); `margin_bottom` provides the 32px below.
+        // 4) Horizontal separator between the invite flows and the team members
+        // list. 32px of breathing room above and below to match the design.
         main_content.add_child(
-            Container::new(Empty::new().finish())
-                .with_border(Border::bottom(1.).with_border_fill(appearance.theme().outline()))
-                .with_margin_bottom(32.)
+            Container::new(render_separator(appearance))
+                .with_padding_top(32.)
+                .with_padding_bottom(32.)
                 .finish(),
         );
 
-        // 4) Team members
+        // 5) Team members
         main_content.add_child(self.render_team_members_section(
             team_metadata,
             &current_user_email,
@@ -3022,7 +3020,7 @@ impl TeamsWidget {
                     appearance,
                     Some(Coords::uniform(0.).right(48.)),
                 ))
-                .with_padding_top(12.)
+                .with_padding_top(16.)
                 .finish(),
             );
 
@@ -3089,15 +3087,6 @@ impl TeamsWidget {
             .collect();
 
         if !domains_as_items.is_empty() {
-            // When the viewer isn't an admin, the list is the first element
-            // below the "Restrict by domain" header, so use the tighter 12px
-            // gap. Otherwise, keep the larger section separation after the
-            // admin input box.
-            let domain_list_padding_top = if has_admin_permissions {
-                CONTENT_SEPARATION_PADDING
-            } else {
-                12.
-            };
             section.add_child(
                 Container::new(self.render_item_list(
                     domains_as_items,
@@ -3105,7 +3094,7 @@ impl TeamsWidget {
                     view,
                     appearance,
                 ))
-                .with_padding_top(domain_list_padding_top)
+                .with_padding_top(CONTENT_SEPARATION_PADDING)
                 .finish(),
             );
         }
@@ -3588,17 +3577,8 @@ impl TeamsWidget {
 
                 row.add_child(pending_and_close_row.finish());
 
-                // Enforce a minimum content height so rows with state chips
-                // (OWNER/ADMIN/PENDING/EXPIRED) match the height of rows
-                // without chips. The chip contributes more vertical space than
-                // plain text due to its own padding.
-                const ITEM_CONTENT_MIN_HEIGHT: f32 = 24.;
-                let list_element = Container::new(
-                    ConstrainedBox::new(row.finish())
-                        .with_min_height(ITEM_CONTENT_MIN_HEIGHT)
-                        .finish(),
-                )
-                .with_uniform_padding(SCROLLABLE_LIST_ITEM_PADDING);
+                let list_element =
+                    Container::new(row.finish()).with_uniform_padding(SCROLLABLE_LIST_ITEM_PADDING);
 
                 let container = if idx % 2 == 0 {
                     list_element

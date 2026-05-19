@@ -945,8 +945,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::SshRemoteServer,
     FeatureFlag::DragTabsToWindows,
     FeatureFlag::CustomWarpingVerbs,
-    FeatureFlag::NamedAgents,
-    FeatureFlag::GitCredentialRefresh,
     FeatureFlag::SoloUserByok,
     FeatureFlag::CustomInferenceEndpoints,
     FeatureFlag::RemoteCodebaseIndexing,
