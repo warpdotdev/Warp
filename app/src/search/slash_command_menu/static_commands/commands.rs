@@ -172,7 +172,7 @@ pub static FORK: LazyLock<StaticCommand> = LazyLock::new(|| {
 });
 
 pub static MOVE_TO_CLOUD: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
-    name: "/move-to-cloud",
+    name: "/handoff",
     description: "Hand off this conversation to a cloud agent",
     icon_path: "bundled/svg/upload-cloud-01.svg",
     availability: Availability::AGENT_VIEW
@@ -722,7 +722,7 @@ fn all_commands() -> Vec<StaticCommand> {
         commands.push(OPEN_REPO);
     }
 
-    if FeatureFlag::Orchestration.is_enabled() {
+    if FeatureFlag::OrchestrationV2.is_enabled() {
         commands.push(ORCHESTRATE.clone());
     }
 

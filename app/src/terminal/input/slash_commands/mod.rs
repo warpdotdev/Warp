@@ -26,9 +26,13 @@ use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent_conversations_model::AgentConversationsModel;
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::agent_management::telemetry::AgentManagementTelemetryEvent;
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::ambient_agents::telemetry::HandoffEntryPoint;
 use crate::ai::blocklist::agent_view::{
     AgentViewEntryOrigin, DismissalStrategy, EphemeralMessage, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
+#[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::blocklist::handoff::PendingCloudLaunch;
 use crate::ai::blocklist::{BlocklistAIHistoryModel, SlashCommandRequest};
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
@@ -894,18 +898,34 @@ impl Input {
             }
             #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
             move_to_cloud if command.name == commands::MOVE_TO_CLOUD.name => {
-                if !FeatureFlag::OzHandoff.is_enabled()
-                    || !FeatureFlag::HandoffLocalCloud.is_enabled()
+                if !AISettings::as_ref(ctx)
+                    .is_cloud_handoff_enabled_for_terminal_view(self.terminal_view_id, ctx)
                 {
                     return false;
                 }
-                // The workspace handler falls through to splitting a fresh cloud-mode
-                // pane when there's nothing to hand off, so we don't need to gate on
-                // `selected_conversation_id` here — the slash command always opens
-                // the new pane.
-                ctx.dispatch_typed_action(&WorkspaceAction::OpenLocalToCloudHandoffPane {
-                    initial_prompt: argument.cloned().filter(|s| !s.is_empty()),
-                });
+                let prompt = argument
+                    .map(|argument| argument.trim())
+                    .filter(|argument| !argument.is_empty())
+                    .map(str::to_owned);
+                if let Some(prompt) = prompt {
+                    // `/handoff query` auto-submits, same as `& query`.
+                    let attachments = self.collect_cloud_launch_attachments(ctx);
+                    let launch = PendingCloudLaunch {
+                        prompt,
+                        attachments,
+                    };
+                    ctx.dispatch_typed_action_deferred(
+                        WorkspaceAction::OpenLocalToCloudHandoffPane {
+                            launch: Some(launch),
+                            environment_id: None,
+                            entry_point: HandoffEntryPoint::SlashCommand,
+                        },
+                    );
+                } else {
+                    // `/handoff` with no query enters `&` compose mode,
+                    // same as the footer chip.
+                    self.activate_cloud_handoff_compose(HandoffEntryPoint::SlashCommand, ctx);
+                }
             }
             fork if command.name == commands::FORK.name => {
                 let Some(conversation_id) = self

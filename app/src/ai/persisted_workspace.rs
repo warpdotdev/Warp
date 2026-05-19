@@ -240,7 +240,7 @@ impl PersistedWorkspace {
                     CodebaseIndexManagerEvent::IndexMetadataUpdated { root_path, event } => {
                         me.handle_index_metadata_event(root_path, *event);
                     }
-                    CodebaseIndexManagerEvent::NewIndexCreated => {
+                    CodebaseIndexManagerEvent::NewIndexCreated { .. } => {
                         send_active_indexed_repos_changed_telemetry(ctx);
                     }
                     CodebaseIndexManagerEvent::RemoveExpiredIndexMetadata { expired_metadata } => {
@@ -656,7 +656,12 @@ impl PersistedWorkspace {
             let auto_indexing_enabled = *CodeSettings::as_ref(ctx).auto_indexing_enabled;
 
             if auto_indexing_enabled {
-                if let Some(root) = DetectedRepositories::as_ref(ctx).get_root_for_path(&dir) {
+                if let Some(root) = DetectedRepositories::as_ref(ctx)
+                    .get_root_for_path(&warp_util::local_or_remote_path::LocalOrRemotePath::Local(
+                        dir.clone(),
+                    ))
+                    .and_then(|r| r.to_local_path().map(std::path::Path::to_path_buf))
+                {
                     manager.index_directory(root, ctx);
                 }
             }

@@ -212,7 +212,9 @@ impl Input {
         )
         .finish();
 
-        let border_color = if !self.ai_input_model.as_ref(app).is_ai_input_enabled()
+        let border_color = if self.handoff_compose_state.as_ref(app).is_active() {
+            appearance.theme().ansi_fg_magenta()
+        } else if !self.ai_input_model.as_ref(app).is_ai_input_enabled()
             && !self.suggestions_mode_model.as_ref(app).is_slash_commands()
             && !self.slash_command_model.as_ref(app).state().is_detected_command()
             // If NLD, don't color the border if the input is empty, because the current

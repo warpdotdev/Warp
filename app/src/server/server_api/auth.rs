@@ -230,45 +230,19 @@ pub trait AuthClient: 'static + Send + Sync {
     async fn get_or_create_ambient_workload_token(&self) -> Result<Option<String>>;
 }
 
-#[cfg_attr(not(target_family = "wasm"), async_trait)]
-#[cfg_attr(target_family = "wasm", async_trait(?Send))]
-impl AuthClient for ServerApi {
-    async fn create_anonymous_user(
-        &self,
-        referral_code: Option<String>,
-        anonymous_user_type: AnonymousUserType,
-    ) -> Result<CreateAnonymousUserResult> {
-        let variables = CreateAnonymousUserVariables {
-            input: warp_graphql::mutations::create_anonymous_user::CreateAnonymousUserInput {
-                anonymous_user_type,
-                expiration_type: warp_graphql::mutations::create_anonymous_user::AnonymousUserExpirationType::NoExpiration,
-                referral_code,
-            },
-            request_context: get_request_context(),
-        };
-
-        let operation = CreateAnonymousUser::build(variables);
-        let response = operation
-            .send_request(self.client.clone(), default_request_options())
-            .await?;
-
-        Ok(response
-            .data
-            .ok_or_else(|| anyhow!("missing data in response"))?
-            .create_anonymous_user)
-    }
-
-    async fn get_or_refresh_access_token(&self) -> Result<AuthToken> {
+impl ServerApi {
+    pub(super) async fn access_token(&self) -> Result<AuthToken> {
         if cfg!(feature = "skip_login") {
             bail!("skip_login enabled; failing all authenticated requests");
         }
 
         let Some(credentials) = self.auth_state.credentials() else {
-            bail!("Attempted to retrieve access token when user is logged out");
+            bail!("missing authentication credentials");
         };
 
         match credentials {
             Credentials::ApiKey { key, .. } => Ok(AuthToken::ApiKey(key)),
+            Credentials::Bearer(token) => Ok(AuthToken::Bearer(token)),
             Credentials::Firebase(auth_tokens) => {
                 let expiration_time = auth_tokens.expiration_time;
 
@@ -301,6 +275,39 @@ impl AuthClient for ServerApi {
             #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
             Credentials::Test => Ok(AuthToken::NoAuth),
         }
+    }
+}
+
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+impl AuthClient for ServerApi {
+    async fn create_anonymous_user(
+        &self,
+        referral_code: Option<String>,
+        anonymous_user_type: AnonymousUserType,
+    ) -> Result<CreateAnonymousUserResult> {
+        let variables = CreateAnonymousUserVariables {
+            input: warp_graphql::mutations::create_anonymous_user::CreateAnonymousUserInput {
+                anonymous_user_type,
+                expiration_type: warp_graphql::mutations::create_anonymous_user::AnonymousUserExpirationType::NoExpiration,
+                referral_code,
+            },
+            request_context: get_request_context(),
+        };
+
+        let operation = CreateAnonymousUser::build(variables);
+        let response = operation
+            .send_request(self.client.clone(), default_request_options())
+            .await?;
+
+        Ok(response
+            .data
+            .ok_or_else(|| anyhow!("missing data in response"))?
+            .create_anonymous_user)
+    }
+
+    async fn get_or_refresh_access_token(&self) -> Result<AuthToken> {
+        self.access_token().await
     }
 
     async fn fetch_user(
@@ -385,7 +392,7 @@ impl AuthClient for ServerApi {
                     auth_token: auth_token.map(ToOwned::to_owned),
                     headers: std::collections::HashMap::from([(
                         EXPERIMENT_ID_HEADER.to_string(),
-                        self.auth_state.anonymous_id(),
+                        self.anonymous_id(),
                     )]),
                     ..default_request_options()
                 },
@@ -811,6 +818,7 @@ impl From<GqlUserOutput> for UserProperties {
 
         let is_on_work_domain = user_properties.is_on_work_domain;
         let is_onboarded = user_properties.is_onboarded;
+        let global_skills = user_properties.global_skills;
         let api_key_owner_type = user_output.api_key_owner_type;
 
         let linked_at = user_properties
@@ -847,6 +855,7 @@ impl From<GqlUserOutput> for UserProperties {
             linked_at,
             personal_object_limits: personal_object_limits.and_then(|t| t.try_into().ok()),
             principal_type,
+            global_skills,
         };
 
         UserProperties {

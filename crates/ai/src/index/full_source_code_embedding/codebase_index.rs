@@ -12,7 +12,10 @@ use warpui::{Entity, ModelContext, ModelHandle};
 
 use super::{
     fragment_metadata::{FragmentMetadata, LeafToFragmentMetadata, LeafToFragmentMetadataUpdates},
-    manager::{CodebaseIndexFinishedStatus, CodebaseIndexStatus, RetrieveFileError},
+    manager::{
+        CodebaseIndexFinishedStatus, CodebaseIndexStatus, FragmentMetadataLookupError,
+        RetrieveFileError,
+    },
     merkle_tree::{MerkleTree, SerializedCodebaseIndex},
     store_client::StoreClient,
     sync_client::{FlushFragmentResult, SyncOperationError},
@@ -316,7 +319,9 @@ pub enum CodebaseIndexEvent {
         retrieval_id: RetrievalID,
         error: Error,
     },
-    SyncStateUpdated,
+    SyncStateUpdated {
+        root_path: PathBuf,
+    },
     IndexMetadataUpdated {
         root_path: PathBuf,
         event: WorkspaceMetadataEvent,
@@ -876,7 +881,9 @@ impl CodebaseIndex {
         ctx: &mut ModelContext<Self>,
     ) -> TreeSourceSyncState {
         let old_state = std::mem::replace(&mut self.tree_sync_state, new_state);
-        ctx.emit(CodebaseIndexEvent::SyncStateUpdated);
+        ctx.emit(CodebaseIndexEvent::SyncStateUpdated {
+            root_path: self.repo_path.clone(),
+        });
         old_state
     }
 
@@ -885,7 +892,9 @@ impl CodebaseIndex {
         if let TreeSourceSyncState::Syncing { sync_progress, .. } = &mut self.tree_sync_state {
             *sync_progress = Some(progress);
 
-            ctx.emit(CodebaseIndexEvent::SyncStateUpdated);
+            ctx.emit(CodebaseIndexEvent::SyncStateUpdated {
+                root_path: self.repo_path.clone(),
+            });
         }
     }
 
@@ -1318,6 +1327,30 @@ impl CodebaseIndex {
         self.leaf_node_to_fragment_metadatas.get(leaf_hash.as_ref())
     }
 
+    pub(super) fn fragment_metadatas_from_hashes(
+        &self,
+        root_hash: &NodeHash,
+        content_hashes: &[ContentHash],
+    ) -> Result<HashMap<ContentHash, Vec<FragmentMetadata>>, FragmentMetadataLookupError> {
+        let current_root_hash = self
+            .last_server_synced_root_node()
+            .ok_or(FragmentMetadataLookupError::IndexNotSynced)?;
+        if &current_root_hash != root_hash {
+            return Err(FragmentMetadataLookupError::RootHashMismatch {
+                requested: root_hash.clone(),
+                current: current_root_hash,
+            });
+        }
+
+        Ok(content_hashes
+            .iter()
+            .filter_map(|hash| {
+                self.fragment_metadatas_from_hash(hash)
+                    .map(|metadata| (hash.clone(), metadata.clone()))
+            })
+            .collect())
+    }
+
     fn repo_metadata(&self) -> RepoMetadata {
         RepoMetadata {
             path: Some(self.repo_path.to_string_lossy().to_string()),
@@ -1342,7 +1375,8 @@ impl CodebaseIndex {
     }
 
     pub(super) fn codebase_index_status(&self) -> CodebaseIndexStatus {
-        let has_synced_version = self.last_server_synced_root_node().is_some();
+        let root_hash = self.last_server_synced_root_node();
+        let has_synced_version = root_hash.is_some();
         match &self.tree_sync_state {
             TreeSourceSyncState::Synced {
                 server_sync_result, ..
@@ -1356,18 +1390,21 @@ impl CodebaseIndex {
                     }
                 }),
                 sync_progress: None,
+                root_hash: root_hash.clone(),
             },
             TreeSourceSyncState::InitializeTreeFailure(e) => CodebaseIndexStatus {
                 has_pending: false,
                 has_synced_version,
                 last_sync_successful: Some(CodebaseIndexFinishedStatus::Failed(e.into())),
                 sync_progress: None,
+                root_hash: root_hash.clone(),
             },
             TreeSourceSyncState::Syncing { sync_progress, .. } => CodebaseIndexStatus {
                 has_pending: true,
                 has_synced_version,
                 last_sync_successful: None,
                 sync_progress: *sync_progress,
+                root_hash: root_hash.clone(),
             },
         }
     }
