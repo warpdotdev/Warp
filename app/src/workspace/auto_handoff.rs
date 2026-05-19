@@ -27,6 +27,7 @@ pub(crate) enum AutoCloudHandoffSkipReason {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AutoCloudHandoffAttemptState {
     InFlight,
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     Succeeded,
 }
 
@@ -93,11 +94,12 @@ impl AutoCloudHandoffController {
         }
     }
 
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pub(crate) fn record_handoff_succeeded(&mut self, conversation_id: AIConversationId) {
         self.attempted_conversation_ids
             .insert(conversation_id, AutoCloudHandoffAttemptState::Succeeded);
     }
-
+    #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
     pub(crate) fn record_handoff_failed(&mut self, conversation_id: AIConversationId) {
         self.attempted_conversation_ids.remove(&conversation_id);
     }
