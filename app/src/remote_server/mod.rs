@@ -89,10 +89,10 @@ pub fn wire_auth_token_rotation(ctx: &mut warpui::AppContext) {
         {
             let codebase_index_limits = current_codebase_index_limits(ctx);
             manager.update(ctx, |manager, _| {
-                manager.update_codebase_index_limits(Some(codebase_index_limits.clone()));
+                manager.update_codebase_index_limits(Some(codebase_index_limits));
             });
             for client in manager.as_ref(ctx).all_connected_clients() {
-                client.update_preferences(new_value, Some(codebase_index_limits.clone()));
+                client.update_preferences(new_value, Some(codebase_index_limits));
             }
         }
     });
@@ -104,12 +104,9 @@ pub fn wire_auth_token_rotation(ctx: &mut warpui::AppContext) {
             let codebase_index_limits = current_codebase_index_limits(ctx);
             let crash_reporting_enabled = PrivacySettings::as_ref(ctx).is_crash_reporting_enabled;
             manager.update(ctx, |manager, _| {
-                manager.update_codebase_index_limits(Some(codebase_index_limits.clone()));
+                manager.update_codebase_index_limits(Some(codebase_index_limits));
                 for client in manager.all_connected_clients() {
-                    client.update_preferences(
-                        crash_reporting_enabled,
-                        Some(codebase_index_limits.clone()),
-                    );
+                    client.update_preferences(crash_reporting_enabled, Some(codebase_index_limits));
                 }
             });
         }

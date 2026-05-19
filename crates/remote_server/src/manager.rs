@@ -1037,7 +1037,7 @@ impl RemoteServerManager {
             // for reconnection after a spontaneous disconnect.
             let transport: Arc<dyn RemoteTransport> = Arc::new(transport);
             let auth_context_for_task = Arc::clone(&auth_context);
-            let codebase_index_limits = self.codebase_index_limits.clone();
+            let codebase_index_limits = self.codebase_index_limits;
             // Capture the identity key synchronously so it travels with the
             // session and can be used to filter token-rotation notifications.
             let identity_key = auth_context.remote_server_identity_key();
@@ -2418,7 +2418,7 @@ impl RemoteServerManager {
                     exit_status,
                     transport,
                     auth_context,
-                    codebase_index_limits: self.codebase_index_limits.clone(),
+                    codebase_index_limits: self.codebase_index_limits,
                     control_path,
                     identity_key,
                 },
@@ -2469,7 +2469,7 @@ impl RemoteServerManager {
         let executor = ctx.background_executor().clone();
         let transport_clone = Arc::clone(&transport);
         let auth_context_for_task = Arc::clone(&auth_context);
-        let codebase_index_limits_for_task = codebase_index_limits.clone();
+        let codebase_index_limits_for_task = codebase_index_limits;
 
         ctx.background_executor()
             .spawn(async move {
