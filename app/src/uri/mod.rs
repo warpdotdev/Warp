@@ -824,7 +824,13 @@ impl Action {
                 open_file(window_id, path, ctx);
             }
             Self::OpenFileEditor { path, line_col } => {
+                #[cfg(feature = "local_fs")]
                 open_file_editor(primary_window_id, path.clone(), *line_col, ctx);
+                #[cfg(not(feature = "local_fs"))]
+                {
+                    let _ = (path, line_col);
+                    log::warn!("open_file_editor action requires local_fs support");
+                }
             }
             Action::Docker => {
                 if let Err(err) = open_docker_container(url, ctx) {
@@ -1140,6 +1146,7 @@ fn classify_open_file_action(path: &Path) -> OpenFileAction {
     }
 }
 
+#[cfg(feature = "local_fs")]
 fn can_open_file_editor_path(path: &Path) -> bool {
     path.is_file() && is_file_openable_in_warp(path).is_some()
 }
@@ -1252,6 +1259,7 @@ fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
     }
 }
 
+#[cfg(feature = "local_fs")]
 fn open_file_editor(
     primary_window_id: Option<WindowId>,
     path: PathBuf,

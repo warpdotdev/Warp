@@ -253,10 +253,20 @@ fn test_action_create_environment_parse_no_repos() {
     }
 }
 
+fn open_file_editor_test_path(file_name: &str) -> (String, PathBuf) {
+    #[cfg(windows)]
+    let path = format!("C:/tmp/{file_name}");
+    #[cfg(not(windows))]
+    let path = format!("/tmp/{file_name}");
+
+    (path.clone(), PathBuf::from(path))
+}
+
 #[test]
 fn test_action_open_file_editor_parse_with_path_only() {
+    let (path_param, expected_path) = open_file_editor_test_path("test.rs");
     let url = Url::parse(&format!(
-        "{}://action/open_file_editor?path=/tmp/test.rs",
+        "{}://action/open_file_editor?path={path_param}",
         ChannelState::url_scheme()
     ))
     .unwrap();
@@ -264,7 +274,7 @@ fn test_action_open_file_editor_parse_with_path_only() {
     let action = Action::parse(&url).unwrap();
     match action {
         Action::OpenFileEditor { path, line_col } => {
-            assert_eq!(path, PathBuf::from("/tmp/test.rs"));
+            assert_eq!(path, expected_path);
             assert_eq!(line_col, None);
         }
         _ => panic!("unexpected action: {action:?}"),
@@ -273,8 +283,9 @@ fn test_action_open_file_editor_parse_with_path_only() {
 
 #[test]
 fn test_action_open_file_editor_parse_with_line_only() {
+    let (path_param, expected_path) = open_file_editor_test_path("test.rs");
     let url = Url::parse(&format!(
-        "{}://action/open_file_editor?path=/tmp/test.rs&line=120",
+        "{}://action/open_file_editor?path={path_param}&line=120",
         ChannelState::url_scheme()
     ))
     .unwrap();
@@ -282,7 +293,7 @@ fn test_action_open_file_editor_parse_with_line_only() {
     let action = Action::parse(&url).unwrap();
     match action {
         Action::OpenFileEditor { path, line_col } => {
-            assert_eq!(path, PathBuf::from("/tmp/test.rs"));
+            assert_eq!(path, expected_path);
             assert_eq!(
                 line_col,
                 Some(LineAndColumnArg {
@@ -297,8 +308,9 @@ fn test_action_open_file_editor_parse_with_line_only() {
 
 #[test]
 fn test_action_open_file_editor_parse_with_line_and_column() {
+    let (path_param, expected_path) = open_file_editor_test_path("test.rs");
     let url = Url::parse(&format!(
-        "{}://action/open_file_editor?path=/tmp/test.rs&line=120&column=8",
+        "{}://action/open_file_editor?path={path_param}&line=120&column=8",
         ChannelState::url_scheme()
     ))
     .unwrap();
@@ -306,7 +318,7 @@ fn test_action_open_file_editor_parse_with_line_and_column() {
     let action = Action::parse(&url).unwrap();
     match action {
         Action::OpenFileEditor { path, line_col } => {
-            assert_eq!(path, PathBuf::from("/tmp/test.rs"));
+            assert_eq!(path, expected_path);
             assert_eq!(
                 line_col,
                 Some(LineAndColumnArg {
@@ -321,8 +333,10 @@ fn test_action_open_file_editor_parse_with_line_and_column() {
 
 #[test]
 fn test_action_open_file_editor_parse_decodes_percent_encoded_path() {
+    let (path_param, _) = open_file_editor_test_path("hello%20world.rs");
+    let (_, expected_path) = open_file_editor_test_path("hello world.rs");
     let url = Url::parse(&format!(
-        "{}://action/open_file_editor?path=/tmp/hello%20world.rs&line=1",
+        "{}://action/open_file_editor?path={path_param}&line=1",
         ChannelState::url_scheme()
     ))
     .unwrap();
@@ -330,7 +344,7 @@ fn test_action_open_file_editor_parse_decodes_percent_encoded_path() {
     let action = Action::parse(&url).unwrap();
     match action {
         Action::OpenFileEditor { path, line_col } => {
-            assert_eq!(path, PathBuf::from("/tmp/hello world.rs"));
+            assert_eq!(path, expected_path);
             assert_eq!(
                 line_col,
                 Some(LineAndColumnArg {
