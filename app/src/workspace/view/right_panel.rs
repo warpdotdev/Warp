@@ -297,6 +297,7 @@ impl CodeReviewState {
                         RightPanelAction::SelectRepo {
                             repo_path: repo_path.clone(),
                             from_dropdown: true,
+                            focus_after_select: true,
                         },
                     )
                 })
@@ -329,6 +330,7 @@ pub enum RightPanelAction {
     SelectRepo {
         repo_path: PathBuf,
         from_dropdown: bool,
+        focus_after_select: bool,
     },
     OpenRepository,
     ToggleMaximize,
@@ -499,11 +501,17 @@ impl RightPanelView {
     }
 
     #[cfg(feature = "local_fs")]
-    pub fn update_selected_repo(&mut self, repo_path: PathBuf, ctx: &mut ViewContext<Self>) {
+    pub fn update_selected_repo(
+        &mut self,
+        repo_path: PathBuf,
+        focus_after_select: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
         self.handle_action(
             &RightPanelAction::SelectRepo {
                 repo_path,
                 from_dropdown: false,
+                focus_after_select,
             },
             ctx,
         );
@@ -1707,6 +1715,7 @@ impl TypedActionView for RightPanelView {
             RightPanelAction::SelectRepo {
                 repo_path,
                 from_dropdown,
+                focus_after_select,
             } => {
                 // Only close the old view if we're actually switching to a different repo.
                 let is_switching = self
@@ -1739,7 +1748,9 @@ impl TypedActionView for RightPanelView {
                         });
                     }
 
-                    self.focus_active_code_review_view(ctx);
+                    if *focus_after_select {
+                        self.focus_active_code_review_view(ctx);
+                    }
                     ctx.notify();
                 }
             }

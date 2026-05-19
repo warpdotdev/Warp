@@ -8349,7 +8349,7 @@ impl Workspace {
         if pane_group_handle.as_ref(ctx).right_panel_open {
             if let Some(repo_path) = &context.repo_path {
                 self.right_panel_view.update(ctx, |right_panel, ctx| {
-                    right_panel.update_selected_repo(repo_path.clone(), ctx);
+                    right_panel.update_selected_repo(repo_path.clone(), focus_new_pane, ctx);
                 });
             }
             return;
@@ -8368,7 +8368,7 @@ impl Workspace {
         );
         if let Some(repo_path) = &context.repo_path {
             self.right_panel_view.update(ctx, |right_panel, ctx| {
-                right_panel.update_selected_repo(repo_path.clone(), ctx);
+                right_panel.update_selected_repo(repo_path.clone(), focus_new_pane, ctx);
             });
         }
     }
