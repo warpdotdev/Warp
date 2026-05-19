@@ -314,6 +314,9 @@ pub enum RemoteSessionState {
         /// See type-level doc.
         #[cfg(not(target_family = "wasm"))]
         control_path: Option<PathBuf>,
+        /// Tail buffer of the last N stderr lines from the proxy subprocess.
+        #[cfg(not(target_family = "wasm"))]
+        stderr_tail: crate::client::RemoteServerLog,
     },
     /// Initialize handshake succeeded. Client is ready for requests.
     Connected {
@@ -374,6 +377,9 @@ pub enum RemoteServerManagerEvent {
         /// Exit status of the SSH subprocess, if available.
         /// Used by telemetry to distinguish proxy crashes from other failures.
         exit_status: Option<RemoteServerExitStatus>,
+        /// Last lines from the proxy's stderr, if available.
+        /// Provides server-side context for why the proxy exited.
+        proxy_stderr: Option<String>,
         /// `true` when the failure is attributed to a user-initiated
         /// cancellation (session deregistered or transport-level
         /// disconnect) rather than a server-side error. Subscribers
@@ -1067,12 +1073,13 @@ impl RemoteServerManager {
                             // to Disconnected while we wait so the session slot
                             // is not empty (an empty slot would be misread as
                             // "user deregistered" by the is_cancelled check).
-                            let maybe_child = spawner
+                            let maybe_child_and_stderr = spawner
                                 .spawn(move |me, _ctx| {
                                     match me.sessions.remove(&session_id) {
                                         Some(RemoteSessionState::Initializing {
                                             _child,
                                             control_path,
+                                            stderr_tail,
                                             ..
                                         }) => {
                                             me.sessions.insert(
@@ -1081,7 +1088,7 @@ impl RemoteServerManager {
                                                     control_path,
                                                 },
                                             );
-                                            Some(_child)
+                                            Some((_child, stderr_tail))
                                         }
                                         other => {
                                             // Put back whatever was there
@@ -1103,9 +1110,13 @@ impl RemoteServerManager {
                             // which is critical for ResponseChannelClosed
                             // errors where the non-blocking try_status()
                             // previously returned None due to a timing race.
-                            let exit_status = match maybe_child {
-                                Some(child) => Self::await_exit_status(child, session_id).await,
-                                None => None,
+                            let (exit_status, proxy_stderr) = match maybe_child_and_stderr {
+                                Some((child, stderr_tail)) => {
+                                    let status = Self::await_exit_status(child, session_id).await;
+                                    let stderr = stderr_tail.drain();
+                                    (status, stderr)
+                                }
+                                None => (None, None),
                             };
 
                             let _ = spawner
@@ -1137,6 +1148,7 @@ impl RemoteServerManager {
                                         phase,
                                         error,
                                         exit_status,
+                                        proxy_stderr,
                                         is_cancelled,
                                     });
                                     me.mark_session_disconnected(session_id, ctx);
@@ -1172,6 +1184,7 @@ impl RemoteServerManager {
             failure_rx,
             child,
             control_path,
+            stderr_tail,
         } = transport
             .connect(executor.clone())
             .await
@@ -1194,6 +1207,7 @@ impl RemoteServerManager {
                         client: client_for_init,
                         _child: child,
                         control_path,
+                        stderr_tail,
                     },
                 );
                 true
@@ -2168,6 +2182,7 @@ impl RemoteServerManager {
             client,
             _child,
             control_path,
+            ..
         }) = self.sessions.remove(&session_id)
         else {
             return;

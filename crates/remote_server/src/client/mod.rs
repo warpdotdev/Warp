@@ -27,6 +27,11 @@ use crate::proto::{
 };
 use crate::repo_metadata_proto::{proto_snapshot_to_update, proto_to_repo_metadata_update};
 
+#[cfg(not(target_family = "wasm"))]
+mod remote_server_log;
+#[cfg(not(target_family = "wasm"))]
+pub use remote_server_log::RemoteServerLog;
+
 use crate::protocol::{self, ProtocolError, RequestId};
 use warp_core::{safe_error, safe_warn, SessionId};
 use warp_util::standardized_path::StandardizedPath;
@@ -216,9 +221,11 @@ impl RemoteServerClient {
         Self,
         async_channel::Receiver<ClientEvent>,
         async_channel::Receiver<RequestFailedEvent>,
+        RemoteServerLog,
     ) {
-        spawn_stderr_forwarder(stderr, executor);
-        Self::new(stdout, stdin, executor)
+        let stderr_tail = spawn_stderr_forwarder(stderr, executor);
+        let (client, event_rx, failure_rx) = Self::new(stdout, stdin, executor);
+        (client, event_rx, failure_rx, stderr_tail)
     }
 }
 
@@ -1318,15 +1325,19 @@ impl RemoteServerClient {
     }
 }
 
-/// Spawns a background task that reads lines from the server's stderr and
-/// forwards them to the client's logging.
+/// Spawns a background task that reads lines from the server's stderr,
+/// forwards them to the client's logging, and retains the last few lines
+/// in a shared buffer for telemetry.
 #[cfg(not(target_family = "wasm"))]
 pub fn spawn_stderr_forwarder(
     stderr: impl AsyncRead + TransportStream,
     executor: &executor::Background,
-) {
+) -> RemoteServerLog {
     use futures::io::AsyncBufReadExt;
     use futures::StreamExt;
+
+    let tail = RemoteServerLog::new();
+    let tail_writer = tail.clone();
 
     executor
         .spawn(async move {
@@ -1334,9 +1345,12 @@ pub fn spawn_stderr_forwarder(
             let mut lines = reader.lines();
             while let Some(Ok(line)) = lines.next().await {
                 log::info!("[remote_server] {line}");
+                tail_writer.push(line);
             }
         })
         .detach();
+
+    tail
 }
 
 #[cfg(test)]
