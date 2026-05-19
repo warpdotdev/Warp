@@ -1377,11 +1377,18 @@ impl CodebaseIndex {
     pub(super) fn codebase_index_status(&self) -> CodebaseIndexStatus {
         let root_hash = self.last_server_synced_root_node();
         let has_synced_version = root_hash.is_some();
+        #[cfg(feature = "local_fs")]
+        let has_pending_file_changes = self
+            .pending_file_changes
+            .as_ref()
+            .is_some_and(|changes| !changes.is_empty());
+        #[cfg(not(feature = "local_fs"))]
+        let has_pending_file_changes = false;
         match &self.tree_sync_state {
             TreeSourceSyncState::Synced {
                 server_sync_result, ..
             } => CodebaseIndexStatus {
-                has_pending: false,
+                has_pending: has_pending_file_changes,
                 has_synced_version,
                 last_sync_successful: Some(match server_sync_result {
                     ServerSyncResult::Success => CodebaseIndexFinishedStatus::Completed,

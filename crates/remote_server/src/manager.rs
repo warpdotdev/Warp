@@ -127,18 +127,27 @@ pub enum RemoteServerOperation {
     GetBranches,
 }
 
-#[derive(Clone, Copy, Debug)]
-enum RemoteCodebaseIndexMutation {
-    EnsureIndexed,
-    Resync,
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteCodebaseIndexUpdateOperation {
+    IndexNewRepo { is_auto_index: bool },
+    Sync { is_full_sync: bool },
     Drop,
 }
 
-impl RemoteCodebaseIndexMutation {
+impl RemoteCodebaseIndexUpdateOperation {
     fn operation(self) -> RemoteServerOperation {
         match self {
-            Self::EnsureIndexed => RemoteServerOperation::IndexCodebase,
-            Self::Resync => RemoteServerOperation::ResyncCodebase,
+            Self::IndexNewRepo {
+                is_auto_index: true,
+            }
+            | Self::IndexNewRepo {
+                is_auto_index: false,
+            } => RemoteServerOperation::IndexCodebase,
+            Self::Sync { is_full_sync: true }
+            | Self::Sync {
+                is_full_sync: false,
+            } => RemoteServerOperation::ResyncCodebase,
             Self::Drop => RemoteServerOperation::DropCodebaseIndex,
         }
     }
@@ -150,8 +159,22 @@ impl RemoteCodebaseIndexMutation {
         auth_token: String,
     ) -> Result<RemoteCodebaseIndexStatus, crate::client::ClientError> {
         match self {
-            Self::EnsureIndexed => client.index_codebase(repo_path, auth_token).await,
-            Self::Resync => client.resync_codebase(repo_path, auth_token).await,
+            Self::IndexNewRepo {
+                is_auto_index: true,
+            }
+            | Self::IndexNewRepo {
+                is_auto_index: false,
+            } => client.index_codebase(repo_path, auth_token).await,
+            Self::Sync {
+                is_full_sync: false,
+            } => {
+                client
+                    .trigger_codebase_incremental_sync(repo_path, auth_token)
+                    .await
+            }
+            Self::Sync { is_full_sync: true } => {
+                client.resync_codebase(repo_path, auth_token).await
+            }
             Self::Drop => client.drop_codebase_index(repo_path, auth_token).await,
         }
     }
@@ -438,10 +461,13 @@ pub enum RemoteServerManagerEvent {
         host_id: HostId,
         statuses: Vec<RemoteCodebaseIndexStatusWithPath>,
     },
-    /// A single remote codebase-index status update was pushed by the daemon.
+    /// A single remote codebase-index status update was pushed by the daemon
+    /// or returned by an index mutation request.
     CodebaseIndexStatusUpdated {
+        session_id: Option<SessionId>,
         remote_path: RemotePath,
         status: RemoteCodebaseIndexStatus,
+        mutation_kind: Option<RemoteCodebaseIndexUpdateOperation>,
     },
     /// A buffer was updated on the remote host (file changed on disk).
     /// The app layer should forward this to `GlobalBufferModel::handle_buffer_updated_push`.
@@ -540,6 +566,12 @@ pub enum RemoteServerManagerEvent {
         operation: RemoteServerOperation,
         error_kind: RemoteServerErrorKind,
     },
+    /// A remote codebase-index mutation failed before yielding a status update.
+    CodebaseIndexMutationFailed {
+        session_id: SessionId,
+        mutation_kind: RemoteCodebaseIndexUpdateOperation,
+        error_kind: RemoteServerErrorKind,
+    },
     /// A server message could not be decoded (no parseable request_id).
     ServerMessageDecodingError { session_id: SessionId },
 }
@@ -560,6 +592,7 @@ impl RemoteServerManagerEvent {
             | RemoteServerManagerEvent::BinaryCheckComplete { session_id, .. }
             | RemoteServerManagerEvent::BinaryInstallComplete { session_id, .. }
             | RemoteServerManagerEvent::ClientRequestFailed { session_id, .. }
+            | RemoteServerManagerEvent::CodebaseIndexMutationFailed { session_id, .. }
             | RemoteServerManagerEvent::ServerMessageDecodingError { session_id }
             | RemoteServerManagerEvent::GetBranchesResponse { session_id, .. } => Some(*session_id),
             RemoteServerManagerEvent::HostConnected { .. }
@@ -568,12 +601,18 @@ impl RemoteServerManagerEvent {
             | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
             | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
             | RemoteServerManagerEvent::CodebaseIndexStatusesSnapshot { .. }
-            | RemoteServerManagerEvent::CodebaseIndexStatusUpdated { .. }
+            | RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
+                session_id: None, ..
+            }
             | RemoteServerManagerEvent::BufferUpdated { .. }
             | RemoteServerManagerEvent::BufferConflictDetected { .. }
             | RemoteServerManagerEvent::DiffStateSnapshotReceived { .. }
             | RemoteServerManagerEvent::DiffStateMetadataUpdateReceived { .. }
             | RemoteServerManagerEvent::DiffStateFileDeltaReceived { .. } => None,
+            RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
+                session_id: Some(session_id),
+                ..
+            } => Some(*session_id),
         }
     }
 }
@@ -1454,28 +1493,48 @@ impl RemoteServerManager {
     pub fn ensure_codebase_indexed(
         &mut self,
         remote_path: RemotePath,
+        mutation_kind: RemoteCodebaseIndexUpdateOperation,
         ctx: &mut ModelContext<Self>,
     ) {
-        self.mutate_codebase_index(remote_path, RemoteCodebaseIndexMutation::EnsureIndexed, ctx);
+        self.mutate_codebase_index(remote_path, mutation_kind, ctx);
     }
 
     /// Sends a `ResyncCodebase` request to a connected daemon for this remote path.
     pub fn resync_codebase(&mut self, remote_path: RemotePath, ctx: &mut ModelContext<Self>) {
-        self.mutate_codebase_index(remote_path, RemoteCodebaseIndexMutation::Resync, ctx);
+        self.mutate_codebase_index(
+            remote_path,
+            RemoteCodebaseIndexUpdateOperation::Sync { is_full_sync: true },
+            ctx,
+        );
+    }
+
+    /// Sends a `ResyncCodebase` request in incremental mode to a connected daemon for this remote path.
+    pub fn trigger_codebase_incremental_sync(
+        &mut self,
+        remote_path: RemotePath,
+        ctx: &mut ModelContext<Self>,
+    ) -> bool {
+        self.mutate_codebase_index(
+            remote_path,
+            RemoteCodebaseIndexUpdateOperation::Sync {
+                is_full_sync: false,
+            },
+            ctx,
+        )
     }
 
     /// Sends a `DropCodebaseIndex` request to a connected daemon for this remote path.
     pub fn drop_codebase_index(&mut self, remote_path: RemotePath, ctx: &mut ModelContext<Self>) {
-        self.mutate_codebase_index(remote_path, RemoteCodebaseIndexMutation::Drop, ctx);
+        self.mutate_codebase_index(remote_path, RemoteCodebaseIndexUpdateOperation::Drop, ctx);
     }
 
     fn mutate_codebase_index(
         &mut self,
         remote_path: RemotePath,
-        mutation: RemoteCodebaseIndexMutation,
+        mutation_kind: RemoteCodebaseIndexUpdateOperation,
         ctx: &mut ModelContext<Self>,
-    ) {
-        let operation = mutation.operation();
+    ) -> bool {
+        let operation = mutation_kind.operation();
         let host_id = remote_path.host_id.clone();
         let repo_path = remote_path.path.as_str().to_string();
 
@@ -1484,7 +1543,7 @@ impl RemoteServerManager {
                 "Remote server codebase index mutation: no auth context \
                  operation={operation:?} host={host_id} repo_path={repo_path}"
             );
-            return;
+            return false;
         };
         let current_identity_key = auth_context.remote_server_identity_key();
         let Some((session_id, client, remote_identity_key)) =
@@ -1494,7 +1553,7 @@ impl RemoteServerManager {
                 "Remote server codebase index mutation: no connected client for current identity \
                  operation={operation:?} host={host_id} repo_path={repo_path}"
             );
-            return;
+            return false;
         };
         log::info!(
             "[Remote codebase indexing] Manager requesting codebase index mutation: \
@@ -1519,12 +1578,17 @@ impl RemoteServerManager {
                                 operation,
                                 error_kind: RemoteServerErrorKind::Other,
                             });
+                            ctx.emit(RemoteServerManagerEvent::CodebaseIndexMutationFailed {
+                                session_id,
+                                mutation_kind,
+                                error_kind: RemoteServerErrorKind::Other,
+                            });
                         })
                         .await;
                     return;
                 };
 
-                match mutation.send(client, repo_path, auth_token).await {
+                match mutation_kind.send(client, repo_path, auth_token).await {
                     Ok(status) => {
                         log::info!(
                             "[Remote codebase indexing] Manager received codebase index mutation response: \
@@ -1537,8 +1601,10 @@ impl RemoteServerManager {
                         let _ = spawner
                             .spawn(move |_me, ctx| {
                                 ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
+                                    session_id: Some(session_id),
                                     remote_path,
                                     status,
+                                    mutation_kind: Some(mutation_kind),
                                 });
                             })
                             .await;
@@ -1549,12 +1615,23 @@ impl RemoteServerManager {
                              operation={operation:?} host={host_id} session={session_id:?} \
                              repo_path={repo_path_for_log} error={e}"
                         );
+                        let error_kind = RemoteServerErrorKind::from_client_error(&e);
+                        let _ = spawner
+                            .spawn(move |_me, ctx| {
+                                ctx.emit(RemoteServerManagerEvent::CodebaseIndexMutationFailed {
+                                    session_id,
+                                    mutation_kind,
+                                    error_kind,
+                                });
+                            })
+                            .await;
                         // Transport-level telemetry is emitted automatically
                         // by send_tracked_request via ClientEvent::RequestFailed.
                     }
                 }
             })
             .detach();
+        true
     }
 
     /// Sends a `NavigatedToDirectory` request to the remote server for
@@ -2000,8 +2077,10 @@ impl RemoteServerManager {
                     return;
                 };
                 ctx.emit(RemoteServerManagerEvent::CodebaseIndexStatusUpdated {
+                    session_id: Some(session_id),
                     remote_path,
                     status,
+                    mutation_kind: None,
                 });
             }
             ClientEvent::MessageDecodingError => {

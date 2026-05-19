@@ -73,6 +73,18 @@ pub(super) fn send_request(
                     message: "Remote codebase search is unavailable because the remote server is not connected.".to_string(),
                 });
             };
+            if search_context.is_stale {
+                let remote_path = search_context.remote_path.clone();
+                let sync_requested = remote_server::manager::RemoteServerManager::handle(ctx)
+                    .update(ctx, |manager, ctx| {
+                        manager.trigger_codebase_incremental_sync(remote_path, ctx)
+                    });
+                if !sync_requested {
+                    log::warn!(
+                        "Remote codebase search is using a stale index because incremental sync could not be requested"
+                    );
+                }
+            }
             let store_client = ServerApiProvider::as_ref(ctx).get();
             let abort_handle = ctx
                 .spawn(

@@ -815,19 +815,24 @@ impl CodebaseIndexManager {
         self.indexing_enabled
     }
 
-    pub fn index_directory(&mut self, directory: PathBuf, ctx: &mut ModelContext<Self>) {
+    pub fn index_directory(&mut self, directory: PathBuf, ctx: &mut ModelContext<Self>) -> bool {
         if !self.is_indexing_enabled() {
-            return;
+            return false;
         }
-        let directory = dunce::canonicalize(&directory).unwrap_or(directory);
-        if !self.codebase_indices.contains_key(&directory) {
-            self.build_and_sync_codebase_index(BuildSource::FromPath(&directory), ctx);
-            self.record_codebase_index_status(&directory, ctx);
+        if self.root_path_for_codebase(&directory).is_none() {
+            if !self.build_and_sync_codebase_index(BuildSource::FromPath(&directory), ctx) {
+                return false;
+            }
+            let indexed_directory = self
+                .root_path_for_codebase(&directory)
+                .unwrap_or_else(|| directory.clone());
+            self.record_codebase_index_status(&indexed_directory, ctx);
             // Starting a new codebase index should be considered into sync state updates.
             ctx.emit(CodebaseIndexManagerEvent::NewIndexCreated {
-                root_path: directory,
+                root_path: indexed_directory,
             });
         }
+        true
     }
 
     #[cfg(feature = "local_fs")]
@@ -867,12 +872,12 @@ impl CodebaseIndexManager {
         &mut self,
         build_source: BuildSource,
         ctx: &mut ModelContext<Self>,
-    ) {
+    ) -> bool {
         if !self.is_indexing_enabled() {
-            return;
+            return false;
         }
         if !self.can_create_new_indices() {
-            return;
+            return false;
         }
 
         let repo_path = match build_source {
@@ -887,7 +892,7 @@ impl CodebaseIndexManager {
                 Ok(path) => path,
                 Err(e) => {
                     log::error!("Failed to canonicalize repository path: {e:?}");
-                    return;
+                    return false;
                 }
             };
 
@@ -898,7 +903,7 @@ impl CodebaseIndexManager {
             Ok(handle) => handle,
             Err(e) => {
                 log::error!("Failed to start tracking repository: {e:?}");
-                return;
+                return false;
             }
         };
 
@@ -933,6 +938,7 @@ impl CodebaseIndexManager {
                 index.update_timestamps_from_metadata(metadata);
             });
         }
+        true
     }
 
     /// Checks whether a snapshot exists for the index and attempts to load it;
@@ -1303,7 +1309,7 @@ impl CodebaseIndexManager {
         codebase_index.update(ctx, |index, _ctx| {
             // Check if the index is in a state where it can perform incremental updates
             let status = index.codebase_index_status();
-            if status.has_pending {
+            if status.last_sync_successful() != Some(true) {
                 return;
             }
 

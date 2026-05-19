@@ -40,10 +40,10 @@ use super::proto::{
     get_fragment_metadata_from_hash_response, resolve_conflict_response, run_command_response,
     save_buffer_response, server_message, write_file_response, Abort, Authenticate, BranchInfo,
     BufferEdit, BufferUpdatedPush, ClientMessage, CloseBuffer, CodebaseIndexStatus,
-    CodebaseIndexStatusUpdated, CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse,
-    DeleteFileSuccess, DiscardFilesError, DiscardFilesResponse, DiscardFilesSuccess,
-    DropCodebaseIndex, ErrorCode, ErrorResponse, FailedFileRead, FileContextProto,
-    FileOperationError, FragmentMetadata as ProtoFragmentMetadata,
+    CodebaseIndexStatusUpdated, CodebaseIndexStatusesSnapshot, CodebaseResyncMode, DeleteFile,
+    DeleteFileResponse, DeleteFileSuccess, DiscardFilesError, DiscardFilesResponse,
+    DiscardFilesSuccess, DropCodebaseIndex, ErrorCode, ErrorResponse, FailedFileRead,
+    FileContextProto, FileOperationError, FragmentMetadata as ProtoFragmentMetadata,
     FragmentMetadataLookupError as ProtoFragmentMetadataLookupError,
     FragmentMetadataLookupErrorCode, GetBranchesError, GetBranchesResponse, GetBranchesSuccess,
     GetDiffStateResponse, GetFragmentMetadataFromHash, GetFragmentMetadataFromHashResponse,
@@ -836,7 +836,7 @@ impl ServerModel {
         }
         let snapshot = self.codebase_index_statuses_snapshot(ctx);
         let status_count = snapshot.statuses.len();
-        log::info!(
+        log::debug!(
             "[Remote codebase indexing] Daemon pushing bootstrap codebase index statuses snapshot: conn_id={conn_id} bootstrap_status_count={status_count}"
         );
         self.send_server_message(
@@ -903,8 +903,22 @@ impl ServerModel {
                     Self::current_codebase_index_status_or_queued(manager, indexed_repo_path, ctx)
                 },
                 |manager, repo_path, ctx| {
-                    manager.index_directory(repo_path.to_path_buf(), ctx);
-                    queued_codebase_index_status(repo_path.to_string_lossy().to_string())
+                    if manager.index_directory(repo_path.to_path_buf(), ctx) {
+                        Self::current_codebase_index_status_or_queued(manager, repo_path, ctx)
+                    } else if !manager.is_indexing_enabled() {
+                        not_enabled_codebase_index_status(repo_path.to_string_lossy().to_string())
+                    } else if !manager.can_create_new_indices() {
+                        unavailable_codebase_index_status(
+                            repo_path.to_string_lossy().to_string(),
+                            "Cannot index remote codebase because the maximum number of codebase indexes has been reached.".to_string(),
+                        )
+                    } else {
+                        unavailable_codebase_index_status(
+                            repo_path.to_string_lossy().to_string(),
+                            "Cannot index remote codebase because indexing did not start."
+                                .to_string(),
+                        )
+                    }
                 },
                 ctx,
             )
@@ -927,7 +941,14 @@ impl ServerModel {
         let ResyncCodebase {
             repo_path,
             auth_token,
+            mode,
         } = msg;
+        let mode = match CodebaseResyncMode::try_from(mode) {
+            Ok(mode) => mode,
+            Err(_) => {
+                return invalid_request_response(format!("Invalid ResyncCodebase mode: {mode}"));
+            }
+        };
         let request = match self.prepare_codebase_index_request(
             CodebaseIndexRequestParams {
                 operation_name: "ResyncCodebase",
@@ -947,7 +968,21 @@ impl ServerModel {
             manager.with_indexed_codebase(
                 &repo_path,
                 |manager, indexed_repo_path, ctx| {
-                    manager.try_manual_resync_codebase(indexed_repo_path, ctx);
+                    match mode {
+                        CodebaseResyncMode::Full => {
+                            manager.try_manual_resync_codebase(indexed_repo_path, ctx);
+                        }
+                        CodebaseResyncMode::Incremental => {
+                            if let Err(error) =
+                                manager.trigger_incremental_sync_for_path(indexed_repo_path, ctx)
+                            {
+                                log::warn!(
+                                    "Failed to trigger remote codebase incremental sync: repo_path={} error={error}",
+                                    indexed_repo_path.display()
+                                );
+                            }
+                        }
+                    }
                     Self::current_codebase_index_status_or_queued(manager, indexed_repo_path, ctx)
                 },
                 |_, repo_path, _| {
