@@ -929,13 +929,16 @@ impl BlocklistAIStatusBar {
         let error_color = theme.ansi_fg_red();
 
         if let Some(auth_url) = ambient_agent_model.github_auth_url() {
+            let error_message = ambient_agent_model
+                .github_auth_error_message()
+                .unwrap_or("Missing GitHub authentication.");
             return Some(Message::new(vec![
                 MessageItem::Icon {
                     icon: CoreIcon::Triangle,
                     color: Some(error_color),
                 },
                 MessageItem::Text {
-                    content: "Missing GitHub authentication. ".into(),
+                    content: format!("{error_message} ").into(),
                     color: Some(error_color),
                 },
                 MessageItem::hyperlink(

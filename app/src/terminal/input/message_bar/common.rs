@@ -92,7 +92,9 @@ fn render_message_bar_items(items: &[MessageItem], app: &AppContext) -> Box<dyn 
     let appearance = Appearance::as_ref(app);
     let default_font_color = styles::default_font_color(app);
 
-    let mut row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
+    let mut row = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_constrain_horizontal_bounds_to_parent(true);
 
     for (i, item) in items.iter().enumerate() {
         let mut child: Box<dyn Element> = match item {

@@ -26,6 +26,9 @@ use crate::workspaces::user_workspaces::UserWorkspaces;
 
 /// Icon size for the error icon
 const ERROR_ICON_SIZE: f32 = 24.;
+const MESSAGE_CARD_MAX_WIDTH: f32 = 400.;
+const MESSAGE_CARD_HORIZONTAL_PADDING: f32 = 24.;
+const MESSAGE_TEXT_MAX_WIDTH: f32 = MESSAGE_CARD_MAX_WIDTH - MESSAGE_CARD_HORIZONTAL_PADDING * 2.;
 
 /// Renders the cloud mode loading screen with shimmering warp logo and tips.
 pub fn render_cloud_mode_loading_screen(
@@ -270,7 +273,11 @@ pub fn render_cloud_mode_error_screen(
         .with_spacing(12.)
         .with_child(error_icon)
         .with_child(title_text)
-        .with_child(selectable_error_text)
+        .with_child(
+            ConstrainedBox::new(selectable_error_text)
+                .with_max_width(MESSAGE_TEXT_MAX_WIDTH)
+                .finish(),
+        )
         .finish();
 
     // Red bordered container with 10% opacity background
@@ -280,13 +287,13 @@ pub fn render_cloud_mode_error_screen(
         .with_background(error_background)
         .with_border(Border::all(1.).with_border_color(error_color.into()))
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-        .with_horizontal_padding(24.)
+        .with_horizontal_padding(MESSAGE_CARD_HORIZONTAL_PADDING)
         .with_vertical_padding(16.)
         .finish();
 
     // Constrain error container to max 400px width
     let constrained_error = ConstrainedBox::new(error_container)
-        .with_max_width(400.)
+        .with_max_width(MESSAGE_CARD_MAX_WIDTH)
         .finish();
 
     // Center the error container in the view
@@ -301,6 +308,7 @@ pub fn render_cloud_mode_error_screen(
 /// Renders the cloud mode GitHub authentication required screen.
 pub fn render_cloud_mode_github_auth_required_screen(
     auth_url: &str,
+    error_message: Option<&str>,
     appearance: &Appearance,
     auth_button_mouse_state: &MouseStateHandle,
     _app: &AppContext,
@@ -332,13 +340,16 @@ pub fn render_cloud_mode_github_auth_required_screen(
     .with_color(title_color)
     .finish();
 
-    // Message text - "Please authenticate with GitHub to continue"
+    let error_message = error_message.unwrap_or("Please authenticate with GitHub to continue");
+
+    // Message text
     let message_text = Text::new(
-        "Please authenticate with GitHub to continue",
+        error_message.to_string(),
         appearance.ui_font_family(),
         appearance.monospace_font_size(),
     )
     .with_color(message_color)
+    .soft_wrap(true)
     .finish();
 
     // Create the authenticate button
@@ -359,7 +370,11 @@ pub fn render_cloud_mode_github_auth_required_screen(
         .with_spacing(12.)
         .with_child(auth_icon)
         .with_child(title_text)
-        .with_child(message_text)
+        .with_child(
+            ConstrainedBox::new(message_text)
+                .with_max_width(MESSAGE_TEXT_MAX_WIDTH)
+                .finish(),
+        )
         .with_child(Container::new(auth_button).with_margin_top(8.).finish())
         .finish();
 
@@ -370,13 +385,13 @@ pub fn render_cloud_mode_github_auth_required_screen(
         .with_background(auth_background)
         .with_border(Border::all(1.).with_border_color(border_color))
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-        .with_horizontal_padding(24.)
+        .with_horizontal_padding(MESSAGE_CARD_HORIZONTAL_PADDING)
         .with_vertical_padding(16.)
         .finish();
 
     // Constrain container to max 400px width
     let constrained_auth = ConstrainedBox::new(auth_container)
-        .with_max_width(400.)
+        .with_max_width(MESSAGE_CARD_MAX_WIDTH)
         .finish();
 
     // Center the container in the view
@@ -444,13 +459,13 @@ pub fn render_cloud_mode_cancelled_screen(appearance: &Appearance) -> Box<dyn El
         .with_background(cancelled_background)
         .with_border(Border::all(1.).with_border_color(border_color))
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-        .with_horizontal_padding(24.)
+        .with_horizontal_padding(MESSAGE_CARD_HORIZONTAL_PADDING)
         .with_vertical_padding(16.)
         .finish();
 
     // Constrain container to max 400px width
     let constrained_cancelled = ConstrainedBox::new(cancelled_container)
-        .with_max_width(400.)
+        .with_max_width(MESSAGE_CARD_MAX_WIDTH)
         .finish();
 
     // Center the container in the view
