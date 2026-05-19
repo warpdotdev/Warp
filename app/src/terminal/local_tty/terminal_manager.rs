@@ -38,6 +38,8 @@ use crate::view_components::ToastFlavor;
 use parking_lot::{FairMutex, Mutex};
 use pathfinder_geometry::vector::Vector2F;
 
+#[cfg(unix)]
+use crate::terminal::cli_agent_sessions::ipc::CLIAgentIpcListener;
 use crate::terminal::cli_agent_sessions::{
     CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
 };
@@ -169,6 +171,12 @@ pub struct TerminalManager {
     #[expect(dead_code)]
     remote_server_controller: ModelHandle<RemoteServerController>,
 
+    /// The manager owns the per-terminal CLI agent IPC socket advertised to
+    /// shell children via `WARP_CLI_AGENT_IPC`.
+    #[cfg(unix)]
+    #[allow(dead_code)]
+    cli_agent_ipc_listener: Option<CLIAgentIpcListener>,
+
     /// The process ID of the PTY. Purely used for integration tests. None if the PTY has not yet
     /// been started.
     #[cfg(feature = "integration_tests")]
@@ -227,7 +235,7 @@ impl TerminalManager {
     #[allow(clippy::too_many_arguments)]
     pub fn create_model(
         startup_directory: Option<PathBuf>,
-        env_vars: HashMap<OsString, OsString>,
+        mut env_vars: HashMap<OsString, OsString>,
         is_shared_session_creator: IsSharedSessionCreator,
         resources: TerminalViewResources,
         restored_blocks: Option<&Vec<SerializedBlockListItem>>,
@@ -252,7 +260,27 @@ impl TerminalManager {
             async_broadcast::broadcast(PTY_READS_BROADCAST_CHANNEL_SIZE);
         let inactive_pty_reads_rx = pty_reads_rx.deactivate();
 
-        let channel_event_proxy = ChannelEventListener::new(wakeups_tx, events_tx, pty_reads_tx);
+        let channel_event_proxy =
+            ChannelEventListener::new(wakeups_tx, events_tx.clone(), pty_reads_tx);
+
+        #[cfg(unix)]
+        let cli_agent_ipc_listener = if FeatureFlag::HOANotifications.is_enabled() {
+            match CLIAgentIpcListener::start(events_tx.clone()) {
+                Ok(listener) => {
+                    env_vars.insert(
+                        OsString::from("WARP_CLI_AGENT_IPC"),
+                        listener.socket_path().as_os_str().to_owned(),
+                    );
+                    Some(listener)
+                }
+                Err(err) => {
+                    log::warn!("Failed to start CLI agent IPC listener: {err}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         // Initialize the sessions model.
         let sessions = ctx.add_model(|ctx| Sessions::new(executor_command_tx.clone(), ctx));
@@ -781,6 +809,8 @@ impl TerminalManager {
             terminal_attributes_poller: None,
             pty_controller,
             remote_server_controller,
+            #[cfg(unix)]
+            cli_agent_ipc_listener,
 
             #[cfg(feature = "integration_tests")]
             pid: None,
