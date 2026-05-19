@@ -18,9 +18,9 @@ use std::pin::Pin;
 use async_channel::Receiver;
 use warpui::r#async::executor;
 
-use crate::client::{ClientEvent, RemoteServerClient};
 #[cfg(not(target_family = "wasm"))]
 use crate::client::RemoteServerLog;
+use crate::client::{ClientEvent, RemoteServerClient};
 use crate::manager::RemoteServerExitStatus;
 use crate::setup::{PreinstallCheckResult, RemotePlatform};
 use serde::Serialize;
