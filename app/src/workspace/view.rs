@@ -875,6 +875,7 @@ struct CodeReviewPaneContext {
 struct RightPanelUpdateParams<'a> {
     pane_group: &'a ViewHandle<PaneGroup>,
     target_open_state: bool,
+    focus_new_pane: bool,
     entrypoint: Option<CodeReviewPaneEntrypoint>,
     cli_agent: Option<crate::terminal::CLIAgent>,
     review_pane_context: Option<&'a CodeReviewPaneContext>,
@@ -8170,6 +8171,11 @@ impl Workspace {
                     self.right_panel_view.as_ref(ctx).selected_repo_path() == Some(target_repo_path)
                 });
         if panel_already_showing_repo {
+            if panel_context.focus_new_pane {
+                self.right_panel_view.update(ctx, |view, ctx| {
+                    view.focus_active_code_review_view(ctx);
+                });
+            }
             return;
         }
 
@@ -8193,6 +8199,7 @@ impl Workspace {
             &pane_group,
             panel_context.entrypoint,
             panel_context.cli_agent,
+            panel_context.focus_new_pane,
             ctx,
         );
 
@@ -8265,6 +8272,11 @@ impl Workspace {
                     ctx
                 );
                 self.setup_code_review_panel(panel_update_params.review_pane_context, ctx);
+                if panel_update_params.focus_new_pane {
+                    self.right_panel_view.update(ctx, |view, ctx| {
+                        view.focus_active_code_review_view(ctx);
+                    });
+                }
             }
         } else {
             self.focus_active_tab(ctx);
@@ -8276,6 +8288,7 @@ impl Workspace {
     fn toggle_right_panel(
         &mut self,
         pane_group_handle: &ViewHandle<PaneGroup>,
+        focus_new_pane: bool,
         ctx: &mut ViewContext<Self>,
     ) {
         let target_open_state =
@@ -8311,6 +8324,7 @@ impl Workspace {
             RightPanelUpdateParams {
                 pane_group: pane_group_handle,
                 target_open_state,
+                focus_new_pane,
                 entrypoint: Some(CodeReviewPaneEntrypoint::RightPanel),
                 cli_agent: None,
                 review_pane_context: context.as_ref(),
@@ -8326,12 +8340,13 @@ impl Workspace {
         pane_group_handle: &ViewHandle<PaneGroup>,
         entrypoint: CodeReviewPaneEntrypoint,
         cli_agent: Option<crate::terminal::CLIAgent>,
+        focus_new_pane: bool,
         ctx: &mut ViewContext<Self>,
     ) {
         if pane_group_handle.as_ref(ctx).right_panel_open {
             if let Some(repo_path) = &context.repo_path {
                 self.right_panel_view.update(ctx, |right_panel, ctx| {
-                    right_panel.update_selected_repo(repo_path.clone(), ctx);
+                    right_panel.update_selected_repo(repo_path.clone(), focus_new_pane, ctx);
                 });
             }
             return;
@@ -8341,6 +8356,7 @@ impl Workspace {
             RightPanelUpdateParams {
                 pane_group: pane_group_handle,
                 target_open_state: true,
+                focus_new_pane,
                 entrypoint: Some(entrypoint),
                 cli_agent,
                 review_pane_context: Some(context),
@@ -8349,7 +8365,7 @@ impl Workspace {
         );
         if let Some(repo_path) = &context.repo_path {
             self.right_panel_view.update(ctx, |right_panel, ctx| {
-                right_panel.update_selected_repo(repo_path.clone(), ctx);
+                right_panel.update_selected_repo(repo_path.clone(), focus_new_pane, ctx);
             });
         }
     }
@@ -8361,6 +8377,7 @@ impl Workspace {
         _pane_group_handle: &ViewHandle<PaneGroup>,
         _entrypoint: CodeReviewPaneEntrypoint,
         _cli_agent: Option<crate::terminal::CLIAgent>,
+        _focus_new_pane: bool,
         _ctx: &mut ViewContext<Self>,
     ) {
     }
@@ -8374,6 +8391,7 @@ impl Workspace {
             RightPanelUpdateParams {
                 pane_group: pane_group_handle,
                 target_open_state: false,
+                focus_new_pane: true,
                 entrypoint: None,
                 cli_agent: None,
                 review_pane_context: None,
@@ -14240,7 +14258,7 @@ impl Workspace {
                 self.open_code_review_panel_from_arg(arg, pane_group.clone(), ctx);
             }
             pane_group::Event::ToggleCodeReviewPane(arg) => {
-                self.toggle_right_panel(&pane_group, ctx);
+                self.toggle_right_panel(&pane_group, arg.focus_new_pane, ctx);
                 let active_conversation_id = arg.terminal_view.upgrade(ctx).and_then(|tv| {
                     BlocklistAIHistoryModel::as_ref(ctx).active_conversation_id(tv.id())
                 });
@@ -21526,7 +21544,7 @@ impl TypedActionView for Workspace {
             }
             ToggleRightPanel => {
                 let pane_group_handle = self.active_tab_pane_group().clone();
-                self.toggle_right_panel(&pane_group_handle, ctx);
+                self.toggle_right_panel(&pane_group_handle, true, ctx);
             }
             #[cfg(feature = "local_fs")]
             OpenCodeReviewPanel(locator) => {
@@ -21562,6 +21580,7 @@ impl TypedActionView for Workspace {
                                 &pane_group_handle,
                                 CodeReviewPaneEntrypoint::GitDiffChip,
                                 None,
+                                true,
                                 ctx,
                             );
                         }

@@ -306,6 +306,7 @@ impl CodeReviewState {
                         RightPanelAction::SelectRepo {
                             repo_path: repo_path.clone(),
                             from_dropdown: true,
+                            focus_after_select: true,
                         },
                     )
                 })
@@ -338,6 +339,7 @@ pub enum RightPanelAction {
     SelectRepo {
         repo_path: LocalOrRemotePath,
         from_dropdown: bool,
+        focus_after_select: bool,
     },
     OpenRepository,
     ToggleMaximize,
@@ -511,12 +513,14 @@ impl RightPanelView {
     pub fn update_selected_repo(
         &mut self,
         repo_path: LocalOrRemotePath,
+        focus_after_select: bool,
         ctx: &mut ViewContext<Self>,
     ) {
         self.handle_action(
             &RightPanelAction::SelectRepo {
                 repo_path,
                 from_dropdown: false,
+                focus_after_select,
             },
             ctx,
         );
@@ -1757,6 +1761,7 @@ impl TypedActionView for RightPanelView {
             RightPanelAction::SelectRepo {
                 repo_path,
                 from_dropdown,
+                focus_after_select,
             } => {
                 // Only close the old view if we're actually switching to a different repo.
                 let is_switching = self
@@ -1776,7 +1781,6 @@ impl TypedActionView for RightPanelView {
                         ctx,
                     );
                     self.ensure_code_review_view_exists(repo_path, ctx);
-
                     // Persist the user's manual selection so it can be restored when
                     // they leave this pane group's session and come back. We only
                     // persist explicit `SelectRepo` actions (i.e. dropdown picks or
@@ -1790,6 +1794,9 @@ impl TypedActionView for RightPanelView {
                         });
                     }
 
+                    if *focus_after_select {
+                        self.focus_active_code_review_view(ctx);
+                    }
                     ctx.notify();
                 }
             }
