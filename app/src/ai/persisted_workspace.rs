@@ -11,6 +11,7 @@ use repo_metadata::repositories::{DetectedRepositories, DetectedRepositoriesEven
 use serde::{Deserialize, Serialize};
 
 use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
+#[cfg(feature = "local_fs")]
 use crate::ai::codebase_auto_indexing::{
     auto_index_candidate_roots, should_auto_index_codebase, CodebaseAutoIndexingSurface,
 };
